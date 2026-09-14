@@ -13,3 +13,4 @@ Config/local/
 
 # Test results
 *.xcresult
+dist/
