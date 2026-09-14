@@ -3,7 +3,9 @@ import CoreImage.CIFilterBuiltins
 import CoreGraphics
 
 /// Renders blur / pixelate regions from the base image. Results are cached per
-/// annotation geometry so dragging other things doesn't re-run Core Image.
+/// annotation geometry so dragging other things doesn't re-run Core Image. Both caches
+/// are bounded: a drag produces a new geometry on every mouse move and a slider a new
+/// blur amount on every tick, and each entry is a full bitmap.
 final class EffectsCache {
     private struct Key: Hashable {
         let rect: CGRect
@@ -11,8 +13,10 @@ final class EffectsCache {
         let intensity: CGFloat
     }
 
-    private var cache: [Key: CGImage] = [:]
-    private let context = CIContext(options: [.cacheIntermediates: false])
+    private var cache = LRUCache<Key, CGImage>(capacity: 32)
+    /// One per process: creating a context compiles GPU pipelines, which takes a while on
+    /// integrated Intel graphics, and every editor window renders the same kind of work.
+    private static let context = CIContext(options: [.cacheIntermediates: false])
 
     func invalidate() {
         cache.removeAll()
@@ -54,7 +58,8 @@ final class EffectsCache {
         let blur: CGFloat
     }
 
-    private var wallpapers: [WallpaperKey: CGImage] = [:]
+    /// Two entries: the current wallpaper at its current blur, plus the one being left.
+    private var wallpapers = LRUCache<WallpaperKey, CGImage>(capacity: 2)
 
     /// A background picture, optionally softened with a Gaussian blur (cached per blur amount).
     func wallpaper(_ wallpaper: Wallpaper, blur: CGFloat) -> CGImage? {
@@ -70,7 +75,7 @@ final class EffectsCache {
         filter.inputImage = source.clampedToExtent()
         filter.radius = Float(blur * 2)
         guard let output = filter.outputImage?.cropped(to: source.extent),
-              let image = context.createCGImage(output, from: source.extent)
+              let image = Self.context.createCGImage(output, from: source.extent)
         else { return base }
         wallpapers[key] = image
         return image
@@ -106,7 +111,7 @@ final class EffectsCache {
             filter.center = CGPoint(x: ciRect.minX, y: ciRect.minY)
             output = filter.outputImage?.cropped(to: ciRect) ?? source.cropped(to: ciRect)
         }
-        guard let rendered = context.createCGImage(output, from: ciRect) else { return nil }
+        guard let rendered = Self.context.createCGImage(output, from: ciRect) else { return nil }
         cache[key] = rendered
         return rendered
     }

@@ -30,6 +30,7 @@
 				OCR/OCRService.swift,
 				OCR/TextLayout.swift,
 				Support/CapturedImage.swift,
+				Support/LRUCache.swift,
 				Support/Log.swift,
 			);
 			target = 4B4C494B000000000000E002 /* KlikTests */;

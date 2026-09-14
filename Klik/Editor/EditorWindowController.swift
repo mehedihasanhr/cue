@@ -68,22 +68,39 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         host.sizingOptions = []
         window.contentViewController = host
         window.contentMinSize = CGSize(width: 560, height: 400)
-        sizeToFit(image: image)
-        window.center()
+        sizeToFit(image: image, on: Self.targetScreen(for: image))
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
+    /// The display to open on: the one the capture was taken from, else the one under the
+    /// pointer. `NSScreen.main` is the primary display for a menu-bar app with no key
+    /// window, which is the wrong monitor on a multi-display Mac mini or iMac.
+    private static func targetScreen(for image: CapturedImage) -> NSScreen? {
+        let screens = NSScreen.screens
+        if image.displayID != 0, let screen = screens.first(where: { $0.displayID == image.displayID }) {
+            return screen
+        }
+        let mouse = NSEvent.mouseLocation
+        return screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main ?? screens.first
+    }
+
     /// Opens large: most of the screen, and never smaller than the image needs (plus room
-    /// for the background sidebar), so nothing has to be zoomed out on arrival.
-    private func sizeToFit(image: CapturedImage) {
-        guard let screen = NSScreen.main, let window else { return }
+    /// for the background sidebar), so nothing has to be zoomed out on arrival. Centred on
+    /// `screen`, so a 1080p external monitor and a 5K iMac panel each get a sensible size.
+    private func sizeToFit(image: CapturedImage, on screen: NSScreen?) {
+        guard let screen, let window else { return }
         let available = screen.visibleFrame
         let chrome = CGSize(width: BackgroundSidebar.width + 80, height: 160)
         let width = min(max(image.pointSize.width + chrome.width, available.width * 0.8), available.width * 0.94)
         let height = min(max(image.pointSize.height + chrome.height, available.height * 0.85), available.height * 0.94)
         window.setContentSize(CGSize(width: width, height: height))
+        let frame = window.frame
+        window.setFrameOrigin(CGPoint(
+            x: available.midX - frame.width / 2,
+            y: available.midY - frame.height / 2
+        ))
     }
 
     /// Brings the window in front of whatever app the capture was taken over. A menu-bar

@@ -15,7 +15,8 @@ final class WallpaperStore {
     private static let maxRenderPixels = 2400
     private static let thumbnailPixels = 96
 
-    private var images: [Wallpaper: CGImage] = [:]
+    /// Full-size renders are ~13 MB each; only the last few tried are worth keeping.
+    @ObservationIgnored private var images = LRUCache<Wallpaper, CGImage>(capacity: 4)
     private var thumbnails: [Wallpaper: NSImage] = [:]
 
     /// The still (non-dynamic) desktop pictures installed on this Mac.

@@ -279,7 +279,7 @@ final class EditorViewModel {
             updated.kind = .pencil(points: points, style: StrokeStyle(color: color, width: strokeWidth))
         case .highlighter(let points, _):
             updated.kind = .highlighter(points: points, style: StrokeStyle(color: color, width: highlighterWidth))
-        case .text(let origin, let text, let style):
+        case .text(let origin, let text, _):
             updated.kind = .text(origin: origin, text: text, style: TextStyle(color: color, fontSize: fontSize, background: textBackground, weight: fontWeight))
         case .counter(let center, let n, _, _):
             updated.kind = .counter(center: center, number: n, color: color, size: counterSize)
