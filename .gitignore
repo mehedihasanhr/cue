@@ -1,0 +1,15 @@
+# Xcode
+build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+.DS_Store
+
+# Local signing config (contains your Team ID) and the self-signed dev certificate
+Config/Signing.xcconfig
+Config/local/
+
+# Test results
+*.xcresult
