@@ -28,7 +28,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Alerts, onboarding and the About pane all draw the brand icon from the asset
         // catalog, independent of the icon-services cache for this bundle path.
         if let icon = NSImage(named: "AppIcon") { NSApp.applicationIconImage = icon }
-        Task(priority: .utility) { await WallpaperStore.shared.prepareThumbnails() }
         installStatusItem()
 
         coordinator.onCaptured = { [weak self] image in self?.handleCapture(image) }
@@ -295,6 +294,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             presentError(NSError(domain: "Klik", code: 2, userInfo: [NSLocalizedDescriptionKey: "The capture file could not be opened."]))
             return
         }
+        // Decoding the wallpaper thumbnails costs seconds of CPU, so it waits for the
+        // first editor rather than running at every login; it's done long before the
+        // Background tool is reached, and a no-op once cached.
+        Task(priority: .utility) { await WallpaperStore.shared.prepareThumbnails() }
         let controller = EditorWindowController(item: item, image: image, library: library, mode: mode)
         controller.onClose = { [weak self] in self?.editorWindows[item.id] = nil }
         controller.onDelete = { [weak self] item in self?.library.delete(item) }

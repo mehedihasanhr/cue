@@ -79,7 +79,7 @@ final class WallpaperStore {
         guard !pending.isEmpty else { return }
         let jobs = pending.compactMap { wallpaper in url(for: wallpaper).map { (wallpaper, $0) } }
         let pixels = Self.thumbnailPixels
-        // Launch-time work: utility QoS keeps it on efficiency cores and off the battery.
+        // Utility QoS keeps this on efficiency cores and off the battery.
         let decoded = await Task.detached(priority: .utility) { () -> [(Wallpaper, CGImage)] in
             jobs.compactMap { wallpaper, url in
                 Self.decode(url: url, scoped: wallpaper.bookmark != nil, maxPixels: pixels).map { (wallpaper, $0) }
