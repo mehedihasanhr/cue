@@ -76,11 +76,12 @@ final class CanvasView: NSView, NSTextViewDelegate, NSUserInterfaceValidations {
     // MARK: - Drawing
 
     override func draw(_ dirtyRect: NSRect) {
-        // Checkerboard-ish neutral backdrop for transparent output areas is not needed;
-        // the document draws its own background (if any) or the bare image.
-        renderer.draw(model.document, draft: model.draft)
-
         guard let context = NSGraphicsContext.current?.cgContext else { return }
+        let document = model.document
+        drawBackdrop(document, context: context)
+        renderer.drawContent(document, context: context)
+        renderer.drawAnnotations(document, draft: model.draft, context: context)
+
         let lineScale = 1 / magnification
 
         if model.tool == .crop, let crop = model.cropDraft {
@@ -88,6 +89,62 @@ final class CanvasView: NSView, NSTextViewDelegate, NSUserInterfaceValidations {
         } else if let selected = model.selected, model.editingTextID == nil {
             drawSelection(selected, context: context, lineScale: lineScale)
         }
+    }
+
+    // MARK: Backdrop cache
+
+    private struct BackdropKey: Equatable {
+        let background: Klik.BackgroundStyle
+        let size: CGSize
+        let card: CGRect
+    }
+
+    private var backdrop: (key: BackdropKey, image: CGImage)?
+
+    /// Gradients, blurred wallpapers and the card's soft shadow are slow to draw at full
+    /// resolution and change only when the background settings do, yet a drag or a hover
+    /// redraws the whole view many times a second. They are rendered once into a bitmap
+    /// — capped at ~2K, which is invisible for such low-frequency content — and blitted.
+    /// The image, inset and annotations stay live so nothing sharp goes through the cache.
+    private func drawBackdrop(_ document: EditorDocument, context: CGContext) {
+        guard let background = document.background else { return }
+        let layout = document.layout
+        let key = BackdropKey(background: background, size: layout.size, card: layout.card)
+        let image: CGImage
+        if let backdrop, backdrop.key == key {
+            image = backdrop.image
+        } else {
+            guard let rendered = renderBackdrop(document, size: layout.size) else {
+                renderer.drawBackdrop(document, context: context)
+                return
+            }
+            backdrop = (key, rendered)
+            image = rendered
+        }
+        let frame = CGRect(origin: .zero, size: layout.size)
+        context.saveGState()
+        // The view is flipped (y down); CGImage draws y-up, so flip around the frame.
+        context.translateBy(x: 0, y: frame.maxY + frame.minY)
+        context.scaleBy(x: 1, y: -1)
+        context.interpolationQuality = .medium
+        context.draw(image, in: frame)
+        context.restoreGState()
+    }
+
+    private func renderBackdrop(_ document: EditorDocument, size: CGSize) -> CGImage? {
+        let maxPixels: CGFloat = 2048
+        let scale = min(document.scale, maxPixels / max(size.width, size.height, 1))
+        let width = Int((size.width * scale).rounded(.up)), height = Int((size.height * scale).rounded(.up))
+        guard width > 0, height > 0,
+              let bitmap = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                     space: CGColorSpaceCreateDeviceRGB(),
+                                     bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
+        else { return nil }
+        // Match the renderer's flipped, point-based coordinate space.
+        bitmap.translateBy(x: 0, y: CGFloat(height))
+        bitmap.scaleBy(x: scale, y: -scale)
+        renderer.drawBackdrop(document, context: bitmap)
+        return bitmap.makeImage()
     }
 
     private func drawSelection(_ annotation: Annotation, context: CGContext, lineScale: CGFloat) {

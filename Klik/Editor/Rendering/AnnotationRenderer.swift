@@ -9,24 +9,34 @@ struct AnnotationRenderer {
 
     func draw(_ document: EditorDocument, draft: Annotation? = nil) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
+        drawBackdrop(document, context: context)
+        drawContent(document, context: context)
+        drawAnnotations(document, draft: draft, context: context)
+    }
+
+    /// The background fill and the card's shadow: the expensive, low-frequency part of a
+    /// frame. The canvas caches it as a bitmap and redraws only the rest while dragging.
+    func drawBackdrop(_ document: EditorDocument, context: CGContext) {
+        guard let background = document.background else { return }
         let layout = document.layout
-        let output = CGRect(origin: .zero, size: layout.size)
+        drawBackground(background, in: CGRect(origin: .zero, size: layout.size), card: layout.card, context: context)
+    }
+
+    /// The inset border and the captured image, clipped to the rounded content frame.
+    func drawContent(_ document: EditorDocument, context: CGContext) {
+        let layout = document.layout
         let contentFrame = layout.image
 
-        if let background = document.background {
-            drawBackground(background, in: output, card: layout.card, context: context)
-            if background.inset > 0 {
-                // The inset border takes the image's own edge colour so it reads as part of it.
-                context.saveGState()
-                context.addPath(CGPath(roundedRect: layout.card, cornerWidth: background.cornerRadius,
-                                       cornerHeight: background.cornerRadius, transform: nil))
-                context.setFillColor(effects.edgeColor(of: document.base))
-                context.fillPath()
-                context.restoreGState()
-            }
+        if let background = document.background, background.inset > 0 {
+            // The inset border takes the image's own edge colour so it reads as part of it.
+            context.saveGState()
+            context.addPath(CGPath(roundedRect: layout.card, cornerWidth: background.cornerRadius,
+                                   cornerHeight: background.cornerRadius, transform: nil))
+            context.setFillColor(effects.edgeColor(of: document.base))
+            context.fillPath()
+            context.restoreGState()
         }
 
-        // The image itself is clipped to the (rounded) content frame…
         context.saveGState()
         if let background = document.background, background.cornerRadius > 0 {
             let radius = max(0, background.cornerRadius - background.inset)
@@ -38,8 +48,11 @@ struct AnnotationRenderer {
         context.translateBy(x: document.contentOffset.x, y: document.contentOffset.y)
         drawImage(document.base, in: document.imageRect, context: context)
         context.restoreGState()
+    }
 
-        // …but annotations may spill over the padding, so they are clipped to the whole output.
+    /// Annotations may spill over the padding, so they are clipped to the whole output.
+    func drawAnnotations(_ document: EditorDocument, draft: Annotation?, context: CGContext) {
+        let output = CGRect(origin: .zero, size: document.layout.size)
         context.saveGState()
         context.clip(to: output)
         context.translateBy(x: document.contentOffset.x, y: document.contentOffset.y)
@@ -97,9 +110,14 @@ struct AnnotationRenderer {
         }
         if style.shadowStrength > 0.01 {
             // Soft and wide rather than dark: a diffuse ambient shadow that scales with the slider.
+            // Core Graphics takes shadow geometry in device space, so it is scaled by the
+            // current transform to keep it in points: the same look at any zoom, in the
+            // canvas's backdrop bitmap and in the export.
             let strength = min(1, max(0, style.shadowStrength))
+            let ctm = context.ctm
+            let device = sqrt(abs(ctm.a * ctm.d - ctm.b * ctm.c))
             context.saveGState()
-            context.setShadow(offset: CGSize(width: 0, height: 4 + 14 * strength), blur: 20 + 60 * strength,
+            context.setShadow(offset: CGSize(width: 0, height: (2 + 7 * strength) * device), blur: (10 + 30 * strength) * device,
                               color: NSColor.black.withAlphaComponent(0.08 + 0.32 * strength).cgColor)
             context.setFillColor(NSColor.black.cgColor)
             context.addPath(CGPath(roundedRect: card, cornerWidth: style.cornerRadius,
