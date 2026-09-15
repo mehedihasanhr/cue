@@ -14,11 +14,14 @@ enum Clipboard {
     /// are listed already).
     nonisolated static let ownMarker = NSPasteboard.PasteboardType("com.stackrover.klik.capture")
 
-    static func copy(_ image: CGImage, to pasteboard: NSPasteboard = .general) {
+    /// With `fileURL`, the original file rides along (an SVG pastes as itself in
+    /// Finder and as a bitmap in an image editor).
+    static func copy(_ image: CGImage, fileURL: URL? = nil, to pasteboard: NSPasteboard = .general) {
         let provider = ImageProvider(image: image)
         let item = NSPasteboardItem()
         item.setDataProvider(provider, forTypes: [.png, .tiff])
         item.setData(Data(), forType: Clipboard.ownMarker) // captures are listed already
+        if let fileURL { item.setString(fileURL.absoluteString, forType: .fileURL) }
         pasteboard.clearContents()
         pasteboard.writeObjects([item])
         provider.changeCount = pasteboard.changeCount

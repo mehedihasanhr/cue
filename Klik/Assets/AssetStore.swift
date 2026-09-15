@@ -125,18 +125,29 @@ final class AssetStore {
     private func register(id: UUID, at url: URL) -> AssetItem {
         let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         var item = AssetItem(id: id, fileName: url.lastPathComponent, kind: .file, byteSize: size, pixelWidth: 0, pixelHeight: 0, createdAt: .now)
-        if let type = UTType(filenameExtension: url.pathExtension), type.conforms(to: .image),
-           let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-           let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
+        if Self.isImageType(url) {
             item.kind = .image
-            item.pixelWidth = properties[kCGImagePropertyPixelWidth] as? Int ?? 0
-            item.pixelHeight = properties[kCGImagePropertyPixelHeight] as? Int ?? 0
-            if let thumbnail = ImageEncoding.thumbnail(from: source) { thumbnails[id] = thumbnail }
+            if let source = CGImageSourceCreateWithURL(url as CFURL, nil), CGImageSourceGetCount(source) > 0,
+               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
+                item.pixelWidth = properties[kCGImagePropertyPixelWidth] as? Int ?? 0
+                item.pixelHeight = properties[kCGImagePropertyPixelHeight] as? Int ?? 0
+                if let thumbnail = ImageEncoding.thumbnail(from: source) { thumbnails[id] = thumbnail }
+            } else if let rendered = ImageEncoding.rasterised(at: url, maxPixels: 320) {
+                // SVG and friends: ImageIO cannot decode them, AppKit can.
+                item.pixelWidth = Int(rendered.size.width)
+                item.pixelHeight = Int(rendered.size.height)
+                thumbnails[id] = rendered.image
+            }
         }
         items.insert(item, at: 0)
         saveIndex()
         Log.app.info("Assets: added \(item.fileName, privacy: .public)")
         return item
+    }
+
+    /// Anything the system calls an image, including vector formats such as SVG.
+    private static func isImageType(_ url: URL) -> Bool {
+        UTType(filenameExtension: url.pathExtension)?.conforms(to: .image) == true
     }
 
     // MARK: - Using
@@ -152,10 +163,17 @@ final class AssetStore {
         if item.kind == .image, let data = try? Data(contentsOf: url) {
             if UTType(filenameExtension: url.pathExtension)?.conforms(to: .png) == true {
                 Clipboard.copy(pngData: data)
-            } else if let source = CGImageSourceCreateWithData(data as CFData, nil), let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) {
-                Clipboard.copy(cgImage)
+                return
             }
-            return
+            if let source = CGImageSourceCreateWithData(data as CFData, nil), let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) {
+                Clipboard.copy(cgImage)
+                return
+            }
+            // A vector (SVG): the file itself, plus a Retina-sized bitmap for image-only targets.
+            if let rendered = ImageEncoding.rasterise(at: url, maxPixels: Int(max(item.pixelWidth, item.pixelHeight, 1) * 2)) {
+                Clipboard.copy(rendered.image, fileURL: url)
+                return
+            }
         }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
@@ -212,14 +230,26 @@ final class AssetStore {
         guard !loadingThumbnails.contains(item.id) else { return nil }
         loadingThumbnails.insert(item.id)
         let id = item.id
+        let needsSize = item.pixelWidth == 0
         storage.async { [weak self] in
-            let image = ImageEncoding.thumbnail(at: url)
+            var image = ImageEncoding.thumbnail(at: url)
+            var size: CGSize?
+            if needsSize, let rendered = ImageEncoding.rasterised(at: url, maxPixels: 320) {
+                image = image ?? rendered.image
+                size = rendered.size
+            }
             Task { @MainActor in
                 guard let self else { return }
                 self.loadingThumbnails.remove(id)
                 guard let image else { return }
                 self.thumbnails[id] = image
                 self.thumbnailVersion += 1
+                // Vectors registered before Klik could size them.
+                if let size, let index = self.items.firstIndex(where: { $0.id == id }), self.items[index].pixelWidth == 0 {
+                    self.items[index].pixelWidth = Int(size.width)
+                    self.items[index].pixelHeight = Int(size.height)
+                    self.saveIndex()
+                }
             }
         }
         return nil
@@ -234,6 +264,13 @@ final class AssetStore {
               let decoded = try? JSONDecoder().decode([AssetItem].self, from: data)
         else { return }
         items = decoded
+        // SVGs and other vectors stored before they counted as images.
+        var upgraded = false
+        for index in items.indices where items[index].kind == .file && Self.isImageType(fileURL(for: items[index])) {
+            items[index].kind = .image
+            upgraded = true
+        }
+        if upgraded { saveIndex() }
     }
 
     private func saveIndex() {
