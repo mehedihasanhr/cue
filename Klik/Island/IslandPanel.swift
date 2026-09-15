@@ -157,7 +157,9 @@ struct IslandPanel: View {
 // MARK: - Day strip
 
 /// Horizontal row of day groups ("Today", "Yesterday", "Wed, Jul 22"). Dragging
-/// anywhere on it scrolls; the scroll wheel / trackpad works too.
+/// anywhere on it scrolls; the scroll wheel / trackpad works too. Every card has the
+/// same width, so positions are arithmetic and only the cards in view are built —
+/// a history of thousands costs the same as one of ten.
 struct DayStrip<Item: Identifiable, Card: View>: View {
     let items: [Item]
     let date: KeyPath<Item, Date>
@@ -171,24 +173,43 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
     @State private var offset: CGFloat = 0
     @State private var dragOrigin: CGFloat?
 
-    private struct Group: Identifiable {
+    private struct PlacedGroup: Identifiable {
         let id: Date
         let title: String
-        var items: [Item]
+        let x: CGFloat
+        var width: CGFloat
     }
 
-    private var groups: [Group] {
+    private struct PlacedCard: Identifiable {
+        let item: Item
+        let x: CGFloat
+        var id: Item.ID { item.id }
+    }
+
+    private struct Layout {
+        var groups: [PlacedGroup] = []
+        var cards: [PlacedCard] = []
+        var width: CGFloat = 0
+    }
+
+    private var layout: Layout {
         let calendar = Calendar.current
-        var result: [Group] = []
+        var layout = Layout()
+        var x: CGFloat = 0
+        var currentDay: Date?
         for item in items {
             let day = calendar.startOfDay(for: item[keyPath: date])
-            if let index = result.firstIndex(where: { $0.id == day }) {
-                result[index].items.append(item)
-            } else {
-                result.append(Group(id: day, title: Self.title(for: day, calendar: calendar), items: [item]))
+            if day != currentDay {
+                if currentDay != nil { x += Self.groupSpacing - Self.spacing }
+                layout.groups.append(PlacedGroup(id: day, title: Self.title(for: day, calendar: calendar), x: x, width: 0))
+                currentDay = day
             }
+            layout.cards.append(PlacedCard(item: item, x: x))
+            x += Self.cardSize.width + Self.spacing
+            layout.groups[layout.groups.count - 1].width = x - Self.spacing - layout.groups[layout.groups.count - 1].x
         }
-        return result
+        layout.width = max(0, x - Self.spacing)
+        return layout
     }
 
     private static func title(for day: Date, calendar: Calendar) -> String {
@@ -198,43 +219,37 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
         return day.formatted(sameYear ? .dateTime.weekday(.abbreviated).month(.abbreviated).day() : .dateTime.month(.abbreviated).day().year())
     }
 
-    private var contentWidth: CGFloat {
-        let groupCount = groups.count
-        let cards = CGFloat(items.count) * Self.cardSize.width + CGFloat(max(0, items.count - groupCount)) * Self.spacing
-        return cards + CGFloat(max(0, groupCount - 1)) * Self.groupSpacing
-    }
-
     var body: some View {
         GeometryReader { proxy in
-            let maxOffset = max(0, contentWidth - proxy.size.width)
-            HStack(alignment: .top, spacing: Self.groupSpacing) {
-                ForEach(groups) { group in
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(group.title)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.9))
-                            .frame(height: Self.headerHeight, alignment: .leading)
-                        HStack(spacing: Self.spacing) {
-                            ForEach(group.items) { item in
-                                card(item)
-                            }
-                        }
-                    }
+            let layout = layout
+            let maxOffset = max(0, layout.width - proxy.size.width)
+            let offset = min(offset, maxOffset)
+            let visible = (offset - Self.cardSize.width)...(offset + proxy.size.width + Self.cardSize.width)
+            ZStack(alignment: .topLeading) {
+                ForEach(layout.groups.filter { visible.overlaps($0.x...($0.x + $0.width)) }) { group in
+                    Text(group.title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.9))
+                        .frame(height: Self.headerHeight, alignment: .leading)
+                        .offset(x: group.x - offset)
+                }
+                ForEach(layout.cards.filter { visible.contains($0.x) }) { placed in
+                    card(placed.item)
+                        .offset(x: placed.x - offset, y: Self.headerHeight)
                 }
             }
-            .offset(x: -min(offset, maxOffset))
-            .frame(width: proxy.size.width, alignment: .leading)
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 3)
                     .onChanged { value in
                         if dragOrigin == nil { dragOrigin = offset }
-                        offset = min(max((dragOrigin ?? 0) - value.translation.width, 0), maxOffset)
+                        self.offset = min(max((dragOrigin ?? 0) - value.translation.width, 0), maxOffset)
                     }
                     .onEnded { _ in dragOrigin = nil }
             )
             .background(ScrollWheelObserver { delta in
-                offset = min(max(offset + delta, 0), maxOffset)
+                self.offset = min(max(offset + delta, 0), maxOffset)
             })
         }
         .frame(height: Self.headerHeight + Self.cardSize.height)
@@ -408,7 +423,7 @@ private struct ClipboardCard: View {
     @State private var hovering = false
 
     var body: some View {
-        CardChrome(hovering: $hovering, onTap: copy) {
+        CardChrome(hovering: $hovering, onTap: paste) {
             content
                 .overlay(alignment: .bottom) {
                     CardCaption(title: "", date: item.createdAt) {
@@ -422,12 +437,16 @@ private struct ClipboardCard: View {
                     }
                 }
         } actionRow: {
+            if clipboard.canPaste {
+                CardAction(symbol: "arrow.down.doc", help: "Paste into the front app", perform: paste)
+            }
             CopyAction(perform: copy)
             CardAction(symbol: item.pinned ? "star.fill" : "star", help: item.pinned ? "Unpin" : "Pin", tint: item.pinned ? .yellow : .white) {
                 clipboard.togglePin(item)
             }
             CardAction(symbol: "trash", help: "Delete", tint: .red) { clipboard.delete(item) }
         } menu: {
+            if clipboard.canPaste { Button("Paste") { paste() } }
             Button("Copy") { copy() }
             Button(item.pinned ? "Unpin" : "Pin") { clipboard.togglePin(item) }
             Divider()
@@ -438,6 +457,16 @@ private struct ClipboardCard: View {
     private func copy() {
         clipboard.copy(item)
         FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
+    }
+
+    /// Click: paste straight into the front app when Accessibility allows it,
+    /// otherwise copy and say so.
+    private func paste() {
+        if clipboard.paste(item) {
+            FeedbackHUD.show("Pasted", symbol: "checkmark.circle.fill", duration: .seconds(1.0))
+        } else {
+            FeedbackHUD.show("Copied — press ⌘V to paste", symbol: "doc.on.clipboard", duration: .seconds(1.6))
+        }
     }
 
     @ViewBuilder

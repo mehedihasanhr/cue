@@ -18,9 +18,9 @@ nonisolated struct ClipboardItem: Identifiable, Codable, Hashable {
     var createdAt: Date
     var pinned: Bool
 
-    init(kind: Kind, text: String, pixelWidth: Int = 0, pixelHeight: Int = 0,
+    init(id: UUID = UUID(), kind: Kind, text: String, pixelWidth: Int = 0, pixelHeight: Int = 0,
          sourceBundleID: String? = nil, sourceName: String? = nil, createdAt: Date = .now) {
-        id = UUID()
+        self.id = id
         self.kind = kind
         self.text = text
         self.pixelWidth = pixelWidth

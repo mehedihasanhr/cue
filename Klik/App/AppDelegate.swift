@@ -152,7 +152,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 } else {
                     island = IslandController(library: library, clipboard: clipboard, actions: historyActions, preferences: preferences)
                     library.warmThumbnails()
-                    clipboard.warmThumbnails()
                 }
             } else if let island {
                 island.tearDown()

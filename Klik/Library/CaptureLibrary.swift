@@ -25,7 +25,15 @@ final class CaptureLibrary {
     private(set) var folderURL: URL
     private(set) var folderIsCustom = false
 
-    @ObservationIgnored private var thumbnails: [UUID: NSImage] = [:]
+    /// Bounded: 320 px thumbnails are ~270 KB each, and a long library would
+    /// otherwise hold hundreds of megabytes after one scroll through.
+    @ObservationIgnored private var thumbnails = LRUCache<UUID, NSImage>(capacity: 300)
+    @ObservationIgnored private var loadingThumbnails: Set<UUID> = []
+    /// Bumped when a thumbnail arrives, so cards showing a placeholder refresh.
+    private(set) var thumbnailVersion = 0
+    /// Small PNGs in the app container, written once per capture, so a thumbnail is a
+    /// ~1 ms read instead of decoding a multi-megabyte Retina PNG.
+    private let thumbnailFolder: URL
     /// Captures whose file is still being written (or rewritten); served from memory
     /// meanwhile so copy, drag and the editor never wait for the disk.
     @ObservationIgnored private var pendingImages: [UUID: CGImage] = [:]
@@ -39,12 +47,16 @@ final class CaptureLibrary {
     private static let indexFileName = "library.json"
 
     init() {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        thumbnailFolder = support.appendingPathComponent("Klik/Thumbnails", isDirectory: true)
         folderURL = Self.defaultFolder()
         if let data = defaults.data(forKey: Self.folderBookmarkKey), let url = Self.resolve(bookmark: data) {
             folderURL = url
             folderIsCustom = true
         }
         try? FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: thumbnailFolder, withIntermediateDirectories: true)
         loadIndex()
     }
 
@@ -103,7 +115,7 @@ final class CaptureLibrary {
         )
         items.insert(item, at: 0)
         pendingImages[item.id] = image.cgImage
-        thumbnails[item.id] = Self.makeThumbnail(image.cgImage)
+        cacheThumbnail(Self.makeThumbnail(image.cgImage), for: item.id)
         write(image.cgImage, for: item.id, to: url, isNew: true)
         return item
     }
@@ -114,7 +126,7 @@ final class CaptureLibrary {
         items[index].pixelWidth = cgImage.width
         items[index].pixelHeight = cgImage.height
         pendingImages[item.id] = cgImage
-        thumbnails[item.id] = Self.makeThumbnail(cgImage)
+        cacheThumbnail(Self.makeThumbnail(cgImage), for: item.id)
         saveIndex()
         write(cgImage, for: item.id, to: url, isNew: false)
     }
@@ -160,6 +172,8 @@ final class CaptureLibrary {
         items.removeAll { $0.id == item.id }
         thumbnails[item.id] = nil
         pendingImages[item.id] = nil
+        let thumbnailURL = thumbnailURL(for: item.id)
+        storage.async { try? FileManager.default.removeItem(at: thumbnailURL) }
         saveIndex()
         guard let url else { return }
         let scoped = folderIsCustom ? folderURL : nil
@@ -185,43 +199,64 @@ final class CaptureLibrary {
         }
     }
 
+    /// The cached thumbnail, or nil while it loads off the main thread (cards showing
+    /// a placeholder refresh through `thumbnailVersion`).
     func thumbnail(for item: CaptureItem) -> NSImage? {
+        _ = thumbnailVersion
         if let cached = thumbnails[item.id] { return cached }
-        guard let url = fileURL(for: item) else { return nil }
-        let thumbnail = withScopedAccess(to: url) { Self.decodeThumbnail(at: url) }
-        thumbnails[item.id] = thumbnail
-        return thumbnail
+        loadThumbnail(for: item)
+        return nil
     }
 
-    /// Decodes the thumbnails that are not cached yet off the main thread, so the first
-    /// opening of the island / panel does not stall on image decoding.
+    /// Loads the thumbnails of the newest captures ahead of the first opening of the
+    /// island / panel.
     func warmThumbnails(limit: Int = 40) {
-        let pending = items.prefix(limit).filter { thumbnails[$0.id] == nil }
-        guard !pending.isEmpty else { return }
-        let work: [(UUID, URL)] = pending.compactMap { item in fileURL(for: item).map { (item.id, $0) } }
+        for item in items.prefix(limit) where thumbnails[item.id] == nil {
+            loadThumbnail(for: item)
+        }
+    }
+
+    /// The small PNG if it exists, else decoded from the capture (and the small PNG
+    /// written for next time).
+    private func loadThumbnail(for item: CaptureItem) {
+        guard !loadingThumbnails.contains(item.id) else { return }
+        let id = item.id
+        let small = thumbnailURL(for: id)
+        let full = fileURL(for: item)
+        loadingThumbnails.insert(id)
         storage.async { [weak self] in
-            for (id, url) in work {
-                let granted = url.startAccessingSecurityScopedResource()
-                let image = Self.decodeThumbnail(at: url)
-                if granted { url.stopAccessingSecurityScopedResource() }
-                guard let image else { continue }
-                Task { @MainActor in
-                    guard let self, self.thumbnails[id] == nil else { return }
-                    self.thumbnails[id] = image
+            var image = NSImage(contentsOf: small)
+            if image == nil, let full {
+                let granted = full.startAccessingSecurityScopedResource()
+                image = ImageEncoding.thumbnail(at: full)
+                if granted { full.stopAccessingSecurityScopedResource() }
+                if let cgImage = image?.cgImage(forProposedRect: nil, context: nil, hints: nil), let png = ImageEncoding.png(cgImage) {
+                    try? png.write(to: small, options: .atomic)
                 }
+            }
+            Task { @MainActor in
+                guard let self else { return }
+                self.loadingThumbnails.remove(id)
+                guard let image else { return }
+                self.thumbnails[id] = image
+                self.thumbnailVersion += 1
             }
         }
     }
 
-    private nonisolated static func decodeThumbnail(at url: URL) -> NSImage? {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-        let options: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceThumbnailMaxPixelSize: 320,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-        ]
-        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
-        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+    /// Caches a freshly made thumbnail and writes its small PNG in the background.
+    private func cacheThumbnail(_ image: NSImage, for id: UUID) {
+        thumbnails[id] = image
+        thumbnailVersion += 1
+        let url = thumbnailURL(for: id)
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+        storage.async {
+            if let png = ImageEncoding.png(cgImage) { try? png.write(to: url, options: .atomic) }
+        }
+    }
+
+    private func thumbnailURL(for id: UUID) -> URL {
+        thumbnailFolder.appendingPathComponent("\(id.uuidString).png")
     }
 
     func fileURL(for item: CaptureItem) -> URL? {

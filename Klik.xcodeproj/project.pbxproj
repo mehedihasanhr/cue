@@ -37,6 +37,7 @@
 				Support/Clipboard.swift,
 				Support/ImageEncoding.swift,
 				Support/LRUCache.swift,
+				Support/SQLite.swift,
 				Support/Log.swift,
 			);
 			target = 4B4C494B000000000000E002 /* KlikTests */;
