@@ -15,6 +15,21 @@ final class AppPreferences {
         static let icon = "menuBar.icon"
         static let iconBookmark = "menuBar.customBookmark"
         static let appearance = "appearance"
+        static let islandEnabled = "island.enabled"
+        static let islandPlainDisplays = "island.plainDisplays"
+    }
+
+    // MARK: Dynamic Island
+
+    /// The hover-to-open captures panel docked on the notch.
+    var dynamicIslandEnabled: Bool {
+        didSet { defaults.set(dynamicIslandEnabled, forKey: Key.islandEnabled) }
+    }
+
+    /// Without a notch the island is a small pill on the menu bar; some people would
+    /// rather not have it there.
+    var dynamicIslandOnPlainDisplays: Bool {
+        didSet { defaults.set(dynamicIslandOnPlainDisplays, forKey: Key.islandPlainDisplays) }
     }
 
     // MARK: Editor defaults
@@ -138,6 +153,8 @@ final class AppPreferences {
         icon = Icon(storageValue: defaults.string(forKey: Key.icon) ?? "camera.viewfinder")
         appearance = Appearance(rawValue: defaults.string(forKey: Key.appearance) ?? "") ?? .system
         editorDefaults = EditorDefaults.load(from: defaults)
+        dynamicIslandEnabled = defaults.object(forKey: Key.islandEnabled) as? Bool ?? true
+        dynamicIslandOnPlainDisplays = defaults.object(forKey: Key.islandPlainDisplays) as? Bool ?? true
         customSoundURL = defaults.data(forKey: Key.soundBookmark).flatMap(Self.resolve)
         customIconURL = defaults.data(forKey: Key.iconBookmark).flatMap(Self.resolve)
         if sound == .custom, customSoundURL == nil { sound = .shutter }

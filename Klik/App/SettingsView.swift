@@ -51,6 +51,19 @@ struct GeneralSettingsView: View {
             }
 
             Section {
+                Toggle(isOn: $preferences.dynamicIslandEnabled) {
+                    Text("Show the Dynamic Island")
+                    Text("Hover over the notch — or the pill at the top of the screen — to open your captures. The island is never part of a screenshot.")
+                }
+                Toggle(isOn: $preferences.dynamicIslandOnPlainDisplays) {
+                    Text("Also show a pill on displays without a notch")
+                }
+                .disabled(!preferences.dynamicIslandEnabled)
+            } header: {
+                Text("Dynamic Island")
+            }
+
+            Section {
                 MenuBarIconPicker()
             } header: {
                 Text("Menu bar icon")

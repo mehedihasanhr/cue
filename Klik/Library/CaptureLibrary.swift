@@ -188,18 +188,40 @@ final class CaptureLibrary {
     func thumbnail(for item: CaptureItem) -> NSImage? {
         if let cached = thumbnails[item.id] { return cached }
         guard let url = fileURL(for: item) else { return nil }
-        let thumbnail: NSImage? = withScopedAccess(to: url) {
-            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-            let options: [CFString: Any] = [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceThumbnailMaxPixelSize: 320,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-            ]
-            guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
-            return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-        }
+        let thumbnail = withScopedAccess(to: url) { Self.decodeThumbnail(at: url) }
         thumbnails[item.id] = thumbnail
         return thumbnail
+    }
+
+    /// Decodes the thumbnails that are not cached yet off the main thread, so the first
+    /// opening of the island / panel does not stall on image decoding.
+    func warmThumbnails(limit: Int = 40) {
+        let pending = items.prefix(limit).filter { thumbnails[$0.id] == nil }
+        guard !pending.isEmpty else { return }
+        let work: [(UUID, URL)] = pending.compactMap { item in fileURL(for: item).map { (item.id, $0) } }
+        storage.async { [weak self] in
+            for (id, url) in work {
+                let granted = url.startAccessingSecurityScopedResource()
+                let image = Self.decodeThumbnail(at: url)
+                if granted { url.stopAccessingSecurityScopedResource() }
+                guard let image else { continue }
+                Task { @MainActor in
+                    guard let self, self.thumbnails[id] == nil else { return }
+                    self.thumbnails[id] = image
+                }
+            }
+        }
+    }
+
+    private nonisolated static func decodeThumbnail(at url: URL) -> NSImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: 320,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+        ]
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
     }
 
     func fileURL(for item: CaptureItem) -> URL? {

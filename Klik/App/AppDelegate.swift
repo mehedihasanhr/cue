@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var historyPopover: NSPopover?
     private var historyDismissMonitors: [Any] = []
     private var historyPanel: HistoryPanelWindow?
+    private var island: IslandController?
     private var captureMenuItems: [HotkeyID: NSMenuItem] = [:]
 
     private var settingsWindow: SettingsWindowController?
@@ -38,6 +39,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         coordinator.onTextRecognized = { [weak self] text in self?.handleRecognizedText(text) }
         coordinator.onPermissionRequired = { [weak self] kind in self?.showOnboarding(for: kind) }
         coordinator.onError = { [weak self] error in self?.presentError(error) }
+        coordinator.onBusyChanged = { [weak self] busy in self?.island?.setHidden(busy) }
+        applyIslandPreference()
 
         shortcuts.setAction(for: .fullScreen) { [weak self] in self?.coordinator.captureFullScreen(fromMenu: false) }
         shortcuts.setAction(for: .region) { [weak self] in self?.coordinator.captureArea(fromMenu: false) }
@@ -136,6 +139,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refreshMenuShortcuts()
     }
 
+    // MARK: - Dynamic Island
+
+    /// Creates or removes the island as the Settings toggles change.
+    private func applyIslandPreference() {
+        withObservationTracking {
+            if preferences.dynamicIslandEnabled {
+                if let island {
+                    island.place()
+                } else {
+                    island = IslandController(library: library, actions: historyActions, preferences: preferences)
+                    library.warmThumbnails()
+                }
+            } else if let island {
+                island.tearDown()
+                self.island = nil
+            }
+            _ = preferences.dynamicIslandOnPlainDisplays
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.applyIslandPreference() }
+        }
+    }
+
     // MARK: - History popover
 
     private func toggleHistory() {
@@ -190,6 +215,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         removeHistoryDismissMonitors()
         historyPopover?.performClose(nil)
         historyPanel?.close()
+        island?.collapse(animated: false)
     }
 
     /// ⌥V: the same panel, floating at the mouse pointer instead of under the menu bar.
@@ -284,6 +310,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         preferences.playCaptureSound()
         let item = library.add(image)
         Log.app.info("Captured \(item.fileName, privacy: .public) → clipboard + library")
+        island?.flash(item)
         openEditor(for: item, image: image, mode: .edit)
     }
 

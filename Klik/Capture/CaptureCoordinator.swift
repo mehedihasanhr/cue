@@ -8,6 +8,8 @@ final class CaptureCoordinator {
     var onTextRecognized: ((RecognizedText) -> Void)?
     var onPermissionRequired: ((PermissionKind) -> Void)?
     var onError: ((any Error) -> Void)?
+    /// `true` while a capture flow runs (selection overlay, scrolling session…).
+    var onBusyChanged: ((Bool) -> Void)?
 
     private let service = ScreenCaptureService()
     private let ocr = OCRService()
@@ -85,8 +87,12 @@ final class CaptureCoordinator {
             return
         }
         isBusy = true
+        onBusyChanged?(true)
         Task {
-            defer { isBusy = false }
+            defer {
+                isBusy = false
+                onBusyChanged?(false)
+            }
             if fromMenu {
                 try? await Task.sleep(for: .milliseconds(200))
             }

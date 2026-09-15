@@ -49,6 +49,9 @@ struct HistoryView: View {
 
     let library: CaptureLibrary
     let actions: HistoryActions
+    /// Inside the Dynamic Island the black shape is the background and sets the size;
+    /// the popover / floating panel draw their own.
+    var chromeless = false
     @State private var search = ""
     @AppStorage("gallery.layout") private var layout: GalleryLayout = .grid
 
@@ -87,7 +90,7 @@ struct HistoryView: View {
             footer
         }
         .frame(width: Self.size.width, height: Self.size.height)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(chromeless ? Color.clear : Color(nsColor: .windowBackgroundColor))
     }
 
     private static let controlHeight: CGFloat = 28
@@ -164,7 +167,7 @@ struct HistoryView: View {
             Text(search.isEmpty ? "No captures yet" : "No matches")
                 .font(.headline)
             if search.isEmpty {
-                Text("Press ⌥⇧3, ⌥⇧4 or ⌥⇧5, or use the buttons above.")
+                Text(chromeless ? "Use the buttons above, or press ⌥⇧3, ⌥⇧4 or ⌥⇧5." : "Press ⌥⇧3, ⌥⇧4 or ⌥⇧5, or use the buttons above.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
