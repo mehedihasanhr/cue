@@ -45,3 +45,56 @@ final class IslandWindow: NSPanel {
         onEscape?()
     }
 }
+
+/// The island's content view doubles as a drop target: files and images dragged
+/// onto the notch or the open panel are saved as assets.
+final class IslandDropView: NSView {
+    var onDragEntered: (() -> Void)?
+    var onDragExited: (() -> Void)?
+    /// File URLs and/or raw image data from the drop.
+    var onDrop: (([URL], Data?) -> Void)?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        registerForDraggedTypes([.fileURL, .png, .tiff])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        guard Self.canAccept(sender) else { return [] }
+        onDragEntered?()
+        return .copy
+    }
+
+    override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        Self.canAccept(sender) ? .copy : []
+    }
+
+    override func draggingExited(_ sender: (any NSDraggingInfo)?) {
+        onDragExited?()
+    }
+
+    override func draggingEnded(_ sender: any NSDraggingInfo) {
+        onDragExited?()
+    }
+
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        let pasteboard = sender.draggingPasteboard
+        let urls = (pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
+        let image = urls.isEmpty ? (pasteboard.data(forType: .png) ?? pasteboard.data(forType: .tiff)) : nil
+        guard !urls.isEmpty || image != nil else { return false }
+        onDrop?(urls, image)
+        return true
+    }
+
+    private static func canAccept(_ info: any NSDraggingInfo) -> Bool {
+        // Never accept the island's own drags (an asset dragged out and back in).
+        guard (info.draggingSource as? NSView)?.window !== info.draggingDestinationWindow else { return false }
+        let types = info.draggingPasteboard.types ?? []
+        return types.contains(.fileURL) || types.contains(.png) || types.contains(.tiff)
+    }
+}

@@ -2,12 +2,15 @@ import AppKit
 import SwiftUI
 
 enum IslandTab: String, CaseIterable {
-    case captures, clipboard
+    case captures, clipboard, assets
+
+    static let storageKey = "island.tab"
 
     var title: String {
         switch self {
         case .captures: "Captures"
         case .clipboard: "Clipboard"
+        case .assets: "Assets"
         }
     }
 
@@ -15,21 +18,25 @@ enum IslandTab: String, CaseIterable {
         switch self {
         case .captures: "photo.on.rectangle"
         case .clipboard: "doc.on.clipboard"
+        case .assets: "tray.full"
         }
     }
 }
 
 /// What the open island shows: search and the capture buttons on top, a row of tabs,
-/// then the captures or the clipboard history as cards in a horizontal row grouped
-/// by day, newest first. The row scrolls by dragging (or with the trackpad).
+/// then the captures, the clipboard history or the assets as cards in a horizontal
+/// row grouped by day, newest first. The row scrolls by dragging (or with the trackpad).
 struct IslandPanel: View {
     static let size = CGSize(width: 780, height: 316)
 
     let library: CaptureLibrary
     let clipboard: ClipboardHistory
+    let assets: AssetStore
     let actions: HistoryActions
+    /// A file or image is being dragged over the island.
+    var dropping = false
     @State private var search = ""
-    @AppStorage("island.tab") private var tab: IslandTab = .captures
+    @AppStorage(IslandTab.storageKey) private var tab: IslandTab = .captures
 
     private var filteredCaptures: [CaptureItem] {
         guard !search.isEmpty else { return library.items }
@@ -39,6 +46,11 @@ struct IslandPanel: View {
     private var filteredClipboard: [ClipboardItem] {
         guard !search.isEmpty else { return clipboard.items }
         return clipboard.items.filter { $0.text.localizedCaseInsensitiveContains(search) || ($0.sourceName?.localizedCaseInsensitiveContains(search) ?? false) }
+    }
+
+    private var filteredAssets: [AssetItem] {
+        guard !search.isEmpty else { return assets.items }
+        return assets.items.filter { $0.fileName.localizedCaseInsensitiveContains(search) }
     }
 
     var body: some View {
@@ -65,41 +77,60 @@ struct IslandPanel: View {
             HStack(spacing: 8) {
                 tabPill(.captures, count: library.items.count)
                 tabPill(.clipboard, count: clipboard.items.count)
+                tabPill(.assets, count: assets.items.count)
                 Spacer(minLength: 0)
                 if tab == .clipboard, clipboard.items.contains(where: { !$0.pinned }) {
-                    Button {
-                        clipboard.clear()
-                    } label: {
-                        Label("Clear", systemImage: "trash")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.7))
-                            .padding(.horizontal, 10)
-                            .frame(height: 28)
-                            .background(.white.opacity(0.08), in: Capsule())
+                    smallButton("Clear", symbol: "trash", help: "Remove every unpinned item") { clipboard.clear() }
+                }
+                if tab == .assets {
+                    smallButton("Paste", symbol: "doc.on.clipboard", help: "Save the image or files on the clipboard as assets") {
+                        if let added = assets.addFromPasteboard() {
+                            FeedbackHUD.show(added.count == 1 ? "Saved to Assets" : "\(added.count) saved to Assets", symbol: "tray.and.arrow.down.fill", duration: .seconds(1.2))
+                        } else {
+                            FeedbackHUD.show("No image or file on the clipboard", symbol: "tray")
+                        }
                     }
-                    .buttonStyle(.plain)
-                    .help("Remove every unpinned item")
                 }
             }
 
-            switch tab {
-            case .captures:
-                if filteredCaptures.isEmpty {
-                    empty(search.isEmpty ? "No captures yet" : "No matches", symbol: "camera.viewfinder")
-                } else {
-                    DayStrip(items: filteredCaptures, date: \.createdAt) { item in
-                        CaptureCard(item: item, library: library, actions: actions)
+            ZStack {
+                switch tab {
+                case .captures:
+                    if filteredCaptures.isEmpty {
+                        empty(search.isEmpty ? "No captures yet" : "No matches", symbol: "camera.viewfinder")
+                    } else {
+                        DayStrip(items: filteredCaptures, date: \.createdAt, dragPayload: { item in
+                            library.fileURL(for: item).map { .file($0, preview: library.thumbnail(for: item)) }
+                        }) { item in
+                            CaptureCard(item: item, library: library, actions: actions)
+                        }
+                    }
+                case .clipboard:
+                    if filteredClipboard.isEmpty {
+                        empty(search.isEmpty ? "Nothing copied yet" : "No matches", symbol: "doc.on.clipboard")
+                    } else {
+                        DayStrip(items: filteredClipboard, date: \.createdAt, dragPayload: { item in
+                            clipboard.dragPayload(for: item)
+                        }) { item in
+                            ClipboardCard(item: item, clipboard: clipboard)
+                        }
+                    }
+                case .assets:
+                    if filteredAssets.isEmpty {
+                        empty(search.isEmpty ? "Drop images or files here to keep them handy" : "No matches", symbol: "tray.and.arrow.down")
+                    } else {
+                        DayStrip(items: filteredAssets, date: \.createdAt, dragPayload: { item in
+                            .file(assets.fileURL(for: item), preview: assets.thumbnail(for: item))
+                        }) { item in
+                            AssetCard(item: item, assets: assets)
+                        }
                     }
                 }
-            case .clipboard:
-                if filteredClipboard.isEmpty {
-                    empty(search.isEmpty ? "Nothing copied yet" : "No matches", symbol: "doc.on.clipboard")
-                } else {
-                    DayStrip(items: filteredClipboard, date: \.createdAt) { item in
-                        ClipboardCard(item: item, clipboard: clipboard)
-                    }
+                if dropping {
+                    dropHint
                 }
             }
+            .frame(height: Self.rowHeight) // the same whether a tab has cards or not
         }
         .padding(.horizontal, 20)
         .padding(.top, 14)
@@ -145,12 +176,46 @@ struct IslandPanel: View {
         .buttonStyle(.plain)
     }
 
+    private func smallButton(_ title: String, symbol: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: symbol)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.white.opacity(0.7))
+                .padding(.horizontal, 10)
+                .frame(height: 28)
+                .background(.white.opacity(0.08), in: Capsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+
+    /// Shown over the row while a drag hovers the island.
+    private var dropHint: some View {
+        RoundedRectangle(cornerRadius: 18, style: .continuous)
+            .fill(.black.opacity(0.75))
+            .background(Color.brand.opacity(0.35), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color.brand, style: SwiftUI.StrokeStyle(lineWidth: 2, dash: [8, 6])))
+            .overlay {
+                VStack(spacing: 6) {
+                    Image(systemName: "tray.and.arrow.down.fill").font(.system(size: 28)).foregroundStyle(.white)
+                    Text("Drop to save as an asset").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                }
+            }
+            .allowsHitTesting(false)
+            .transition(.opacity)
+    }
+
+    /// Height of the card row: header plus cards.
+    static var rowHeight: CGFloat { DayStrip<CaptureItem, EmptyView>.headerHeight + DayStrip<CaptureItem, EmptyView>.cardSize.height }
+
     private func empty(_ message: String, symbol: String) -> some View {
         VStack(spacing: 6) {
             Image(systemName: symbol).font(.system(size: 26)).foregroundStyle(.white.opacity(0.5))
             Text(message).font(.system(size: 13, weight: .medium)).foregroundStyle(.white.opacity(0.7))
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity)
+        .frame(height: Self.rowHeight)
     }
 }
 
@@ -163,6 +228,9 @@ struct IslandPanel: View {
 struct DayStrip<Item: Identifiable, Card: View>: View {
     let items: [Item]
     let date: KeyPath<Item, Date>
+    /// What a card puts on the drag pasteboard, if it can be dragged out. A vertical
+    /// drag on a card then drags it into other apps; a horizontal drag scrolls the row.
+    var dragPayload: ((Item) -> DragPayload?)? = nil
     @ViewBuilder let card: (Item) -> Card
 
     static var cardSize: CGSize { CGSize(width: 200, height: 160) }
@@ -172,6 +240,10 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
 
     @State private var offset: CGFloat = 0
     @State private var dragOrigin: CGFloat?
+    @State private var dragMode: DragMode?
+    @State private var dragSource = StripEventView.Handle()
+
+    private enum DragMode { case scroll, dragOut }
 
     private struct PlacedGroup: Identifiable {
         let id: Date
@@ -243,14 +315,32 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
             .gesture(
                 DragGesture(minimumDistance: 3)
                     .onChanged { value in
-                        if dragOrigin == nil { dragOrigin = offset }
+                        if dragMode == nil {
+                            let dx = value.translation.width, dy = value.translation.height
+                            guard hypot(dx, dy) >= 5 else { return }
+                            if abs(dy) > abs(dx), value.startLocation.y >= Self.headerHeight,
+                               let dragPayload, let placed = layout.cards.first(where: { ($0.x - offset...$0.x - offset + Self.cardSize.width).contains(value.startLocation.x) }),
+                               let payload = dragPayload(placed.item), let event = NSApp.currentEvent {
+                                dragMode = .dragOut
+                                dragSource.beginDrag(payload, event: event)
+                                return
+                            }
+                            dragMode = .scroll
+                            dragOrigin = offset
+                            NSCursor.closedHand.set()
+                        }
+                        guard dragMode == .scroll else { return }
                         self.offset = min(max((dragOrigin ?? 0) - value.translation.width, 0), maxOffset)
                     }
-                    .onEnded { _ in dragOrigin = nil }
+                    .onEnded { _ in
+                        dragOrigin = nil
+                        dragMode = nil
+                        NSCursor.arrow.set()
+                    }
             )
-            .background(ScrollWheelObserver { delta in
+            .background(StripEventView(handle: dragSource, onScroll: { delta in
                 self.offset = min(max(offset + delta, 0), maxOffset)
-            })
+            }, onDragEnded: { dragMode = nil }))
         }
         .frame(height: Self.headerHeight + Self.cardSize.height)
         .clipped()
@@ -273,13 +363,14 @@ private struct CardChrome<Content: View, Actions: View, Menu: View>: View {
     var body: some View {
         content()
             .overlay(alignment: .top) {
-                if hovering {
-                    HStack(spacing: 6) { actionRow() }
-                        .padding(8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(LinearGradient(colors: [.black.opacity(0.7), .black.opacity(0)], startPoint: .top, endPoint: .bottom))
-                        .transition(.opacity)
-                }
+                // Always in the tree (faded out, not hit-testable) so a drag started
+                // from the row survives the pointer leaving the card.
+                HStack(spacing: 6) { actionRow() }
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(LinearGradient(colors: [.black.opacity(0.7), .black.opacity(0)], startPoint: .top, endPoint: .bottom))
+                    .opacity(hovering ? 1 : 0)
+                    .allowsHitTesting(hovering)
             }
             .frame(width: DayStrip<CaptureItem, EmptyView>.cardSize.width, height: DayStrip<CaptureItem, EmptyView>.cardSize.height)
             .background(.white.opacity(0.07))
@@ -539,26 +630,108 @@ private struct ClipboardCard: View {
     }
 }
 
-// MARK: - Scroll wheel
+private struct AssetCard: View {
+    let item: AssetItem
+    let assets: AssetStore
+    @State private var hovering = false
 
-/// Reports horizontal scroll-wheel / trackpad deltas over its own bounds. SwiftUI
-/// offers no scroll-wheel hook for a hand-rolled strip, so this watches the app's
-/// scroll events while it is on screen and keeps the ones that land on it.
-private struct ScrollWheelObserver: NSViewRepresentable {
+    var body: some View {
+        CardChrome(hovering: $hovering, onTap: { assets.open(item) }) {
+            content
+                .overlay(alignment: .bottom) {
+                    CardCaption(title: item.fileName, date: item.createdAt) {
+                        Badge(text: item.kind == .image && item.pixelWidth > 0 ? item.dimensions : item.sizeText)
+                    }
+                }
+        } actionRow: {
+            CardAction(symbol: "arrow.up.forward.app", help: "Open") { assets.open(item) }
+            CopyAction { assets.copy(item) }
+            CardAction(symbol: "trash", help: "Delete", tint: .red) { assets.delete(item) }
+        } menu: {
+            Button("Open") { assets.open(item) }
+            Button("Copy") { assets.copy(item) }
+            Button("Reveal in Finder") { assets.reveal(item) }
+            Divider()
+            Button("Delete", role: .destructive) { assets.delete(item) }
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if item.kind == .image {
+            Color.clear
+                .overlay {
+                    if let thumbnail = assets.thumbnail(for: item) {
+                        Image(nsImage: thumbnail).resizable().scaledToFill()
+                    } else {
+                        Color.white.opacity(0.1)
+                    }
+                }
+                .clipped()
+        } else {
+            VStack(spacing: 8) {
+                if let icon = assets.thumbnail(for: item) {
+                    Image(nsImage: icon).resizable().frame(width: 56, height: 56)
+                }
+                Text((item.fileName as NSString).pathExtension.uppercased())
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.6))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.bottom, 24)
+        }
+    }
+}
+
+// MARK: - Row events
+
+/// What a dragged card writes to the drag pasteboard, and the image under the pointer.
+struct DragPayload {
+    let writer: any NSPasteboardWriting
+    let preview: NSImage
+
+    /// A file: other apps get a file URL carrying the sandbox extension they need to
+    /// read a file in Klik's container.
+    static func file(_ url: URL, preview: NSImage?) -> DragPayload {
+        DragPayload(writer: url as NSURL, preview: preview ?? NSWorkspace.shared.icon(forFile: url.path))
+    }
+}
+
+/// The AppKit side of the row: reports horizontal scroll-wheel / trackpad deltas over
+/// its bounds (SwiftUI offers no scroll-wheel hook for a hand-rolled strip), and
+/// starts file drags out of the island — an AppKit session writing a file URL, which
+/// carries the sandbox extension other apps need to read a file in Klik's container.
+private struct StripEventView: NSViewRepresentable {
+    /// Lets the SwiftUI gesture reach the NSView to start a drag.
+    final class Handle {
+        weak var view: EventView?
+
+        func beginDrag(_ payload: DragPayload, event: NSEvent) {
+            view?.beginDrag(payload, event: event)
+        }
+    }
+
+    let handle: Handle
     var onScroll: (CGFloat) -> Void
+    var onDragEnded: () -> Void
 
-    func makeNSView(context: Context) -> ObserverView {
-        let view = ObserverView()
+    func makeNSView(context: Context) -> EventView {
+        let view = EventView()
         view.onScroll = onScroll
+        view.onDragEnded = onDragEnded
+        handle.view = view
         return view
     }
 
-    func updateNSView(_ view: ObserverView, context: Context) {
+    func updateNSView(_ view: EventView, context: Context) {
         view.onScroll = onScroll
+        view.onDragEnded = onDragEnded
+        handle.view = view
     }
 
-    final class ObserverView: NSView {
+    final class EventView: NSView, NSDraggingSource {
         var onScroll: ((CGFloat) -> Void)?
+        var onDragEnded: (() -> Void)?
         private var monitor: Any?
 
         /// Installed while on screen; `viewDidMoveToWindow` with a nil window (the
@@ -575,6 +748,36 @@ private struct ScrollWheelObserver: NSViewRepresentable {
                 self.onScroll?(event.hasPreciseScrollingDeltas ? -delta : -delta * 8)
                 return nil
             }
+        }
+
+        func beginDrag(_ payload: DragPayload, event: NSEvent) {
+            let item = NSDraggingItem(pasteboardWriter: payload.writer)
+            let image = payload.preview
+            let side: CGFloat = 140
+            let scale = min(side / max(image.size.width, 1), side / max(image.size.height, 1), 1)
+            let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+            let location = convert(event.locationInWindow, from: nil)
+            item.setDraggingFrame(CGRect(x: location.x - size.width / 2, y: location.y - size.height / 2, width: size.width, height: size.height), contents: image)
+            beginDraggingSession(with: [item], event: event, source: self)
+        }
+
+        func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+            context == .outsideApplication ? .copy : []
+        }
+
+        // The grabbing hand for the whole drag; the drag manager keeps resetting the
+        // cursor, so it is set again on every move.
+        func draggingSession(_ session: NSDraggingSession, willBeginAt screenPoint: NSPoint) {
+            NSCursor.closedHand.set()
+        }
+
+        func draggingSession(_ session: NSDraggingSession, movedTo screenPoint: NSPoint) {
+            NSCursor.closedHand.set()
+        }
+
+        func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+            NSCursor.arrow.set()
+            onDragEnded?()
         }
     }
 }

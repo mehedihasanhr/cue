@@ -59,6 +59,12 @@ final class ClipboardHistory {
         }
         migrateJSONIfNeeded()
         loadItems()
+        // PNGs written for dragging images out are only needed for that drag.
+        let folder = folderURL
+        storage.async {
+            let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
+            for file in files where file.lastPathComponent.hasPrefix("drag-") { try? FileManager.default.removeItem(at: file) }
+        }
     }
 
     private static let schema = """
@@ -202,6 +208,51 @@ final class ClipboardHistory {
             moved.createdAt = .now
             items.insert(moved, at: 0)
             update(moved)
+        }
+    }
+
+    /// A pasteboard item with every flavour the entry was copied with, for dragging it
+    /// into other apps. Images also get a PNG file (in the clipboard folder) so Finder
+    /// and file-only targets accept the drop; file entries carry their original URLs.
+    func dragPayload(for item: ClipboardItem) -> DragPayload? {
+        let contents = (try? database?.query(
+            "SELECT item_index, type, data FROM contents WHERE item_id = ? ORDER BY item_index, rowid",
+            [.text(item.id.uuidString)]
+        ) { row in Content(index: Int(row.integer(0)), type: row.text(1) ?? "", data: row.blob(2) ?? Data()) }) ?? []
+        let pasteboardItem = NSPasteboardItem()
+        for content in contents where content.index == 0 {
+            pasteboardItem.setData(content.data, forType: NSPasteboard.PasteboardType(content.type))
+        }
+        var preview: NSImage?
+        switch item.kind {
+        case .files:
+            guard let first = item.filePaths.first else { return nil }
+            let url = URL(fileURLWithPath: first)
+            return DragPayload(writer: url as NSURL, preview: NSWorkspace.shared.icon(forFile: url.path))
+        case .image:
+            let url = folderURL.appendingPathComponent("drag-\(item.id.uuidString).png")
+            if let png = contents.first(where: { $0.type == NSPasteboard.PasteboardType.png.rawValue })?.data
+                ?? contents.first.flatMap({ CGImageSourceCreateWithData($0.data as CFData, nil) }).flatMap({ CGImageSourceCreateImageAtIndex($0, 0, nil) }).flatMap(ImageEncoding.png) {
+                try? png.write(to: url, options: .atomic)
+                pasteboardItem.setString(url.absoluteString, forType: .fileURL)
+            }
+            preview = thumbnails[item.id]
+        case .text, .link, .color:
+            if contents.isEmpty { pasteboardItem.setString(item.text, forType: .string) }
+            preview = Self.textPreview(item.title)
+        }
+        return DragPayload(writer: pasteboardItem, preview: preview ?? Self.textPreview(item.title))
+    }
+
+    /// A small card image for dragging text.
+    private static func textPreview(_ text: String) -> NSImage {
+        let size = CGSize(width: 160, height: 60)
+        return NSImage(size: size, flipped: false) { rect in
+            NSColor(white: 0.12, alpha: 0.95).setFill()
+            NSBezierPath(roundedRect: rect, xRadius: 10, yRadius: 10).fill()
+            let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.white]
+            (text as NSString).draw(in: rect.insetBy(dx: 10, dy: 10), withAttributes: attributes)
+            return true
         }
     }
 

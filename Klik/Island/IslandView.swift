@@ -20,6 +20,8 @@ final class IslandModel {
 
     var phase: Phase = .collapsed
     var geometry: IslandGeometry?
+    /// A drag with files or an image is over the island.
+    var dropping = false
     /// A click on the closed shape opens it.
     var onTap: () -> Void = {}
 }
@@ -71,6 +73,7 @@ struct IslandView: View {
     let model: IslandModel
     let library: CaptureLibrary
     let clipboard: ClipboardHistory
+    let assets: AssetStore
     let actions: HistoryActions
 
     /// Opening overshoots a touch; closing settles without a bounce.
@@ -118,7 +121,7 @@ struct IslandView: View {
         case .expanded:
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
-                IslandPanel(library: library, clipboard: clipboard, actions: actions)
+                IslandPanel(library: library, clipboard: clipboard, assets: assets, actions: actions, dropping: model.dropping)
                     .padding(.horizontal, IslandGeometry.panelHorizontalPadding)
                     .padding(.bottom, IslandGeometry.panelBottomPadding)
             }

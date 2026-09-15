@@ -25,11 +25,14 @@ final class IslandController {
     private static let flashDuration: Duration = .seconds(1.8)
     private static let collapseAnimation: Duration = .milliseconds(380)
 
-    init(library: CaptureLibrary, clipboard: ClipboardHistory, actions: HistoryActions, preferences: AppPreferences) {
+    init(library: CaptureLibrary, clipboard: ClipboardHistory, assets: AssetStore, actions: HistoryActions, preferences: AppPreferences) {
         self.preferences = preferences
 
-        let content = NSView(frame: CGRect(origin: .zero, size: window.frame.size))
-        let host = NSHostingView(rootView: IslandView(model: model, library: library, clipboard: clipboard, actions: actions))
+        let content = IslandDropView(frame: CGRect(origin: .zero, size: window.frame.size))
+        content.onDragEntered = { [weak self] in self?.dragEntered() }
+        content.onDragExited = { [weak self] in self?.model.dropping = false }
+        content.onDrop = { [weak self] urls, image in self?.drop(urls: urls, image: image, into: assets) }
+        let host = NSHostingView(rootView: IslandView(model: model, library: library, clipboard: clipboard, assets: assets, actions: actions))
         host.sizingOptions = []
         host.autoresizingMask = [.width, .height]
         host.frame = content.bounds
@@ -230,6 +233,27 @@ final class IslandController {
         if window.isKeyWindow {
             window.orderOut(nil)
             if !hidden { window.orderFrontRegardless() }
+        }
+    }
+
+    // MARK: - Drops
+
+    /// A file or image dragged over the island: open on the Assets tab and show the
+    /// drop hint.
+    private func dragEntered() {
+        UserDefaults.standard.set(IslandTab.assets.rawValue, forKey: IslandTab.storageKey)
+        expand()
+        model.dropping = true
+    }
+
+    private func drop(urls: [URL], image: Data?, into assets: AssetStore) {
+        model.dropping = false
+        var added = assets.add(fileURLs: urls)
+        if let image, let item = assets.add(imageData: image) { added.append(item) }
+        if added.isEmpty {
+            FeedbackHUD.show("Nothing to save", symbol: "tray")
+        } else {
+            FeedbackHUD.show(added.count == 1 ? "Saved to Assets" : "\(added.count) saved to Assets", symbol: "tray.and.arrow.down.fill", duration: .seconds(1.2))
         }
     }
 
