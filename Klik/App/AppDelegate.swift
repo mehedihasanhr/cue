@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let clipboard = ClipboardHistory()
     let assets = AssetStore()
     let colors = ColorStore()
+    let tasks = TaskStore()
     let preferences = AppPreferences()
     private lazy var coordinator = CaptureCoordinator(shortcuts: shortcuts)
 
@@ -154,7 +155,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if let island {
                     island.place()
                 } else {
-                    island = IslandController(library: library, clipboard: clipboard, assets: assets, colors: colors, actions: historyActions, preferences: preferences)
+                    island = IslandController(library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasks, actions: historyActions, preferences: preferences)
                     library.warmThumbnails()
                 }
             } else if let island {

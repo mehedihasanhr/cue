@@ -36,11 +36,13 @@ nonisolated struct ScreenMetrics: Equatable {
 /// The island's three sizes for one screen. Every rect hangs from the top edge of the
 /// screen (`frame.maxY`), centred on the notch (or the screen when there is none).
 nonisolated struct IslandGeometry: Equatable {
-    enum Phase: Equatable { case collapsed, flash, expanded }
+    enum Phase: Equatable { case collapsed, flash, form, expanded }
 
     let screen: ScreenMetrics
     let collapsed: CGRect
     let flash: CGRect
+    /// A compact form (a new task): wider and taller than a flash.
+    let form: CGRect
     let expanded: CGRect
     /// Bottom corner radius of the shape in each phase.
     let collapsedRadius: CGFloat
@@ -55,6 +57,8 @@ nonisolated struct IslandGeometry: Equatable {
     static let shadowMargin: CGFloat = 28
     static let flashWidth: CGFloat = 340
     static let flashContentHeight: CGFloat = 64
+    static let formWidth: CGFloat = 460
+    static let formContentHeight: CGFloat = 300
     static let panelHorizontalPadding: CGFloat = 4
     static let panelBottomPadding: CGFloat = 4
 
@@ -79,6 +83,10 @@ nonisolated struct IslandGeometry: Equatable {
             size: CGSize(width: Self.flashWidth, height: collapsedSize.height + Self.flashContentHeight),
             centerX: centerX, top: top, in: screen.frame
         )
+        form = Self.hang(
+            size: CGSize(width: Self.formWidth, height: collapsedSize.height + Self.formContentHeight),
+            centerX: centerX, top: top, in: screen.frame
+        )
         expanded = Self.hang(
             size: CGSize(
                 width: panelSize.width + Self.panelHorizontalPadding * 2,
@@ -92,6 +100,7 @@ nonisolated struct IslandGeometry: Equatable {
         switch phase {
         case .collapsed: collapsed
         case .flash: flash
+        case .form: form
         case .expanded: expanded
         }
     }
@@ -100,6 +109,7 @@ nonisolated struct IslandGeometry: Equatable {
         switch phase {
         case .collapsed: collapsedRadius
         case .flash: flashRadius
+        case .form: expandedRadius
         case .expanded: expandedRadius
         }
     }

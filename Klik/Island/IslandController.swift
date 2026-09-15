@@ -10,6 +10,7 @@ final class IslandController {
     private let window = IslandWindow()
     private let model = IslandModel()
     private let preferences: AppPreferences
+    private let tasks: TaskStore
 
     private var closeTask: Task<Void, Never>?
     private var flashTask: Task<Void, Never>?
@@ -25,14 +26,15 @@ final class IslandController {
     private static let flashDuration: Duration = .seconds(1.8)
     private static let collapseAnimation: Duration = .milliseconds(380)
 
-    init(library: CaptureLibrary, clipboard: ClipboardHistory, assets: AssetStore, colors: ColorStore, actions: HistoryActions, preferences: AppPreferences) {
+    init(library: CaptureLibrary, clipboard: ClipboardHistory, assets: AssetStore, colors: ColorStore, tasks: TaskStore, actions: HistoryActions, preferences: AppPreferences) {
         self.preferences = preferences
+        self.tasks = tasks
 
         let content = IslandDropView(frame: CGRect(origin: .zero, size: window.frame.size))
         content.onDragEntered = { [weak self] in self?.dragEntered() }
         content.onDragExited = { [weak self] in self?.model.dropping = false }
         content.onDrop = { [weak self] urls, image in self?.drop(urls: urls, image: image, into: assets) }
-        let host = NSHostingView(rootView: IslandView(model: model, library: library, clipboard: clipboard, assets: assets, colors: colors, actions: actions).environment(preferences))
+        let host = NSHostingView(rootView: IslandView(model: model, library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasks, actions: actions).environment(preferences))
         host.sizingOptions = []
         host.autoresizingMask = [.width, .height]
         host.frame = content.bounds
@@ -40,6 +42,36 @@ final class IslandController {
         window.contentView = content
         window.onEscape = { [weak self] in self?.collapse() }
         model.onTap = { [weak self] in self?.expand() }
+        model.onPrompt = { [weak self] prompt in self?.prompt(prompt) }
+        model.onShowTask = { [weak self] task in self?.showTask(task) }
+        model.onTaskDetailClosed = { [weak self] task in
+            guard let self else { return }
+            removeOutsideClickMonitor()
+            tasks.pendingSelection = task?.projectID.map { .project($0) } ?? .all
+            setPhase(.expanded, animated: true)
+        }
+        model.onPromptFinished = { [weak self] prompt, answer in
+            guard let self else { return }
+            removeOutsideClickMonitor()
+            if let answer {
+                switch prompt.kind {
+                case .project(let parent):
+                    if let project = tasks.addProject(named: answer.title, in: parent) {
+                        tasks.pendingSelection = .project(project.id)
+                    }
+                case .task:
+                    if let task = prompt.editing {
+                        tasks.update(task, title: answer.title, notes: answer.notes, projectID: answer.projectID)
+                    } else {
+                        tasks.addTask(titled: answer.title, notes: answer.notes, in: answer.projectID)
+                    }
+                    tasks.pendingSelection = answer.projectID.map { .project($0) } ?? .all
+                }
+            } else if case .task(let project) = prompt.kind {
+                tasks.pendingSelection = project.map { .project($0) } ?? .all
+            }
+            setPhase(.expanded, animated: true)
+        }
 
         let center = NotificationCenter.default
         observers.append(center.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
@@ -98,6 +130,7 @@ final class IslandController {
         observers.removeAll()
         pointerMonitors.forEach { NSEvent.removeMonitor($0) }
         pointerMonitors.removeAll()
+        removeOutsideClickMonitor()
         if let wakeObserver { NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver) }
         wakeObserver = nil
         window.orderOut(nil)
@@ -180,6 +213,7 @@ final class IslandController {
         flashTask?.cancel()
         closeTask?.cancel()
         guard model.phase != .collapsed else { return }
+        removeOutsideClickMonitor()
         shadowTask?.cancel()
         window.hasShadow = false
         setPhase(.collapsed, animated: animated)
@@ -202,6 +236,55 @@ final class IslandController {
             return
         }
         flash(phase: .flash(item))
+    }
+
+    /// Shrinks the open island to a small box with a text field; the answer comes
+    /// back through `onPromptFinished`. A click anywhere outside the box cancels it.
+    private func prompt(_ prompt: IslandPrompt) {
+        guard model.geometry != nil else { return }
+        closeTask?.cancel()
+        flashTask?.cancel()
+        setPhase(.prompt(prompt), animated: true)
+        installOutsideClickMonitor()
+    }
+
+    /// Opens a task in the compact island; a click outside closes the island.
+    private func showTask(_ task: TaskItem) {
+        guard model.geometry != nil else { return }
+        closeTask?.cancel()
+        flashTask?.cancel()
+        setPhase(.taskDetail(task.id), animated: true)
+        installOutsideClickMonitor()
+    }
+
+    private var outsideClickMonitors: [Any] = []
+
+    private func installOutsideClickMonitor() {
+        removeOutsideClickMonitor()
+        let handler: @MainActor () -> Void = { [weak self] in
+            guard let self, let geometry = model.geometry else { return }
+            switch model.phase {
+            case .prompt, .taskDetail: break
+            default: return
+            }
+            if !geometry.rect(for: model.phase.geometryPhase).contains(NSEvent.mouseLocation) { collapse() }
+        }
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { _ in
+            MainActor.assumeIsolated { handler() }
+        }) {
+            outsideClickMonitors.append(global)
+        }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { event in
+            MainActor.assumeIsolated { handler() }
+            return event
+        }) {
+            outsideClickMonitors.append(local)
+        }
+    }
+
+    private func removeOutsideClickMonitor() {
+        outsideClickMonitors.forEach { NSEvent.removeMonitor($0) }
+        outsideClickMonitors.removeAll()
     }
 
     /// Show the colour that was just picked for a moment.
@@ -271,6 +354,12 @@ final class IslandController {
 
     private func pointerEntered() {
         closeTask?.cancel()
+        // The compact prompt / task detail stay as they are until ↩, ⎋ or a click
+        // outside; the pointer does not reopen the panel.
+        switch model.phase {
+        case .prompt, .taskDetail: return
+        default: break
+        }
         if model.phase != .expanded { expand() }
     }
 

@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 enum IslandTab: String, CaseIterable {
-    case captures, clipboard, assets, colors
+    case captures, clipboard, assets, colors, tasks
 
     static let storageKey = "island.tab"
 
@@ -12,6 +12,7 @@ enum IslandTab: String, CaseIterable {
         case .clipboard: "Clipboard"
         case .assets: "Assets"
         case .colors: "Colours"
+        case .tasks: "Tasks"
         }
     }
 
@@ -21,6 +22,7 @@ enum IslandTab: String, CaseIterable {
         case .clipboard: "doc.on.clipboard"
         case .assets: "tray.full"
         case .colors: "paintpalette"
+        case .tasks: "checklist"
         }
     }
 }
@@ -35,10 +37,15 @@ struct IslandPanel: View {
     let clipboard: ClipboardHistory
     let assets: AssetStore
     let colors: ColorStore
+    let tasksStore: TaskStore
     let actions: HistoryActions
     @Environment(AppPreferences.self) private var preferences
     /// A file or image is being dragged over the island.
     var dropping = false
+    /// Asks the island for a line of text in its compact form.
+    var onPrompt: (IslandPrompt) -> Void = { _ in }
+    /// Opens a task in the compact island.
+    var onShowTask: (TaskItem) -> Void = { _ in }
     @State private var search = ""
     /// A card opened in place of the row.
     @State private var detail: IslandDetail?
@@ -96,6 +103,7 @@ struct IslandPanel: View {
                 tabPill(.clipboard, count: clipboard.items.count)
                 tabPill(.assets, count: assets.items.count)
                 tabPill(.colors, count: colors.items.count)
+                tabPill(.tasks, count: tasksStore.tasks.filter { $0.status != .complete }.count)
                 Spacer(minLength: 0)
                 if tab == .colors {
                     smallButton("Pick", symbol: "eyedropper", help: "Pick a colour from the screen", action: actions.pickColor)
@@ -141,6 +149,8 @@ struct IslandPanel: View {
                             ClipboardCard(item: item, clipboard: clipboard, onPreview: { open(.clipboard(item)) })
                         }
                     }
+                case .tasks:
+                    IslandTasksView(store: tasksStore, onPrompt: onPrompt, onShowTask: onShowTask)
                 case .colors:
                     if filteredColors.isEmpty {
                         empty(search.isEmpty ? "Pick a colour anywhere on screen with the eyedropper" : "No matches", symbol: "eyedropper")
@@ -478,7 +488,7 @@ private struct CardCaption<Leading: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             if renaming, let rename {
-                RenameField(initial: title, commit: rename, cancel: cancelRename)
+                InlineTextField(initial: title, commit: rename, cancel: cancelRename)
             } else if !title.isEmpty {
                 Text(title)
                     .font(.system(size: 10.5, weight: .medium))
@@ -502,56 +512,6 @@ private struct CardCaption<Leading: View>: View {
             LinearGradient(colors: [.black.opacity(0), .black.opacity(0.45), .black.opacity(0.65)], startPoint: .top, endPoint: .bottom)
                 .padding(.top, -16)
         )
-    }
-}
-
-/// An in-place text field for a card title: ↩ saves, ⎋ cancels, clicking away saves.
-private struct RenameField: View {
-    let initial: String
-    let commit: (String) -> Void
-    let cancel: () -> Void
-    @State private var text = ""
-    @State private var done = false
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        TextField("Name", text: $text)
-            .textFieldStyle(.plain)
-            .font(.system(size: 10.5, weight: .medium))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(.white.opacity(0.18), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-            .focused($focused)
-            .background(KeyWindowMaker())
-            .onAppear {
-                text = initial
-                focused = true
-            }
-            .onSubmit { finish { commit(text) } }
-            .onExitCommand { finish(cancel) }
-            .onChange(of: focused) { _, isFocused in
-                if !isFocused { finish { commit(text) } }
-            }
-    }
-
-    private func finish(_ action: () -> Void) {
-        guard !done else { return }
-        done = true
-        action()
-    }
-
-    /// The island is a non-activating panel: typing needs it to be the key window.
-    private struct KeyWindowMaker: NSViewRepresentable {
-        func makeNSView(context: Context) -> KeyView { KeyView() }
-        func updateNSView(_ view: KeyView, context: Context) {}
-
-        final class KeyView: NSView {
-            override func viewDidMoveToWindow() {
-                super.viewDidMoveToWindow()
-                window?.makeKey()
-            }
-        }
     }
 }
 
