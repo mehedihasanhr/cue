@@ -47,31 +47,24 @@ struct IslandPanel: View {
     /// Opens a task in the compact island.
     var onShowTask: (TaskItem) -> Void = { _ in }
     @State private var search = ""
+    @FocusState private var searchFocused: Bool
+    /// While searching: show hits from this tab only (nil: every tab).
+    @State private var resultFilter: IslandTab?
     /// Clipboard tab: show pinned entries only.
     @State private var pinnedOnly = false
     /// A card opened in place of the row.
     @State private var detail: IslandDetail?
     @AppStorage(IslandTab.storageKey) private var tab: IslandTab = .captures
 
-    private var filteredCaptures: [CaptureItem] {
-        guard !search.isEmpty else { return library.items }
-        return library.items.filter { $0.title.localizedCaseInsensitiveContains(search) }
+    private var searching: Bool { !search.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    /// Matches across every tab for the current search.
+    private var hits: [SearchHit] {
+        IslandSearch.hits(for: search, library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore)
     }
 
     private var filteredClipboard: [ClipboardItem] {
-        let items = pinnedOnly ? clipboard.items.filter(\.pinned) : clipboard.items
-        guard !search.isEmpty else { return items }
-        return items.filter { $0.text.localizedCaseInsensitiveContains(search) || ($0.name?.localizedCaseInsensitiveContains(search) ?? false) || ($0.sourceName?.localizedCaseInsensitiveContains(search) ?? false) }
-    }
-
-    private var filteredAssets: [AssetItem] {
-        guard !search.isEmpty else { return assets.items }
-        return assets.items.filter { $0.fileName.localizedCaseInsensitiveContains(search) }
-    }
-
-    private var filteredColors: [ColorEntry] {
-        guard !search.isEmpty else { return colors.items }
-        return colors.items.filter { ColorFormat.hex.string(for: $0.color).localizedCaseInsensitiveContains(search) }
+        pinnedOnly ? clipboard.items.filter(\.pinned) : clipboard.items
     }
 
     var body: some View {
@@ -79,24 +72,46 @@ struct IslandPanel: View {
             HStack(spacing: 10) {
                 circle("gearshape", help: "Settings", action: actions.openSettings)
                 HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass").font(.system(size: 14, weight: .medium)).foregroundStyle(.white.opacity(0.6))
-                    TextField("Search", text: $search)
+                    Image(systemName: "magnifyingglass").font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(searching ? Color.brand : .white.opacity(0.6))
+                    TextField("Search captures, clipboard, assets, colors, tasks", text: $search)
                         .textFieldStyle(.plain)
                         .font(.system(size: 14))
                         .foregroundStyle(.white)
+                        .focused($searchFocused)
+                        .onExitCommand { clearSearch() }
+                    if searching {
+                        Text(hits.isEmpty ? "No matches" : "\(hits.count) \(hits.count == 1 ? "match" : "matches")")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.55))
+                            .fixedSize()
+                        Button(action: clearSearch) {
+                            Image(systemName: "xmark.circle.fill").font(.system(size: 14)).foregroundStyle(.white.opacity(0.6))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Clear the search")
+                    }
                 }
                 .padding(.horizontal, 14)
                 .frame(height: 40)
-                .background(.white.opacity(0.08), in: Capsule(style: .continuous))
-                Spacer(minLength: 8)
-                circle("display", help: "Capture full screen", action: actions.captureFullScreen)
-                circle("viewfinder", help: "Capture area", action: actions.captureArea)
-                circle("rectangle.expand.vertical", help: "Scrolling capture", action: actions.captureScrolling)
-                circle("text.viewfinder", help: "Capture text", action: actions.captureText)
-                circle("eyedropper", help: "Pick a color", action: actions.pickColor)
+                .frame(maxWidth: searching ? .infinity : nil)
+                .background(.white.opacity(searching ? 0.12 : 0.08), in: Capsule(style: .continuous))
+                .overlay(Capsule(style: .continuous).strokeBorder(searching ? Color.brand.opacity(0.8) : .clear, lineWidth: 1.5))
+                .background(KeyOnFocus(focused: searchFocused))
+                if !searching {
+                    Spacer(minLength: 8)
+                    circle("display", help: "Capture full screen", action: actions.captureFullScreen)
+                    circle("viewfinder", help: "Capture area", action: actions.captureArea)
+                    circle("rectangle.expand.vertical", help: "Scrolling capture", action: actions.captureScrolling)
+                    circle("text.viewfinder", help: "Capture text", action: actions.captureText)
+                    circle("eyedropper", help: "Pick a color", action: actions.pickColor)
+                }
             }
+            .animation(.easeOut(duration: 0.18), value: searching)
 
-            if let detail {
+            if searching {
+                resultBar
+            } else if let detail {
                 IslandDetailHeader(detail: detail, library: library, assets: assets, actions: actions) {
                     withAnimation(.easeOut(duration: 0.15)) { self.detail = nil }
                 }
@@ -132,61 +147,46 @@ struct IslandPanel: View {
             }
 
             ZStack {
-                if let detail {
+                if searching {
+                    searchResults
+                } else if let detail {
                     IslandDetailBody(detail: detail, library: library, clipboard: clipboard, assets: assets, colors: colors, actions: actions)
                         .transition(.opacity)
                 } else {
                 switch tab {
                 case .captures:
-                    if filteredCaptures.isEmpty {
-                        empty(search.isEmpty ? "No captures yet" : "No matches", symbol: "camera.viewfinder")
+                    if library.items.isEmpty {
+                        empty("No captures yet", symbol: "camera.viewfinder")
                     } else {
-                        DayStrip(items: filteredCaptures, date: \.createdAt, dragPayload: { item in
+                        DayStrip(items: library.items, date: \.createdAt, dragPayload: { item in
                             library.fileURL(for: item).map { .file($0, preview: library.thumbnail(for: item)) }
-                        }) { item in
-                            CaptureCard(item: item, library: library, actions: actions, clipboard: clipboard, onPreview: { open(.capture(item)) }, onRename: {
-                                onPrompt(IslandPrompt(kind: .rename(.capture(item)), initial: item.title.replacingOccurrences(of: "Screenshot ", with: ""), image: library.thumbnail(for: item)))
-                            })
-                        }
+                        }, card: captureCard)
                     }
                 case .clipboard:
                     if filteredClipboard.isEmpty {
-                        empty(search.isEmpty ? "Nothing copied yet" : "No matches", symbol: "doc.on.clipboard")
+                        empty(pinnedOnly ? "Nothing pinned" : "Nothing copied yet", symbol: "doc.on.clipboard")
                     } else {
                         DayStrip(items: filteredClipboard, date: \.createdAt, pinned: \.pinned, dragPayload: { item in
                             clipboard.dragPayload(for: item)
-                        }) { item in
-                            ClipboardCard(item: item, clipboard: clipboard, onPreview: { open(.clipboard(item)) }, onRename: {
-                                onPrompt(IslandPrompt(kind: .rename(.clipboard(item)), initial: item.name ?? "", image: clipboard.thumbnail(for: item),
-                                                      swatch: item.kind == .color ? PickedColor(hex: item.text) : nil))
-                            })
-                        }
+                        }, card: clipboardCard)
                     }
                 case .tasks:
                     IslandTasksView(store: tasksStore, onPrompt: onPrompt, onShowTask: onShowTask)
                 case .colors:
-                    if filteredColors.isEmpty {
-                        empty(search.isEmpty ? "Pick a color anywhere on screen with the eyedropper" : "No matches", symbol: "eyedropper")
+                    if colors.items.isEmpty {
+                        empty("Pick a color anywhere on screen with the eyedropper", symbol: "eyedropper")
                     } else {
-                        DayStrip(items: filteredColors, date: \.createdAt, dragPayload: { entry in
+                        DayStrip(items: colors.items, date: \.createdAt, dragPayload: { entry in
                             DragPayload(writer: preferences.colorFormat.string(for: entry.color) as NSString, preview: ColorCard.dragImage(for: entry.color))
-                        }) { entry in
-                            ColorCard(entry: entry, colors: colors, format: preferences.colorFormat, onPreview: { open(.color(entry)) }, onRename: {
-                                onPrompt(IslandPrompt(kind: .rename(.color(entry)), initial: entry.name ?? "", swatch: entry.color))
-                            })
-                        }
+                        }, card: colorCard)
                     }
                 case .assets:
-                    if filteredAssets.isEmpty {
-                        empty(search.isEmpty ? "Drop images or files here to keep them handy" : "No matches", symbol: "tray.and.arrow.down")
+                    if assets.items.isEmpty {
+                        empty("Drop images or files here to keep them handy", symbol: "tray.and.arrow.down")
                     } else {
-                        DayStrip(items: filteredAssets, date: \.createdAt, dragPayload: { item in
+                        DayStrip(items: assets.items, date: \.createdAt, dragPayload: { item in
                             .file(assets.fileURL(for: item), preview: assets.thumbnail(for: item))
-                        }) { item in
-                            AssetCard(item: item, assets: assets, clipboard: clipboard, onPreview: { open(.asset(item)) }, onRename: {
-                                onPrompt(IslandPrompt(kind: .rename(.asset(item)), initial: item.title, image: assets.thumbnail(for: item)))
-                            })
-                        }
+                        }, card: assetCard)
                     }
                 }
                 }
@@ -196,11 +196,119 @@ struct IslandPanel: View {
             }
             .frame(height: Self.rowHeight) // the same whether a tab has cards or not
             .onChange(of: tab) { _, _ in detail = nil }
+            .onChange(of: searching) { _, _ in
+                detail = nil
+                resultFilter = nil
+            }
         }
         .padding(.horizontal, 20)
         .padding(.top, 14)
         .padding(.bottom, 16)
         .frame(width: Self.size.width, height: Self.size.height)
+    }
+
+    // MARK: - Cards
+
+    private func captureCard(_ item: CaptureItem) -> some View {
+        CaptureCard(item: item, library: library, actions: actions, clipboard: clipboard, onPreview: { open(.capture(item)) }, onRename: {
+            onPrompt(IslandPrompt(kind: .rename(.capture(item)), initial: item.title.replacingOccurrences(of: "Screenshot ", with: ""), image: library.thumbnail(for: item)))
+        })
+    }
+
+    private func clipboardCard(_ item: ClipboardItem) -> some View {
+        ClipboardCard(item: item, clipboard: clipboard, onPreview: { open(.clipboard(item)) }, onRename: {
+            onPrompt(IslandPrompt(kind: .rename(.clipboard(item)), initial: item.name ?? "", image: clipboard.thumbnail(for: item),
+                                  swatch: item.kind == .color ? PickedColor(hex: item.text) : nil))
+        })
+    }
+
+    private func assetCard(_ item: AssetItem) -> some View {
+        AssetCard(item: item, assets: assets, clipboard: clipboard, onPreview: { open(.asset(item)) }, onRename: {
+            onPrompt(IslandPrompt(kind: .rename(.asset(item)), initial: item.title, image: assets.thumbnail(for: item)))
+        })
+    }
+
+    private func colorCard(_ entry: ColorEntry) -> some View {
+        ColorCard(entry: entry, colors: colors, format: preferences.colorFormat, onPreview: { open(.color(entry)) }, onRename: {
+            onPrompt(IslandPrompt(kind: .rename(.color(entry)), initial: entry.name ?? "", swatch: entry.color))
+        })
+    }
+
+    // MARK: - Search
+
+    private func clearSearch() {
+        search = ""
+        searchFocused = false
+    }
+
+    /// Replaces the tab row while searching: how many hits each tab has, as pills
+    /// that narrow the results to that tab.
+    private var resultBar: some View {
+        let counts = IslandSearch.counts(hits)
+        return HStack(spacing: 8) {
+            resultPill(nil, title: "All", count: hits.count, symbol: "magnifyingglass")
+            ForEach(counts, id: \.tab) { entry in
+                resultPill(entry.tab, title: entry.tab.title, count: entry.count, symbol: entry.tab.symbol)
+            }
+            Spacer(minLength: 0)
+            Text("⎋ to clear")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.white.opacity(0.4))
+        }
+        .transition(.opacity)
+    }
+
+    private func resultPill(_ value: IslandTab?, title: String, count: Int, symbol: String) -> some View {
+        let selected = resultFilter == value
+        return Button {
+            withAnimation(.easeOut(duration: 0.15)) { resultFilter = value }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: symbol).font(.system(size: 11, weight: .semibold))
+                Text(title).font(.system(size: 12, weight: .semibold))
+                Text("\(count)")
+                    .font(.system(size: 10, weight: .semibold))
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background((selected ? Color.black : Color.white).opacity(0.12), in: Capsule())
+            }
+            .foregroundStyle(selected ? .black : .white.opacity(0.85))
+            .padding(.horizontal, 12)
+            .frame(height: 28)
+            .background(selected ? Color.brand : Color.white.opacity(0.1), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Every hit as a card, grouped by tab, in one strip.
+    @ViewBuilder
+    private var searchResults: some View {
+        let shown = resultFilter.map { filter in hits.filter { $0.tab == filter } } ?? hits
+        if shown.isEmpty {
+            empty("Nothing matches “\(search.trimmingCharacters(in: .whitespaces))”", symbol: "magnifyingglass")
+        } else {
+            DayStrip(items: shown, section: { StripSection(id: $0.tab, title: $0.tab.title) }, dragPayload: dragPayload) { hit in
+                switch hit {
+                case .capture(let item): captureCard(item)
+                case .clipboard(let item): clipboardCard(item)
+                case .asset(let item): assetCard(item)
+                case .color(let entry): colorCard(entry)
+                case .task(let task): TaskCard(task: task, store: tasksStore, onOpen: { onShowTask(task) })
+                }
+            }
+            .transition(.opacity)
+        }
+    }
+
+    private func dragPayload(for hit: SearchHit) -> DragPayload? {
+        switch hit {
+        case .capture(let item): library.fileURL(for: item).map { .file($0, preview: library.thumbnail(for: item)) }
+        case .clipboard(let item): clipboard.dragPayload(for: item)
+        case .asset(let item): .file(assets.fileURL(for: item), preview: assets.thumbnail(for: item))
+        case .color(let entry): DragPayload(writer: preferences.colorFormat.string(for: entry.color) as NSString, preview: ColorCard.dragImage(for: entry.color))
+        case .task: nil
+        }
     }
 
     private func circle(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
@@ -306,19 +414,48 @@ struct IslandPanel: View {
 
 // MARK: - Day strip
 
+/// A header in a `DayStrip`.
+struct StripSection {
+    let id: AnyHashable
+    let title: String
+}
+
 /// Horizontal row of day groups ("Today", "Yesterday", "Wed, Jul 22"). Dragging
 /// anywhere on it scrolls; the scroll wheel / trackpad works too. Every card has the
 /// same width, so positions are arithmetic and only the cards in view are built —
 /// a history of thousands costs the same as one of ten.
 struct DayStrip<Item: Identifiable, Card: View>: View {
     let items: [Item]
-    let date: KeyPath<Item, Date>
-    /// Items flagged here go in a "Pinned" group ahead of the days.
-    var pinned: KeyPath<Item, Bool>? = nil
+    /// The group an item belongs to; consecutive items with the same group share a header.
+    let section: (Item) -> StripSection
     /// What a card puts on the drag pasteboard, if it can be dragged out. A vertical
     /// drag on a card then drags it into other apps; a horizontal drag scrolls the row.
     var dragPayload: ((Item) -> DragPayload?)? = nil
     @ViewBuilder let card: (Item) -> Card
+
+    /// Grouped by day ("Today", "Yesterday", "Wed, Jul 22"); items flagged `pinned`
+    /// go first in a "Pinned" group.
+    init(items: [Item], date: KeyPath<Item, Date>, pinned: KeyPath<Item, Bool>? = nil,
+         dragPayload: ((Item) -> DragPayload?)? = nil, @ViewBuilder card: @escaping (Item) -> Card) {
+        let calendar = Calendar.current
+        self.items = pinned.map { key in items.filter { $0[keyPath: key] } + items.filter { !$0[keyPath: key] } } ?? items
+        self.section = { item in
+            if let pinned, item[keyPath: pinned] { return StripSection(id: "pinned", title: "Pinned") }
+            let day = calendar.startOfDay(for: item[keyPath: date])
+            return StripSection(id: day, title: Self.title(for: day, calendar: calendar))
+        }
+        self.dragPayload = dragPayload
+        self.card = card
+    }
+
+    /// Grouped however `section` says (search results by tab, say).
+    init(items: [Item], section: @escaping (Item) -> StripSection,
+         dragPayload: ((Item) -> DragPayload?)? = nil, @ViewBuilder card: @escaping (Item) -> Card) {
+        self.items = items
+        self.section = section
+        self.dragPayload = dragPayload
+        self.card = card
+    }
 
     static var cardSize: CGSize { CGSize(width: 200, height: 160) }
     static var spacing: CGFloat { 10 }
@@ -332,7 +469,7 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
     private enum DragMode { case scroll, dragOut }
 
     private struct PlacedGroup: Identifiable {
-        let id: Date
+        let id: AnyHashable
         let title: String
         let x: CGFloat
         var width: CGFloat
@@ -351,18 +488,15 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
     }
 
     private var layout: Layout {
-        let calendar = Calendar.current
         var layout = Layout()
         var x: CGFloat = 0
-        var currentDay: Date?
-        let ordered = pinned.map { key in items.filter { $0[keyPath: key] } + items.filter { !$0[keyPath: key] } } ?? items
-        for item in ordered {
-            let isPinned = pinned.map { item[keyPath: $0] } ?? false
-            let day = isPinned ? Date.distantFuture : calendar.startOfDay(for: item[keyPath: date])
-            if day != currentDay {
-                if currentDay != nil { x += Self.groupSpacing - Self.spacing }
-                layout.groups.append(PlacedGroup(id: day, title: isPinned ? "Pinned" : Self.title(for: day, calendar: calendar), x: x, width: 0))
-                currentDay = day
+        var current: AnyHashable?
+        for item in items {
+            let section = section(item)
+            if section.id != current {
+                if current != nil { x += Self.groupSpacing - Self.spacing }
+                layout.groups.append(PlacedGroup(id: section.id, title: section.title, x: x, width: 0))
+                current = section.id
             }
             layout.cards.append(PlacedCard(item: item, x: x))
             x += Self.cardSize.width + Self.spacing
@@ -879,6 +1013,72 @@ struct ColorCard: View {
 // MARK: - Row events
 
 /// What a dragged card writes to the drag pasteboard, and the image under the pointer.
+/// A task as a card, for search results: status, title, notes, project.
+private struct TaskCard: View {
+    let task: TaskItem
+    let store: TaskStore
+    var onOpen: () -> Void = {}
+    @State private var hovering = false
+
+    var body: some View {
+        CardChrome(hovering: $hovering, onTap: onOpen) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: task.status.symbol)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(task.status.color)
+                    Text(task.title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .strikethrough(task.status == .complete, color: .white.opacity(0.5))
+                        .foregroundStyle(task.status == .complete ? .white.opacity(0.5) : .white)
+                        .lineLimit(2)
+                }
+                if !task.notes.isEmpty {
+                    Text(task.notes)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .lineLimit(4)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(12)
+            .overlay(alignment: .bottom) {
+                CardCaption(title: store.project(task.projectID)?.name ?? "", date: task.createdAt) {
+                    Badge(text: task.status.title)
+                }
+            }
+        } actionRow: {
+            CardAction(symbol: task.status.next.symbol, help: "Mark \(task.status.next.title.lowercased())", tint: task.status.next == .pending ? .white : task.status.next.color) {
+                store.setStatus(task.status.next, for: task)
+            }
+            CardAction(symbol: "arrow.up.forward", help: "Open", perform: onOpen)
+            CardAction(symbol: "trash", help: "Delete", tint: .red) { store.delete(task) }
+        } menu: {
+            Button("Open", action: onOpen)
+            Menu("Status") {
+                ForEach(TaskStatus.allCases, id: \.self) { status in
+                    Button { store.setStatus(status, for: task) } label: { Label(status.title, systemImage: status.symbol) }
+                }
+            }
+            Divider()
+            Button("Delete", role: .destructive) { store.delete(task) }
+        }
+    }
+}
+
+/// The island is a non-activating panel that opens on hover, so it is not the key
+/// window when the search field is clicked; typing needs it to be.
+private struct KeyOnFocus: NSViewRepresentable {
+    let focused: Bool
+
+    func makeNSView(context: Context) -> NSView { NSView() }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        guard focused, let window = view.window, !window.isKeyWindow else { return }
+        DispatchQueue.main.async { window.makeKey() }
+    }
+}
+
 struct DragPayload {
     let writer: any NSPasteboardWriting
     let preview: NSImage
