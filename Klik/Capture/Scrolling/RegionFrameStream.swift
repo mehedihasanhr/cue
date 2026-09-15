@@ -2,15 +2,21 @@ import os
 import ScreenCaptureKit
 
 /// A continuous ScreenCaptureKit stream of one screen region. Frames are delivered
-/// on a private queue as `Bitmap`s; a frame that arrives while the previous one is
-/// still being processed is dropped, so the stitcher never falls behind the screen.
+/// on a private queue as `Bitmap`s. While the stitcher is busy with one frame only the
+/// newest arrival is kept, so it always sees the current screen rather than a backlog.
 nonisolated final class RegionFrameStream: NSObject, SCStreamOutput, SCStreamDelegate {
     private let stream: SCStream
     private let queue = DispatchQueue(label: "com.stackrover.klik.scrolling-frames", qos: .userInteractive)
     private let handler: @Sendable (Bitmap) async -> Void
-    private let busy = OSAllocatedUnfairLock(initialState: false)
+    private struct Inbox {
+        var running = false
+        var pending: Bitmap?
+    }
+    private let inbox = OSAllocatedUnfairLock(initialState: Inbox())
 
-    init(filter: SCContentFilter, configuration: SCStreamConfiguration, framesPerSecond: Int = 60,
+    /// 30 fps is plenty for hand scrolling (ScreenCaptureKit only sends a frame when
+    /// something changed) and halves the matcher's work per second.
+    init(filter: SCContentFilter, configuration: SCStreamConfiguration, framesPerSecond: Int = 30,
          handler: @escaping @Sendable (Bitmap) async -> Void) {
         let config = configuration.copy() as! SCStreamConfiguration
         config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(framesPerSecond))
@@ -40,19 +46,28 @@ nonisolated final class RegionFrameStream: NSObject, SCStreamOutput, SCStreamDel
               let pixelBuffer = sampleBuffer.imageBuffer
         else { return }
 
-        // Drop the frame if the stitcher is still chewing on the previous one.
-        let claimed = busy.withLock { isBusy -> Bool in
-            if isBusy { return false }
-            isBusy = true
+        guard let bitmap = Bitmap(pixelBuffer: pixelBuffer) else { return }
+        // Hand it over, or park it as the newest pending frame while a previous one is
+        // still being stitched (replacing any older pending frame).
+        let start = inbox.withLock { inbox -> Bool in
+            if inbox.running {
+                inbox.pending = bitmap
+                return false
+            }
+            inbox.running = true
             return true
         }
-        guard claimed, let bitmap = Bitmap(pixelBuffer: pixelBuffer) else {
-            if claimed { busy.withLock { $0 = false } }
-            return
-        }
-        Task { [handler, busy] in
-            await handler(bitmap)
-            busy.withLock { $0 = false }
+        guard start else { return }
+        Task { [handler, inbox] in
+            var next: Bitmap? = bitmap
+            while let frame = next {
+                await handler(frame)
+                next = inbox.withLock { inbox in
+                    defer { inbox.pending = nil }
+                    if inbox.pending == nil { inbox.running = false }
+                    return inbox.pending
+                }
+            }
         }
     }
 
@@ -73,8 +88,8 @@ actor StitchWorker {
     private let engine: ScrollingCaptureEngine
     private let previewWidth: Int
 
-    init(expectedOverlap: Int, previewWidth: Int) {
-        engine = ScrollingCaptureEngine(expectedOverlap: expectedOverlap)
+    init(previewWidth: Int) {
+        engine = ScrollingCaptureEngine()
         self.previewWidth = previewWidth
     }
 

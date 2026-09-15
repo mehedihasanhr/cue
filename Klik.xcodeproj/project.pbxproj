@@ -27,6 +27,8 @@
 		4B4C494B000000000000B003 /* Exceptions for "Klik" folder in "KlikTests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				Capture/Scrolling/FrameStitcher.swift,
+				Capture/Scrolling/ScrollingCaptureEngine.swift,
 				OCR/OCRService.swift,
 				OCR/TextLayout.swift,
 				Support/CapturedImage.swift,

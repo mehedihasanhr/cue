@@ -30,10 +30,7 @@ final class ScrollingCaptureSession {
         let region = selection.rect
         let screen = selection.screen
 
-        // A typical wheel/trackpad scroll moves well under a viewport; this only biases
-        // tie-breaking in the matcher.
-        let expectedOverlap = Int(region.height * 0.6 * screen.backingScaleFactor)
-        let worker = StitchWorker(expectedOverlap: expectedOverlap, previewWidth: 640)
+        let worker = StitchWorker(previewWidth: 640)
 
         let status = ScrollingStatus()
         status.autoScroll = false
