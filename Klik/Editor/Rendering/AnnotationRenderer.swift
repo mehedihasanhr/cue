@@ -130,6 +130,20 @@ struct AnnotationRenderer {
     // MARK: - Annotations
 
     private func draw(_ annotation: Annotation, document: EditorDocument, context: CGContext) {
+        if annotation.rotation != 0, annotation.canRotate {
+            let center = annotation.center
+            context.saveGState()
+            defer { context.restoreGState() }
+            context.translateBy(x: center.x, y: center.y)
+            context.rotate(by: annotation.rotation)
+            context.translateBy(x: -center.x, y: -center.y)
+            drawUnrotated(annotation, document: document, context: context)
+            return
+        }
+        drawUnrotated(annotation, document: document, context: context)
+    }
+
+    private func drawUnrotated(_ annotation: Annotation, document: EditorDocument, context: CGContext) {
         switch annotation.kind {
         case .rectangle(let rect, let style):
             let path = CGPath(rect: rect, transform: nil)

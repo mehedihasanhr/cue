@@ -110,10 +110,58 @@ enum AnnotationKind: Hashable, Codable {
 struct Annotation: Identifiable, Hashable, Codable {
     let id: UUID
     var kind: AnnotationKind
+    /// Radians, clockwise on screen, about the centre of `bounds`. Only `canRotate` kinds use it.
+    var rotation: CGFloat = 0
 
-    init(id: UUID = UUID(), kind: AnnotationKind) {
+    init(id: UUID = UUID(), kind: AnnotationKind, rotation: CGFloat = 0) {
         self.id = id
         self.kind = kind
+        self.rotation = rotation
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, kind, rotation }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        kind = try container.decode(AnnotationKind.self, forKey: .kind)
+        rotation = try container.decodeIfPresent(CGFloat.self, forKey: .rotation) ?? 0
+    }
+}
+
+// MARK: - Rotation
+
+extension Annotation {
+    /// Boxes and text turn about their centre; strokes, arrows and counters don't rotate.
+    var canRotate: Bool {
+        switch kind {
+        case .rectangle, .ellipse, .highlight, .text: true
+        default: false
+        }
+    }
+
+    var center: CGPoint { CGPoint(x: bounds.midX, y: bounds.midY) }
+
+    /// `point` (image space) expressed in the annotation's own, unrotated frame.
+    func localPoint(_ point: CGPoint) -> CGPoint {
+        rotation == 0 ? point : Self.rotate(point, by: -rotation, around: center)
+    }
+
+    /// A point of the unrotated frame placed where it appears on screen.
+    func worldPoint(_ point: CGPoint) -> CGPoint {
+        rotation == 0 ? point : Self.rotate(point, by: rotation, around: center)
+    }
+
+    func withRotation(_ angle: CGFloat) -> Annotation {
+        var copy = self
+        copy.rotation = canRotate ? angle : 0
+        return copy
+    }
+
+    static func rotate(_ point: CGPoint, by angle: CGFloat, around center: CGPoint) -> CGPoint {
+        let dx = point.x - center.x, dy = point.y - center.y
+        let c = cos(angle), s = sin(angle)
+        return CGPoint(x: center.x + dx * c - dy * s, y: center.y + dx * s + dy * c)
     }
 }
 

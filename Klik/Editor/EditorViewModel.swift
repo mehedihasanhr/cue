@@ -109,6 +109,20 @@ enum ResizeHandle: CaseIterable {
         default: .crosshair
         }
     }
+
+    /// The handle across the rect, which stays put while this one is dragged.
+    var opposite: ResizeHandle {
+        switch self {
+        case .topLeft: .bottomRight
+        case .top: .bottom
+        case .topRight: .bottomLeft
+        case .right: .left
+        case .bottomRight: .topLeft
+        case .bottom: .top
+        case .bottomLeft: .topRight
+        case .left: .right
+        }
+    }
 }
 
 enum ZoomCommand {
@@ -378,6 +392,7 @@ final class EditorViewModel {
         case resizing(id: UUID, handle: ResizeHandle, origin: Annotation)
         case endpoint(id: UUID, which: Int, origin: Annotation)
         case bend(id: UUID, origin: Annotation)
+        case rotating(id: UUID, origin: Annotation, startAngle: CGFloat)
         case cropCreating(anchor: CGPoint)
         case cropMoving(origin: CGRect, start: CGPoint)
         case cropResizing(handle: ResizeHandle, origin: CGRect)
@@ -385,6 +400,16 @@ final class EditorViewModel {
 
     private var drag: Drag = .none
     private var pencilPoints: [CGPoint] = []
+
+    /// The cursor to hold while the current drag lasts, if it has one.
+    var dragCursor: NSCursor? {
+        switch drag {
+        case .moving, .cropMoving: .closedHand
+        case .resizing(_, let handle, _), .cropResizing(let handle, _): handle.cursor
+        case .rotating: .rotate
+        default: nil
+        }
+    }
 
     /// `tolerance` is in image points (screen pixels ÷ zoom).
     func mouseDown(at point: CGPoint, clickCount: Int, shift: Bool, tolerance: CGFloat) {
@@ -407,9 +432,16 @@ final class EditorViewModel {
                     if let middle = bendHandle(of: selected), point.distance(to: middle) <= tolerance * 2 {
                         drag = .bend(id: selected.id, origin: selected); return
                     }
-                } else if selected.isResizable, let handle = handle(at: point, in: selected.bounds, tolerance: tolerance) {
-                    drag = .resizing(id: selected.id, handle: handle, origin: selected)
-                    return
+                } else {
+                    if selected.canRotate, let knob = rotationHandle(of: selected, tolerance: tolerance), point.distance(to: knob) <= tolerance * 2 {
+                        let center = selected.center
+                        drag = .rotating(id: selected.id, origin: selected, startAngle: atan2(point.y - center.y, point.x - center.x))
+                        return
+                    }
+                    if selected.isResizable, let handle = handle(at: selected.localPoint(point), in: selected.bounds, tolerance: tolerance) {
+                        drag = .resizing(id: selected.id, handle: handle, origin: selected)
+                        return
+                    }
                 }
             }
             if let hit = hitTest(point, tolerance: tolerance) {
@@ -482,7 +514,21 @@ final class EditorViewModel {
         case .moving(_, let origin, let start):
             document.update(origin.moved(by: point - start))
         case .resizing(_, let handle, let origin):
-            document.update(origin.withRect(handle.resize(origin.bounds, to: point)))
+            // Resize in the shape's own frame, then keep the opposite handle where it was on
+            // screen so a rotated box grows from the dragged edge instead of swinging.
+            let resized = handle.resize(origin.bounds, to: origin.localPoint(point))
+            let anchor = origin.worldPoint(handle.opposite.point(in: origin.bounds))
+            let updated = origin.withRect(resized)
+            let anchorNow = updated.worldPoint(handle.opposite.point(in: resized))
+            document.update(updated.withRect(resized.offsetBy(dx: anchor.x - anchorNow.x, dy: anchor.y - anchorNow.y)))
+        case .rotating(_, let origin, let startAngle):
+            let center = origin.center
+            var angle = origin.rotation + atan2(point.y - center.y, point.x - center.x) - startAngle
+            if shift { angle = (angle / (.pi / 12)).rounded() * (.pi / 12) } // 15° steps
+            let turn = 2 * CGFloat.pi
+            angle = angle.truncatingRemainder(dividingBy: turn)
+            if abs(angle) < 0.01 { angle = 0 }
+            document.update(origin.withRotation(angle))
         case .endpoint(_, let which, let origin):
             let (a, b) = endpoints(of: origin)
             var end = point
@@ -523,7 +569,7 @@ final class EditorViewModel {
             annotation = Annotation(kind: annotation.kind)
             commit { $0.annotations.append(annotation) }
             select(annotation.id)
-        case .moving(_, let origin, _), .resizing(_, _, let origin), .endpoint(_, _, let origin), .bend(_, let origin):
+        case .moving(_, let origin, _), .resizing(_, _, let origin), .endpoint(_, _, let origin), .bend(_, let origin), .rotating(_, let origin, _):
             // The live drag mutated the document directly; register one undo step for it.
             guard let now = document.annotation(id: origin.id), now != origin else { return }
             var before = document
@@ -603,8 +649,17 @@ final class EditorViewModel {
         ResizeHandle.allCases.first { $0.point(in: rect).distance(to: point) <= tolerance * 1.6 }
     }
 
+    /// The rotation knob: a little above the top edge, turning with the shape.
+    /// `tolerance` (image points per few screen pixels) keeps its distance zoom-independent.
+    func rotationHandle(of annotation: Annotation, tolerance: CGFloat) -> CGPoint? {
+        guard annotation.canRotate else { return nil }
+        let bounds = annotation.bounds
+        return annotation.worldPoint(CGPoint(x: bounds.midX, y: bounds.minY - tolerance * 4))
+    }
+
     func hitTest(_ point: CGPoint, tolerance: CGFloat) -> Annotation? {
         for annotation in document.annotations.reversed() {
+            let point = annotation.localPoint(point) // rotated shapes are tested in their own frame
             switch annotation.kind {
             case .line(let a, let b, let style):
                 if Self.distance(from: point, toSegment: a, b) <= max(style.width / 2, 2) + tolerance { return annotation }

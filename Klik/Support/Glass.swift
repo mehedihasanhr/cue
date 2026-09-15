@@ -134,3 +134,28 @@ extension View {
         buttonStyle(PillButtonStyle(prominent: prominent))
     }
 }
+
+extension NSCursor {
+    /// A turn-arrow cursor for the rotation knob (AppKit has no public one).
+    static let rotate: NSCursor = {
+        let size = CGSize(width: 22, height: 22)
+        let configuration = NSImage.SymbolConfiguration(pointSize: 15, weight: .bold)
+        let symbol = NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: "Rotate")?
+            .withSymbolConfiguration(configuration)
+        let image = NSImage(size: size, flipped: false) { rect in
+            guard let symbol else { return false }
+            let frame = CGRect(x: (rect.width - symbol.size.width) / 2, y: (rect.height - symbol.size.height) / 2,
+                               width: symbol.size.width, height: symbol.size.height)
+            // White halo so it reads on any background, black glyph on top.
+            for dx in [-1.0, 0, 1] { for dy in [-1.0, 0, 1] where dx != 0 || dy != 0 {
+                symbol.draw(in: frame.offsetBy(dx: dx, dy: dy), from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true,
+                            hints: [.ctm: AffineTransform.identity])
+            } }
+            NSColor.white.set()
+            frame.offsetBy(dx: 0, dy: 0).fill(using: .sourceAtop)
+            symbol.draw(in: frame, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+            return true
+        }
+        return NSCursor(image: image, hotSpot: CGPoint(x: 11, y: 11))
+    }()
+}

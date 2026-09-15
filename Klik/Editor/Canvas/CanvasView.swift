@@ -77,7 +77,11 @@ final class CanvasView: NSView, NSTextViewDelegate, NSUserInterfaceValidations {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
-        let document = model.document
+        var document = model.document
+        // The text field editor is axis-aligned, so the text under it is shown that way too.
+        if let id = model.editingTextID, let index = document.annotations.firstIndex(where: { $0.id == id }) {
+            document.annotations[index].rotation = 0
+        }
         drawBackdrop(document, context: context)
         renderer.drawContent(document, context: context)
         renderer.drawAnnotations(document, draft: model.draft, context: context)
@@ -184,6 +188,13 @@ final class CanvasView: NSView, NSTextViewDelegate, NSUserInterfaceValidations {
                 drawHandle(at: middle, context: context, lineScale: lineScale, radius: 4, fill: .systemPink, stroke: .white)
             }
         } else {
+            // The frame, handles and rotation knob turn with the shape.
+            if annotation.rotation != 0 {
+                let center = annotation.center
+                context.translateBy(x: center.x, y: center.y)
+                context.rotate(by: annotation.rotation)
+                context.translateBy(x: -center.x, y: -center.y)
+            }
             let bounds = annotation.bounds.insetBy(dx: -2 * lineScale, dy: -2 * lineScale)
             context.setLineDash(phase: 0, lengths: [4 * lineScale, 3 * lineScale])
             context.stroke(bounds)
@@ -192,6 +203,14 @@ final class CanvasView: NSView, NSTextViewDelegate, NSUserInterfaceValidations {
                 for handle in ResizeHandle.allCases {
                     drawHandle(at: handle.point(in: annotation.bounds), context: context, lineScale: lineScale)
                 }
+            }
+            if annotation.canRotate, model.editingTextID == nil {
+                let knob = CGPoint(x: annotation.bounds.midX, y: annotation.bounds.minY - tolerance * 4)
+                context.setLineWidth(lineScale)
+                context.move(to: CGPoint(x: bounds.midX, y: bounds.minY))
+                context.addLine(to: CGPoint(x: knob.x, y: knob.y + 4.5 * lineScale))
+                context.strokePath()
+                drawHandle(at: knob, context: context, lineScale: lineScale, radius: 4.5, fill: .controlAccentColor, stroke: .white)
             }
         }
         context.restoreGState()
@@ -309,10 +328,14 @@ final class CanvasView: NSView, NSTextViewDelegate, NSUserInterfaceValidations {
 
     private func cursor(for point: CGPoint) -> NSCursor {
         guard model.mode == .edit else { return .arrow }
+        if isDragging, let held = model.dragCursor { return held }
         switch model.tool {
         case .select, .background:
             if let selected = model.selected {
-                if selected.isResizable, let handle = model.handle(at: point, in: selected.bounds, tolerance: tolerance) {
+                if let knob = model.rotationHandle(of: selected, tolerance: tolerance), point.distance(to: knob) <= tolerance * 2 {
+                    return .rotate
+                }
+                if selected.isResizable, let handle = model.handle(at: selected.localPoint(point), in: selected.bounds, tolerance: tolerance) {
                     return handle.cursor
                 }
                 if selected.hasEndpoints {
@@ -329,6 +352,10 @@ final class CanvasView: NSView, NSTextViewDelegate, NSUserInterfaceValidations {
         case .pencil, .highlighter:
             return .crosshair
         default:
+            if let selected = model.selected {
+                if let knob = model.rotationHandle(of: selected, tolerance: tolerance), point.distance(to: knob) <= tolerance * 2 { return .rotate }
+                if selected.isResizable, let handle = model.handle(at: selected.localPoint(point), in: selected.bounds, tolerance: tolerance) { return handle.cursor }
+            }
             if model.hitTest(point, tolerance: tolerance) != nil { return .openHand }
             return model.tool == .text ? .iBeam : .crosshair
         }
