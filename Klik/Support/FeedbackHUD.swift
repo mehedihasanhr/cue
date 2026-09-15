@@ -7,8 +7,14 @@ import SwiftUI
 enum FeedbackHUD {
     private static var panel: NSPanel?
     private static var dismissTask: Task<Void, Never>?
+    /// The Dynamic Island, when it is on screen: it shows the message itself (over
+    /// its panel when open, as a flash on the notch otherwise) and returns true; the
+    /// toast below is the fallback.
+    static var island: ((IslandStatus) -> Bool)?
 
-    static func show(_ message: String, symbol: String, duration: Duration = .seconds(1.6)) {
+    static func show(_ message: String, symbol: String, duration: Duration = .seconds(1.6),
+                     subtitle: String? = nil, image: NSImage? = nil, swatch: PickedColor? = nil) {
+        if island?(IslandStatus(symbol: symbol, title: message, subtitle: subtitle, image: image, swatch: swatch)) == true { return }
         dismissTask?.cancel()
         panel?.close()
 

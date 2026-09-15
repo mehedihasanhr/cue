@@ -82,6 +82,9 @@ final class IslandController {
             }
             setPhase(.expanded, animated: true)
             resignKeyIfNeeded()
+            if let answer, case .task = prompt.kind {
+                showStatus(IslandStatus(symbol: "checkmark.circle.fill", title: prompt.editing == nil ? "Task saved" : "Task updated", subtitle: answer.title))
+            }
         }
 
         let center = NotificationCenter.default
@@ -314,10 +317,26 @@ final class IslandController {
         outsideClickMonitors.removeAll()
     }
 
-    /// Show the color that was just picked for a moment.
-    func flashColor(_ entry: ColorEntry) {
-        UserDefaults.standard.set(IslandTab.colors.rawValue, forKey: IslandTab.storageKey)
-        flash(phase: .flashColor(entry))
+    private var toastTask: Task<Void, Never>?
+
+    /// Shows a confirmation: over the panel while the island is open, as a flash on
+    /// the closed island otherwise. False when the island is not on screen.
+    @discardableResult
+    func showStatus(_ status: IslandStatus) -> Bool {
+        guard model.geometry != nil, !hidden else { return false }
+        switch model.phase {
+        case .expanded, .prompt, .taskDetail:
+            toastTask?.cancel()
+            model.toast = status
+            toastTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(1.4))
+                guard !Task.isCancelled, let self, model.toast?.id == status.id else { return }
+                model.toast = nil
+            }
+        case .collapsed, .flash, .status:
+            flash(phase: .status(status))
+        }
+        return true
     }
 
     private func flash(phase: IslandModel.Phase) {

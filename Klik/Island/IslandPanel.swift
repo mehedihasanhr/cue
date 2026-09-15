@@ -784,7 +784,7 @@ struct ClipboardCard: View {
                             let pasteboard = NSPasteboard.general
                             pasteboard.clearContents()
                             pasteboard.setString(format.string(for: color), forType: .string)
-                            FeedbackHUD.show("\(format.string(for: color)) copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
+                            FeedbackHUD.show("\(format.string(for: color)) copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), swatch: color)
                         }
                     }
                 }
@@ -798,7 +798,8 @@ struct ClipboardCard: View {
 
     private func copy() {
         clipboard.copy(item)
-        FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
+        FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: item.contentTitle,
+                         image: item.kind == .image ? clipboard.thumbnail(for: item) : nil, swatch: item.kind == .color ? PickedColor(hex: item.text) : nil)
     }
 
     /// Pastes straight into the front app when Accessibility allows it, otherwise
@@ -900,7 +901,10 @@ struct AssetCard: View {
         } actionRow: {
             CardAction(symbol: "eye", help: "Preview", perform: onPreview)
             CardAction(symbol: "arrow.up.forward.app", help: "Open") { assets.open(item) }
-            CopyAction { assets.copy(item) }
+            CopyAction {
+                assets.copy(item)
+                FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: item.fileName, image: assets.thumbnail(for: item))
+            }
             CardAction(symbol: "trash", help: "Delete", tint: .red) { assets.delete(item) }
         } menu: {
             if let clipboard, clipboard.canPaste { Button("Paste", action: paste) }
@@ -996,7 +1000,7 @@ struct ColorCard: View {
     private func copy(as format: ColorFormat) {
         colors.copy(entry, as: format)
         preferences.colorFormat = format // the next copy uses the format used last
-        FeedbackHUD.show("\(format.string(for: entry.color)) copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
+        FeedbackHUD.show("\(format.string(for: entry.color)) copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: entry.name, swatch: entry.color)
     }
 
     /// A swatch for dragging the color's text.

@@ -132,7 +132,7 @@ struct IslandDetailBody: View {
                 } buttons: {
                     detailButton("Copy", symbol: "doc.on.doc") {
                         assets.copy(item)
-                        FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
+                        FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: item.fileName, image: assets.thumbnail(for: item))
                     }
                     detailButton("Open", symbol: "arrow.up.forward.app") { assets.open(item) }
                     detailButton("Reveal", symbol: "folder") { assets.reveal(item) }
@@ -304,7 +304,7 @@ struct IslandDetailBody: View {
             } buttons: {
                 detailButton("Copy", symbol: "doc.on.doc") {
                     clipboard.copy(item)
-                    FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
+                    FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: item.contentTitle, image: clipboard.thumbnail(for: item))
                 }
                 detailButton(item.pinned ? "Unpin" : "Pin", symbol: item.pinned ? "star.fill" : "star") { clipboard.togglePin(item) }
             }
@@ -331,7 +331,7 @@ struct IslandDetailBody: View {
                 VStack(alignment: .leading, spacing: 8) {
                     detailButton("Copy", symbol: "doc.on.doc") {
                         clipboard.copy(item)
-                        FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
+                        FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: item.contentTitle)
                     }
                     if item.kind == .link, let url = URL(string: item.text) {
                         detailButton("Open", symbol: "safari") { NSWorkspace.shared.open(url) }

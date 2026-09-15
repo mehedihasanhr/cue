@@ -8,7 +8,8 @@ final class IslandModel {
     enum Phase: Equatable {
         case collapsed
         case flash(CaptureItem)
-        case flashColor(ColorEntry)
+        /// A moment's confirmation on the closed island ("Copied", "Task saved").
+        case status(IslandStatus)
         /// A compact box asking for one line of text (a new project's name).
         case prompt(IslandPrompt)
         /// A task opened in the compact island: title, status, description.
@@ -18,7 +19,7 @@ final class IslandModel {
         var geometryPhase: IslandGeometry.Phase {
             switch self {
             case .collapsed: .collapsed
-            case .flash, .flashColor: .flash
+            case .flash, .status: .flash
             case .prompt(let prompt): prompt.isForm ? .form : .flash
             case .taskDetail: .form
             case .expanded: .expanded
@@ -27,7 +28,7 @@ final class IslandModel {
 
         var isFlash: Bool {
             switch self {
-            case .flash, .flashColor: true
+            case .flash, .status: true
             case .collapsed, .expanded, .prompt, .taskDetail: false
             }
         }
@@ -35,6 +36,8 @@ final class IslandModel {
 
     var phase: Phase = .collapsed
     var geometry: IslandGeometry?
+    /// A confirmation shown over the open panel for a moment.
+    var toast: IslandStatus?
     /// A drag with files or an image is over the island.
     var dropping = false
     /// Asks the compact box for a line of text; called by the panel.
@@ -144,10 +147,10 @@ struct IslandView: View {
                     .frame(height: IslandGeometry.flashContentHeight)
             }
             .transition(Self.contentTransition)
-        case .flashColor(let entry):
+        case .status(let status):
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
-                ColorFlashRow(entry: entry)
+                StatusRow(status: status)
                     .frame(height: IslandGeometry.flashContentHeight)
             }
             .transition(Self.contentTransition)
@@ -180,6 +183,18 @@ struct IslandView: View {
                     .padding(.horizontal, IslandGeometry.panelHorizontalPadding)
                     .padding(.bottom, IslandGeometry.panelBottomPadding)
             }
+            .overlay(alignment: .top) {
+                if let toast = model.toast {
+                    StatusRow(status: toast, compact: true)
+                        .padding(.horizontal, 14)
+                        .frame(height: 48)
+                        .klikGlass(cornerRadius: 16)
+                        .padding(.top, strip + 12)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .id(toast.id)
+                }
+            }
+            .animation(.spring(response: 0.3, dampingFraction: 0.85), value: model.toast)
             .transition(Self.contentTransition)
         }
     }
@@ -225,31 +240,60 @@ private struct FlashRow: View {
     }
 }
 
-/// "Just picked": the swatch and its hex.
-private struct ColorFlashRow: View {
-    let entry: ColorEntry
+/// A moment's confirmation: "Copied", "Task saved", "Saved to Assets" — with what it
+/// was about (a thumbnail, a swatch, a line of text) when there is one.
+struct IslandStatus: Equatable, Identifiable {
+    let id = UUID()
+    let symbol: String
+    let title: String
+    var subtitle: String? = nil
+    var image: NSImage? = nil
+    var swatch: PickedColor? = nil
+
+    /// Green for done, orange for "nothing to do", white otherwise.
+    var tint: Color {
+        if symbol.contains("checkmark") || symbol.contains("arrow.down.fill") { return .green }
+        if symbol == "tray" || symbol.hasPrefix("exclamationmark") { return .orange }
+        return .white
+    }
+}
+
+/// The status as a row: symbol, title, subtitle, and its image or swatch.
+private struct StatusRow: View {
+    let status: IslandStatus
+    var compact = false
 
     var body: some View {
-        HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(entry.color.swiftUIColor)
-                .frame(width: 44, height: 44)
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.white.opacity(0.2)))
+        HStack(spacing: compact ? 10 : 12) {
+            if let swatch = status.swatch {
+                RoundedRectangle(cornerRadius: compact ? 6 : 8, style: .continuous)
+                    .fill(swatch.swiftUIColor)
+                    .frame(width: compact ? 28 : 44, height: compact ? 28 : 44)
+                    .overlay(RoundedRectangle(cornerRadius: compact ? 6 : 8, style: .continuous).strokeBorder(.white.opacity(0.2)))
+            } else if let image = status.image {
+                Image(nsImage: image).resizable().scaledToFill()
+                    .frame(width: compact ? 42 : 66, height: compact ? 28 : 44)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(.white.opacity(0.15)))
+            }
             VStack(alignment: .leading, spacing: 2) {
-                Text(ColorFormat.hex.string(for: entry.color))
-                    .font(.system(size: 14, weight: .semibold, design: .monospaced))
-                Text(ColorFormat.oklch.string(for: entry.color))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                Text(status.title)
+                    .font(.system(size: compact ? 12 : 13, weight: .semibold))
+                if let subtitle = status.subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
             }
             .lineLimit(1)
-            Spacer(minLength: 0)
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(.green)
+            if !compact { Spacer(minLength: 0) }
+            Image(systemName: status.symbol)
+                .font(.system(size: compact ? 16 : 20, weight: .semibold))
+                .foregroundStyle(status.tint)
         }
         .foregroundStyle(.white)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, compact ? 4 : 16)
+        .fixedSize(horizontal: compact, vertical: false)
     }
 }
 

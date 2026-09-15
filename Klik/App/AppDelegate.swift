@@ -177,6 +177,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 } else {
                     island = IslandController(library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasks, actions: historyActions, preferences: preferences)
                     library.warmThumbnails()
+                    FeedbackHUD.island = { [weak self] status in self?.island?.showStatus(status) ?? false }
                 }
             } else if let island {
                 island.tearDown()
@@ -302,7 +303,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             edit: { [weak self] item in self?.closeHistoryThen { $0.openEditor(for: item, mode: .edit) } },
             copy: { [weak self] item in
                 self?.library.copyToClipboard(item)
-                FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
+                FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: item.dimensions, image: self?.library.thumbnail(for: item))
             },
             delete: { [weak self] item in self?.deleteCapture(item) }
         )
@@ -359,8 +360,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let entry = colors.add(color)
         let format = preferences.colorFormat
         colors.copy(entry, as: format)
-        FeedbackHUD.show("\(format.string(for: entry.color)) copied", symbol: "eyedropper.halffull", duration: .seconds(1.6))
-        island?.flashColor(entry)
+        UserDefaults.standard.set(IslandTab.colors.rawValue, forKey: IslandTab.storageKey) // the island opens on the new color
+        FeedbackHUD.show("\(format.string(for: entry.color)) copied", symbol: "checkmark.circle.fill", duration: .seconds(1.6),
+                         subtitle: ColorFormat.oklch.string(for: entry.color), swatch: entry.color)
     }
 
     /// A floating "new task" form at the pointer (⌥/ by default).
