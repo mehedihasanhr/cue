@@ -27,11 +27,10 @@ final class ColorPickerSession {
         guard !windows.isEmpty else { throw .noDisplay }
         let mouse = NSEvent.mouseLocation
         let initial = windows.first { NSMouseInRect(mouse, $0.frame, false) } ?? windows[0]
-        NSApp.activate()
         for window in windows {
             window.orderFrontRegardless()
         }
-        initial.makeKeyAndOrderFront(nil)
+        NSApp.activateForOverlay(keyWindow: initial)
         initial.makeFirstResponder(initial.contentView)
         NSCursor.hide()
         Log.app.info("Color picker shown on \(self.windows.count) screen(s)")
@@ -152,6 +151,9 @@ final class PixelPickerView: NSView {
     override func mouseDragged(with event: NSEvent) {
         mouseMoved(with: event)
     }
+
+    /// The first click picks even if the window was not key yet.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {
         if let color = pixels.color(x: Int(target.x), y: Int(target.y)) { onPick?(color) }

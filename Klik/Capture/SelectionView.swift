@@ -87,6 +87,8 @@ final class SelectionView: NSView {
     }
 
     override var acceptsFirstResponder: Bool { true }
+    /// The first click starts a selection even if the window was not key yet.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()

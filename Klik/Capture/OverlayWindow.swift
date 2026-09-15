@@ -20,6 +20,21 @@ final class OverlayWindow: NSWindow {
     override var canBecomeMain: Bool { false }
 }
 
+extension NSApplication {
+    /// Brings Klik front with `window` key for an overlay. A plain `activate()` is
+    /// often refused right after a global hotkey or a click in the non-activating
+    /// island; the refusal costs the first click (it only activates) and sends ⎋ to
+    /// the user's app instead of the overlay.
+    func activateForOverlay(keyWindow window: NSWindow) {
+        activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        if !window.isKeyWindow {
+            NSRunningApplication.current.activate(options: [.activateAllWindows])
+            window.makeKeyAndOrderFront(nil)
+        }
+    }
+}
+
 /// Builds the per-screen overlay: the frozen screenshot underneath, the interactive
 /// `SelectionView` on top.
 final class OverlayWindowController: NSWindowController {

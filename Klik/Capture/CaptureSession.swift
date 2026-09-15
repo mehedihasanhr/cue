@@ -49,9 +49,12 @@ final class CaptureSession: SelectionViewDelegate {
 
         let mouse = NSEvent.mouseLocation
         let initial = controllers.first { NSMouseInRect(mouse, $0.screen.frame, false) } ?? controllers[0]
-        NSApp.activate()
         for controller in controllers {
             controller.present(makeKey: controller === initial)
+        }
+        if let window = initial.window {
+            NSApp.activateForOverlay(keyWindow: window)
+            window.makeFirstResponder(initial.selectionView)
         }
         activeView = initial.selectionView
         Log.capture.info("Selection overlay shown on \(self.controllers.count) screen(s)")
