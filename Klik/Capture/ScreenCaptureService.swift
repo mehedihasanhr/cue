@@ -23,7 +23,7 @@ enum CaptureError: Error, LocalizedError {
 /// `SCScreenshotManager` (macOS 14+) is used instead of an `SCStream` because a
 /// screenshot needs exactly one frame. Should SCK misbehave on a particular
 /// display configuration, `CGDisplayCreateImage` is the (deprecated) fallback —
-/// it loses HDR/colour-space fidelity but needs no stream plumbing.
+/// it loses HDR/color-space fidelity but needs no stream plumbing.
 final class ScreenCaptureService {
     func shareableContent() async throws(CaptureError) -> SCShareableContent {
         do {

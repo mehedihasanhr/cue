@@ -3,7 +3,7 @@ import AppKit
 import Observation
 import SwiftUI
 
-/// One colour picked from the screen.
+/// One color picked from the screen.
 nonisolated struct ColorEntry: Identifiable, Codable, Hashable {
     let id: UUID
     var color: PickedColor
@@ -18,7 +18,7 @@ nonisolated struct ColorEntry: Identifiable, Codable, Hashable {
     }
 }
 
-/// Colours picked with the eyedropper, newest first. Small, so a JSON file in the
+/// Colors picked with the eyedropper, newest first. Small, so a JSON file in the
 /// app container is all it needs.
 @Observable
 final class ColorStore {
@@ -39,7 +39,7 @@ final class ColorStore {
         }
     }
 
-    /// Records a picked colour, newest first.
+    /// Records a picked color, newest first.
     @discardableResult
     func add(_ color: PickedColor) -> ColorEntry {
         let entry = ColorEntry(color: color)
@@ -49,14 +49,14 @@ final class ColorStore {
         return entry
     }
 
-    /// Exact sRGB components, unclamped: a Display P3 colour outside sRGB keeps its
-    /// true value rather than being flattened to the nearest sRGB colour.
+    /// Exact sRGB components, unclamped: a Display P3 color outside sRGB keeps its
+    /// true value rather than being flattened to the nearest sRGB color.
     static func picked(from color: NSColor) -> PickedColor? {
         guard let srgb = color.usingColorSpace(.extendedSRGB) else { return nil }
         return PickedColor(red: srgb.redComponent, green: srgb.greenComponent, blue: srgb.blueComponent, alpha: srgb.alphaComponent)
     }
 
-    /// Copies the colour in the given format, marked so the clipboard history does
+    /// Copies the color in the given format, marked so the clipboard history does
     /// not list it twice.
     func copy(_ entry: ColorEntry, as format: ColorFormat) {
         let pasteboard = NSPasteboard.general
@@ -96,7 +96,7 @@ extension PickedColor {
         return Color(red: r, green: g, blue: b, opacity: alpha)
     }
 
-    /// Whether white text reads well on the colour.
+    /// Whether white text reads well on the color.
     var isDark: Bool {
         let (r, g, b) = linear
         return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.35

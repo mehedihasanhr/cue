@@ -348,7 +348,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         coordinator.captureText(fromMenu: sender is NSMenuItem)
     }
 
-    /// The pixel picker. The picked colour is listed under Colours in the island and
+    /// The pixel picker. The picked color is listed under Colors in the island and
     /// copied in the preferred format.
     @objc func pickColor(_ sender: Any?) {
         closeHistory()

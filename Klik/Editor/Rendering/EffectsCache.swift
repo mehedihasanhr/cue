@@ -22,11 +22,11 @@ final class EffectsCache {
         cache.removeAll()
     }
 
-    // MARK: - Edge colour
+    // MARK: - Edge color
 
     private var edgeColors: [ObjectIdentifier: CGColor] = [:]
 
-    /// Average colour of the image's outer border, so an inset frame blends with it.
+    /// Average color of the image's outer border, so an inset frame blends with it.
     func edgeColor(of image: CGImage) -> CGColor {
         let key = ObjectIdentifier(image)
         if let cached = edgeColors[key] { return cached }

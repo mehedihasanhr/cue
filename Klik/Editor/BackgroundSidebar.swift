@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Left sidebar for the Background tool: gradients, wallpapers, blurred wallpapers and
-/// plain colours as a scrollable gallery (CleanShot-style), with the geometry controls
+/// plain colors as a scrollable gallery (CleanShot-style), with the geometry controls
 /// pinned at the bottom.
 struct BackgroundSidebar: View {
     @Bindable var model: EditorViewModel
@@ -128,7 +128,7 @@ struct BackgroundSidebar: View {
                 ), supportsOpacity: false)
                 .labelsHidden()
                 .frame(width: 22, height: 22)
-                .help("Custom colour")
+                .help("Custom color")
             }
         }
     }

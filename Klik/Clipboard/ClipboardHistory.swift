@@ -3,7 +3,7 @@ import AppKit
 import Carbon.HIToolbox
 import Observation
 
-/// Everything copied on this Mac, newest first: text, links, colours, images and
+/// Everything copied on this Mac, newest first: text, links, colors, images and
 /// files. Watches the pasteboard by polling its change count (there is no
 /// notification), records which app copied it, and keeps the list bounded.
 ///

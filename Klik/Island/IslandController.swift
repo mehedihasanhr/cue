@@ -314,7 +314,7 @@ final class IslandController {
         outsideClickMonitors.removeAll()
     }
 
-    /// Show the colour that was just picked for a moment.
+    /// Show the color that was just picked for a moment.
     func flashColor(_ entry: ColorEntry) {
         UserDefaults.standard.set(IslandTab.colors.rawValue, forKey: IslandTab.storageKey)
         flash(phase: .flashColor(entry))

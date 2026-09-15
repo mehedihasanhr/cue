@@ -1,6 +1,6 @@
 import XCTest
 
-/// How copied text is sorted into text, links and colours.
+/// How copied text is sorted into text, links and colors.
 final class ClipboardItemTests: XCTestCase {
     func testLinksAreSingleURLs() {
         XCTAssertEqual(ClipboardItem.classify("https://example.com/path?q=1").0, .link)
@@ -11,18 +11,18 @@ final class ClipboardItemTests: XCTestCase {
         XCTAssertEqual(ClipboardItem.classify("file:///tmp").0, .text)
     }
 
-    func testColoursAreNormalisedToHex() {
+    func testColorsAreNormalisedToHex() {
         XCTAssertEqual(ClipboardItem.classify("#d6688b").1, "#D6688B")
         XCTAssertEqual(ClipboardItem.classify("D6688B").1, "#D6688B")
         XCTAssertEqual(ClipboardItem.classify("#fff").1, "#FFFFFF")
         XCTAssertEqual(ClipboardItem.classify("rgb(214, 104, 139)").1, "#D6688B")
         XCTAssertEqual(ClipboardItem.classify("#d6688b").0, .color)
-        XCTAssertEqual(ClipboardItem.classify("#12345").0, .text)   // five digits is not a colour
+        XCTAssertEqual(ClipboardItem.classify("#12345").0, .text)   // five digits is not a color
         XCTAssertEqual(ClipboardItem.classify("deadbeef").0, .text)
         XCTAssertEqual(ClipboardItem.classify("rgb(300, 0, 0)").0, .text)
     }
 
-    func testColourComponents() throws {
+    func testColorComponents() throws {
         let item = ClipboardItem(kind: .color, text: "#D6688B")
         let components = try XCTUnwrap(item.colorComponents)
         XCTAssertEqual(components.red, 214 / 255, accuracy: 0.001)

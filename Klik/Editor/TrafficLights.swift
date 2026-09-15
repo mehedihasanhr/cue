@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Custom close / minimise / zoom buttons that live inside Klik's own toolbar row, so
 /// they sit on the same centre line as the tools (the native ones are pinned to
-/// AppKit's title-bar height). Same colours, sizes and hover glyphs as the system's.
+/// AppKit's title-bar height). Same colors, sizes and hover glyphs as the system's.
 struct TrafficLights: View {
     let onClose: () -> Void
     let onMinimize: () -> Void

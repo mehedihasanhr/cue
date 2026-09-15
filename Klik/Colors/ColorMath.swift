@@ -1,6 +1,6 @@
 import Foundation
 
-/// A picked colour as exact sRGB components (not clamped: a Display P3 colour
+/// A picked color as exact sRGB components (not clamped: a Display P3 color
 /// outside sRGB keeps its true value) plus alpha. All conversions follow CSS Color 4
 /// so the strings match what browsers and design tools show.
 nonisolated struct PickedColor: Codable, Hashable {
@@ -166,7 +166,7 @@ nonisolated struct PickedColor: Codable, Hashable {
     }
 }
 
-/// The strings a colour can be copied as.
+/// The strings a color can be copied as.
 nonisolated enum ColorFormat: String, CaseIterable, Codable {
     case hex, hexAlpha, rgb, rgba, hsl, hsb, oklch, oklab, lch, lab, displayP3, cmyk, swiftUI, nsColor, uiColor
 

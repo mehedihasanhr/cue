@@ -259,7 +259,7 @@ struct IslandPrompt: Hashable {
     enum Kind: Hashable {
         case project(parent: UUID?)
         case task(project: UUID?)
-        /// Rename a card (capture, asset, clipboard entry or colour).
+        /// Rename a card (capture, asset, clipboard entry or color).
         case rename(IslandDetail)
     }
 
@@ -295,7 +295,7 @@ struct IslandPrompt: Hashable {
             case .capture: return "Rename capture"
             case .asset: return "Rename file"
             case .clipboard: return "Name this clipboard entry"
-            case .color: return "Name this colour"
+            case .color: return "Name this color"
             }
         }
     }

@@ -1,11 +1,11 @@
 import os
 import AppKit
 
-/// A pixel-exact colour picker: every display is frozen, covered by an overlay, and a
+/// A pixel-exact color picker: every display is frozen, covered by an overlay, and a
 /// square loupe *is* the pointer — centred on it, the cursor hidden — showing the
 /// surrounding pixels magnified as a grid. Click picks the centre pixel, arrow keys
-/// nudge it by one device pixel, scrolling zooms, ⎋ cancels. Colours are read from the capture in the display's
-/// own colour space and converted to extended sRGB, so a P3 colour keeps its value.
+/// nudge it by one device pixel, scrolling zooms, ⎋ cancels. Colors are read from the capture in the display's
+/// own color space and converted to extended sRGB, so a P3 color keeps its value.
 final class ColorPickerSession {
     private var windows: [OverlayWindow] = []
     private var continuation: CheckedContinuation<PickedColor?, Never>?
@@ -34,7 +34,7 @@ final class ColorPickerSession {
         initial.makeKeyAndOrderFront(nil)
         initial.makeFirstResponder(initial.contentView)
         NSCursor.hide()
-        Log.app.info("Colour picker shown on \(self.windows.count) screen(s)")
+        Log.app.info("Color picker shown on \(self.windows.count) screen(s)")
         return await withCheckedContinuation { continuation in
             self.continuation = continuation
         }
@@ -51,7 +51,7 @@ final class ColorPickerSession {
     }
 }
 
-/// The frozen display as 8-bit RGBA in its own colour space, for exact pixel reads.
+/// The frozen display as 8-bit RGBA in its own color space, for exact pixel reads.
 final class PixelSource {
     let width: Int
     let height: Int
@@ -79,7 +79,7 @@ final class PixelSource {
         data = bytes
     }
 
-    /// The colour at a device pixel (origin top-left), nil outside the image.
+    /// The color at a device pixel (origin top-left), nil outside the image.
     func color(x: Int, y: Int) -> PickedColor? {
         guard x >= 0, y >= 0, x < width, y < height else { return nil }
         let offset = (y * width + x) * 4
@@ -90,7 +90,7 @@ final class PixelSource {
         return PickedColor(red: converted.redComponent, green: converted.greenComponent, blue: converted.blueComponent)
     }
 
-    /// For drawing the loupe cells quickly (no colour management needed on screen).
+    /// For drawing the loupe cells quickly (no color management needed on screen).
     func displayColor(x: Int, y: Int) -> NSColor? {
         guard x >= 0, y >= 0, x < width, y < height else { return nil }
         let offset = (y * width + x) * 4
@@ -243,7 +243,7 @@ final class PixelPickerView: NSView {
         lines.stroke()
         NSGraphicsContext.restoreGraphicsState()
 
-        // Centre pixel: a white ring with a dark outline so it reads on any colour.
+        // Centre pixel: a white ring with a dark outline so it reads on any color.
         let centerRect = CGRect(x: loupe.minX + CGFloat(half) * cell, y: loupe.maxY - CGFloat(half + 1) * cell, width: cell, height: cell)
         NSColor.black.withAlphaComponent(0.8).setStroke()
         let outer = NSBezierPath(rect: centerRect.insetBy(dx: -1.5, dy: -1.5)); outer.lineWidth = 3; outer.stroke()

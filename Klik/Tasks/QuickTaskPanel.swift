@@ -4,7 +4,7 @@ import SwiftUI
 /// The task form as a floating window at the pointer (⌥/), for jotting a task
 /// down from anywhere without going to the island. Frosted dark glass with a grain
 /// so text stays legible over anything; the island's cards (captures, clipboard
-/// entries, assets, colours) can be dragged into its description or pasted there.
+/// entries, assets, colors) can be dragged into its description or pasted there.
 /// Closes on ⎋, on Create / Cancel, on a click outside, or when it loses key status.
 final class QuickTaskPanel: NSPanel {
     private static let size = CGSize(width: IslandGeometry.formWidth, height: IslandGeometry.formContentHeight + 8)

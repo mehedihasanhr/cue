@@ -128,7 +128,7 @@ struct FloatingPanelView: View {
                 circle("viewfinder", help: "Capture area", action: actions.captureArea)
                 circle("rectangle.expand.vertical", help: "Scrolling capture", action: actions.captureScrolling)
                 circle("text.viewfinder", help: "Capture text", action: actions.captureText)
-                circle("eyedropper", help: "Pick a colour", action: actions.pickColor)
+                circle("eyedropper", help: "Pick a color", action: actions.pickColor)
             }
             HStack(spacing: 8) {
                 ForEach(IslandTab.allCases, id: \.self) { value in
@@ -274,7 +274,7 @@ struct FloatingPanelView: View {
             }
         case .colors:
             let items = colors.items.filter { search.isEmpty || ColorFormat.hex.string(for: $0.color).localizedCaseInsensitiveContains(search) || ($0.name?.localizedCaseInsensitiveContains(search) ?? false) }
-            list(items, date: \.createdAt, empty: "No colours yet — use the eyedropper") { entry in
+            list(items, date: \.createdAt, empty: "No colors yet — use the eyedropper") { entry in
                 ColorCard(entry: entry, colors: colors, format: preferences.colorFormat, onRename: {
                     onPrompt(IslandPrompt(kind: .rename(.color(entry)), initial: entry.name ?? "", swatch: entry.color))
                 })

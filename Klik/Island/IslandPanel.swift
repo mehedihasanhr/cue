@@ -11,7 +11,7 @@ enum IslandTab: String, CaseIterable {
         case .captures: "Captures"
         case .clipboard: "Clipboard"
         case .assets: "Assets"
-        case .colors: "Colours"
+        case .colors: "Colors"
         case .tasks: "Tasks"
         }
     }
@@ -93,7 +93,7 @@ struct IslandPanel: View {
                 circle("viewfinder", help: "Capture area", action: actions.captureArea)
                 circle("rectangle.expand.vertical", help: "Scrolling capture", action: actions.captureScrolling)
                 circle("text.viewfinder", help: "Capture text", action: actions.captureText)
-                circle("eyedropper", help: "Pick a colour", action: actions.pickColor)
+                circle("eyedropper", help: "Pick a color", action: actions.pickColor)
             }
 
             if let detail {
@@ -109,7 +109,7 @@ struct IslandPanel: View {
                 tabPill(.tasks, count: tasksStore.tasks.filter { $0.status != .complete }.count)
                 Spacer(minLength: 0)
                 if tab == .colors {
-                    smallButton("Pick", symbol: "eyedropper", help: "Pick a colour from the screen", action: actions.pickColor)
+                    smallButton("Pick", symbol: "eyedropper", help: "Pick a color from the screen", action: actions.pickColor)
                 }
                 if tab == .clipboard {
                     if clipboard.items.contains(where: \.pinned) {
@@ -166,7 +166,7 @@ struct IslandPanel: View {
                     IslandTasksView(store: tasksStore, onPrompt: onPrompt, onShowTask: onShowTask)
                 case .colors:
                     if filteredColors.isEmpty {
-                        empty(search.isEmpty ? "Pick a colour anywhere on screen with the eyedropper" : "No matches", symbol: "eyedropper")
+                        empty(search.isEmpty ? "Pick a color anywhere on screen with the eyedropper" : "No matches", symbol: "eyedropper")
                     } else {
                         DayStrip(items: filteredColors, date: \.createdAt, dragPayload: { entry in
                             DragPayload(writer: preferences.colorFormat.string(for: entry.color) as NSString, preview: ColorCard.dragImage(for: entry.color))
@@ -457,7 +457,7 @@ private struct CardChrome<Content: View, Actions: View, Menu: View>: View {
                 HStack(spacing: 6) { actionRow() }
                     .padding(8)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(LinearGradient(colors: [.black.opacity(0.7), .black.opacity(0)], startPoint: .top, endPoint: .bottom))
+                    .background(LinearGradient(colors: [.black.opacity(0.85), .black.opacity(0)], startPoint: .top, endPoint: .bottom))
                     .opacity(hovering ? 1 : 0)
                     .allowsHitTesting(hovering)
             }
@@ -483,10 +483,11 @@ private struct CardAction: View {
     var body: some View {
         Button(action: perform) {
             Image(systemName: symbol)
-                .font(.system(size: 11, weight: .semibold))
-                .frame(width: 28, height: 28)
-                .background(.black.opacity(0.55), in: Circle())
-                .overlay(Circle().strokeBorder(.white.opacity(0.15)))
+                .font(.system(size: 12, weight: .bold))
+                .frame(width: 30, height: 30)
+                .background(.black.opacity(0.8), in: Circle())
+                .overlay(Circle().strokeBorder(.white.opacity(0.35)))
+                .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
         }
         .buttonStyle(.plain)
         .foregroundStyle(tint)
@@ -587,9 +588,6 @@ struct CaptureCard: View {
                     }
                 }
         } actionRow: {
-            if let clipboard, clipboard.canPaste {
-                CardAction(symbol: "arrow.down.doc", help: "Paste", perform: paste)
-            }
             CardAction(symbol: "eye", help: "Preview", perform: onPreview)
             CardAction(symbol: "pencil", help: "Edit") { actions.edit(item) }
             CopyAction { actions.copy(item) }
@@ -621,7 +619,7 @@ struct ClipboardCard: View {
     @State private var hovering = false
 
     var body: some View {
-        CardChrome(hovering: $hovering, onTap: paste) {
+        CardChrome(hovering: $hovering, onTap: copy) {
             content
                 .overlay(alignment: .bottom) {
                     CardCaption(title: item.name ?? "", date: item.createdAt) {
@@ -635,18 +633,16 @@ struct ClipboardCard: View {
                     }
                 }
         } actionRow: {
-            if clipboard.canPaste {
-                CardAction(symbol: "arrow.down.doc", help: "Paste into the front app", perform: paste)
-            }
             CopyAction(perform: copy)
-            CardAction(symbol: "eye", help: "Preview", perform: onPreview)
             CardAction(symbol: item.pinned ? "star.fill" : "star", help: item.pinned ? "Unpin" : "Pin", tint: item.pinned ? .yellow : .white) {
                 clipboard.togglePin(item)
             }
+            CardAction(symbol: "eye", help: "Preview", perform: onPreview)
             CardAction(symbol: "trash", help: "Delete", tint: .red) { clipboard.delete(item) }
         } menu: {
-            if clipboard.canPaste { Button("Paste") { paste() } }
             Button("Copy") { copy() }
+            if clipboard.canPaste { Button("Paste") { paste() } }
+            Button("Preview", action: onPreview)
             if item.kind == .color, let color = PickedColor(hex: item.text) {
                 Menu("Copy as") {
                     ForEach(ColorFormat.allCases, id: \.self) { format in
@@ -671,8 +667,8 @@ struct ClipboardCard: View {
         FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
     }
 
-    /// Click: paste straight into the front app when Accessibility allows it,
-    /// otherwise copy and say so.
+    /// Pastes straight into the front app when Accessibility allows it, otherwise
+    /// copies and says so.
     private func paste() {
         if clipboard.paste(item) {
             FeedbackHUD.show("Pasted", symbol: "checkmark.circle.fill", duration: .seconds(1.0))
@@ -768,9 +764,6 @@ struct AssetCard: View {
                     }
                 }
         } actionRow: {
-            if let clipboard, clipboard.canPaste {
-                CardAction(symbol: "arrow.down.doc", help: "Paste", perform: paste)
-            }
             CardAction(symbol: "eye", help: "Preview", perform: onPreview)
             CardAction(symbol: "arrow.up.forward.app", help: "Open") { assets.open(item) }
             CopyAction { assets.copy(item) }
@@ -820,7 +813,7 @@ struct AssetCard: View {
     }
 }
 
-/// A picked colour: the swatch fills the card, the preferred format is the caption.
+/// A picked color: the swatch fills the card, the preferred format is the caption.
 struct ColorCard: View {
     let entry: ColorEntry
     let colors: ColorStore
@@ -841,7 +834,7 @@ struct ColorCard: View {
                             .padding(.horizontal, 5).padding(.vertical, 2)
                             .background((entry.color.isDark ? Color.white : Color.black).opacity(0.2), in: Capsule())
                             .padding(8)
-                            .help("Outside the sRGB gamut — a Display P3 colour")
+                            .help("Outside the sRGB gamut — a Display P3 color")
                     }
                 }
                 .overlay(alignment: .bottom) {
@@ -872,7 +865,7 @@ struct ColorCard: View {
         FeedbackHUD.show("\(format.string(for: entry.color)) copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
     }
 
-    /// A swatch for dragging the colour's text.
+    /// A swatch for dragging the color's text.
     static func dragImage(for color: PickedColor) -> NSImage {
         let (r, g, b) = color.clamped
         return NSImage(size: NSSize(width: 60, height: 60), flipped: false) { rect in

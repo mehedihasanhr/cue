@@ -22,9 +22,9 @@ final class AppPreferences {
         static let colorFormat = "color.format"
     }
 
-    // MARK: Colour picker
+    // MARK: Color picker
 
-    /// The format a picked colour is copied in (every format is in the card's menu).
+    /// The format a picked color is copied in (every format is in the card's menu).
     var colorFormat: ColorFormat {
         didSet { defaults.set(colorFormat.rawValue, forKey: Key.colorFormat) }
     }

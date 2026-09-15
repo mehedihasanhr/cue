@@ -10,7 +10,7 @@ final class CaptureCoordinator {
     var onError: ((any Error) -> Void)?
     /// `true` while a capture flow runs (selection overlay, scrolling session…).
     var onBusyChanged: ((Bool) -> Void)?
-    /// Result of the colour picker.
+    /// Result of the color picker.
     var onColorPicked: ((PickedColor) -> Void)?
 
     private let service = ScreenCaptureService()
@@ -73,7 +73,7 @@ final class CaptureCoordinator {
         }
     }
 
-    /// The pixel-grid colour picker over frozen displays.
+    /// The pixel-grid color picker over frozen displays.
     func pickColor(fromMenu: Bool) {
         start(fromMenu: fromMenu) { [self] in
             if let color = try await ColorPickerSession().run(using: service) {

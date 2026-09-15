@@ -9,7 +9,7 @@ nonisolated struct ClipboardItem: Identifiable, Codable, Hashable {
 
     let id: UUID
     var kind: Kind
-    /// The text, URL, colour (as `#RRGGBB`) or file paths (one per line).
+    /// The text, URL, color (as `#RRGGBB`) or file paths (one per line).
     var text: String
     var pixelWidth: Int
     var pixelHeight: Int
@@ -63,7 +63,7 @@ nonisolated struct ClipboardItem: Identifiable, Codable, Hashable {
 
     // MARK: - Classification
 
-    /// Recognises a link (a single URL) or a colour (`#D6688B`, `D6688B`, `rgb(…)`);
+    /// Recognises a link (a single URL) or a color (`#D6688B`, `D6688B`, `rgb(…)`);
     /// everything else is text.
     static func classify(_ text: String) -> (Kind, String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)

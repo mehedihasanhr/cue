@@ -63,13 +63,13 @@ struct IslandDetailHeader: View {
             pills.append(Pill(symbol: "info.circle", text: item.sizeText))
             return pills
         case .color(let entry):
-            return [Pill(symbol: "paintpalette", text: "Colour"), Pill(symbol: "number", text: ColorFormat.hex.string(for: entry.color))]
+            return [Pill(symbol: "paintpalette", text: "Color"), Pill(symbol: "number", text: ColorFormat.hex.string(for: entry.color))]
         case .clipboard(let item):
             var pills: [Pill]
             switch item.kind {
             case .text: pills = [Pill(symbol: "text.alignleft", text: "Text"), Pill(symbol: "character", text: "\(item.text.count) characters")]
             case .link: pills = [Pill(symbol: "link", text: "Link")]
-            case .color: pills = [Pill(symbol: "paintpalette", text: "Colour"), Pill(symbol: "number", text: item.text)]
+            case .color: pills = [Pill(symbol: "paintpalette", text: "Color"), Pill(symbol: "number", text: item.text)]
             case .image: pills = [Pill(symbol: "photo", text: "Image"), Pill(symbol: "aspectratio", text: item.dimensions)]
             case .files: pills = [Pill(symbol: "doc.on.doc", text: item.filePaths.count == 1 ? "File" : "\(item.filePaths.count) files")]
             }
@@ -97,7 +97,7 @@ struct IslandDetailHeader: View {
     }
 }
 
-/// The body of an open card, in the card row's space: colours as a swatch with every
+/// The body of an open card, in the card row's space: colors as a swatch with every
 /// format beside it (click a row to copy it), images large, text in full.
 struct IslandDetailBody: View {
     let detail: IslandDetail
@@ -144,7 +144,7 @@ struct IslandDetailBody: View {
         .foregroundStyle(.white)
     }
 
-    // MARK: - Colour
+    // MARK: - Color
 
     /// Swatch on the left; every format on the right in two columns, each a
     /// click-to-copy row. The row copied last is the default for the copy buttons.

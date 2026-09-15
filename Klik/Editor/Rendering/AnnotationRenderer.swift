@@ -28,7 +28,7 @@ struct AnnotationRenderer {
         let contentFrame = layout.image
 
         if let background = document.background, background.inset > 0 {
-            // The inset border takes the image's own edge colour so it reads as part of it.
+            // The inset border takes the image's own edge color so it reads as part of it.
             context.saveGState()
             context.addPath(CGPath(roundedRect: layout.card, cornerWidth: background.cornerRadius,
                                    cornerHeight: background.cornerRadius, transform: nil))

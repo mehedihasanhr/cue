@@ -99,7 +99,7 @@ enum HotkeyID: UInt32, CaseIterable {
     case showPanel
     /// Select an area, recognise its text on-device and copy it.
     case captureText
-    /// The eyedropper: pick a colour anywhere on screen.
+    /// The eyedropper: pick a color anywhere on screen.
     case pickColor
     /// A floating "new task" form at the pointer.
     case quickTask
@@ -131,7 +131,7 @@ enum HotkeyID: UInt32, CaseIterable {
         case .scrolling: "Scrolling capture"
         case .showPanel: "Klik panel at the pointer"
         case .captureText: "Capture text (OCR)"
-        case .pickColor: "Pick a colour"
+        case .pickColor: "Pick a color"
         case .quickTask: "Quick task"
         case .confirmCapture: "Finish capture"
         case .cancelCapture: "Stop capture"

@@ -45,7 +45,7 @@ enum GradientPreset: String, Hashable, Codable, CaseIterable {
     }
 }
 
-/// Solid colours offered for backgrounds (the annotation palette plus a few neutrals).
+/// Solid colors offered for backgrounds (the annotation palette plus a few neutrals).
 enum BackgroundPalette {
     static let colors: [RGBA] = [
         .white, RGBA(r: 0.93, g: 0.93, b: 0.95), RGBA(r: 0.75, g: 0.76, b: 0.8), .gray, RGBA(r: 0.2, g: 0.2, b: 0.22), .black,
@@ -104,7 +104,7 @@ struct BackgroundStyle: Hashable, Codable {
     /// Padding derived from the image size instead of the slider.
     var autoBalance = false
     /// Border inside the card, between the image and the rounded edge, filled with the
-    /// image's own edge colour.
+    /// image's own edge color.
     var inset: CGFloat = 0
     var cornerRadius: CGFloat = 12
     var fill: BackgroundFill = .gradient(.ocean)

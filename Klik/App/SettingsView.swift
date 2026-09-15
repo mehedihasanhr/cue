@@ -64,13 +64,13 @@ struct GeneralSettingsView: View {
             }
 
             Section {
-                Picker("Copy picked colours as", selection: $preferences.colorFormat) {
+                Picker("Copy picked colors as", selection: $preferences.colorFormat) {
                     ForEach(ColorFormat.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
             } header: {
-                Text("Colour picker")
+                Text("Color picker")
             } footer: {
-                Text("Every other format is one right-click away on a colour card.")
+                Text("Every other format is one right-click away on a color card.")
             }
 
             Section {
@@ -257,7 +257,7 @@ struct ClipboardSettingsView: View {
             Section {
                 Toggle(isOn: $preferences.clipboardHistoryEnabled) {
                     Text("Keep a clipboard history")
-                    Text("Text, links, colours, images and files you copy in any app appear in the Dynamic Island's Clipboard tab. Click one to copy it again.")
+                    Text("Text, links, colors, images and files you copy in any app appear in the Dynamic Island's Clipboard tab. Click one to copy it again.")
                 }
                 Picker("Keep the last", selection: $preferences.clipboardHistoryLimit) {
                     ForEach(AppPreferences.clipboardLimits, id: \.self) { Text("\($0) items").tag($0) }
@@ -409,7 +409,7 @@ struct EditorSettingsView: View {
                 }
             }
 
-            Section("Colours") {
+            Section("Colors") {
                 LabeledContent("Annotations") { SwatchRow(color: d.color) }
                 LabeledContent("Highlight box") { SwatchRow(color: d.highlightColor) }
             }
@@ -474,7 +474,7 @@ struct EditorSettingsView: View {
     }
 }
 
-/// The editor's palette plus a colour well, bound to one colour.
+/// The editor's palette plus a color well, bound to one color.
 private struct SwatchRow: View {
     @Binding var color: RGBA
 

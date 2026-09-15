@@ -1,6 +1,6 @@
 import XCTest
 
-/// Colour conversions checked against the CSS Color 4 reference values (what
+/// Color conversions checked against the CSS Color 4 reference values (what
 /// browsers, Figma and Digital Color Meter report).
 final class ColorMathTests: XCTestCase {
     private let red = PickedColor(hex: "#FF0000")!
@@ -70,7 +70,7 @@ final class ColorMathTests: XCTestCase {
         let grey = PickedColor(hex: "#808080")!.displayP3
         XCTAssertEqual(grey.r, 128 / 255, accuracy: 0.001)
         XCTAssertEqual(grey.g, grey.b, accuracy: 1e-9)
-        // A P3 colour outside sRGB keeps its value (no clamping) and says so.
+        // A P3 color outside sRGB keeps its value (no clamping) and says so.
         let vivid = PickedColor(red: 1.09, green: -0.23, blue: -0.15)
         XCTAssertFalse(vivid.isInSRGBGamut)
         XCTAssertEqual(ColorFormat.hex.string(for: vivid), "#FF0000")

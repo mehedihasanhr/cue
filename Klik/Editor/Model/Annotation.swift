@@ -1,6 +1,6 @@
 import AppKit
 
-/// A colour as plain data so the model stays a value type.
+/// A color as plain data so the model stays a value type.
 struct RGBA: Hashable, Codable {
     var r: Double
     var g: Double
