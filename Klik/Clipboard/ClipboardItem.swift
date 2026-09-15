@@ -17,6 +17,8 @@ nonisolated struct ClipboardItem: Identifiable, Codable, Hashable {
     var sourceName: String?
     var createdAt: Date
     var pinned: Bool
+    /// A label given by the user; nil shows the content itself.
+    var name: String?
 
     init(id: UUID = UUID(), kind: Kind, text: String, pixelWidth: Int = 0, pixelHeight: Int = 0,
          sourceBundleID: String? = nil, sourceName: String? = nil, createdAt: Date = .now) {
@@ -36,6 +38,12 @@ nonisolated struct ClipboardItem: Identifiable, Codable, Hashable {
 
     /// One-line summary for search and titles.
     var title: String {
+        if let name, !name.isEmpty { return name }
+        return contentTitle
+    }
+
+    /// The summary of the content itself, ignoring any label.
+    var contentTitle: String {
         switch kind {
         case .text, .link, .color: text.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .newlines).first ?? text
         case .image: "Image \(dimensions)"

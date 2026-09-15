@@ -282,6 +282,39 @@ final class CaptureLibrary {
         fileURL(for: item) ?? (pendingImages[item.id] != nil ? folderURL.appendingPathComponent(item.fileName) : nil)
     }
 
+    /// Renames the capture's file (the title is the file name without ".png"). The
+    /// move happens at once so the new name is real before anything else touches it.
+    func rename(_ item: CaptureItem, to title: String) {
+        let cleaned = title.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
+        guard !cleaned.isEmpty, cleaned != item.title, let index = items.firstIndex(where: { $0.id == item.id }) else { return }
+        guard let source = storedURL(for: item) else { return }
+        let destination = withFolderAccess { uniqueURL(for: "\(cleaned).png") }
+        if pendingImages[item.id] == nil {
+            let moved: Bool = withFolderAccess {
+                let scoped = source.startAccessingSecurityScopedResource()
+                defer { if scoped { source.stopAccessingSecurityScopedResource() } }
+                do {
+                    try FileManager.default.moveItem(at: source, to: destination)
+                    return true
+                } catch {
+                    Log.app.error("Could not rename capture: \(error.localizedDescription, privacy: .public)")
+                    return false
+                }
+            }
+            guard moved else { return }
+            items[index].bookmark = withFolderAccess {
+                (try? destination.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)) ?? Data()
+            }
+        } else {
+            // Still being written: the pending write lands under the old name, so move it after.
+            let old = source
+            reservedNames.insert(destination.lastPathComponent)
+            storage.async { try? FileManager.default.moveItem(at: old, to: destination) }
+        }
+        items[index].fileName = destination.lastPathComponent
+        saveIndex()
+    }
+
     // MARK: - Index persistence
 
     private var indexURL: URL {

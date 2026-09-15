@@ -24,6 +24,7 @@ enum MainMenu {
             ("Capture Area", #selector(AppDelegate.captureArea(_:))),
             ("Scrolling Capture", #selector(AppDelegate.captureScrolling(_:))),
             ("Capture Text", #selector(AppDelegate.captureText(_:))),
+            ("Pick Color", #selector(AppDelegate.pickColor(_:))),
         ] {
             let item = captureMenu.addItem(withTitle: title, action: selector, keyEquivalent: "")
             item.target = target

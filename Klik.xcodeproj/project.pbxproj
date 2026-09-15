@@ -29,6 +29,7 @@
 			membershipExceptions = (
 				Capture/Scrolling/FrameStitcher.swift,
 				Clipboard/ClipboardItem.swift,
+				Colors/ColorMath.swift,
 				Island/IslandGeometry.swift,
 				Capture/Scrolling/ScrollingCaptureEngine.swift,
 				OCR/OCRService.swift,

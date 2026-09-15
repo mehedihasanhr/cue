@@ -7,6 +7,7 @@ struct HistoryActions {
     var captureArea: () -> Void
     var captureScrolling: () -> Void
     var captureText: () -> Void
+    var pickColor: () -> Void
     var openSettings: () -> Void
     var quit: () -> Void
     var preview: (CaptureItem) -> Void

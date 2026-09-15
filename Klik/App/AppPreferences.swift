@@ -19,6 +19,14 @@ final class AppPreferences {
         static let islandPlainDisplays = "island.plainDisplays"
         static let clipboardEnabled = "clipboard.enabled"
         static let clipboardLimit = "clipboard.limit"
+        static let colorFormat = "color.format"
+    }
+
+    // MARK: Colour picker
+
+    /// The format a picked colour is copied in (every format is in the card's menu).
+    var colorFormat: ColorFormat {
+        didSet { defaults.set(colorFormat.rawValue, forKey: Key.colorFormat) }
     }
 
     // MARK: Clipboard history
@@ -171,6 +179,7 @@ final class AppPreferences {
         dynamicIslandOnPlainDisplays = defaults.object(forKey: Key.islandPlainDisplays) as? Bool ?? true
         clipboardHistoryEnabled = defaults.object(forKey: Key.clipboardEnabled) as? Bool ?? true
         clipboardHistoryLimit = defaults.object(forKey: Key.clipboardLimit) as? Int ?? 200
+        colorFormat = ColorFormat(rawValue: defaults.string(forKey: Key.colorFormat) ?? "") ?? .hex
         customSoundURL = defaults.data(forKey: Key.soundBookmark).flatMap(Self.resolve)
         customIconURL = defaults.data(forKey: Key.iconBookmark).flatMap(Self.resolve)
         if sound == .custom, customSoundURL == nil { sound = .shutter }

@@ -64,6 +64,16 @@ struct GeneralSettingsView: View {
             }
 
             Section {
+                Picker("Copy picked colours as", selection: $preferences.colorFormat) {
+                    ForEach(ColorFormat.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+            } header: {
+                Text("Colour picker")
+            } footer: {
+                Text("Every other format is one right-click away on a colour card.")
+            }
+
+            Section {
                 MenuBarIconPicker()
             } header: {
                 Text("Menu bar icon")
@@ -586,6 +596,7 @@ struct ShortcutSettingsView: View {
         case .scrolling: "rectangle.expand.vertical"
         case .showPanel: "cursorarrow.rays"
         case .captureText: "text.viewfinder"
+        case .pickColor: "eyedropper"
         case .confirmCapture, .cancelCapture: "xmark"
         }
     }
@@ -597,6 +608,7 @@ struct ShortcutSettingsView: View {
         case .scrolling: .indigo
         case .showPanel: .orange
         case .captureText: .green
+        case .pickColor: .pink
         case .confirmCapture, .cancelCapture: .gray
         }
     }

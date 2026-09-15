@@ -25,14 +25,14 @@ final class IslandController {
     private static let flashDuration: Duration = .seconds(1.8)
     private static let collapseAnimation: Duration = .milliseconds(380)
 
-    init(library: CaptureLibrary, clipboard: ClipboardHistory, assets: AssetStore, actions: HistoryActions, preferences: AppPreferences) {
+    init(library: CaptureLibrary, clipboard: ClipboardHistory, assets: AssetStore, colors: ColorStore, actions: HistoryActions, preferences: AppPreferences) {
         self.preferences = preferences
 
         let content = IslandDropView(frame: CGRect(origin: .zero, size: window.frame.size))
         content.onDragEntered = { [weak self] in self?.dragEntered() }
         content.onDragExited = { [weak self] in self?.model.dropping = false }
         content.onDrop = { [weak self] urls, image in self?.drop(urls: urls, image: image, into: assets) }
-        let host = NSHostingView(rootView: IslandView(model: model, library: library, clipboard: clipboard, assets: assets, actions: actions))
+        let host = NSHostingView(rootView: IslandView(model: model, library: library, clipboard: clipboard, assets: assets, colors: colors, actions: actions).environment(preferences))
         host.sizingOptions = []
         host.autoresizingMask = [.width, .height]
         host.frame = content.bounds
@@ -80,7 +80,7 @@ final class IslandController {
     private func pointerMoved() {
         guard let geometry = model.geometry, !hidden, window.isVisible else { return }
         let location = NSEvent.mouseLocation
-        // The drawn shape, not the (mostly transparent) window. The pointer stops at
+        // The drawn shapes, not the (mostly transparent) window. The pointer stops at
         // the very top edge (y == maxY), which must count as inside.
         let frame = geometry.rect(for: model.phase.geometryPhase)
         let inside = location.x >= frame.minX && location.x <= frame.maxX
@@ -201,15 +201,25 @@ final class IslandController {
             pendingFlash = item
             return
         }
+        flash(phase: .flash(item))
+    }
+
+    /// Show the colour that was just picked for a moment.
+    func flashColor(_ entry: ColorEntry) {
+        UserDefaults.standard.set(IslandTab.colors.rawValue, forKey: IslandTab.storageKey)
+        flash(phase: .flashColor(entry))
+    }
+
+    private func flash(phase: IslandModel.Phase) {
         guard model.geometry != nil, model.phase != .expanded else { return }
         flashTask?.cancel()
         closeTask?.cancel()
         window.orderFrontRegardless()
-        setPhase(.flash(item), animated: true)
+        setPhase(phase, animated: true)
         scheduleShadow()
         flashTask = Task { [weak self] in
             try? await Task.sleep(for: Self.flashDuration)
-            guard !Task.isCancelled, let self, case .flash = model.phase else { return }
+            guard !Task.isCancelled, let self, model.phase.isFlash else { return }
             collapse()
         }
     }
@@ -261,12 +271,7 @@ final class IslandController {
 
     private func pointerEntered() {
         closeTask?.cancel()
-        switch model.phase {
-        case .collapsed, .flash:
-            expand()
-        case .expanded:
-            break
-        }
+        if model.phase != .expanded { expand() }
     }
 
     private func pointerExited() {

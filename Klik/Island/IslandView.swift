@@ -7,13 +7,21 @@ final class IslandModel {
     enum Phase: Equatable {
         case collapsed
         case flash(CaptureItem)
+        case flashColor(ColorEntry)
         case expanded
 
         var geometryPhase: IslandGeometry.Phase {
             switch self {
             case .collapsed: .collapsed
-            case .flash: .flash
+            case .flash, .flashColor: .flash
             case .expanded: .expanded
+            }
+        }
+
+        var isFlash: Bool {
+            switch self {
+            case .flash, .flashColor: true
+            case .collapsed, .expanded: false
             }
         }
     }
@@ -74,6 +82,7 @@ struct IslandView: View {
     let library: CaptureLibrary
     let clipboard: ClipboardHistory
     let assets: AssetStore
+    let colors: ColorStore
     let actions: HistoryActions
 
     /// Opening overshoots a touch; closing settles without a bounce.
@@ -118,10 +127,17 @@ struct IslandView: View {
                     .frame(height: IslandGeometry.flashContentHeight)
             }
             .transition(Self.contentTransition)
+        case .flashColor(let entry):
+            VStack(spacing: 0) {
+                Color.clear.frame(height: strip)
+                ColorFlashRow(entry: entry)
+                    .frame(height: IslandGeometry.flashContentHeight)
+            }
+            .transition(Self.contentTransition)
         case .expanded:
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
-                IslandPanel(library: library, clipboard: clipboard, assets: assets, actions: actions, dropping: model.dropping)
+                IslandPanel(library: library, clipboard: clipboard, assets: assets, colors: colors, actions: actions, dropping: model.dropping)
                     .padding(.horizontal, IslandGeometry.panelHorizontalPadding)
                     .padding(.bottom, IslandGeometry.panelBottomPadding)
             }
@@ -156,6 +172,34 @@ private struct FlashRow: View {
                 Text("Copied to clipboard")
                     .font(.system(size: 13, weight: .semibold))
                 Text(item.dimensions)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            .lineLimit(1)
+            Spacer(minLength: 0)
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(.green)
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 16)
+    }
+}
+
+/// "Just picked": the swatch and its hex.
+private struct ColorFlashRow: View {
+    let entry: ColorEntry
+
+    var body: some View {
+        HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(entry.color.swiftUIColor)
+                .frame(width: 44, height: 44)
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.white.opacity(0.2)))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(ColorFormat.hex.string(for: entry.color))
+                    .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                Text(ColorFormat.oklch.string(for: entry.color))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }

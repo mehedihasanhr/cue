@@ -162,6 +162,24 @@ final class AssetStore {
         pasteboard.writeObjects([url as NSURL])
     }
 
+    /// Renames the file (its extension is kept).
+    func rename(_ item: AssetItem, to title: String) {
+        let cleaned = title.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
+        guard !cleaned.isEmpty, cleaned != item.title, let index = items.firstIndex(where: { $0.id == item.id }) else { return }
+        let ext = (item.fileName as NSString).pathExtension
+        let newName = ext.isEmpty ? cleaned : "\(cleaned).\(ext)"
+        let source = fileURL(for: item)
+        let destination = source.deletingLastPathComponent().appendingPathComponent(newName)
+        do {
+            try FileManager.default.moveItem(at: source, to: destination)
+        } catch {
+            Log.app.error("Assets: cannot rename: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+        items[index].fileName = newName
+        saveIndex()
+    }
+
     func open(_ item: AssetItem) {
         NSWorkspace.shared.open(fileURL(for: item))
     }

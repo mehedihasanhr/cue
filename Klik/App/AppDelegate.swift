@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let library = CaptureLibrary()
     let clipboard = ClipboardHistory()
     let assets = AssetStore()
+    let colors = ColorStore()
     let preferences = AppPreferences()
     private lazy var coordinator = CaptureCoordinator(shortcuts: shortcuts)
 
@@ -50,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         shortcuts.setAction(for: .scrolling) { [weak self] in self?.coordinator.captureScrolling(fromMenu: false) }
         shortcuts.setAction(for: .showPanel) { [weak self] in self?.toggleHistoryAtPointer() }
         shortcuts.setAction(for: .captureText) { [weak self] in self?.coordinator.captureText(fromMenu: false) }
+        shortcuts.setAction(for: .pickColor) { [weak self] in self?.pickColor(nil) }
 
         if !PermissionManager.hasScreenCaptureAccess {
             Log.app.notice("Screen Recording not granted; showing onboarding")
@@ -77,6 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         captureMenuItems[.region] = addItem(makeItem("Capture Area", #selector(captureArea(_:))), to: menu)
         captureMenuItems[.scrolling] = addItem(makeItem("Scrolling Capture", #selector(captureScrolling(_:))), to: menu)
         captureMenuItems[.captureText] = addItem(makeItem("Capture Text", #selector(captureText(_:))), to: menu)
+        captureMenuItems[.pickColor] = addItem(makeItem("Pick Color", #selector(pickColor(_:))), to: menu)
         menu.addItem(.separator())
         menu.addItem(makeItem("Show Captures", #selector(showHistory(_:))))
         menu.addItem(makeItem("Settings…", #selector(showSettings(_:)), keyEquivalent: ",", modifiers: .command))
@@ -151,7 +154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if let island {
                     island.place()
                 } else {
-                    island = IslandController(library: library, clipboard: clipboard, assets: assets, actions: historyActions, preferences: preferences)
+                    island = IslandController(library: library, clipboard: clipboard, assets: assets, colors: colors, actions: historyActions, preferences: preferences)
                     library.warmThumbnails()
                 }
             } else if let island {
@@ -253,6 +256,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             captureArea: { [weak self] in self?.closeHistoryThen { $0.coordinator.captureArea(fromMenu: true) } },
             captureScrolling: { [weak self] in self?.closeHistoryThen { $0.coordinator.captureScrolling(fromMenu: true) } },
             captureText: { [weak self] in self?.closeHistoryThen { $0.coordinator.captureText(fromMenu: true) } },
+            pickColor: { [weak self] in self?.closeHistoryThen { $0.pickColor(nil) } },
             openSettings: { [weak self] in self?.closeHistoryThen { $0.showSettings(nil) } },
             quit: { NSApp.terminate(nil) },
             preview: { [weak self] item in self?.closeHistoryThen { $0.openEditor(for: item, mode: .preview) } },
@@ -303,6 +307,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func captureText(_ sender: Any?) {
         coordinator.captureText(fromMenu: sender is NSMenuItem)
+    }
+
+    /// The eyedropper. The picked colour is listed under Colours in the island and
+    /// copied in the preferred format.
+    @objc func pickColor(_ sender: Any?) {
+        closeHistory()
+        colors.pick { [weak self] entry in
+            guard let self, let entry else { return }
+            let format = preferences.colorFormat
+            colors.copy(entry, as: format)
+            FeedbackHUD.show("\(format.string(for: entry.color)) copied", symbol: "eyedropper.halffull", duration: .seconds(1.6))
+            island?.flashColor(entry)
+        }
     }
 
     @objc func showSettings(_ sender: Any?) {

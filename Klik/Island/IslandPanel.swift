@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 enum IslandTab: String, CaseIterable {
-    case captures, clipboard, assets
+    case captures, clipboard, assets, colors
 
     static let storageKey = "island.tab"
 
@@ -11,6 +11,7 @@ enum IslandTab: String, CaseIterable {
         case .captures: "Captures"
         case .clipboard: "Clipboard"
         case .assets: "Assets"
+        case .colors: "Colours"
         }
     }
 
@@ -19,6 +20,7 @@ enum IslandTab: String, CaseIterable {
         case .captures: "photo.on.rectangle"
         case .clipboard: "doc.on.clipboard"
         case .assets: "tray.full"
+        case .colors: "paintpalette"
         }
     }
 }
@@ -32,10 +34,14 @@ struct IslandPanel: View {
     let library: CaptureLibrary
     let clipboard: ClipboardHistory
     let assets: AssetStore
+    let colors: ColorStore
     let actions: HistoryActions
+    @Environment(AppPreferences.self) private var preferences
     /// A file or image is being dragged over the island.
     var dropping = false
     @State private var search = ""
+    /// A card opened in place of the row.
+    @State private var detail: IslandDetail?
     @AppStorage(IslandTab.storageKey) private var tab: IslandTab = .captures
 
     private var filteredCaptures: [CaptureItem] {
@@ -51,6 +57,11 @@ struct IslandPanel: View {
     private var filteredAssets: [AssetItem] {
         guard !search.isEmpty else { return assets.items }
         return assets.items.filter { $0.fileName.localizedCaseInsensitiveContains(search) }
+    }
+
+    private var filteredColors: [ColorEntry] {
+        guard !search.isEmpty else { return colors.items }
+        return colors.items.filter { ColorFormat.hex.string(for: $0.color).localizedCaseInsensitiveContains(search) }
     }
 
     var body: some View {
@@ -72,13 +83,23 @@ struct IslandPanel: View {
                 circle("viewfinder", help: "Capture area", action: actions.captureArea)
                 circle("rectangle.expand.vertical", help: "Scrolling capture", action: actions.captureScrolling)
                 circle("text.viewfinder", help: "Capture text", action: actions.captureText)
+                circle("eyedropper", help: "Pick a colour", action: actions.pickColor)
             }
 
+            if let detail {
+                IslandDetailHeader(detail: detail, library: library, assets: assets, actions: actions) {
+                    withAnimation(.easeOut(duration: 0.15)) { self.detail = nil }
+                }
+            } else {
             HStack(spacing: 8) {
                 tabPill(.captures, count: library.items.count)
                 tabPill(.clipboard, count: clipboard.items.count)
                 tabPill(.assets, count: assets.items.count)
+                tabPill(.colors, count: colors.items.count)
                 Spacer(minLength: 0)
+                if tab == .colors {
+                    smallButton("Pick", symbol: "eyedropper", help: "Pick a colour from the screen", action: actions.pickColor)
+                }
                 if tab == .clipboard, clipboard.items.contains(where: { !$0.pinned }) {
                     smallButton("Clear", symbol: "trash", help: "Remove every unpinned item") { clipboard.clear() }
                 }
@@ -92,8 +113,13 @@ struct IslandPanel: View {
                     }
                 }
             }
+            }
 
             ZStack {
+                if let detail {
+                    IslandDetailBody(detail: detail, library: library, clipboard: clipboard, assets: assets, colors: colors, actions: actions)
+                        .transition(.opacity)
+                } else {
                 switch tab {
                 case .captures:
                     if filteredCaptures.isEmpty {
@@ -102,7 +128,7 @@ struct IslandPanel: View {
                         DayStrip(items: filteredCaptures, date: \.createdAt, dragPayload: { item in
                             library.fileURL(for: item).map { .file($0, preview: library.thumbnail(for: item)) }
                         }) { item in
-                            CaptureCard(item: item, library: library, actions: actions)
+                            CaptureCard(item: item, library: library, actions: actions, onPreview: { open(.capture(item)) })
                         }
                     }
                 case .clipboard:
@@ -112,7 +138,17 @@ struct IslandPanel: View {
                         DayStrip(items: filteredClipboard, date: \.createdAt, dragPayload: { item in
                             clipboard.dragPayload(for: item)
                         }) { item in
-                            ClipboardCard(item: item, clipboard: clipboard)
+                            ClipboardCard(item: item, clipboard: clipboard, onPreview: { open(.clipboard(item)) })
+                        }
+                    }
+                case .colors:
+                    if filteredColors.isEmpty {
+                        empty(search.isEmpty ? "Pick a colour anywhere on screen with the eyedropper" : "No matches", symbol: "eyedropper")
+                    } else {
+                        DayStrip(items: filteredColors, date: \.createdAt, dragPayload: { entry in
+                            DragPayload(writer: preferences.colorFormat.string(for: entry.color) as NSString, preview: ColorCard.dragImage(for: entry.color))
+                        }) { entry in
+                            ColorCard(entry: entry, colors: colors, format: preferences.colorFormat, onPreview: { open(.color(entry)) })
                         }
                     }
                 case .assets:
@@ -122,15 +158,17 @@ struct IslandPanel: View {
                         DayStrip(items: filteredAssets, date: \.createdAt, dragPayload: { item in
                             .file(assets.fileURL(for: item), preview: assets.thumbnail(for: item))
                         }) { item in
-                            AssetCard(item: item, assets: assets)
+                            AssetCard(item: item, assets: assets, onPreview: { open(.asset(item)) })
                         }
                     }
+                }
                 }
                 if dropping {
                     dropHint
                 }
             }
             .frame(height: Self.rowHeight) // the same whether a tab has cards or not
+            .onChange(of: tab) { _, _ in detail = nil }
         }
         .padding(.horizontal, 20)
         .padding(.top, 14)
@@ -174,6 +212,10 @@ struct IslandPanel: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+    }
+
+    private func open(_ detail: IslandDetail) {
+        withAnimation(.easeOut(duration: 0.15)) { self.detail = detail }
     }
 
     private func smallButton(_ title: String, symbol: String, help: String, action: @escaping () -> Void) -> some View {
@@ -427,11 +469,17 @@ private struct CopyAction: View {
 private struct CardCaption<Leading: View>: View {
     let title: String
     let date: Date
+    /// Set while the title is being edited in place; `rename` gets the new name.
+    var renaming = false
+    var rename: ((String) -> Void)? = nil
+    var cancelRename: () -> Void = {}
     @ViewBuilder let trailing: () -> Leading
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            if !title.isEmpty {
+            if renaming, let rename {
+                RenameField(initial: title, commit: rename, cancel: cancelRename)
+            } else if !title.isEmpty {
                 Text(title)
                     .font(.system(size: 10.5, weight: .medium))
                     .foregroundStyle(.white.opacity(0.92))
@@ -457,6 +505,56 @@ private struct CardCaption<Leading: View>: View {
     }
 }
 
+/// An in-place text field for a card title: ↩ saves, ⎋ cancels, clicking away saves.
+private struct RenameField: View {
+    let initial: String
+    let commit: (String) -> Void
+    let cancel: () -> Void
+    @State private var text = ""
+    @State private var done = false
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        TextField("Name", text: $text)
+            .textFieldStyle(.plain)
+            .font(.system(size: 10.5, weight: .medium))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(.white.opacity(0.18), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .focused($focused)
+            .background(KeyWindowMaker())
+            .onAppear {
+                text = initial
+                focused = true
+            }
+            .onSubmit { finish { commit(text) } }
+            .onExitCommand { finish(cancel) }
+            .onChange(of: focused) { _, isFocused in
+                if !isFocused { finish { commit(text) } }
+            }
+    }
+
+    private func finish(_ action: () -> Void) {
+        guard !done else { return }
+        done = true
+        action()
+    }
+
+    /// The island is a non-activating panel: typing needs it to be the key window.
+    private struct KeyWindowMaker: NSViewRepresentable {
+        func makeNSView(context: Context) -> KeyView { KeyView() }
+        func updateNSView(_ view: KeyView, context: Context) {}
+
+        final class KeyView: NSView {
+            override func viewDidMoveToWindow() {
+                super.viewDidMoveToWindow()
+                window?.makeKey()
+            }
+        }
+    }
+}
+
 private struct Badge: View {
     let text: String
 
@@ -475,10 +573,12 @@ private struct CaptureCard: View {
     let item: CaptureItem
     let library: CaptureLibrary
     let actions: HistoryActions
+    var onPreview: () -> Void = {}
     @State private var hovering = false
+    @State private var renaming = false
 
     var body: some View {
-        CardChrome(hovering: $hovering, onTap: { actions.edit(item) }) {
+        CardChrome(hovering: $hovering, onTap: { if !renaming { actions.edit(item) } }) {
             Color.clear
                 .overlay {
                     if let thumbnail = library.thumbnail(for: item) {
@@ -489,12 +589,13 @@ private struct CaptureCard: View {
                 }
                 .clipped()
                 .overlay(alignment: .bottom) {
-                    CardCaption(title: item.title.replacingOccurrences(of: "Screenshot ", with: ""), date: item.createdAt) {
+                    CardCaption(title: item.title.replacingOccurrences(of: "Screenshot ", with: ""), date: item.createdAt,
+                                renaming: renaming, rename: { renaming = false; library.rename(item, to: $0) }, cancelRename: { renaming = false }) {
                         Badge(text: item.dimensions)
                     }
                 }
         } actionRow: {
-            CardAction(symbol: "eye", help: "Preview") { actions.preview(item) }
+            CardAction(symbol: "eye", help: "Preview", perform: onPreview)
             CardAction(symbol: "pencil", help: "Edit") { actions.edit(item) }
             CopyAction { actions.copy(item) }
             CardAction(symbol: "trash", help: "Delete", tint: .red) { actions.delete(item) }
@@ -502,6 +603,7 @@ private struct CaptureCard: View {
             Button("Preview") { actions.preview(item) }
             Button("Edit") { actions.edit(item) }
             Button("Copy to Clipboard") { actions.copy(item) }
+            Button("Rename…") { renaming = true }
             Divider()
             Button("Delete", role: .destructive) { actions.delete(item) }
         }
@@ -511,13 +613,16 @@ private struct CaptureCard: View {
 private struct ClipboardCard: View {
     let item: ClipboardItem
     let clipboard: ClipboardHistory
+    var onPreview: () -> Void = {}
     @State private var hovering = false
+    @State private var renaming = false
 
     var body: some View {
-        CardChrome(hovering: $hovering, onTap: paste) {
+        CardChrome(hovering: $hovering, onTap: { if !renaming { paste() } }) {
             content
                 .overlay(alignment: .bottom) {
-                    CardCaption(title: "", date: item.createdAt) {
+                    CardCaption(title: item.name ?? "", date: item.createdAt,
+                                renaming: renaming, rename: { renaming = false; clipboard.rename(item, to: $0) }, cancelRename: { renaming = false }) {
                         if item.pinned {
                             Image(systemName: "star.fill").font(.system(size: 9)).foregroundStyle(.yellow)
                         }
@@ -532,6 +637,7 @@ private struct ClipboardCard: View {
                 CardAction(symbol: "arrow.down.doc", help: "Paste into the front app", perform: paste)
             }
             CopyAction(perform: copy)
+            CardAction(symbol: "eye", help: "Preview", perform: onPreview)
             CardAction(symbol: item.pinned ? "star.fill" : "star", help: item.pinned ? "Unpin" : "Pin", tint: item.pinned ? .yellow : .white) {
                 clipboard.togglePin(item)
             }
@@ -539,7 +645,20 @@ private struct ClipboardCard: View {
         } menu: {
             if clipboard.canPaste { Button("Paste") { paste() } }
             Button("Copy") { copy() }
+            if item.kind == .color, let color = PickedColor(hex: item.text) {
+                Menu("Copy as") {
+                    ForEach(ColorFormat.allCases, id: \.self) { format in
+                        Button(format.string(for: color)) {
+                            let pasteboard = NSPasteboard.general
+                            pasteboard.clearContents()
+                            pasteboard.setString(format.string(for: color), forType: .string)
+                            FeedbackHUD.show("\(format.string(for: color)) copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
+                        }
+                    }
+                }
+            }
             Button(item.pinned ? "Unpin" : "Pin") { clipboard.togglePin(item) }
+            Button(item.name == nil ? "Name…" : "Rename…") { renaming = true }
             Divider()
             Button("Delete", role: .destructive) { clipboard.delete(item) }
         }
@@ -633,17 +752,21 @@ private struct ClipboardCard: View {
 private struct AssetCard: View {
     let item: AssetItem
     let assets: AssetStore
+    var onPreview: () -> Void = {}
     @State private var hovering = false
+    @State private var renaming = false
 
     var body: some View {
-        CardChrome(hovering: $hovering, onTap: { assets.open(item) }) {
+        CardChrome(hovering: $hovering, onTap: { if !renaming { assets.open(item) } }) {
             content
                 .overlay(alignment: .bottom) {
-                    CardCaption(title: item.fileName, date: item.createdAt) {
+                    CardCaption(title: renaming ? item.title : item.fileName, date: item.createdAt,
+                                renaming: renaming, rename: { renaming = false; assets.rename(item, to: $0) }, cancelRename: { renaming = false }) {
                         Badge(text: item.kind == .image && item.pixelWidth > 0 ? item.dimensions : item.sizeText)
                     }
                 }
         } actionRow: {
+            CardAction(symbol: "eye", help: "Preview", perform: onPreview)
             CardAction(symbol: "arrow.up.forward.app", help: "Open") { assets.open(item) }
             CopyAction { assets.copy(item) }
             CardAction(symbol: "trash", help: "Delete", tint: .red) { assets.delete(item) }
@@ -651,6 +774,7 @@ private struct AssetCard: View {
             Button("Open") { assets.open(item) }
             Button("Copy") { assets.copy(item) }
             Button("Reveal in Finder") { assets.reveal(item) }
+            Button("Rename…") { renaming = true }
             Divider()
             Button("Delete", role: .destructive) { assets.delete(item) }
         }
@@ -679,6 +803,70 @@ private struct AssetCard: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.bottom, 24)
+        }
+    }
+}
+
+/// A picked colour: the swatch fills the card, the preferred format is the caption.
+private struct ColorCard: View {
+    let entry: ColorEntry
+    let colors: ColorStore
+    let format: ColorFormat
+    var onPreview: () -> Void = {}
+    @Environment(AppPreferences.self) private var preferences
+    @State private var hovering = false
+    @State private var renaming = false
+
+    var body: some View {
+        CardChrome(hovering: $hovering, onTap: { if !renaming { onPreview() } }) {
+            entry.color.swiftUIColor
+                .overlay(alignment: .topLeading) {
+                    if !entry.color.isInSRGBGamut {
+                        Text("P3")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(entry.color.isDark ? .white : .black)
+                            .padding(.horizontal, 5).padding(.vertical, 2)
+                            .background((entry.color.isDark ? Color.white : Color.black).opacity(0.2), in: Capsule())
+                            .padding(8)
+                            .help("Outside the sRGB gamut — a Display P3 colour")
+                    }
+                }
+                .overlay(alignment: .bottom) {
+                    CardCaption(title: entry.name ?? format.string(for: entry.color), date: entry.createdAt,
+                                renaming: renaming, rename: { renaming = false; colors.rename(entry, to: $0) }, cancelRename: { renaming = false }) {
+                        if entry.name != nil || format != .hex { Badge(text: ColorFormat.hex.string(for: entry.color)) }
+                    }
+                }
+        } actionRow: {
+            CopyAction { copy(as: format) }
+            CardAction(symbol: "eye", help: "Preview", perform: onPreview)
+            CardAction(symbol: "trash", help: "Delete", tint: .red) { colors.delete(entry) }
+        } menu: {
+            Button("Copy \(format.title)") { copy(as: format) }
+            Menu("Copy as") {
+                ForEach(ColorFormat.allCases, id: \.self) { other in
+                    Button(other.string(for: entry.color)) { copy(as: other) }
+                }
+            }
+            Button(entry.name == nil ? "Name…" : "Rename…") { renaming = true }
+            Divider()
+            Button("Delete", role: .destructive) { colors.delete(entry) }
+        }
+    }
+
+    private func copy(as format: ColorFormat) {
+        colors.copy(entry, as: format)
+        preferences.colorFormat = format // the next copy uses the format used last
+        FeedbackHUD.show("\(format.string(for: entry.color)) copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
+    }
+
+    /// A swatch for dragging the colour's text.
+    static func dragImage(for color: PickedColor) -> NSImage {
+        let (r, g, b) = color.clamped
+        return NSImage(size: NSSize(width: 60, height: 60), flipped: false) { rect in
+            NSColor(srgbRed: r, green: g, blue: b, alpha: 1).setFill()
+            NSBezierPath(roundedRect: rect, xRadius: 12, yRadius: 12).fill()
+            return true
         }
     }
 }

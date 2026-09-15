@@ -52,6 +52,8 @@ final class ClipboardHistory {
         do {
             let database = try SQLiteDatabase(url: folderURL.appendingPathComponent("history.sqlite"))
             try database.execute(Self.schema)
+            // Added after the first release; harmless when the column exists.
+            try? database.execute("ALTER TABLE items ADD COLUMN name TEXT")
             self.database = database
         } catch {
             Log.app.error("Clipboard history: cannot open database: \(String(describing: error), privacy: .public)")
@@ -78,7 +80,8 @@ final class ClipboardHistory {
             source_name TEXT,
             created REAL NOT NULL,
             pinned INTEGER NOT NULL DEFAULT 0,
-            thumbnail BLOB
+            thumbnail BLOB,
+            name TEXT
         );
         CREATE INDEX IF NOT EXISTS items_created ON items(created DESC);
         CREATE TABLE IF NOT EXISTS contents (
@@ -283,6 +286,14 @@ final class ClipboardHistory {
         update(items[index])
     }
 
+    /// Gives the entry a label (empty clears it).
+    func rename(_ item: ClipboardItem, to name: String) {
+        guard let index = items.firstIndex(of: item) else { return }
+        let cleaned = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        items[index].name = cleaned.isEmpty ? nil : cleaned
+        update(items[index])
+    }
+
     func delete(_ item: ClipboardItem) {
         items.removeAll { $0.id == item.id }
         thumbnails[item.id] = nil
@@ -321,6 +332,16 @@ final class ClipboardHistory {
         return nil
     }
 
+    /// The stored image data of an image entry (PNG preferred, else TIFF), for previews.
+    func imageData(for item: ClipboardItem) -> Data? {
+        guard item.kind == .image, let database else { return nil }
+        let rows = (try? database.query(
+            "SELECT type, data FROM contents WHERE item_id = ? AND item_index = 0", [.text(item.id.uuidString)]
+        ) { ($0.text(0) ?? "", $0.blob(1)) }) ?? []
+        return rows.first { $0.0 == NSPasteboard.PasteboardType.png.rawValue }?.1
+            ?? rows.first { $0.0 == NSPasteboard.PasteboardType.tiff.rawValue }?.1
+    }
+
     /// The icon of the app the item was copied from.
     func sourceIcon(for item: ClipboardItem) -> NSImage? {
         guard let bundleID = item.sourceBundleID else { return nil }
@@ -339,7 +360,7 @@ final class ClipboardHistory {
         guard let database else { return }
         do {
             items = try database.query(
-                "SELECT id, kind, text, pixel_width, pixel_height, source_bundle, source_name, created, pinned FROM items ORDER BY created DESC"
+                "SELECT id, kind, text, pixel_width, pixel_height, source_bundle, source_name, created, pinned, name FROM items ORDER BY created DESC"
             ) { row in
                 var item = ClipboardItem(
                     id: UUID(uuidString: row.text(0) ?? "") ?? UUID(),
@@ -350,6 +371,7 @@ final class ClipboardHistory {
                     createdAt: Date(timeIntervalSince1970: row.double(7))
                 )
                 item.pinned = row.bool(8)
+                item.name = row.text(9)
                 return item
             }
         } catch {
@@ -387,8 +409,8 @@ final class ClipboardHistory {
         guard let database else { return }
         storage.async {
             try? database.run(
-                "UPDATE items SET created = ?, pinned = ? WHERE id = ?",
-                [.real(item.createdAt.timeIntervalSince1970), .integer(item.pinned ? 1 : 0), .text(item.id.uuidString)]
+                "UPDATE items SET created = ?, pinned = ?, name = ? WHERE id = ?",
+                [.real(item.createdAt.timeIntervalSince1970), .integer(item.pinned ? 1 : 0), item.name.map(Value.text) ?? .null, .text(item.id.uuidString)]
             )
         }
     }

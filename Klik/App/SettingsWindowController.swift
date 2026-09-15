@@ -15,7 +15,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         tabs.canPropagateSelectedChildViewControllerTitle = false
 
         tabs.addTabViewItem(Self.pane(
-            "General", symbol: "gearshape", height: 700,
+            "General", symbol: "gearshape", height: 780,
             GeneralSettingsView().environment(model).environment(library).environment(preferences)
         ))
         tabs.addTabViewItem(Self.pane(
@@ -31,7 +31,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             EditorSettingsView().environment(preferences)
         ))
         tabs.addTabViewItem(Self.pane(
-            "Shortcuts", symbol: "keyboard", height: 330,
+            "Shortcuts", symbol: "keyboard", height: 370,
             ShortcutSettingsView().environment(shortcuts)
         ))
         tabs.addTabViewItem(Self.pane(
