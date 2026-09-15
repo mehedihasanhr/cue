@@ -175,6 +175,8 @@ struct FloatingPanelView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .onChange(of: searching) { _, _ in resultFilter = nil }
+            .onChange(of: search, refreshHits)
+            .onChange(of: library.items.count + clipboard.items.count + assets.items.count + colors.items.count + tasksStore.tasks.count, refreshHits)
         }
         .padding(18)
         .foregroundStyle(.white)
@@ -184,9 +186,12 @@ struct FloatingPanelView: View {
 
     private var searching: Bool { !search.trimmingCharacters(in: .whitespaces).isEmpty }
 
-    /// Matches across every tab for the current search.
-    private var hits: [IslandItem] {
-        IslandSearch.hits(for: search, library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore)
+    /// Matches across every tab for the current search — computed once per keystroke,
+    /// not once per view that shows them.
+    @State private var hits: [IslandItem] = []
+
+    private func refreshHits() {
+        hits = searching ? IslandSearch.hits(for: search, library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore) : []
     }
 
     private func resultPill(_ value: IslandTab?, title: String, count: Int, symbol: String) -> some View {
