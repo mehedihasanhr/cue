@@ -11,10 +11,13 @@ final class IslandController {
     private let model = IslandModel()
     private let preferences: AppPreferences
     private let tasks: TaskStore
+    private let library: CaptureLibrary
+    private let clipboard: ClipboardHistory
+    private let assets: AssetStore
+    private let colors: ColorStore
 
     private var closeTask: Task<Void, Never>?
     private var flashTask: Task<Void, Never>?
-    private var shadowTask: Task<Void, Never>?
     /// Menus (layout picker, context menus) take the pointer away without leaving.
     private var menusTracking = 0
     /// Hidden while a capture flow runs; a capture that lands meanwhile flashes after.
@@ -29,6 +32,10 @@ final class IslandController {
     init(library: CaptureLibrary, clipboard: ClipboardHistory, assets: AssetStore, colors: ColorStore, tasks: TaskStore, actions: HistoryActions, preferences: AppPreferences) {
         self.preferences = preferences
         self.tasks = tasks
+        self.library = library
+        self.clipboard = clipboard
+        self.assets = assets
+        self.colors = colors
 
         let content = IslandDropView(frame: CGRect(origin: .zero, size: window.frame.size))
         content.onDragEntered = { [weak self] in self?.dragEntered() }
@@ -40,15 +47,16 @@ final class IslandController {
         host.frame = content.bounds
         content.addSubview(host)
         window.contentView = content
-        window.onEscape = { [weak self] in self?.collapse() }
+        window.onEscape = { [weak self] in self?.escape() }
         model.onTap = { [weak self] in self?.expand() }
         model.onPrompt = { [weak self] prompt in self?.prompt(prompt) }
         model.onShowTask = { [weak self] task in self?.showTask(task) }
         model.onTaskDetailClosed = { [weak self] task in
             guard let self else { return }
             removeOutsideClickMonitor()
-            tasks.pendingSelection = task?.projectID.map { .project($0) } ?? .all
+            if let task { tasks.pendingSelection = task.projectID.map { .project($0) } ?? .all }
             setPhase(.expanded, animated: true)
+            resignKeyIfNeeded()
         }
         model.onPromptFinished = { [weak self] prompt, answer in
             guard let self else { return }
@@ -59,6 +67,8 @@ final class IslandController {
                     if let project = tasks.addProject(named: answer.title, in: parent) {
                         tasks.pendingSelection = .project(project.id)
                     }
+                case .rename(let detail):
+                    renamed(detail, to: answer.title)
                 case .task:
                     if let task = prompt.editing {
                         tasks.update(task, title: answer.title, notes: answer.notes, projectID: answer.projectID)
@@ -71,6 +81,7 @@ final class IslandController {
                 tasks.pendingSelection = project.map { .project($0) } ?? .all
             }
             setPhase(.expanded, animated: true)
+            resignKeyIfNeeded()
         }
 
         let center = NotificationCenter.default
@@ -193,20 +204,6 @@ final class IslandController {
         flashTask?.cancel()
         window.orderFrontRegardless()
         setPhase(.expanded, animated: true)
-        scheduleShadow()
-    }
-
-    /// The window server draws the shadow (free per frame, unlike a SwiftUI shadow on
-    /// an animating shape); it is switched on once the shape has settled and off before
-    /// it shrinks, so the notch itself never gets one.
-    private func scheduleShadow() {
-        shadowTask?.cancel()
-        shadowTask = Task { [weak self] in
-            try? await Task.sleep(for: Self.collapseAnimation)
-            guard !Task.isCancelled, let self, model.phase != .collapsed else { return }
-            window.hasShadow = true
-            window.invalidateShadow()
-        }
     }
 
     func collapse(animated: Bool = true) {
@@ -214,8 +211,6 @@ final class IslandController {
         closeTask?.cancel()
         guard model.phase != .collapsed else { return }
         removeOutsideClickMonitor()
-        shadowTask?.cancel()
-        window.hasShadow = false
         setPhase(.collapsed, animated: animated)
         if animated {
             closeTask = Task { [weak self] in
@@ -240,7 +235,7 @@ final class IslandController {
 
     /// Shrinks the open island to a small box with a text field; the answer comes
     /// back through `onPromptFinished`. A click anywhere outside the box cancels it.
-    private func prompt(_ prompt: IslandPrompt) {
+    func prompt(_ prompt: IslandPrompt) {
         guard model.geometry != nil else { return }
         closeTask?.cancel()
         flashTask?.cancel()
@@ -248,13 +243,45 @@ final class IslandController {
         installOutsideClickMonitor()
     }
 
-    /// Opens a task in the compact island; a click outside closes the island.
-    private func showTask(_ task: TaskItem) {
+    /// Opens a task in the compact island; a click outside closes the island, ⎋
+    /// goes back to the panel.
+    func showTask(_ task: TaskItem) {
         guard model.geometry != nil else { return }
         closeTask?.cancel()
         flashTask?.cancel()
         setPhase(.taskDetail(task.id), animated: true)
         installOutsideClickMonitor()
+        window.makeKey() // so ⎋ reaches the island
+    }
+
+    /// Applies a rename from the compact box to the right store.
+    private func renamed(_ detail: IslandDetail, to name: String) {
+        switch detail {
+        case .capture(let item): library.rename(item, to: name)
+        case .asset(let item): assets.rename(item, to: name)
+        case .clipboard(let item): clipboard.rename(item, to: name)
+        case .color(let entry): colors.rename(entry, to: name)
+        }
+    }
+
+    /// ⎋: back out of a compact phase to the panel; from the panel, close the island.
+    private func escape() {
+        switch model.phase {
+        case .taskDetail:
+            model.onTaskDetailClosed(nil)
+        case .prompt(let prompt):
+            model.onPromptFinished(prompt, nil)
+        default:
+            collapse()
+        }
+    }
+
+    /// Typing must go back to the user's app once the island no longer needs the
+    /// keyboard; re-ordering front without key is the only way to drop it.
+    private func resignKeyIfNeeded() {
+        guard window.isKeyWindow else { return }
+        window.orderOut(nil)
+        if !hidden { window.orderFrontRegardless() }
     }
 
     private var outsideClickMonitors: [Any] = []
@@ -299,7 +326,6 @@ final class IslandController {
         closeTask?.cancel()
         window.orderFrontRegardless()
         setPhase(phase, animated: true)
-        scheduleShadow()
         flashTask = Task { [weak self] in
             try? await Task.sleep(for: Self.flashDuration)
             guard !Task.isCancelled, let self, model.phase.isFlash else { return }

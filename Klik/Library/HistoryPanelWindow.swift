@@ -7,9 +7,9 @@ import SwiftUI
 final class HistoryPanelWindow: NSPanel {
     private var monitors: [Any] = []
 
-    init(rootView: some View) {
+    init(rootView: some View, size: CGSize = HistoryView.size) {
         super.init(
-            contentRect: CGRect(origin: .zero, size: HistoryView.size),
+            contentRect: CGRect(origin: .zero, size: size),
             styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -25,11 +25,8 @@ final class HistoryPanelWindow: NSPanel {
         collectionBehavior = [.canJoinAllSpaces, .transient, .fullScreenAuxiliary]
         animationBehavior = .utilityWindow
 
-        let host = NSHostingView(rootView: rootView
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.primary.opacity(0.12)))
-        )
-        host.frame = CGRect(origin: .zero, size: HistoryView.size)
+        let host = NSHostingView(rootView: rootView.clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous)))
+        host.frame = CGRect(origin: .zero, size: size)
         contentView = host
     }
 
@@ -59,7 +56,11 @@ final class HistoryPanelWindow: NSPanel {
 
     override func resignKey() {
         super.resignKey()
-        close()
+        // Menus and the island's compact box take key status briefly; only a real switch closes.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            guard let self, isVisible, !isKeyWindow, NSApp.keyWindow == nil || NSApp.keyWindow?.isKind(of: NSPanel.self) == false else { return }
+            close()
+        }
     }
 
     private func installMonitors() {

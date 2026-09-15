@@ -8,6 +8,8 @@ struct InlineTextField: View {
     var font = Font.system(size: 10.5, weight: .medium)
     /// The field's own box; off when the caller draws one around it.
     var boxed = true
+    /// Select the initial text on focus, so typing replaces it.
+    var selectAll = false
     let commit: (String) -> Void
     var cancel: () -> Void = {}
     @State private var text = ""
@@ -31,6 +33,10 @@ struct InlineTextField: View {
                 Task {
                     try? await Task.sleep(for: .milliseconds(60))
                     focused = true
+                    if selectAll {
+                        try? await Task.sleep(for: .milliseconds(40))
+                        NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
+                    }
                 }
             }
             .onSubmit { finish { commit(text) } }

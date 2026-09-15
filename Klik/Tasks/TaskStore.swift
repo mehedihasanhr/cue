@@ -103,6 +103,8 @@ final class TaskStore {
     private let fileURL: URL
     /// Images pasted or dropped into descriptions, referenced as `klik://<name>`.
     private let imagesFolder: URL
+    /// Other files dropped into descriptions, referenced as `klik-file://<id>/<name>`.
+    private let attachmentsFolder: URL
     @ObservationIgnored private let storage = DispatchQueue(label: "com.stackrover.klik.tasks", qos: .utility)
 
     private struct File: Codable {
@@ -117,7 +119,9 @@ final class TaskStore {
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         fileURL = folder.appendingPathComponent("tasks.json")
         imagesFolder = folder.appendingPathComponent("TaskImages", isDirectory: true)
+        attachmentsFolder = folder.appendingPathComponent("TaskAttachments", isDirectory: true)
         try? FileManager.default.createDirectory(at: imagesFolder, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: attachmentsFolder, withIntermediateDirectories: true)
         if let data = try? Data(contentsOf: fileURL), let file = try? JSONDecoder().decode(File.self, from: data) {
             projects = file.projects
             tasks = file.tasks
@@ -227,6 +231,32 @@ final class TaskStore {
         let png = isPNG ? data : CGImageSourceCreateImageAtIndex(source, 0, nil).flatMap(ImageEncoding.png)
         guard let png, (try? png.write(to: url, options: .atomic)) != nil else { return nil }
         return "![image](klik://\(name))"
+    }
+
+    /// Copies a file into the attachments folder and returns the Markdown to link it.
+    func saveAttachment(_ url: URL) -> String? {
+        let id = UUID().uuidString
+        let destination = attachmentsFolder.appendingPathComponent(id, isDirectory: true).appendingPathComponent(url.lastPathComponent)
+        do {
+            try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let granted = url.startAccessingSecurityScopedResource()
+            defer { if granted { url.stopAccessingSecurityScopedResource() } }
+            try FileManager.default.copyItem(at: url, to: destination)
+        } catch {
+            return nil
+        }
+        let name = url.lastPathComponent.replacingOccurrences(of: "]", with: ")")
+        let escaped = url.lastPathComponent.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? url.lastPathComponent
+        return "[\(name)](klik-file://\(id)/\(escaped))"
+    }
+
+    /// The file behind a `klik-file://<id>/<name>` attachment reference.
+    func attachmentURL(for source: String) -> URL? {
+        guard source.hasPrefix("klik-file://") else { return nil }
+        let parts = source.dropFirst(12).split(separator: "/", maxSplits: 1)
+        guard parts.count == 2, !parts[0].contains(".."), let name = String(parts[1]).removingPercentEncoding, !name.contains("/") else { return nil }
+        let url = attachmentsFolder.appendingPathComponent(String(parts[0]), isDirectory: true).appendingPathComponent(name)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
     /// The file behind a `klik://<name>` image reference.

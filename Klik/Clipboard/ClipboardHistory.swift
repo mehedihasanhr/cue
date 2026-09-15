@@ -234,7 +234,9 @@ final class ClipboardHistory {
             return DragPayload(writer: url as NSURL, preview: NSWorkspace.shared.icon(forFile: url.path))
         case .image:
             let url = folderURL.appendingPathComponent("drag-\(item.id.uuidString).png")
-            if let png = contents.first(where: { $0.type == NSPasteboard.PasteboardType.png.rawValue })?.data
+            if FileManager.default.fileExists(atPath: url.path) {
+                pasteboardItem.setString(url.absoluteString, forType: .fileURL) // written by an earlier drag
+            } else if let png = contents.first(where: { $0.type == NSPasteboard.PasteboardType.png.rawValue })?.data
                 ?? contents.first.flatMap({ CGImageSourceCreateWithData($0.data as CFData, nil) }).flatMap({ CGImageSourceCreateImageAtIndex($0, 0, nil) }).flatMap(ImageEncoding.png) {
                 try? png.write(to: url, options: .atomic)
                 pasteboardItem.setString(url.absoluteString, forType: .fileURL)
@@ -259,15 +261,33 @@ final class ClipboardHistory {
         }
     }
 
-    /// Whether `paste` can type ⌘V into the front app (needs Accessibility).
-    var canPaste: Bool { PermissionManager.hasAccessibilityAccess }
+    /// A Klik text view that should receive pastes instead of the front app — the
+    /// quick-task form while it is open. Set by the app delegate.
+    var openEditor: () -> NSTextView? = { nil }
 
-    /// Copies the item and presses ⌘V in the front app. Returns false (after copying)
-    /// when Accessibility is not granted, so the caller can say "press ⌘V".
+    /// Whether `paste` has somewhere to go: an open Klik editor, or the front app
+    /// through a typed ⌘V (needs Accessibility).
+    var canPaste: Bool { openEditor() != nil || PermissionManager.hasAccessibilityAccess }
+
+    /// Copies the item and pastes it. Returns false (after copying) when there is
+    /// nowhere to paste, so the caller can say "press ⌘V".
     @discardableResult
     func paste(_ item: ClipboardItem) -> Bool {
         copy(item)
-        guard canPaste else { return false }
+        return pressPaste()
+    }
+
+    /// Pastes whatever is on the pasteboard: into Klik's own open editor when there
+    /// is one, otherwise by pressing ⌘V in the front app.
+    @discardableResult
+    func pressPaste() -> Bool {
+        if let editor = openEditor() {
+            editor.window?.makeKeyAndOrderFront(nil)
+            editor.window?.makeFirstResponder(editor)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { editor.paste(nil) }
+            return true
+        }
+        guard PermissionManager.hasAccessibilityAccess else { return false }
         // A beat for the pasteboard to settle before the key press lands.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
             let source = CGEventSource(stateID: .combinedSessionState)

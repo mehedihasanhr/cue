@@ -41,21 +41,27 @@ extension View {
 /// frosted, slightly grainy texture rather than a flat translucent sheet.
 struct GrainOverlay: View {
     var opacity: Double
+    /// A fine, low-contrast grain (soft light) that reads as texture rather than
+    /// static — for glass over light backgrounds.
+    var smooth = false
 
     var body: some View {
-        Image(nsImage: Self.tile)
+        Image(nsImage: smooth ? Self.smoothTile : Self.tile)
             .resizable(resizingMode: .tile)
             .opacity(opacity)
-            .blendMode(.overlay)
+            .blendMode(smooth ? .softLight : .overlay)
             .allowsHitTesting(false)
     }
 
-    private static let tile: NSImage = {
+    private static let tile = makeTile(range: 0...255)
+    private static let smoothTile = makeTile(range: 108...148)
+
+    private static func makeTile(range: ClosedRange<UInt8>) -> NSImage {
         let size = 128
         var bytes = [UInt8](repeating: 0, count: size * size)
         var generator = SystemRandomNumberGenerator()
         for i in bytes.indices {
-            bytes[i] = UInt8.random(in: 0...255, using: &generator)
+            bytes[i] = UInt8.random(in: range, using: &generator)
         }
         let provider = CGDataProvider(data: Data(bytes) as CFData)!
         let cgImage = CGImage(
@@ -64,7 +70,7 @@ struct GrainOverlay: View {
             provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent
         )!
         return NSImage(cgImage: cgImage, size: NSSize(width: size, height: size))
-    }()
+    }
 }
 
 /// A keyboard-key badge for shortcut hints ("↩", "esc").
@@ -78,11 +84,11 @@ struct KeyCap: View {
     var body: some View {
         Text(label)
             .font(.caption.weight(.semibold).monospaced())
-            .foregroundStyle(.white.opacity(0.9))
+            .foregroundStyle(.primary.opacity(0.9))
             .padding(.horizontal, 5)
             .padding(.vertical, 1.5)
-            .background(.white.opacity(0.14), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(.white.opacity(0.18)))
+            .background(.primary.opacity(0.14), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(.primary.opacity(0.18)))
     }
 }
 
@@ -158,4 +164,42 @@ extension NSCursor {
         }
         return NSCursor(image: image, hotSpot: CGPoint(x: 11, y: 11))
     }()
+}
+
+/// Real Liquid Glass (macOS 26): a lightly tinted, refractive `glassEffect` that
+/// bends what is behind the panel, with a faint grain so text keeps its contrast.
+/// Follows the appearance (light tint in light mode, dark in dark). Older systems
+/// get a material.
+struct LiquidGlassModifier: ViewModifier {
+    let cornerRadius: CGFloat
+    /// Dark glass whatever the appearance (for content drawn in white).
+    var alwaysDark = false
+    @Environment(\.colorScheme) private var scheme
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        let dark = alwaysDark || scheme == .dark
+        let tint: Color = dark ? .black.opacity(alwaysDark && scheme == .light ? 0.5 : 0.22) : .white.opacity(0.28)
+        if #available(macOS 26.0, *) {
+            GlassEffectContainer {
+                content
+                    .background { GrainOverlay(opacity: dark ? 0.5 : 0.35, smooth: true).clipShape(shape) }
+                    .glassEffect(.regular.tint(tint).interactive(), in: shape)
+            }
+        } else {
+            content
+                .background { GrainOverlay(opacity: 0.4, smooth: true).clipShape(shape) }
+                .background(.regularMaterial, in: shape)
+                .background(tint, in: shape)
+                .overlay(shape.strokeBorder(.primary.opacity(0.12)))
+                .shadow(color: .black.opacity(0.3), radius: 16, y: 6)
+        }
+    }
+}
+
+extension View {
+    /// Tinted Liquid Glass that follows the appearance (or stays dark).
+    func liquidGlass(cornerRadius: CGFloat, alwaysDark: Bool = false) -> some View {
+        modifier(LiquidGlassModifier(cornerRadius: cornerRadius, alwaysDark: alwaysDark))
+    }
 }

@@ -49,6 +49,8 @@ struct IslandPanel: View {
     @State private var search = ""
     /// A card opened in place of the row.
     @State private var detail: IslandDetail?
+    /// Pending hover switch of the tabs (cancelled if the pointer moves on).
+    @State private var hoverSwitch: Task<Void, Never>?
     @AppStorage(IslandTab.storageKey) private var tab: IslandTab = .captures
 
     private var filteredCaptures: [CaptureItem] {
@@ -136,7 +138,9 @@ struct IslandPanel: View {
                         DayStrip(items: filteredCaptures, date: \.createdAt, dragPayload: { item in
                             library.fileURL(for: item).map { .file($0, preview: library.thumbnail(for: item)) }
                         }) { item in
-                            CaptureCard(item: item, library: library, actions: actions, onPreview: { open(.capture(item)) })
+                            CaptureCard(item: item, library: library, actions: actions, clipboard: clipboard, onPreview: { open(.capture(item)) }, onRename: {
+                                onPrompt(IslandPrompt(kind: .rename(.capture(item)), initial: item.title.replacingOccurrences(of: "Screenshot ", with: ""), image: library.thumbnail(for: item)))
+                            })
                         }
                     }
                 case .clipboard:
@@ -146,7 +150,10 @@ struct IslandPanel: View {
                         DayStrip(items: filteredClipboard, date: \.createdAt, dragPayload: { item in
                             clipboard.dragPayload(for: item)
                         }) { item in
-                            ClipboardCard(item: item, clipboard: clipboard, onPreview: { open(.clipboard(item)) })
+                            ClipboardCard(item: item, clipboard: clipboard, onPreview: { open(.clipboard(item)) }, onRename: {
+                                onPrompt(IslandPrompt(kind: .rename(.clipboard(item)), initial: item.name ?? "", image: clipboard.thumbnail(for: item),
+                                                      swatch: item.kind == .color ? PickedColor(hex: item.text) : nil))
+                            })
                         }
                     }
                 case .tasks:
@@ -158,7 +165,9 @@ struct IslandPanel: View {
                         DayStrip(items: filteredColors, date: \.createdAt, dragPayload: { entry in
                             DragPayload(writer: preferences.colorFormat.string(for: entry.color) as NSString, preview: ColorCard.dragImage(for: entry.color))
                         }) { entry in
-                            ColorCard(entry: entry, colors: colors, format: preferences.colorFormat, onPreview: { open(.color(entry)) })
+                            ColorCard(entry: entry, colors: colors, format: preferences.colorFormat, onPreview: { open(.color(entry)) }, onRename: {
+                                onPrompt(IslandPrompt(kind: .rename(.color(entry)), initial: entry.name ?? "", swatch: entry.color))
+                            })
                         }
                     }
                 case .assets:
@@ -168,7 +177,9 @@ struct IslandPanel: View {
                         DayStrip(items: filteredAssets, date: \.createdAt, dragPayload: { item in
                             .file(assets.fileURL(for: item), preview: assets.thumbnail(for: item))
                         }) { item in
-                            AssetCard(item: item, assets: assets, onPreview: { open(.asset(item)) })
+                            AssetCard(item: item, assets: assets, clipboard: clipboard, onPreview: { open(.asset(item)) }, onRename: {
+                                onPrompt(IslandPrompt(kind: .rename(.asset(item)), initial: item.title, image: assets.thumbnail(for: item)))
+                            })
                         }
                     }
                 }
@@ -199,6 +210,7 @@ struct IslandPanel: View {
         .help(help)
     }
 
+    /// Tabs switch after the pointer rests on them for 250 ms (a click is immediate).
     private func tabPill(_ value: IslandTab, count: Int) -> some View {
         let selected = tab == value
         return Button {
@@ -222,6 +234,15 @@ struct IslandPanel: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .onHover { inside in
+            hoverSwitch?.cancel()
+            guard inside, tab != value else { return }
+            hoverSwitch = Task {
+                try? await Task.sleep(for: .milliseconds(250))
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeOut(duration: 0.15)) { tab = value }
+            }
+        }
     }
 
     private func open(_ detail: IslandDetail) {
@@ -293,7 +314,6 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
     @State private var offset: CGFloat = 0
     @State private var dragOrigin: CGFloat?
     @State private var dragMode: DragMode?
-    @State private var dragSource = StripEventView.Handle()
 
     private enum DragMode { case scroll, dragOut }
 
@@ -364,19 +384,15 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
             .contentShape(Rectangle())
+            // Horizontal drags scroll the row. Vertical ones are taken by the AppKit
+            // layer underneath before SwiftUI's gesture settles (see StripEventView).
             .gesture(
                 DragGesture(minimumDistance: 3)
                     .onChanged { value in
                         if dragMode == nil {
                             let dx = value.translation.width, dy = value.translation.height
-                            guard hypot(dx, dy) >= 5 else { return }
-                            if abs(dy) > abs(dx), value.startLocation.y >= Self.headerHeight,
-                               let dragPayload, let placed = layout.cards.first(where: { ($0.x - offset...$0.x - offset + Self.cardSize.width).contains(value.startLocation.x) }),
-                               let payload = dragPayload(placed.item), let event = NSApp.currentEvent {
-                                dragMode = .dragOut
-                                dragSource.beginDrag(payload, event: event)
-                                return
-                            }
+                            guard hypot(dx, dy) >= StripEventView.decisionDistance else { return }
+                            guard !StripEventView.isDragOut(dx: dx, dy: dy) else { dragMode = .dragOut; return }
                             dragMode = .scroll
                             dragOrigin = offset
                             NSCursor.closedHand.set()
@@ -390,9 +406,14 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
                         NSCursor.arrow.set()
                     }
             )
-            .background(StripEventView(handle: dragSource, onScroll: { delta in
+            .background(StripEventView(payloadAt: { point in
+                guard point.y >= Self.headerHeight, let dragPayload,
+                      let placed = layout.cards.first(where: { ($0.x - offset...$0.x - offset + Self.cardSize.width).contains(point.x) })
+                else { return nil }
+                return dragPayload(placed.item)
+            }, onScroll: { delta in
                 self.offset = min(max(offset + delta, 0), maxOffset)
-            }, onDragEnded: { dragMode = nil }))
+            }, onDragBegan: { dragMode = .dragOut }, onDragEnded: { dragMode = nil }))
         }
         .frame(height: Self.headerHeight + Self.cardSize.height)
         .clipped()
@@ -479,17 +500,11 @@ private struct CopyAction: View {
 private struct CardCaption<Leading: View>: View {
     let title: String
     let date: Date
-    /// Set while the title is being edited in place; `rename` gets the new name.
-    var renaming = false
-    var rename: ((String) -> Void)? = nil
-    var cancelRename: () -> Void = {}
     @ViewBuilder let trailing: () -> Leading
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            if renaming, let rename {
-                InlineTextField(initial: title, commit: rename, cancel: cancelRename)
-            } else if !title.isEmpty {
+            if !title.isEmpty {
                 Text(title)
                     .font(.system(size: 10.5, weight: .medium))
                     .foregroundStyle(.white.opacity(0.92))
@@ -529,16 +544,18 @@ private struct Badge: View {
     }
 }
 
-private struct CaptureCard: View {
+struct CaptureCard: View {
     let item: CaptureItem
     let library: CaptureLibrary
     let actions: HistoryActions
+    /// For pasting straight into the front app / an open Klik editor.
+    var clipboard: ClipboardHistory? = nil
     var onPreview: () -> Void = {}
+    var onRename: () -> Void = {}
     @State private var hovering = false
-    @State private var renaming = false
 
     var body: some View {
-        CardChrome(hovering: $hovering, onTap: { if !renaming { actions.edit(item) } }) {
+        CardChrome(hovering: $hovering, onTap: { actions.edit(item) }) {
             Color.clear
                 .overlay {
                     if let thumbnail = library.thumbnail(for: item) {
@@ -549,40 +566,49 @@ private struct CaptureCard: View {
                 }
                 .clipped()
                 .overlay(alignment: .bottom) {
-                    CardCaption(title: item.title.replacingOccurrences(of: "Screenshot ", with: ""), date: item.createdAt,
-                                renaming: renaming, rename: { renaming = false; library.rename(item, to: $0) }, cancelRename: { renaming = false }) {
+                    CardCaption(title: item.title.replacingOccurrences(of: "Screenshot ", with: ""), date: item.createdAt) {
                         Badge(text: item.dimensions)
                     }
                 }
         } actionRow: {
+            if let clipboard, clipboard.canPaste {
+                CardAction(symbol: "arrow.down.doc", help: "Paste", perform: paste)
+            }
             CardAction(symbol: "eye", help: "Preview", perform: onPreview)
             CardAction(symbol: "pencil", help: "Edit") { actions.edit(item) }
             CopyAction { actions.copy(item) }
             CardAction(symbol: "trash", help: "Delete", tint: .red) { actions.delete(item) }
         } menu: {
+            if let clipboard, clipboard.canPaste { Button("Paste", action: paste) }
             Button("Preview") { actions.preview(item) }
             Button("Edit") { actions.edit(item) }
             Button("Copy to Clipboard") { actions.copy(item) }
-            Button("Rename…") { renaming = true }
+            Button("Rename…", action: onRename)
             Divider()
             Button("Delete", role: .destructive) { actions.delete(item) }
         }
     }
+
+    private func paste() {
+        actions.copy(item)
+        if clipboard?.pressPaste() == true {
+            FeedbackHUD.show("Pasted", symbol: "checkmark.circle.fill", duration: .seconds(1.0))
+        }
+    }
 }
 
-private struct ClipboardCard: View {
+struct ClipboardCard: View {
     let item: ClipboardItem
     let clipboard: ClipboardHistory
     var onPreview: () -> Void = {}
+    var onRename: () -> Void = {}
     @State private var hovering = false
-    @State private var renaming = false
 
     var body: some View {
-        CardChrome(hovering: $hovering, onTap: { if !renaming { paste() } }) {
+        CardChrome(hovering: $hovering, onTap: paste) {
             content
                 .overlay(alignment: .bottom) {
-                    CardCaption(title: item.name ?? "", date: item.createdAt,
-                                renaming: renaming, rename: { renaming = false; clipboard.rename(item, to: $0) }, cancelRename: { renaming = false }) {
+                    CardCaption(title: item.name ?? "", date: item.createdAt) {
                         if item.pinned {
                             Image(systemName: "star.fill").font(.system(size: 9)).foregroundStyle(.yellow)
                         }
@@ -618,7 +644,7 @@ private struct ClipboardCard: View {
                 }
             }
             Button(item.pinned ? "Unpin" : "Pin") { clipboard.togglePin(item) }
-            Button(item.name == nil ? "Name…" : "Rename…") { renaming = true }
+            Button(item.name == nil ? "Name…" : "Rename…", action: onRename)
             Divider()
             Button("Delete", role: .destructive) { clipboard.delete(item) }
         }
@@ -709,34 +735,45 @@ private struct ClipboardCard: View {
     }
 }
 
-private struct AssetCard: View {
+struct AssetCard: View {
     let item: AssetItem
     let assets: AssetStore
+    var clipboard: ClipboardHistory? = nil
     var onPreview: () -> Void = {}
+    var onRename: () -> Void = {}
     @State private var hovering = false
-    @State private var renaming = false
 
     var body: some View {
-        CardChrome(hovering: $hovering, onTap: { if !renaming { assets.open(item) } }) {
+        CardChrome(hovering: $hovering, onTap: { assets.open(item) }) {
             content
                 .overlay(alignment: .bottom) {
-                    CardCaption(title: renaming ? item.title : item.fileName, date: item.createdAt,
-                                renaming: renaming, rename: { renaming = false; assets.rename(item, to: $0) }, cancelRename: { renaming = false }) {
+                    CardCaption(title: item.fileName, date: item.createdAt) {
                         Badge(text: item.kind == .image && item.pixelWidth > 0 ? item.dimensions : item.sizeText)
                     }
                 }
         } actionRow: {
+            if let clipboard, clipboard.canPaste {
+                CardAction(symbol: "arrow.down.doc", help: "Paste", perform: paste)
+            }
             CardAction(symbol: "eye", help: "Preview", perform: onPreview)
             CardAction(symbol: "arrow.up.forward.app", help: "Open") { assets.open(item) }
             CopyAction { assets.copy(item) }
             CardAction(symbol: "trash", help: "Delete", tint: .red) { assets.delete(item) }
         } menu: {
+            if let clipboard, clipboard.canPaste { Button("Paste", action: paste) }
             Button("Open") { assets.open(item) }
             Button("Copy") { assets.copy(item) }
             Button("Reveal in Finder") { assets.reveal(item) }
-            Button("Rename…") { renaming = true }
+            Button("Rename…", action: onRename)
             Divider()
             Button("Delete", role: .destructive) { assets.delete(item) }
+        }
+    }
+
+    private func paste() {
+        assets.copy(item)
+        if clipboard?.pressPaste() == true {
+            FeedbackHUD.show("Pasted", symbol: "checkmark.circle.fill", duration: .seconds(1.0))
         }
     }
 
@@ -768,17 +805,17 @@ private struct AssetCard: View {
 }
 
 /// A picked colour: the swatch fills the card, the preferred format is the caption.
-private struct ColorCard: View {
+struct ColorCard: View {
     let entry: ColorEntry
     let colors: ColorStore
     let format: ColorFormat
     var onPreview: () -> Void = {}
+    var onRename: () -> Void = {}
     @Environment(AppPreferences.self) private var preferences
     @State private var hovering = false
-    @State private var renaming = false
 
     var body: some View {
-        CardChrome(hovering: $hovering, onTap: { if !renaming { onPreview() } }) {
+        CardChrome(hovering: $hovering, onTap: onPreview) {
             entry.color.swiftUIColor
                 .overlay(alignment: .topLeading) {
                     if !entry.color.isInSRGBGamut {
@@ -792,8 +829,7 @@ private struct ColorCard: View {
                     }
                 }
                 .overlay(alignment: .bottom) {
-                    CardCaption(title: entry.name ?? format.string(for: entry.color), date: entry.createdAt,
-                                renaming: renaming, rename: { renaming = false; colors.rename(entry, to: $0) }, cancelRename: { renaming = false }) {
+                    CardCaption(title: entry.name ?? format.string(for: entry.color), date: entry.createdAt) {
                         if entry.name != nil || format != .hex { Badge(text: ColorFormat.hex.string(for: entry.color)) }
                     }
                 }
@@ -808,7 +844,7 @@ private struct ColorCard: View {
                     Button(other.string(for: entry.color)) { copy(as: other) }
                 }
             }
-            Button(entry.name == nil ? "Name…" : "Rename…") { renaming = true }
+            Button(entry.name == nil ? "Name…" : "Rename…", action: onRename)
             Divider()
             Button("Delete", role: .destructive) { colors.delete(entry) }
         }
@@ -845,42 +881,54 @@ struct DragPayload {
     }
 }
 
-/// The AppKit side of the row: reports horizontal scroll-wheel / trackpad deltas over
-/// its bounds (SwiftUI offers no scroll-wheel hook for a hand-rolled strip), and
-/// starts file drags out of the island — an AppKit session writing a file URL, which
+/// The AppKit side of the row: starts drags out of the island and reports
+/// scroll-wheel / trackpad deltas over its bounds (SwiftUI offers no scroll-wheel
+/// hook for a hand-rolled strip).
+///
+/// Drags start here, from a local event monitor, rather than from a SwiftUI gesture:
+/// the monitor sees the mouse-down and the first drag events before the window
+/// dispatches them, so a card leaves the island on the first vertical movement —
+/// whether or not the island is the key window, mid-animation, and without waiting
+/// for SwiftUI to settle its gesture. The AppKit session writes a file URL, which
 /// carries the sandbox extension other apps need to read a file in Klik's container.
 private struct StripEventView: NSViewRepresentable {
-    /// Lets the SwiftUI gesture reach the NSView to start a drag.
-    final class Handle {
-        weak var view: EventView?
+    /// How far the pointer moves before a press becomes a drag-out or a scroll.
+    static let decisionDistance: CGFloat = 5
+    /// Anything steeper than ~30° from horizontal drags the card out; flatter scrolls.
+    static func isDragOut(dx: CGFloat, dy: CGFloat) -> Bool { abs(dy) > abs(dx) * 0.6 }
 
-        func beginDrag(_ payload: DragPayload, event: NSEvent) {
-            view?.beginDrag(payload, event: event)
-        }
-    }
-
-    let handle: Handle
+    /// The payload for the card under a point (top-left origin, strip coordinates).
+    var payloadAt: (CGPoint) -> DragPayload?
     var onScroll: (CGFloat) -> Void
+    var onDragBegan: () -> Void
     var onDragEnded: () -> Void
 
     func makeNSView(context: Context) -> EventView {
         let view = EventView()
-        view.onScroll = onScroll
-        view.onDragEnded = onDragEnded
-        handle.view = view
+        update(view)
         return view
     }
 
     func updateNSView(_ view: EventView, context: Context) {
+        update(view)
+    }
+
+    private func update(_ view: EventView) {
+        view.payloadAt = payloadAt
         view.onScroll = onScroll
+        view.onDragBegan = onDragBegan
         view.onDragEnded = onDragEnded
-        handle.view = view
     }
 
     final class EventView: NSView, NSDraggingSource {
+        var payloadAt: ((CGPoint) -> DragPayload?)?
         var onScroll: ((CGFloat) -> Void)?
+        var onDragBegan: (() -> Void)?
         var onDragEnded: (() -> Void)?
         private var monitor: Any?
+        /// Where the current press started (window coordinates), until it is
+        /// classified as a drag-out or handed to SwiftUI as a scroll.
+        private var pressStart: CGPoint?
 
         /// Installed while on screen; `viewDidMoveToWindow` with a nil window (the
         /// island collapsing) removes it, so nothing is left behind.
@@ -888,29 +936,56 @@ private struct StripEventView: NSViewRepresentable {
             super.viewDidMoveToWindow()
             if let monitor { NSEvent.removeMonitor(monitor); self.monitor = nil }
             guard window != nil else { return }
-            monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-                guard let self, event.window === self.window,
-                      self.bounds.contains(self.convert(event.locationInWindow, from: nil))
-                else { return event }
-                let delta = event.scrollingDeltaX != 0 ? event.scrollingDeltaX : event.scrollingDeltaY
-                self.onScroll?(event.hasPreciseScrollingDeltas ? -delta : -delta * 8)
-                return nil
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .leftMouseDown, .leftMouseDragged, .leftMouseUp]) { [weak self] event in
+                guard let self else { return event }
+                // Local monitors run on the main thread; the event stays there too.
+                nonisolated(unsafe) var result: NSEvent? = event
+                MainActor.assumeIsolated { result = self.handle(event) }
+                return result
             }
         }
 
-        func beginDrag(_ payload: DragPayload, event: NSEvent) {
+        private func handle(_ event: NSEvent) -> NSEvent? {
+            switch event.type {
+            case .scrollWheel:
+                guard event.window === window, bounds.contains(convert(event.locationInWindow, from: nil)) else { return event }
+                let delta = event.scrollingDeltaX != 0 ? event.scrollingDeltaX : event.scrollingDeltaY
+                onScroll?(event.hasPreciseScrollingDeltas ? -delta : -delta * 8)
+                return nil
+            case .leftMouseDown:
+                pressStart = event.window === window && bounds.contains(convert(event.locationInWindow, from: nil)) ? event.locationInWindow : nil
+                return event
+            case .leftMouseDragged:
+                guard let start = pressStart, event.window === window else { return event }
+                let dx = event.locationInWindow.x - start.x, dy = event.locationInWindow.y - start.y
+                guard hypot(dx, dy) >= StripEventView.decisionDistance else { return event }
+                pressStart = nil
+                guard StripEventView.isDragOut(dx: dx, dy: dy) else { return event } // SwiftUI scrolls
+                let local = convert(start, from: nil)
+                guard let payload = payloadAt?(CGPoint(x: local.x, y: bounds.height - local.y)) else { return event }
+                onDragBegan?()
+                beginDrag(payload, at: local, event: event)
+                return nil
+            case .leftMouseUp:
+                pressStart = nil
+                return event
+            default:
+                return event
+            }
+        }
+
+        private func beginDrag(_ payload: DragPayload, at location: CGPoint, event: NSEvent) {
             let item = NSDraggingItem(pasteboardWriter: payload.writer)
             let image = payload.preview
             let side: CGFloat = 140
             let scale = min(side / max(image.size.width, 1), side / max(image.size.height, 1), 1)
             let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-            let location = convert(event.locationInWindow, from: nil)
             item.setDraggingFrame(CGRect(x: location.x - size.width / 2, y: location.y - size.height / 2, width: size.width, height: size.height), contents: image)
             beginDraggingSession(with: [item], event: event, source: self)
         }
 
         func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
-            context == .outsideApplication ? .copy : []
+            .copy
         }
 
         // The grabbing hand for the whole drag; the drag manager keeps resetting the

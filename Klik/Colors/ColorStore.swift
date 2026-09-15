@@ -39,24 +39,14 @@ final class ColorStore {
         }
     }
 
-    /// Picks a colour from anywhere on screen with the system eyedropper (a loupe
-    /// that reads the exact pixel, in the display's own colour profile), then records
-    /// it. `completion` gets nil when the user cancels.
-    func pick(completion: @escaping @MainActor (ColorEntry?) -> Void) {
-        // The sampler calls back on the main thread; the closure is not annotated.
-        NSColorSampler().show { [weak self] color in
-            MainActor.assumeIsolated {
-                guard let self, let color, let picked = Self.picked(from: color) else {
-                    completion(nil)
-                    return
-                }
-                let entry = ColorEntry(color: picked)
-                self.items.insert(entry, at: 0)
-                if self.items.count > Self.limit { self.items.removeLast(self.items.count - Self.limit) }
-                self.save()
-                completion(entry)
-            }
-        }
+    /// Records a picked colour, newest first.
+    @discardableResult
+    func add(_ color: PickedColor) -> ColorEntry {
+        let entry = ColorEntry(color: color)
+        items.insert(entry, at: 0)
+        if items.count > Self.limit { items.removeLast(items.count - Self.limit) }
+        save()
+        return entry
     }
 
     /// Exact sRGB components, unclamped: a Display P3 colour outside sRGB keeps its

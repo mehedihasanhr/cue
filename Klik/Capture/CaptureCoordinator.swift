@@ -10,6 +10,8 @@ final class CaptureCoordinator {
     var onError: ((any Error) -> Void)?
     /// `true` while a capture flow runs (selection overlay, scrolling session…).
     var onBusyChanged: ((Bool) -> Void)?
+    /// Result of the colour picker.
+    var onColorPicked: ((PickedColor) -> Void)?
 
     private let service = ScreenCaptureService()
     private let ocr = OCRService()
@@ -68,6 +70,15 @@ final class CaptureCoordinator {
             let recognized = try await ocr.recognize(image.cgImage)
             Log.ocr.info("Recognised \(recognized.items.count) line(s) in \(Int(image.pixelSize.width))×\(Int(image.pixelSize.height))px")
             onTextRecognized?(recognized)
+        }
+    }
+
+    /// The pixel-grid colour picker over frozen displays.
+    func pickColor(fromMenu: Bool) {
+        start(fromMenu: fromMenu) { [self] in
+            if let color = try await ColorPickerSession().run(using: service) {
+                onColorPicked?(color)
+            }
         }
     }
 

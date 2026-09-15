@@ -64,28 +64,31 @@ nonisolated struct NotchShape: Shape {
         set { flare = newValue.first; topRadius = newValue.second.first; bottomRadius = newValue.second.second }
     }
 
+    /// `rect` includes the flares: the body spans `minX + flare … maxX - flare`, and
+    /// the flares sweep from the body's top corners out to the rect's top corners.
     func path(in rect: CGRect) -> Path {
         let flare = min(self.flare, rect.width / 4)
-        let top = min(topRadius, rect.width / 2, rect.height / 2)
-        let bottom = min(bottomRadius, rect.width / 2, rect.height / 2)
+        let body = rect.insetBy(dx: flare, dy: 0)
+        let top = min(topRadius, body.width / 2, body.height / 2)
+        let bottom = min(bottomRadius, body.width / 2, body.height / 2)
         var path = Path()
-        path.move(to: CGPoint(x: rect.minX - flare, y: rect.minY))
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
         if flare > 0 {
-            path.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.minY + flare), control: CGPoint(x: rect.minX, y: rect.minY))
+            path.addQuadCurve(to: CGPoint(x: body.minX, y: body.minY + flare), control: CGPoint(x: body.minX, y: body.minY))
         } else {
-            path.addLine(to: CGPoint(x: rect.minX + top, y: rect.minY))
-            path.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.minY + top), control: CGPoint(x: rect.minX, y: rect.minY))
+            path.addLine(to: CGPoint(x: body.minX + top, y: body.minY))
+            path.addQuadCurve(to: CGPoint(x: body.minX, y: body.minY + top), control: CGPoint(x: body.minX, y: body.minY))
         }
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - bottom))
-        path.addQuadCurve(to: CGPoint(x: rect.minX + bottom, y: rect.maxY), control: CGPoint(x: rect.minX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.maxX - bottom, y: rect.maxY))
-        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.maxY - bottom), control: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: body.minX, y: body.maxY - bottom))
+        path.addQuadCurve(to: CGPoint(x: body.minX + bottom, y: body.maxY), control: CGPoint(x: body.minX, y: body.maxY))
+        path.addLine(to: CGPoint(x: body.maxX - bottom, y: body.maxY))
+        path.addQuadCurve(to: CGPoint(x: body.maxX, y: body.maxY - bottom), control: CGPoint(x: body.maxX, y: body.maxY))
         if flare > 0 {
-            path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + flare))
-            path.addQuadCurve(to: CGPoint(x: rect.maxX + flare, y: rect.minY), control: CGPoint(x: rect.maxX, y: rect.minY))
+            path.addLine(to: CGPoint(x: body.maxX, y: body.minY + flare))
+            path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY), control: CGPoint(x: body.maxX, y: body.minY))
         } else {
-            path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + top))
-            path.addQuadCurve(to: CGPoint(x: rect.maxX - top, y: rect.minY), control: CGPoint(x: rect.maxX, y: rect.minY))
+            path.addLine(to: CGPoint(x: body.maxX, y: body.minY + top))
+            path.addQuadCurve(to: CGPoint(x: body.maxX - top, y: body.minY), control: CGPoint(x: body.maxX, y: body.minY))
         }
         path.closeSubpath()
         return path
@@ -102,26 +105,24 @@ struct IslandView: View {
     let actions: HistoryActions
 
     /// Opening overshoots a touch; closing settles without a bounce.
-    static let openAnimation = Animation.spring(response: 0.42, dampingFraction: 0.8, blendDuration: 0)
+    static let openAnimation = Animation.spring(response: 0.36, dampingFraction: 0.82, blendDuration: 0)
     static let closeAnimation = Animation.spring(response: 0.45, dampingFraction: 1.0, blendDuration: 0)
-    static let contentAnimation = Animation.smooth(duration: 0.35)
+    static let contentAnimation = Animation.smooth(duration: 0.28)
 
     var body: some View {
         let phase = model.phase
         if let geometry = model.geometry {
             let size = geometry.rect(for: phase.geometryPhase).size
             let collapsed = phase == .collapsed
-            let shape = NotchShape(
-                flare: collapsed ? 6 : IslandGeometry.openFlare,
-                topRadius: 0,
-                bottomRadius: geometry.radius(for: phase.geometryPhase)
-            )
+            let flare: CGFloat = collapsed ? 6 : IslandGeometry.openFlare
+            let shape = NotchShape(flare: flare, topRadius: 0, bottomRadius: geometry.radius(for: phase.geometryPhase))
             ZStack(alignment: .top) {
                 shape.fill(.black)
                 content(for: phase, strip: geometry.stripHeight)
                     .compositingGroup()
+                    .padding(.horizontal, flare) // the body; the flares lie outside it
             }
-            .frame(width: size.width, height: size.height)
+            .frame(width: size.width + flare * 2, height: size.height)
             .clipShape(shape)
             .contentShape(shape)
             .onTapGesture { if collapsed { model.onTap() } }
@@ -258,6 +259,8 @@ struct IslandPrompt: Hashable {
     enum Kind: Hashable {
         case project(parent: UUID?)
         case task(project: UUID?)
+        /// Rename a card (capture, asset, clipboard entry or colour).
+        case rename(IslandDetail)
     }
 
     let kind: Kind
@@ -265,7 +268,16 @@ struct IslandPrompt: Hashable {
     var context: String? = nil
     /// An existing task to edit instead of creating one.
     var editing: TaskItem? = nil
+    /// The current name, prefilled and selected, for renames.
+    var initial = ""
+    /// A thumbnail to show beside a rename.
+    var image: NSImage? = nil
+    /// A swatch to show beside a rename.
+    var swatch: PickedColor? = nil
     let id = UUID()
+
+    static func == (lhs: IslandPrompt, rhs: IslandPrompt) -> Bool { lhs.id == rhs.id }
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
 
     var isForm: Bool {
         if case .task = kind { return true }
@@ -278,6 +290,13 @@ struct IslandPrompt: Hashable {
             if parent == nil { return "New project" }
             return context.map { "New sub-project in \($0)" } ?? "New sub-project"
         case .task: return editing == nil ? "New task" : "Edit task"
+        case .rename(let detail):
+            switch detail {
+            case .capture: return "Rename capture"
+            case .asset: return "Rename file"
+            case .clipboard: return "Name this clipboard entry"
+            case .color: return "Name this colour"
+            }
         }
     }
 
@@ -285,6 +304,7 @@ struct IslandPrompt: Hashable {
         switch kind {
         case .project: "Project name"
         case .task: "Task title"
+        case .rename: "Name"
         }
     }
 
@@ -292,6 +312,7 @@ struct IslandPrompt: Hashable {
         switch kind {
         case .project: "folder.badge.plus"
         case .task: "checklist"
+        case .rename: "pencil"
         }
     }
 }
@@ -310,11 +331,23 @@ private struct PromptRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            PromptBadge(symbol: prompt.symbol)
+            if let image = prompt.image {
+                Image(nsImage: image).resizable().scaledToFill()
+                    .frame(width: 44, height: 36)
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(.white.opacity(0.15)))
+            } else if let swatch = prompt.swatch {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(swatch.swiftUIColor)
+                    .frame(width: 36, height: 36)
+                    .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(.white.opacity(0.15)))
+            } else {
+                PromptBadge(symbol: prompt.symbol)
+            }
             VStack(alignment: .leading, spacing: 4) {
                 PromptLabel(prompt.title)
                 PromptBox {
-                    InlineTextField(placeholder: prompt.placeholder, font: .system(size: 13, weight: .medium), boxed: false,
+                    InlineTextField(placeholder: prompt.placeholder, initial: prompt.initial, font: .system(size: 13, weight: .medium), boxed: false, selectAll: true,
                                     commit: { finish(PromptAnswer(title: $0)) }, cancel: { finish(nil) })
                     KeyCap("↩")
                 }
@@ -328,7 +361,7 @@ private struct PromptRow: View {
 /// The compact island's task form: title, a Markdown description with a formatting
 /// bar (images can be pasted or dropped in), and the project — a dropdown that can
 /// also create a new project on the spot.
-private struct TaskFormRow: View {
+struct TaskFormRow: View {
     let prompt: IslandPrompt
     let store: TaskStore
     let finish: (PromptAnswer?) -> Void
@@ -349,29 +382,29 @@ private struct TaskFormRow: View {
                 PromptLabel(prompt.title)
                 Spacer(minLength: 0)
                 KeyCap("esc")
-                Text("cancel").font(.system(size: 10)).foregroundStyle(.white.opacity(0.4))
+                Text("cancel").font(.system(size: 10)).foregroundStyle(.primary.opacity(0.45))
             }
             PromptBox {
                 TextField("Task title", text: $title)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .focused($focus, equals: .title)
                     .onSubmit { focus = .notes }
                     .padding(.horizontal, 8)
             }
             VStack(spacing: 0) {
                 formatBar
-                MarkdownEditor(text: $notes, handle: editor, insertImage: { data in store.saveImage(data) })
+                MarkdownEditor(text: $notes, handle: editor, insertImage: { data in store.saveImage(data) }, insertFile: { url in store.saveAttachment(url) })
                     .focused($focus, equals: .notes)
             }
-            .background(.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.white.opacity(0.15)))
+            .background(.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.primary.opacity(0.15)))
             .frame(maxHeight: .infinity)
             HStack(spacing: 8) {
                 if newProjectName != nil {
                     PromptBox {
-                        Image(systemName: "folder.badge.plus").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(0.7)).padding(.leading, 8)
+                        Image(systemName: "folder.badge.plus").font(.system(size: 11, weight: .semibold)).foregroundStyle(.primary.opacity(0.7)).padding(.leading, 8)
                         InlineTextField(placeholder: "New project name", font: .system(size: 12, weight: .medium), boxed: false) { name in
                             newProjectName = nil
                             if let project = store.addProject(named: name) { projectID = project.id }
@@ -386,10 +419,10 @@ private struct TaskFormRow: View {
                 Button("Cancel") { finish(nil) }
                     .buttonStyle(.plain)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(.primary.opacity(0.7))
                     .padding(.horizontal, 12)
                     .frame(height: 30)
-                    .background(.white.opacity(0.1), in: Capsule())
+                    .background(.primary.opacity(0.1), in: Capsule())
                 Button(action: create) {
                     HStack(spacing: 6) {
                         Text(prompt.editing == nil ? "Create" : "Save").font(.system(size: 12, weight: .semibold))
@@ -437,9 +470,9 @@ private struct TaskFormRow: View {
             formatButton("text.quote", help: "Quote") { editor.prefixLine("> ") }
             formatButton("photo", help: "Insert image…") { chooseImage() }
             Spacer(minLength: 0)
-            Text("Markdown · paste or drop images")
+            Text("Markdown · paste or drop images and files")
                 .font(.system(size: 9.5))
-                .foregroundStyle(.white.opacity(0.35))
+                .foregroundStyle(.primary.opacity(0.4))
                 .padding(.trailing, 8)
         }
         .padding(.horizontal, 4)
@@ -450,7 +483,7 @@ private struct TaskFormRow: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 10.5, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.8))
+                .foregroundStyle(.primary.opacity(0.8))
                 .frame(width: 24, height: 22)
                 .contentShape(Rectangle())
         }
@@ -493,10 +526,10 @@ private struct TaskFormRow: View {
                     .lineLimit(1)
                 Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(.primary)
             .padding(.horizontal, 12)
             .frame(height: 30)
-            .background(.white.opacity(0.1), in: Capsule())
+            .background(.primary.opacity(0.1), in: Capsule())
             .contentShape(Capsule())
         }
         .menuStyle(.button)
@@ -513,11 +546,13 @@ private struct TaskFormRow: View {
 }
 
 /// A plain-text Markdown editor (an `NSTextView`) that takes pasted and dropped
-/// images, saving them through `insertImage` and inserting the returned Markdown.
-private struct MarkdownEditor: NSViewRepresentable {
+/// images and files, saving them through `insertImage` / `insertFile` and inserting
+/// the returned Markdown.
+struct MarkdownEditor: NSViewRepresentable {
     @Binding var text: String
     let handle: Handle
     let insertImage: (Data) -> String?
+    let insertFile: (URL) -> String?
 
     /// Lets the toolbar reach the text view.
     final class Handle {
@@ -533,8 +568,8 @@ private struct MarkdownEditor: NSViewRepresentable {
         textView.delegate = context.coordinator
         textView.string = text
         textView.font = .systemFont(ofSize: 12)
-        textView.textColor = .white
-        textView.insertionPointColor = .white
+        textView.textColor = .labelColor
+        textView.insertionPointColor = .labelColor
         textView.backgroundColor = .clear
         textView.drawsBackground = false
         textView.isRichText = false
@@ -547,6 +582,7 @@ private struct MarkdownEditor: NSViewRepresentable {
         textView.autoresizingMask = [.width]
         textView.textContainer?.widthTracksTextView = true
         textView.insertImage = insertImage
+        textView.insertFile = insertFile
         textView.registerForDraggedTypes([.fileURL, .png, .tiff])
         handle.textView = textView
 
@@ -577,31 +613,65 @@ private struct MarkdownEditor: NSViewRepresentable {
 
     final class EditorTextView: NSTextView {
         var insertImage: ((Data) -> String?)?
+        var insertFile: ((URL) -> String?)?
 
         override var acceptsFirstResponder: Bool { true }
 
-        // Pasting an image inserts it as Markdown; text pastes as plain text.
+        // Pasting an image or files inserts them as Markdown; text pastes as plain text.
         override func paste(_ sender: Any?) {
-            if takeImage(from: NSPasteboard.general) { return }
+            if takeContent(from: NSPasteboard.general) { return }
             pasteAsPlainText(sender)
         }
 
-        override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
-            takeImage(from: sender.draggingPasteboard) || super.performDragOperation(sender)
+        // NSTextView has its own ideas about which drags it takes (and consults them
+        // again in `draggingUpdated` / `prepareForDragOperation`), so every step is
+        // overridden for files and images — the island's cards among them.
+        private static func carriesContent(_ sender: any NSDraggingInfo) -> Bool {
+            let types = sender.draggingPasteboard.types ?? []
+            return types.contains(.fileURL) || types.contains(.png) || types.contains(.tiff)
         }
 
         override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
-            let types = sender.draggingPasteboard.types ?? []
-            return types.contains(.fileURL) || types.contains(.png) || types.contains(.tiff) ? .copy : super.draggingEntered(sender)
+            Self.carriesContent(sender) ? .copy : super.draggingEntered(sender)
         }
 
-        private func takeImage(from pasteboard: NSPasteboard) -> Bool {
-            var data = pasteboard.data(forType: .png) ?? pasteboard.data(forType: .tiff)
-            if data == nil, let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
-               let url = urls.first, ["png", "jpg", "jpeg", "gif", "heic", "tiff", "webp"].contains(url.pathExtension.lowercased()) {
-                data = try? Data(contentsOf: url)
+        override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
+            Self.carriesContent(sender) ? .copy : super.draggingUpdated(sender)
+        }
+
+        override func prepareForDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+            Self.carriesContent(sender) || super.prepareForDragOperation(sender)
+        }
+
+        override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+            if Self.carriesContent(sender) {
+                window?.makeFirstResponder(self)
+                return takeContent(from: sender.draggingPasteboard)
             }
-            guard let data, let markdown = insertImage?(data) else { return false }
+            return super.performDragOperation(sender)
+        }
+
+        override func concludeDragOperation(_ sender: (any NSDraggingInfo)?) {
+            if let sender, Self.carriesContent(sender) { return }
+            super.concludeDragOperation(sender)
+        }
+
+        /// Files become images (when they are pictures) or attachments; raw image
+        /// data becomes an image. Returns false when there is nothing of the kind.
+        func takeContent(from pasteboard: NSPasteboard) -> Bool {
+            if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
+                var inserted = false
+                for url in urls {
+                    let isImage = ["png", "jpg", "jpeg", "gif", "heic", "tiff", "webp"].contains(url.pathExtension.lowercased())
+                    let markdown = isImage ? (try? Data(contentsOf: url)).flatMap { insertImage?($0) } : insertFile?(url)
+                    if let markdown {
+                        insertMarkdown(markdown)
+                        inserted = true
+                    }
+                }
+                return inserted
+            }
+            guard let data = pasteboard.data(forType: .png) ?? pasteboard.data(forType: .tiff), let markdown = insertImage?(data) else { return false }
             insertMarkdown(markdown)
             return true
         }
@@ -673,15 +743,19 @@ private struct TaskDetailRow: View {
                         .foregroundStyle(.white.opacity(0.45))
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
-                    MarkdownView(markdown: task.notes, imageURL: { store.imageURL(for: $0) })
+                    MarkdownView(markdown: task.notes, imageURL: { store.imageURL(for: $0) }, attachmentURL: { store.attachmentURL(for: $0) })
                 }
             }
             .padding(10)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             HStack(spacing: 8) {
-                KeyCap("esc")
-                Text("back").font(.system(size: 10)).foregroundStyle(.white.opacity(0.4))
+                HStack(spacing: 6) {
+                    KeyCap("esc")
+                    Text("back").font(.system(size: 10)).foregroundStyle(.primary.opacity(0.45))
+                }
+                .contentShape(Rectangle())
+                .onTapGesture(perform: close) // the hint is a button too
                 Spacer(minLength: 0)
                 Button("Delete") { store.delete(task); close() }
                     .buttonStyle(.plain)
@@ -690,17 +764,10 @@ private struct TaskDetailRow: View {
                     .padding(.horizontal, 12)
                     .frame(height: 30)
                     .background(.white.opacity(0.08), in: Capsule())
-                Button("Close", action: close)
-                    .buttonStyle(.plain)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.8))
-                    .padding(.horizontal, 12)
-                    .frame(height: 30)
-                    .background(.white.opacity(0.1), in: Capsule())
                 Button(action: edit) {
                     Label("Edit", systemImage: "pencil")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                         .padding(.horizontal, 14)
                         .frame(height: 30)
                         .background(Color.brand, in: Capsule())
@@ -711,7 +778,7 @@ private struct TaskDetailRow: View {
         .padding(.horizontal, 18)
         .padding(.top, 8)
         .padding(.bottom, 12)
-        .foregroundStyle(.white)
+        .foregroundStyle(.primary)
     }
 
     private var statusMenu: some View {
@@ -725,10 +792,10 @@ private struct TaskDetailRow: View {
                 Text(task.status.title).font(.system(size: 12, weight: .semibold))
                 Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).foregroundStyle(.white.opacity(0.5))
             }
-            .foregroundStyle(.white.opacity(0.9))
+            .foregroundStyle(.primary.opacity(0.9))
             .padding(.horizontal, 10)
             .frame(height: 28)
-            .background(.white.opacity(0.1), in: Capsule())
+            .background(.primary.opacity(0.1), in: Capsule())
             .contentShape(Capsule())
         }
         .menuStyle(.button)
@@ -761,7 +828,7 @@ private struct PromptLabel: View {
     var body: some View {
         Text(text)
             .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(.white.opacity(0.6))
+            .foregroundStyle(.primary.opacity(0.6))
             .lineLimit(1)
     }
 }
@@ -776,8 +843,8 @@ private struct PromptBox<Content: View>: View {
             .padding(.trailing, 6)
             .frame(height: height)
             .frame(maxWidth: .infinity)
-            .background(.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.white.opacity(0.15)))
+            .background(.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.primary.opacity(0.15)))
     }
 }
 

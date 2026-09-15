@@ -10,6 +10,8 @@ nonisolated enum MarkdownBlock: Equatable {
     case numbered([String])
     case quote(String)
     case image(alt: String, source: String)
+    /// A line that is just a link to an attached file.
+    case attachment(name: String, source: String)
 
     /// Splits Markdown text into blocks. Consecutive plain lines join into one
     /// paragraph; a blank line separates blocks.
@@ -33,6 +35,9 @@ nonisolated enum MarkdownBlock: Equatable {
             if let image = imageLine(line) {
                 flush()
                 blocks.append(image)
+            } else if let attachment = attachmentLine(line) {
+                flush()
+                blocks.append(attachment)
             } else if line.hasPrefix("#") {
                 flush()
                 let level = min(3, line.prefix { $0 == "#" }.count)
@@ -64,6 +69,15 @@ nonisolated enum MarkdownBlock: Equatable {
         return .image(alt: alt, source: source)
     }
 
+    private static func attachmentLine(_ line: String) -> MarkdownBlock? {
+        guard line.hasPrefix("["), let close = line.firstIndex(of: "]"),
+              line[line.index(after: close)...].hasPrefix("(klik-file://"), line.hasSuffix(")")
+        else { return nil }
+        let name = String(line[line.index(after: line.startIndex)..<close])
+        let source = String(line[line.index(close, offsetBy: 2)..<line.index(before: line.endIndex)])
+        return .attachment(name: name, source: source)
+    }
+
     private static func numberedItem(_ line: String) -> String? {
         guard let dot = line.firstIndex(where: { $0 == "." || $0 == ")" }), dot != line.startIndex,
               line[..<dot].allSatisfy(\.isNumber), line[line.index(after: dot)...].hasPrefix(" ")
@@ -77,6 +91,8 @@ struct MarkdownView: View {
     let markdown: String
     /// Resolves `klik://name.png` image references to files.
     var imageURL: (String) -> URL? = { _ in nil }
+    /// Resolves `klik-file://id/name` attachment references to files.
+    var attachmentURL: (String) -> URL? = { _ in nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -131,6 +147,28 @@ struct MarkdownView: View {
             } else {
                 Label(alt.isEmpty ? "Image" : alt, systemImage: "photo").font(.system(size: 11)).foregroundStyle(.white.opacity(0.5))
             }
+        case .attachment(let name, let source):
+            let url = attachmentURL(source)
+            Button {
+                if let url { NSWorkspace.shared.open(url) }
+            } label: {
+                HStack(spacing: 6) {
+                    if let url {
+                        Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable().frame(width: 16, height: 16)
+                    } else {
+                        Image(systemName: "doc").font(.system(size: 11))
+                    }
+                    Text(name).font(.system(size: 11.5, weight: .medium)).lineLimit(1)
+                    if url != nil { Image(systemName: "arrow.up.forward").font(.system(size: 9, weight: .bold)).foregroundStyle(.white.opacity(0.5)) }
+                }
+                .foregroundStyle(url == nil ? .white.opacity(0.5) : .white)
+                .padding(.horizontal, 10)
+                .frame(height: 26)
+                .background(.white.opacity(0.1), in: Capsule())
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .help(url == nil ? "File missing" : "Open")
         }
     }
 

@@ -17,8 +17,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusMenu: NSMenu?
     private var historyPopover: NSPopover?
     private var historyDismissMonitors: [Any] = []
-    private var historyPanel: HistoryPanelWindow?
+    private var floatingPanel: FloatingPanelWindow?
     private var island: IslandController?
+    private var quickTaskPanel: QuickTaskPanel?
     private var captureMenuItems: [HotkeyID: NSMenuItem] = [:]
 
     private var settingsWindow: SettingsWindowController?
@@ -44,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         coordinator.onPermissionRequired = { [weak self] kind in self?.showOnboarding(for: kind) }
         coordinator.onError = { [weak self] error in self?.presentError(error) }
         coordinator.onBusyChanged = { [weak self] busy in self?.island?.setHidden(busy) }
+        coordinator.onColorPicked = { [weak self] color in self?.handlePickedColor(color) }
         applyIslandPreference()
         applyClipboardPreference()
 
@@ -53,7 +55,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         shortcuts.setAction(for: .showPanel) { [weak self] in self?.toggleHistoryAtPointer() }
         shortcuts.setAction(for: .captureText) { [weak self] in self?.coordinator.captureText(fromMenu: false) }
         shortcuts.setAction(for: .pickColor) { [weak self] in self?.pickColor(nil) }
+        shortcuts.setAction(for: .quickTask) { [weak self] in self?.quickTask(nil) }
 
+        // Diagnostics: `--env KLIK_DEBUG_HOTKEYS=1` writes every shortcut and its status to Pictures/Klik.
+        if ProcessInfo.processInfo.environment["KLIK_DEBUG_HOTKEYS"] == "1" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                guard let self else { return }
+                let lines = HotkeyID.configurable.map { id -> String in
+                    let entry = shortcuts.entries[id]
+                    return "\(id): \(entry?.hotkey?.displayString ?? "none") keyCode=\(entry?.hotkey?.keyCode ?? 0) mods=\(entry?.hotkey?.modifiers ?? 0) status=\(String(describing: entry?.status))"
+                }
+                let url = CaptureLibrary.defaultFolder().appendingPathComponent("_hotkeys.txt")
+                try? lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+            }
+        }
+        // Diagnostics: `open Klik.app --env KLIK_DEBUG_PANEL=1` opens the floating panel at launch.
+        if ProcessInfo.processInfo.environment["KLIK_DEBUG_PANEL"] == "1" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.toggleHistoryAtPointer() }
+        }
         if !PermissionManager.hasScreenCaptureAccess {
             Log.app.notice("Screen Recording not granted; showing onboarding")
             showOnboarding(for: .screenRecording)
@@ -81,6 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         captureMenuItems[.scrolling] = addItem(makeItem("Scrolling Capture", #selector(captureScrolling(_:))), to: menu)
         captureMenuItems[.captureText] = addItem(makeItem("Capture Text", #selector(captureText(_:))), to: menu)
         captureMenuItems[.pickColor] = addItem(makeItem("Pick Color", #selector(pickColor(_:))), to: menu)
+        captureMenuItems[.quickTask] = addItem(makeItem("Quick Task…", #selector(quickTask(_:))), to: menu)
         menu.addItem(.separator())
         menu.addItem(makeItem("Show Captures", #selector(showHistory(_:))))
         menu.addItem(makeItem("Settings…", #selector(showSettings(_:)), keyEquivalent: ",", modifiers: .command))
@@ -235,20 +255,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func closeHistory() {
         removeHistoryDismissMonitors()
         historyPopover?.performClose(nil)
-        historyPanel?.close()
+        floatingPanel?.close()
         island?.collapse(animated: false)
     }
 
-    /// ⌥V: the same panel, floating at the mouse pointer instead of under the menu bar.
+    /// The floating Klik panel at the pointer (⌥⇧K by default): the island's content
+    /// as a movable glass window that scrolls vertically, as a grid or a list.
     private func toggleHistoryAtPointer() {
-        if let panel = historyPanel, panel.isVisible {
+        if let panel = floatingPanel, panel.isVisible {
             panel.close()
             return
         }
         closeHistory()
-        let panel = historyPanel ?? HistoryPanelWindow(rootView: HistoryView(library: library, actions: historyActions))
-        historyPanel = panel
+        let content = FloatingPanelView(
+            library: library, clipboard: clipboard, assets: assets, colors: colors, tasksStore: tasks, actions: historyActions,
+            onPrompt: { [weak self] prompt in self?.promptFromFloatingPanel(prompt) },
+            onShowTask: { [weak self] task in self?.floatingPanel?.close(); self?.island?.showTask(task) }
+        )
+        .environment(preferences)
+        let panel = FloatingPanelWindow(rootView: content)
+        floatingPanel = panel
         panel.show(at: NSEvent.mouseLocation)
+    }
+
+    /// Creation and renaming from the floating panel go through the island's compact
+    /// box; without the island, tasks fall back to the floating task form.
+    private func promptFromFloatingPanel(_ prompt: IslandPrompt) {
+        floatingPanel?.close()
+        if let island {
+            island.prompt(prompt)
+        } else if case .task = prompt.kind {
+            quickTask(nil)
+        }
     }
 
     private var historyActions: HistoryActions {
@@ -310,17 +348,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         coordinator.captureText(fromMenu: sender is NSMenuItem)
     }
 
-    /// The eyedropper. The picked colour is listed under Colours in the island and
+    /// The pixel picker. The picked colour is listed under Colours in the island and
     /// copied in the preferred format.
     @objc func pickColor(_ sender: Any?) {
         closeHistory()
-        colors.pick { [weak self] entry in
-            guard let self, let entry else { return }
-            let format = preferences.colorFormat
-            colors.copy(entry, as: format)
-            FeedbackHUD.show("\(format.string(for: entry.color)) copied", symbol: "eyedropper.halffull", duration: .seconds(1.6))
-            island?.flashColor(entry)
+        coordinator.pickColor(fromMenu: sender is NSMenuItem)
+    }
+
+    private func handlePickedColor(_ color: PickedColor) {
+        let entry = colors.add(color)
+        let format = preferences.colorFormat
+        colors.copy(entry, as: format)
+        FeedbackHUD.show("\(format.string(for: entry.color)) copied", symbol: "eyedropper.halffull", duration: .seconds(1.6))
+        island?.flashColor(entry)
+    }
+
+    /// A floating "new task" form at the pointer (⌥/ by default).
+    @objc func quickTask(_ sender: Any?) {
+        if let panel = quickTaskPanel, panel.isVisible {
+            panel.close()
+            return
         }
+        closeHistory()
+        let panel = QuickTaskPanel(store: tasks) { [weak self] answer in
+            guard let self, let answer else { return }
+            tasks.addTask(titled: answer.title, notes: answer.notes, in: answer.projectID)
+            FeedbackHUD.show("Task added", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
+        }
+        quickTaskPanel = panel
+        // Island cards pasted while the form is open land in its description.
+        clipboard.openEditor = { [weak self] in
+            guard let panel = self?.quickTaskPanel, panel.isVisible else { return nil }
+            return panel.editor
+        }
+        panel.show(at: NSEvent.mouseLocation)
     }
 
     @objc func showSettings(_ sender: Any?) {

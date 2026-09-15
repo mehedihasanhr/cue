@@ -15,9 +15,10 @@ struct Hotkey: Hashable, Codable {
     static let fullScreen = Hotkey(keyCode: UInt32(kVK_ANSI_3), modifiers: UInt32(optionKey | shiftKey))
     static let region = Hotkey(keyCode: UInt32(kVK_ANSI_4), modifiers: UInt32(optionKey | shiftKey))
     static let scrolling = Hotkey(keyCode: UInt32(kVK_ANSI_5), modifiers: UInt32(optionKey | shiftKey))
-    static let showPanel = Hotkey(keyCode: UInt32(kVK_ANSI_V), modifiers: UInt32(optionKey))
+    static let showPanel = Hotkey(keyCode: UInt32(kVK_ANSI_K), modifiers: UInt32(optionKey | shiftKey))
     static let captureText = Hotkey(keyCode: UInt32(kVK_ANSI_T), modifiers: UInt32(optionKey | shiftKey))
-    static let pickColor = Hotkey(keyCode: UInt32(kVK_ANSI_C), modifiers: UInt32(optionKey | shiftKey))
+    static let pickColor = Hotkey(keyCode: UInt32(kVK_ANSI_P), modifiers: UInt32(optionKey | shiftKey))
+    static let quickTask = Hotkey(keyCode: UInt32(kVK_ANSI_N), modifiers: UInt32(optionKey | shiftKey))
     static let escape = Hotkey(keyCode: UInt32(kVK_Escape), modifiers: 0)
     static let enter = Hotkey(keyCode: UInt32(kVK_Return), modifiers: 0)
 
@@ -100,12 +101,14 @@ enum HotkeyID: UInt32, CaseIterable {
     case captureText
     /// The eyedropper: pick a colour anywhere on screen.
     case pickColor
+    /// A floating "new task" form at the pointer.
+    case quickTask
     /// Registered only while a scrolling capture runs, so ↩ / ⎋ work from any app.
     case confirmCapture = 98
     case cancelCapture = 99
 
     /// The shortcuts a user can rebind in Settings.
-    static let configurable: [HotkeyID] = [.fullScreen, .region, .scrolling, .captureText, .pickColor, .showPanel]
+    static let configurable: [HotkeyID] = [.fullScreen, .region, .scrolling, .captureText, .pickColor, .quickTask, .showPanel]
 
     var defaultHotkey: Hotkey {
         switch self {
@@ -115,6 +118,7 @@ enum HotkeyID: UInt32, CaseIterable {
         case .showPanel: .showPanel
         case .captureText: .captureText
         case .pickColor: .pickColor
+        case .quickTask: .quickTask
         case .confirmCapture: .enter
         case .cancelCapture: .escape
         }
@@ -125,9 +129,10 @@ enum HotkeyID: UInt32, CaseIterable {
         case .fullScreen: "Capture full screen"
         case .region: "Capture area"
         case .scrolling: "Scrolling capture"
-        case .showPanel: "Show captures at the pointer"
+        case .showPanel: "Klik panel at the pointer"
         case .captureText: "Capture text (OCR)"
         case .pickColor: "Pick a colour"
+        case .quickTask: "Quick task"
         case .confirmCapture: "Finish capture"
         case .cancelCapture: "Stop capture"
         }

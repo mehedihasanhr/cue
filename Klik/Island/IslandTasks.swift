@@ -409,10 +409,31 @@ struct IslandTasksView: View {
                         .background(.white.opacity(0.1), in: Capsule())
                         .lineLimit(1)
                 }
-                Text(task.status == .complete ? task.status.title : task.createdAt.formatted(.relative(presentation: .named)))
+                Text(task.createdAt.formatted(.relative(presentation: .named)))
                     .font(.system(size: 10))
                     .foregroundStyle(.white.opacity(0.45))
                     .lineLimit(1)
+                // The status as a pill with its own menu, so it changes without opening the task.
+                Menu {
+                    ForEach(TaskStatus.allCases, id: \.self) { status in
+                        Button { store.setStatus(status, for: task) } label: { Label(status.title, systemImage: status.symbol) }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(task.status.title).font(.system(size: 10, weight: .semibold))
+                        Image(systemName: "chevron.down").font(.system(size: 7, weight: .bold)).opacity(0.7)
+                    }
+                    .foregroundStyle(task.status == .pending ? .white.opacity(0.8) : task.status.color)
+                    .padding(.horizontal, 8)
+                    .frame(height: 20)
+                    .background((task.status == .pending ? Color.white : task.status.color).opacity(0.14), in: Capsule())
+                    .contentShape(Capsule())
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .frame(width: 88, alignment: .trailing)
                 if hovering {
                     Button { store.delete(task) } label: {
                         Image(systemName: "trash").font(.system(size: 10, weight: .semibold)).foregroundStyle(.red.opacity(0.9))

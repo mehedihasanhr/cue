@@ -16,9 +16,10 @@ final class IslandWindow: NSPanel {
         )
         isFloatingPanel = true
         // Set after `isFloatingPanel`, which resets the level to `.floating`. Above the
-        // menu bar (24) and its status items (25) so the open panel covers them, below
-        // pop-up menus (101) so the island's own menus still show on top.
-        level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 3)
+        // menu bar (24), its status items (25), every app window and Klik's own floating
+        // panels (which sit at `.floating`) so cards can be dragged from the island into
+        // them; just below pop-up menus (101) so the island's own menus still show on top.
+        level = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue - 1)
         hidesOnDeactivate = false
         sharingType = .none
         isOpaque = false
