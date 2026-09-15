@@ -1,8 +1,9 @@
 import AppKit
 import SwiftUI
 
-/// The Tasks tab: a row of projects to start with; picking one hides the projects
-/// and lists its tasks by day, with its sub-projects as pills to drill into.
+/// The Tasks tab: every task to start with, grouped by project; a group's header
+/// opens that project (its tasks by day, sub-projects as pills to drill into), and
+/// "Projects" shows the projects themselves as cards or rows.
 struct IslandTasksView: View {
     let store: TaskStore
     /// New projects are named in the island's compact box.
@@ -16,7 +17,7 @@ struct IslandTasksView: View {
         case project(UUID)
     }
 
-    @State private var selection: Selection = .projects
+    @State private var selection: Selection = .all
     @AppStorage("tasks.projectLayout") private var projectLayout: ProjectLayout = .grid
 
     private enum ProjectLayout: String {
@@ -303,24 +304,80 @@ struct IslandTasksView: View {
                         .padding(.horizontal, 6)
                         .padding(.top, 8)
                 }
-                ForEach(dayGroups(tasks), id: \.day) { group in
-                    Text(group.title)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.45))
-                        .textCase(.uppercase)
-                        .padding(.horizontal, 6)
-                        .padding(.top, 6)
-                    ForEach(group.tasks) { task in
-                        TaskRow(task: task, store: store, showProject: task.projectID != selectedProjectID) {
-                            onShowTask(task)
-                        } edit: {
-                            onPrompt(IslandPrompt(kind: .task(project: task.projectID), editing: task))
-                        }
+                if selection == .all {
+                    // Every task, one group per project; the header opens the project.
+                    ForEach(projectGroups(tasks), id: \.id) { group in
+                        projectHeader(group)
+                        ForEach(group.tasks) { task in taskRow(task, showProject: false) }
+                    }
+                } else {
+                    ForEach(dayGroups(tasks), id: \.day) { group in
+                        Text(group.title)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.45))
+                            .textCase(.uppercase)
+                            .padding(.horizontal, 6)
+                            .padding(.top, 6)
+                        ForEach(group.tasks) { task in taskRow(task, showProject: task.projectID != selectedProjectID) }
                     }
                 }
             }
             .padding(.bottom, 8)
         }
+    }
+
+    private func taskRow(_ task: TaskItem, showProject: Bool) -> some View {
+        TaskRow(task: task, store: store, showProject: showProject) {
+            onShowTask(task)
+        } edit: {
+            onPrompt(IslandPrompt(kind: .task(project: task.projectID), editing: task))
+        }
+    }
+
+    private struct ProjectGroup {
+        /// nil: tasks outside any project.
+        let id: UUID?
+        let title: String
+        var tasks: [TaskItem]
+    }
+
+    /// Tasks by project in the projects' own order (nested ones under their path),
+    /// tasks outside any project last.
+    private func projectGroups(_ tasks: [TaskItem]) -> [ProjectGroup] {
+        var groups: [ProjectGroup] = []
+        for entry in projectTree(under: nil, depth: 0) {
+            let own = tasks.filter { $0.projectID == entry.project.id }
+            guard !own.isEmpty else { continue }
+            groups.append(ProjectGroup(id: entry.project.id, title: store.path(to: entry.project.id).map(\.name).joined(separator: " › "), tasks: own))
+        }
+        let loose = tasks.filter { store.project($0.projectID) == nil }
+        if !loose.isEmpty { groups.append(ProjectGroup(id: nil, title: "No project", tasks: loose)) }
+        return groups
+    }
+
+    private func projectHeader(_ group: ProjectGroup) -> some View {
+        Button {
+            guard let id = group.id else { return }
+            withAnimation(.easeOut(duration: 0.15)) { selection = .project(id) }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: group.id == nil ? "tray" : "folder.fill").font(.system(size: 10, weight: .semibold))
+                Text(group.title).font(.system(size: 11, weight: .semibold)).lineLimit(1)
+                Text("\(group.tasks.count { $0.status != .complete })/\(group.tasks.count)")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.5))
+                if group.id != nil {
+                    Image(systemName: "chevron.right").font(.system(size: 8, weight: .bold)).foregroundStyle(.white.opacity(0.4))
+                }
+            }
+            .foregroundStyle(.white.opacity(0.85))
+            .padding(.horizontal, 6)
+            .padding(.top, 8)
+            .padding(.bottom, 2)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(group.id == nil)
     }
 
     private struct DayGroup {
