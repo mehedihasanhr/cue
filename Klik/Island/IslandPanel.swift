@@ -128,7 +128,7 @@ struct IslandPanel: View {
                 }
                 if tab == .clipboard {
                     if clipboard.items.contains(where: \.pinned) {
-                        smallToggle("Pinned", symbol: pinnedOnly ? "star.fill" : "star", help: "Show only pinned entries", isOn: $pinnedOnly)
+                        smallToggle("Pinned", symbol: pinnedOnly ? "pin.fill" : "pin", help: "Show only pinned entries", isOn: $pinnedOnly)
                     }
                     if clipboard.items.contains(where: { !$0.pinned }) {
                         smallButton("Clear", symbol: "trash", help: "Remove every unpinned item") { clipboard.clear() }
@@ -758,7 +758,7 @@ struct ClipboardCard: View {
                 .overlay(alignment: .bottom) {
                     CardCaption(title: item.name ?? "", date: item.createdAt) {
                         if item.pinned {
-                            Image(systemName: "star.fill").font(.system(size: 9)).foregroundStyle(.yellow)
+                            Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(.yellow)
                         }
                         if let icon = clipboard.sourceIcon(for: item) {
                             Image(nsImage: icon).resizable().frame(width: 16, height: 16)
@@ -768,7 +768,7 @@ struct ClipboardCard: View {
                 }
         } actionRow: {
             CopyAction(perform: copy)
-            CardAction(symbol: item.pinned ? "star.fill" : "star", help: item.pinned ? "Unpin" : "Pin", tint: item.pinned ? .yellow : .white) {
+            CardAction(symbol: item.pinned ? "pin.slash.fill" : "pin", help: item.pinned ? "Unpin" : "Pin", tint: item.pinned ? .yellow : .white) {
                 clipboard.togglePin(item)
             }
             CardAction(symbol: "eye", help: "Preview", perform: onPreview)

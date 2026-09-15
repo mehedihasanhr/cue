@@ -306,7 +306,7 @@ struct IslandDetailBody: View {
                     clipboard.copy(item)
                     FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: item.contentTitle, image: clipboard.thumbnail(for: item))
                 }
-                detailButton(item.pinned ? "Unpin" : "Pin", symbol: item.pinned ? "star.fill" : "star") { clipboard.togglePin(item) }
+                detailButton(item.pinned ? "Unpin" : "Pin", symbol: item.pinned ? "pin.slash.fill" : "pin") { clipboard.togglePin(item) }
             }
         case .files:
             VStack(alignment: .leading, spacing: 6) {
@@ -336,7 +336,7 @@ struct IslandDetailBody: View {
                     if item.kind == .link, let url = URL(string: item.text) {
                         detailButton("Open", symbol: "safari") { NSWorkspace.shared.open(url) }
                     }
-                    detailButton(item.pinned ? "Unpin" : "Pin", symbol: item.pinned ? "star.fill" : "star") { clipboard.togglePin(item) }
+                    detailButton(item.pinned ? "Unpin" : "Pin", symbol: item.pinned ? "pin.slash.fill" : "pin") { clipboard.togglePin(item) }
                 }
                 .frame(width: 120, alignment: .topLeading)
             }
