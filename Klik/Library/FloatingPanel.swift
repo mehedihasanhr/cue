@@ -103,6 +103,7 @@ struct FloatingPanelView: View {
 
     @Environment(AppPreferences.self) private var preferences
     @State private var search = ""
+    @FocusState private var searchFocused: Bool
     /// While searching: show hits from this tab only (nil: every tab).
     @State private var resultFilter: IslandTab?
     @AppStorage(IslandTab.storageKey) private var tab: IslandTab = .all
@@ -122,6 +123,7 @@ struct FloatingPanelView: View {
                         .textFieldStyle(.plain)
                         .font(.system(size: 13))
                         .foregroundStyle(.white)
+                        .focused($searchFocused)
                         .onExitCommand { search = "" }
                     if searching {
                         Text(hits.isEmpty ? "No matches" : "\(hits.count) \(hits.count == 1 ? "match" : "matches")")
@@ -180,6 +182,8 @@ struct FloatingPanelView: View {
         }
         .padding(18)
         .foregroundStyle(.white)
+        // The panel opens ready to type into.
+        .onAppear { DispatchQueue.main.async { searchFocused = true } }
     }
 
     // MARK: - Search
