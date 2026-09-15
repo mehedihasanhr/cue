@@ -105,7 +105,7 @@ struct FloatingPanelView: View {
     @State private var search = ""
     /// While searching: show hits from this tab only (nil: every tab).
     @State private var resultFilter: IslandTab?
-    @AppStorage(IslandTab.storageKey) private var tab: IslandTab = .captures
+    @AppStorage(IslandTab.storageKey) private var tab: IslandTab = .all
     @AppStorage("floating.layout") private var layout: Layout = .grid
 
     enum Layout: String { case grid, list }
@@ -185,7 +185,7 @@ struct FloatingPanelView: View {
     private var searching: Bool { !search.trimmingCharacters(in: .whitespaces).isEmpty }
 
     /// Matches across every tab for the current search.
-    private var hits: [SearchHit] {
+    private var hits: [IslandItem] {
         IslandSearch.hits(for: search, library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore)
     }
 
@@ -250,7 +250,7 @@ struct FloatingPanelView: View {
     }
 
     @ViewBuilder
-    private func hitCard(_ hit: SearchHit) -> some View {
+    private func hitCard(_ hit: IslandItem) -> some View {
         switch hit {
         case .capture(let item): captureCard(item)
         case .clipboard(let item): clipboardCard(item)
@@ -261,7 +261,7 @@ struct FloatingPanelView: View {
     }
 
     @ViewBuilder
-    private func hitRow(_ hit: SearchHit) -> some View {
+    private func hitRow(_ hit: IslandItem) -> some View {
         switch hit {
         case .capture(let item): captureRow(item)
         case .clipboard(let item): clipboardRow(item)
@@ -305,6 +305,7 @@ struct FloatingPanelView: View {
     private func tabPill(_ value: IslandTab) -> some View {
         let selected = tab == value
         let count: Int = switch value {
+        case .all: library.items.count + clipboard.items.count + assets.items.count + colors.items.count + tasksStore.tasks.count
         case .captures: library.items.count
         case .clipboard: clipboard.items.count
         case .assets: assets.items.count
@@ -352,6 +353,9 @@ struct FloatingPanelView: View {
     @ViewBuilder
     private var content: some View {
         switch tab {
+        case .all:
+            list(IslandSearch.everything(library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore),
+                 date: \.date, empty: "Nothing yet — capture, copy or drop something", card: hitCard, row: hitRow)
         case .tasks:
             IslandTasksView(store: tasksStore, onPrompt: onPrompt, onShowTask: onShowTask)
         case .captures:

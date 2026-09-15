@@ -1,13 +1,15 @@
 import AppKit
 import SwiftUI
 
+/// The panel's tabs, in display order.
 enum IslandTab: String, CaseIterable {
-    case captures, clipboard, assets, colors, tasks
+    case all, assets, tasks, captures, colors, clipboard
 
     static let storageKey = "island.tab"
 
     var title: String {
         switch self {
+        case .all: "All"
         case .captures: "Captures"
         case .clipboard: "Clipboard"
         case .assets: "Assets"
@@ -18,6 +20,7 @@ enum IslandTab: String, CaseIterable {
 
     var symbol: String {
         switch self {
+        case .all: "square.grid.2x2"
         case .captures: "photo.on.rectangle"
         case .clipboard: "doc.on.clipboard"
         case .assets: "tray.full"
@@ -54,12 +57,12 @@ struct IslandPanel: View {
     @State private var pinnedOnly = false
     /// A card opened in place of the row.
     @State private var detail: IslandDetail?
-    @AppStorage(IslandTab.storageKey) private var tab: IslandTab = .captures
+    @AppStorage(IslandTab.storageKey) private var tab: IslandTab = .all
 
     private var searching: Bool { !search.trimmingCharacters(in: .whitespaces).isEmpty }
 
     /// Matches across every tab for the current search.
-    private var hits: [SearchHit] {
+    private var hits: [IslandItem] {
         IslandSearch.hits(for: search, library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore)
     }
 
@@ -117,11 +120,9 @@ struct IslandPanel: View {
                 }
             } else {
             HStack(spacing: 8) {
-                tabPill(.captures, count: library.items.count)
-                tabPill(.clipboard, count: clipboard.items.count)
-                tabPill(.assets, count: assets.items.count)
-                tabPill(.colors, count: colors.items.count)
-                tabPill(.tasks, count: tasksStore.tasks.filter { $0.status != .complete }.count)
+                ForEach(IslandTab.allCases, id: \.self) { value in
+                    tabPill(value, count: count(for: value))
+                }
                 Spacer(minLength: 0)
                 if tab == .colors {
                     smallButton("Pick", symbol: "eyedropper", help: "Pick a color from the screen", action: actions.pickColor)
@@ -154,6 +155,13 @@ struct IslandPanel: View {
                         .transition(.opacity)
                 } else {
                 switch tab {
+                case .all:
+                    let everything = IslandSearch.everything(library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore)
+                    if everything.isEmpty {
+                        empty("Nothing yet — capture, copy or drop something", symbol: "square.grid.2x2")
+                    } else {
+                        DayStrip(items: everything, date: \.date, dragPayload: dragPayload, card: itemCard)
+                    }
                 case .captures:
                     if library.items.isEmpty {
                         empty("No captures yet", symbol: "camera.viewfinder")
@@ -288,20 +296,34 @@ struct IslandPanel: View {
         if shown.isEmpty {
             empty("Nothing matches “\(search.trimmingCharacters(in: .whitespaces))”", symbol: "magnifyingglass")
         } else {
-            DayStrip(items: shown, section: { StripSection(id: $0.tab, title: $0.tab.title) }, dragPayload: dragPayload) { hit in
-                switch hit {
-                case .capture(let item): captureCard(item)
-                case .clipboard(let item): clipboardCard(item)
-                case .asset(let item): assetCard(item)
-                case .color(let entry): colorCard(entry)
-                case .task(let task): TaskCard(task: task, store: tasksStore, onOpen: { onShowTask(task) })
-                }
-            }
-            .transition(.opacity)
+            DayStrip(items: shown, section: { StripSection(id: $0.tab, title: $0.tab.title) }, dragPayload: dragPayload, card: itemCard)
+                .transition(.opacity)
         }
     }
 
-    private func dragPayload(for hit: SearchHit) -> DragPayload? {
+    @ViewBuilder
+    private func itemCard(_ item: IslandItem) -> some View {
+        switch item {
+        case .capture(let item): captureCard(item)
+        case .clipboard(let item): clipboardCard(item)
+        case .asset(let item): assetCard(item)
+        case .color(let entry): colorCard(entry)
+        case .task(let task): TaskCard(task: task, store: tasksStore, onOpen: { onShowTask(task) })
+        }
+    }
+
+    private func count(for tab: IslandTab) -> Int {
+        switch tab {
+        case .all: library.items.count + clipboard.items.count + assets.items.count + colors.items.count + tasksStore.tasks.count
+        case .captures: library.items.count
+        case .clipboard: clipboard.items.count
+        case .assets: assets.items.count
+        case .colors: colors.items.count
+        case .tasks: tasksStore.tasks.count { $0.status != .complete }
+        }
+    }
+
+    private func dragPayload(for hit: IslandItem) -> DragPayload? {
         switch hit {
         case .capture(let item): library.fileURL(for: item).map { .file($0, preview: library.thumbnail(for: item)) }
         case .clipboard(let item): clipboard.dragPayload(for: item)
