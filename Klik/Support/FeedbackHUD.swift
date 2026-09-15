@@ -25,6 +25,7 @@ enum FeedbackHUD {
         panel.hasShadow = false
         panel.level = .statusBar
         panel.ignoresMouseEvents = true
+        panel.sharingType = .none
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .transient, .fullScreenAuxiliary]
         panel.contentView = host

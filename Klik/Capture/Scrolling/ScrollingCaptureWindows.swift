@@ -9,6 +9,7 @@ import SwiftUI
 final class ScrollingDimWindow: NSWindow {
     init(screen: NSScreen, region: CGRect) {
         super.init(contentRect: screen.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        sharingType = .none
         setFrame(screen.frame, display: false)
         level = .floating
         isOpaque = false
@@ -137,6 +138,7 @@ final class ScrollingControlPanel {
         panel.level = .statusBar
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
+        panel.sharingType = .none // never part of a screen capture, whatever the filter says
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false

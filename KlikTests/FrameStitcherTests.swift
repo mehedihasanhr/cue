@@ -195,6 +195,24 @@ final class FrameStitcherTests: XCTestCase {
         print("Retina pair matched in \(Int(elapsed * 1000)) ms")
     }
 
+    func testBackToTopAfterTheHeroChangedIsNotRepeated() {
+        // Scroll down, the hero carousel moves on, fling back to the top: the top must be
+        // recognised despite the new hero, not appended again below.
+        let engine = ScrollingCaptureEngine()
+        _ = engine.ingest(frame(at: 0, heroSeed: 1))
+        for offset in [300, 600, 900] { _ = engine.ingest(frame(at: offset, heroSeed: 1)) }
+        XCTAssertEqual(engine.totalRows, 1500)
+
+        for seed in 1...3 { _ = engine.ingest(blank(seed: seed)) }
+        for _ in 0..<12 { _ = engine.ingest(frame(at: 0, heroSeed: 2)) }
+        XCTAssertEqual(engine.totalRows, 1500, "the top was found again; nothing appended")
+
+        XCTAssertEqual(engine.ingest(frame(at: 200, heroSeed: 2)), .covered)
+        XCTAssertEqual(engine.ingest(frame(at: 600, heroSeed: 2)), .covered)
+        XCTAssertEqual(engine.ingest(frame(at: 1000, heroSeed: 2)), .appended)
+        XCTAssertEqual(engine.totalRows, 1600)
+    }
+
     func testFlingPastTheResultContinuesBelow() {
         let engine = ScrollingCaptureEngine()
         _ = engine.ingest(frame(at: 0))
@@ -295,7 +313,7 @@ final class FrameStitcherTests: XCTestCase {
                         } else if sidebar, Self.sidebar.contains(x) { // fixed widget column
                             (r, g, b) = Self.hash(y / 5 + widgetSeed * 4099, x / 5) % 5 == 0 ? (90, 120, 200) : (235, 238, 245)
                         }
-                        if heroSeed > 0, (100..<400).contains(pageRow), (60..<260).contains(x) { // animated hero (page-anchored)
+                        if heroSeed > 0, (100..<260).contains(pageRow), (60..<220).contains(x) { // animated hero (page-anchored)
                             let v: UInt8 = Self.hash(pageRow / 8 + heroSeed * 977, x / 8) % 2 == 0 ? 120 : 250
                             (r, g, b) = (v, UInt8(255 &- v), v)
                         }

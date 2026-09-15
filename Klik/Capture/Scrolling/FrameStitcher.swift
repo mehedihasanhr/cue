@@ -138,6 +138,9 @@ nonisolated enum FrameStitcher {
     /// (a scroll moves every detailed row; an animation leaves most of them alone).
     private static let unchangedRatio = 0.2
     private static let maxVerifications = 6
+    /// Relocation is judged on what is left unchanged, so it tolerates an animated region.
+    private static let relocateRatio = 0.45
+    private static let relocateAgreement = 0.6
     /// Share of detailed blocks that must agree pixel-wise for a shift to be accepted.
     /// A fixed widget or an animation disqualifies only its own blocks.
     private static let minBlockAgreement = 0.7
@@ -347,20 +350,24 @@ nonisolated enum FrameStitcher {
             }
             guard informative >= minMatchedRows else { continue }
             let ratio = Double(matches) / Double(informative)
-            if ratio >= 0.8 { candidates.append((position, ratio)) }
+            if ratio >= relocateRatio { candidates.append((position, ratio)) }
         }
-        guard let best = candidates.max(by: { $0.ratio < $1.ratio }) else { return nil }
-        // A second, clearly separate position that scores nearly as well means the page
-        // repeats itself here; better to stay lost than to guess.
-        let rival = candidates.filter { abs($0.position - best.position) > 3 }.map(\.ratio).max() ?? 0
-        guard rival + scrollMargin <= best.ratio else { return nil }
-
-        let first = max(0, -best.position) + top
-        let last = min(height - bottom, stitched.height - best.position)
-        let band = last - first
-        guard band >= minMatchedRows else { return nil }
-        let agreement = blockAgreement(frame, rowsFrom: first, stitched, rowsFrom: best.position + first, count: band, columns: columns)
-        return agreement >= minBlockAgreement ? best.position : nil
+        // Best first, one candidate per neighbourhood; the pixels decide, so a page whose
+        // hero changed since it was captured (a carousel) is still found by the rest.
+        candidates.sort { $0.ratio > $1.ratio }
+        var tried: [Int] = []
+        for candidate in candidates where !tried.contains(where: { abs($0 - candidate.position) <= 3 }) {
+            tried.append(candidate.position)
+            guard tried.count <= maxVerifications else { break }
+            let first = max(0, -candidate.position) + top
+            let last = min(height - bottom, stitched.height - candidate.position)
+            let band = last - first
+            guard band >= minMatchedRows else { continue }
+            let agreement = blockAgreement(frame, rowsFrom: first, stitched, rowsFrom: candidate.position + first, count: band, columns: columns)
+            if debug { print("  locate p=\(candidate.position) r=\(String(format: "%.2f", candidate.ratio)) agreement=\(String(format: "%.2f", agreement))") }
+            if agreement >= relocateAgreement { return candidate.position }
+        }
+        return nil
     }
 
     // MARK: - Compose
