@@ -80,10 +80,11 @@ final class IslandController {
             } else if case .task(let project) = prompt.kind {
                 tasks.pendingSelection = project.map { .project($0) } ?? .all
             }
-            setPhase(.expanded, animated: true)
             resignKeyIfNeeded()
             if let answer, case .task = prompt.kind {
                 showStatus(IslandStatus(symbol: "checkmark.circle.fill", title: prompt.editing == nil ? "Task saved" : "Task updated", subtitle: answer.title))
+            } else {
+                setPhase(.expanded, animated: true)
             }
         }
 
@@ -317,38 +318,34 @@ final class IslandController {
         outsideClickMonitors.removeAll()
     }
 
-    private var toastTask: Task<Void, Never>?
-
-    /// Shows a confirmation: over the panel while the island is open, as a flash on
-    /// the closed island otherwise. False when the island is not on screen.
+    /// Shows a confirmation on the island for a moment: the closed notch grows into
+    /// it, the open panel shrinks to it. False when the island is not on screen.
     @discardableResult
     func showStatus(_ status: IslandStatus) -> Bool {
         guard model.geometry != nil, !hidden else { return false }
-        switch model.phase {
-        case .expanded, .prompt, .taskDetail:
-            toastTask?.cancel()
-            model.toast = status
-            toastTask = Task { [weak self] in
-                try? await Task.sleep(for: .seconds(1.4))
-                guard !Task.isCancelled, let self, model.toast?.id == status.id else { return }
-                model.toast = nil
-            }
-        case .collapsed, .flash, .status:
-            flash(phase: .status(status))
-        }
+        flash(phase: .status(status), overPanel: true)
         return true
     }
 
-    private func flash(phase: IslandModel.Phase) {
-        guard model.geometry != nil, model.phase != .expanded else { return }
+    /// `overPanel`: replace the open panel (or compact box) too, rather than only
+    /// flashing the closed island. Afterwards the island closes — or opens again if
+    /// the pointer is still on it.
+    private func flash(phase: IslandModel.Phase, overPanel: Bool = false) {
+        guard model.geometry != nil, overPanel || model.phase == .collapsed || model.phase.isFlash else { return }
         flashTask?.cancel()
         closeTask?.cancel()
+        removeOutsideClickMonitor()
         window.orderFrontRegardless()
         setPhase(phase, animated: true)
         flashTask = Task { [weak self] in
             try? await Task.sleep(for: Self.flashDuration)
             guard !Task.isCancelled, let self, model.phase.isFlash else { return }
-            collapse()
+            if let geometry = model.geometry, geometry.rect(for: .flash).contains(NSEvent.mouseLocation) {
+                pointerInside = true
+                expand()
+            } else {
+                collapse()
+            }
         }
     }
 

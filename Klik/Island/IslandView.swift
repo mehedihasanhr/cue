@@ -36,8 +36,6 @@ final class IslandModel {
 
     var phase: Phase = .collapsed
     var geometry: IslandGeometry?
-    /// A confirmation shown over the open panel for a moment.
-    var toast: IslandStatus?
     /// A drag with files or an image is over the island.
     var dropping = false
     /// Asks the compact box for a line of text; called by the panel.
@@ -183,18 +181,6 @@ struct IslandView: View {
                     .padding(.horizontal, IslandGeometry.panelHorizontalPadding)
                     .padding(.bottom, IslandGeometry.panelBottomPadding)
             }
-            .overlay(alignment: .top) {
-                if let toast = model.toast {
-                    StatusRow(status: toast, compact: true)
-                        .padding(.horizontal, 14)
-                        .frame(height: 48)
-                        .klikGlass(cornerRadius: 16)
-                        .padding(.top, strip + 12)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                        .id(toast.id)
-                }
-            }
-            .animation(.spring(response: 0.3, dampingFraction: 0.85), value: model.toast)
             .transition(Self.contentTransition)
         }
     }
@@ -258,27 +244,26 @@ struct IslandStatus: Equatable, Identifiable {
     }
 }
 
-/// The status as a row: symbol, title, subtitle, and its image or swatch.
+/// The status as a row: its image or swatch, title, subtitle, and the symbol.
 private struct StatusRow: View {
     let status: IslandStatus
-    var compact = false
 
     var body: some View {
-        HStack(spacing: compact ? 10 : 12) {
+        HStack(spacing: 12) {
             if let swatch = status.swatch {
-                RoundedRectangle(cornerRadius: compact ? 6 : 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(swatch.swiftUIColor)
-                    .frame(width: compact ? 28 : 44, height: compact ? 28 : 44)
-                    .overlay(RoundedRectangle(cornerRadius: compact ? 6 : 8, style: .continuous).strokeBorder(.white.opacity(0.2)))
+                    .frame(width: 44, height: 44)
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.white.opacity(0.2)))
             } else if let image = status.image {
                 Image(nsImage: image).resizable().scaledToFill()
-                    .frame(width: compact ? 42 : 66, height: compact ? 28 : 44)
+                    .frame(width: 66, height: 44)
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(.white.opacity(0.15)))
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(status.title)
-                    .font(.system(size: compact ? 12 : 13, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                 if let subtitle = status.subtitle, !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.system(size: 11))
@@ -286,14 +271,13 @@ private struct StatusRow: View {
                 }
             }
             .lineLimit(1)
-            if !compact { Spacer(minLength: 0) }
+            Spacer(minLength: 0)
             Image(systemName: status.symbol)
-                .font(.system(size: compact ? 16 : 20, weight: .semibold))
+                .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(status.tint)
         }
         .foregroundStyle(.white)
-        .padding(.horizontal, compact ? 4 : 16)
-        .fixedSize(horizontal: compact, vertical: false)
+        .padding(.horizontal, 16)
     }
 }
 
