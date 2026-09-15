@@ -34,6 +34,9 @@ nonisolated final class ScrollingCaptureEngine {
     }
 
     private(set) var pieces: [StitchPiece] = []
+    /// First stitched row whose content changed in the last ingest that grew the result;
+    /// lets a preview redraw only what is new.
+    private(set) var dirtyFrom = 0
     private var lastFrame: Bitmap?
     /// Stitched row at which `lastFrame`'s row 0 sits — meaningful only while `anchored`.
     private var lastTop = 0
@@ -42,17 +45,18 @@ nonisolated final class ScrollingCaptureEngine {
     private var anchored = true
     private var unmatchedStreak = 0
     private var framesSinceRelocation = 0
+    private var failedRelocations = 0
     /// The stitched result as it was when tracking was lost; relocation searches in it.
     private var lostReference: Bitmap?
-    /// Scroll distance predicted for the next frame — the last verified one. Starts at 0:
-    /// on periodic content that reads as "prefer the smallest shift", which at worst
-    /// adds too little rather than repeating a section.
-    private var expectedShift = 0
 
     /// Consecutive unplaceable frames before the engine looks for the frame in the
     /// whole result instead of relative to the previous frame.
     static let resyncAfter = 6
     private static let relocateEvery = 4
+    /// Failed relocations after which a verified *downward* scroll re-anchors the frame
+    /// at the bottom of the result: the user moved on to new content, so the capture
+    /// continues from there (with a gap, never a repeat).
+    static let resumeAfterFailures = 2
 
     var frameCount: Int { pieces.count }
     var totalRows: Int { pieces.reduce(0) { $0 + $1.rows } }
@@ -62,6 +66,7 @@ nonisolated final class ScrollingCaptureEngine {
             lastFrame = frame
             lastTop = 0
             pieces = [StitchPiece(frame: frame, from: 0, rows: frame.height)]
+            dirtyFrom = 0
             return .first
         }
         guard frame.width == last.width, frame.height == last.height else {
@@ -72,7 +77,7 @@ nonisolated final class ScrollingCaptureEngine {
             return .unchanged
         }
 
-        switch FrameStitcher.shift(from: last, to: frame, expected: expectedShift) {
+        switch FrameStitcher.shift(from: last, to: frame) {
         case .none:
             // The page looks different now; later scrolls are measured from this look.
             lastFrame = frame
@@ -80,9 +85,15 @@ nonisolated final class ScrollingCaptureEngine {
 
         case .moved(let delta, let seam):
             lastFrame = frame
-            expectedShift = abs(delta)
             unmatchedStreak = 0
-            guard anchored else { return relocateIfDue(frame) }
+            guard anchored else {
+                if delta > 0, failedRelocations >= Self.resumeAfterFailures {
+                    Log.capture.notice("Scrolling capture: not found in the result; continuing below it")
+                    resume(at: totalRows - frame.height)
+                    return place(frame, below: totalRows - frame.height + delta, header: seam.header)
+                }
+                return relocateIfDue(frame)
+            }
             let newTop = lastTop + delta
             return delta > 0
                 ? place(frame, below: newTop, header: seam.header)
@@ -98,6 +109,7 @@ nonisolated final class ScrollingCaptureEngine {
             if let placed = relocate(frame) { return placed }
             anchored = false
             lostReference = compose()
+            failedRelocations = 1
             framesSinceRelocation = Self.relocateEvery - 1 // try again on the very next frame
             return .unmatched
         }
@@ -115,7 +127,16 @@ nonisolated final class ScrollingCaptureEngine {
         framesSinceRelocation += 1
         guard framesSinceRelocation >= Self.relocateEvery else { return .unmatched }
         framesSinceRelocation = 0
-        return relocate(frame) ?? .unmatched
+        if let placed = relocate(frame) { return placed }
+        failedRelocations += 1
+        return .unmatched
+    }
+
+    private func resume(at top: Int) {
+        anchored = true
+        lostReference = nil
+        failedRelocations = 0
+        lastTop = top
     }
 
     /// Finds `frame` in the stitched result and, if found, resumes tracking from there.
@@ -124,8 +145,7 @@ nonisolated final class ScrollingCaptureEngine {
               let position = FrameStitcher.locate(frame, in: stitched)
         else { return nil }
         Log.capture.info("Scrolling capture: frame found at stitched row \(position); resuming")
-        anchored = true
-        lostReference = nil
+        resume(at: position)
         lastFrame = frame
         let top = Int(Double(frame.height) * FrameStitcher.topGuard)
         let bottom = Int(Double(frame.height) * FrameStitcher.bottomGuard)
@@ -150,6 +170,7 @@ nonisolated final class ScrollingCaptureEngine {
         trimBottom(to: cut)
         let from = max(header, cut - newTop)
         pieces.append(StitchPiece(frame: frame, from: from, rows: frame.height - from))
+        dirtyFrom = cut
         return .appended
     }
 
@@ -170,6 +191,7 @@ nonisolated final class ScrollingCaptureEngine {
         trimTop(to: newTop + rows)   // stitched rows [0, newTop + rows) are now supplied by the new frame
         pieces.insert(StitchPiece(frame: frame, from: 0, rows: rows), at: 0)
         lastTop = 0
+        dirtyFrom = 0
         return .prepended
     }
 

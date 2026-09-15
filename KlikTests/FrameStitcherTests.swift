@@ -65,7 +65,7 @@ final class FrameStitcherTests: XCTestCase {
         _ = engine.ingest(frame(at: 0))
         var offset = 0
         while offset < Self.pageHeight - Self.viewport {
-            offset = min(offset + 300, Self.pageHeight - Self.viewport)
+            offset = min(offset + 280, Self.pageHeight - Self.viewport)
             _ = engine.ingest(frame(at: offset))
         }
         XCTAssertEqual(engine.totalRows, Self.pageHeight)
@@ -109,6 +109,35 @@ final class FrameStitcherTests: XCTestCase {
         assertMatchesPage(decorated, rows: 1600)
     }
 
+    func testFastScrollWithLittleOverlap() {
+        // Steps of 500 on a 600-row viewport leave 100 rows of overlap, 40 of them a
+        // sticky header — still enough once the sticky band is detected, not assumed.
+        let engine = ScrollingCaptureEngine()
+        _ = engine.ingest(frame(at: 0))
+        for offset in [500, 1000, 1500, 1950, 2400] {
+            XCTAssertEqual(engine.ingest(frame(at: offset)), .appended, "step to \(offset)")
+        }
+        assertMatchesPage(engine)
+    }
+
+    func testAnimatedFixedWidgetDoesNotDisturbMatching() {
+        // A floating video widget that changes every frame but never scrolls.
+        let engine = ScrollingCaptureEngine()
+        _ = engine.ingest(frame(at: 0, widgetSeed: 1))
+        var offset = 0
+        var seed = 1
+        while offset < Self.pageHeight - Self.viewport {
+            offset = min(offset + 220, Self.pageHeight - Self.viewport)
+            seed += 1
+            XCTAssertEqual(engine.ingest(frame(at: offset, widgetSeed: seed)), .appended, "step to \(offset)")
+        }
+        // Widget animating while the page stays put.
+        for extra in 1...3 {
+            XCTAssertEqual(engine.ingest(frame(at: offset, widgetSeed: seed + extra)), .unchanged)
+        }
+        assertMatchesPage(engine)
+    }
+
     func testFrameOfDifferentSizeIsDropped() {
         let engine = ScrollingCaptureEngine()
         _ = engine.ingest(frame(at: 0))
@@ -135,6 +164,35 @@ final class FrameStitcherTests: XCTestCase {
         XCTAssertEqual(engine.ingest(frame(at: 1000)), .appended)
         XCTAssertEqual(engine.totalRows, 1600)
         assertMatchesPage(engine, rows: 1600)
+    }
+
+    /// A Retina-sized frame pair must match well inside a 30 fps budget even unoptimised.
+    func testRetinaFramePairMatchesQuickly() {
+        let width = 1800, height = 1600
+        func frame(offset: Int) -> Bitmap {
+            var bitmap = Bitmap(width: width, height: height)
+            bitmap.data.withUnsafeMutableBytes { buffer in
+                let bytes = buffer.bindMemory(to: UInt8.self)
+                for y in 0..<height {
+                    let row = offset + y
+                    for x in 0..<width {
+                        let i = (y * width + x) * 4
+                        let text = (200..<1500).contains(x) && row % 40 < 28 && Self.hash(row / 4, x / 6) % 3 == 0
+                        let shade: UInt8 = text ? 25 : 255
+                        bytes[i] = shade; bytes[i + 1] = shade; bytes[i + 2] = shade; bytes[i + 3] = 255
+                    }
+                }
+            }
+            return bitmap
+        }
+        let a = frame(offset: 0), b = frame(offset: 730)
+        let started = Date()
+        let result = FrameStitcher.shift(from: a, to: b)
+        let elapsed = Date().timeIntervalSince(started)
+        guard case .moved(let delta, _) = result else { return XCTFail("\(result)") }
+        XCTAssertEqual(delta, 730)
+        XCTAssertLessThan(elapsed, 0.25, "matcher took \(elapsed)s")
+        print("Retina pair matched in \(Int(elapsed * 1000)) ms")
     }
 
     func testLocateFindsAFrameInsideAndOverhangingTheResult() {
@@ -168,7 +226,7 @@ final class FrameStitcherTests: XCTestCase {
         return bitmap
     }()
 
-    private func frame(at offset: Int, sidebar: Bool = true, heroSeed: Int = 0, overscroll: Int = 0) -> Bitmap {
+    private func frame(at offset: Int, sidebar: Bool = true, heroSeed: Int = 0, overscroll: Int = 0, widgetSeed: Int = 0) -> Bitmap {
         var bitmap = Bitmap(width: Self.width, height: Self.viewport)
         bitmap.data.withUnsafeMutableBytes { buffer in
             let bytes = buffer.bindMemory(to: UInt8.self)
@@ -186,7 +244,7 @@ final class FrameStitcherTests: XCTestCase {
                         if y < Self.headerRows { // sticky header: a dark bar with a light pattern
                             (r, g, b) = Self.hash(y / 4, x / 10) % 4 == 0 ? (200, 200, 220) : (40, 40, 60)
                         } else if sidebar, Self.sidebar.contains(x) { // fixed widget column
-                            (r, g, b) = Self.hash(y / 5, x / 5) % 5 == 0 ? (90, 120, 200) : (235, 238, 245)
+                            (r, g, b) = Self.hash(y / 5 + widgetSeed * 4099, x / 5) % 5 == 0 ? (90, 120, 200) : (235, 238, 245)
                         }
                         if heroSeed > 0, (100..<400).contains(pageRow), (60..<260).contains(x) { // animated hero (page-anchored)
                             let v: UInt8 = Self.hash(pageRow / 8 + heroSeed * 977, x / 8) % 2 == 0 ? 120 : 250

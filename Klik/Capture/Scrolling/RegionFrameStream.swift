@@ -85,20 +85,19 @@ actor StitchWorker {
         let preview: CGImage?
     }
 
-    private let engine: ScrollingCaptureEngine
-    private let previewWidth: Int
+    private let engine = ScrollingCaptureEngine()
+    private let preview: StitchPreview
 
     init(previewWidth: Int) {
-        engine = ScrollingCaptureEngine()
-        self.previewWidth = previewWidth
+        preview = StitchPreview(width: previewWidth)
     }
 
     func ingest(_ frame: Bitmap) -> Update {
         let result = engine.ingest(frame)
         switch result {
         case .first, .appended, .prepended:
-            let preview = engine.compose()?.cgImage.map { Self.thumbnail(of: $0, maxWidth: previewWidth) }
-            return Update(result: result, frames: engine.frameCount, preview: preview)
+            let image = preview.update(pieces: engine.pieces, totalRows: engine.totalRows, dirtyFrom: engine.dirtyFrom)
+            return Update(result: result, frames: engine.frameCount, preview: image)
         default:
             return Update(result: result, frames: engine.frameCount, preview: nil)
         }
@@ -108,18 +107,61 @@ actor StitchWorker {
         guard engine.frameCount > 0 else { return nil }
         return engine.compose()?.cgImage
     }
+}
 
-    private static func thumbnail(of image: CGImage, maxWidth: Int) -> CGImage {
-        guard image.width > maxWidth else { return image }
-        let scale = CGFloat(maxWidth) / CGFloat(image.width)
-        let size = CGSize(width: maxWidth, height: max(1, Int(CGFloat(image.height) * scale)))
-        guard let context = CGContext(
-            data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8, bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
-        ) else { return image }
-        context.interpolationQuality = .medium
-        context.draw(image, in: CGRect(origin: .zero, size: size))
-        return context.makeImage() ?? image
+/// A reduced copy of the stitched result, kept up to date by drawing only the rows that
+/// changed. Composing and shrinking the whole result on every frame would take longer
+/// and longer as the capture grows, until the stitcher could no longer keep up.
+nonisolated final class StitchPreview {
+    let width: Int
+    private var scale: CGFloat = 0
+    private var context: CGContext?
+    private var capacity = 0
+    private var drawnRows = 0
+
+    init(width: Int) {
+        self.width = width
+    }
+
+    func update(pieces: [StitchPiece], totalRows: Int, dirtyFrom: Int) -> CGImage? {
+        guard let first = pieces.first, totalRows > 0 else { return nil }
+        if scale == 0 { scale = min(1, CGFloat(width) / CGFloat(first.frame.width)) }
+        let previewWidth = Int((CGFloat(first.frame.width) * scale).rounded())
+        let previewRows = Int((CGFloat(totalRows) * scale).rounded(.up))
+        guard ensureCapacity(previewRows, width: previewWidth), let context else { return nil }
+
+        let from = min(dirtyFrom, drawnRows)
+        var row = 0
+        for piece in pieces {
+            let end = row + piece.rows
+            defer { row = end }
+            guard end > from, piece.rows > 0, let image = piece.frame.cgImage else { continue }
+            let skip = max(from - row, 0)
+            let crop = CGRect(x: 0, y: piece.from + skip, width: piece.frame.width, height: piece.rows - skip)
+            guard let part = image.cropping(to: crop) else { continue }
+            let top = CGFloat(row + skip) * scale
+            let height = CGFloat(crop.height) * scale
+            // The context is y-up; preview row r sits at y = capacity − r.
+            context.draw(part, in: CGRect(x: 0, y: CGFloat(capacity) - top - height, width: CGFloat(previewWidth), height: height))
+        }
+        drawnRows = totalRows
+        return context.makeImage()?.cropping(to: CGRect(x: 0, y: 0, width: previewWidth, height: previewRows))
+    }
+
+    /// Grows the backing bitmap (doubling) and carries the drawn rows over.
+    private func ensureCapacity(_ rows: Int, width: Int) -> Bool {
+        guard rows > capacity else { return true }
+        let newCapacity = max(rows, capacity * 2, 512)
+        guard let fresh = CGContext(data: nil, width: width, height: newCapacity, bitsPerComponent: 8, bytesPerRow: 0,
+                                    space: CGColorSpaceCreateDeviceRGB(),
+                                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue)
+        else { return false }
+        fresh.interpolationQuality = .medium
+        if let context, let old = context.makeImage() {
+            fresh.draw(old, in: CGRect(x: 0, y: CGFloat(newCapacity - capacity), width: CGFloat(width), height: CGFloat(capacity)))
+        }
+        context = fresh
+        capacity = newCapacity
+        return true
     }
 }

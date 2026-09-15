@@ -108,10 +108,17 @@ nonisolated enum FrameStitcher {
         let footer: Int
     }
 
-    /// Fraction of each frame's top / bottom never used for matching: sticky headers,
-    /// tab bars and floating footers live there.
+    /// Fraction of a frame's top / bottom never used when relocating a lost frame in the
+    /// whole result (sticky headers, tab bars and floating footers live there). Frame to
+    /// frame, sticky bands are detected instead — see `stickyBands`.
     static let topGuard = 0.15
     static let bottomGuard = 0.08
+    /// Rows at the very edges of a frame skipped frame to frame (partial rows, shadows).
+    private static let edgeGuardPercent = 2
+    /// A sticky band can take up to this much of the frame.
+    private static let maxStickyPercent = 40
+    /// Below this many detailed rows a candidate needs to be unrivalled to be trusted.
+    private static let solidEvidence = 24
 
     private static let columnStride = 4
     /// Per-channel mean difference above which a row pair is a pixel mismatch (0…255).
@@ -122,19 +129,25 @@ nonisolated enum FrameStitcher {
     /// Edge energy per sampled column below which a row is blank and carries no evidence.
     private static let edgeFloor = 4
     private static let minMatchRatio = 0.6
-    private static let minMatchedRows = 12
+    private static let minMatchedRows = 8
     /// A scroll must agree this much more than "no scroll" to be believed.
     private static let scrollMargin = 0.1
     /// Detailed rows still in place after the change for the page to count as not scrolled
     /// (a scroll moves every detailed row; an animation leaves most of them alone).
     private static let unchangedRatio = 0.2
     private static let maxVerifications = 6
-    private static let badRowPercent = 4
+    /// Share of detailed blocks that must agree pixel-wise for a shift to be accepted.
+    /// A fixed widget or an animation disqualifies only its own blocks.
+    private static let minBlockAgreement = 0.7
+    private static let blockRows = 32
+    private static let blockColumns = 16
     private static let tieTolerance = 0.03
     /// Sampled pixel change (sum of |ΔR|+|ΔG|+|ΔB|) that marks a column as changed.
     private static let staticColumnTolerance = 12
-    /// Columns that must have changed for the frame pair to count as a scroll at all.
-    private static let minActiveFraction = 0.05
+    /// Share of the detailed columns that must have changed for the pair to count as a scroll.
+    private static let minActiveFraction = 0.3
+    /// Spread of a column's sampled values (sum of three channels) that marks it as detailed.
+    private static let detailSpread = 60
 
     /// `true` when the two frames are (nearly) pixel-identical.
     static func framesMatch(_ a: Bitmap, _ b: Bitmap) -> Bool {
@@ -142,93 +155,148 @@ nonisolated enum FrameStitcher {
         return sampledDifference(a, rowsFrom: 0, b, rowsFrom: 0, count: a.height, columns: nil) < 2.0
     }
 
-    /// The scroll between `previous` and `next`. `expected` (a distance, rows) only orders
-    /// candidates that the evidence cannot separate — periodic content such as repeated
-    /// lines or chat bubbles — and even then the choice is verified before it is accepted.
-    static func shift(from previous: Bitmap, to next: Bitmap, expected: Int) -> Shift {
+    /// The scroll between `previous` and `next`. Candidates the evidence cannot separate
+    /// — periodic content such as repeated lines or chat bubbles — resolve to the smallest
+    /// shift: at worst a repeating region comes out shorter, never repeated. Either way the
+    /// choice is verified pixel-wise before it is accepted.
+    static func shift(from previous: Bitmap, to next: Bitmap) -> Shift {
         guard previous.width == next.width, previous.height == next.height else { return .ambiguous }
         let height = previous.height
-        let top = Int(Double(height) * topGuard)
-        let bottom = Int(Double(height) * bottomGuard)
-        let maxShift = height - (top + bottom + minMatchedRows)
-        guard maxShift >= 1 else { return .ambiguous }
+        let guardRows = max(2, height * edgeGuardPercent / 100)
 
-        // Only columns that changed carry information about the scroll. If almost nothing
-        // changed, something moved on screen but the page did not.
-        let columns = activeColumns(previous, next)
-        let sampledColumns = (previous.width + columnStride - 1) / columnStride
-        guard Double(columns.count) >= max(8, Double(sampledColumns) * minActiveFraction) else { return .none }
+        // Only columns that changed carry information about the scroll. If most of the
+        // columns that hold any detail did not change, something moved on screen (a video
+        // widget, a spinner) but the page did not.
+        let (columns, detailed) = activeColumns(previous, next)
+        guard columns.count >= 8, Double(columns.count) >= Double(detailed) * minActiveFraction else { return .none }
 
         let sigA = signature(previous, columns: columns)
         let sigB = signature(next, columns: columns)
         let samples = Double(columns.count)
         let floor = Int32(edgeFloor * columns.count)
+        /// Signature difference (integer) that still counts as the same row.
+        let rowBudget = Int32(rowTolerance * samples)
+        /// Scoring reads every other row on tall frames: hundreds of votes either way.
+        let rowStep = height > 800 ? 2 : 1
+
+        // Per row: does it carry detail, and did it stay put (same row in both frames)?
+        var informative = [Bool](repeating: false, count: height)
+        var still = [Bool](repeating: false, count: height)
+        var stillInformative = 0, stillMatches = 0
+        for k in 0..<height {
+            informative[k] = max(sigA.edges[k], sigB.edges[k]) >= floor
+            let difference = Double(abs(sigA.brightness[k] - sigB.brightness[k]) + abs(sigA.edges[k] - sigB.edges[k]))
+            still[k] = difference / samples <= rowTolerance
+            if informative[k] {
+                stillInformative += 1
+                if still[k] { stillMatches += 1 }
+            }
+        }
+        let stillRatio = stillInformative > 0 ? Double(stillMatches) / Double(stillInformative) : 0
+
+        // Sticky bands are found, not assumed: the run of unmoved detailed rows at the top
+        // (a navigation bar) and at the bottom (a cookie banner, a tab bar). Blank rows
+        // inside the run are tolerated but do not extend it.
+        let sticky = stickyBands(still: still, informative: informative, height: height)
+        let low = sticky.top + guardRows
+        let high = height - sticky.bottom - guardRows
+        let maxShift = high - low - minMatchedRows
+        guard maxShift >= 1 else { return stillRatio >= unchangedRatio ? .none : .ambiguous }
 
         /// Fraction of detailed row pairs that agree when `next` is shifted by `delta`.
         func score(_ delta: Int) -> (ratio: Double, informative: Int)? {
             let offsetA = max(delta, 0), offsetB = max(-delta, 0)
-            let overlap = height - abs(delta)
-            var matches = 0, informative = 0
-            for k in 0..<overlap {
-                let a = offsetA + k, b = offsetB + k
-                guard a >= top, b >= top, a < height - bottom, b < height - bottom else { continue }
-                guard max(sigA.edges[a], sigB.edges[b]) >= floor else { continue }
-                informative += 1
-                let difference = Double(abs(sigA.brightness[a] - sigB.brightness[b]) + abs(sigA.edges[a] - sigB.edges[b]))
-                if difference / samples <= rowTolerance { matches += 1 }
+            let from = max(low - offsetA, low - offsetB, 0)
+            let to = min(high - offsetA, high - offsetB)
+            guard to - from >= minMatchedRows else { return nil }
+            var matches = 0, count = 0
+            sigA.brightness.withUnsafeBufferPointer { brightA in
+                sigA.edges.withUnsafeBufferPointer { edgesA in
+                    sigB.brightness.withUnsafeBufferPointer { brightB in
+                        sigB.edges.withUnsafeBufferPointer { edgesB in
+                            var k = from
+                            while k < to {
+                                let a = offsetA + k, b = offsetB + k
+                                k += rowStep
+                                guard max(edgesA[a], edgesB[b]) >= floor else { continue }
+                                count += 1
+                                let difference = abs(brightA[a] - brightB[b]) + abs(edgesA[a] - edgesB[b])
+                                if difference <= rowBudget { matches += 1 }
+                            }
+                        }
+                    }
+                }
             }
-            guard informative >= minMatchedRows else { return nil }
-            return (Double(matches) / Double(informative), informative)
+            guard count * rowStep >= minMatchedRows else { return nil }
+            return (Double(matches) / Double(count), count * rowStep)
         }
 
-        let still = score(0)?.ratio ?? 0
-        var candidates: [(delta: Int, ratio: Double)] = []
+        var candidates: [(delta: Int, ratio: Double, informative: Int)] = []
         for delta in -maxShift...maxShift where delta != 0 {
             guard let scored = score(delta), scored.ratio >= minMatchRatio else { continue }
-            candidates.append((delta, scored.ratio))
+            candidates.append((delta, scored.ratio, scored.informative))
         }
         // "Did not scroll" is a candidate like any other, and wins ties: an animation
         // changes some rows, a scroll changes them all.
-        guard let best = candidates.map(\.ratio).max(), best >= still + scrollMargin else {
-            return still >= unchangedRatio ? .none : .ambiguous
+        guard let best = candidates.map(\.ratio).max(), best >= stillRatio + scrollMargin else {
+            return stillRatio >= unchangedRatio ? .none : .ambiguous
         }
 
-        // Candidates the scores cannot separate (within the tolerance) that are more than a
-        // few rows apart are a periodic pattern; there the expected distance orders them.
-        let leaders = candidates.filter { $0.ratio >= best - tieTolerance }
-        let periodic = leaders.contains { abs(abs($0.delta) - abs(leaders[0].delta)) > 3 }
+        // Candidates the scores cannot separate (within the tolerance) are a periodic
+        // pattern; the smallest shift among them is the safe reading.
         candidates.sort { a, b in
             let aLeads = a.ratio >= best - tieTolerance, bLeads = b.ratio >= best - tieTolerance
             if aLeads != bLeads { return aLeads }
-            if aLeads, periodic { return abs(abs(a.delta) - expected) < abs(abs(b.delta) - expected) }
+            if aLeads { return abs(a.delta) < abs(b.delta) }
             return a.ratio > b.ratio
         }
         if debug {
-            print("still=\(String(format: "%.2f", still)) candidates (top 12):",
-                  candidates.prefix(12).map { "d=\($0.delta) r=\(String(format: "%.2f", $0.ratio))" }.joined(separator: " "))
+            print("still=\(String(format: "%.2f", stillRatio)) sticky=\(sticky) candidates (top 12):",
+                  candidates.prefix(12).map { "d=\($0.delta) r=\(String(format: "%.2f", $0.ratio)) n=\($0.informative)" }.joined(separator: " "))
         }
 
         for candidate in candidates.prefix(maxVerifications) {
             let delta = candidate.delta
             let overlap = height - abs(delta)
-            let band = overlap - top - bottom
-            guard band > 0 else { continue }
-            let bad = mismatchedRows(previous, rowsFrom: max(delta, 0) + top, next, rowsFrom: max(-delta, 0) + top,
-                                     count: band, columns: columns)
-            let allowed = max(2, band * badRowPercent / 100)
-            if debug { print("  verify d=\(delta) band=\(band) bad=\(bad) allowed=\(allowed)") }
-            if bad <= allowed {
-                return .moved(delta: delta, seam: seam(overlap: overlap, top: top, bottom: bottom))
+            // The seam must keep the lower frame's sticky header and the upper frame's
+            // sticky footer out of the result.
+            guard sticky.top <= overlap - sticky.bottom else { continue }
+            let offsetA = max(delta, 0), offsetB = max(-delta, 0)
+            let from = max(low - offsetA, low - offsetB, 0)
+            let to = min(high - offsetA, high - offsetB)
+            guard to > from else { continue }
+            // Thin evidence is accepted only when nothing else comes close.
+            if candidate.informative < solidEvidence {
+                let rival = candidates.filter { abs($0.delta - delta) > 3 }.map(\.ratio).max() ?? 0
+                guard rival + scrollMargin <= candidate.ratio else { continue }
+            }
+            let agreement = blockAgreement(previous, rowsFrom: offsetA + from, next, rowsFrom: offsetB + from,
+                                           count: to - from, columns: columns)
+            if debug { print("  verify d=\(delta) rows=\(to - from) agreement=\(String(format: "%.2f", agreement))") }
+            if agreement >= minBlockAgreement {
+                let header = min(max(overlap / 2, sticky.top), overlap - sticky.bottom)
+                return .moved(delta: delta, seam: Seam(overlap: overlap, header: header, footer: overlap - header))
             }
         }
         // Rows agreed by signature but not by pixel — a look-alike, not a scroll.
-        return still >= unchangedRatio ? .none : .ambiguous
+        return stillRatio >= unchangedRatio ? .none : .ambiguous
     }
 
-    /// Seam in the middle of the overlap, never inside a guard band.
-    private static func seam(overlap: Int, top: Int, bottom: Int) -> Seam {
-        let header = min(max(overlap / 2, top), max(top, overlap - bottom))
-        return Seam(overlap: overlap, header: header, footer: overlap - header)
+    /// Rows of unmoved detail at the top and bottom of the frame pair (sticky UI).
+    private static func stickyBands(still: [Bool], informative: [Bool], height: Int) -> (top: Int, bottom: Int) {
+        let cap = height * maxStickyPercent / 100
+        var top = 0, k = 0
+        while k < cap, still[k] || !informative[k] {
+            if informative[k] { top = k + 1 }
+            k += 1
+        }
+        var bottom = 0
+        k = height - 1
+        while height - 1 - k < cap, still[k] || !informative[k] {
+            if informative[k] { bottom = height - k }
+            k -= 1
+        }
+        return (top, bottom)
     }
 
     nonisolated(unsafe) static var debug = false
@@ -274,8 +342,8 @@ nonisolated enum FrameStitcher {
         let last = min(height - bottom, stitched.height - best.position)
         let band = last - first
         guard band >= minMatchedRows else { return nil }
-        let bad = mismatchedRows(frame, rowsFrom: first, stitched, rowsFrom: best.position + first, count: band, columns: columns)
-        return bad <= max(2, band * badRowPercent / 100) ? best.position : nil
+        let agreement = blockAgreement(frame, rowsFrom: first, stitched, rowsFrom: best.position + first, count: band, columns: columns)
+        return agreement >= minBlockAgreement ? best.position : nil
     }
 
     // MARK: - Compose
@@ -312,35 +380,44 @@ nonisolated enum FrameStitcher {
     }
 
     /// Sampled columns (x positions) whose pixels differ between the two frames somewhere
-    /// along ~48 sampled rows. Everything else is scenery that moved with neither frame.
-    private static func activeColumns(_ a: Bitmap, _ b: Bitmap) -> [Int] {
+    /// along ~48 sampled rows, plus how many sampled columns hold any detail at all.
+    /// Everything else is scenery that moved with neither frame.
+    private static func activeColumns(_ a: Bitmap, _ b: Bitmap) -> (active: [Int], detailed: Int) {
         let width = a.width
         let bytesPerRow = a.bytesPerRow
         let rowStep = max(1, a.height / 48)
         var active: [Int] = []
+        var detailed = 0
         a.data.withUnsafeBytes { bufferA in
             b.data.withUnsafeBytes { bufferB in
                 let bytesA = bufferA.bindMemory(to: UInt8.self)
                 let bytesB = bufferB.bindMemory(to: UInt8.self)
                 var x = 0
                 while x < width {
+                    var changed = false
+                    var low = Int.max, high = Int.min
                     var row = 0
-                    columnLoop: while row < a.height {
+                    while row < a.height {
                         let i = row * bytesPerRow + x * 4
-                        let change = abs(Int(bytesA[i]) - Int(bytesB[i]))
-                            + abs(Int(bytesA[i + 1]) - Int(bytesB[i + 1]))
-                            + abs(Int(bytesA[i + 2]) - Int(bytesB[i + 2]))
-                        if change > staticColumnTolerance {
-                            active.append(x)
-                            break columnLoop
+                        let valueA = Int(bytesA[i]) + Int(bytesA[i + 1]) + Int(bytesA[i + 2])
+                        let valueB = Int(bytesB[i]) + Int(bytesB[i + 1]) + Int(bytesB[i + 2])
+                        low = min(low, valueA, valueB)
+                        high = max(high, valueA, valueB)
+                        if !changed {
+                            let change = abs(Int(bytesA[i]) - Int(bytesB[i]))
+                                + abs(Int(bytesA[i + 1]) - Int(bytesB[i + 1]))
+                                + abs(Int(bytesA[i + 2]) - Int(bytesB[i + 2]))
+                            changed = change > staticColumnTolerance
                         }
                         row += rowStep
                     }
+                    if changed { active.append(x) }
+                    if high - low > detailSpread { detailed += 1 }
                     x += columnStride
                 }
             }
         }
-        return active
+        return (active, detailed)
     }
 
     private static func signature(_ bitmap: Bitmap, columns: [Int]) -> Signature {
@@ -368,15 +445,53 @@ nonisolated enum FrameStitcher {
         return Signature(brightness: brightness, edges: edges)
     }
 
-    /// Number of rows in the range whose sampled pixel difference exceeds the threshold.
-    private static func mismatchedRows(
+    /// Pixel verification of a shift, in blocks (`blockRows` × a slice of `columns`):
+    /// the share of blocks with detail whose mean per-channel difference stays under
+    /// `verificationThreshold`. Blank blocks carry no vote; a fixed or animated widget
+    /// only loses the blocks it covers, and re-rasterised text averages out.
+    private static func blockAgreement(
         _ a: Bitmap, rowsFrom rowA: Int, _ b: Bitmap, rowsFrom rowB: Int, count: Int, columns: [Int]
-    ) -> Int {
-        var bad = 0
-        for k in 0..<count where sampledDifference(a, rowsFrom: rowA + k, b, rowsFrom: rowB + k, count: 1, columns: columns) > verificationThreshold {
-            bad += 1
+    ) -> Double {
+        guard count > 0, !columns.isEmpty, a.width == b.width else { return 0 }
+        let groups = min(blockColumns, columns.count)
+        let columnsPerGroup = (columns.count + groups - 1) / groups
+        let strips = (count + blockRows - 1) / blockRows
+        var difference = [Int](repeating: 0, count: strips * groups)
+        var detail = [Int](repeating: 0, count: strips * groups)
+        var pixels = [Int](repeating: 0, count: strips * groups)
+        let bytesPerRow = a.bytesPerRow
+        let rowStep = count > 256 ? 2 : 1
+        a.data.withUnsafeBytes { bufferA in
+            b.data.withUnsafeBytes { bufferB in
+                let bytesA = bufferA.bindMemory(to: UInt8.self)
+                let bytesB = bufferB.bindMemory(to: UInt8.self)
+                for k in stride(from: 0, to: count, by: rowStep) {
+                    let strip = (k / blockRows) * groups
+                    let offsetA = (rowA + k) * bytesPerRow
+                    let offsetB = (rowB + k) * bytesPerRow
+                    var previousA = -1, previousB = -1
+                    for (index, x) in columns.enumerated() {
+                        let block = strip + index / columnsPerGroup
+                        let ia = offsetA + x * 4, ib = offsetB + x * 4
+                        let ra = Int(bytesA[ia]), ga = Int(bytesA[ia + 1]), ba = Int(bytesA[ia + 2])
+                        let rb = Int(bytesB[ib]), gb = Int(bytesB[ib + 1]), bb = Int(bytesB[ib + 2])
+                        difference[block] += abs(ra - rb) + abs(ga - gb) + abs(ba - bb)
+                        let valueA = ra + ga + ba, valueB = rb + gb + bb
+                        if previousA >= 0 { detail[block] += max(abs(valueA - previousA), abs(valueB - previousB)) }
+                        previousA = valueA; previousB = valueB
+                        pixels[block] += 1
+                    }
+                }
+            }
         }
-        return bad
+        var informative = 0, agreeing = 0
+        for block in 0..<(strips * groups) where pixels[block] > 0 {
+            guard detail[block] >= edgeFloor * pixels[block] else { continue }
+            informative += 1
+            if Double(difference[block]) / Double(pixels[block] * 3) <= verificationThreshold { agreeing += 1 }
+        }
+        guard informative > 0 else { return 0 }
+        return Double(agreeing) / Double(informative)
     }
 
     /// Mean absolute per-channel difference over a sparse sample of the given row ranges,
