@@ -123,8 +123,7 @@ struct FloatingPanelView: View {
                         .textFieldStyle(.plain)
                         .font(.system(size: 13))
                         .foregroundStyle(.white)
-                        .focused($searchFocused)
-                        .onExitCommand { search = "" }
+                        .focused($searchFocused) // ⎋ falls through to the panel, which closes
                     if searching {
                         Text(hits.isEmpty ? "No matches" : "\(hits.count) \(hits.count == 1 ? "match" : "matches")")
                             .font(.system(size: 11, weight: .medium))
