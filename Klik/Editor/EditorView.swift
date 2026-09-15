@@ -24,7 +24,7 @@ struct EditorView: View {
                 PreviewToolbar(model: model, title: title, fileName: fileName, onCopy: onCopy, onDelete: onDelete, windowButtons: windowButtons)
                 Divider()
             } else {
-                EditorToolbar(model: model, fileName: fileName, onCopy: onCopy, onSave: onSave, onExport: onExport, onDone: onDone, windowButtons: windowButtons)
+                EditorToolbar(model: model, fileName: fileName, onCopy: onCopy, onSave: onSave, onExport: onExport, onDelete: onDelete, onDone: onDone, windowButtons: windowButtons)
                 Divider()
                 // The options row only appears when there is something to set.
                 if model.tool != .background, !(model.tool == .select && model.selectedID == nil) {
@@ -129,6 +129,7 @@ struct EditorToolbar: View {
     let onCopy: () -> Void
     let onSave: () -> Void
     let onExport: () -> Void
+    let onDelete: () -> Void
     let onDone: () -> Void
     let windowButtons: WindowButtons
     @State private var copied = false
@@ -177,6 +178,9 @@ struct EditorToolbar: View {
                     )
                     .frame(width: 32, height: 28)
                     .help("Drag into another app")
+                }
+                ToolGroup {
+                    IconButton(symbol: "trash", help: "Delete capture", tint: .red.opacity(0.9), action: onDelete)
                 }
                 ToolbarPillButton(title: "Save as…", prominent: false, action: onExport)
                     .help("Export a copy (⇧⌘S)")

@@ -23,6 +23,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             CaptureSettingsView().environment(preferences)
         ))
         tabs.addTabViewItem(Self.pane(
+            "Editor", symbol: "paintbrush.pointed", height: 780,
+            EditorSettingsView().environment(preferences)
+        ))
+        tabs.addTabViewItem(Self.pane(
             "Shortcuts", symbol: "keyboard", height: 330,
             ShortcutSettingsView().environment(shortcuts)
         ))

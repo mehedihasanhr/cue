@@ -17,6 +17,12 @@ final class AppPreferences {
         static let appearance = "appearance"
     }
 
+    // MARK: Editor defaults
+
+    var editorDefaults: EditorDefaults {
+        didSet { editorDefaults.save(to: defaults) }
+    }
+
     // MARK: Appearance
 
     enum Appearance: String, CaseIterable {
@@ -131,6 +137,7 @@ final class AppPreferences {
         sound = Sound(storageValue: defaults.string(forKey: Key.sound) ?? "shutter")
         icon = Icon(storageValue: defaults.string(forKey: Key.icon) ?? "camera.viewfinder")
         appearance = Appearance(rawValue: defaults.string(forKey: Key.appearance) ?? "") ?? .system
+        editorDefaults = EditorDefaults.load(from: defaults)
         customSoundURL = defaults.data(forKey: Key.soundBookmark).flatMap(Self.resolve)
         customIconURL = defaults.data(forKey: Key.iconBookmark).flatMap(Self.resolve)
         if sound == .custom, customSoundURL == nil { sound = .shutter }

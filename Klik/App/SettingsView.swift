@@ -326,6 +326,139 @@ struct SymbolTile: View {
     }
 }
 
+// MARK: - Editor defaults
+
+struct EditorSettingsView: View {
+    @Environment(AppPreferences.self) private var preferences
+
+    var body: some View {
+        @Bindable var preferences = preferences
+        let d = $preferences.editorDefaults
+        Form {
+            Section {
+                Toggle(isOn: d.rememberLastUsed) {
+                    Text("Start each editor with the options last used")
+                    Text("Off: every editor starts with the defaults below.")
+                }
+            }
+
+            Section("Colours") {
+                LabeledContent("Annotations") { SwatchRow(color: d.color) }
+                LabeledContent("Highlight box") { SwatchRow(color: d.highlightColor) }
+            }
+
+            Section("Shapes, lines & arrows") {
+                SliderRow("Stroke width", value: d.strokeWidth, range: EditorDefaults.strokeRange, unit: "px")
+                Picker("Shape", selection: d.shapeKind) {
+                    Text("Rectangle").tag(ShapeKind.rectangle)
+                    Text("Ellipse").tag(ShapeKind.ellipse)
+                    Text("Line").tag(ShapeKind.line)
+                }
+                Picker("Fill", selection: d.fillMode) {
+                    Text("None").tag(FillMode.none)
+                    Text("Solid").tag(FillMode.solid)
+                    Text("Translucent").tag(FillMode.translucent)
+                }
+                Picker("Arrow head", selection: d.arrowStyle) {
+                    Text("One end").tag(ArrowStyle.single)
+                    Text("Both ends").tag(ArrowStyle.double)
+                }
+            }
+
+            Section("Text") {
+                SliderRow("Font size", value: d.fontSize, range: EditorDefaults.fontSizeRange, unit: "pt")
+                LabeledContent("Weight") {
+                    HStack(spacing: 10) {
+                        Slider(value: d.fontWeight, in: TextStyle.weightRange)
+                        Text(TextStyle(color: .black, fontSize: 12, background: .none, weight: preferences.editorDefaults.fontWeight).weightName)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 66, alignment: .trailing)
+                    }
+                }
+                Picker("Background", selection: d.textBackground) {
+                    Text("None").tag(TextBackground.none)
+                    Text("Solid").tag(TextBackground.solid)
+                    Text("Translucent").tag(TextBackground.translucent)
+                }
+            }
+
+            Section("Marker, blur & counter") {
+                SliderRow("Marker width", value: d.highlighterWidth, range: EditorDefaults.highlighterRange, unit: "px")
+                Picker("Blur style", selection: d.blurKind) {
+                    Text("Blur").tag(BlurKind.blur)
+                    Text("Pixelate").tag(BlurKind.pixelate)
+                }
+                SliderRow("Blur strength", value: d.blurIntensity, range: EditorDefaults.blurRange, unit: "")
+                SliderRow("Counter size", value: d.counterSize, range: EditorDefaults.counterRange, unit: "px")
+            }
+
+            Section {
+                HStack {
+                    Spacer()
+                    Button("Restore Defaults") {
+                        let remember = preferences.editorDefaults.rememberLastUsed
+                        preferences.editorDefaults = EditorDefaults()
+                        preferences.editorDefaults.rememberLastUsed = remember
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+/// The editor's palette plus a colour well, bound to one colour.
+private struct SwatchRow: View {
+    @Binding var color: RGBA
+
+    var body: some View {
+        HStack(spacing: 5) {
+            ForEach(RGBA.palette, id: \.self) { swatch in
+                Button { color = swatch } label: {
+                    Circle()
+                        .fill(Color(nsColor: swatch.nsColor))
+                        .frame(width: 16, height: 16)
+                        .overlay(Circle().strokeBorder(.primary.opacity(color == swatch ? 0.95 : 0.3), lineWidth: color == swatch ? 2 : 1))
+                        .padding(2)
+                }
+                .buttonStyle(.plain)
+            }
+            ColorPicker("", selection: Binding(
+                get: { Color(nsColor: color.nsColor) },
+                set: { color = RGBA(NSColor($0)) }
+            ), supportsOpacity: false)
+            .labelsHidden()
+            .frame(width: 24)
+        }
+    }
+}
+
+private struct SliderRow: View {
+    let label: String
+    @Binding var value: CGFloat
+    let range: ClosedRange<CGFloat>
+    let unit: String
+
+    init(_ label: String, value: Binding<CGFloat>, range: ClosedRange<CGFloat>, unit: String) {
+        self.label = label
+        _value = value
+        self.range = range
+        self.unit = unit
+    }
+
+    var body: some View {
+        LabeledContent(label) {
+            HStack(spacing: 10) {
+                Slider(value: Binding(get: { value }, set: { value = $0.rounded() }), in: range)
+                Text("\(Int(value))\(unit.isEmpty ? "" : " \(unit)")")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .frame(width: 66, alignment: .trailing)
+            }
+        }
+    }
+}
+
 // MARK: - Shortcuts
 
 struct ShortcutSettingsView: View {

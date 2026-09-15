@@ -59,8 +59,10 @@ final class ScrollingCaptureSession {
         // the control pill must already be on screen to be left out of the frames.
         let capturer = try await service.makeRegionCapturer(region, on: screen)
         let scale = capturer.scale
+        let dump = FrameDump.ifEnabled()
         let stream = RegionFrameStream(filter: capturer.filter, configuration: capturer.configuration) { frame in
             let update = await worker.ingest(frame)
+            dump?.record(frame, result: update.result)
             guard let image = update.preview else { return }
             await MainActor.run {
                 status.frames = update.frames
@@ -86,6 +88,56 @@ final class ScrollingCaptureSession {
             return nil
         }
         Log.capture.info("Scrolling capture finished: \(cgImage.width)×\(cgImage.height)px")
+        dump?.finish(result: cgImage)
         return CapturedImage(cgImage: cgImage, scale: scale, displayID: capturer.displayID, capturedAt: .now)
+    }
+}
+
+/// Diagnostics: with `defaults write com.stackrover.klik debug.dumpScrollFrames -bool YES`
+/// every frame of a scrolling capture is written as PNG, with the engine's decision per
+/// frame, so a failing page can be replayed offline (see `FrameStitcherTests`).
+nonisolated final class FrameDump: Sendable {
+    private let folder: URL
+    private let queue = DispatchQueue(label: "com.stackrover.klik.frame-dump", qos: .utility)
+    private let count = OSAllocatedUnfairLock(initialState: 0)
+
+    static func ifEnabled() -> FrameDump? {
+        guard UserDefaults.standard.bool(forKey: "debug.dumpScrollFrames") else { return nil }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH.mm.ss"
+        let folder = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("ScrollFrames \(formatter.string(from: .now))", isDirectory: true)
+        guard (try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)) != nil else { return nil }
+        Log.capture.notice("Scrolling capture: dumping frames to \(folder.path, privacy: .public)")
+        return FrameDump(folder: folder)
+    }
+
+    private init(folder: URL) {
+        self.folder = folder
+    }
+
+    func record(_ frame: Bitmap, result: ScrollingCaptureEngine.Ingest) {
+        let index = count.withLock { $0 += 1; return $0 }
+        queue.async { [folder] in
+            if let image = frame.cgImage, let png = ImageEncoding.png(image) {
+                try? png.write(to: folder.appendingPathComponent(String(format: "frame-%04d.png", index)))
+            }
+            let line = String(format: "%04d %@\n", index, String(describing: result))
+            if let handle = try? FileHandle(forWritingTo: folder.appendingPathComponent("decisions.txt")) {
+                handle.seekToEndOfFile()
+                handle.write(Data(line.utf8))
+                try? handle.close()
+            } else {
+                try? Data(line.utf8).write(to: folder.appendingPathComponent("decisions.txt"))
+            }
+        }
+    }
+
+    func finish(result: CGImage) {
+        queue.async { [folder] in
+            if let png = ImageEncoding.png(result) {
+                try? png.write(to: folder.appendingPathComponent("result.png"))
+            }
+            Task { @MainActor in NSWorkspace.shared.activateFileViewerSelecting([folder]) }
+        }
     }
 }

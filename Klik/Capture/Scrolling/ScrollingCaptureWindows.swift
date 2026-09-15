@@ -183,6 +183,29 @@ final class ScrollingPreviewPanel {
         imageView.autoresizingMask = [.width, .height]
         container.addSubview(imageView)
         panel.contentView = container
+
+        // On screen (invisibly) from the start, so it exists when the capture filter is
+        // built and is excluded from the frames like Klik's other windows.
+        panel.alphaValue = 0
+        if let frame = frame(for: CGSize(width: width, height: 24)) {
+            panel.setFrame(frame, display: false)
+            panel.orderFrontRegardless()
+        }
+    }
+
+    /// Where the panel fits *outside* the region — left, right, above or below it — or
+    /// `nil` when the region fills the screen. It must never overlap the region: it would
+    /// be captured in every frame and, changing after each stitch, unsettle the matcher.
+    private func frame(for size: CGSize) -> CGRect? {
+        let visible = screen.visibleFrame
+        let gap: CGFloat = 24
+        let candidates = [
+            CGRect(x: region.minX - gap - size.width, y: region.maxY - size.height, width: size.width, height: size.height),
+            CGRect(x: region.maxX + gap, y: region.maxY - size.height, width: size.width, height: size.height),
+            CGRect(x: region.minX, y: region.maxY + gap, width: size.width, height: size.height),
+            CGRect(x: region.minX, y: region.minY - gap - 44 - size.height, width: size.width, height: size.height), // under the control pill
+        ]
+        return candidates.first { visible.insetBy(dx: 8, dy: 8).contains($0) && !$0.intersects(region) }
     }
 
     func update(image: CGImage) {
@@ -195,17 +218,19 @@ final class ScrollingPreviewPanel {
         }
         size.height = max(size.height, 24)
 
-        imageView.image = NSImage(cgImage: image, size: size)
-
-        // Left of the region, top-aligned; right of it when there is no room.
-        let gap: CGFloat = 24
-        var x = region.minX - gap - size.width
-        if x < visible.minX + 8 {
-            x = region.maxX + gap
+        // Try the full size, then shrink until it fits somewhere outside the region.
+        var frame = self.frame(for: size)
+        while frame == nil, size.width > 80 {
+            size = CGSize(width: (size.width * 0.8).rounded(), height: (size.width * 0.8 * aspect).rounded())
+            frame = self.frame(for: size)
         }
-        x = min(x, visible.maxX - size.width - 8)
-        let y = region.maxY - size.height
-        panel.setFrame(CGRect(x: x, y: y, width: size.width, height: size.height), display: true)
+        guard let frame else {
+            panel.alphaValue = 0 // no room: the pill's frame count is the feedback
+            return
+        }
+        imageView.image = NSImage(cgImage: image, size: frame.size)
+        panel.setFrame(frame, display: true)
+        panel.alphaValue = 1
         panel.orderFrontRegardless()
     }
 

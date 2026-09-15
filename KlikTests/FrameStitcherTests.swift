@@ -202,6 +202,36 @@ final class FrameStitcherTests: XCTestCase {
         XCTAssertNil(FrameStitcher.locate(noise(seed: 3), in: stitched))
     }
 
+    // MARK: - Replay of dumped frames
+
+    /// Replays a folder written by `FrameDump` (Klik run with `debug.dumpScrollFrames`):
+    ///   TEST_RUNNER_KLIK_SCROLL_FRAMES="/path/to/ScrollFrames …" xcodebuild … test
+    /// Prints the matcher's decision per frame and writes `replay.png` next to the frames.
+    func testReplayDumpedFrames() throws {
+        guard let path = ProcessInfo.processInfo.environment["KLIK_SCROLL_FRAMES"] else {
+            throw XCTSkip("set KLIK_SCROLL_FRAMES to a FrameDump folder to replay it")
+        }
+        let folder = URL(fileURLWithPath: path)
+        let files = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
+            .filter { $0.lastPathComponent.hasPrefix("frame-") }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        XCTAssertFalse(files.isEmpty, "no frames in \(path)")
+        let engine = ScrollingCaptureEngine()
+        FrameStitcher.debug = true
+        defer { FrameStitcher.debug = false }
+        for file in files {
+            guard let source = CGImageSourceCreateWithURL(file as CFURL, nil),
+                  let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+                  let bitmap = Bitmap(image)
+            else { XCTFail("unreadable \(file.lastPathComponent)"); continue }
+            let result = engine.ingest(bitmap)
+            print("\(file.lastPathComponent): \(result) → \(engine.totalRows) rows")
+        }
+        if let composed = engine.compose()?.cgImage, let png = ImageEncoding.png(composed) {
+            try png.write(to: folder.appendingPathComponent("replay.png"))
+        }
+    }
+
     // MARK: - Fixture
 
     /// Deterministic page: 4×6 px "glyph" cells in the content column, a blank gap, and a

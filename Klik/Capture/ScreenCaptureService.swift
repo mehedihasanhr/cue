@@ -80,8 +80,15 @@ final class ScreenCaptureService {
               let display = content.displays.first(where: { $0.displayID == displayID })
         else { throw .noDisplay }
 
-        let ownApps = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
-        let filter = SCContentFilter(display: display, excludingApplications: ownApps, exceptingWindows: [])
+        // Leave out every Klik window (HUDs, the dim overlay, the scrolling preview). By
+        // application when ScreenCaptureKit lists us, else by the windows it does know.
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let ownApps = content.applications.filter { $0.processID == pid }
+        let ownWindows = content.windows.filter { $0.owningApplication?.processID == pid }
+        let filter = ownApps.isEmpty
+            ? SCContentFilter(display: display, excludingWindows: ownWindows)
+            : SCContentFilter(display: display, excludingApplications: ownApps, exceptingWindows: [])
+        Log.capture.info("Region filter excludes \(ownApps.count) app(s) / \(ownWindows.count) own window(s)")
         let scale = CGFloat(filter.pointPixelScale)
 
         let configuration = Self.configuration(pointSize: rect.size, scale: scale)

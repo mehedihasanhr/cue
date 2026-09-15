@@ -303,7 +303,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // first editor rather than running at every login; it's done long before the
         // Background tool is reached, and a no-op once cached.
         Task(priority: .utility) { await WallpaperStore.shared.prepareThumbnails() }
-        let controller = EditorWindowController(item: item, image: image, library: library, mode: mode)
+        let controller = EditorWindowController(item: item, image: image, library: library, preferences: preferences, mode: mode)
         controller.onClose = { [weak self] in self?.editorWindows[item.id] = nil }
         controller.onDelete = { [weak self] item in self?.library.delete(item) }
         editorWindows[item.id] = controller

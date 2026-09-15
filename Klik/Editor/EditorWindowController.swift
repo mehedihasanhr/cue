@@ -13,10 +13,13 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     var onClose: (() -> Void)?
     var onDelete: ((CaptureItem) -> Void)?
 
-    init(item: CaptureItem, image: CapturedImage, library: CaptureLibrary, mode: EditorMode) {
+    private let preferences: AppPreferences
+
+    init(item: CaptureItem, image: CapturedImage, library: CaptureLibrary, preferences: AppPreferences, mode: EditorMode) {
         self.item = item
         self.library = library
-        model = EditorViewModel(image: image)
+        self.preferences = preferences
+        model = EditorViewModel(image: image, defaults: preferences.editorDefaults)
         model.mode = mode
 
         let window = EditorWindow(
@@ -142,8 +145,17 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     /// Close without the unsaved-changes prompt.
     func forceClose() {
         window?.delegate = nil
+        rememberOptions()
         onClose?()
         window?.close()
+    }
+
+    /// With "remember last used" on, the next editor starts from this one's options.
+    private func rememberOptions() {
+        guard preferences.editorDefaults.rememberLastUsed, model.mode == .edit else { return }
+        var options = model.options
+        options.rememberLastUsed = true
+        if options != preferences.editorDefaults { preferences.editorDefaults = options }
     }
 
     // MARK: - Actions
@@ -220,6 +232,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        rememberOptions()
         onClose?()
     }
 }

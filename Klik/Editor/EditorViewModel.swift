@@ -58,7 +58,7 @@ enum EditorTool: String, CaseIterable, Identifiable {
     var isDrawing: Bool { self != .select && self != .background && self != .crop }
 }
 
-enum ShapeKind: String, CaseIterable, Identifiable {
+enum ShapeKind: String, CaseIterable, Identifiable, Codable {
     case rectangle, ellipse, line
     var id: String { rawValue }
     var symbol: String {
@@ -166,7 +166,7 @@ final class EditorViewModel {
     var editingTextID: UUID?
     var hoverHandle: ResizeHandle?
 
-    // Tool options (persisted as defaults for the next session).
+    // Tool options; start from `EditorDefaults` (Settings › Editor).
     var color: RGBA = .red { didSet { applyStyleToSelection() } }
     var strokeWidth: CGFloat = 4 { didSet { applyStyleToSelection() } }
     var fillMode: FillMode = .none { didSet { applyStyleToSelection() } }
@@ -191,8 +191,31 @@ final class EditorViewModel {
 
     private var suppressStyleSync = false
 
-    init(image: CapturedImage) {
+    init(image: CapturedImage, defaults: EditorDefaults = EditorDefaults()) {
         document = EditorDocument(image: image)
+        options = defaults
+    }
+
+    /// The current tool options as a defaults record (and the way to apply one).
+    var options: EditorDefaults {
+        get {
+            var record = EditorDefaults()
+            record.color = color; record.highlightColor = highlightColor
+            record.strokeWidth = strokeWidth; record.fillMode = fillMode; record.shapeKind = shapeKind; record.arrowStyle = arrowStyle
+            record.fontSize = fontSize; record.fontWeight = fontWeight; record.textBackground = textBackground
+            record.highlighterWidth = highlighterWidth; record.blurKind = blurKind; record.blurIntensity = blurIntensity
+            record.counterSize = counterSize
+            return record
+        }
+        set {
+            suppressStyleSync = true
+            defer { suppressStyleSync = false }
+            color = newValue.color; highlightColor = newValue.highlightColor
+            strokeWidth = newValue.strokeWidth; fillMode = newValue.fillMode; shapeKind = newValue.shapeKind; arrowStyle = newValue.arrowStyle
+            fontSize = newValue.fontSize; fontWeight = newValue.fontWeight; textBackground = newValue.textBackground
+            highlighterWidth = newValue.highlighterWidth; blurKind = newValue.blurKind; blurIntensity = newValue.blurIntensity
+            counterSize = newValue.counterSize
+        }
     }
 
     // MARK: - Document mutation with undo
