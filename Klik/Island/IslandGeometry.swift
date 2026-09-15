@@ -36,17 +36,19 @@ nonisolated struct ScreenMetrics: Equatable {
 /// The island's three sizes for one screen. Every rect hangs from the top edge of the
 /// screen (`frame.maxY`), centred on the notch (or the screen when there is none).
 nonisolated struct IslandGeometry: Equatable {
-    enum Phase: Equatable { case collapsed, flash, form, expanded }
+    enum Phase: Equatable { case collapsed, flash, prompt, form, expanded }
 
     let screen: ScreenMetrics
     let collapsed: CGRect
     let flash: CGRect
+    /// A one-line question (a name): a flash with room for a label and a box.
+    let prompt: CGRect
     /// A compact form (a new task): wider and taller than a flash.
     let form: CGRect
     let expanded: CGRect
     /// Bottom corner radius of the shape in each phase.
     let collapsedRadius: CGFloat
-    let flashRadius: CGFloat = 20
+    let flashRadius: CGFloat = 18
     let expandedRadius: CGFloat = 28
     /// Outward curve where the open panel meets the top of the screen.
     static let openFlare: CGFloat = 24
@@ -56,7 +58,8 @@ nonisolated struct IslandGeometry: Equatable {
     /// Room around the flash / expanded shape for its shadow.
     static let shadowMargin: CGFloat = 28
     static let flashWidth: CGFloat = 340
-    static let flashContentHeight: CGFloat = 64
+    static let flashContentHeight: CGFloat = 48
+    static let promptContentHeight: CGFloat = 64
     static let formWidth: CGFloat = 460
     static let formContentHeight: CGFloat = 300
     static let panelHorizontalPadding: CGFloat = 4
@@ -83,6 +86,10 @@ nonisolated struct IslandGeometry: Equatable {
             size: CGSize(width: Self.flashWidth, height: collapsedSize.height + Self.flashContentHeight),
             centerX: centerX, top: top, in: screen.frame
         )
+        prompt = Self.hang(
+            size: CGSize(width: Self.flashWidth, height: collapsedSize.height + Self.promptContentHeight),
+            centerX: centerX, top: top, in: screen.frame
+        )
         form = Self.hang(
             size: CGSize(width: Self.formWidth, height: collapsedSize.height + Self.formContentHeight),
             centerX: centerX, top: top, in: screen.frame
@@ -100,6 +107,7 @@ nonisolated struct IslandGeometry: Equatable {
         switch phase {
         case .collapsed: collapsed
         case .flash: flash
+        case .prompt: prompt
         case .form: form
         case .expanded: expanded
         }
@@ -108,7 +116,7 @@ nonisolated struct IslandGeometry: Equatable {
     func radius(for phase: Phase) -> CGFloat {
         switch phase {
         case .collapsed: collapsedRadius
-        case .flash: flashRadius
+        case .flash, .prompt: flashRadius
         case .form: expandedRadius
         case .expanded: expandedRadius
         }

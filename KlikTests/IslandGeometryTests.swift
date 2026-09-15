@@ -39,7 +39,7 @@ final class IslandGeometryTests: XCTestCase {
 
     func testExpandedAndFlashHangFromTheNotchCentre() {
         let geometry = IslandGeometry(screen: Self.notched, panelSize: Self.panel)
-        for phase in [IslandGeometry.Phase.flash, .expanded] {
+        for phase in [IslandGeometry.Phase.flash, .prompt, .form, .expanded] {
             let rect = geometry.rect(for: phase)
             XCTAssertEqual(rect.maxY, 982)
             XCTAssertEqual(rect.midX, 756)
@@ -53,7 +53,7 @@ final class IslandGeometryTests: XCTestCase {
             width: 480 + IslandGeometry.panelHorizontalPadding * 2,
             height: 32 + 560 + IslandGeometry.panelBottomPadding
         ))
-        XCTAssertEqual(geometry.flash.size, CGSize(width: 340, height: 32 + 64))
+        XCTAssertEqual(geometry.flash.size, CGSize(width: 340, height: 32 + 48))
     }
 
     func testPlainDisplayGetsAPillOnTheMenuBar() {

@@ -20,7 +20,7 @@ final class IslandModel {
             switch self {
             case .collapsed: .collapsed
             case .flash, .status: .flash
-            case .prompt(let prompt): prompt.isForm ? .form : .flash
+            case .prompt(let prompt): prompt.isForm ? .form : .prompt
             case .taskDetail: .form
             case .expanded: .expanded
             }
@@ -160,7 +160,7 @@ struct IslandView: View {
                         .frame(height: IslandGeometry.formContentHeight)
                 } else {
                     PromptRow(prompt: prompt) { answer in model.onPromptFinished(prompt, answer) }
-                        .frame(height: IslandGeometry.flashContentHeight)
+                        .frame(height: IslandGeometry.promptContentHeight)
                 }
             }
             .transition(Self.contentTransition)
@@ -196,7 +196,7 @@ private struct FlashRow: View {
     let library: CaptureLibrary
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             Group {
                 if let thumbnail = library.thumbnail(for: item) {
                     Image(nsImage: thumbnail).resizable().scaledToFill()
@@ -204,21 +204,21 @@ private struct FlashRow: View {
                     Color.gray.opacity(0.3)
                 }
             }
-            .frame(width: 66, height: 44)
+            .frame(width: 48, height: 32)
             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(.white.opacity(0.15)))
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text("Copied to clipboard")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 12.5, weight: .semibold))
                 Text(item.dimensions)
-                    .font(.system(size: 11))
+                    .font(.system(size: 10.5))
                     .foregroundStyle(.secondary)
             }
             .lineLimit(1)
             Spacer(minLength: 0)
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 20, weight: .semibold))
+                .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(.green)
         }
         .foregroundStyle(.white)
@@ -249,31 +249,31 @@ private struct StatusRow: View {
     let status: IslandStatus
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             if let swatch = status.swatch {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(swatch.swiftUIColor)
-                    .frame(width: 44, height: 44)
-                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.white.opacity(0.2)))
+                    .frame(width: 32, height: 32)
+                    .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(.white.opacity(0.2)))
             } else if let image = status.image {
                 Image(nsImage: image).resizable().scaledToFill()
-                    .frame(width: 66, height: 44)
+                    .frame(width: 48, height: 32)
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(.white.opacity(0.15)))
             }
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(status.title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 12.5, weight: .semibold))
                 if let subtitle = status.subtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.system(size: 11))
+                        .font(.system(size: 10.5))
                         .foregroundStyle(.secondary)
                 }
             }
             .lineLimit(1)
             Spacer(minLength: 0)
             Image(systemName: status.symbol)
-                .font(.system(size: 20, weight: .semibold))
+                .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(status.tint)
         }
         .foregroundStyle(.white)
