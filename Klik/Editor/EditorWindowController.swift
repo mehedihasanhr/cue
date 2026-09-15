@@ -150,10 +150,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
     @objc func copyToClipboard() {
         model.endTextEditing()
-        guard let image = model.renderedImage(), let png = DocumentExporter.pngData(image) else { return }
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setData(png, forType: .png)
+        guard let image = model.renderedImage() else { return }
+        Clipboard.copy(image) // encodes in the background; returns at once
         Log.app.info("Copied edited capture to clipboard")
     }
 

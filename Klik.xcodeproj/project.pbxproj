@@ -32,6 +32,8 @@
 				OCR/OCRService.swift,
 				OCR/TextLayout.swift,
 				Support/CapturedImage.swift,
+				Support/Clipboard.swift,
+				Support/ImageEncoding.swift,
 				Support/LRUCache.swift,
 				Support/Log.swift,
 			);

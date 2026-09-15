@@ -88,8 +88,9 @@ struct PreviewToolbar: View {
                 }
                 ToolGroup {
                     IconButton(symbol: copied ? "checkmark" : "doc.on.doc", help: "Copy to clipboard (⌘C)", tint: copied ? .green : nil) {
-                        onCopy()
+                        // Feedback first; the copy is a pasteboard promise and doesn't block.
                         withAnimation(.easeOut(duration: 0.15)) { copied = true }
+                        onCopy()
                         Task {
                             try? await Task.sleep(for: .seconds(1.6))
                             withAnimation { copied = false }
@@ -160,8 +161,9 @@ struct EditorToolbar: View {
                 }
                 ToolGroup {
                     IconButton(symbol: copied ? "checkmark" : "doc.on.doc", help: "Copy to clipboard (⌘C)", tint: copied ? .green : nil) {
-                        onCopy()
+                        // Feedback first; the copy is a pasteboard promise and doesn't block.
                         withAnimation(.easeOut(duration: 0.15)) { copied = true }
+                        onCopy()
                         Task {
                             try? await Task.sleep(for: .seconds(1.6))
                             withAnimation { copied = false }

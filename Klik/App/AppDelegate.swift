@@ -22,6 +22,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - Lifecycle
 
+    func applicationWillTerminate(_ notification: Notification) {
+        Clipboard.resolvePromises()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         MainMenu.install(target: self)
         preferences.applyAppearance()
@@ -210,7 +214,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             quit: { NSApp.terminate(nil) },
             preview: { [weak self] item in self?.closeHistoryThen { $0.openEditor(for: item, mode: .preview) } },
             edit: { [weak self] item in self?.closeHistoryThen { $0.openEditor(for: item, mode: .edit) } },
-            copy: { [weak self] item in self?.library.copyToClipboard(item) },
+            copy: { [weak self] item in
+                self?.library.copyToClipboard(item)
+                FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
+            },
             delete: { [weak self] item in self?.deleteCapture(item) }
         )
     }
@@ -271,13 +278,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: - Captures
 
     private func handleCapture(_ image: CapturedImage) {
-        guard let item = library.add(image) else {
-            presentError(NSError(domain: "Klik", code: 1, userInfo: [NSLocalizedDescriptionKey: "The capture could not be saved to \(library.folderURL.path)."]))
-            return
-        }
-        // Copied and filed straight away, then opened in the editor.
-        library.copyToClipboard(item)
+        // Clipboard first (a promise, instant), then the library lists it and writes the
+        // file in the background, then the editor opens — nothing waits for the disk.
+        Clipboard.copy(image.cgImage)
         preferences.playCaptureSound()
+        let item = library.add(image)
         Log.app.info("Captured \(item.fileName, privacy: .public) → clipboard + library")
         openEditor(for: item, image: image, mode: .edit)
     }

@@ -26,6 +26,14 @@ final class CaptureLibrary {
     private(set) var folderIsCustom = false
 
     @ObservationIgnored private var thumbnails: [UUID: NSImage] = [:]
+    /// Captures whose file is still being written (or rewritten); served from memory
+    /// meanwhile so copy, drag and the editor never wait for the disk.
+    @ObservationIgnored private var pendingImages: [UUID: CGImage] = [:]
+    /// File names handed out but not yet on disk, so two captures in one second differ.
+    @ObservationIgnored private var reservedNames: Set<String> = []
+    /// All file work runs here in order, off the main thread: a rewrite or delete of an
+    /// item can never overtake its first write.
+    @ObservationIgnored private let storage = DispatchQueue(label: "com.stackrover.klik.storage", qos: .utility)
     private let defaults = UserDefaults.standard
     private static let folderBookmarkKey = "library.folderBookmark"
     private static let indexFileName = "library.json"
@@ -84,59 +92,90 @@ final class CaptureLibrary {
 
     // MARK: - Items
 
+    /// Lists the capture at once and writes its file in the background.
     @discardableResult
-    func add(_ image: CapturedImage) -> CaptureItem? {
-        guard let png = DocumentExporter.pngData(image.cgImage) else { return nil }
-        let fileName = Self.fileName(for: image.capturedAt)
-        return withFolderAccess {
-            let url = uniqueURL(for: fileName)
-            do {
-                try png.write(to: url, options: .atomic)
-                let bookmark = (try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)) ?? Data()
-                let item = CaptureItem(
-                    id: UUID(), fileName: url.lastPathComponent, bookmark: bookmark, createdAt: image.capturedAt,
-                    pixelWidth: image.cgImage.width, pixelHeight: image.cgImage.height, scale: image.scale
-                )
-                items.insert(item, at: 0)
-                thumbnails[item.id] = Self.makeThumbnail(image.cgImage)
-                saveIndex()
-                Log.app.info("Saved capture \(url.lastPathComponent, privacy: .public)")
-                return item
-            } catch {
-                Log.app.error("Could not save capture: \(error.localizedDescription, privacy: .public)")
-                return nil
-            }
-        }
+    func add(_ image: CapturedImage) -> CaptureItem {
+        let url = withFolderAccess { uniqueURL(for: Self.fileName(for: image.capturedAt)) }
+        reservedNames.insert(url.lastPathComponent)
+        let item = CaptureItem(
+            id: UUID(), fileName: url.lastPathComponent, bookmark: Data(), createdAt: image.capturedAt,
+            pixelWidth: image.cgImage.width, pixelHeight: image.cgImage.height, scale: image.scale
+        )
+        items.insert(item, at: 0)
+        pendingImages[item.id] = image.cgImage
+        thumbnails[item.id] = Self.makeThumbnail(image.cgImage)
+        write(image.cgImage, for: item.id, to: url, isNew: true)
+        return item
     }
 
     /// Overwrites an item's file with an edited image.
     func replaceImage(of item: CaptureItem, with cgImage: CGImage) {
-        guard let png = DocumentExporter.pngData(cgImage), let url = fileURL(for: item) else { return }
-        withScopedAccess(to: url) {
-            do {
+        guard let index = items.firstIndex(where: { $0.id == item.id }), let url = storedURL(for: item) else { return }
+        items[index].pixelWidth = cgImage.width
+        items[index].pixelHeight = cgImage.height
+        pendingImages[item.id] = cgImage
+        thumbnails[item.id] = Self.makeThumbnail(cgImage)
+        saveIndex()
+        write(cgImage, for: item.id, to: url, isNew: false)
+    }
+
+    /// Encodes and writes on the storage queue, then records the outcome on the main actor.
+    private func write(_ cgImage: CGImage, for id: UUID, to url: URL, isNew: Bool) {
+        let scoped = folderIsCustom ? folderURL : nil
+        storage.async {
+            let accessing = scoped?.startAccessingSecurityScopedResource() ?? false
+            defer { if accessing { scoped?.stopAccessingSecurityScopedResource() } }
+            let result = Result { () throws -> Data in
+                guard let png = ImageEncoding.png(cgImage) else { throw CocoaError(.fileWriteUnknown) }
                 try png.write(to: url, options: .atomic)
-                if let index = items.firstIndex(of: item) {
-                    items[index].pixelWidth = cgImage.width
-                    items[index].pixelHeight = cgImage.height
-                }
-                thumbnails[item.id] = Self.makeThumbnail(cgImage)
+                return (try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)) ?? Data()
+            }
+            Task { @MainActor in self.didWrite(cgImage, for: id, to: url, isNew: isNew, result: result) }
+        }
+    }
+
+    private func didWrite(_ cgImage: CGImage, for id: UUID, to url: URL, isNew: Bool, result: Result<Data, any Error>) {
+        reservedNames.remove(url.lastPathComponent)
+        // A newer image for the same item may already be queued; keep serving that one.
+        if pendingImages[id] === cgImage { pendingImages[id] = nil }
+        switch result {
+        case .success(let bookmark):
+            if isNew, let index = items.firstIndex(where: { $0.id == id }) {
+                items[index].bookmark = bookmark
                 saveIndex()
-            } catch {
-                Log.app.error("Could not overwrite capture: \(error.localizedDescription, privacy: .public)")
+                Log.app.info("Saved capture \(url.lastPathComponent, privacy: .public)")
+            }
+        case .failure(let error):
+            Log.app.error("Could not \(isNew ? "save" : "overwrite", privacy: .public) capture: \(error.localizedDescription, privacy: .public)")
+            if isNew {
+                items.removeAll { $0.id == id }
+                thumbnails[id] = nil
+                saveIndex()
             }
         }
     }
 
     func delete(_ item: CaptureItem) {
-        if let url = fileURL(for: item) {
-            withScopedAccess(to: url) { try? FileManager.default.trashItem(at: url, resultingItemURL: nil) }
-        }
+        let url = storedURL(for: item)
         items.removeAll { $0.id == item.id }
         thumbnails[item.id] = nil
+        pendingImages[item.id] = nil
         saveIndex()
+        guard let url else { return }
+        let scoped = folderIsCustom ? folderURL : nil
+        storage.async {
+            let accessing = scoped?.startAccessingSecurityScopedResource() ?? false
+            defer { if accessing { scoped?.stopAccessingSecurityScopedResource() } }
+            let itemAccess = url.startAccessingSecurityScopedResource()
+            defer { if itemAccess { url.stopAccessingSecurityScopedResource() } }
+            try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
+        }
     }
 
     func image(for item: CaptureItem) -> CapturedImage? {
+        if let pending = pendingImages[item.id] {
+            return CapturedImage(cgImage: pending, scale: item.scale, displayID: 0, capturedAt: item.createdAt)
+        }
         guard let url = fileURL(for: item) else { return nil }
         return withScopedAccess(to: url) {
             guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
@@ -170,13 +209,20 @@ final class CaptureLibrary {
     }
 
     func copyToClipboard(_ item: CaptureItem) {
+        if let pending = pendingImages[item.id] {
+            Clipboard.copy(pending)
+            return
+        }
         guard let url = fileURL(for: item) else { return }
         withScopedAccess(to: url) {
             guard let data = try? Data(contentsOf: url) else { return }
-            let pasteboard = NSPasteboard.general
-            pasteboard.clearContents()
-            pasteboard.setData(data, forType: .png)
+            Clipboard.copy(pngData: data)
         }
+    }
+
+    /// The item's file, whether or not it has been written yet.
+    private func storedURL(for item: CaptureItem) -> URL? {
+        fileURL(for: item) ?? (pendingImages[item.id] != nil ? folderURL.appendingPathComponent(item.fileName) : nil)
     }
 
     // MARK: - Index persistence
@@ -214,7 +260,7 @@ final class CaptureLibrary {
         var url = folderURL.appendingPathComponent(fileName)
         var counter = 2
         let base = (fileName as NSString).deletingPathExtension
-        while FileManager.default.fileExists(atPath: url.path) {
+        while FileManager.default.fileExists(atPath: url.path) || reservedNames.contains(url.lastPathComponent) {
             url = folderURL.appendingPathComponent("\(base) (\(counter)).png")
             counter += 1
         }
@@ -228,11 +274,20 @@ final class CaptureLibrary {
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
+    /// A real 320 px bitmap — wrapping the full capture in a small `NSImage` would keep
+    /// every capture of the session in memory at full size.
     private static func makeThumbnail(_ image: CGImage) -> NSImage {
         let maxSide: CGFloat = 320
         let scale = min(1, maxSide / CGFloat(max(image.width, image.height)))
-        let size = NSSize(width: CGFloat(image.width) * scale, height: CGFloat(image.height) * scale)
-        return NSImage(cgImage: image, size: size)
+        let size = CGSize(width: max(1, (CGFloat(image.width) * scale).rounded()), height: max(1, (CGFloat(image.height) * scale).rounded()))
+        guard scale < 1,
+              let context = CGContext(data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return NSImage(cgImage: image, size: size) }
+        context.interpolationQuality = .medium
+        context.draw(image, in: CGRect(origin: .zero, size: size))
+        guard let small = context.makeImage() else { return NSImage(cgImage: image, size: size) }
+        return NSImage(cgImage: small, size: size)
     }
 
     @discardableResult

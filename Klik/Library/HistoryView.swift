@@ -221,17 +221,25 @@ private struct ActionButtons: View {
     let item: CaptureItem
     let actions: HistoryActions
     var compact = false
+    @State private var copied = false
 
     var body: some View {
         HStack(spacing: compact ? 1 : 2) {
             button("eye", help: "Preview") { actions.preview(item) }
             button("pencil", help: "Edit") { actions.edit(item) }
-            button("doc.on.doc", help: "Copy to clipboard") { actions.copy(item) }
-            button("trash", help: "Delete", destructive: true) { actions.delete(item) }
+            button(copied ? "checkmark" : "doc.on.doc", help: "Copy to clipboard", tint: copied ? .green : .white) {
+                withAnimation(.easeOut(duration: 0.15)) { copied = true }
+                actions.copy(item)
+                Task {
+                    try? await Task.sleep(for: .seconds(1.2))
+                    withAnimation { copied = false }
+                }
+            }
+            button("trash", help: "Delete", tint: .red) { actions.delete(item) }
         }
     }
 
-    private func button(_ symbol: String, help: String, destructive: Bool = false, action: @escaping () -> Void) -> some View {
+    private func button(_ symbol: String, help: String, tint: Color = .white, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: compact ? 9 : 11, weight: .medium))
@@ -239,7 +247,7 @@ private struct ActionButtons: View {
                 .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: compact ? 4 : 5))
         }
         .buttonStyle(.plain)
-        .foregroundStyle(destructive ? Color.red : Color.white)
+        .foregroundStyle(tint)
         .help(help)
     }
 }
@@ -369,8 +377,14 @@ private extension View {
     /// Drag the capture's file into Finder, Slack, WhatsApp, a browser upload field…
     func captureDrag(item: CaptureItem, library: CaptureLibrary) -> some View {
         onDrag {
-            guard let url = library.fileURL(for: item) else { return NSItemProvider() }
-            let provider = NSItemProvider(contentsOf: url) ?? NSItemProvider()
+            let provider: NSItemProvider
+            if let url = library.fileURL(for: item) {
+                provider = NSItemProvider(contentsOf: url) ?? NSItemProvider()
+            } else if let image = library.image(for: item) {
+                provider = NSItemProvider(object: image.nsImage) // file still being written
+            } else {
+                provider = NSItemProvider()
+            }
             provider.suggestedName = item.fileName
             return provider
         } preview: {

@@ -399,7 +399,6 @@ enum DocumentExporter {
     }
 
     static func pngData(_ image: CGImage) -> Data? {
-        let rep = NSBitmapImageRep(cgImage: image)
-        return rep.representation(using: .png, properties: [:])
+        ImageEncoding.png(image)
     }
 }
