@@ -14,9 +14,9 @@ nonisolated final class RegionFrameStream: NSObject, SCStreamOutput, SCStreamDel
     }
     private let inbox = OSAllocatedUnfairLock(initialState: Inbox())
 
-    /// 30 fps is plenty for hand scrolling (ScreenCaptureKit only sends a frame when
-    /// something changed) and halves the matcher's work per second.
-    init(filter: SCContentFilter, configuration: SCStreamConfiguration, framesPerSecond: Int = 30,
+    /// 60 fps keeps consecutive frames close together during a fast flick; the inbox
+    /// drops what the stitcher cannot keep up with, so the rate costs nothing extra.
+    init(filter: SCContentFilter, configuration: SCStreamConfiguration, framesPerSecond: Int = 60,
          handler: @escaping @Sendable (Bitmap) async -> Void) {
         let config = configuration.copy() as! SCStreamConfiguration
         config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(framesPerSecond))

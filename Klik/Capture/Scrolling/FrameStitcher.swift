@@ -106,6 +106,8 @@ nonisolated enum FrameStitcher {
         let header: Int
         /// Rows at the bottom of the *upper* frame that are not used, clear of any sticky footer.
         let footer: Int
+        /// Rows of sticky UI found at the top of the frames.
+        let stickyTop: Int
     }
 
     /// Fraction of a frame's top / bottom never used when relocating a lost frame in the
@@ -275,7 +277,7 @@ nonisolated enum FrameStitcher {
             if debug { print("  verify d=\(delta) rows=\(to - from) agreement=\(String(format: "%.2f", agreement))") }
             if agreement >= minBlockAgreement {
                 let header = min(max(overlap / 2, sticky.top), overlap - sticky.bottom)
-                return .moved(delta: delta, seam: Seam(overlap: overlap, header: header, footer: overlap - header))
+                return .moved(delta: delta, seam: Seam(overlap: overlap, header: header, footer: overlap - header, stickyTop: sticky.top))
             }
         }
         // Rows agreed by signature but not by pixel — a look-alike, not a scroll.
@@ -303,17 +305,32 @@ nonisolated enum FrameStitcher {
 
     // MARK: - Relocation
 
-    /// Where `frame` sits inside `stitched` (its row 0 in stitched rows), searched over
-    /// every position including ones that overhang either end, or `nil` when no position
-    /// is convincing. Used to re-anchor after the frame-to-frame matcher lost track.
-    static func locate(_ frame: Bitmap, in stitched: Bitmap) -> Int? {
+    /// A stitched result prepared for repeated `locate` calls (its signatures are the
+    /// expensive part and don't change while the engine is lost).
+    struct LocateIndex: Sendable {
+        fileprivate let stitched: Bitmap
+        fileprivate let columns: [Int]
+        fileprivate let signature: Signature
+
+        init(_ stitched: Bitmap) {
+            self.stitched = stitched
+            columns = Array(stride(from: 0, to: stitched.width, by: columnStride))
+            signature = FrameStitcher.signature(stitched, columns: columns)
+        }
+    }
+
+    /// Where `frame` sits inside the indexed result (its row 0 in stitched rows), searched
+    /// over every position including ones that overhang either end, or `nil` when no
+    /// position is convincing. Used to re-anchor after the frame-to-frame matcher lost track.
+    static func locate(_ frame: Bitmap, in index: LocateIndex) -> Int? {
+        let stitched = index.stitched
         guard frame.width == stitched.width, stitched.height >= minMatchedRows else { return nil }
         let height = frame.height
         let top = Int(Double(height) * topGuard)
         let bottom = Int(Double(height) * bottomGuard)
-        let columns = Array(stride(from: 0, to: frame.width, by: columnStride))
+        let columns = index.columns
         let sigF = signature(frame, columns: columns)
-        let sigS = signature(stitched, columns: columns)
+        let sigS = index.signature
         let samples = Double(columns.count)
         let floor = Int32(edgeFloor * columns.count)
         let minOverlap = top + bottom + minMatchedRows
@@ -374,9 +391,9 @@ nonisolated enum FrameStitcher {
 
     // MARK: - Internals
 
-    private struct Signature {
-        let brightness: [Int32]
-        let edges: [Int32]
+    struct Signature: Sendable {
+        fileprivate let brightness: [Int32]
+        fileprivate let edges: [Int32]
     }
 
     /// Sampled columns (x positions) whose pixels differ between the two frames somewhere

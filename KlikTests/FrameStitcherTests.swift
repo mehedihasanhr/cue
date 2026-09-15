@@ -195,8 +195,27 @@ final class FrameStitcherTests: XCTestCase {
         print("Retina pair matched in \(Int(elapsed * 1000)) ms")
     }
 
+    func testFlingPastTheResultContinuesBelow() {
+        let engine = ScrollingCaptureEngine()
+        _ = engine.ingest(frame(at: 0))
+        for offset in [300, 600, 900] { _ = engine.ingest(frame(at: offset)) }
+        XCTAssertEqual(engine.totalRows, 1500)
+
+        // A fast fling: frames whose body is not painted yet, then the page settles far
+        // below anything captured.
+        for seed in 1...4 { _ = engine.ingest(blank(seed: seed)) }
+        var results: [ScrollingCaptureEngine.Ingest] = []
+        for _ in 0..<12 { results.append(engine.ingest(frame(at: 2000))) }
+        XCTAssertTrue(results.contains(.appended), "\(results)")
+        XCTAssertEqual(engine.totalRows, 1500 + Self.viewport - Self.headerRows, "appended in full below its sticky header")
+
+        // Tracking resumes from there.
+        XCTAssertEqual(engine.ingest(frame(at: 2200)), .appended)
+        XCTAssertEqual(engine.totalRows, 1500 + Self.viewport - Self.headerRows + 200)
+    }
+
     func testLocateFindsAFrameInsideAndOverhangingTheResult() {
-        let stitched = Self.slice(of: page, rows: 0..<1000)
+        let stitched = FrameStitcher.LocateIndex(Self.slice(of: page, rows: 0..<1000))
         XCTAssertEqual(FrameStitcher.locate(frame(at: 300, sidebar: false), in: stitched), 300)
         XCTAssertEqual(FrameStitcher.locate(frame(at: 700, sidebar: false), in: stitched), 700, "overhanging the end")
         XCTAssertNil(FrameStitcher.locate(noise(seed: 3), in: stitched))
@@ -282,6 +301,23 @@ final class FrameStitcherTests: XCTestCase {
                         }
                         bytes[i] = r; bytes[i + 1] = g; bytes[i + 2] = b; bytes[i + 3] = 255
                     }
+                }
+            }
+        }
+        return bitmap
+    }
+
+    /// A frame as a browser paints it mid-fling: sticky header, a few stray rows, white elsewhere.
+    private func blank(seed: Int) -> Bitmap {
+        var bitmap = frame(at: 0)
+        bitmap.data.withUnsafeMutableBytes { buffer in
+            let bytes = buffer.bindMemory(to: UInt8.self)
+            for y in Self.headerRows..<Self.viewport {
+                for x in 0..<Self.width {
+                    let i = (y * Self.width + x) * 4
+                    let stray = y / 16 == 10 + seed && Self.hash(y, x / 4) % 7 == 0
+                    let v: UInt8 = stray ? 40 : 255
+                    bytes[i] = v; bytes[i + 1] = v; bytes[i + 2] = v
                 }
             }
         }

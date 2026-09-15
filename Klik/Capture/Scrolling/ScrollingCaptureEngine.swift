@@ -46,17 +46,23 @@ nonisolated final class ScrollingCaptureEngine {
     private var unmatchedStreak = 0
     private var framesSinceRelocation = 0
     private var failedRelocations = 0
-    /// The stitched result as it was when tracking was lost; relocation searches in it.
-    private var lostReference: Bitmap?
+    /// Consecutive identical frames while lost: the user stopped and the page is painted.
+    private var stableStreak = 0
+    /// Sticky rows found at the top of the frames by the last verified move.
+    private var stickyTop = 0
+    /// The stitched result as it was when tracking was lost, indexed for relocation.
+    private var lostReference: FrameStitcher.LocateIndex?
 
     /// Consecutive unplaceable frames before the engine looks for the frame in the
     /// whole result instead of relative to the previous frame.
     static let resyncAfter = 6
     private static let relocateEvery = 4
-    /// Failed relocations after which a verified *downward* scroll re-anchors the frame
-    /// at the bottom of the result: the user moved on to new content, so the capture
-    /// continues from there (with a gap, never a repeat).
+    /// Failed relocations after which the capture continues *below* the result: the user
+    /// moved on to content that is not in it (a fast fling paints its frames too late to
+    /// match), so the next frame that scrolls down, or that stays put for `stableFrames`
+    /// frames, is appended in full — a gap, never a repeat.
     static let resumeAfterFailures = 2
+    static let stableFrames = 3
 
     var frameCount: Int { pieces.count }
     var totalRows: Int { pieces.reduce(0) { $0 + $1.rows } }
@@ -74,8 +80,18 @@ nonisolated final class ScrollingCaptureEngine {
             return .dropped
         }
         if FrameStitcher.framesMatch(last, frame) {
+            stableStreak += 1
+            guard !anchored else { return .unchanged }
+            // Lost and the screen is still: look for it; if it is nowhere in the result,
+            // the user has settled on new content — continue below.
+            let placed = relocateIfDue(frame)
+            if placed != .unmatched { return placed }
+            if failedRelocations >= Self.resumeAfterFailures, stableStreak >= Self.stableFrames {
+                return continueBelow(frame)
+            }
             return .unchanged
         }
+        stableStreak = 0
 
         switch FrameStitcher.shift(from: last, to: frame) {
         case .none:
@@ -86,11 +102,10 @@ nonisolated final class ScrollingCaptureEngine {
         case .moved(let delta, let seam):
             lastFrame = frame
             unmatchedStreak = 0
+            stickyTop = seam.stickyTop
             guard anchored else {
                 if delta > 0, failedRelocations >= Self.resumeAfterFailures {
-                    Log.capture.notice("Scrolling capture: not found in the result; continuing below it")
-                    resume(at: totalRows - frame.height)
-                    return place(frame, below: totalRows - frame.height + delta, header: seam.header)
+                    return continueBelow(frame)
                 }
                 return relocateIfDue(frame)
             }
@@ -106,9 +121,9 @@ nonisolated final class ScrollingCaptureEngine {
             Log.capture.notice("Scrolling capture: \(self.unmatchedStreak) frames could not be placed; looking for the frame in the result")
             unmatchedStreak = 0
             lastFrame = frame
+            lostReference = compose().map(FrameStitcher.LocateIndex.init)
             if let placed = relocate(frame) { return placed }
             anchored = false
-            lostReference = compose()
             failedRelocations = 1
             framesSinceRelocation = Self.relocateEvery - 1 // try again on the very next frame
             return .unmatched
@@ -136,14 +151,23 @@ nonisolated final class ScrollingCaptureEngine {
         anchored = true
         lostReference = nil
         failedRelocations = 0
+        stableStreak = 0
         lastTop = top
+    }
+
+    /// The user is somewhere the result does not cover: append the frame after what was
+    /// captured (below its sticky header) and track on from there.
+    private func continueBelow(_ frame: Bitmap) -> Ingest {
+        Log.capture.notice("Scrolling capture: not found in the result; continuing below it")
+        // Its sticky header is skipped, so row 0 sits that many rows above the result's end.
+        resume(at: totalRows - stickyTop)
+        lastFrame = frame
+        return place(frame, below: totalRows - stickyTop, header: stickyTop)
     }
 
     /// Finds `frame` in the stitched result and, if found, resumes tracking from there.
     private func relocate(_ frame: Bitmap) -> Ingest? {
-        guard let stitched = lostReference ?? compose(),
-              let position = FrameStitcher.locate(frame, in: stitched)
-        else { return nil }
+        guard let index = lostReference, let position = FrameStitcher.locate(frame, in: index) else { return nil }
         Log.capture.info("Scrolling capture: frame found at stitched row \(position); resuming")
         resume(at: position)
         lastFrame = frame
