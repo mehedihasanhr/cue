@@ -49,8 +49,6 @@ struct IslandPanel: View {
     @State private var search = ""
     /// A card opened in place of the row.
     @State private var detail: IslandDetail?
-    /// Pending hover switch of the tabs (cancelled if the pointer moves on).
-    @State private var hoverSwitch: Task<Void, Never>?
     @AppStorage(IslandTab.storageKey) private var tab: IslandTab = .captures
 
     private var filteredCaptures: [CaptureItem] {
@@ -234,15 +232,6 @@ struct IslandPanel: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .onHover { inside in
-            hoverSwitch?.cancel()
-            guard inside, tab != value else { return }
-            hoverSwitch = Task {
-                try? await Task.sleep(for: .milliseconds(250))
-                guard !Task.isCancelled else { return }
-                withAnimation(.easeOut(duration: 0.15)) { tab = value }
-            }
-        }
     }
 
     private func open(_ detail: IslandDetail) {
