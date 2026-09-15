@@ -2,7 +2,7 @@ import os
 import AppKit
 import SwiftUI
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel()
     let shortcuts = ShortcutController()
     let library = CaptureLibrary()
@@ -15,12 +15,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var statusItem: NSStatusItem?
     private var statusMenu: NSMenu?
-    private var historyPopover: NSPopover?
-    private var historyDismissMonitors: [Any] = []
     private var floatingPanel: FloatingPanelWindow?
     private var island: IslandController?
     private var quickTaskPanel: QuickTaskPanel?
-    private var captureMenuItems: [HotkeyID: NSMenuItem] = [:]
 
     private var settingsWindow: SettingsWindowController?
     private var onboardingWindows: [PermissionKind: HostedWindowController] = [:]
@@ -85,29 +82,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - Status item
 
+    /// The menu bar item is a plain dropdown — Settings and Quit. Everything else
+    /// lives in the Dynamic Island, the floating panel (⌥⇧K) and the shortcuts.
     private func installStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        item.button?.target = self
-        item.button?.action = #selector(statusItemClicked(_:))
-        item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
-        statusItem = item
-        applyMenuBarIcon()
-
         let menu = NSMenu()
-        menu.delegate = self
-        captureMenuItems[.fullScreen] = addItem(makeItem("Capture Full Screen", #selector(captureFullScreen(_:))), to: menu)
-        captureMenuItems[.region] = addItem(makeItem("Capture Area", #selector(captureArea(_:))), to: menu)
-        captureMenuItems[.scrolling] = addItem(makeItem("Scrolling Capture", #selector(captureScrolling(_:))), to: menu)
-        captureMenuItems[.captureText] = addItem(makeItem("Capture Text", #selector(captureText(_:))), to: menu)
-        captureMenuItems[.pickColor] = addItem(makeItem("Pick Color", #selector(pickColor(_:))), to: menu)
-        captureMenuItems[.quickTask] = addItem(makeItem("Quick Task…", #selector(quickTask(_:))), to: menu)
-        menu.addItem(.separator())
-        menu.addItem(makeItem("Show Captures", #selector(showHistory(_:))))
         menu.addItem(makeItem("Settings…", #selector(showSettings(_:)), keyEquivalent: ",", modifiers: .command))
         menu.addItem(.separator())
         menu.addItem(makeItem("Quit Klik", #selector(NSApplication.terminate(_:)), keyEquivalent: "q", modifiers: .command))
+        item.menu = menu
+        statusItem = item
         statusMenu = menu
-        refreshMenuShortcuts()
+        applyMenuBarIcon()
     }
 
     /// Keeps the status item image in sync with the Settings choice.
@@ -118,22 +104,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } onChange: { [weak self] in
             Task { @MainActor in self?.applyMenuBarIcon() }
         }
-    }
-
-    /// Left click opens the capture history; right click shows the quick menu.
-    @objc private func statusItemClicked(_ sender: Any?) {
-        if NSApp.currentEvent?.type == .rightMouseUp, let statusMenu, let item = statusItem {
-            item.menu = statusMenu
-            item.button?.performClick(nil)
-            item.menu = nil
-        } else {
-            toggleHistory()
-        }
-    }
-
-    private func addItem(_ item: NSMenuItem, to menu: NSMenu) -> NSMenuItem {
-        menu.addItem(item)
-        return item
     }
 
     private func makeItem(
@@ -147,23 +117,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Only our own actions target the delegate; app-level ones (Quit) go to NSApp.
         item.target = responds(to: action) ? self : NSApp
         return item
-    }
-
-    /// Mirrors the current bindings next to the menu items (display only — the
-    /// global shortcuts themselves are handled by `ShortcutController`).
-    private func refreshMenuShortcuts() {
-        for (id, item) in captureMenuItems {
-            if let hotkey = shortcuts.hotkey(for: id) {
-                item.keyEquivalent = hotkey.menuKeyEquivalent
-                item.keyEquivalentModifierMask = hotkey.menuModifierMask
-            } else {
-                item.keyEquivalent = ""
-            }
-        }
-    }
-
-    func menuNeedsUpdate(_ menu: NSMenu) {
-        refreshMenuShortcuts()
     }
 
     // MARK: - Dynamic Island
@@ -203,59 +156,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    // MARK: - History popover
-
-    private func toggleHistory() {
-        if let popover = historyPopover, popover.isShown {
-            closeHistory()
-            return
-        }
-        showHistory(nil)
-    }
-
-    @objc func showHistory(_ sender: Any?) {
-        guard let button = statusItem?.button else { return }
-        let popover = historyPopover ?? makeHistoryPopover()
-        historyPopover = popover
-        NSApp.activate()
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        installHistoryDismissMonitors()
-    }
-
-    /// A transient popover from a menu-bar-only app does not reliably close when the
-    /// click lands in another app, so watch for outside clicks and ⎋ ourselves.
-    private func installHistoryDismissMonitors() {
-        removeHistoryDismissMonitors()
-        if let global = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown], handler: { [weak self] _ in
-            MainActor.assumeIsolated { self?.closeHistory() }
-        }) {
-            historyDismissMonitors.append(global)
-        }
-        if let local = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown], handler: { [weak self] event in
-            guard let self, let popover = self.historyPopover, popover.isShown else { return event }
-            if event.type == .keyDown {
-                if event.keyCode == 53 { self.closeHistory(); return nil }
-                return event
-            }
-            // Clicks inside the popover (or on the status item, which toggles) pass through.
-            if event.window === popover.contentViewController?.view.window || event.window === self.statusItem?.button?.window {
-                return event
-            }
-            self.closeHistory()
-            return event
-        }) {
-            historyDismissMonitors.append(local)
-        }
-    }
-
-    private func removeHistoryDismissMonitors() {
-        historyDismissMonitors.forEach { NSEvent.removeMonitor($0) }
-        historyDismissMonitors.removeAll()
-    }
+    // MARK: - Panels
 
     private func closeHistory() {
-        removeHistoryDismissMonitors()
-        historyPopover?.performClose(nil)
         floatingPanel?.close()
         island?.collapse(animated: false)
     }
@@ -307,20 +210,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             },
             delete: { [weak self] item in self?.deleteCapture(item) }
         )
-    }
-
-    private func makeHistoryPopover() -> NSPopover {
-        let host = NSHostingController(rootView: HistoryView(library: library, actions: historyActions))
-        host.sizingOptions = []
-        host.preferredContentSize = HistoryView.size
-        host.view.frame = CGRect(origin: .zero, size: HistoryView.size)
-
-        let popover = NSPopover()
-        popover.behavior = .transient
-        popover.animates = true
-        popover.contentViewController = host
-        popover.contentSize = HistoryView.size
-        return popover
     }
 
     private func closeHistoryThen(_ action: @escaping (AppDelegate) -> Void) {

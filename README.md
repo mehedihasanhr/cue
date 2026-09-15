@@ -57,8 +57,10 @@ If a grant ever gets stuck, clear it and re-grant: `tccutil reset ScreenCapture 
 2. Click **Request Access**, then **Open System Settings** in the system prompt and turn
    on **Klik** under Privacy & Security › Screen & System Audio Recording.
 3. Back in Klik, click **Relaunch Klik** — macOS applies the grant on the next launch.
-4. Press **⌥⇧3** (full screen), **⌥⇧4** (area) or **⌥⇧5** (scrolling), or use the menu
-   bar icon. Captures open in a preview window at native Retina resolution.
+4. Press **⌥⇧3** (full screen), **⌥⇧4** (area) or **⌥⇧5** (scrolling), or hover the
+   notch to open the Dynamic Island and use its capture buttons. Captures open in a
+   preview window at native Retina resolution. The menu bar icon only holds Settings
+   and Quit.
 
 ### Area capture (⌥⇧4)
 
