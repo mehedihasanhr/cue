@@ -25,11 +25,11 @@ final class IslandController {
     private static let flashDuration: Duration = .seconds(1.8)
     private static let collapseAnimation: Duration = .milliseconds(380)
 
-    init(library: CaptureLibrary, actions: HistoryActions, preferences: AppPreferences) {
+    init(library: CaptureLibrary, clipboard: ClipboardHistory, actions: HistoryActions, preferences: AppPreferences) {
         self.preferences = preferences
 
         let content = NSView(frame: CGRect(origin: .zero, size: window.frame.size))
-        let host = NSHostingView(rootView: IslandView(model: model, library: library, actions: actions))
+        let host = NSHostingView(rootView: IslandView(model: model, library: library, clipboard: clipboard, actions: actions))
         host.sizingOptions = []
         host.autoresizingMask = [.width, .height]
         host.frame = content.bounds

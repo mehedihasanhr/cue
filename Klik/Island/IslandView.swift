@@ -70,6 +70,7 @@ nonisolated struct NotchShape: Shape {
 struct IslandView: View {
     let model: IslandModel
     let library: CaptureLibrary
+    let clipboard: ClipboardHistory
     let actions: HistoryActions
 
     /// Opening overshoots a touch; closing settles without a bounce.
@@ -117,7 +118,7 @@ struct IslandView: View {
         case .expanded:
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
-                IslandPanel(library: library, actions: actions)
+                IslandPanel(library: library, clipboard: clipboard, actions: actions)
                     .padding(.horizontal, IslandGeometry.panelHorizontalPadding)
                     .padding(.bottom, IslandGeometry.panelBottomPadding)
             }

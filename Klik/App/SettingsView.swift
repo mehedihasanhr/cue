@@ -234,6 +234,50 @@ private struct MenuBarIconPicker: View {
     }
 }
 
+// MARK: - Clipboard
+
+struct ClipboardSettingsView: View {
+    @Environment(ClipboardHistory.self) private var clipboard
+    @Environment(AppPreferences.self) private var preferences
+    @State private var confirmClear = false
+
+    var body: some View {
+        @Bindable var preferences = preferences
+        Form {
+            Section {
+                Toggle(isOn: $preferences.clipboardHistoryEnabled) {
+                    Text("Keep a clipboard history")
+                    Text("Text, links, colours, images and files you copy in any app appear in the Dynamic Island's Clipboard tab. Click one to copy it again.")
+                }
+                Picker("Keep the last", selection: $preferences.clipboardHistoryLimit) {
+                    ForEach(AppPreferences.clipboardLimits, id: \.self) { Text("\($0) items").tag($0) }
+                }
+                .disabled(!preferences.clipboardHistoryEnabled)
+            } header: {
+                Text("History")
+            } footer: {
+                Text("Pinned items are always kept. Content that apps mark as concealed (secrets from credential managers) is never recorded, and nothing leaves this Mac.")
+            }
+
+            Section {
+                HStack {
+                    Text("\(clipboard.items.count) item\(clipboard.items.count == 1 ? "" : "s") stored")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Clear History…", role: .destructive) { confirmClear = true }
+                        .disabled(clipboard.items.allSatisfy(\.pinned))
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .confirmationDialog("Clear the clipboard history?", isPresented: $confirmClear) {
+            Button("Clear History", role: .destructive) { clipboard.clear() }
+        } message: {
+            Text("Pinned items stay. This cannot be undone.")
+        }
+    }
+}
+
 // MARK: - Permissions
 
 struct PermissionSettingsView: View {

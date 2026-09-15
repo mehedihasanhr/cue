@@ -9,7 +9,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     private static let paneWidth: CGFloat = 560
 
-    init(model: AppModel, shortcuts: ShortcutController, library: CaptureLibrary, preferences: AppPreferences) {
+    init(model: AppModel, shortcuts: ShortcutController, library: CaptureLibrary, clipboard: ClipboardHistory, preferences: AppPreferences) {
         let tabs = NSTabViewController()
         tabs.tabStyle = .toolbar
         tabs.canPropagateSelectedChildViewControllerTitle = false
@@ -21,6 +21,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         tabs.addTabViewItem(Self.pane(
             "Capture", symbol: "camera", height: 330,
             CaptureSettingsView().environment(preferences)
+        ))
+        tabs.addTabViewItem(Self.pane(
+            "Clipboard", symbol: "doc.on.clipboard", height: 340,
+            ClipboardSettingsView().environment(clipboard).environment(preferences)
         ))
         tabs.addTabViewItem(Self.pane(
             "Editor", symbol: "paintbrush.pointed", height: 780,

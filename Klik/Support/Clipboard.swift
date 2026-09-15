@@ -10,11 +10,15 @@ import os
 enum Clipboard {
     /// Providers stay alive until the pasteboard says it is done with them.
     private static var providers: [ImageProvider] = []
+    /// Marks Klik's own image copies so the clipboard history skips them (captures
+    /// are listed already).
+    nonisolated static let ownMarker = NSPasteboard.PasteboardType("com.stackrover.klik.capture")
 
     static func copy(_ image: CGImage, to pasteboard: NSPasteboard = .general) {
         let provider = ImageProvider(image: image)
         let item = NSPasteboardItem()
         item.setDataProvider(provider, forTypes: [.png, .tiff])
+        item.setData(Data(), forType: Clipboard.ownMarker) // captures are listed already
         pasteboard.clearContents()
         pasteboard.writeObjects([item])
         provider.changeCount = pasteboard.changeCount
@@ -25,6 +29,7 @@ enum Clipboard {
     static func copy(pngData: Data, to pasteboard: NSPasteboard = .general) {
         pasteboard.clearContents()
         pasteboard.setData(pngData, forType: .png)
+        pasteboard.setData(Data(), forType: Clipboard.ownMarker)
     }
 
     /// Turns any outstanding promise into real data. Called before the app quits, so a

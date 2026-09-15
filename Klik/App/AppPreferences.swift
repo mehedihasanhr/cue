@@ -17,6 +17,20 @@ final class AppPreferences {
         static let appearance = "appearance"
         static let islandEnabled = "island.enabled"
         static let islandPlainDisplays = "island.plainDisplays"
+        static let clipboardEnabled = "clipboard.enabled"
+        static let clipboardLimit = "clipboard.limit"
+    }
+
+    // MARK: Clipboard history
+
+    var clipboardHistoryEnabled: Bool {
+        didSet { defaults.set(clipboardHistoryEnabled, forKey: Key.clipboardEnabled) }
+    }
+
+    static let clipboardLimits = [50, 100, 200, 500, 1000]
+
+    var clipboardHistoryLimit: Int {
+        didSet { defaults.set(clipboardHistoryLimit, forKey: Key.clipboardLimit) }
     }
 
     // MARK: Dynamic Island
@@ -155,6 +169,8 @@ final class AppPreferences {
         editorDefaults = EditorDefaults.load(from: defaults)
         dynamicIslandEnabled = defaults.object(forKey: Key.islandEnabled) as? Bool ?? true
         dynamicIslandOnPlainDisplays = defaults.object(forKey: Key.islandPlainDisplays) as? Bool ?? true
+        clipboardHistoryEnabled = defaults.object(forKey: Key.clipboardEnabled) as? Bool ?? true
+        clipboardHistoryLimit = defaults.object(forKey: Key.clipboardLimit) as? Int ?? 200
         customSoundURL = defaults.data(forKey: Key.soundBookmark).flatMap(Self.resolve)
         customIconURL = defaults.data(forKey: Key.iconBookmark).flatMap(Self.resolve)
         if sound == .custom, customSoundURL == nil { sound = .shutter }

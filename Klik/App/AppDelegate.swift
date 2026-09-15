@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let model = AppModel()
     let shortcuts = ShortcutController()
     let library = CaptureLibrary()
+    let clipboard = ClipboardHistory()
     let preferences = AppPreferences()
     private lazy var coordinator = CaptureCoordinator(shortcuts: shortcuts)
 
@@ -41,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         coordinator.onError = { [weak self] error in self?.presentError(error) }
         coordinator.onBusyChanged = { [weak self] busy in self?.island?.setHidden(busy) }
         applyIslandPreference()
+        applyClipboardPreference()
 
         shortcuts.setAction(for: .fullScreen) { [weak self] in self?.coordinator.captureFullScreen(fromMenu: false) }
         shortcuts.setAction(for: .region) { [weak self] in self?.coordinator.captureArea(fromMenu: false) }
@@ -148,8 +150,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if let island {
                     island.place()
                 } else {
-                    island = IslandController(library: library, actions: historyActions, preferences: preferences)
+                    island = IslandController(library: library, clipboard: clipboard, actions: historyActions, preferences: preferences)
                     library.warmThumbnails()
+                    clipboard.warmThumbnails()
                 }
             } else if let island {
                 island.tearDown()
@@ -158,6 +161,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             _ = preferences.dynamicIslandOnPlainDisplays
         } onChange: { [weak self] in
             Task { @MainActor in self?.applyIslandPreference() }
+        }
+    }
+
+    /// Starts or stops recording the pasteboard as the Settings toggles change.
+    private func applyClipboardPreference() {
+        withObservationTracking {
+            clipboard.limit = preferences.clipboardHistoryLimit
+            if preferences.clipboardHistoryEnabled {
+                clipboard.startWatching()
+            } else {
+                clipboard.stopWatching()
+            }
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.applyClipboardPreference() }
         }
     }
 
@@ -290,7 +307,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func showSettings(_ sender: Any?) {
         if settingsWindow == nil {
-            let controller = SettingsWindowController(model: model, shortcuts: shortcuts, library: library, preferences: preferences)
+            let controller = SettingsWindowController(model: model, shortcuts: shortcuts, library: library, clipboard: clipboard, preferences: preferences)
             controller.onClose = { [weak self] in
                 self?.settingsWindow = nil
                 self?.shortcuts.isRecording = false

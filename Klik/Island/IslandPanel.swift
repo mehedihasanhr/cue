@@ -1,23 +1,48 @@
 import AppKit
 import SwiftUI
 
-/// What the open island shows: search and the capture buttons on top, then the
-/// captures as cards in a horizontal row grouped by day, newest first. The row
-/// scrolls by dragging (or with the trackpad).
+enum IslandTab: String, CaseIterable {
+    case captures, clipboard
+
+    var title: String {
+        switch self {
+        case .captures: "Captures"
+        case .clipboard: "Clipboard"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .captures: "photo.on.rectangle"
+        case .clipboard: "doc.on.clipboard"
+        }
+    }
+}
+
+/// What the open island shows: search and the capture buttons on top, a row of tabs,
+/// then the captures or the clipboard history as cards in a horizontal row grouped
+/// by day, newest first. The row scrolls by dragging (or with the trackpad).
 struct IslandPanel: View {
-    static let size = CGSize(width: 780, height: 272)
+    static let size = CGSize(width: 780, height: 316)
 
     let library: CaptureLibrary
+    let clipboard: ClipboardHistory
     let actions: HistoryActions
     @State private var search = ""
+    @AppStorage("island.tab") private var tab: IslandTab = .captures
 
-    private var filtered: [CaptureItem] {
+    private var filteredCaptures: [CaptureItem] {
         guard !search.isEmpty else { return library.items }
         return library.items.filter { $0.title.localizedCaseInsensitiveContains(search) }
     }
 
+    private var filteredClipboard: [ClipboardItem] {
+        guard !search.isEmpty else { return clipboard.items }
+        return clipboard.items.filter { $0.text.localizedCaseInsensitiveContains(search) || ($0.sourceName?.localizedCaseInsensitiveContains(search) ?? false) }
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 circle("gearshape", help: "Settings", action: actions.openSettings)
                 HStack(spacing: 8) {
@@ -37,15 +62,43 @@ struct IslandPanel: View {
                 circle("text.viewfinder", help: "Capture text", action: actions.captureText)
             }
 
-            if filtered.isEmpty {
-                VStack(spacing: 6) {
-                    Image(systemName: "camera.viewfinder").font(.system(size: 26)).foregroundStyle(.white.opacity(0.5))
-                    Text(search.isEmpty ? "No captures yet" : "No matches")
-                        .font(.system(size: 13, weight: .medium)).foregroundStyle(.white.opacity(0.7))
+            HStack(spacing: 8) {
+                tabPill(.captures, count: library.items.count)
+                tabPill(.clipboard, count: clipboard.items.count)
+                Spacer(minLength: 0)
+                if tab == .clipboard, clipboard.items.contains(where: { !$0.pinned }) {
+                    Button {
+                        clipboard.clear()
+                    } label: {
+                        Label("Clear", systemImage: "trash")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.7))
+                            .padding(.horizontal, 10)
+                            .frame(height: 28)
+                            .background(.white.opacity(0.08), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Remove every unpinned item")
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                CardStrip(items: filtered, library: library, actions: actions)
+            }
+
+            switch tab {
+            case .captures:
+                if filteredCaptures.isEmpty {
+                    empty(search.isEmpty ? "No captures yet" : "No matches", symbol: "camera.viewfinder")
+                } else {
+                    DayStrip(items: filteredCaptures, date: \.createdAt) { item in
+                        CaptureCard(item: item, library: library, actions: actions)
+                    }
+                }
+            case .clipboard:
+                if filteredClipboard.isEmpty {
+                    empty(search.isEmpty ? "Nothing copied yet" : "No matches", symbol: "doc.on.clipboard")
+                } else {
+                    DayStrip(items: filteredClipboard, date: \.createdAt) { item in
+                        ClipboardCard(item: item, clipboard: clipboard)
+                    }
+                }
             }
         }
         .padding(.horizontal, 20)
@@ -66,21 +119,54 @@ struct IslandPanel: View {
         .buttonStyle(.plain)
         .help(help)
     }
+
+    private func tabPill(_ value: IslandTab, count: Int) -> some View {
+        let selected = tab == value
+        return Button {
+            withAnimation(.easeOut(duration: 0.15)) { tab = value }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: value.symbol).font(.system(size: 11, weight: .semibold))
+                Text(value.title).font(.system(size: 12, weight: .semibold))
+                if count > 0 {
+                    Text("\(count)")
+                        .font(.system(size: 10, weight: .semibold))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background((selected ? Color.black : Color.white).opacity(0.12), in: Capsule())
+                }
+            }
+            .foregroundStyle(selected ? .black : .white.opacity(0.85))
+            .padding(.horizontal, 12)
+            .frame(height: 28)
+            .background(selected ? Color.white : Color.white.opacity(0.1), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func empty(_ message: String, symbol: String) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: symbol).font(.system(size: 26)).foregroundStyle(.white.opacity(0.5))
+            Text(message).font(.system(size: 13, weight: .medium)).foregroundStyle(.white.opacity(0.7))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
 }
 
-// MARK: - Strip
+// MARK: - Day strip
 
-/// Horizontal row of day groups. Dragging anywhere on it scrolls; the scroll wheel /
-/// trackpad works too. Clicking a card opens the editor; hovering shows the actions.
-private struct CardStrip: View {
-    let items: [CaptureItem]
-    let library: CaptureLibrary
-    let actions: HistoryActions
+/// Horizontal row of day groups ("Today", "Yesterday", "Wed, Jul 22"). Dragging
+/// anywhere on it scrolls; the scroll wheel / trackpad works too.
+struct DayStrip<Item: Identifiable, Card: View>: View {
+    let items: [Item]
+    let date: KeyPath<Item, Date>
+    @ViewBuilder let card: (Item) -> Card
 
-    static let card = CGSize(width: 200, height: 160)
-    static let spacing: CGFloat = 10
-    static let groupSpacing: CGFloat = 22
-    static let headerHeight: CGFloat = 24
+    static var cardSize: CGSize { CGSize(width: 200, height: 160) }
+    static var spacing: CGFloat { 10 }
+    static var groupSpacing: CGFloat { 22 }
+    static var headerHeight: CGFloat { 24 }
 
     @State private var offset: CGFloat = 0
     @State private var dragOrigin: CGFloat?
@@ -88,16 +174,16 @@ private struct CardStrip: View {
     private struct Group: Identifiable {
         let id: Date
         let title: String
-        let items: [CaptureItem]
+        var items: [Item]
     }
 
     private var groups: [Group] {
         let calendar = Calendar.current
         var result: [Group] = []
         for item in items {
-            let day = calendar.startOfDay(for: item.createdAt)
+            let day = calendar.startOfDay(for: item[keyPath: date])
             if let index = result.firstIndex(where: { $0.id == day }) {
-                result[index] = Group(id: day, title: result[index].title, items: result[index].items + [item])
+                result[index].items.append(item)
             } else {
                 result.append(Group(id: day, title: Self.title(for: day, calendar: calendar), items: [item]))
             }
@@ -113,9 +199,9 @@ private struct CardStrip: View {
     }
 
     private var contentWidth: CGFloat {
-        let groups = groups
-        let cards = CGFloat(items.count) * Self.card.width + CGFloat(max(0, items.count - groups.count)) * Self.spacing
-        return cards + CGFloat(max(0, groups.count - 1)) * Self.groupSpacing
+        let groupCount = groups.count
+        let cards = CGFloat(items.count) * Self.cardSize.width + CGFloat(max(0, items.count - groupCount)) * Self.spacing
+        return cards + CGFloat(max(0, groupCount - 1)) * Self.groupSpacing
     }
 
     var body: some View {
@@ -130,7 +216,7 @@ private struct CardStrip: View {
                             .frame(height: Self.headerHeight, alignment: .leading)
                         HStack(spacing: Self.spacing) {
                             ForEach(group.items) { item in
-                                Card(item: item, library: library, actions: actions)
+                                card(item)
                             }
                         }
                     }
@@ -151,72 +237,107 @@ private struct CardStrip: View {
                 offset = min(max(offset + delta, 0), maxOffset)
             })
         }
-        .frame(height: Self.headerHeight + Self.card.height)
+        .frame(height: Self.headerHeight + Self.cardSize.height)
         .clipped()
     }
 }
 
-private struct Card: View {
-    let item: CaptureItem
-    let library: CaptureLibrary
-    let actions: HistoryActions
-    @State private var hovering = false
-    @State private var copied = false
+// MARK: - Cards
 
-    private static let radius: CGFloat = 18
+/// Rounded card chrome shared by captures and clipboard items: blue border on hover,
+/// circular action buttons at the top, click and context menu.
+private struct CardChrome<Content: View, Actions: View, Menu: View>: View {
+    @Binding var hovering: Bool
+    let onTap: () -> Void
+    @ViewBuilder let content: () -> Content
+    @ViewBuilder let actionRow: () -> Actions
+    @ViewBuilder let menu: () -> Menu
+
+    private static var radius: CGFloat { 18 }
 
     var body: some View {
-        Color.clear
-            .overlay {
-                if let thumbnail = library.thumbnail(for: item) {
-                    Image(nsImage: thumbnail).resizable().scaledToFill()
-                } else {
-                    Color.white.opacity(0.1)
+        content()
+            .overlay(alignment: .top) {
+                if hovering {
+                    HStack(spacing: 6) { actionRow() }
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(LinearGradient(colors: [.black.opacity(0.7), .black.opacity(0)], startPoint: .top, endPoint: .bottom))
+                        .transition(.opacity)
                 }
             }
-            .clipped()
-            .overlay(alignment: .bottom) { caption }
-            .overlay(alignment: .top) {
-                if hovering { actionRow.transition(.opacity) }
-            }
-            .frame(width: CardStrip.card.width, height: CardStrip.card.height)
+            .frame(width: DayStrip<CaptureItem, EmptyView>.cardSize.width, height: DayStrip<CaptureItem, EmptyView>.cardSize.height)
             .background(.white.opacity(0.07))
             .clipShape(RoundedRectangle(cornerRadius: Self.radius, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Self.radius, style: .continuous).strokeBorder(hovering ? Color.brand : .white.opacity(0.1), lineWidth: hovering ? 2 : 1))
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
             .animation(.easeOut(duration: 0.12), value: hovering)
-            .onTapGesture { actions.edit(item) }
-            .contextMenu {
-                Button("Preview") { actions.preview(item) }
-                Button("Edit") { actions.edit(item) }
-                Button("Copy to Clipboard") { actions.copy(item) }
-                Divider()
-                Button("Delete", role: .destructive) { actions.delete(item) }
-            }
+            .onTapGesture(perform: onTap)
+            .contextMenu { menu() }
     }
+}
 
-    /// Title, age and size, kept small over a short gradient: the screenshot is the
-    /// content, the caption only helps telling cards apart.
-    private var caption: some View {
+/// A circular button for the card's hover row.
+private struct CardAction: View {
+    let symbol: String
+    let help: String
+    var tint: Color = .white
+    let perform: () -> Void
+
+    var body: some View {
+        Button(action: perform) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .semibold))
+                .frame(width: 28, height: 28)
+                .background(.black.opacity(0.55), in: Circle())
+                .overlay(Circle().strokeBorder(.white.opacity(0.15)))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(tint)
+        .help(help)
+    }
+}
+
+/// Copy button that turns into a green tick for a moment.
+private struct CopyAction: View {
+    let perform: () -> Void
+    @State private var copied = false
+
+    var body: some View {
+        CardAction(symbol: copied ? "checkmark" : "doc.on.doc", help: "Copy to clipboard", tint: copied ? .green : .white) {
+            withAnimation(.easeOut(duration: 0.15)) { copied = true }
+            perform()
+            Task {
+                try? await Task.sleep(for: .seconds(1.2))
+                withAnimation { copied = false }
+            }
+        }
+    }
+}
+
+/// Small caption over a short gradient at the foot of a card: the content is the
+/// point, the caption only helps telling cards apart.
+private struct CardCaption<Leading: View>: View {
+    let title: String
+    let date: Date
+    @ViewBuilder let trailing: () -> Leading
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(item.title.replacingOccurrences(of: "Screenshot ", with: ""))
-                .font(.system(size: 10.5, weight: .medium))
-                .foregroundStyle(.white.opacity(0.92))
-                .lineLimit(1)
+            if !title.isEmpty {
+                Text(title)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.92))
+                    .lineLimit(1)
+            }
             HStack(alignment: .center, spacing: 6) {
-                Text(item.createdAt.formatted(.relative(presentation: .named)))
+                Text(date.formatted(.relative(presentation: .named)))
                     .font(.system(size: 9.5))
                     .foregroundStyle(.white.opacity(0.7))
                     .lineLimit(1)
                 Spacer(minLength: 0)
-                Text(item.dimensions)
-                    .font(.system(size: 8.5, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.75))
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1.5)
-                    .background(.white.opacity(0.16), in: Capsule())
-                    .fixedSize()
+                trailing()
             }
         }
         .shadow(color: .black.opacity(0.35), radius: 1.5, y: 1)
@@ -228,37 +349,164 @@ private struct Card: View {
                 .padding(.top, -16)
         )
     }
+}
 
-    private var actionRow: some View {
-        HStack(spacing: 6) {
-            action("eye", help: "Preview") { actions.preview(item) }
-            action("pencil", help: "Edit") { actions.edit(item) }
-            action(copied ? "checkmark" : "doc.on.doc", help: "Copy to clipboard", tint: copied ? .green : .white) {
-                withAnimation(.easeOut(duration: 0.15)) { copied = true }
-                actions.copy(item)
-                Task {
-                    try? await Task.sleep(for: .seconds(1.2))
-                    withAnimation { copied = false }
+private struct Badge: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 8.5, weight: .medium))
+            .foregroundStyle(.white.opacity(0.75))
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1.5)
+            .background(.white.opacity(0.16), in: Capsule())
+            .fixedSize()
+    }
+}
+
+private struct CaptureCard: View {
+    let item: CaptureItem
+    let library: CaptureLibrary
+    let actions: HistoryActions
+    @State private var hovering = false
+
+    var body: some View {
+        CardChrome(hovering: $hovering, onTap: { actions.edit(item) }) {
+            Color.clear
+                .overlay {
+                    if let thumbnail = library.thumbnail(for: item) {
+                        Image(nsImage: thumbnail).resizable().scaledToFill()
+                    } else {
+                        Color.white.opacity(0.1)
+                    }
                 }
-            }
-            action("trash", help: "Delete", tint: .red) { actions.delete(item) }
+                .clipped()
+                .overlay(alignment: .bottom) {
+                    CardCaption(title: item.title.replacingOccurrences(of: "Screenshot ", with: ""), date: item.createdAt) {
+                        Badge(text: item.dimensions)
+                    }
+                }
+        } actionRow: {
+            CardAction(symbol: "eye", help: "Preview") { actions.preview(item) }
+            CardAction(symbol: "pencil", help: "Edit") { actions.edit(item) }
+            CopyAction { actions.copy(item) }
+            CardAction(symbol: "trash", help: "Delete", tint: .red) { actions.delete(item) }
+        } menu: {
+            Button("Preview") { actions.preview(item) }
+            Button("Edit") { actions.edit(item) }
+            Button("Copy to Clipboard") { actions.copy(item) }
+            Divider()
+            Button("Delete", role: .destructive) { actions.delete(item) }
         }
-        .padding(8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(LinearGradient(colors: [.black.opacity(0.7), .black.opacity(0)], startPoint: .top, endPoint: .bottom))
+    }
+}
+
+private struct ClipboardCard: View {
+    let item: ClipboardItem
+    let clipboard: ClipboardHistory
+    @State private var hovering = false
+
+    var body: some View {
+        CardChrome(hovering: $hovering, onTap: copy) {
+            content
+                .overlay(alignment: .bottom) {
+                    CardCaption(title: "", date: item.createdAt) {
+                        if item.pinned {
+                            Image(systemName: "star.fill").font(.system(size: 9)).foregroundStyle(.yellow)
+                        }
+                        if let icon = clipboard.sourceIcon(for: item) {
+                            Image(nsImage: icon).resizable().frame(width: 16, height: 16)
+                                .help(item.sourceName ?? "")
+                        }
+                    }
+                }
+        } actionRow: {
+            CopyAction(perform: copy)
+            CardAction(symbol: item.pinned ? "star.fill" : "star", help: item.pinned ? "Unpin" : "Pin", tint: item.pinned ? .yellow : .white) {
+                clipboard.togglePin(item)
+            }
+            CardAction(symbol: "trash", help: "Delete", tint: .red) { clipboard.delete(item) }
+        } menu: {
+            Button("Copy") { copy() }
+            Button(item.pinned ? "Unpin" : "Pin") { clipboard.togglePin(item) }
+            Divider()
+            Button("Delete", role: .destructive) { clipboard.delete(item) }
+        }
     }
 
-    private func action(_ symbol: String, help: String, tint: Color = .white, perform: @escaping () -> Void) -> some View {
-        Button(action: perform) {
-            Image(systemName: symbol)
-                .font(.system(size: 11, weight: .semibold))
-                .frame(width: 28, height: 28)
-                .background(.black.opacity(0.55), in: Circle())
-                .overlay(Circle().strokeBorder(.white.opacity(0.15)))
+    private func copy() {
+        clipboard.copy(item)
+        FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch item.kind {
+        case .text:
+            Text(item.text.trimmingCharacters(in: .whitespacesAndNewlines))
+                .font(.system(size: 11))
+                .foregroundStyle(.white.opacity(0.92))
+                .lineLimit(7)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(12)
+        case .link:
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: "link").font(.system(size: 11, weight: .semibold))
+                    Text(URL(string: item.text)?.host ?? item.text).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                }
+                .foregroundStyle(.white)
+                Text(item.text)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.white.opacity(0.65))
+                    .lineLimit(4)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(12)
+        case .color:
+            let components = item.colorComponents ?? (0.5, 0.5, 0.5)
+            Color(red: components.red, green: components.green, blue: components.blue)
+                .overlay(alignment: .topLeading) {
+                    Text(item.text)
+                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(.black.opacity(0.35), in: Capsule())
+                        .padding(12)
+                }
+        case .image:
+            Color.clear
+                .overlay {
+                    if let thumbnail = clipboard.thumbnail(for: item) {
+                        Image(nsImage: thumbnail).resizable().scaledToFill()
+                    } else {
+                        Color.white.opacity(0.1)
+                    }
+                }
+                .clipped()
+                .overlay(alignment: .topTrailing) {
+                    if !hovering { Badge(text: item.dimensions).padding(8) }
+                }
+        case .files:
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: item.filePaths.count > 1 ? "doc.on.doc" : "doc").font(.system(size: 12, weight: .semibold))
+                    Text(item.filePaths.count > 1 ? "\(item.filePaths.count) files" : "File").font(.system(size: 12, weight: .semibold))
+                }
+                .foregroundStyle(.white)
+                ForEach(item.filePaths.prefix(4), id: \.self) { path in
+                    Text((path as NSString).lastPathComponent)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.white.opacity(0.75))
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(12)
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(tint)
-        .help(help)
     }
 }
 
