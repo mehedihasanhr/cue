@@ -138,7 +138,7 @@ struct IslandDetailBody: View {
                     detailButton("Reveal", symbol: "folder") { assets.reveal(item) }
                 }
             case .clipboard(let item):
-                clipboardView(item)
+                clipboardView(clipboard.items.first { $0.id == item.id } ?? item) // live copy, so Pin reflects its state
             }
         }
         .foregroundStyle(.white)
@@ -306,6 +306,7 @@ struct IslandDetailBody: View {
                     clipboard.copy(item)
                     FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
                 }
+                detailButton(item.pinned ? "Unpin" : "Pin", symbol: item.pinned ? "star.fill" : "star") { clipboard.togglePin(item) }
             }
         case .files:
             VStack(alignment: .leading, spacing: 6) {
@@ -335,6 +336,7 @@ struct IslandDetailBody: View {
                     if item.kind == .link, let url = URL(string: item.text) {
                         detailButton("Open", symbol: "safari") { NSWorkspace.shared.open(url) }
                     }
+                    detailButton(item.pinned ? "Unpin" : "Pin", symbol: item.pinned ? "star.fill" : "star") { clipboard.togglePin(item) }
                 }
                 .frame(width: 120, alignment: .topLeading)
             }

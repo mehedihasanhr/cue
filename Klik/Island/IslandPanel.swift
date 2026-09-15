@@ -47,6 +47,8 @@ struct IslandPanel: View {
     /// Opens a task in the compact island.
     var onShowTask: (TaskItem) -> Void = { _ in }
     @State private var search = ""
+    /// Clipboard tab: show pinned entries only.
+    @State private var pinnedOnly = false
     /// A card opened in place of the row.
     @State private var detail: IslandDetail?
     @AppStorage(IslandTab.storageKey) private var tab: IslandTab = .captures
@@ -57,8 +59,9 @@ struct IslandPanel: View {
     }
 
     private var filteredClipboard: [ClipboardItem] {
-        guard !search.isEmpty else { return clipboard.items }
-        return clipboard.items.filter { $0.text.localizedCaseInsensitiveContains(search) || ($0.sourceName?.localizedCaseInsensitiveContains(search) ?? false) }
+        let items = pinnedOnly ? clipboard.items.filter(\.pinned) : clipboard.items
+        guard !search.isEmpty else { return items }
+        return items.filter { $0.text.localizedCaseInsensitiveContains(search) || ($0.name?.localizedCaseInsensitiveContains(search) ?? false) || ($0.sourceName?.localizedCaseInsensitiveContains(search) ?? false) }
     }
 
     private var filteredAssets: [AssetItem] {
@@ -108,8 +111,13 @@ struct IslandPanel: View {
                 if tab == .colors {
                     smallButton("Pick", symbol: "eyedropper", help: "Pick a colour from the screen", action: actions.pickColor)
                 }
-                if tab == .clipboard, clipboard.items.contains(where: { !$0.pinned }) {
-                    smallButton("Clear", symbol: "trash", help: "Remove every unpinned item") { clipboard.clear() }
+                if tab == .clipboard {
+                    if clipboard.items.contains(where: \.pinned) {
+                        smallToggle("Pinned", symbol: pinnedOnly ? "star.fill" : "star", help: "Show only pinned entries", isOn: $pinnedOnly)
+                    }
+                    if clipboard.items.contains(where: { !$0.pinned }) {
+                        smallButton("Clear", symbol: "trash", help: "Remove every unpinned item") { clipboard.clear() }
+                    }
                 }
                 if tab == .assets {
                     smallButton("Paste", symbol: "doc.on.clipboard", help: "Save the image or files on the clipboard as assets") {
@@ -145,7 +153,7 @@ struct IslandPanel: View {
                     if filteredClipboard.isEmpty {
                         empty(search.isEmpty ? "Nothing copied yet" : "No matches", symbol: "doc.on.clipboard")
                     } else {
-                        DayStrip(items: filteredClipboard, date: \.createdAt, dragPayload: { item in
+                        DayStrip(items: filteredClipboard, date: \.createdAt, pinned: \.pinned, dragPayload: { item in
                             clipboard.dragPayload(for: item)
                         }) { item in
                             ClipboardCard(item: item, clipboard: clipboard, onPreview: { open(.clipboard(item)) }, onRename: {
@@ -238,6 +246,21 @@ struct IslandPanel: View {
         withAnimation(.easeOut(duration: 0.15)) { self.detail = detail }
     }
 
+    /// A `smallButton` that stays lit while on.
+    private func smallToggle(_ title: String, symbol: String, help: String, isOn: Binding<Bool>) -> some View {
+        Button { isOn.wrappedValue.toggle() } label: {
+            Label(title, systemImage: symbol)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(isOn.wrappedValue ? .yellow : .white.opacity(0.7))
+                .padding(.horizontal, 10)
+                .frame(height: 28)
+                .background(isOn.wrappedValue ? .yellow.opacity(0.18) : .white.opacity(0.08), in: Capsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+
     private func smallButton(_ title: String, symbol: String, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Label(title, systemImage: symbol)
@@ -290,6 +313,8 @@ struct IslandPanel: View {
 struct DayStrip<Item: Identifiable, Card: View>: View {
     let items: [Item]
     let date: KeyPath<Item, Date>
+    /// Items flagged here go in a "Pinned" group ahead of the days.
+    var pinned: KeyPath<Item, Bool>? = nil
     /// What a card puts on the drag pasteboard, if it can be dragged out. A vertical
     /// drag on a card then drags it into other apps; a horizontal drag scrolls the row.
     var dragPayload: ((Item) -> DragPayload?)? = nil
@@ -330,11 +355,13 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
         var layout = Layout()
         var x: CGFloat = 0
         var currentDay: Date?
-        for item in items {
-            let day = calendar.startOfDay(for: item[keyPath: date])
+        let ordered = pinned.map { key in items.filter { $0[keyPath: key] } + items.filter { !$0[keyPath: key] } } ?? items
+        for item in ordered {
+            let isPinned = pinned.map { item[keyPath: $0] } ?? false
+            let day = isPinned ? Date.distantFuture : calendar.startOfDay(for: item[keyPath: date])
             if day != currentDay {
                 if currentDay != nil { x += Self.groupSpacing - Self.spacing }
-                layout.groups.append(PlacedGroup(id: day, title: Self.title(for: day, calendar: calendar), x: x, width: 0))
+                layout.groups.append(PlacedGroup(id: day, title: isPinned ? "Pinned" : Self.title(for: day, calendar: calendar), x: x, width: 0))
                 currentDay = day
             }
             layout.cards.append(PlacedCard(item: item, x: x))

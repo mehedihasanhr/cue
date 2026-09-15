@@ -237,7 +237,7 @@ struct FloatingPanelView: View {
             }
         case .clipboard:
             let items = clipboard.items.filter { search.isEmpty || $0.text.localizedCaseInsensitiveContains(search) || ($0.name?.localizedCaseInsensitiveContains(search) ?? false) }
-            list(items, date: \.createdAt, empty: "Nothing copied yet") { item in
+            list(items, date: \.createdAt, pinned: \.pinned, empty: "Nothing copied yet") { item in
                 ClipboardCard(item: item, clipboard: clipboard, onRename: {
                     onPrompt(IslandPrompt(kind: .rename(.clipboard(item)), initial: item.name ?? "", image: clipboard.thumbnail(for: item), swatch: item.kind == .color ? PickedColor(hex: item.text) : nil))
                 })
@@ -309,7 +309,7 @@ struct FloatingPanelView: View {
 
     /// Items by day: cards in a grid, or compact rows.
     private func list<Item: Identifiable, Card: View, Row: View>(
-        _ items: [Item], date: KeyPath<Item, Date>, empty: String,
+        _ items: [Item], date: KeyPath<Item, Date>, pinned: KeyPath<Item, Bool>? = nil, empty: String,
         @ViewBuilder card: @escaping (Item) -> Card, @ViewBuilder row: @escaping (Item) -> Row
     ) -> some View {
         Group {
@@ -321,7 +321,7 @@ struct FloatingPanelView: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 8, pinnedViews: []) {
-                        ForEach(dayGroups(items, date: date), id: \.day) { group in
+                        ForEach(dayGroups(items, date: date, pinned: pinned), id: \.day) { group in
                             Text(group.title)
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(.white.opacity(0.85))
@@ -349,10 +349,15 @@ struct FloatingPanelView: View {
         var items: [Item]
     }
 
-    private func dayGroups<Item>(_ items: [Item], date: KeyPath<Item, Date>) -> [DayGroup<Item>] {
+    /// Pinned items (if `pinned` is given) come first in their own group.
+    private func dayGroups<Item>(_ items: [Item], date: KeyPath<Item, Date>, pinned: KeyPath<Item, Bool>? = nil) -> [DayGroup<Item>] {
         let calendar = Calendar.current
         var groups: [DayGroup<Item>] = []
-        for item in items {
+        if let pinned {
+            let pinnedItems = items.filter { $0[keyPath: pinned] }
+            if !pinnedItems.isEmpty { groups.append(DayGroup(day: .distantFuture, title: "Pinned", items: pinnedItems)) }
+        }
+        for item in items where !(pinned.map { item[keyPath: $0] } ?? false) {
             let day = calendar.startOfDay(for: item[keyPath: date])
             if let index = groups.firstIndex(where: { $0.day == day }) {
                 groups[index].items.append(item)
