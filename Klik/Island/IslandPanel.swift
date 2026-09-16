@@ -136,8 +136,8 @@ struct IslandPanel: View {
                 .background(KeyOnFocus(focused: searchFocused))
                 if !searching {
                     Spacer(minLength: 8)
-                    if let clock, let pill = clock.pill {
-                        prayerPill(pill, clock: clock)
+                    if let clock, clock.status != nil {
+                        PrayerPill(clock: clock)
                     }
                     circle("display", help: "Capture full screen", action: actions.captureFullScreen)
                     circle("viewfinder", help: "Capture area", action: actions.captureArea)
@@ -386,24 +386,6 @@ struct IslandPanel: View {
         }
         .buttonStyle(.plain)
         .help(help)
-    }
-
-    /// The prayer clock: the current period and what is left of it; every time of
-    /// the day in the tooltip.
-    private func prayerPill(_ text: String, clock: PrayerClock) -> some View {
-        let forbidden = clock.status?.forbidden != nil
-        return HStack(spacing: 5) {
-            Image(systemName: forbidden ? "exclamationmark.triangle.fill" : (clock.status?.current ?? clock.status?.next ?? .dhuhr).symbol)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(forbidden ? .orange : .white.opacity(0.85))
-            Text(text).font(.system(size: 12, weight: .semibold)).lineLimit(1)
-        }
-        .foregroundStyle(.white.opacity(0.9))
-        .padding(.horizontal, 12)
-        .frame(height: 40)
-        .background(.white.opacity(forbidden ? 0.14 : 0.08), in: Capsule())
-        .fixedSize()
-        .help(clock.today.map { day in day.ordered.map { "\($0.prayer.title) \(PrayerClock.clock($0.time))" }.joined(separator: "   ") } ?? "")
     }
 
     /// Tabs switch after the pointer rests on them for 250 ms (a click is immediate).

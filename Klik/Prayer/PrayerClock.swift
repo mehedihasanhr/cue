@@ -186,19 +186,28 @@ final class PrayerClock: NSObject {
         showStatus(status(for: .time, at: Date()), false)
     }
 
+    /// Every event is drawn by `ClockRow`; the plain title/subtitle serve the HUD
+    /// when there is no island.
     private func status(for event: Event, at now: Date) -> IslandStatus {
+        let kind: ClockStatus.Kind
+        let symbol: String, title: String, subtitle: String?, duration: Duration
         switch event {
         case .prayer(let prayer):
-            return IslandStatus(symbol: prayer.symbol, title: "\(prayer.title) · \(Self.clock(now))", subtitle: untilNext(), duration: .seconds(5))
-        case .forbiddenStart(let kind):
-            return IslandStatus(symbol: "exclamationmark.triangle.fill", title: "Prayer not allowed · \(kind.title.lowercased())",
-                                subtitle: status?.forbidden.map { "Until \(Self.clock($0.end))" }, duration: .seconds(5))
+            kind = .prayer(prayer)
+            (symbol, title, subtitle, duration) = (prayer.symbol, "\(prayer.title) · \(Self.clock(now))", untilNext(), .seconds(5))
+        case .forbiddenStart(let windowKind):
+            let end = status?.forbidden?.end ?? now
+            kind = .forbidden(windowKind, end: end)
+            (symbol, title, subtitle, duration) = ("exclamationmark.triangle.fill", "Prayer not allowed · \(windowKind.title.lowercased())", "Until \(Self.clock(end))", .seconds(5))
         case .forbiddenEnd:
-            return IslandStatus(symbol: "checkmark.circle.fill", title: "Prayer allowed again", subtitle: prayerLine(), duration: .seconds(4))
+            kind = .allowed
+            (symbol, title, subtitle, duration) = ("checkmark.circle.fill", "Prayer allowed again", prayerLine(), .seconds(4))
         case .time:
-            return IslandStatus(symbol: "clock", title: Self.clock(now), subtitle: prayerLine() ?? now.formatted(.dateTime.weekday(.wide).month(.wide).day()),
-                                duration: .seconds(4))
+            kind = .time
+            (symbol, title, subtitle, duration) = ("clock", Self.clock(now), prayerLine() ?? now.formatted(.dateTime.weekday(.wide).month(.wide).day()), .seconds(4))
         }
+        return IslandStatus(symbol: symbol, title: title, subtitle: subtitle, duration: duration,
+                            clock: ClockStatus(kind: kind, time: now, prayer: status, today: today))
     }
 
     /// "Asr · ends 6:12 PM · Maghrib next", for subtitles and the panel pill.

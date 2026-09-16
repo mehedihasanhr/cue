@@ -19,7 +19,8 @@ final class IslandModel {
         var geometryPhase: IslandGeometry.Phase {
             switch self {
             case .collapsed: .collapsed
-            case .flash, .status: .flash
+            case .flash: .flash
+            case .status(let status): status.clock == nil ? .flash : .prompt
             case .prompt(let prompt): prompt.isForm ? .form : .prompt
             case .taskDetail: .form
             case .expanded: .expanded
@@ -184,9 +185,15 @@ struct IslandView: View {
         case .status(let status):
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
-                StatusRow(status: status)
-                    .modifier(IdealWidth { model.contentWidth = $0 })
-                    .frame(height: IslandGeometry.flashContentHeight)
+                if let clock = status.clock {
+                    ClockRow(status: clock)
+                        .modifier(IdealWidth { model.contentWidth = $0 })
+                        .frame(height: IslandGeometry.promptContentHeight)
+                } else {
+                    StatusRow(status: status)
+                        .modifier(IdealWidth { model.contentWidth = $0 })
+                        .frame(height: IslandGeometry.flashContentHeight)
+                }
             }
             .transition(Self.contentTransition)
         case .prompt(let prompt):
@@ -298,6 +305,8 @@ struct IslandStatus: Equatable, Identifiable {
     var swatch: PickedColor? = nil
     /// How long the island holds it before closing again.
     var duration: Duration = .seconds(1.8)
+    /// Drawn as the clock (large time, prayer bar) instead of the plain line.
+    var clock: ClockStatus? = nil
 
     /// Green for done, orange for "nothing to do", white otherwise.
     var tint: Color {

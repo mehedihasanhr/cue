@@ -256,6 +256,8 @@ nonisolated private extension Double {
 nonisolated struct PrayerStatus: Equatable {
     /// The prayer whose time it is; nil between sunrise and Dhuhr.
     var current: Prayer?
+    /// When the current period began (the last boundary).
+    var starts: Date
     /// When the current period ends (the next boundary).
     var ends: Date
     var next: Prayer
@@ -274,16 +276,18 @@ nonisolated struct PrayerStatus: Equatable {
     init(at now: Date, today: PrayerTimes, tomorrow: PrayerTimes) {
         let boundaries: [(Prayer, Date)] = today.ordered.map { ($0.prayer, $0.time) } + [(.fajr, tomorrow[.fajr])]
         if now < today[.fajr] {
-            // Still last night's Isha.
+            // Still last night's Isha (about where yesterday's Isha fell).
             current = .isha
+            starts = today[.isha].addingTimeInterval(-86_400)
             ends = today[.fajr]
             next = .fajr
             nextStarts = today[.fajr]
         } else {
             var index = 0
             while index + 1 < boundaries.count, now >= boundaries[index + 1].1 { index += 1 }
-            let (prayer, _) = boundaries[index]
+            let (prayer, start) = boundaries[index]
             current = prayer == .sunrise ? nil : prayer
+            starts = start
             ends = boundaries[index + 1].1
             next = boundaries[index + 1].0
             nextStarts = boundaries[index + 1].1
