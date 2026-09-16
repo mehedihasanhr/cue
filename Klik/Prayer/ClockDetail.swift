@@ -19,7 +19,6 @@ struct ClockDetail: View {
                     period(status, now: now)
                     windows(today, status: status)
                 } else {
-                    Spacer(minLength: 0)
                     HStack(spacing: 10) {
                         Image(systemName: clock?.enabled == true ? "location.slash" : "moon.stars")
                             .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white.opacity(0.6))
@@ -34,12 +33,12 @@ struct ClockDetail: View {
                             .padding(.horizontal, 12).frame(height: 28)
                             .background(.white.opacity(0.12), in: Capsule())
                     }
-                    Spacer(minLength: 0)
                 }
+                Spacer(minLength: 0)
                 footer
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top) // pinned under the notch, never centred
             .padding(.horizontal, 18)
-            .padding(.top, 0)
             .padding(.bottom, 10)
         }
         .foregroundStyle(.white)
