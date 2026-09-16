@@ -76,10 +76,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         return item
     }
 
+    /// Opens in front of every other app's windows and takes focus, however Klik
+    /// was asked (the island, the menu bar, a hotkey — none of which activate it).
     func present() {
-        NSApp.activate()
         showWindow(nil)
-        window?.makeKeyAndOrderFront(nil)
+        guard let window else { return }
+        window.orderFrontRegardless()
+        NSApp.activateForOverlay(keyWindow: window)
     }
 
     func windowWillClose(_ notification: Notification) {

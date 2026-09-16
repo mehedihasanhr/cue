@@ -31,10 +31,13 @@ final class HostedWindowController: NSWindowController, NSWindowDelegate {
 
     /// Brings the window to the front. Agent apps (no Dock icon) must activate
     /// explicitly, otherwise the window opens behind the current app.
+    /// Opens in front of every other app's windows and takes focus, however Klik
+    /// was asked (the island, the menu bar, a hotkey — none of which activate it).
     func present() {
-        NSApp.activate()
         showWindow(nil)
-        window?.makeKeyAndOrderFront(nil)
+        guard let window else { return }
+        window.orderFrontRegardless()
+        NSApp.activateForOverlay(keyWindow: window)
     }
 
     func windowWillClose(_ notification: Notification) {

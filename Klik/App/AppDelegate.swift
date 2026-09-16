@@ -248,7 +248,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Without an island to ask in, a plain alert confirms a deletion.
     private func confirmWithAlert(_ prompt: IslandPrompt, _ deletion: TaskDeletion) {
-        NSApp.activate()
+        NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.messageText = prompt.title
         alert.informativeText = prompt.detail(tasks)
@@ -431,7 +431,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func presentError(_ error: any Error) {
-        NSApp.activate()
+        NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.messageText = "Something went wrong"
         alert.informativeText = error.localizedDescription
