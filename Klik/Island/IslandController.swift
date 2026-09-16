@@ -392,10 +392,12 @@ final class IslandController {
         window.orderFrontRegardless()
         setPhase(phase, animated: true)
         let duration: Duration = if case .status(let status) = phase { status.duration } else { Self.flashDuration }
+        let isClock = if case .status(let status) = phase { status.clock != nil } else { false }
         flashTask = Task { [weak self] in
             try? await Task.sleep(for: duration)
             guard !Task.isCancelled, let self, model.phase.isFlash else { return }
-            if model.shapeRect(for: model.phase).contains(NSEvent.mouseLocation) {
+            // A pointer resting on a flash opens the panel; the clock just closes.
+            if !isClock, model.shapeRect(for: model.phase).contains(NSEvent.mouseLocation) {
                 pointerInside = true
                 expand()
             } else {
@@ -456,9 +458,8 @@ final class IslandController {
         switch model.phase {
         case .prompt, .taskDetail, .clock: return
         case .status(let status) where status.clock != nil:
-            // The clock stays while the pointer rests on it, so it can be clicked open;
-            // it closes a moment after the pointer leaves.
-            flashTask?.cancel()
+            // The clock ignores the pointer: it neither opens the panel nor stays;
+            // a click opens the clock view, otherwise it closes on its own.
             return
         default: break
         }
@@ -466,15 +467,6 @@ final class IslandController {
     }
 
     private func pointerExited() {
-        if case .status(let status) = model.phase, status.clock != nil {
-            closeTask?.cancel()
-            closeTask = Task { [weak self] in
-                try? await Task.sleep(for: Self.closeDelay)
-                guard !Task.isCancelled, let self, model.phase.isFlash else { return }
-                collapse()
-            }
-            return
-        }
         guard model.phase == .expanded else { return }
         closeTask?.cancel()
         closeTask = Task { [weak self] in
