@@ -128,19 +128,24 @@ nonisolated struct IslandGeometry: Equatable {
     /// `maxFlashWidth`; `.expanded` takes it as the panel's width, never narrower than
     /// the fixed panel and never wider than the screen. `.form`, and a nil width, are
     /// the fixed rects.
-    func rect(for phase: Phase, contentWidth: CGFloat?) -> CGRect {
-        guard let contentWidth else { return rect(for: phase) }
+    /// `contentHeight`: for `.form`, the box takes exactly this content height (the
+    /// clock view) instead of the fixed form height.
+    func rect(for phase: Phase, contentWidth: CGFloat?, contentHeight: CGFloat? = nil) -> CGRect {
         let fixed = rect(for: phase)
-        let width: CGFloat
+        var width = fixed.width
+        var height = fixed.height
         switch phase {
         case .flash, .prompt:
-            width = min(max(contentWidth, collapsed.width + Self.minFlashGrowth), Self.maxFlashWidth).rounded()
+            if let contentWidth { width = min(max(contentWidth, collapsed.width + Self.minFlashGrowth), Self.maxFlashWidth).rounded() }
         case .expanded:
-            width = min(max(contentWidth + Self.panelHorizontalPadding * 2, fixed.width), screen.frame.width).rounded()
-        case .collapsed, .form:
-            return fixed
+            if let contentWidth { width = min(max(contentWidth + Self.panelHorizontalPadding * 2, fixed.width), screen.frame.width).rounded() }
+        case .form:
+            if let contentHeight { height = (collapsed.height + contentHeight).rounded() }
+        case .collapsed:
+            break
         }
-        return Self.hang(size: CGSize(width: width, height: fixed.height), centerX: centerX, top: screen.frame.maxY, in: screen.frame)
+        guard width != fixed.width || height != fixed.height else { return fixed }
+        return Self.hang(size: CGSize(width: width, height: height), centerX: centerX, top: screen.frame.maxY, in: screen.frame)
     }
 
     func radius(for phase: Phase) -> CGFloat {

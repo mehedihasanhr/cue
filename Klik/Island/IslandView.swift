@@ -51,6 +51,8 @@ final class IslandModel {
     var geometry: IslandGeometry?
     /// The compact box's row width, reported by the row itself (see `fitsContent`).
     var contentWidth: CGFloat?
+    /// The clock view's height, reported by the view, so its box fits it.
+    var clockHeight: CGFloat?
     /// The open panel's width: wide enough for its tab row, at least the fixed size.
     private(set) var panelWidth: CGFloat = IslandPanel.size.width
     /// The window must grow with the panel; set by the controller.
@@ -70,7 +72,8 @@ final class IslandModel {
         case .expanded: panelWidth
         default: phase.fitsContent ? contentWidth : nil
         }
-        return geometry.rect(for: phase.geometryPhase, contentWidth: width)
+        let height: CGFloat? = phase == .clock ? clockHeight : nil
+        return geometry.rect(for: phase.geometryPhase, contentWidth: width, contentHeight: height)
     }
     /// A drag with files or an image is over the island.
     var dropping = false
@@ -180,6 +183,7 @@ struct IslandView: View {
             .animation(collapsed ? Self.closeAnimation : Self.openAnimation, value: phase)
             .animation(Self.openAnimation, value: model.contentWidth)
             .animation(Self.openAnimation, value: model.panelWidth)
+            .animation(Self.openAnimation, value: model.clockHeight)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .environment(\.colorScheme, .dark)
         }
@@ -232,7 +236,8 @@ struct IslandView: View {
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
                 ClockDetail(clock: clock, openSettings: { model.onOpenTimeSettings() }, close: { model.onClockClosed() })
-                    .frame(height: IslandGeometry.formContentHeight)
+                    .modifier(IdealHeight { model.clockHeight = $0 })
+                    .frame(width: IslandGeometry.formWidth, height: model.clockHeight ?? IslandGeometry.formContentHeight)
             }
             .transition(Self.contentTransition)
         case .taskDetail(let id):
@@ -267,6 +272,22 @@ struct IslandView: View {
 /// Reports a view's ideal width so the island can fit it. A hidden copy laid out at
 /// its ideal size does the measuring; the visible view then gets the clamped width
 /// and truncates what does not fit.
+/// The vertical twin of `IdealWidth`: the height a view wants at its given width.
+struct IdealHeight: ViewModifier {
+    let report: (CGFloat) -> Void
+
+    func body(content: Content) -> some View {
+        content.background {
+            content
+                .fixedSize(horizontal: false, vertical: true)
+                .hidden()
+                .disabled(true)
+                .accessibilityHidden(true)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { report($0) }
+        }
+    }
+}
+
 struct IdealWidth: ViewModifier {
     let report: (CGFloat) -> Void
 
