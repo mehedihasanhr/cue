@@ -13,9 +13,36 @@ struct CaptureItem: Identifiable, Codable, Hashable {
     var pixelWidth: Int
     var pixelHeight: Int
     var scale: Double
+    /// Kept at the top of the list and by "Clear".
+    var pinned = false
 
     var title: String { (fileName as NSString).deletingPathExtension }
     var dimensions: String { "\(pixelWidth) × \(pixelHeight)" }
+
+    private enum CodingKeys: String, CodingKey { case id, fileName, bookmark, createdAt, pixelWidth, pixelHeight, scale, pinned }
+
+    init(id: UUID, fileName: String, bookmark: Data, createdAt: Date, pixelWidth: Int, pixelHeight: Int, scale: Double) {
+        self.id = id
+        self.fileName = fileName
+        self.bookmark = bookmark
+        self.createdAt = createdAt
+        self.pixelWidth = pixelWidth
+        self.pixelHeight = pixelHeight
+        self.scale = scale
+    }
+
+    /// Indexes written before pinning existed have no `pinned` key.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        fileName = try container.decode(String.self, forKey: .fileName)
+        bookmark = try container.decode(Data.self, forKey: .bookmark)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        pixelWidth = try container.decode(Int.self, forKey: .pixelWidth)
+        pixelHeight = try container.decode(Int.self, forKey: .pixelHeight)
+        scale = try container.decode(Double.self, forKey: .scale)
+        pinned = try container.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
+    }
 }
 
 /// Every capture Klik takes is written to the storage folder as PNG and listed here.
@@ -166,6 +193,16 @@ final class CaptureLibrary {
             }
         }
     }
+
+    func togglePin(_ item: CaptureItem) {
+        guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
+        items[index].pinned.toggle()
+        saveIndex()
+    }
+
+    /// Every capture that is not pinned, for "Clear" (each goes through `delete` so
+    /// open editors close with them).
+    var unpinned: [CaptureItem] { items.filter { !$0.pinned } }
 
     func delete(_ item: CaptureItem) {
         let url = storedURL(for: item)

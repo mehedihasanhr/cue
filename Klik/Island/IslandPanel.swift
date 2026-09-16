@@ -59,7 +59,7 @@ struct IslandPanel: View {
     @FocusState private var searchFocused: Bool
     /// While searching: show hits from this tab only (nil: every tab).
     @State private var resultFilter: IslandTab?
-    /// Clipboard tab: show pinned entries only.
+    /// Captures / Assets / Colors / Clipboard tab: show pinned items only.
     @State private var pinnedOnly = false
     /// A card opened in place of the row.
     @State private var detail: IslandDetail?
@@ -77,6 +77,29 @@ struct IslandPanel: View {
 
     private var filteredClipboard: [ClipboardItem] {
         pinnedOnly ? clipboard.items.filter(\.pinned) : clipboard.items
+    }
+
+    private var filteredCaptures: [CaptureItem] {
+        pinnedOnly ? library.items.filter(\.pinned) : library.items
+    }
+
+    private var filteredAssets: [AssetItem] {
+        pinnedOnly ? assets.items.filter(\.pinned) : assets.items
+    }
+
+    private var filteredColors: [ColorEntry] {
+        pinnedOnly ? colors.items.filter(\.pinned) : colors.items
+    }
+
+    /// The "Pinned" filter and "Clear" (everything unpinned) for a tab's items.
+    @ViewBuilder
+    private func pinControls<Item>(_ items: [Item], pinned: KeyPath<Item, Bool>, clear: @escaping () -> Void) -> some View {
+        if items.contains(where: { $0[keyPath: pinned] }) {
+            smallToggle("Pinned", symbol: pinnedOnly ? "pin.fill" : "pin", help: "Show only pinned items", isOn: $pinnedOnly)
+        }
+        if items.contains(where: { !$0[keyPath: pinned] }) {
+            smallButton("Clear", symbol: "trash", help: "Remove every unpinned item", action: clear)
+        }
     }
 
     var body: some View {
@@ -133,16 +156,15 @@ struct IslandPanel: View {
                     tabPill(value, count: count(for: value))
                 }
                 Spacer(minLength: 16)
+                if tab == .captures {
+                    pinControls(library.items, pinned: \.pinned) { library.unpinned.forEach(actions.delete) }
+                }
                 if tab == .colors {
                     smallButton("Pick", symbol: "eyedropper", help: "Pick a color from the screen", action: actions.pickColor)
+                    pinControls(colors.items, pinned: \.pinned) { colors.clear() }
                 }
                 if tab == .clipboard {
-                    if clipboard.items.contains(where: \.pinned) {
-                        smallToggle("Pinned", symbol: pinnedOnly ? "pin.fill" : "pin", help: "Show only pinned entries", isOn: $pinnedOnly)
-                    }
-                    if clipboard.items.contains(where: { !$0.pinned }) {
-                        smallButton("Clear", symbol: "trash", help: "Remove every unpinned item") { clipboard.clear() }
-                    }
+                    pinControls(clipboard.items, pinned: \.pinned) { clipboard.clear() }
                 }
                 if tab == .assets {
                     smallButton("Paste", symbol: "doc.on.clipboard", help: "Save the image or files on the clipboard as assets") {
@@ -152,6 +174,7 @@ struct IslandPanel: View {
                             FeedbackHUD.show("No image or file on the clipboard", symbol: "tray")
                         }
                     }
+                    pinControls(assets.items, pinned: \.pinned) { assets.clear() }
                 }
             }
             .modifier(IdealWidth { onIdealWidth($0 + Self.horizontalPadding * 2) })
@@ -173,10 +196,10 @@ struct IslandPanel: View {
                         DayStrip(items: everything, date: \.date, dragPayload: dragPayload, card: itemCard)
                     }
                 case .captures:
-                    if library.items.isEmpty {
-                        empty("No captures yet", symbol: "camera.viewfinder")
+                    if filteredCaptures.isEmpty {
+                        empty(pinnedOnly ? "Nothing pinned" : "No captures yet", symbol: "camera.viewfinder")
                     } else {
-                        DayStrip(items: library.items, date: \.createdAt, dragPayload: { item in
+                        DayStrip(items: filteredCaptures, date: \.createdAt, pinned: \.pinned, dragPayload: { item in
                             library.fileURL(for: item).map { .file($0, preview: library.thumbnail(for: item)) }
                         }, card: captureCard)
                     }
@@ -191,18 +214,18 @@ struct IslandPanel: View {
                 case .tasks:
                     IslandTasksView(store: tasksStore, onPrompt: onPrompt, onShowTask: onShowTask)
                 case .colors:
-                    if colors.items.isEmpty {
-                        empty("Pick a color anywhere on screen with the eyedropper", symbol: "eyedropper")
+                    if filteredColors.isEmpty {
+                        empty(pinnedOnly ? "Nothing pinned" : "Pick a color anywhere on screen with the eyedropper", symbol: "eyedropper")
                     } else {
-                        DayStrip(items: colors.items, date: \.createdAt, dragPayload: { entry in
+                        DayStrip(items: filteredColors, date: \.createdAt, pinned: \.pinned, dragPayload: { entry in
                             DragPayload(writer: preferences.colorFormat.string(for: entry.color) as NSString, preview: ColorCard.dragImage(for: entry.color))
                         }, card: colorCard)
                     }
                 case .assets:
-                    if assets.items.isEmpty {
-                        empty("Drop images or files here to keep them handy", symbol: "tray.and.arrow.down")
+                    if filteredAssets.isEmpty {
+                        empty(pinnedOnly ? "Nothing pinned" : "Drop images or files here to keep them handy", symbol: "tray.and.arrow.down")
                     } else {
-                        DayStrip(items: assets.items, date: \.createdAt, dragPayload: { item in
+                        DayStrip(items: filteredAssets, date: \.createdAt, pinned: \.pinned, dragPayload: { item in
                             .file(assets.fileURL(for: item), preview: assets.thumbnail(for: item))
                         }, card: assetCard)
                     }
@@ -213,7 +236,10 @@ struct IslandPanel: View {
                 }
             }
             .frame(height: Self.rowHeight) // the same whether a tab has cards or not
-            .onChange(of: tab) { _, _ in detail = nil }
+            .onChange(of: tab) { _, _ in
+                detail = nil
+                pinnedOnly = false // the filter is per tab; a tab without pinned items has no way to turn it off
+            }
             .onChange(of: searching) { _, _ in
                 detail = nil
                 resultFilter = nil
@@ -730,6 +756,16 @@ private struct Badge: View {
     }
 }
 
+/// Pin / unpin, lit yellow while pinned.
+private struct PinAction: View {
+    let pinned: Bool
+    let perform: () -> Void
+
+    var body: some View {
+        CardAction(symbol: pinned ? "pin.slash.fill" : "pin", help: pinned ? "Unpin" : "Pin", tint: pinned ? .yellow : .white, perform: perform)
+    }
+}
+
 struct CaptureCard: View {
     let item: CaptureItem
     let library: CaptureLibrary
@@ -753,18 +789,24 @@ struct CaptureCard: View {
                 .clipped()
                 .overlay(alignment: .bottom) {
                     CardCaption(title: item.title.replacingOccurrences(of: "Screenshot ", with: ""), date: item.createdAt) {
+                        if item.pinned {
+                            Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(.yellow)
+                        }
                         Badge(text: item.dimensions)
                     }
                 }
         } actionRow: {
-            CardAction(symbol: "eye", help: "Preview", perform: onPreview)
-            CardAction(symbol: "pencil", help: "Edit") { actions.edit(item) }
             CopyAction { actions.copy(item) }
+            CardAction(symbol: "pencil", help: "Edit") { actions.edit(item) }
+            PinAction(pinned: item.pinned) { library.togglePin(item) }
+            CardAction(symbol: "eye", help: "Preview", perform: onPreview)
+            CardAction(symbol: "trash", help: "Remove", tint: .red) { actions.delete(item) }
         } menu: {
             if let clipboard, clipboard.canPaste { Button("Paste", action: paste) }
             Button("Preview") { actions.preview(item) }
             Button("Edit") { actions.edit(item) }
             Button("Copy to Clipboard") { actions.copy(item) }
+            Button(item.pinned ? "Unpin" : "Pin") { library.togglePin(item) }
             Button("Rename…", action: onRename)
             Divider()
             Button("Delete", role: .destructive) { actions.delete(item) }
@@ -802,9 +844,7 @@ struct ClipboardCard: View {
                 }
         } actionRow: {
             CopyAction(perform: copy)
-            CardAction(symbol: item.pinned ? "pin.slash.fill" : "pin", help: item.pinned ? "Unpin" : "Pin", tint: item.pinned ? .yellow : .white) {
-                clipboard.togglePin(item)
-            }
+            PinAction(pinned: item.pinned) { clipboard.togglePin(item) }
             CardAction(symbol: "eye", help: "Preview", perform: onPreview)
         } menu: {
             Button("Copy") { copy() }
@@ -928,21 +968,27 @@ struct AssetCard: View {
             content
                 .overlay(alignment: .bottom) {
                     CardCaption(title: item.fileName, date: item.createdAt) {
+                        if item.pinned {
+                            Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(.yellow)
+                        }
                         Badge(text: item.kind == .image && item.pixelWidth > 0 ? item.dimensions : item.sizeText)
                     }
                 }
         } actionRow: {
-            CardAction(symbol: "eye", help: "Preview", perform: onPreview)
-            CardAction(symbol: "arrow.up.forward.app", help: "Open") { assets.open(item) }
             CopyAction {
                 assets.copy(item)
                 FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: item.fileName, image: assets.thumbnail(for: item))
             }
+            CardAction(symbol: "arrow.up.forward.app", help: "Open") { assets.open(item) }
+            PinAction(pinned: item.pinned) { assets.togglePin(item) }
+            CardAction(symbol: "eye", help: "Preview", perform: onPreview)
+            CardAction(symbol: "trash", help: "Remove", tint: .red) { assets.delete(item) }
         } menu: {
             if let clipboard, clipboard.canPaste { Button("Paste", action: paste) }
             Button("Open") { assets.open(item) }
             Button("Copy") { assets.copy(item) }
             Button("Reveal in Finder") { assets.reveal(item) }
+            Button(item.pinned ? "Unpin" : "Pin") { assets.togglePin(item) }
             Button("Rename…", action: onRename)
             Divider()
             Button("Delete", role: .destructive) { assets.delete(item) }
@@ -1009,12 +1055,17 @@ struct ColorCard: View {
                 }
                 .overlay(alignment: .bottom) {
                     CardCaption(title: entry.name ?? format.string(for: entry.color), date: entry.createdAt) {
+                        if entry.pinned {
+                            Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(.yellow)
+                        }
                         if entry.name != nil || format != .hex { Badge(text: ColorFormat.hex.string(for: entry.color)) }
                     }
                 }
         } actionRow: {
             CopyAction { copy(as: format) }
+            PinAction(pinned: entry.pinned) { colors.togglePin(entry) }
             CardAction(symbol: "eye", help: "Preview", perform: onPreview)
+            CardAction(symbol: "trash", help: "Remove", tint: .red) { colors.delete(entry) }
         } menu: {
             Button("Copy \(format.title)") { copy(as: format) }
             Menu("Copy as") {
@@ -1022,6 +1073,7 @@ struct ColorCard: View {
                     Button(other.string(for: entry.color)) { copy(as: other) }
                 }
             }
+            Button(entry.pinned ? "Unpin" : "Pin") { colors.togglePin(entry) }
             Button(entry.name == nil ? "Name…" : "Rename…", action: onRename)
             Divider()
             Button("Delete", role: .destructive) { colors.delete(entry) }

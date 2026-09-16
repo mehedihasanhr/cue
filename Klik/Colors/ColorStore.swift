@@ -10,11 +10,25 @@ nonisolated struct ColorEntry: Identifiable, Codable, Hashable {
     var createdAt: Date
     /// A label given by the user ("Brand pink").
     var name: String?
+    /// Kept at the top of the list, by "Clear" and by the history limit.
+    var pinned = false
 
     init(color: PickedColor, createdAt: Date = .now) {
         id = UUID()
         self.color = color
         self.createdAt = createdAt
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, color, createdAt, name, pinned }
+
+    /// Files written before pinning existed have no `pinned` key.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        color = try container.decode(PickedColor.self, forKey: .color)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+        pinned = try container.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
     }
 }
 
@@ -44,7 +58,14 @@ final class ColorStore {
     func add(_ color: PickedColor) -> ColorEntry {
         let entry = ColorEntry(color: color)
         items.insert(entry, at: 0)
-        if items.count > Self.limit { items.removeLast(items.count - Self.limit) }
+        // Over the limit, the oldest unpinned colors go.
+        var excess = items.count - Self.limit
+        if excess > 0 {
+            for index in items.indices.reversed() where excess > 0 && !items[index].pinned {
+                items.remove(at: index)
+                excess -= 1
+            }
+        }
         save()
         return entry
     }
@@ -72,13 +93,20 @@ final class ColorStore {
         save()
     }
 
+    func togglePin(_ entry: ColorEntry) {
+        guard let index = items.firstIndex(where: { $0.id == entry.id }) else { return }
+        items[index].pinned.toggle()
+        save()
+    }
+
     func delete(_ entry: ColorEntry) {
         items.removeAll { $0.id == entry.id }
         save()
     }
 
+    /// Removes everything except pinned colors.
     func clear() {
-        items.removeAll()
+        items.removeAll { !$0.pinned }
         save()
     }
 

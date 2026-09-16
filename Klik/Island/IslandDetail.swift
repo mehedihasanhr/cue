@@ -113,7 +113,8 @@ struct IslandDetailBody: View {
             switch detail {
             case .color(let entry):
                 colorView(entry.color)
-            case .capture(let item):
+            case .capture(let stale):
+                let item = library.items.first { $0.id == stale.id } ?? stale // live copy, so Pin reflects its state
                 let url = library.fileURL(for: item)
                 imageRow(placeholder: library.thumbnail(for: item), key: item.id, title: item.title, subtitle: "\(item.dimensions) · \(item.createdAt.formatted(date: .abbreviated, time: .shortened))") {
                     guard let url else { return nil }
@@ -124,8 +125,10 @@ struct IslandDetailBody: View {
                     detailButton("Copy", symbol: "doc.on.doc") { actions.copy(item) }
                     detailButton("Edit", symbol: "pencil") { actions.edit(item) }
                     detailButton("Preview", symbol: "eye") { actions.preview(item) }
+                    detailButton(item.pinned ? "Unpin" : "Pin", symbol: item.pinned ? "pin.slash.fill" : "pin") { library.togglePin(item) }
                 }
-            case .asset(let item):
+            case .asset(let stale):
+                let item = assets.items.first { $0.id == stale.id } ?? stale
                 let url = assets.fileURL(for: item)
                 imageRow(placeholder: assets.thumbnail(for: item), key: item.id, title: item.fileName, subtitle: "\(item.sizeText) · \(item.createdAt.formatted(date: .abbreviated, time: .shortened))") {
                     item.kind == .image ? ImageEncoding.thumbnail(at: url, maxPixels: 1200) : nil
@@ -136,6 +139,7 @@ struct IslandDetailBody: View {
                     }
                     detailButton("Open", symbol: "arrow.up.forward.app") { assets.open(item) }
                     detailButton("Reveal", symbol: "folder") { assets.reveal(item) }
+                    detailButton(item.pinned ? "Unpin" : "Pin", symbol: item.pinned ? "pin.slash.fill" : "pin") { assets.togglePin(item) }
                 }
             case .clipboard(let item):
                 clipboardView(clipboard.items.first { $0.id == item.id } ?? item) // live copy, so Pin reflects its state

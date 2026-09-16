@@ -367,13 +367,13 @@ struct FloatingPanelView: View {
         case .tasks:
             IslandTasksView(store: tasksStore, onPrompt: onPrompt, onShowTask: onShowTask)
         case .captures:
-            list(library.items, date: \.createdAt, empty: "No captures yet", card: captureCard, row: captureRow)
+            list(library.items, date: \.createdAt, pinned: \.pinned, empty: "No captures yet", card: captureCard, row: captureRow)
         case .clipboard:
             list(clipboard.items, date: \.createdAt, pinned: \.pinned, empty: "Nothing copied yet", card: clipboardCard, row: clipboardRow)
         case .assets:
-            list(assets.items, date: \.createdAt, empty: "No assets yet — drop files on the island", card: assetCard, row: assetRow)
+            list(assets.items, date: \.createdAt, pinned: \.pinned, empty: "No assets yet — drop files on the island", card: assetCard, row: assetRow)
         case .colors:
-            list(colors.items, date: \.createdAt, empty: "No colors yet — use the eyedropper", card: colorCard, row: colorRow)
+            list(colors.items, date: \.createdAt, pinned: \.pinned, empty: "No colors yet — use the eyedropper", card: colorCard, row: colorRow)
         }
     }
 
@@ -392,6 +392,7 @@ struct FloatingPanelView: View {
                 Button("Preview") { actions.preview(item) }
                 Button("Edit") { actions.edit(item) }
                 Button("Copy to Clipboard") { actions.copy(item) }
+                Button(item.pinned ? "Unpin" : "Pin") { library.togglePin(item) }
                 Divider()
                 Button("Delete", role: .destructive) { actions.delete(item) }
             }
@@ -431,6 +432,7 @@ struct FloatingPanelView: View {
                 Button("Open") { assets.open(item) }
                 Button("Copy") { assets.copy(item) }
                 Button("Reveal in Finder") { assets.reveal(item) }
+                Button(item.pinned ? "Unpin" : "Pin") { assets.togglePin(item) }
                 Divider()
                 Button("Delete", role: .destructive) { assets.delete(item) }
             }
@@ -454,6 +456,7 @@ struct FloatingPanelView: View {
                     Button(format.string(for: entry.color)) { colors.copy(entry, as: format) }
                 }
             }
+            Button(entry.pinned ? "Unpin" : "Pin") { colors.togglePin(entry) }
             Divider()
             Button("Delete", role: .destructive) { colors.delete(entry) }
         }

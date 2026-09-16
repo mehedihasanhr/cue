@@ -16,6 +16,33 @@ nonisolated struct AssetItem: Identifiable, Codable, Hashable {
     var pixelWidth: Int
     var pixelHeight: Int
     var createdAt: Date
+    /// Kept at the top of the list and by "Clear".
+    var pinned = false
+
+    private enum CodingKeys: String, CodingKey { case id, fileName, kind, byteSize, pixelWidth, pixelHeight, createdAt, pinned }
+
+    init(id: UUID, fileName: String, kind: Kind, byteSize: Int, pixelWidth: Int, pixelHeight: Int, createdAt: Date) {
+        self.id = id
+        self.fileName = fileName
+        self.kind = kind
+        self.byteSize = byteSize
+        self.pixelWidth = pixelWidth
+        self.pixelHeight = pixelHeight
+        self.createdAt = createdAt
+    }
+
+    /// Indexes written before pinning existed have no `pinned` key.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        fileName = try container.decode(String.self, forKey: .fileName)
+        kind = try container.decode(Kind.self, forKey: .kind)
+        byteSize = try container.decode(Int.self, forKey: .byteSize)
+        pixelWidth = try container.decode(Int.self, forKey: .pixelWidth)
+        pixelHeight = try container.decode(Int.self, forKey: .pixelHeight)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        pinned = try container.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
+    }
 
     var title: String { (fileName as NSString).deletingPathExtension }
     var dimensions: String { "\(pixelWidth) × \(pixelHeight)" }
@@ -206,10 +233,29 @@ final class AssetStore {
         NSWorkspace.shared.activateFileViewerSelecting([fileURL(for: item)])
     }
 
+    func togglePin(_ item: AssetItem) {
+        guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
+        items[index].pinned.toggle()
+        saveIndex()
+    }
+
     func delete(_ item: AssetItem) {
         items.removeAll { $0.id == item.id }
         thumbnails[item.id] = nil
         saveIndex()
+        removeFolder(of: item)
+    }
+
+    /// Removes everything except pinned items.
+    func clear() {
+        let removed = items.filter { !$0.pinned }
+        items.removeAll { !$0.pinned }
+        for item in removed { thumbnails[item.id] = nil }
+        saveIndex()
+        removed.forEach(removeFolder)
+    }
+
+    private func removeFolder(of item: AssetItem) {
         let folder = folderURL.appendingPathComponent(item.id.uuidString, isDirectory: true)
         storage.async { try? FileManager.default.removeItem(at: folder) }
     }
