@@ -53,7 +53,7 @@ enum IslandSearch {
         items += clipboard.items.map(IslandItem.clipboard)
         items += assets.items.map(IslandItem.asset)
         items += colors.items.map(IslandItem.color)
-        items += tasks.tasks.map(IslandItem.task)
+        items += tasks.tasks.filter { $0.status != .complete }.map(IslandItem.task) // done tasks are the Tasks tab's "Complete" filter
         return items.sorted { $0.date > $1.date }
     }
 
