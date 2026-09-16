@@ -7,6 +7,7 @@ enum IslandItem: Identifiable {
     case asset(AssetItem)
     case color(ColorEntry)
     case task(TaskItem)
+    case snippet(Snippet)
 
     var id: UUID {
         switch self {
@@ -15,6 +16,7 @@ enum IslandItem: Identifiable {
         case .asset(let item): item.id
         case .color(let entry): entry.id
         case .task(let task): task.id
+        case .snippet(let snippet): snippet.id
         }
     }
 
@@ -25,6 +27,7 @@ enum IslandItem: Identifiable {
         case .asset: .assets
         case .color: .colors
         case .task: .tasks
+        case .snippet: .snippets
         }
     }
 
@@ -35,6 +38,7 @@ enum IslandItem: Identifiable {
         case .asset(let item): item.createdAt
         case .color(let entry): entry.createdAt
         case .task(let task): task.createdAt
+        case .snippet(let snippet): snippet.createdAt
         }
     }
 }
@@ -47,18 +51,19 @@ enum IslandItem: Identifiable {
 enum IslandSearch {
     /// Everything, newest first, for the All tab.
     static func everything(library: CaptureLibrary, clipboard: ClipboardHistory, assets: AssetStore,
-                           colors: ColorStore, tasks: TaskStore) -> [IslandItem] {
+                           colors: ColorStore, tasks: TaskStore, snippets: SnippetStore) -> [IslandItem] {
         var items: [IslandItem] = []
         items += library.items.map(IslandItem.capture)
         items += clipboard.items.map(IslandItem.clipboard)
         items += assets.items.map(IslandItem.asset)
         items += colors.items.map(IslandItem.color)
         items += tasks.tasks.filter { $0.status != .complete }.map(IslandItem.task) // done tasks are the Tasks tab's "Complete" filter
+        items += snippets.items.map(IslandItem.snippet)
         return items.sorted { $0.date > $1.date }
     }
 
     static func hits(for query: String, library: CaptureLibrary, clipboard: ClipboardHistory, assets: AssetStore,
-                     colors: ColorStore, tasks: TaskStore) -> [IslandItem] {
+                     colors: ColorStore, tasks: TaskStore, snippets: SnippetStore) -> [IslandItem] {
         let terms = query.split(whereSeparator: \.isWhitespace).map(String.init)
         guard !terms.isEmpty else { return [] }
         func matches(_ fields: [String?]) -> Bool {
@@ -70,6 +75,7 @@ enum IslandSearch {
         hits += assets.items.filter { matches([$0.fileName]) }.map(IslandItem.asset)
         hits += colors.items.filter { entry in matches([entry.name] + ColorFormat.allCases.map { $0.string(for: entry.color) }) }.map(IslandItem.color)
         hits += tasks.tasks.filter { matches([$0.title, $0.notes, tasks.project($0.projectID)?.name, $0.status.title, $0.priority.title]) }.map(IslandItem.task)
+        hits += snippets.items.filter { matches([$0.keyword, $0.name, $0.text]) }.map(IslandItem.snippet)
         return hits
     }
 

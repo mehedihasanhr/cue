@@ -32,6 +32,14 @@ final class AppPreferences {
         static let prayerKnownLongitude = "prayer.knownLongitude"
         static let prayerAnnouncements = "prayer.announcements"
         static let prayerAdjustments = "prayer.adjustments"
+        static let snippetsEnabled = "snippets.enabled"
+    }
+
+    // MARK: Snippets
+
+    /// Expand snippet keywords as they are typed in any app (needs Accessibility).
+    var snippetsEnabled: Bool {
+        didSet { defaults.set(snippetsEnabled, forKey: Key.snippetsEnabled) }
     }
 
     // MARK: Time & prayer
@@ -276,6 +284,7 @@ final class AppPreferences {
             prayerKnownPlace = nil
         }
         prayerAnnouncements = defaults.object(forKey: Key.prayerAnnouncements) as? Bool ?? true
+        snippetsEnabled = defaults.object(forKey: Key.snippetsEnabled) as? Bool ?? true
         let stored = defaults.dictionary(forKey: Key.prayerAdjustments) as? [String: Int] ?? [:]
         prayerAdjustments = Dictionary(uniqueKeysWithValues: stored.compactMap { key, value in Prayer(rawValue: key).map { ($0, value) } })
         customSoundURL = defaults.data(forKey: Key.soundBookmark).flatMap(Self.resolve)

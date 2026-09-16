@@ -89,6 +89,17 @@ The macOS defaults (⌘⇧3/4/5/6) are handled by the system first; Klik marks t
 warning if you bind them, and links to Keyboard › Keyboard Shortcuts › Screenshots
 where they can be turned off.
 
+### Snippets (text expander)
+
+The island's **Snippets** tab. Give a snippet a keyword (`;welcome`) and a template;
+type the keyword in any app and Klik replaces it with the template. `{{Name}}` in the
+template is a blank Klik asks for before pasting (in the island's compact box);
+`{{date}}`, `{{time}}`, `{{datetime}}` and `{{clipboard}}` fill themselves. A snippet
+can paste an asset (an image or a file) instead of text. Make one with **New** in the
+tab, or from a clipboard entry or an asset with **Make Snippet…** in its menu. Needs
+Accessibility access (Settings › Island › Snippets); what was on the clipboard is put
+back after the paste.
+
 ### Time & prayer times
 
 Settings › Time. The island shows the time for a moment on the hour (or every 15 / 30

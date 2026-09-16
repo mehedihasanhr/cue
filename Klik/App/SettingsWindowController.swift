@@ -20,7 +20,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         ))
         tabs.addTabViewItem(Self.pane(
             "Island", symbol: "rectangle.topthird.inset.filled", height: 470,
-            IslandSettingsView().environment(preferences)
+            IslandSettingsView().environment(preferences).environment(model)
         ))
         tabs.addTabViewItem(Self.pane(
             "Capture", symbol: "camera", height: 330,

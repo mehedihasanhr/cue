@@ -149,6 +149,7 @@ struct IslandView: View {
     let assets: AssetStore
     let colors: ColorStore
     let tasks: TaskStore
+    let snippets: SnippetStore
     let actions: HistoryActions
     @Environment(PrayerClock.self) private var clock: PrayerClock?
 
@@ -219,7 +220,13 @@ struct IslandView: View {
         case .prompt(let prompt):
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
-                if prompt.isForm {
+                if case .snippet = prompt.kind {
+                    SnippetFormRow(prompt: prompt, store: snippets, assets: assets) { answer in model.onPromptFinished(prompt, answer) }
+                        .frame(height: IslandGeometry.formContentHeight)
+                } else if case .fill(let snippet) = prompt.kind {
+                    SnippetFillRow(snippet: snippet) { answer in model.onPromptFinished(prompt, answer) }
+                        .frame(height: IslandGeometry.formContentHeight)
+                } else if prompt.isForm {
                     TaskFormRow(prompt: prompt, store: tasks) { answer in model.onPromptFinished(prompt, answer) }
                         .frame(height: IslandGeometry.formContentHeight)
                 } else if prompt.isConfirm {
@@ -254,7 +261,7 @@ struct IslandView: View {
         case .expanded:
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
-                IslandPanel(library: library, clipboard: clipboard, assets: assets, colors: colors, tasksStore: tasks, actions: actions, dropping: model.dropping,
+                IslandPanel(library: library, clipboard: clipboard, assets: assets, colors: colors, tasksStore: tasks, snippets: snippets, actions: actions, dropping: model.dropping,
                             width: model.panelWidth, onIdealWidth: { model.setPanelWidth($0) }, onPrompt: { model.onPrompt($0) }, onShowTask: { model.onShowTask($0) },
                             onShowClock: { model.onShowClock() })
                     .padding(.horizontal, IslandGeometry.panelHorizontalPadding)
@@ -408,6 +415,10 @@ struct IslandPrompt: Hashable {
         case rename(IslandDetail)
         /// Confirm deleting a task or a project.
         case delete(TaskDeletion)
+        /// A new snippet (from a template text or an asset), or an edit of one.
+        case snippet(Snippet?, initialText: String, assetID: UUID?)
+        /// Fill a snippet's blanks before it is pasted.
+        case fill(Snippet)
     }
 
     let kind: Kind
@@ -427,8 +438,10 @@ struct IslandPrompt: Hashable {
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
 
     var isForm: Bool {
-        if case .task = kind { return true }
-        return false
+        switch kind {
+        case .task, .snippet, .fill: true
+        default: false
+        }
     }
 
     /// A yes/no box (Cancel / Delete) rather than a text field.
@@ -454,6 +467,8 @@ struct IslandPrompt: Hashable {
             if parent == nil { return "New project" }
             return context.map { "New sub-project in \($0)" } ?? "New sub-project"
         case .task: return editing == nil ? "New task" : "Edit task"
+        case .snippet(let snippet, _, let asset): return snippet == nil ? (asset == nil ? "New snippet" : "New snippet from this file") : "Edit snippet"
+        case .fill(let snippet): return "Fill in \(snippet.title)"
         case .rename(let detail):
             switch detail {
             case .capture: return "Rename capture"
@@ -469,7 +484,7 @@ struct IslandPrompt: Hashable {
         case .project: "Project name"
         case .task: "Task title"
         case .rename: "Name"
-        case .delete: ""
+        case .delete, .snippet, .fill: ""
         }
     }
 
@@ -479,6 +494,7 @@ struct IslandPrompt: Hashable {
         case .task: "checklist"
         case .rename: "pencil"
         case .delete: "trash"
+        case .snippet, .fill: "text.badge.plus"
         }
     }
 }
@@ -489,6 +505,10 @@ struct PromptAnswer {
     var notes = ""
     var projectID: UUID?
     var priority: TaskPriority = .medium
+    /// A snippet's name.
+    var name = ""
+    /// A snippet's filled blanks.
+    var values: [String: String] = [:]
 }
 
 /// The compact island's one-line form: an icon, what is being created, and the field.
@@ -1218,7 +1238,7 @@ struct PriorityMenu: View {
 
 // MARK: - Prompt pieces
 
-private struct PromptBadge: View {
+struct PromptBadge: View {
     let symbol: String
     var tint: Color = .brand
 
@@ -1231,7 +1251,7 @@ private struct PromptBadge: View {
     }
 }
 
-private struct PromptLabel: View {
+struct PromptLabel: View {
     let text: String
 
     init(_ text: String) { self.text = text }
@@ -1245,7 +1265,7 @@ private struct PromptLabel: View {
 }
 
 /// A bordered field container.
-private struct PromptBox<Content: View>: View {
+struct PromptBox<Content: View>: View {
     var height: CGFloat = 30
     @ViewBuilder let content: () -> Content
 
@@ -1260,7 +1280,7 @@ private struct PromptBox<Content: View>: View {
 }
 
 /// Makes the island the key window so the form's fields receive typing.
-private struct KeyWindowFocus: NSViewRepresentable {
+struct KeyWindowFocus: NSViewRepresentable {
     func makeNSView(context: Context) -> KeyView { KeyView() }
     func updateNSView(_ view: KeyView, context: Context) {}
 

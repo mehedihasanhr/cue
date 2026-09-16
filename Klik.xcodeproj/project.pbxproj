@@ -40,6 +40,7 @@
 				Support/LRUCache.swift,
 				Support/PanelPosition.swift,
 				Prayer/PrayerCalculator.swift,
+				Snippets/SnippetStore.swift,
 				Support/SQLite.swift,
 				Tasks/MarkdownView.swift,
 				Tasks/TaskStore.swift,

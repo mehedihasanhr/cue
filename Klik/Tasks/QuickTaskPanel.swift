@@ -13,7 +13,22 @@ final class QuickTaskPanel: NSPanel {
     private var monitors: [Any] = []
     private let finish: (PromptAnswer?) -> Void
 
-    init(store: TaskStore, finish: @escaping (PromptAnswer?) -> Void) {
+    convenience init(store: TaskStore, finish: @escaping (PromptAnswer?) -> Void) {
+        let prompt = IslandPrompt(kind: .task(project: nil))
+        self.init(finish: finish) { close in
+            TaskFormRow(prompt: prompt, store: store) { answer in
+                finish(answer)
+                close()
+            }
+        }
+    }
+
+    /// Any of the island's forms (a snippet, its blanks) as a floating window.
+    convenience init(form: some View) {
+        self.init(finish: { _ in }) { _ in form }
+    }
+
+    private init(finish: @escaping (PromptAnswer?) -> Void, form: (@escaping () -> Void) -> some View) {
         self.finish = finish
         super.init(
             contentRect: CGRect(origin: .zero, size: CGSize(width: Self.size.width + Self.margin * 2, height: Self.size.height + Self.margin * 2)),
@@ -35,11 +50,7 @@ final class QuickTaskPanel: NSPanel {
         collectionBehavior = [.canJoinAllSpaces, .transient, .fullScreenAuxiliary]
         animationBehavior = .utilityWindow
 
-        let prompt = IslandPrompt(kind: .task(project: nil))
-        let root = TaskFormRow(prompt: prompt, store: store) { [weak self] answer in
-            self?.finish(answer)
-            self?.close()
-        }
+        let root = form { [weak self] in self?.close() }
         .padding(.top, 8)
         .frame(width: Self.size.width, height: Self.size.height)
         .liquidGlass(cornerRadius: 22)

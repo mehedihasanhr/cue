@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The panel's tabs, in display order.
 enum IslandTab: String, CaseIterable {
-    case all, assets, tasks, captures, colors, clipboard
+    case all, assets, tasks, captures, colors, snippets, clipboard
 
     static let storageKey = "island.tab"
 
@@ -15,6 +15,7 @@ enum IslandTab: String, CaseIterable {
         case .assets: "Assets"
         case .colors: "Colors"
         case .tasks: "Tasks"
+        case .snippets: "Snippets"
         }
     }
 
@@ -26,6 +27,7 @@ enum IslandTab: String, CaseIterable {
         case .assets: "tray.full"
         case .colors: "paintpalette"
         case .tasks: "checklist"
+        case .snippets: "text.badge.plus"
         }
     }
 }
@@ -43,6 +45,7 @@ struct IslandPanel: View {
     let assets: AssetStore
     let colors: ColorStore
     let tasksStore: TaskStore
+    let snippets: SnippetStore
     let actions: HistoryActions
     @Environment(AppPreferences.self) private var preferences
     @Environment(PrayerClock.self) private var clock: PrayerClock?
@@ -75,7 +78,7 @@ struct IslandPanel: View {
     @State private var hits: [IslandItem] = []
 
     private func refreshHits() {
-        hits = searching ? IslandSearch.hits(for: search, library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore) : []
+        hits = searching ? IslandSearch.hits(for: search, library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore, snippets: snippets) : []
     }
 
     private var filteredClipboard: [ClipboardItem] {
@@ -165,6 +168,9 @@ struct IslandPanel: View {
                 if tab == .captures {
                     pinControls(library.items, pinned: \.pinned) { library.unpinned.forEach(actions.delete) }
                 }
+                if tab == .snippets {
+                    smallButton("New", symbol: "plus", help: "A new snippet") { onPrompt(IslandPrompt(kind: .snippet(nil, initialText: "", assetID: nil))) }
+                }
                 if tab == .colors {
                     smallButton("Pick", symbol: "eyedropper", help: "Pick a color from the screen", action: actions.pickColor)
                     pinControls(colors.items, pinned: \.pinned) { colors.clear() }
@@ -195,7 +201,7 @@ struct IslandPanel: View {
                 } else {
                 switch tab {
                 case .all:
-                    let everything = IslandSearch.everything(library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore)
+                    let everything = IslandSearch.everything(library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore, snippets: snippets)
                     if everything.isEmpty {
                         empty("Nothing yet — capture, copy or drop something", symbol: "square.grid.2x2")
                     } else {
@@ -219,6 +225,12 @@ struct IslandPanel: View {
                     }
                 case .tasks:
                     IslandTasksView(store: tasksStore, onPrompt: onPrompt, onShowTask: onShowTask)
+                case .snippets:
+                    if snippets.items.isEmpty {
+                        empty("Type a keyword anywhere and Klik pastes the snippet — add one with New", symbol: "text.badge.plus")
+                    } else {
+                        DayStrip(items: snippets.items, date: \.createdAt, dragPayload: snippetDrag, card: snippetCard)
+                    }
                 case .colors:
                     if filteredColors.isEmpty {
                         empty(pinnedOnly ? "Nothing pinned" : "Pick a color anywhere on screen with the eyedropper", symbol: "eyedropper")
@@ -271,12 +283,16 @@ struct IslandPanel: View {
         ClipboardCard(item: item, clipboard: clipboard, onPreview: { open(.clipboard(item)) }, onRename: {
             onPrompt(IslandPrompt(kind: .rename(.clipboard(item)), initial: item.name ?? "", image: clipboard.thumbnail(for: item),
                                   swatch: item.kind == .color ? PickedColor(hex: item.text) : nil))
+        }, onSnippet: { text in
+            onPrompt(IslandPrompt(kind: .snippet(nil, initialText: text, assetID: nil)))
         })
     }
 
     private func assetCard(_ item: AssetItem) -> some View {
         AssetCard(item: item, assets: assets, clipboard: clipboard, onPreview: { open(.asset(item)) }, onRename: {
             onPrompt(IslandPrompt(kind: .rename(.asset(item)), initial: item.title, image: assets.thumbnail(for: item)))
+        }, onSnippet: {
+            onPrompt(IslandPrompt(kind: .snippet(nil, initialText: "", assetID: item.id)))
         })
     }
 
@@ -353,17 +369,28 @@ struct IslandPanel: View {
         case .asset(let item): assetCard(item)
         case .color(let entry): colorCard(entry)
         case .task(let task): TaskCard(task: task, store: tasksStore, onOpen: { onShowTask(task) }, onDelete: { onPrompt(IslandPrompt(kind: .delete(.task(task)))) })
+        case .snippet(let snippet): snippetCard(snippet)
         }
+    }
+
+    private func snippetDrag(_ snippet: Snippet) -> DragPayload? {
+        DragPayload(writer: SnippetTemplate.expand(snippet.text, values: [:]) as NSString, preview: SnippetCard.dragImage(for: snippet))
+    }
+
+    private func snippetCard(_ snippet: Snippet) -> some View {
+        SnippetCard(snippet: snippet, store: snippets, assets: assets, clipboard: clipboard,
+                    onEdit: { onPrompt(IslandPrompt(kind: .snippet(snippet, initialText: "", assetID: nil))) })
     }
 
     private func count(for tab: IslandTab) -> Int {
         switch tab {
-        case .all: library.items.count + clipboard.items.count + assets.items.count + colors.items.count + tasksStore.tasks.count
+        case .all: library.items.count + clipboard.items.count + assets.items.count + colors.items.count + tasksStore.tasks.count + snippets.items.count
         case .captures: library.items.count
         case .clipboard: clipboard.items.count
         case .assets: assets.items.count
         case .colors: colors.items.count
         case .tasks: tasksStore.tasks.count { $0.status != .complete }
+        case .snippets: snippets.items.count
         }
     }
 
@@ -374,6 +401,7 @@ struct IslandPanel: View {
         case .asset(let item): .file(assets.fileURL(for: item), preview: assets.thumbnail(for: item))
         case .color(let entry): DragPayload(writer: preferences.colorFormat.string(for: entry.color) as NSString, preview: ColorCard.dragImage(for: entry.color))
         case .task: nil
+        case .snippet(let snippet): DragPayload(writer: SnippetTemplate.expand(snippet.text, values: [:]) as NSString, preview: SnippetCard.dragImage(for: snippet))
         }
     }
 
@@ -641,7 +669,7 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
 
 /// Rounded card chrome shared by captures and clipboard items: blue border on hover,
 /// circular action buttons at the top, click and context menu.
-private struct CardChrome<Content: View, Actions: View, Menu: View>: View {
+struct CardChrome<Content: View, Actions: View, Menu: View>: View {
     @Binding var hovering: Bool
     let onTap: () -> Void
     @ViewBuilder let content: () -> Content
@@ -675,7 +703,7 @@ private struct CardChrome<Content: View, Actions: View, Menu: View>: View {
 }
 
 /// A circular button for the card's hover row.
-private struct CardAction: View {
+struct CardAction: View {
     let symbol: String
     let help: String
     var tint: Color = .white
@@ -697,7 +725,7 @@ private struct CardAction: View {
 }
 
 /// Copy button that turns into a green tick for a moment.
-private struct CopyAction: View {
+struct CopyAction: View {
     let perform: () -> Void
     @State private var copied = false
 
@@ -715,7 +743,7 @@ private struct CopyAction: View {
 
 /// Small caption over a short gradient at the foot of a card: the content is the
 /// point, the caption only helps telling cards apart.
-private struct CardCaption<Leading: View>: View {
+struct CardCaption<Leading: View>: View {
     let title: String
     let date: Date
     @ViewBuilder let trailing: () -> Leading
@@ -748,7 +776,7 @@ private struct CardCaption<Leading: View>: View {
     }
 }
 
-private struct Badge: View {
+struct Badge: View {
     let text: String
 
     var body: some View {
@@ -832,6 +860,8 @@ struct ClipboardCard: View {
     let clipboard: ClipboardHistory
     var onPreview: () -> Void = {}
     var onRename: () -> Void = {}
+    /// A snippet from this entry's text.
+    var onSnippet: (String) -> Void = { _ in }
     @State private var hovering = false
 
     var body: some View {
@@ -871,6 +901,9 @@ struct ClipboardCard: View {
             }
             Button(item.pinned ? "Unpin" : "Pin") { clipboard.togglePin(item) }
             Button(item.name == nil ? "Name…" : "Rename…", action: onRename)
+            if item.kind == .text || item.kind == .link || item.kind == .color {
+                Button("Make Snippet…") { onSnippet(item.text) }
+            }
             Divider()
             Button("Delete", role: .destructive) { clipboard.delete(item) }
         }
@@ -968,6 +1001,8 @@ struct AssetCard: View {
     var clipboard: ClipboardHistory? = nil
     var onPreview: () -> Void = {}
     var onRename: () -> Void = {}
+    /// A snippet that pastes this file.
+    var onSnippet: () -> Void = {}
     @State private var hovering = false
 
     var body: some View {
@@ -997,6 +1032,7 @@ struct AssetCard: View {
             Button("Reveal in Finder") { assets.reveal(item) }
             Button(item.pinned ? "Unpin" : "Pin") { assets.togglePin(item) }
             Button("Rename…", action: onRename)
+            Button("Make Snippet…", action: onSnippet)
             Divider()
             Button("Delete", role: .destructive) { assets.delete(item) }
         }

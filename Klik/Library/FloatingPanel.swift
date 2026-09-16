@@ -94,6 +94,7 @@ struct FloatingPanelView: View {
     let assets: AssetStore
     let colors: ColorStore
     let tasksStore: TaskStore
+    let snippets: SnippetStore
     let actions: HistoryActions
     var onPrompt: (IslandPrompt) -> Void = { _ in }
     var onShowTask: (TaskItem) -> Void = { _ in }
@@ -191,7 +192,7 @@ struct FloatingPanelView: View {
     @State private var hits: [IslandItem] = []
 
     private func refreshHits() {
-        hits = searching ? IslandSearch.hits(for: search, library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore) : []
+        hits = searching ? IslandSearch.hits(for: search, library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore, snippets: snippets) : []
     }
 
     private func resultPill(_ value: IslandTab?, title: String, count: Int, symbol: String) -> some View {
@@ -262,6 +263,7 @@ struct FloatingPanelView: View {
         case .asset(let item): assetCard(item)
         case .color(let entry): colorCard(entry)
         case .task(let task): taskRow(task)
+        case .snippet(let snippet): snippetCard(snippet)
         }
     }
 
@@ -273,6 +275,25 @@ struct FloatingPanelView: View {
         case .asset(let item): assetRow(item)
         case .color(let entry): colorRow(entry)
         case .task(let task): taskRow(task)
+        case .snippet(let snippet): snippetRow(snippet)
+        }
+    }
+
+    private func snippetCard(_ snippet: Snippet) -> some View {
+        SnippetCard(snippet: snippet, store: snippets, assets: assets, clipboard: clipboard,
+                    onEdit: { onPrompt(IslandPrompt(kind: .snippet(snippet, initialText: "", assetID: nil))) })
+    }
+
+    private func snippetRow(_ snippet: Snippet) -> some View {
+        ListRow(symbol: "text.badge.plus", title: "\(snippet.keyword)  \(snippet.name)",
+                subtitle: snippet.assetID != nil ? "Pastes a file" : snippet.text.replacingOccurrences(of: "\n", with: " ")) {
+            SnippetCard.copy(snippet, store: snippets, assets: assets)
+        }
+        .contextMenu {
+            Button("Copy") { SnippetCard.copy(snippet, store: snippets, assets: assets) }
+            Button("Edit…") { onPrompt(IslandPrompt(kind: .snippet(snippet, initialText: "", assetID: nil))) }
+            Divider()
+            Button("Delete", role: .destructive) { snippets.delete(snippet) }
         }
     }
 
@@ -321,6 +342,7 @@ struct FloatingPanelView: View {
         case .assets: assets.items.count
         case .colors: colors.items.count
         case .tasks: tasksStore.tasks.filter { $0.status != .complete }.count
+        case .snippets: snippets.items.count
         }
         return Button {
             withAnimation(.easeOut(duration: 0.15)) { tab = value }
@@ -364,10 +386,12 @@ struct FloatingPanelView: View {
     private var content: some View {
         switch tab {
         case .all:
-            list(IslandSearch.everything(library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore),
+            list(IslandSearch.everything(library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore, snippets: snippets),
                  date: \.date, empty: "Nothing yet — capture, copy or drop something", card: hitCard, row: hitRow)
         case .tasks:
             IslandTasksView(store: tasksStore, onPrompt: onPrompt, onShowTask: onShowTask)
+        case .snippets:
+            list(snippets.items, date: \.createdAt, empty: "No snippets yet — make one from a clipboard entry or an asset, or with New in the island", card: snippetCard, row: snippetRow)
         case .captures:
             list(library.items, date: \.createdAt, pinned: \.pinned, empty: "No captures yet", card: captureCard, row: captureRow)
         case .clipboard:
@@ -416,6 +440,9 @@ struct FloatingPanelView: View {
         .contextMenu {
             Button("Copy") { clipboard.copy(item) }
             Button(item.pinned ? "Unpin" : "Pin") { clipboard.togglePin(item) }
+            if item.kind == .text || item.kind == .link || item.kind == .color {
+                Button("Make Snippet…") { onPrompt(IslandPrompt(kind: .snippet(nil, initialText: item.text, assetID: nil))) }
+            }
             Divider()
             Button("Delete", role: .destructive) { clipboard.delete(item) }
         }
@@ -435,6 +462,7 @@ struct FloatingPanelView: View {
                 Button("Copy") { assets.copy(item) }
                 Button("Reveal in Finder") { assets.reveal(item) }
                 Button(item.pinned ? "Unpin" : "Pin") { assets.togglePin(item) }
+                Button("Make Snippet…") { onPrompt(IslandPrompt(kind: .snippet(nil, initialText: "", assetID: item.id))) }
                 Divider()
                 Button("Delete", role: .destructive) { assets.delete(item) }
             }

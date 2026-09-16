@@ -11,6 +11,7 @@ final class IslandController {
     private let model = IslandModel()
     private let preferences: AppPreferences
     private let tasks: TaskStore
+    private let snippets: SnippetStore
     private let library: CaptureLibrary
     private let clipboard: ClipboardHistory
     private let assets: AssetStore
@@ -29,9 +30,14 @@ final class IslandController {
     private static let flashDuration: Duration = .seconds(1.8)
     private static let collapseAnimation: Duration = .milliseconds(380)
 
-    init(library: CaptureLibrary, clipboard: ClipboardHistory, assets: AssetStore, colors: ColorStore, tasks: TaskStore, actions: HistoryActions, preferences: AppPreferences, clock: PrayerClock? = nil) {
+    /// A snippet's blanks were filled in the compact box; set by the app delegate.
+    var onSnippetFilled: (Snippet, [String: String]) -> Void = { _, _ in }
+
+    init(library: CaptureLibrary, clipboard: ClipboardHistory, assets: AssetStore, colors: ColorStore, tasks: TaskStore, snippets: SnippetStore,
+         actions: HistoryActions, preferences: AppPreferences, clock: PrayerClock? = nil) {
         self.preferences = preferences
         self.tasks = tasks
+        self.snippets = snippets
         self.library = library
         self.clipboard = clipboard
         self.assets = assets
@@ -41,7 +47,7 @@ final class IslandController {
         content.onDragEntered = { [weak self] in self?.dragEntered() }
         content.onDragExited = { [weak self] in self?.model.dropping = false }
         content.onDrop = { [weak self] urls, image in self?.drop(urls: urls, image: image, into: assets) }
-        let host = NSHostingView(rootView: IslandView(model: model, library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasks, actions: actions)
+        let host = NSHostingView(rootView: IslandView(model: model, library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasks, snippets: snippets, actions: actions)
             .environment(preferences).environment(clock))
         host.sizingOptions = []
         host.autoresizingMask = [.width, .height]
@@ -83,12 +89,24 @@ final class IslandController {
             guard let self else { return }
             removeOutsideClickMonitor()
             var status: IslandStatus?
+            var collapseAfterPrompt = false
             if let answer {
                 switch prompt.kind {
                 case .delete(let deletion):
                     let done = tasks.delete(deletion)
                     if case .project = deletion { tasks.pendingSelection = .all }
                     status = IslandStatus(symbol: "trash.fill", title: done.title, subtitle: done.subtitle)
+                case .snippet(let existing, _, let assetID):
+                    if let existing {
+                        snippets.update(existing, keyword: answer.title, name: answer.name, text: answer.notes)
+                    } else {
+                        snippets.add(keyword: answer.title, name: answer.name, text: answer.notes, assetID: assetID)
+                    }
+                    status = IslandStatus(symbol: "text.badge.checkmark", title: existing == nil ? "Snippet saved" : "Snippet updated",
+                                          subtitle: "Type \(SnippetStore.cleanKeyword(answer.title)) anywhere")
+                case .fill(let snippet):
+                    onSnippetFilled(snippet, answer.values)
+                    collapseAfterPrompt = true
                 case .project(let parent):
                     if let project = tasks.addProject(named: answer.title, in: parent) {
                         tasks.pendingSelection = .project(project.id)
@@ -110,7 +128,9 @@ final class IslandController {
                 status = IslandStatus(symbol: "checkmark.circle.fill", title: prompt.editing == nil ? "Task saved" : "Task updated", subtitle: answer.title)
             }
             resignKeyIfNeeded()
-            if let status {
+            if collapseAfterPrompt || (answer == nil && { if case .fill = prompt.kind { return true } else { return false } }()) {
+                collapse() // the paste goes to the app the keyword was typed in
+            } else if let status {
                 showStatus(status)
             } else {
                 setPhase(.expanded, animated: true)

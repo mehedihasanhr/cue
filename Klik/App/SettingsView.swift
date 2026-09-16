@@ -113,10 +113,35 @@ struct GeneralSettingsView: View {
 
 struct IslandSettingsView: View {
     @Environment(AppPreferences.self) private var preferences
+    @Environment(AppModel.self) private var model
 
     var body: some View {
         @Bindable var preferences = preferences
         Form {
+            Section {
+                Toggle(isOn: $preferences.snippetsEnabled) {
+                    Text("Expand snippets as you type")
+                    Text("Type a snippet's keyword (;welcome) in any app and Klik replaces it with the snippet. Blanks like {{Name}} are asked for first; {{date}}, {{time}} and {{clipboard}} fill themselves.")
+                }
+                if !PermissionManager.hasAccessibilityAccess {
+                    HStack {
+                        Label("Needs Accessibility access to see what you type and to paste", systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                            .font(.callout)
+                        Spacer()
+                        Button("Grant…") {
+                            PermissionManager.requestAccessibilityAccess()
+                            PermissionManager.revealAppInFinder()
+                        }
+                        .controlSize(.small)
+                    }
+                }
+            } header: {
+                Text("Snippets")
+            } footer: {
+                Text("Make snippets in the island's Snippets tab, or from a clipboard entry or an asset with Make Snippet…")
+            }
+
             Section {
                 Toggle(isOn: $preferences.dynamicIslandEnabled) {
                     Text("Show the Dynamic Island")
