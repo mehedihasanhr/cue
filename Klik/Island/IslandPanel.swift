@@ -248,7 +248,7 @@ struct IslandPanel: View {
             .onChange(of: library.items.count + clipboard.items.count + assets.items.count + colors.items.count + tasksStore.tasks.count, refreshHits)
         }
         .padding(.horizontal, Self.horizontalPadding)
-        .padding(.top, 14)
+        .padding(.top, 6)
         .padding(.bottom, 16)
         .frame(width: width, height: Self.size.height)
     }
