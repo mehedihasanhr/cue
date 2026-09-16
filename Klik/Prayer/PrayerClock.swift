@@ -15,6 +15,8 @@ final class PrayerClock: NSObject {
     /// statuses wait for the island to be closed.
     var showStatus: (_ status: IslandStatus, _ quiet: Bool) -> Void = { _, _ in }
 
+    /// Prayer times are turned on in Settings (times still need a place).
+    var enabled: Bool { preferences.prayerTimesEnabled }
     /// The place the times are for (current or manual), once known.
     private(set) var place: Coordinates?
     /// A word about where the place came from, for Settings.

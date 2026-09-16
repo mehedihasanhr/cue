@@ -21,8 +21,11 @@ struct ClockDetail: View {
                 } else {
                     Spacer(minLength: 0)
                     HStack(spacing: 10) {
-                        Image(systemName: "moon.stars").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white.opacity(0.6))
-                        Text("Prayer times are off. Turn them on to see the day's times here.")
+                        Image(systemName: clock?.enabled == true ? "location.slash" : "moon.stars")
+                            .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white.opacity(0.6))
+                        Text(clock?.enabled == true
+                             ? "No prayer times yet — \(clock?.placeDescription.lowercased() ?? "no location")."
+                             : "Prayer times are off. Turn them on to see the day's times here.")
                             .font(.system(size: 12)).foregroundStyle(.white.opacity(0.6))
                         Spacer(minLength: 0)
                         Button("Open Settings", action: openSettings)

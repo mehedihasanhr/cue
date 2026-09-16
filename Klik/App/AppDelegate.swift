@@ -46,6 +46,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.onError = { [weak self] error in self?.presentError(error) }
         coordinator.onBusyChanged = { [weak self] busy in self?.island?.setHidden(busy) }
         coordinator.onColorPicked = { [weak self] color in self?.handlePickedColor(color) }
+
+        // Before the island, which shows the clock's statuses and its pill.
+        let clock = PrayerClock(preferences: preferences)
+        clock.showStatus = { [weak self] status, quiet in
+            guard let self else { return }
+            if island?.showStatus(status, quiet: quiet) != true, island == nil {
+                FeedbackHUD.show(status.title, symbol: status.symbol, duration: status.duration, subtitle: status.subtitle)
+            }
+        }
+        prayerClock = clock
         applyIslandPreference()
         applyClipboardPreference()
 
@@ -57,15 +67,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         shortcuts.setAction(for: .pickColor) { [weak self] in self?.pickColor(nil) }
         shortcuts.setAction(for: .quickTask) { [weak self] in self?.quickTask(nil) }
         shortcuts.setAction(for: .clipboardPanel) { [weak self] in self?.showClipboardPanel(nil) }
-
-        let clock = PrayerClock(preferences: preferences)
-        clock.showStatus = { [weak self] status, quiet in
-            guard let self else { return }
-            if island?.showStatus(status, quiet: quiet) != true, island == nil {
-                FeedbackHUD.show(status.title, symbol: status.symbol, duration: status.duration, subtitle: status.subtitle)
-            }
-        }
-        prayerClock = clock
 
         // Diagnostics: `--env KLIK_DEBUG_HOTKEYS=1` writes every shortcut and its status to Pictures/Klik.
         if ProcessInfo.processInfo.environment["KLIK_DEBUG_HOTKEYS"] == "1" {
