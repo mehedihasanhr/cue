@@ -126,9 +126,10 @@ struct ClockRow: View {
         case .time:
             clockDigits
         case .prayer(let prayer):
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(prayer.title).font(.system(size: 20, weight: .bold, design: .rounded))
-                clockDigits
+            // A notification: the prayer's name, with a bell.
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("\(prayer.title) prayer").font(.system(size: 20, weight: .bold, design: .rounded))
+                Image(systemName: "bell.fill").font(.system(size: 11, weight: .bold)).foregroundStyle(status.tint.last ?? .white)
             }
         case .forbidden:
             Text("Prayer not allowed").font(.system(size: 17, weight: .bold, design: .rounded))
@@ -162,7 +163,7 @@ struct ClockRow: View {
     private var caption: String {
         switch status.kind {
         case .time: status.time.formatted(.dateTime.weekday(.wide).month(.abbreviated).day())
-        case .prayer: status.time.formatted(.dateTime.weekday(.wide).month(.abbreviated).day())
+        case .prayer: status.prayer.map { "Started \(PrayerClock.clock(status.time)) · until \(PrayerClock.clock($0.ends))" } ?? PrayerClock.clock(status.time)
         case .forbidden(let kind, let end): "\(kind.title) · until \(PrayerClock.clock(end))"
         case .allowed: status.prayer.map { $0.current.map { "\($0.title) time" } ?? "\($0.next.title) at \(PrayerClock.clock($0.nextStarts))" } ?? ""
         }
@@ -173,6 +174,7 @@ struct ClockRow: View {
         switch status.kind {
         case .forbidden(let kind, _): return kind.title
         case .allowed: return nil
+        case .prayer: return "\(PrayerClock.countdown(to: prayer.ends, from: status.time)) to pray"
         default:
             if let forbidden = prayer.forbidden { return "No prayer · \(forbidden.kind.title.lowercased())" }
             if let current = prayer.current { return "\(current.title) · until \(PrayerClock.clock(prayer.ends))" }
@@ -185,6 +187,7 @@ struct ClockRow: View {
         switch status.kind {
         case .forbidden(_, let end): return "\(PrayerClock.countdown(to: end, from: status.time)) to go"
         case .allowed: return nil
+        case .prayer: return "then \(prayer.next.title) at \(PrayerClock.clock(prayer.nextStarts))"
         default:
             if let forbidden = prayer.forbidden { return "until \(PrayerClock.clock(forbidden.end))" }
             if prayer.current != nil { return "\(PrayerClock.countdown(to: prayer.ends, from: status.time)) left · then \(prayer.next.title)" }

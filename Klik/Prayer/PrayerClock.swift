@@ -29,6 +29,11 @@ final class PrayerClock: NSObject {
     private(set) var minute = Date()
 
     @ObservationIgnored private var eventTimer: Timer?
+    /// What the event timer was armed for, so a late firing (App Nap, sleep) still
+    /// shows what fell due instead of skipping to the next tick.
+    @ObservationIgnored private var armed: [(date: Date, event: Event)] = []
+    /// Keeps App Nap from stretching the timers while there is something to show.
+    @ObservationIgnored private var activity: (any NSObjectProtocol)?
     @ObservationIgnored private var minuteTimer: Timer?
     @ObservationIgnored private var locationManager: CLLocationManager?
     @ObservationIgnored private var observers: [any NSObjectProtocol] = []
@@ -111,6 +116,7 @@ final class PrayerClock: NSObject {
     func refresh() {
         eventTimer?.invalidate()
         eventTimer = nil
+        Log.app.info("Island clock: prayer times \(self.preferences.prayerTimesEnabled ? "on" : "off"), place \(self.placeDescription, privacy: .public), every \(self.preferences.timeStatusInterval) min")
         guard preferences.prayerTimesEnabled, let place else {
             today = nil
             tomorrow = nil
@@ -160,22 +166,36 @@ final class PrayerClock: NSObject {
 
     private func armTimer() {
         eventTimer?.invalidate()
-        guard let next = upcomingEvents(after: Date()).first else { eventTimer = nil; return }
+        let upcoming = upcomingEvents(after: Date())
+        guard let next = upcoming.first else {
+            eventTimer = nil
+            armed = []
+            if let activity { ProcessInfo.processInfo.endActivity(activity) }
+            activity = nil
+            return
+        }
+        // Everything that shares the next moment (a prayer and a window can coincide).
+        armed = upcoming.filter { $0.date.timeIntervalSince(next.date) < 1 }
+        if activity == nil {
+            activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep], reason: "Island clock")
+        }
         let timer = Timer(fire: next.date, interval: 0, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated { self?.fire() }
         }
-        timer.tolerance = 1
+        timer.tolerance = 0.5
         RunLoop.main.add(timer, forMode: .common)
         eventTimer = timer
+        Log.app.info("Island clock: next \(String(describing: next.event), privacy: .public) at \(next.date.formatted(date: .omitted, time: .standard), privacy: .public)")
     }
 
-    /// Shows every event due now (several can share a moment), then waits for the next.
+    /// Shows what the timer was armed for, then waits for the next event. A firing
+    /// that comes very late (the Mac was asleep) is dropped rather than announced
+    /// long after the fact.
     private func fire() {
         let now = Date()
         updateStatus()
-        // Anything within the last few seconds is "now"; a laptop asleep past an event
-        // does not get a stale announcement.
-        let due = upcomingEvents(after: now.addingTimeInterval(-5)).filter { $0.date <= now.addingTimeInterval(1) }
+        let due = armed.filter { now.timeIntervalSince($0.date) < 10 * 60 }
+        Log.app.info("Island clock: fired, \(due.count) due, late by \(Int(now.timeIntervalSince(self.armed.first?.date ?? now)))s")
         if let event = due.map(\.event).first(where: { $0 != .time }) ?? due.first?.event {
             showStatus(status(for: event, at: now), true)
         }
@@ -196,7 +216,8 @@ final class PrayerClock: NSObject {
         switch event {
         case .prayer(let prayer):
             kind = .prayer(prayer)
-            (symbol, title, subtitle, duration) = (prayer.symbol, "\(prayer.title) · \(Self.clock(now))", untilNext(), .seconds(5))
+            (symbol, title, subtitle, duration) = (prayer.symbol, "\(prayer.title) prayer · \(Self.clock(now))", untilNext(), .seconds(8))
+            if preferences.soundEnabled { NSSound(named: "Glass")?.play() } // a notification, so a chime
         case .forbiddenStart(let windowKind):
             let end = status?.forbidden?.end ?? now
             kind = .forbidden(windowKind, end: end)
