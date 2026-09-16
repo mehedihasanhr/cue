@@ -7,11 +7,32 @@ import SwiftUI
 /// entries, assets, colors) can be dragged into its description or pasted there.
 /// Closes on ⎋, on Create / Cancel, on a click outside, or when it loses key status.
 final class QuickTaskPanel: NSPanel {
-    private static let size = CGSize(width: IslandGeometry.formWidth, height: IslandGeometry.formContentHeight + 8)
+    static let defaultSize = CGSize(width: IslandGeometry.formWidth, height: IslandGeometry.formContentHeight + 8)
     /// Room around the glass for its shadow.
     private static let margin: CGFloat = 24
     private var monitors: [Any] = []
     private let finish: (PromptAnswer?) -> Void
+    /// The glass's size; a form that fits itself to its content changes it.
+    private let sizing = Sizing()
+
+    @Observable
+    final class Sizing {
+        var size = QuickTaskPanel.defaultSize
+    }
+
+    /// The glass at `size`, keeping its top-left corner where it is.
+    private struct Sized<Content: View>: View {
+        let sizing: Sizing
+        let content: Content
+
+        var body: some View {
+            content
+                .padding(.top, 8)
+                .frame(width: sizing.size.width, height: sizing.size.height)
+                .liquidGlass(cornerRadius: 22)
+                .padding(QuickTaskPanel.margin)
+        }
+    }
 
     convenience init(store: TaskStore, finish: @escaping (PromptAnswer?) -> Void) {
         let prompt = IslandPrompt(kind: .task(project: nil))
@@ -31,7 +52,7 @@ final class QuickTaskPanel: NSPanel {
     private init(finish: @escaping (PromptAnswer?) -> Void, form: (@escaping () -> Void) -> some View) {
         self.finish = finish
         super.init(
-            contentRect: CGRect(origin: .zero, size: CGSize(width: Self.size.width + Self.margin * 2, height: Self.size.height + Self.margin * 2)),
+            contentRect: CGRect(origin: .zero, size: CGSize(width: Self.defaultSize.width + Self.margin * 2, height: Self.defaultSize.height + Self.margin * 2)),
             styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -50,13 +71,9 @@ final class QuickTaskPanel: NSPanel {
         collectionBehavior = [.canJoinAllSpaces, .transient, .fullScreenAuxiliary]
         animationBehavior = .utilityWindow
 
-        let root = form { [weak self] in self?.close() }
-        .padding(.top, 8)
-        .frame(width: Self.size.width, height: Self.size.height)
-        .liquidGlass(cornerRadius: 22)
-        .padding(Self.margin)
+        let root = Sized(sizing: sizing, content: form { [weak self] in self?.close() })
         let host = NSHostingView(rootView: root)
-        let full = CGRect(origin: .zero, size: CGSize(width: Self.size.width + Self.margin * 2, height: Self.size.height + Self.margin * 2))
+        let full = CGRect(origin: .zero, size: CGSize(width: Self.defaultSize.width + Self.margin * 2, height: Self.defaultSize.height + Self.margin * 2))
         host.frame = full
         host.autoresizingMask = [.width, .height]
         // Anything dropped on the panel — not just on the editor — goes into the description.
@@ -92,6 +109,28 @@ final class QuickTaskPanel: NSPanel {
     }
 
     override var canBecomeKey: Bool { true }
+
+    /// Resizes the glass to `size` (the window grows around it), keeping the top-left
+    /// corner in place and staying on screen.
+    func resize(to size: CGSize) {
+        guard size != sizing.size else { return }
+        sizing.size = size
+        var frame = frame
+        let full = CGSize(width: size.width + Self.margin * 2, height: size.height + Self.margin * 2)
+        frame.origin.y = frame.maxY - full.height
+        frame.size = full
+        if let visible = screen?.visibleFrame {
+            frame.origin.x = min(max(frame.minX, visible.minX - Self.margin + 8), visible.maxX - full.width + Self.margin - 8)
+            frame.origin.y = min(max(frame.minY, visible.minY - Self.margin + 8), visible.maxY - full.height + Self.margin - 8)
+        }
+        setFrame(frame, display: true, animate: true)
+    }
+
+    /// The largest glass allowed: 60 % of the screen either way.
+    static func maxSize(on screen: NSScreen?) -> CGSize {
+        let visible = screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        return CGSize(width: (visible.width * 0.6).rounded(), height: (visible.height * 0.6).rounded())
+    }
 
     /// The description editor, for pasting island cards into it.
     var editor: NSTextView? {

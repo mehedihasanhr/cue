@@ -302,11 +302,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let panel: QuickTaskPanel
         if case .fill(let snippet) = prompt.kind {
-            panel = QuickTaskPanel(form: SnippetFillRow(snippet: snippet) { [weak self] answer in
+            let fill = SnippetFillRow(snippet: snippet) { [weak self] answer in
                 if answer == nil { self?.snippetFilled(snippet, values: nil) }
                 finish(answer)
                 self?.quickTaskPanel?.close()
-            })
+            } onContentSize: { [weak self] naturalWidth, height in
+                // The glass grows to the template — up to 60 % of the screen either way.
+                guard let panel = self?.quickTaskPanel else { return }
+                let limit = QuickTaskPanel.maxSize(on: panel.screen ?? NSScreen.main)
+                let chrome = CGSize(width: 36, height: 128) // paddings, the header row and the buttons
+                let width = min(max(naturalWidth + chrome.width, 360), limit.width)
+                let contentHeight = min(max(height + chrome.height, 180), limit.height)
+                panel.resize(to: CGSize(width: width.rounded(), height: contentHeight.rounded()))
+            }
+            panel = QuickTaskPanel(form: fill)
         } else {
             panel = QuickTaskPanel(form: SnippetFormRow(prompt: prompt, store: snippets, assets: assets) { [weak self] answer in finish(answer); self?.quickTaskPanel?.close() }
                 .environment(preferences))

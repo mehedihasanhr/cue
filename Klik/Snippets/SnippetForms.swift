@@ -210,8 +210,13 @@ struct SnippetFormRow: View {
 struct SnippetFillRow: View {
     let snippet: Snippet
     let finish: (PromptAnswer?) -> Void
+    /// The template's natural width (unwrapped) and its height at the current width,
+    /// so the panel can fit itself to the content.
+    var onContentSize: (_ naturalWidth: CGFloat, _ height: CGFloat) -> Void = { _, _ in }
 
     @State private var values: [String: String] = [:]
+    @State private var naturalWidth: CGFloat = 0
+    @State private var contentHeight: CGFloat = 0
     @FocusState private var focused: String?
 
     var body: some View {
@@ -232,6 +237,22 @@ struct SnippetFillRow: View {
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                    contentHeight = height
+                    onContentSize(naturalWidth, height)
+                }
+                .background {
+                    // The unwrapped width, from a hidden copy laid out without a width.
+                    TemplateFillView(template: snippet.text, values: .constant([:]), focused: $focused)
+                        .fixedSize()
+                        .hidden()
+                        .disabled(true)
+                        .accessibilityHidden(true)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+                            naturalWidth = width + 24
+                            onContentSize(naturalWidth, contentHeight)
+                        }
+                }
             }
             .background(.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.primary.opacity(0.15)))
@@ -328,15 +349,16 @@ struct TemplateFillView: View {
             ForEach(Array(tokens.enumerated()), id: \.offset) { _, token in
                 switch token {
                 case .word(let word):
-                    Text(word).font(.system(size: 13)).foregroundStyle(.primary.opacity(0.9))
+                    Text(word).font(.system(size: 13)).foregroundStyle(.primary.opacity(0.9)).frame(height: 18)
                 case .newline:
                     Color.clear.frame(width: 0, height: 0).layoutValue(key: LineBreak.self, value: true)
                 case .builtIn(let name):
                     Text(SnippetTemplate.expand("{{\(name)}}", values: [:], clipboard: NSPasteboard.general.string(forType: .string)))
-                        .font(.system(size: 12.5, weight: .medium))
+                        .font(.system(size: 13))
                         .foregroundStyle(.primary.opacity(0.7))
-                        .padding(.horizontal, 6).padding(.vertical, 1)
-                        .background(.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                        .padding(.horizontal, 4)
+                        .frame(height: 18)
+                        .background(.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                         .help("{{\(name)}} fills itself")
                 case .blank(let name):
                     blankField(name)
@@ -345,33 +367,28 @@ struct TemplateFillView: View {
         }
     }
 
-    /// An inline field that grows with what is typed and lights up while focused.
+    /// An inline field that reads like the text around it: the same font, a tint
+    /// and an underline instead of a box; it grows with what is typed and lights
+    /// up while focused.
     private func blankField(_ name: String) -> some View {
         let text = Binding(get: { values[name] ?? "" }, set: { values[name] = $0 })
         let active = focused.wrappedValue == name
-        return ZStack(alignment: .leading) {
-            // The width comes from the longer of the placeholder and the value.
-            Text(text.wrappedValue.isEmpty ? name : text.wrappedValue)
-                .font(.system(size: 13, weight: .medium))
-                .hidden()
-                .padding(.horizontal, 8)
-            TextField(name, text: text)
-                .textFieldStyle(.plain)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(active ? Color.primary : Color.primary.opacity(0.85))
-                .focused(focused, equals: name)
-                .onSubmit { submit(name) }
-                .padding(.horizontal, 8)
-        }
-        .frame(minWidth: 60)
-        .frame(height: 24)
-        .background((active ? Color.brand : Color.primary).opacity(active ? 0.22 : 0.1), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(active ? Color.brand : Color.primary.opacity(0.35)).frame(height: 1.5).padding(.horizontal, 4)
-        }
-        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .onTapGesture { focused.wrappedValue = name }
-        .fixedSize()
+        let shown = text.wrappedValue.isEmpty ? name : text.wrappedValue
+        let width = max(36, (shown as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 13)]).width + 10)
+        return TextField(name, text: text)
+            .textFieldStyle(.plain)
+            .font(.system(size: 13))
+            .foregroundStyle(active ? Color.primary : Color.primary.opacity(0.85))
+            .focused(focused, equals: name)
+            .onSubmit { submit(name) }
+            .padding(.horizontal, 4)
+            .frame(width: width, height: 18)
+            .background((active ? Color.brand : Color.primary).opacity(active ? 0.2 : 0.08), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(active ? Color.brand : Color.primary.opacity(0.35)).frame(height: 1)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { focused.wrappedValue = name }
     }
 }
 
@@ -391,19 +408,30 @@ struct FlowLayout: Layout {
         var size: CGSize
     }
 
-    private func place(_ subviews: Subviews, width: CGFloat) -> (placements: [Placement], size: CGSize) {
+    /// Rows wrap at `width` (never, when nil); items sit centred in their row.
+    private func place(_ subviews: Subviews, width: CGFloat?) -> (placements: [Placement], size: CGSize) {
         var placements: [Placement] = []
         var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0, maxX: CGFloat = 0
+        var rowStart = 0
+        func closeRow() {
+            for index in rowStart..<placements.count {
+                placements[index].origin.y += (rowHeight - placements[index].size.height) / 2
+            }
+            rowStart = placements.count
+        }
         for subview in subviews {
             if subview[LineBreak.self] {
+                closeRow()
                 x = 0
                 y += rowHeight + lineSpacing
                 rowHeight = 0
                 placements.append(Placement(origin: CGPoint(x: x, y: y), size: .zero))
+                rowStart = placements.count
                 continue
             }
             let size = subview.sizeThatFits(.unspecified)
-            if x > 0, x + size.width > width {
+            if let width, x > 0, x + size.width > width {
+                closeRow()
                 x = 0
                 y += rowHeight + lineSpacing
                 rowHeight = 0
@@ -413,12 +441,12 @@ struct FlowLayout: Layout {
             rowHeight = max(rowHeight, size.height)
             maxX = max(maxX, x - spacing)
         }
+        closeRow()
         return (placements, CGSize(width: maxX, height: y + rowHeight))
     }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? 400
-        let laid = place(subviews, width: width)
+        let laid = place(subviews, width: proposal.width)
         return CGSize(width: proposal.width ?? laid.size.width, height: laid.size.height)
     }
 
