@@ -852,6 +852,7 @@ struct ClipboardCard: View {
             CopyAction(perform: copy)
             PinAction(pinned: item.pinned) { clipboard.togglePin(item) }
             CardAction(symbol: "eye", help: "Preview", perform: onPreview)
+            CardAction(symbol: "trash", help: "Remove", tint: .red) { clipboard.delete(item) }
         } menu: {
             Button("Copy") { copy() }
             if clipboard.canPaste { Button("Paste") { paste() } }
