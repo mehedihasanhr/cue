@@ -279,8 +279,10 @@ final class ClipboardHistory {
 
     /// Pastes whatever is on the pasteboard: into Klik's own open editor when there
     /// is one, otherwise by pressing ⌘V in the front app.
+    /// `app`: the application that was in front before one of Klik's panels took
+    /// the keyboard; it is brought back first so its text field has focus again.
     @discardableResult
-    func pressPaste() -> Bool {
+    func pressPaste(returningTo app: NSRunningApplication? = nil) -> Bool {
         if let editor = openEditor() {
             editor.window?.makeKeyAndOrderFront(nil)
             editor.window?.makeFirstResponder(editor)
@@ -288,9 +290,10 @@ final class ClipboardHistory {
             return true
         }
         guard PermissionManager.hasAccessibilityAccess else { return false }
+        if let app, app != .current { app.activate() }
         // A beat for the pasteboard to settle, and for key focus to return to the
         // front app when one of Klik's panels has just closed, before ⌘V lands.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + (app == nil ? 0.15 : 0.25)) {
             let source = CGEventSource(stateID: .combinedSessionState)
             for down in [true, false] {
                 guard let event = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: down) else { continue }
