@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var island: IslandController?
     private var quickTaskPanel: QuickTaskPanel?
     private var clipboardPanel: FloatingPanelWindow?
+    private var clipboardPanelObserver: (any NSObjectProtocol)?
 
     private var settingsWindow: SettingsWindowController?
     private var onboardingWindows: [PermissionKind: HostedWindowController] = [:]
@@ -195,13 +196,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         closeHistory()
+        // Klik takes activation for the panel (invisibly — it has no menu bar or Dock
+        // icon) so that handing it back afterwards restores the other app's key
+        // window and the cursor in its field; a non-activating panel would leave the
+        // field unfocused when it closed.
+        let frontApp = NSWorkspace.shared.frontmostApplication
         let content = ClipboardPanelView(clipboard: clipboard, close: { [weak self] in self?.clipboardPanel?.close() },
                                          onNeedsAccessibility: { [weak self] in self?.showOnboarding(for: .accessibility) },
-                                         frontApp: NSWorkspace.shared.frontmostApplication)
+                                         frontApp: frontApp)
             .environment(preferences)
         let panel = FloatingPanelWindow(rootView: content, size: ClipboardPanelView.size)
         clipboardPanel = panel
+        NSApp.activate(ignoringOtherApps: true)
         panel.show(at: NSEvent.mouseLocation, position: preferences.panelPosition)
+        // Whatever closes the panel (⎋, a click outside, a pick), the other app gets
+        // activation back so the user is where they were.
+        if let observer = clipboardPanelObserver { NotificationCenter.default.removeObserver(observer) }
+        clipboardPanelObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: panel, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                if let self, let observer = self.clipboardPanelObserver {
+                    NotificationCenter.default.removeObserver(observer)
+                    self.clipboardPanelObserver = nil
+                }
+                if let frontApp, frontApp != .current { ClipboardHistory.activate(frontApp) }
+            }
+        }
     }
 
     /// Creation and renaming from the floating panel go through the island's compact

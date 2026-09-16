@@ -279,8 +279,9 @@ final class ClipboardHistory {
 
     /// Pastes whatever is on the pasteboard: into Klik's own open editor when there
     /// is one, otherwise by pressing ⌘V in the front app.
-    /// `app`: the application that was in front before one of Klik's panels took
-    /// the keyboard; it is brought back first so its text field has focus again.
+    /// `app`: the application that was in front before Klik took activation for one
+    /// of its panels; activation is handed back to it, and ⌘V is sent once it is in
+    /// front again so the keystroke lands in the field that had the cursor.
     @discardableResult
     func pressPaste(returningTo app: NSRunningApplication? = nil) -> Bool {
         if let editor = openEditor() {
@@ -290,18 +291,41 @@ final class ClipboardHistory {
             return true
         }
         guard PermissionManager.hasAccessibilityAccess else { return false }
-        if let app, app != .current { app.activate() }
-        // A beat for the pasteboard to settle, and for key focus to return to the
-        // front app when one of Klik's panels has just closed, before ⌘V lands.
-        DispatchQueue.main.asyncAfter(deadline: .now() + (app == nil ? 0.15 : 0.25)) {
-            let source = CGEventSource(stateID: .combinedSessionState)
-            for down in [true, false] {
-                guard let event = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: down) else { continue }
-                event.flags = .maskCommand
-                event.post(tap: .cghidEventTap)
-            }
+        if let app, app != .current {
+            Self.activate(app)
+            Self.whenFrontmost(app) { Self.postCommandV() }
+        } else {
+            // A beat for the pasteboard to settle before the key press lands.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: Self.postCommandV)
         }
         return true
+    }
+
+    /// Hands activation from Klik to `app` (the cooperative way macOS 14 wants).
+    static func activate(_ app: NSRunningApplication) {
+        NSApp.yieldActivation(to: app)
+        app.activate(from: .current, options: [])
+    }
+
+    /// Runs `action` once `app` is the frontmost application (polled, with a beat for
+    /// its key window to take focus back), or after a second regardless.
+    private static func whenFrontmost(_ app: NSRunningApplication, attempts: Int = 20, then action: @escaping @MainActor () -> Void) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            if NSWorkspace.shared.frontmostApplication == app || attempts <= 1 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: action)
+            } else {
+                whenFrontmost(app, attempts: attempts - 1, then: action)
+            }
+        }
+    }
+
+    private static func postCommandV() {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        for down in [true, false] {
+            guard let event = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: down) else { continue }
+            event.flags = .maskCommand
+            event.post(tap: .cghidEventTap)
+        }
     }
 
     func togglePin(_ item: ClipboardItem) {
