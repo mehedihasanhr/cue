@@ -136,7 +136,9 @@ nonisolated struct PrayerTimes: Equatable {
     /// Times in the day's order.
     var ordered: [(prayer: Prayer, time: Date)] { Prayer.allCases.map { ($0, times[$0]!) } }
 
-    init(on date: Date, at place: Coordinates, method: CalculationMethod, madhab: Madhab, timeZone: TimeZone = .current, calendar: Calendar = .current) {
+    /// `adjustments`: minutes added to each time (a local timetable's tweaks).
+    init(on date: Date, at place: Coordinates, method: CalculationMethod, madhab: Madhab, adjustments: [Prayer: Int] = [:],
+         timeZone: TimeZone = .current, calendar: Calendar = .current) {
         var calendar = calendar
         calendar.timeZone = timeZone
         let day = calendar.startOfDay(for: date)
@@ -152,8 +154,8 @@ nonisolated struct PrayerTimes: Equatable {
 
         var times: [Prayer: Date] = [:]
         for (prayer, hours) in t {
-            let seconds = (hours * 60).rounded() * 60 // to the minute
-            times[prayer] = day.addingTimeInterval(seconds)
+            let minutes = (hours * 60).rounded() + Double(adjustments[prayer] ?? 0)
+            times[prayer] = day.addingTimeInterval(minutes * 60)
         }
         self.date = day
         self.times = times

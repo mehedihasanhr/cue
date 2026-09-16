@@ -31,6 +31,7 @@ final class AppPreferences {
         static let prayerKnownLatitude = "prayer.knownLatitude"
         static let prayerKnownLongitude = "prayer.knownLongitude"
         static let prayerAnnouncements = "prayer.announcements"
+        static let prayerAdjustments = "prayer.adjustments"
     }
 
     // MARK: Time & prayer
@@ -87,6 +88,14 @@ final class AppPreferences {
     /// Announce each prayer, and the times prayer is not allowed, on the island.
     var prayerAnnouncements: Bool {
         didSet { defaults.set(prayerAnnouncements, forKey: Key.prayerAnnouncements) }
+    }
+
+    /// Minutes added to each computed time, to match a local timetable.
+    var prayerAdjustments: [Prayer: Int] {
+        didSet {
+            let stored = Dictionary(uniqueKeysWithValues: prayerAdjustments.filter { $0.value != 0 }.map { ($0.key.rawValue, $0.value) })
+            defaults.set(stored, forKey: Key.prayerAdjustments)
+        }
     }
 
     // MARK: Panels
@@ -267,6 +276,8 @@ final class AppPreferences {
             prayerKnownPlace = nil
         }
         prayerAnnouncements = defaults.object(forKey: Key.prayerAnnouncements) as? Bool ?? true
+        let stored = defaults.dictionary(forKey: Key.prayerAdjustments) as? [String: Int] ?? [:]
+        prayerAdjustments = Dictionary(uniqueKeysWithValues: stored.compactMap { key, value in Prayer(rawValue: key).map { ($0, value) } })
         customSoundURL = defaults.data(forKey: Key.soundBookmark).flatMap(Self.resolve)
         customIconURL = defaults.data(forKey: Key.iconBookmark).flatMap(Self.resolve)
         if sound == .custom, customSoundURL == nil { sound = .shutter }

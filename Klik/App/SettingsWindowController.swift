@@ -15,8 +15,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         tabs.canPropagateSelectedChildViewControllerTitle = false
 
         tabs.addTabViewItem(Self.pane(
-            "General", symbol: "gearshape", height: 860,
+            "General", symbol: "gearshape", height: 520,
             GeneralSettingsView().environment(model).environment(library).environment(preferences)
+        ))
+        tabs.addTabViewItem(Self.pane(
+            "Island", symbol: "rectangle.topthird.inset.filled", height: 470,
+            IslandSettingsView().environment(preferences)
         ))
         tabs.addTabViewItem(Self.pane(
             "Capture", symbol: "camera", height: 330,
@@ -27,11 +31,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             ClipboardSettingsView().environment(clipboard).environment(preferences)
         ))
         tabs.addTabViewItem(Self.pane(
-            "Editor", symbol: "paintbrush.pointed", height: 780,
+            "Editor", symbol: "paintbrush.pointed", height: 560,
             EditorSettingsView().environment(preferences)
         ))
         tabs.addTabViewItem(Self.pane(
-            "Time", symbol: "clock", height: 720,
+            "Time", symbol: "clock", height: 560,
             TimeSettingsView().environment(preferences).environment(clock)
         ))
         tabs.addTabViewItem(Self.pane(

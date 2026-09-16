@@ -71,6 +71,18 @@ final class PrayerCalculatorTests: XCTestCase {
         XCTAssertLessThan(times[.maghrib], times[.isha])
     }
 
+    func testAdjustmentsShiftOnlyTheirPrayer() {
+        let zone = TimeZone(identifier: "Asia/Riyadh")!
+        let place = Coordinates(latitude: 21.4225, longitude: 39.8262)
+        let plain = PrayerTimes(on: day(2024, 1, 1, in: zone), at: place, method: .ummAlQura, madhab: .standard, timeZone: zone)
+        let nudged = PrayerTimes(on: day(2024, 1, 1, in: zone), at: place, method: .ummAlQura, madhab: .standard, adjustments: [.fajr: 3, .asr: -2], timeZone: zone)
+        XCTAssertEqual(nudged[.fajr].timeIntervalSince(plain[.fajr]), 180)
+        XCTAssertEqual(nudged[.asr].timeIntervalSince(plain[.asr]), -120)
+        XCTAssertEqual(nudged[.dhuhr], plain[.dhuhr])
+        // The forbidden windows follow the adjusted times.
+        XCTAssertEqual(nudged.forbidden[2].end, nudged[.maghrib])
+    }
+
     func testStatusWalksThroughTheDay() {
         let zone = TimeZone(identifier: "Asia/Riyadh")!
         let place = Coordinates(latitude: 21.4225, longitude: 39.8262)

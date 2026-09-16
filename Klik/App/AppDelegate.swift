@@ -59,9 +59,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         shortcuts.setAction(for: .clipboardPanel) { [weak self] in self?.showClipboardPanel(nil) }
 
         let clock = PrayerClock(preferences: preferences)
-        clock.showStatus = { [weak self] status in
+        clock.showStatus = { [weak self] status, quiet in
             guard let self else { return }
-            if island?.showStatus(status, quiet: true) != true, island == nil {
+            if island?.showStatus(status, quiet: quiet) != true, island == nil {
                 FeedbackHUD.show(status.title, symbol: status.symbol, duration: status.duration, subtitle: status.subtitle)
             }
         }

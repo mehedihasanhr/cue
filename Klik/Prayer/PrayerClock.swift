@@ -11,8 +11,9 @@ import os
 @MainActor
 final class PrayerClock: NSObject {
     private let preferences: AppPreferences
-    /// Shows a status on the island (or the HUD); set by the app delegate.
-    var showStatus: (IslandStatus) -> Void = { _ in }
+    /// Shows a status on the island (or the HUD); set by the app delegate. `quiet`
+    /// statuses wait for the island to be closed.
+    var showStatus: (_ status: IslandStatus, _ quiet: Bool) -> Void = { _, _ in }
 
     /// The place the times are for (current or manual), once known.
     private(set) var place: Coordinates?
@@ -62,6 +63,7 @@ final class PrayerClock: NSObject {
             _ = preferences.prayerMadhab
             _ = preferences.timeStatusInterval
             _ = preferences.prayerAnnouncements
+            _ = preferences.prayerAdjustments
             return (preferences.prayerTimesEnabled, preferences.prayerLocationMode, preferences.prayerManualPlace)
         } onChange: { [weak self] in
             Task { @MainActor in self?.applyPreferences() }
@@ -115,8 +117,9 @@ final class PrayerClock: NSObject {
             return
         }
         let now = Date()
-        today = PrayerTimes(on: now, at: place, method: preferences.prayerMethod, madhab: preferences.prayerMadhab)
-        tomorrow = PrayerTimes(on: Calendar.current.date(byAdding: .day, value: 1, to: now)!, at: place, method: preferences.prayerMethod, madhab: preferences.prayerMadhab)
+        today = PrayerTimes(on: now, at: place, method: preferences.prayerMethod, madhab: preferences.prayerMadhab, adjustments: preferences.prayerAdjustments)
+        tomorrow = PrayerTimes(on: Calendar.current.date(byAdding: .day, value: 1, to: now)!, at: place, method: preferences.prayerMethod,
+                               madhab: preferences.prayerMadhab, adjustments: preferences.prayerAdjustments)
         updateStatus()
         armTimer()
     }
@@ -172,9 +175,15 @@ final class PrayerClock: NSObject {
         // does not get a stale announcement.
         let due = upcomingEvents(after: now.addingTimeInterval(-5)).filter { $0.date <= now.addingTimeInterval(1) }
         if let event = due.map(\.event).first(where: { $0 != .time }) ?? due.first?.event {
-            showStatus(status(for: event, at: now))
+            showStatus(status(for: event, at: now), true)
         }
         armTimer()
+    }
+
+    /// Shows the time status now (Settings, while its options are being chosen).
+    func preview() {
+        updateStatus()
+        showStatus(status(for: .time, at: Date()), false)
     }
 
     private func status(for event: Event, at now: Date) -> IslandStatus {

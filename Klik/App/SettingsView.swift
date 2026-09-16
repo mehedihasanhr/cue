@@ -51,39 +51,6 @@ struct GeneralSettingsView: View {
             }
 
             Section {
-                Toggle(isOn: $preferences.dynamicIslandEnabled) {
-                    Text("Show the Dynamic Island")
-                    Text("Hover over the notch — or the pill at the top of the screen — to open your captures. The island is never part of a screenshot.")
-                }
-                Toggle(isOn: $preferences.dynamicIslandOnPlainDisplays) {
-                    Text("Also show a pill on displays without a notch")
-                }
-                .disabled(!preferences.dynamicIslandEnabled)
-            } header: {
-                Text("Dynamic Island")
-            }
-
-            Section {
-                Picker("Open panels at", selection: $preferences.panelPosition) {
-                    ForEach(PanelPosition.allCases, id: \.self) { Text($0.title).tag($0) }
-                }
-            } header: {
-                Text("Panels")
-            } footer: {
-                Text("Where the library panel (⌥⇧K) and the quick task (⌥/) appear — on the screen the pointer is on.")
-            }
-
-            Section {
-                Picker("Copy picked colors as", selection: $preferences.colorFormat) {
-                    ForEach(ColorFormat.allCases, id: \.self) { Text($0.title).tag($0) }
-                }
-            } header: {
-                Text("Color picker")
-            } footer: {
-                Text("Every other format is one right-click away on a color card.")
-            }
-
-            Section {
                 MenuBarIconPicker()
             } header: {
                 Text("Menu bar icon")
@@ -139,6 +106,52 @@ struct GeneralSettingsView: View {
                 model.launchAtLogin = LaunchAtLogin.state
             }
         )
+    }
+}
+
+// MARK: - Island & panels
+
+struct IslandSettingsView: View {
+    @Environment(AppPreferences.self) private var preferences
+
+    var body: some View {
+        @Bindable var preferences = preferences
+        Form {
+            Section {
+                Toggle(isOn: $preferences.dynamicIslandEnabled) {
+                    Text("Show the Dynamic Island")
+                    Text("Hover over the notch — or the pill at the top of the screen — to open your captures. The island is never part of a screenshot.")
+                }
+                Toggle(isOn: $preferences.dynamicIslandOnPlainDisplays) {
+                    Text("Also show a pill on displays without a notch")
+                }
+                .disabled(!preferences.dynamicIslandEnabled)
+            } header: {
+                Text("Dynamic Island")
+            }
+
+            Section {
+                Picker("Open panels at", selection: $preferences.panelPosition) {
+                    ForEach(PanelPosition.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+            } header: {
+                Text("Panels")
+            } footer: {
+                Text("Where the library panel (⌥⇧K) and the quick task (⌥/) appear — on the screen the pointer is on.")
+            }
+
+            Section {
+                Picker("Copy picked colors as", selection: $preferences.colorFormat) {
+                    ForEach(ColorFormat.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+            } header: {
+                Text("Color picker")
+            } footer: {
+                Text("Every other format is one right-click away on a color card.")
+            }
+
+        }
+        .formStyle(.grouped)
     }
 }
 
@@ -271,10 +284,15 @@ struct TimeSettingsView: View {
                         Text(Self.intervalTitle(minutes)).tag(minutes)
                     }
                 }
+                HStack {
+                    Text("Preview").foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Show on the Island Now") { clock?.preview() }
+                }
             } header: {
                 Text("Time on the island")
             } footer: {
-                Text("On the hour, the half hour and so on, the island shows the time for a moment — and the prayer period when prayer times are on. It waits while the island is open.")
+                Text("On the hour, the half hour and so on, the island shows the time for a moment — with the prayer period when prayer times are on. It waits while the island is open.")
             }
 
             Section {
@@ -331,16 +349,16 @@ struct TimeSettingsView: View {
             if preferences.prayerTimesEnabled, let clock, let today = clock.today {
                 Section {
                     ForEach(today.ordered, id: \.prayer) { entry in
-                        HStack {
-                            Label(entry.prayer.title, systemImage: entry.prayer.symbol)
-                            Spacer()
-                            Text(PrayerClock.clock(entry.time)).monospacedDigit().foregroundStyle(.secondary)
-                        }
+                        adjustmentRow(entry.prayer, time: entry.time)
+                    }
+                    if preferences.prayerAdjustments.values.contains(where: { $0 != 0 }) {
+                        Button("Reset Adjustments") { preferences.prayerAdjustments = [:] }
+                            .controlSize(.small)
                     }
                 } header: {
                     Text("Today")
                 } footer: {
-                    Text(clock.prayerLine() ?? "")
+                    Text("Nudge a time by a few minutes to match your mosque's timetable. \(clock.prayerLine() ?? "")")
                 }
             }
         }
@@ -348,6 +366,28 @@ struct TimeSettingsView: View {
         .onAppear {
             latitude = preferences.prayerManualPlace.latitude == 0 ? "" : String(preferences.prayerManualPlace.latitude)
             longitude = preferences.prayerManualPlace.longitude == 0 ? "" : String(preferences.prayerManualPlace.longitude)
+            // The status this tab configures, on the island, while it is being chosen.
+            clock?.preview()
+        }
+    }
+
+    /// A prayer's time with a ± minutes stepper.
+    private func adjustmentRow(_ prayer: Prayer, time: Date) -> some View {
+        let offset = Binding(
+            get: { preferences.prayerAdjustments[prayer] ?? 0 },
+            set: { preferences.prayerAdjustments[prayer] = $0 }
+        )
+        return HStack {
+            Label(prayer.title, systemImage: prayer.symbol)
+            Spacer()
+            Text(PrayerClock.clock(time)).monospacedDigit()
+            Stepper(value: offset, in: -60...60) {
+                Text(offset.wrappedValue == 0 ? "±0" : String(format: "%+d min", offset.wrappedValue))
+                    .monospacedDigit()
+                    .foregroundStyle(offset.wrappedValue == 0 ? .secondary : .primary)
+                    .frame(width: 56, alignment: .trailing)
+            }
+            .controlSize(.small)
         }
     }
 
