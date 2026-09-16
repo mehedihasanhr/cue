@@ -123,22 +123,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Creates or removes the island as the Settings toggles change.
     private func applyIslandPreference() {
-        withObservationTracking {
-            if preferences.dynamicIslandEnabled {
-                if let island {
-                    island.place()
-                } else {
-                    island = IslandController(library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasks, actions: historyActions, preferences: preferences)
-                    library.warmThumbnails()
-                    FeedbackHUD.island = { [weak self] status in self?.island?.showStatus(status) ?? false }
-                }
-            } else if let island {
-                island.tearDown()
-                self.island = nil
-            }
+        // Only the two preferences are tracked: the island's own model must not be, or
+        // its every change (a tab widening the panel) would re-place it closed.
+        let enabled = withObservationTracking {
             _ = preferences.dynamicIslandOnPlainDisplays
+            return preferences.dynamicIslandEnabled
         } onChange: { [weak self] in
             Task { @MainActor in self?.applyIslandPreference() }
+        }
+        if enabled {
+            if let island {
+                island.place()
+            } else {
+                island = IslandController(library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasks, actions: historyActions, preferences: preferences)
+                library.warmThumbnails()
+                FeedbackHUD.island = { [weak self] status in self?.island?.showStatus(status) ?? false }
+            }
+        } else if let island {
+            island.tearDown()
+            self.island = nil
         }
     }
 
