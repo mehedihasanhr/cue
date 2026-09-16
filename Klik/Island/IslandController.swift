@@ -56,6 +56,22 @@ final class IslandController {
             // Reported from inside a layout pass; the window resizes after it.
             DispatchQueue.main.async { self?.fitWindow() }
         }
+        model.onShowClock = { [weak self] in self?.showClock() }
+        model.onClockClosed = { [weak self] in
+            guard let self else { return }
+            removeOutsideClickMonitor()
+            resignKeyIfNeeded()
+            if model.shapeRect(for: .expanded).contains(NSEvent.mouseLocation) {
+                pointerInside = true
+                setPhase(.expanded, animated: true)
+            } else {
+                collapse()
+            }
+        }
+        model.onOpenTimeSettings = { [weak self] in
+            self?.collapse()
+            actions.openSettings()
+        }
         model.onTaskDetailClosed = { [weak self] task in
             guard let self else { return }
             removeOutsideClickMonitor()
@@ -281,6 +297,16 @@ final class IslandController {
         window.makeKey() // so ⎋ reaches the island
     }
 
+    /// Opens the clock in the compact island; ⎋ or a click outside closes it.
+    func showClock() {
+        guard model.geometry != nil, model.phase != .clock else { return }
+        closeTask?.cancel()
+        flashTask?.cancel()
+        setPhase(.clock, animated: true)
+        installOutsideClickMonitor()
+        window.makeKey() // so ⎋ reaches the island
+    }
+
     /// Applies a rename from the compact box to the right store.
     private func renamed(_ detail: IslandDetail, to name: String) {
         switch detail {
@@ -296,6 +322,8 @@ final class IslandController {
         switch model.phase {
         case .taskDetail:
             model.onTaskDetailClosed(nil)
+        case .clock:
+            model.onClockClosed()
         case .prompt(let prompt):
             model.onPromptFinished(prompt, nil)
         default:
@@ -318,7 +346,7 @@ final class IslandController {
         let handler: @MainActor () -> Void = { [weak self] in
             guard let self, model.geometry != nil else { return }
             switch model.phase {
-            case .prompt, .taskDetail: break
+            case .prompt, .taskDetail, .clock: break
             default: return
             }
             if !model.shapeRect(for: model.phase).contains(NSEvent.mouseLocation) { collapse() }
@@ -426,13 +454,27 @@ final class IslandController {
         // The compact prompt / task detail stay as they are until ↩, ⎋ or a click
         // outside; the pointer does not reopen the panel.
         switch model.phase {
-        case .prompt, .taskDetail: return
+        case .prompt, .taskDetail, .clock: return
+        case .status(let status) where status.clock != nil:
+            // The clock stays while the pointer rests on it, so it can be clicked open;
+            // it closes a moment after the pointer leaves.
+            flashTask?.cancel()
+            return
         default: break
         }
         if model.phase != .expanded { expand() }
     }
 
     private func pointerExited() {
+        if case .status(let status) = model.phase, status.clock != nil {
+            closeTask?.cancel()
+            closeTask = Task { [weak self] in
+                try? await Task.sleep(for: Self.closeDelay)
+                guard !Task.isCancelled, let self, model.phase.isFlash else { return }
+                collapse()
+            }
+            return
+        }
         guard model.phase == .expanded else { return }
         closeTask?.cancel()
         closeTask = Task { [weak self] in

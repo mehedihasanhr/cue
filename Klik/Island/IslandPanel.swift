@@ -56,6 +56,8 @@ struct IslandPanel: View {
     var onPrompt: (IslandPrompt) -> Void = { _ in }
     /// Opens a task in the compact island.
     var onShowTask: (TaskItem) -> Void = { _ in }
+    /// Opens the clock in the compact island (the prayer pill).
+    var onShowClock: () -> Void = {}
     @State private var search = ""
     @FocusState private var searchFocused: Bool
     /// While searching: show hits from this tab only (nil: every tab).
@@ -137,7 +139,7 @@ struct IslandPanel: View {
                 if !searching {
                     Spacer(minLength: 8)
                     if let clock, clock.status != nil {
-                        PrayerPill(clock: clock)
+                        PrayerPill(clock: clock).onTapGesture(perform: onShowClock)
                     }
                     circle("display", help: "Capture full screen", action: actions.captureFullScreen)
                     circle("viewfinder", help: "Capture area", action: actions.captureArea)

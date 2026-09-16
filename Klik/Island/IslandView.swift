@@ -14,6 +14,8 @@ final class IslandModel {
         case prompt(IslandPrompt)
         /// A task opened in the compact island: title, status, description.
         case taskDetail(UUID)
+        /// The clock opened in the compact island: time, dates, prayer times.
+        case clock
         case expanded
 
         var geometryPhase: IslandGeometry.Phase {
@@ -22,7 +24,7 @@ final class IslandModel {
             case .flash: .flash
             case .status(let status): status.clock == nil ? .flash : .prompt
             case .prompt(let prompt): prompt.isForm ? .form : .prompt
-            case .taskDetail: .form
+            case .taskDetail, .clock: .form
             case .expanded: .expanded
             }
         }
@@ -30,7 +32,7 @@ final class IslandModel {
         var isFlash: Bool {
             switch self {
             case .flash, .status: true
-            case .collapsed, .expanded, .prompt, .taskDetail: false
+            case .collapsed, .expanded, .prompt, .taskDetail, .clock: false
             }
         }
 
@@ -40,7 +42,7 @@ final class IslandModel {
             switch self {
             case .flash, .status: true
             case .prompt(let prompt): prompt.isConfirm
-            case .collapsed, .expanded, .taskDetail: false
+            case .collapsed, .expanded, .taskDetail, .clock: false
             }
         }
     }
@@ -82,6 +84,13 @@ final class IslandModel {
     var onTaskDetailClosed: (TaskItem?) -> Void = { _ in }
     /// A click on the closed shape opens it.
     var onTap: () -> Void = {}
+    /// Opens the clock in the compact island (a click on a clock status or the
+    /// prayer pill); set by the controller.
+    var onShowClock: () -> Void = {}
+    /// Leaves the clock; set by the controller.
+    var onClockClosed: () -> Void = {}
+    /// Settings › Time, from the clock; set by the controller.
+    var onOpenTimeSettings: () -> Void = {}
 }
 
 /// The island silhouette: top corners flare outward into the bezel (a small flare
@@ -138,6 +147,7 @@ struct IslandView: View {
     let colors: ColorStore
     let tasks: TaskStore
     let actions: HistoryActions
+    @Environment(PrayerClock.self) private var clock: PrayerClock?
 
     /// Opening overshoots a touch; closing settles without a bounce.
     static let openAnimation = Animation.spring(response: 0.36, dampingFraction: 0.82, blendDuration: 0)
@@ -160,7 +170,13 @@ struct IslandView: View {
             .frame(width: size.width + flare * 2, height: size.height)
             .clipShape(shape)
             .contentShape(shape)
-            .onTapGesture { if collapsed { model.onTap() } }
+            .onTapGesture {
+                if collapsed {
+                    model.onTap()
+                } else if case .status(let status) = phase, status.clock != nil {
+                    model.onShowClock()
+                }
+            }
             .animation(collapsed ? Self.closeAnimation : Self.openAnimation, value: phase)
             .animation(Self.openAnimation, value: model.contentWidth)
             .animation(Self.openAnimation, value: model.panelWidth)
@@ -212,6 +228,13 @@ struct IslandView: View {
                 }
             }
             .transition(Self.contentTransition)
+        case .clock:
+            VStack(spacing: 0) {
+                Color.clear.frame(height: strip)
+                ClockDetail(clock: clock, openSettings: { model.onOpenTimeSettings() }, close: { model.onClockClosed() })
+                    .frame(height: IslandGeometry.formContentHeight)
+            }
+            .transition(Self.contentTransition)
         case .taskDetail(let id):
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
@@ -227,7 +250,8 @@ struct IslandView: View {
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
                 IslandPanel(library: library, clipboard: clipboard, assets: assets, colors: colors, tasksStore: tasks, actions: actions, dropping: model.dropping,
-                            width: model.panelWidth, onIdealWidth: { model.setPanelWidth($0) }, onPrompt: { model.onPrompt($0) }, onShowTask: { model.onShowTask($0) })
+                            width: model.panelWidth, onIdealWidth: { model.setPanelWidth($0) }, onPrompt: { model.onPrompt($0) }, onShowTask: { model.onShowTask($0) },
+                            onShowClock: { model.onShowClock() })
                     .padding(.horizontal, IslandGeometry.panelHorizontalPadding)
                     .padding(.bottom, IslandGeometry.panelBottomPadding)
             }
