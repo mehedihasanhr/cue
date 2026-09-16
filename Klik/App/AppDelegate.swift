@@ -12,6 +12,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let tasks = TaskStore()
     let snippets = SnippetStore()
     private var snippetExpander: SnippetExpander?
+    /// The app a snippet keyword was typed in, while its blanks are being filled.
+    private var snippetFrontApp: NSRunningApplication?
     private var prayerClock: PrayerClock?
     let preferences = AppPreferences()
     private lazy var coordinator = CaptureCoordinator(shortcuts: shortcuts)
@@ -62,7 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applyClipboardPreference()
 
         let expander = SnippetExpander(store: snippets, assets: assets, preferences: preferences)
-        expander.askToFill = { [weak self] snippet in self?.fillSnippet(snippet) }
+        expander.askToFill = { [weak self] snippet, app in self?.fillSnippet(snippet, from: app) }
         snippetExpander = expander
 
         shortcuts.setAction(for: .fullScreen) { [weak self] in self?.coordinator.captureFullScreen(fromMenu: false) }
@@ -157,10 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } else {
                 island = IslandController(library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasks, snippets: snippets,
                                           actions: historyActions, preferences: preferences, clock: prayerClock)
-                island?.onSnippetFilled = { [weak self] snippet, values in
-                    // A beat for the island to give the keyboard back to the app first.
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self?.snippetExpander?.paste(snippet, values: values) }
-                }
+                island?.onSnippetFilled = { [weak self] snippet, values in self?.snippetFilled(snippet, values: values) }
                 library.warmThumbnails()
                 FeedbackHUD.island = { [weak self] status in self?.island?.showStatus(status) ?? false }
             }
@@ -261,17 +260,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// A snippet's blanks, asked for in the island — or a floating form without one.
-    private func fillSnippet(_ snippet: Snippet) {
-        let prompt = IslandPrompt(kind: .fill(snippet))
-        if let island {
-            island.prompt(prompt)
-        } else {
-            snippetPanel(prompt)
+    /// Klik takes activation for the form (invisibly) so it can hand it back to the
+    /// app afterwards, with the cursor where it was.
+    private func fillSnippet(_ snippet: Snippet, from app: NSRunningApplication?) {
+        snippetFrontApp = app
+        NSApp.activate(ignoringOtherApps: true)
+        // Always a floating form at the pointer — where the keyword was just typed.
+        snippetPanel(IslandPrompt(kind: .fill(snippet)), at: .pointer)
+    }
+
+    /// The blanks are in (or the form was cancelled): back to the app, then paste.
+    private func snippetFilled(_ snippet: Snippet, values: [String: String]?) {
+        let app = snippetFrontApp
+        snippetFrontApp = nil
+        if let values {
+            snippetExpander?.paste(snippet, values: values, returningTo: app)
+        } else if let app, app != .current {
+            ClipboardHistory.activate(app)
         }
     }
 
-    /// The snippet form (new / edit / fill) as a floating window when there is no island.
-    private func snippetPanel(_ prompt: IslandPrompt) {
+    /// The snippet form (new / edit) as a floating window when there is no island,
+    /// and the blanks form always.
+    private func snippetPanel(_ prompt: IslandPrompt, at position: PanelPosition? = nil) {
         quickTaskPanel?.close()
         let finish: (PromptAnswer?) -> Void = { [weak self] answer in
             guard let self, let answer else { return }
@@ -284,20 +295,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 FeedbackHUD.show("Snippet saved", symbol: "text.badge.checkmark", subtitle: "Type \(SnippetStore.cleanKeyword(answer.title)) anywhere")
             case .fill(let snippet):
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self.snippetExpander?.paste(snippet, values: answer.values) }
+                snippetFilled(snippet, values: answer.values)
             default:
                 break
             }
         }
         let panel: QuickTaskPanel
         if case .fill(let snippet) = prompt.kind {
-            panel = QuickTaskPanel(form: SnippetFillRow(snippet: snippet) { [weak self] answer in finish(answer); self?.quickTaskPanel?.close() })
+            panel = QuickTaskPanel(form: SnippetFillRow(snippet: snippet) { [weak self] answer in
+                if answer == nil { self?.snippetFilled(snippet, values: nil) }
+                finish(answer)
+                self?.quickTaskPanel?.close()
+            })
         } else {
             panel = QuickTaskPanel(form: SnippetFormRow(prompt: prompt, store: snippets, assets: assets) { [weak self] answer in finish(answer); self?.quickTaskPanel?.close() }
                 .environment(preferences))
         }
         quickTaskPanel = panel
-        panel.show(at: NSEvent.mouseLocation, position: preferences.panelPosition)
+        panel.show(at: NSEvent.mouseLocation, position: position ?? preferences.panelPosition)
     }
 
     /// Without an island to ask in, a plain alert confirms a deletion.

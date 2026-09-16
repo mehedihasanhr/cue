@@ -165,6 +165,14 @@ struct SnippetFormRow: View {
         .padding(.top, 8)
         .padding(.bottom, 12)
         .background(KeyWindowFocus())
+        .onKeyPress(.tab, phases: .down) { press in
+            // ⇥ / ⇧⇥ walk the fields (the editor keeps ⇥ for itself).
+            let order: [Field] = [.prefix, .keyword, .name, .text]
+            guard let current = focus, current != .text || press.modifiers.contains(.shift), let index = order.firstIndex(of: current) else { return .ignored }
+            let next = press.modifiers.contains(.shift) ? max(index - 1, 0) : min(index + 1, order.count - 1)
+            focus = order[next]
+            return .handled
+        }
         .onAppear {
             if case .snippet(let snippet, let initialText, _) = prompt.kind {
                 let stored = snippet?.keyword ?? ""
@@ -270,6 +278,14 @@ struct SnippetFillRow: View {
         .padding(.top, 8)
         .padding(.bottom, 12)
         .background(KeyWindowFocus())
+        .onKeyPress(.tab, phases: .down) { press in
+            // ⇥ / ⇧⇥ move between the blanks, wrapping around.
+            guard !blanks.isEmpty else { return .ignored }
+            let index = focused.flatMap { blanks.firstIndex(of: $0) } ?? -1
+            let next = press.modifiers.contains(.shift) ? (index - 1 + blanks.count) % blanks.count : (index + 1) % blanks.count
+            focused = blanks[next]
+            return .handled
+        }
         .onAppear {
             Task {
                 try? await Task.sleep(for: .milliseconds(80))

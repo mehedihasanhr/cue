@@ -307,6 +307,18 @@ final class ClipboardHistory {
         app.activate(from: .current, options: [])
     }
 
+    /// Hands activation back to `app` (if given) and presses ⌘V once it is in front,
+    /// for anything Klik puts on the pasteboard to land in the field that had the
+    /// cursor.
+    static func pressCommandV(returningTo app: NSRunningApplication?) {
+        if let app, app != .current {
+            activate(app)
+            whenFrontmost(app) { postCommandV() }
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: postCommandV)
+        }
+    }
+
     /// Runs `action` once `app` is the frontmost application (polled, with a beat for
     /// its key window to take focus back), or after a second regardless.
     private static func whenFrontmost(_ app: NSRunningApplication, attempts: Int = 20, then action: @escaping @MainActor () -> Void) {

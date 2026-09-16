@@ -30,8 +30,9 @@ final class IslandController {
     private static let flashDuration: Duration = .seconds(1.8)
     private static let collapseAnimation: Duration = .milliseconds(380)
 
-    /// A snippet's blanks were filled in the compact box; set by the app delegate.
-    var onSnippetFilled: (Snippet, [String: String]) -> Void = { _, _ in }
+    /// A snippet's blanks were filled in the compact box (nil: cancelled); set by
+    /// the app delegate.
+    var onSnippetFilled: (Snippet, [String: String]?) -> Void = { _, _ in }
 
     init(library: CaptureLibrary, clipboard: ClipboardHistory, assets: AssetStore, colors: ColorStore, tasks: TaskStore, snippets: SnippetStore,
          actions: HistoryActions, preferences: AppPreferences, clock: PrayerClock? = nil) {
@@ -128,7 +129,11 @@ final class IslandController {
                 status = IslandStatus(symbol: "checkmark.circle.fill", title: prompt.editing == nil ? "Task saved" : "Task updated", subtitle: answer.title)
             }
             resignKeyIfNeeded()
-            if collapseAfterPrompt || (answer == nil && { if case .fill = prompt.kind { return true } else { return false } }()) {
+            if answer == nil, case .fill(let snippet) = prompt.kind {
+                onSnippetFilled(snippet, nil)
+                collapseAfterPrompt = true
+            }
+            if collapseAfterPrompt {
                 collapse() // the paste goes to the app the keyword was typed in
             } else if let status {
                 showStatus(status)

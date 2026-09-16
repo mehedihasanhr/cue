@@ -10,8 +10,9 @@ final class SnippetExpander {
     private let store: SnippetStore
     private let assets: AssetStore
     private let preferences: AppPreferences
-    /// Asks the user to fill a snippet's blanks; the answer comes back through `paste`.
-    var askToFill: (Snippet) -> Void = { _ in }
+    /// Asks the user to fill a snippet's blanks (the app that was in front is passed
+    /// along so the paste can go back to it); the answer comes back through `paste`.
+    var askToFill: (Snippet, NSRunningApplication?) -> Void = { _, _ in }
 
     private var monitors: [Any] = []
     /// The last few characters typed, at most the longest keyword.
@@ -39,7 +40,11 @@ final class SnippetExpander {
     var isWatching: Bool { !monitors.isEmpty }
 
     private func start() {
-        guard monitors.isEmpty, PermissionManager.hasAccessibilityAccess else { return }
+        guard monitors.isEmpty else { return }
+        guard PermissionManager.hasAccessibilityAccess else {
+            Log.app.info("Snippets: no Accessibility access, not watching")
+            return
+        }
         let keys = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             MainActor.assumeIsolated { self?.keyDown(event) }
         }
@@ -57,7 +62,13 @@ final class SnippetExpander {
         typed = ""
     }
 
+    private var loggedFirstKey = false
+
     private func keyDown(_ event: NSEvent) {
+        if !loggedFirstKey {
+            loggedFirstKey = true
+            Log.app.info("Snippets: first keystroke seen")
+        }
         guard !expanding, NSApp.keyWindow == nil else { return } // not while typing into Klik itself
         let modifiers = event.modifierFlags.intersection([.command, .control, .option])
         guard modifiers.isEmpty else { typed = ""; return }
@@ -78,6 +89,7 @@ final class SnippetExpander {
         if typed.count > keep { typed = String(typed.suffix(keep)) }
         guard let snippet = store.match(endOf: typed) else { return }
         typed = ""
+        Log.app.info("Snippets: expanding \(snippet.keyword, privacy: .public)")
         expand(snippet)
     }
 
@@ -91,13 +103,13 @@ final class SnippetExpander {
             }
         } else {
             expanding = false
-            askToFill(snippet)
+            askToFill(snippet, NSWorkspace.shared.frontmostApplication)
         }
     }
 
     /// Pastes the snippet where the caret is: the pasteboard takes the expansion, ⌘V
     /// goes to the front app, and what was on the pasteboard before comes back.
-    func paste(_ snippet: Snippet, values: [String: String]) {
+    func paste(_ snippet: Snippet, values: [String: String], returningTo app: NSRunningApplication? = nil) {
         expanding = true
         let pasteboard = NSPasteboard.general
         let previous = pasteboard.pasteboardItems?.compactMap { item -> NSPasteboardItem? in
@@ -117,10 +129,8 @@ final class SnippetExpander {
         pasteboard.setData(Data(), forType: Clipboard.ownMarker) // the history need not record the expansion
         store.recordUse(snippet)
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            Self.press(kVK_ANSI_V, times: 1, flags: .maskCommand)
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+        ClipboardHistory.pressCommandV(returningTo: app)
+        DispatchQueue.main.asyncAfter(deadline: .now() + (app == nil ? 0.4 : 1.6)) { [weak self] in
             if !previous.isEmpty {
                 pasteboard.clearContents()
                 pasteboard.writeObjects(previous)
