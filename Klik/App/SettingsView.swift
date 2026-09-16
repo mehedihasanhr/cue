@@ -608,6 +608,7 @@ struct ShortcutSettingsView: View {
         case .captureText: "text.viewfinder"
         case .pickColor: "eyedropper"
         case .quickTask: "checklist"
+        case .clipboardPanel: "doc.on.clipboard"
         case .confirmCapture, .cancelCapture: "xmark"
         }
     }
@@ -621,6 +622,7 @@ struct ShortcutSettingsView: View {
         case .captureText: .green
         case .pickColor: .pink
         case .quickTask: .mint
+        case .clipboardPanel: .purple
         case .confirmCapture, .cancelCapture: .gray
         }
     }

@@ -9,8 +9,8 @@ final class FloatingPanelWindow: NSPanel {
     private static let margin: CGFloat = 24
     private var monitors: [Any] = []
 
-    init(rootView: some View) {
-        let full = CGSize(width: Self.size.width + Self.margin * 2, height: Self.size.height + Self.margin * 2)
+    init(rootView: some View, size: CGSize = FloatingPanelWindow.size) {
+        let full = CGSize(width: size.width + Self.margin * 2, height: size.height + Self.margin * 2)
         super.init(
             contentRect: CGRect(origin: .zero, size: full),
             styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
@@ -32,7 +32,7 @@ final class FloatingPanelWindow: NSPanel {
         animationBehavior = .utilityWindow
 
         let host = NSHostingView(rootView: rootView
-            .frame(width: Self.size.width, height: Self.size.height)
+            .frame(width: size.width, height: size.height)
             .liquidGlass(cornerRadius: 24, alwaysDark: true)
             .padding(Self.margin)
             .environment(\.colorScheme, .dark)

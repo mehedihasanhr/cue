@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var floatingPanel: FloatingPanelWindow?
     private var island: IslandController?
     private var quickTaskPanel: QuickTaskPanel?
+    private var clipboardPanel: FloatingPanelWindow?
 
     private var settingsWindow: SettingsWindowController?
     private var onboardingWindows: [PermissionKind: HostedWindowController] = [:]
@@ -53,6 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         shortcuts.setAction(for: .captureText) { [weak self] in self?.coordinator.captureText(fromMenu: false) }
         shortcuts.setAction(for: .pickColor) { [weak self] in self?.pickColor(nil) }
         shortcuts.setAction(for: .quickTask) { [weak self] in self?.quickTask(nil) }
+        shortcuts.setAction(for: .clipboardPanel) { [weak self] in self?.showClipboardPanel(nil) }
 
         // Diagnostics: `--env KLIK_DEBUG_HOTKEYS=1` writes every shortcut and its status to Pictures/Klik.
         if ProcessInfo.processInfo.environment["KLIK_DEBUG_HOTKEYS"] == "1" {
@@ -163,6 +165,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func closeHistory() {
         floatingPanel?.close()
+        clipboardPanel?.close()
         island?.collapse(animated: false)
     }
 
@@ -182,6 +185,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         .environment(preferences)
         let panel = FloatingPanelWindow(rootView: content)
         floatingPanel = panel
+        panel.show(at: NSEvent.mouseLocation, position: preferences.panelPosition)
+    }
+
+    /// The clipboard history alone (⌘⇧C by default): a list to pick from by keyboard.
+    @objc func showClipboardPanel(_ sender: Any?) {
+        if let panel = clipboardPanel, panel.isVisible {
+            panel.close()
+            return
+        }
+        closeHistory()
+        let content = ClipboardPanelView(clipboard: clipboard, close: { [weak self] in self?.clipboardPanel?.close() })
+            .environment(preferences)
+        let panel = FloatingPanelWindow(rootView: content, size: ClipboardPanelView.size)
+        clipboardPanel = panel
         panel.show(at: NSEvent.mouseLocation, position: preferences.panelPosition)
     }
 

@@ -81,6 +81,9 @@ permission (Klik asks on first use) so it can send scroll events to the target a
 
 ### Shortcuts
 
+Defaults: **⌥⇧3** full screen · **⌥⇧4** area · **⌥⇧5** scrolling · **⌥⇧T** capture
+text · **⌥⇧P** pick a color · **⌥⇧N** quick task · **⌥⇧K** the Klik panel ·
+**⌘⇧C** the clipboard list (type to filter, ↑↓, ↩ pastes, ⌘↩ copies, ⌘1–9 picks).
 Klik › Settings › Shortcuts: click a field and press a new combination (⌫ clears).
 The macOS defaults (⌘⇧3/4/5/6) are handled by the system first; Klik marks them with a
 warning if you bind them, and links to Keyboard › Keyboard Shortcuts › Screenshots
