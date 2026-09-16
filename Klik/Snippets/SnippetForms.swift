@@ -204,7 +204,9 @@ struct SnippetFormRow: View {
     }
 }
 
-/// Fills a snippet's blanks before it is pasted: one field per `{{placeholder}}`.
+/// Fills a snippet's blanks before it is pasted: the whole template, laid out as it
+/// will read, with each `{{blank}}` an inline field. A click on a blank focuses it,
+/// ⇥ / ⇧⇥ move between them, ↩ in the last one (or ⌘↩) pastes.
 struct SnippetFillRow: View {
     let snippet: Snippet
     let finish: (PromptAnswer?) -> Void
@@ -219,39 +221,25 @@ struct SnippetFillRow: View {
                 PromptBadge(symbol: "text.badge.checkmark")
                 PromptLabel("Fill in \(snippet.title)")
                 Spacer(minLength: 0)
+                KeyCap("⇥")
+                Text("next blank").font(.system(size: 10)).foregroundStyle(.primary.opacity(0.45))
                 KeyCap("esc")
                 Text("cancel").font(.system(size: 10)).foregroundStyle(.primary.opacity(0.45))
             }
             ScrollView {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(Array(blanks.enumerated()), id: \.element) { index, blank in
-                        HStack(spacing: 8) {
-                            Text(blank)
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(.primary.opacity(0.7))
-                                .frame(width: 110, alignment: .trailing)
-                                .lineLimit(1)
-                            PromptBox {
-                                TextField(blank, text: binding(blank))
-                                    .textFieldStyle(.plain)
-                                    .font(.system(size: 13))
-                                    .foregroundStyle(.primary)
-                                    .focused($focused, equals: blank)
-                                    .onSubmit {
-                                        if index + 1 < blanks.count { focused = blanks[index + 1] } else { paste() }
-                                    }
-                                    .padding(.horizontal, 8)
-                            }
-                        }
-                    }
+                TemplateFillView(template: snippet.text, values: $values, focused: $focused) { blank in
+                    if let index = blanks.firstIndex(of: blank), index + 1 < blanks.count { focused = blanks[index + 1] } else { paste() }
                 }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
+            .background(.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.primary.opacity(0.15)))
             .frame(maxHeight: .infinity)
             HStack(spacing: 8) {
-                Text(preview)
+                Text(blanks.count == 1 ? "1 blank" : "\(blanks.count) blanks")
                     .font(.system(size: 10.5))
                     .foregroundStyle(.primary.opacity(0.5))
-                    .lineLimit(2)
                 Spacer(minLength: 8)
                 Button("Cancel") { finish(nil) }
                     .buttonStyle(.plain)
@@ -295,15 +283,150 @@ struct SnippetFillRow: View {
         .onExitCommand { finish(nil) }
     }
 
-    private func binding(_ blank: String) -> Binding<String> {
-        Binding(get: { values[blank] ?? "" }, set: { values[blank] = $0 })
-    }
-
-    private var preview: String {
-        SnippetTemplate.expand(snippet.text, values: values).replacingOccurrences(of: "\n", with: " ")
-    }
-
     private func paste() {
         finish(PromptAnswer(title: snippet.keyword, values: values))
+    }
+}
+
+/// The template as flowing text with an inline field for each `{{blank}}`; the
+/// built-in blanks show what they will be filled with.
+struct TemplateFillView: View {
+    let template: String
+    @Binding var values: [String: String]
+    var focused: FocusState<String?>.Binding
+    /// ↩ in a blank.
+    var submit: (String) -> Void = { _ in }
+
+    private enum Token: Hashable {
+        case word(String)
+        case blank(String)
+        case builtIn(String)
+        case newline
+    }
+
+    private var tokens: [Token] {
+        var result: [Token] = []
+        var rest = Substring(template)
+        func words(_ text: Substring) {
+            for (index, line) in text.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+                if index > 0 { result.append(.newline) }
+                for word in line.split(whereSeparator: \.isWhitespace) { result.append(.word(String(word))) }
+            }
+        }
+        while let open = rest.range(of: "{{"), let close = rest[open.upperBound...].range(of: "}}") {
+            words(rest[..<open.lowerBound])
+            let name = rest[open.upperBound..<close.lowerBound].trimmingCharacters(in: .whitespaces)
+            result.append(SnippetTemplate.isBuiltIn(name) ? .builtIn(name) : .blank(name))
+            rest = rest[close.upperBound...]
+        }
+        words(rest)
+        return result
+    }
+
+    var body: some View {
+        FlowLayout(spacing: 5, lineSpacing: 8) {
+            ForEach(Array(tokens.enumerated()), id: \.offset) { _, token in
+                switch token {
+                case .word(let word):
+                    Text(word).font(.system(size: 13)).foregroundStyle(.primary.opacity(0.9))
+                case .newline:
+                    Color.clear.frame(width: 0, height: 0).layoutValue(key: LineBreak.self, value: true)
+                case .builtIn(let name):
+                    Text(SnippetTemplate.expand("{{\(name)}}", values: [:], clipboard: NSPasteboard.general.string(forType: .string)))
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(.primary.opacity(0.7))
+                        .padding(.horizontal, 6).padding(.vertical, 1)
+                        .background(.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                        .help("{{\(name)}} fills itself")
+                case .blank(let name):
+                    blankField(name)
+                }
+            }
+        }
+    }
+
+    /// An inline field that grows with what is typed and lights up while focused.
+    private func blankField(_ name: String) -> some View {
+        let text = Binding(get: { values[name] ?? "" }, set: { values[name] = $0 })
+        let active = focused.wrappedValue == name
+        return ZStack(alignment: .leading) {
+            // The width comes from the longer of the placeholder and the value.
+            Text(text.wrappedValue.isEmpty ? name : text.wrappedValue)
+                .font(.system(size: 13, weight: .medium))
+                .hidden()
+                .padding(.horizontal, 8)
+            TextField(name, text: text)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(active ? Color.primary : Color.primary.opacity(0.85))
+                .focused(focused, equals: name)
+                .onSubmit { submit(name) }
+                .padding(.horizontal, 8)
+        }
+        .frame(minWidth: 60)
+        .frame(height: 24)
+        .background((active ? Color.brand : Color.primary).opacity(active ? 0.22 : 0.1), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(active ? Color.brand : Color.primary.opacity(0.35)).frame(height: 1.5).padding(.horizontal, 4)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .onTapGesture { focused.wrappedValue = name }
+        .fixedSize()
+    }
+}
+
+/// Marks a subview that forces the flow onto a new line.
+nonisolated private struct LineBreak: LayoutValueKey {
+    static let defaultValue = false
+}
+
+/// Lays subviews out left to right, wrapping like text; a `LineBreak` subview starts
+/// a new row.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 4
+    var lineSpacing: CGFloat = 4
+
+    private struct Placement {
+        var origin: CGPoint
+        var size: CGSize
+    }
+
+    private func place(_ subviews: Subviews, width: CGFloat) -> (placements: [Placement], size: CGSize) {
+        var placements: [Placement] = []
+        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0, maxX: CGFloat = 0
+        for subview in subviews {
+            if subview[LineBreak.self] {
+                x = 0
+                y += rowHeight + lineSpacing
+                rowHeight = 0
+                placements.append(Placement(origin: CGPoint(x: x, y: y), size: .zero))
+                continue
+            }
+            let size = subview.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > width {
+                x = 0
+                y += rowHeight + lineSpacing
+                rowHeight = 0
+            }
+            placements.append(Placement(origin: CGPoint(x: x, y: y), size: size))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+            maxX = max(maxX, x - spacing)
+        }
+        return (placements, CGSize(width: maxX, height: y + rowHeight))
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? 400
+        let laid = place(subviews, width: width)
+        return CGSize(width: proposal.width ?? laid.size.width, height: laid.size.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let laid = place(subviews, width: bounds.width)
+        for (subview, placement) in zip(subviews, laid.placements) {
+            subview.place(at: CGPoint(x: bounds.minX + placement.origin.x, y: bounds.minY + placement.origin.y), anchor: .topLeading,
+                          proposal: ProposedViewSize(placement.size))
+        }
     }
 }

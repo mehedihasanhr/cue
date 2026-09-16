@@ -96,14 +96,26 @@ final class SnippetExpander {
     /// Replaces the keyword just typed: fills the blanks first when there are any.
     private func expand(_ snippet: Snippet) {
         expanding = true
-        Self.press(kVK_Delete, times: snippet.keyword.count)
-        if snippet.placeholders.isEmpty {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
-                self?.paste(snippet, values: [:])
+        // The keyword is erased one backspace at a time, spaced out: posted in one
+        // burst from inside the key monitor they arrive before the app has taken the
+        // keystroke that completed the keyword, and some go missing.
+        Self.erase(characters: snippet.keyword.count) { [weak self] in
+            guard let self else { return }
+            if snippet.placeholders.isEmpty {
+                paste(snippet, values: [:])
+            } else {
+                expanding = false
+                askToFill(snippet, NSWorkspace.shared.frontmostApplication)
             }
-        } else {
-            expanding = false
-            askToFill(snippet, NSWorkspace.shared.frontmostApplication)
+        }
+    }
+
+    /// Backspaces `count` times, a few milliseconds apart, then calls `done`.
+    private static func erase(characters count: Int, then done: @escaping @MainActor () -> Void) {
+        guard count > 0 else { done(); return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) {
+            press(kVK_Delete, times: 1)
+            erase(characters: count - 1, then: done)
         }
     }
 
