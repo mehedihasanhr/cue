@@ -48,11 +48,26 @@ final class IslandModel {
     var geometry: IslandGeometry?
     /// The compact box's row width, reported by the row itself (see `fitsContent`).
     var contentWidth: CGFloat?
+    /// The open panel's width: wide enough for its tab row, at least the fixed size.
+    private(set) var panelWidth: CGFloat = IslandPanel.size.width
+    /// The window must grow with the panel; set by the controller.
+    var onPanelWidthChanged: () -> Void = {}
+
+    func setPanelWidth(_ width: CGFloat) {
+        let width = max(width, IslandPanel.size.width).rounded()
+        guard width != panelWidth else { return }
+        panelWidth = width
+        onPanelWidthChanged()
+    }
 
     /// The drawn shape in `phase`: the fixed rect, or the content-fitted one.
     func shapeRect(for phase: Phase) -> CGRect {
         guard let geometry else { return .zero }
-        return geometry.rect(for: phase.geometryPhase, contentWidth: phase.fitsContent ? contentWidth : nil)
+        let width: CGFloat? = switch phase {
+        case .expanded: panelWidth
+        default: phase.fitsContent ? contentWidth : nil
+        }
+        return geometry.rect(for: phase.geometryPhase, contentWidth: width)
     }
     /// A drag with files or an image is over the island.
     var dropping = false
@@ -147,6 +162,7 @@ struct IslandView: View {
             .onTapGesture { if collapsed { model.onTap() } }
             .animation(collapsed ? Self.closeAnimation : Self.openAnimation, value: phase)
             .animation(Self.openAnimation, value: model.contentWidth)
+            .animation(Self.openAnimation, value: model.panelWidth)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .environment(\.colorScheme, .dark)
         }
@@ -161,7 +177,7 @@ struct IslandView: View {
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
                 FlashRow(item: item, library: library)
-                    .modifier(MeasuredWidth(model: model))
+                    .modifier(IdealWidth { model.contentWidth = $0 })
                     .frame(height: IslandGeometry.flashContentHeight)
             }
             .transition(Self.contentTransition)
@@ -169,7 +185,7 @@ struct IslandView: View {
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
                 StatusRow(status: status)
-                    .modifier(MeasuredWidth(model: model))
+                    .modifier(IdealWidth { model.contentWidth = $0 })
                     .frame(height: IslandGeometry.flashContentHeight)
             }
             .transition(Self.contentTransition)
@@ -181,7 +197,7 @@ struct IslandView: View {
                         .frame(height: IslandGeometry.formContentHeight)
                 } else if prompt.isConfirm {
                     ConfirmRow(prompt: prompt, detail: prompt.detail(tasks)) { answer in model.onPromptFinished(prompt, answer) }
-                        .modifier(MeasuredWidth(model: model))
+                        .modifier(IdealWidth { model.contentWidth = $0 })
                         .frame(height: IslandGeometry.promptContentHeight)
                 } else {
                     PromptRow(prompt: prompt) { answer in model.onPromptFinished(prompt, answer) }
@@ -203,7 +219,8 @@ struct IslandView: View {
         case .expanded:
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
-                IslandPanel(library: library, clipboard: clipboard, assets: assets, colors: colors, tasksStore: tasks, actions: actions, dropping: model.dropping, onPrompt: { model.onPrompt($0) }, onShowTask: { model.onShowTask($0) })
+                IslandPanel(library: library, clipboard: clipboard, assets: assets, colors: colors, tasksStore: tasks, actions: actions, dropping: model.dropping,
+                            width: model.panelWidth, onIdealWidth: { model.setPanelWidth($0) }, onPrompt: { model.onPrompt($0) }, onShowTask: { model.onShowTask($0) })
                     .padding(.horizontal, IslandGeometry.panelHorizontalPadding)
                     .padding(.bottom, IslandGeometry.panelBottomPadding)
             }
@@ -216,11 +233,11 @@ struct IslandView: View {
         .animation(contentAnimation)
 }
 
-/// Reports a row's ideal width to the model so the compact box can fit it. A hidden
-/// copy laid out at its ideal size does the measuring; the visible row then gets the
-/// clamped width and truncates what does not fit.
-private struct MeasuredWidth: ViewModifier {
-    let model: IslandModel
+/// Reports a view's ideal width so the island can fit it. A hidden copy laid out at
+/// its ideal size does the measuring; the visible view then gets the clamped width
+/// and truncates what does not fit.
+struct IdealWidth: ViewModifier {
+    let report: (CGFloat) -> Void
 
     func body(content: Content) -> some View {
         content.background {
@@ -229,9 +246,7 @@ private struct MeasuredWidth: ViewModifier {
                 .hidden()
                 .disabled(true) // its buttons must not answer clicks or shortcuts
                 .accessibilityHidden(true)
-                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
-                    model.contentWidth = width
-                }
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { report($0) }
         }
     }
 }

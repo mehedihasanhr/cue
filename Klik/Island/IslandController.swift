@@ -51,6 +51,10 @@ final class IslandController {
         model.onTap = { [weak self] in self?.expand() }
         model.onPrompt = { [weak self] prompt in self?.prompt(prompt) }
         model.onShowTask = { [weak self] task in self?.showTask(task) }
+        model.onPanelWidthChanged = { [weak self] in
+            // Reported from inside a layout pass; the window resizes after it.
+            DispatchQueue.main.async { self?.fitWindow() }
+        }
         model.onTaskDetailClosed = { [weak self] task in
             guard let self else { return }
             removeOutsideClickMonitor()
@@ -187,9 +191,18 @@ final class IslandController {
         let geometry = IslandGeometry(screen: metrics, panelSize: IslandPanel.size)
         model.geometry = geometry
         setPhase(.collapsed, animated: false)
-        window.setFrame(geometry.windowRect, display: true)
+        fitWindow()
         if !hidden { window.orderFrontRegardless() }
         Log.app.info("Dynamic Island on \(screen.localizedName, privacy: .public) notch=\(metrics.hasNotch) rect=\(String(describing: geometry.collapsed), privacy: .public)")
+    }
+
+    /// The window always holds the widest shape (the open panel at its current width)
+    /// plus shadow room; only the drawn shape animates.
+    private func fitWindow() {
+        guard let geometry = model.geometry else { return }
+        let rect = geometry.windowRect(for: .expanded, contentWidth: model.panelWidth)
+        guard window.frame != rect else { return }
+        window.setFrame(rect, display: true)
     }
 
     /// Hidden for the duration of a capture flow so the selection overlay can't open it.

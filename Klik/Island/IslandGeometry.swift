@@ -123,13 +123,23 @@ nonisolated struct IslandGeometry: Equatable {
         }
     }
 
-    /// The compact phases (`.flash`, `.prompt`) sized to their content: `contentWidth`
-    /// clamped between a little wider than the closed shape and `maxFlashWidth`.
-    /// Other phases, and a nil width, are the fixed rects.
+    /// A phase sized to its content. The compact phases (`.flash`, `.prompt`) take
+    /// `contentWidth` clamped between a little wider than the closed shape and
+    /// `maxFlashWidth`; `.expanded` takes it as the panel's width, never narrower than
+    /// the fixed panel and never wider than the screen. `.form`, and a nil width, are
+    /// the fixed rects.
     func rect(for phase: Phase, contentWidth: CGFloat?) -> CGRect {
-        guard let contentWidth, phase == .flash || phase == .prompt else { return rect(for: phase) }
-        let width = min(max(contentWidth, collapsed.width + Self.minFlashGrowth), Self.maxFlashWidth).rounded()
+        guard let contentWidth else { return rect(for: phase) }
         let fixed = rect(for: phase)
+        let width: CGFloat
+        switch phase {
+        case .flash, .prompt:
+            width = min(max(contentWidth, collapsed.width + Self.minFlashGrowth), Self.maxFlashWidth).rounded()
+        case .expanded:
+            width = min(max(contentWidth + Self.panelHorizontalPadding * 2, fixed.width), screen.frame.width).rounded()
+        case .collapsed, .form:
+            return fixed
+        }
         return Self.hang(size: CGSize(width: width, height: fixed.height), centerX: centerX, top: screen.frame.maxY, in: screen.frame)
     }
 
@@ -150,8 +160,8 @@ nonisolated struct IslandGeometry: Equatable {
     /// the drawn shape animates, so it always grows out of the notch's centre.
     var windowRect: CGRect { windowRect(for: .expanded) }
 
-    func windowRect(for phase: Phase) -> CGRect {
-        let shape = rect(for: phase)
+    func windowRect(for phase: Phase, contentWidth: CGFloat? = nil) -> CGRect {
+        let shape = rect(for: phase, contentWidth: contentWidth)
         guard phase != .collapsed else { return shape }
         var rect = shape.insetBy(dx: -Self.shadowMargin, dy: 0)
         rect.origin.y -= Self.shadowMargin

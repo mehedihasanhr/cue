@@ -34,7 +34,9 @@ enum IslandTab: String, CaseIterable {
 /// then the captures, the clipboard history or the assets as cards in a horizontal
 /// row grouped by day, newest first. The row scrolls by dragging (or with the trackpad).
 struct IslandPanel: View {
+    /// The panel's smallest size; it widens for a tab row that needs more room.
     static let size = CGSize(width: 780, height: 316)
+    static let horizontalPadding: CGFloat = 20
 
     let library: CaptureLibrary
     let clipboard: ClipboardHistory
@@ -46,6 +48,10 @@ struct IslandPanel: View {
     /// A file or image is being dragged over the island.
     var dropping = false
     /// Asks the island for a line of text in its compact form.
+    /// The current width (the island fits it to `onIdealWidth`).
+    var width: CGFloat = IslandPanel.size.width
+    /// The width the tab row would like, so nothing in it is ever truncated.
+    var onIdealWidth: (CGFloat) -> Void = { _ in }
     var onPrompt: (IslandPrompt) -> Void = { _ in }
     /// Opens a task in the compact island.
     var onShowTask: (TaskItem) -> Void = { _ in }
@@ -126,7 +132,7 @@ struct IslandPanel: View {
                 ForEach(IslandTab.allCases, id: \.self) { value in
                     tabPill(value, count: count(for: value))
                 }
-                Spacer(minLength: 0)
+                Spacer(minLength: 16)
                 if tab == .colors {
                     smallButton("Pick", symbol: "eyedropper", help: "Pick a color from the screen", action: actions.pickColor)
                 }
@@ -148,6 +154,7 @@ struct IslandPanel: View {
                     }
                 }
             }
+            .modifier(IdealWidth { onIdealWidth($0 + Self.horizontalPadding * 2) })
             }
 
             ZStack {
@@ -214,10 +221,10 @@ struct IslandPanel: View {
             .onChange(of: search, refreshHits)
             .onChange(of: library.items.count + clipboard.items.count + assets.items.count + colors.items.count + tasksStore.tasks.count, refreshHits)
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, Self.horizontalPadding)
         .padding(.top, 14)
         .padding(.bottom, 16)
-        .frame(width: Self.size.width, height: Self.size.height)
+        .frame(width: width, height: Self.size.height)
     }
 
     // MARK: - Cards
@@ -369,6 +376,7 @@ struct IslandPanel: View {
                 }
             }
             .foregroundStyle(selected ? .black : .white.opacity(0.85))
+            .fixedSize()
             .padding(.horizontal, 12)
             .frame(height: 28)
             .background(selected ? Color.white : Color.white.opacity(0.1), in: Capsule())

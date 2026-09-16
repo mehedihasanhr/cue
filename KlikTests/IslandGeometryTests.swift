@@ -69,9 +69,15 @@ final class IslandGeometryTests: XCTestCase {
             XCTAssertEqual(rect.height, geometry.rect(for: phase).height)
             XCTAssertEqual(geometry.rect(for: phase, contentWidth: nil), geometry.rect(for: phase))
         }
-        // Fixed phases ignore the content width.
-        XCTAssertEqual(geometry.rect(for: .form, contentWidth: 100), geometry.form)
+        // The open panel grows for a wider content, never shrinks below the fixed panel.
         XCTAssertEqual(geometry.rect(for: .expanded, contentWidth: 100), geometry.expanded)
+        let wide = geometry.rect(for: .expanded, contentWidth: 900)
+        XCTAssertEqual(wide.width, 900 + IslandGeometry.panelHorizontalPadding * 2)
+        XCTAssertEqual(wide.midX, 756)
+        XCTAssertEqual(geometry.rect(for: .expanded, contentWidth: 5000).width, 1512)
+        XCTAssertTrue(geometry.windowRect(for: .expanded, contentWidth: 900).contains(wide))
+        // The form ignores the content width.
+        XCTAssertEqual(geometry.rect(for: .form, contentWidth: 100), geometry.form)
     }
 
     func testPlainDisplayGetsAPillOnTheMenuBar() {
