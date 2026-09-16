@@ -43,15 +43,12 @@ final class FloatingPanelWindow: NSPanel {
 
     override var canBecomeKey: Bool { true }
 
-    /// Shows the panel with its top-left corner just under the pointer, kept on screen.
-    func show(at point: CGPoint) {
+    /// Shows the panel at `position` on the pointer's screen (at the pointer: its
+    /// top-left corner just under it), kept on screen.
+    func show(at point: CGPoint, position: PanelPosition = .pointer) {
         let screen = NSScreen.screens.first { $0.frame.contains(point) } ?? NSScreen.main
         let visible = screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
-        let size = frame.size
-        var origin = CGPoint(x: point.x - Self.margin - 24, y: point.y - size.height + Self.margin + 12)
-        origin.x = min(max(origin.x, visible.minX + 8 - Self.margin), visible.maxX - size.width - 8 + Self.margin)
-        origin.y = min(max(origin.y, visible.minY + 8 - Self.margin), visible.maxY - size.height - 8 + Self.margin)
-        setFrameOrigin(origin)
+        setFrameOrigin(position.origin(windowSize: frame.size, margin: Self.margin, pointer: point, visible: visible))
         makeKeyAndOrderFront(nil)
         installMonitors()
     }

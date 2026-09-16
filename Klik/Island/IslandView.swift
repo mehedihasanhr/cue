@@ -526,8 +526,92 @@ struct TaskFormRow: View {
     @State private var newProjectName: String?
     @State private var editor = MarkdownEditor.Handle()
     @FocusState private var focus: Field?
+    /// Which completion for the title's last `#` / `!` token is highlighted.
+    @State private var suggestionIndex = 0
 
     private enum Field { case title, notes }
+
+    /// A completion offered under the title while a `#` or `!` token is being typed.
+    private enum Suggestion: Hashable {
+        case project(TaskProject)
+        case newProject(String)
+        case priority(TaskPriority)
+
+        var title: String {
+            switch self {
+            case .project(let project): project.name
+            case .newProject(let name): "New project “\(name)”"
+            case .priority(let priority): priority.title
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .project: "folder"
+            case .newProject: "folder.badge.plus"
+            case .priority(let priority): priority.symbol
+            }
+        }
+
+        /// What replaces the token when accepted.
+        var token: String {
+            switch self {
+            case .project(let project): "#" + project.name.filter { !$0.isWhitespace }
+            case .newProject(let name): "#" + name
+            case .priority(let priority): "!" + priority.rawValue
+            }
+        }
+    }
+
+    /// The title's last word, if it is a `#` or `!` token still being typed.
+    private var typingToken: String? {
+        guard !title.hasSuffix(" "), let last = title.split(whereSeparator: \.isWhitespace).last else { return nil }
+        let token = String(last)
+        return token.hasPrefix("#") || token.hasPrefix("!") ? token : nil
+    }
+
+    private var suggestions: [Suggestion] {
+        guard let token = typingToken else { return [] }
+        let fragment = TaskTokens.compact(String(token.dropFirst()))
+        if token.hasPrefix("#") {
+            let matches = store.projects.filter { TaskTokens.compact($0.name).hasPrefix(fragment) }
+                .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+            var result = matches.prefix(5).map(Suggestion.project)
+            if !fragment.isEmpty, !matches.contains(where: { TaskTokens.compact($0.name) == fragment }) {
+                result.append(.newProject(String(token.dropFirst())))
+            }
+            return result
+        }
+        return TaskPriority.allCases.filter { fragment.isEmpty || $0.rawValue.hasPrefix(fragment) }.map(Suggestion.priority)
+    }
+
+    /// Replaces the token being typed with the highlighted completion.
+    @discardableResult
+    private func acceptSuggestion() -> Bool {
+        let suggestions = suggestions
+        guard !suggestions.isEmpty, let token = typingToken else { return false }
+        let chosen = suggestions[min(suggestionIndex, suggestions.count - 1)]
+        title = String(title.dropLast(token.count)) + chosen.token + " "
+        suggestionIndex = 0
+        return true
+    }
+
+    private func moveSuggestion(_ delta: Int) -> KeyPress.Result {
+        let count = suggestions.count
+        guard count > 0 else { return .ignored }
+        suggestionIndex = (suggestionIndex + delta + count) % count
+        return .handled
+    }
+
+    /// `#project` / `!priority` in the title drive the pickers as they are typed.
+    private func applyTokens() {
+        let parsed = TaskTokens.parse(title)
+        if let priority = parsed.priority { self.priority = priority }
+        if let name = parsed.project, let project = store.projects.first(where: { TaskTokens.compact($0.name) == TaskTokens.compact(name) }) {
+            projectID = project.id
+        }
+        if suggestionIndex >= suggestions.count { suggestionIndex = 0 }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -539,17 +623,26 @@ struct TaskFormRow: View {
                 Text("cancel").font(.system(size: 10)).foregroundStyle(.primary.opacity(0.45))
             }
             PromptBox {
-                TextField("Task title", text: $title)
+                TextField("Task title — #project !priority", text: $title)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.primary)
                     .focused($focus, equals: .title)
-                    .onSubmit { focus = .notes }
+                    .onSubmit { if !acceptSuggestion() { focus = .notes } }
+                    .onKeyPress(.tab) { acceptSuggestion() ? .handled : { focus = .notes; return .handled }() }
+                    .onKeyPress(.downArrow) { moveSuggestion(1) }
+                    .onKeyPress(.upArrow) { moveSuggestion(-1) }
+                    .onChange(of: title) { _, _ in applyTokens() }
                     .padding(.horizontal, 8)
             }
+            .overlay(alignment: .topLeading) {
+                if !suggestions.isEmpty, focus == .title { suggestionRow.offset(y: 34) }
+            }
+            .zIndex(1)
             VStack(spacing: 0) {
                 formatBar
-                MarkdownEditor(text: $notes, handle: editor, insertImage: { data in store.saveImage(data) }, insertFile: { url in store.saveAttachment(url) })
+                MarkdownEditor(text: $notes, handle: editor, insertImage: { data in store.saveImage(data) }, insertFile: { url in store.saveAttachment(url) },
+                               onBacktab: { focus = .title })
                     .focused($focus, equals: .notes)
             }
             .background(.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -594,6 +687,7 @@ struct TaskFormRow: View {
                 .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
+        .background { priorityShortcuts }
         .padding(.horizontal, 18)
         .padding(.top, 8)
         .padding(.bottom, 12)
@@ -615,27 +709,69 @@ struct TaskFormRow: View {
         .onExitCommand { finish(nil) }
     }
 
+    /// Completions for the `#` / `!` token being typed: ↑↓ to choose, ⇥ or ↩ to take.
+    private var suggestionRow: some View {
+        let suggestions = suggestions
+        return HStack(spacing: 4) {
+            ForEach(Array(suggestions.enumerated()), id: \.element) { index, suggestion in
+                let chosen = index == min(suggestionIndex, suggestions.count - 1)
+                Button {
+                    suggestionIndex = index
+                    acceptSuggestion()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: suggestion.symbol).font(.system(size: 9, weight: .bold))
+                        Text(suggestion.title).font(.system(size: 11, weight: .medium)).lineLimit(1)
+                    }
+                    .foregroundStyle(chosen ? .black : .primary.opacity(0.85))
+                    .padding(.horizontal, 8)
+                    .frame(height: 22)
+                    .background(chosen ? Color.white : Color.primary.opacity(0.1), in: Capsule())
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            KeyCap("⇥").padding(.leading, 4)
+        }
+        .padding(6)
+        .background(.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.white.opacity(0.15)))
+        .shadow(color: .black.opacity(0.4), radius: 12, y: 4)
+    }
+
+    /// ⌘1 – ⌘4 set the priority from anywhere in the form.
+    private var priorityShortcuts: some View {
+        ForEach(Array(TaskPriority.allCases.enumerated()), id: \.element) { index, value in
+            Button("") { priority = value }
+                .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
+        }
+        .frame(width: 0, height: 0)
+        .opacity(0)
+        .accessibilityHidden(true)
+    }
+
     /// Bold, italic, heading, list, quote, image — applied to the selection or the line.
     private var formatBar: some View {
         HStack(spacing: 2) {
-            formatButton("bold", help: "Bold") { editor.wrap("**", "**") }
-            formatButton("italic", help: "Italic") { editor.wrap("*", "*") }
-            formatButton("textformat.size", help: "Heading") { editor.prefixLine("## ") }
-            formatButton("list.bullet", help: "Bullet list") { editor.prefixLine("- ") }
-            formatButton("list.number", help: "Numbered list") { editor.prefixLine("1. ") }
-            formatButton("text.quote", help: "Quote") { editor.prefixLine("> ") }
-            formatButton("photo", help: "Insert image…") { chooseImage() }
+            formatButton("bold", help: "Bold", shortcut: KeyboardShortcut("b")) { editor.wrap("**", "**") }
+            formatButton("italic", help: "Italic", shortcut: KeyboardShortcut("i")) { editor.wrap("*", "*") }
+            formatButton("textformat.size", help: "Heading", shortcut: KeyboardShortcut("h", modifiers: [.command, .shift])) { editor.prefixLine("## ") }
+            formatButton("list.bullet", help: "Bullet list", shortcut: KeyboardShortcut("l", modifiers: [.command, .shift])) { editor.prefixLine("- ") }
+            formatButton("list.number", help: "Numbered list", shortcut: KeyboardShortcut("n", modifiers: [.command, .shift])) { editor.prefixLine("1. ") }
+            formatButton("text.quote", help: "Quote", shortcut: KeyboardShortcut("q", modifiers: [.command, .shift])) { editor.prefixLine("> ") }
+            formatButton("photo", help: "Insert image…", shortcut: KeyboardShortcut("i", modifiers: [.command, .shift])) { chooseImage() }
             Spacer(minLength: 0)
-            Text("Markdown · paste or drop images and files")
+            Text("#project · !priority · ⌘1–4 priority · ⌘B ⌘I · ⇧⇥ back to title")
                 .font(.system(size: 9.5))
                 .foregroundStyle(.primary.opacity(0.4))
+                .lineLimit(1)
                 .padding(.trailing, 8)
         }
         .padding(.horizontal, 4)
         .padding(.top, 4)
     }
 
-    private func formatButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
+    private func formatButton(_ symbol: String, help: String, shortcut: KeyboardShortcut, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 10.5, weight: .semibold))
@@ -644,7 +780,8 @@ struct TaskFormRow: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(help)
+        .keyboardShortcut(shortcut)
+        .help("\(help) (\(shortcut.display))")
     }
 
     private func chooseImage() {
@@ -695,9 +832,31 @@ struct TaskFormRow: View {
     }
 
     private func create() {
-        let cleaned = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parsed = TaskTokens.parse(title)
+        let cleaned = parsed.title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return }
-        finish(PromptAnswer(title: cleaned, notes: notes, projectID: projectID, priority: priority))
+        var projectID = projectID
+        if let name = parsed.project {
+            // A `#` token names the project; one that matches nothing is created.
+            if let project = store.projects.first(where: { TaskTokens.compact($0.name) == TaskTokens.compact(name) }) {
+                projectID = project.id
+            } else if let project = store.addProject(named: name) {
+                projectID = project.id
+            }
+        }
+        finish(PromptAnswer(title: cleaned, notes: notes, projectID: projectID, priority: parsed.priority ?? priority))
+    }
+}
+
+extension KeyboardShortcut {
+    /// "⌘⇧H", for help text.
+    var display: String {
+        var text = ""
+        if modifiers.contains(.control) { text += "⌃" }
+        if modifiers.contains(.option) { text += "⌥" }
+        if modifiers.contains(.shift) { text += "⇧" }
+        if modifiers.contains(.command) { text += "⌘" }
+        return text + String(key.character).uppercased()
     }
 }
 
@@ -709,6 +868,8 @@ struct MarkdownEditor: NSViewRepresentable {
     let handle: Handle
     let insertImage: (Data) -> String?
     let insertFile: (URL) -> String?
+    /// ⇧⇥ in the editor (moves focus back to the title).
+    var onBacktab: () -> Void = {}
 
     /// Lets the toolbar reach the text view.
     final class Handle {
@@ -739,6 +900,7 @@ struct MarkdownEditor: NSViewRepresentable {
         textView.textContainer?.widthTracksTextView = true
         textView.insertImage = insertImage
         textView.insertFile = insertFile
+        textView.onBacktab = onBacktab
         textView.registerForDraggedTypes([.fileURL, .png, .tiff])
         handle.textView = textView
 
@@ -770,8 +932,13 @@ struct MarkdownEditor: NSViewRepresentable {
     final class EditorTextView: NSTextView {
         var insertImage: ((Data) -> String?)?
         var insertFile: ((URL) -> String?)?
+        var onBacktab: (() -> Void)?
 
         override var acceptsFirstResponder: Bool { true }
+
+        override func insertBacktab(_ sender: Any?) {
+            onBacktab?()
+        }
 
         // Pasting an image or files inserts them as Markdown; text pastes as plain text.
         override func paste(_ sender: Any?) {

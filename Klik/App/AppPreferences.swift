@@ -20,6 +20,14 @@ final class AppPreferences {
         static let clipboardEnabled = "clipboard.enabled"
         static let clipboardLimit = "clipboard.limit"
         static let colorFormat = "color.format"
+        static let panelPosition = "panels.position"
+    }
+
+    // MARK: Panels
+
+    /// Where the floating panel and the quick task open.
+    var panelPosition: PanelPosition {
+        didSet { defaults.set(panelPosition.rawValue, forKey: Key.panelPosition) }
     }
 
     // MARK: Color picker
@@ -180,6 +188,7 @@ final class AppPreferences {
         clipboardHistoryEnabled = defaults.object(forKey: Key.clipboardEnabled) as? Bool ?? true
         clipboardHistoryLimit = defaults.object(forKey: Key.clipboardLimit) as? Int ?? 200
         colorFormat = ColorFormat(rawValue: defaults.string(forKey: Key.colorFormat) ?? "") ?? .hex
+        panelPosition = PanelPosition(rawValue: defaults.string(forKey: Key.panelPosition) ?? "") ?? .pointer
         customSoundURL = defaults.data(forKey: Key.soundBookmark).flatMap(Self.resolve)
         customIconURL = defaults.data(forKey: Key.iconBookmark).flatMap(Self.resolve)
         if sound == .custom, customSoundURL == nil { sound = .shutter }

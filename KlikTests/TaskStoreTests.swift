@@ -42,3 +42,33 @@ final class TaskStoreTests: XCTestCase {
         for task in store.tasks { store.delete(task) }
     }
 }
+
+/// `#project` and `!priority` shorthand in a task title.
+final class TaskTokensTests: XCTestCase {
+    func testTokensAreStrippedAndRead() {
+        let parsed = TaskTokens.parse("Fix login  #Work !high before Friday")
+        XCTAssertEqual(parsed.title, "Fix login before Friday")
+        XCTAssertEqual(parsed.project, "Work")
+        XCTAssertEqual(parsed.priority, .high)
+    }
+
+    func testPriorityByNamePrefixOrNumber() {
+        XCTAssertEqual(TaskTokens.priority(from: "!urgent"), .urgent)
+        XCTAssertEqual(TaskTokens.priority(from: "!U"), .urgent)
+        XCTAssertEqual(TaskTokens.priority(from: "!lo"), .low)
+        XCTAssertEqual(TaskTokens.priority(from: "!2"), .high)
+        XCTAssertEqual(TaskTokens.priority(from: "!p4"), .low)
+        XCTAssertNil(TaskTokens.priority(from: "!"))
+        XCTAssertNil(TaskTokens.priority(from: "!9"))
+        XCTAssertNil(TaskTokens.priority(from: "!zzz"))
+    }
+
+    func testPlainWordsSurvive() {
+        // A lone "#" and a "!" that names no priority are ordinary words.
+        let parsed = TaskTokens.parse("Ask # 3 !!!")
+        XCTAssertEqual(parsed.title, "Ask # 3 !!!")
+        XCTAssertNil(parsed.project)
+        XCTAssertNil(parsed.priority)
+        XCTAssertEqual(TaskTokens.compact("New Website"), "newwebsite")
+    }
+}

@@ -182,7 +182,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         .environment(preferences)
         let panel = FloatingPanelWindow(rootView: content)
         floatingPanel = panel
-        panel.show(at: NSEvent.mouseLocation)
+        panel.show(at: NSEvent.mouseLocation, position: preferences.panelPosition)
     }
 
     /// Creation and renaming from the floating panel go through the island's compact
@@ -291,7 +291,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let panel = self?.quickTaskPanel, panel.isVisible else { return nil }
             return panel.editor
         }
-        panel.show(at: NSEvent.mouseLocation)
+        panel.show(at: NSEvent.mouseLocation, position: preferences.panelPosition)
     }
 
     @objc func showSettings(_ sender: Any?) {

@@ -94,6 +94,50 @@ extension TaskPriority {
     }
 }
 
+/// Shorthand typed into a task's title: `#project` picks (or creates) the project,
+/// `!urgent` / `!high` / `!medium` / `!low` (or `!1`–`!4`) sets the priority. The
+/// tokens are stripped from the saved title.
+nonisolated enum TaskTokens {
+    struct Parsed: Equatable {
+        var title: String
+        /// The `#` token as typed, without the `#`.
+        var project: String?
+        var priority: TaskPriority?
+    }
+
+    /// Lower-cased with the spaces removed, so "#NewWebsite" matches "New Website".
+    static func compact(_ name: String) -> String {
+        name.lowercased().filter { !$0.isWhitespace }
+    }
+
+    /// The `!` token's priority, from its name, a prefix of it ("!u", "!hi") or a number.
+    static func priority(from token: String) -> TaskPriority? {
+        var body = token.lowercased()
+        guard body.hasPrefix("!") else { return nil }
+        body.removeFirst()
+        if body.hasPrefix("p") { body.removeFirst() }
+        if let number = Int(body), (1...TaskPriority.allCases.count).contains(number) { return TaskPriority.allCases[number - 1] }
+        guard !body.isEmpty else { return nil }
+        return TaskPriority.allCases.first { $0.rawValue.hasPrefix(body) }
+    }
+
+    static func parse(_ title: String) -> Parsed {
+        var parsed = Parsed(title: "", project: nil, priority: nil)
+        var words: [String] = []
+        for word in title.split(whereSeparator: \.isWhitespace).map(String.init) {
+            if word.count > 1, word.hasPrefix("#"), parsed.project == nil {
+                parsed.project = String(word.dropFirst())
+            } else if word.hasPrefix("!"), let priority = priority(from: word) {
+                parsed.priority = priority
+            } else {
+                words.append(word)
+            }
+        }
+        parsed.title = words.joined(separator: " ")
+        return parsed
+    }
+}
+
 /// Something the user asked to delete and must confirm first.
 nonisolated enum TaskDeletion: Hashable {
     case task(TaskItem)

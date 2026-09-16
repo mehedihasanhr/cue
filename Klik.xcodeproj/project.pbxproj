@@ -38,6 +38,7 @@
 				Support/Clipboard.swift,
 				Support/ImageEncoding.swift,
 				Support/LRUCache.swift,
+				Support/PanelPosition.swift,
 				Support/SQLite.swift,
 				Tasks/MarkdownView.swift,
 				Tasks/TaskStore.swift,

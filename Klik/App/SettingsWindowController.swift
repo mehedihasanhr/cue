@@ -15,7 +15,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         tabs.canPropagateSelectedChildViewControllerTitle = false
 
         tabs.addTabViewItem(Self.pane(
-            "General", symbol: "gearshape", height: 780,
+            "General", symbol: "gearshape", height: 860,
             GeneralSettingsView().environment(model).environment(library).environment(preferences)
         ))
         tabs.addTabViewItem(Self.pane(

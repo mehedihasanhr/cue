@@ -64,6 +64,16 @@ struct GeneralSettingsView: View {
             }
 
             Section {
+                Picker("Open panels at", selection: $preferences.panelPosition) {
+                    ForEach(PanelPosition.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+            } header: {
+                Text("Panels")
+            } footer: {
+                Text("Where the library panel (⌥⇧K) and the quick task (⌥/) appear — on the screen the pointer is on.")
+            }
+
+            Section {
                 Picker("Copy picked colors as", selection: $preferences.colorFormat) {
                     ForEach(ColorFormat.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
