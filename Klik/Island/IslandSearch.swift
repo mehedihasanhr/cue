@@ -69,7 +69,7 @@ enum IslandSearch {
         hits += clipboard.items.filter { matches([$0.text, $0.name, $0.sourceName, $0.kind.rawValue]) }.map(IslandItem.clipboard)
         hits += assets.items.filter { matches([$0.fileName]) }.map(IslandItem.asset)
         hits += colors.items.filter { entry in matches([entry.name] + ColorFormat.allCases.map { $0.string(for: entry.color) }) }.map(IslandItem.color)
-        hits += tasks.tasks.filter { matches([$0.title, $0.notes, tasks.project($0.projectID)?.name, $0.status.title]) }.map(IslandItem.task)
+        hits += tasks.tasks.filter { matches([$0.title, $0.notes, tasks.project($0.projectID)?.name, $0.status.title, $0.priority.title]) }.map(IslandItem.task)
         return hits
     }
 

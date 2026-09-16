@@ -60,6 +60,40 @@ extension TaskStatus {
     }
 }
 
+/// How pressing a task is; the list orders each status group by it.
+nonisolated enum TaskPriority: String, Codable, CaseIterable {
+    case urgent, high, medium, low
+
+    var title: String {
+        switch self {
+        case .urgent: "Urgent"
+        case .high: "High"
+        case .medium: "Medium"
+        case .low: "Low"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .urgent: "flame.fill"
+        case .high: "chevron.up.2"
+        case .medium: "equal"
+        case .low: "chevron.down"
+        }
+    }
+}
+
+extension TaskPriority {
+    var color: Color {
+        switch self {
+        case .urgent: .red
+        case .high: .orange
+        case .medium: .white.opacity(0.55)
+        case .low: .cyan
+        }
+    }
+}
+
 /// Something the user asked to delete and must confirm first.
 nonisolated enum TaskDeletion: Hashable {
     case task(TaskItem)
@@ -72,18 +106,20 @@ nonisolated struct TaskItem: Identifiable, Codable, Hashable {
     var notes: String
     var projectID: UUID?
     var status: TaskStatus
+    var priority: TaskPriority
     var createdAt: Date
 
-    init(title: String, notes: String = "", projectID: UUID?) {
+    init(title: String, notes: String = "", projectID: UUID?, priority: TaskPriority = .medium) {
         id = UUID()
         self.title = title
         self.notes = notes
         self.projectID = projectID
         status = .pending
+        self.priority = priority
         createdAt = .now
     }
 
-    private enum CodingKeys: String, CodingKey { case id, title, notes, projectID, status, createdAt }
+    private enum CodingKeys: String, CodingKey { case id, title, notes, projectID, status, priority, createdAt }
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -92,6 +128,7 @@ nonisolated struct TaskItem: Identifiable, Codable, Hashable {
         notes = try container.decodeIfPresent(String.self, forKey: .notes) ?? ""
         projectID = try container.decodeIfPresent(UUID.self, forKey: .projectID)
         status = try container.decode(TaskStatus.self, forKey: .status)
+        priority = try container.decodeIfPresent(TaskPriority.self, forKey: .priority) ?? .medium
         createdAt = try container.decode(Date.self, forKey: .createdAt)
     }
 }
@@ -229,23 +266,24 @@ final class TaskStore {
     // MARK: - Tasks
 
     @discardableResult
-    func addTask(titled title: String, notes: String = "", in projectID: UUID?) -> TaskItem? {
+    func addTask(titled title: String, notes: String = "", in projectID: UUID?, priority: TaskPriority = .medium) -> TaskItem? {
         let cleaned = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return nil }
-        let task = TaskItem(title: cleaned, notes: notes.trimmingCharacters(in: .whitespacesAndNewlines), projectID: projectID)
+        let task = TaskItem(title: cleaned, notes: notes.trimmingCharacters(in: .whitespacesAndNewlines), projectID: projectID, priority: priority)
         tasks.insert(task, at: 0)
         save()
         return task
     }
 
     /// Edits a task's title, description and project in one go.
-    func update(_ task: TaskItem, title: String, notes: String, projectID: UUID?) {
+    func update(_ task: TaskItem, title: String, notes: String, projectID: UUID?, priority: TaskPriority) {
         let cleaned = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return }
         update(task) {
             $0.title = cleaned
             $0.notes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
             $0.projectID = projectID
+            $0.priority = priority
         }
     }
 
@@ -299,6 +337,10 @@ final class TaskStore {
 
     func setStatus(_ status: TaskStatus, for task: TaskItem) {
         update(task) { $0.status = status }
+    }
+
+    func setPriority(_ priority: TaskPriority, for task: TaskItem) {
+        update(task) { $0.priority = priority }
     }
 
     func rename(_ task: TaskItem, to title: String) {

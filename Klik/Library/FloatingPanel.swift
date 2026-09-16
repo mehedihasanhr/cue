@@ -282,12 +282,17 @@ struct FloatingPanelView: View {
     private func taskRow(_ task: TaskItem) -> some View {
         let project = tasksStore.project(task.projectID)
         return ListRow(symbol: task.status.symbol, title: task.title,
-                       subtitle: "\(task.status.title)\(project.map { " · \($0.name)" } ?? "") · \(task.createdAt.formatted(.relative(presentation: .named)))") { onShowTask(task) }
+                       subtitle: "\(task.status.title) · \(task.priority.title)\(project.map { " · \($0.name)" } ?? "") · \(task.createdAt.formatted(.relative(presentation: .named)))") { onShowTask(task) }
             .contextMenu {
                 Button("Open") { onShowTask(task) }
                 Menu("Status") {
                     ForEach(TaskStatus.allCases, id: \.self) { status in
                         Button { tasksStore.setStatus(status, for: task) } label: { Label(status.title, systemImage: status.symbol) }
+                    }
+                }
+                Menu("Priority") {
+                    ForEach(TaskPriority.allCases, id: \.self) { value in
+                        Button { tasksStore.setPriority(value, for: task) } label: { Label(value.title, systemImage: value.symbol) }
                     }
                 }
                 Divider()

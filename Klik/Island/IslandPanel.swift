@@ -1132,6 +1132,10 @@ private struct TaskCard: View {
             .padding(12)
             .overlay(alignment: .bottom) {
                 CardCaption(title: store.project(task.projectID)?.name ?? "", date: task.createdAt) {
+                    if task.priority != .medium {
+                        Image(systemName: task.priority.symbol).font(.system(size: 9, weight: .bold)).foregroundStyle(task.priority.color)
+                            .help(task.priority.title)
+                    }
                     Badge(text: task.status.title)
                 }
             }
@@ -1145,6 +1149,11 @@ private struct TaskCard: View {
             Menu("Status") {
                 ForEach(TaskStatus.allCases, id: \.self) { status in
                     Button { store.setStatus(status, for: task) } label: { Label(status.title, systemImage: status.symbol) }
+                }
+            }
+            Menu("Priority") {
+                ForEach(TaskPriority.allCases, id: \.self) { value in
+                    Button { store.setPriority(value, for: task) } label: { Label(value.title, systemImage: value.symbol) }
                 }
             }
             Divider()

@@ -80,9 +80,9 @@ final class IslandController {
                     renamed(detail, to: answer.title)
                 case .task:
                     if let task = prompt.editing {
-                        tasks.update(task, title: answer.title, notes: answer.notes, projectID: answer.projectID)
+                        tasks.update(task, title: answer.title, notes: answer.notes, projectID: answer.projectID, priority: answer.priority)
                     } else {
-                        tasks.addTask(titled: answer.title, notes: answer.notes, in: answer.projectID)
+                        tasks.addTask(titled: answer.title, notes: answer.notes, in: answer.projectID, priority: answer.priority)
                     }
                     tasks.pendingSelection = answer.projectID.map { .project($0) } ?? .all
                 }

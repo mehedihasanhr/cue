@@ -282,7 +282,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         closeHistory()
         let panel = QuickTaskPanel(store: tasks) { [weak self] answer in
             guard let self, let answer else { return }
-            tasks.addTask(titled: answer.title, notes: answer.notes, in: answer.projectID)
+            tasks.addTask(titled: answer.title, notes: answer.notes, in: answer.projectID, priority: answer.priority)
             FeedbackHUD.show("Task added", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
         }
         quickTaskPanel = panel

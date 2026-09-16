@@ -392,12 +392,13 @@ struct IslandTasksView: View {
         var tasks: [TaskItem]
     }
 
-    /// The filtered tasks in status order (in process, pending, review, complete),
-    /// newest first within a status; empty statuses are skipped.
+    /// The filtered tasks in status order (in process, pending, review, complete);
+    /// within a status the most urgent first, then newest. Empty statuses are skipped.
     private func statusGroups(_ tasks: [TaskItem]) -> [StatusGroup] {
-        Self.statusOrder.compactMap { status in
+        let rank = Dictionary(uniqueKeysWithValues: TaskPriority.allCases.enumerated().map { ($1, $0) })
+        return Self.statusOrder.compactMap { status in
             guard filter.includes(status) else { return nil }
-            let own = tasks.filter { $0.status == status }
+            let own = tasks.filter { $0.status == status }.sorted { (rank[$0.priority]!, $1.createdAt) < (rank[$1.priority]!, $0.createdAt) }
             return own.isEmpty ? nil : StatusGroup(status: status, tasks: own)
         }
     }
@@ -496,7 +497,29 @@ struct IslandTasksView: View {
                     .font(.system(size: 10))
                     .foregroundStyle(.white.opacity(0.45))
                     .lineLimit(1)
-                // The status as a pill with its own menu, so it changes without opening the task.
+                // Priority and status as pills with their own menus, so they change
+                // without opening the task.
+                Menu {
+                    ForEach(TaskPriority.allCases, id: \.self) { value in
+                        Button { store.setPriority(value, for: task) } label: { Label(value.title, systemImage: value.symbol) }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: task.priority.symbol).font(.system(size: 9, weight: .bold))
+                        Text(task.priority.title).font(.system(size: 10, weight: .semibold))
+                    }
+                    .foregroundStyle(task.priority == .medium ? .white.opacity(0.7) : task.priority.color)
+                    .padding(.horizontal, 8)
+                    .frame(height: 20)
+                    .background((task.priority == .medium ? Color.white : task.priority.color).opacity(0.14), in: Capsule())
+                    .contentShape(Capsule())
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .frame(width: 78, alignment: .trailing)
+                .help("Priority")
                 Menu {
                     ForEach(TaskStatus.allCases, id: \.self) { status in
                         Button { store.setStatus(status, for: task) } label: { Label(status.title, systemImage: status.symbol) }
@@ -527,6 +550,11 @@ struct IslandTasksView: View {
             .contextMenu {
                 ForEach(TaskStatus.allCases, id: \.self) { status in
                     Button(status.title) { store.setStatus(status, for: task) }
+                }
+                Menu("Priority") {
+                    ForEach(TaskPriority.allCases, id: \.self) { value in
+                        Button { store.setPriority(value, for: task) } label: { Label(value.title, systemImage: value.symbol) }
+                    }
                 }
                 Divider()
                 Button("Open") { open() }

@@ -432,6 +432,7 @@ struct PromptAnswer {
     var title: String
     var notes = ""
     var projectID: UUID?
+    var priority: TaskPriority = .medium
 }
 
 /// The compact island's one-line form: an icon, what is being created, and the field.
@@ -521,6 +522,7 @@ struct TaskFormRow: View {
     @State private var title = ""
     @State private var notes = ""
     @State private var projectID: UUID?
+    @State private var priority: TaskPriority = .medium
     @State private var newProjectName: String?
     @State private var editor = MarkdownEditor.Handle()
     @FocusState private var focus: Field?
@@ -567,6 +569,7 @@ struct TaskFormRow: View {
                 } else {
                     projectMenu
                 }
+                PriorityMenu(priority: priority) { priority = $0 }
                 Spacer(minLength: 0)
                 Button("Cancel") { finish(nil) }
                     .buttonStyle(.plain)
@@ -600,6 +603,7 @@ struct TaskFormRow: View {
                 title = task.title
                 notes = task.notes
                 projectID = task.projectID
+                priority = task.priority
             } else if case .task(let project) = prompt.kind {
                 projectID = project
             }
@@ -693,7 +697,7 @@ struct TaskFormRow: View {
     private func create() {
         let cleaned = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return }
-        finish(PromptAnswer(title: cleaned, notes: notes, projectID: projectID))
+        finish(PromptAnswer(title: cleaned, notes: notes, projectID: projectID, priority: priority))
     }
 }
 
@@ -887,6 +891,7 @@ private struct TaskDetailRow: View {
                     .lineLimit(1)
                 }
                 Spacer(minLength: 0)
+                PriorityMenu(priority: task.priority) { store.setPriority($0, for: task) }
                 statusMenu
             }
             ScrollView {
@@ -955,6 +960,36 @@ private struct TaskDetailRow: View {
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
+    }
+}
+
+/// The priority as a pill with a menu, the same shape as the status pill.
+struct PriorityMenu: View {
+    let priority: TaskPriority
+    let pick: (TaskPriority) -> Void
+
+    var body: some View {
+        Menu {
+            ForEach(TaskPriority.allCases, id: \.self) { value in
+                Button { pick(value) } label: { Label(value.title, systemImage: value.symbol) }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: priority.symbol).font(.system(size: 11, weight: .semibold)).foregroundStyle(priority.color)
+                Text(priority.title).font(.system(size: 12, weight: .semibold))
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).foregroundStyle(.primary.opacity(0.5))
+            }
+            .foregroundStyle(.primary.opacity(0.9))
+            .padding(.horizontal, 10)
+            .frame(height: 28)
+            .background(.primary.opacity(0.1), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Priority")
     }
 }
 
