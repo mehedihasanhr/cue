@@ -1,9 +1,10 @@
 import AppKit
 import SwiftUI
 
-/// The Tasks tab: every task to start with, grouped by project; a group's header
-/// opens that project (its tasks by day, sub-projects as pills to drill into), and
-/// "Projects" shows the projects themselves as cards or rows.
+/// The Tasks tab: every task to start with, grouped by status (in process first,
+/// complete last) and filtered — completed tasks are hidden until asked for; a
+/// project shows its own tasks the same way, with sub-projects as pills to drill
+/// into, and "Projects" shows the projects themselves as cards or rows.
 struct IslandTasksView: View {
     let store: TaskStore
     /// New projects are named in the island's compact box.
@@ -19,6 +20,48 @@ struct IslandTasksView: View {
 
     @State private var selection: Selection = .all
     @AppStorage("tasks.projectLayout") private var projectLayout: ProjectLayout = .grid
+    @AppStorage("tasks.filter") private var filter: StatusFilter = .active
+
+    /// Which statuses the list shows. `active` is everything but complete.
+    private enum StatusFilter: String, CaseIterable {
+        case active, all, inProcess, pending, review, complete
+
+        var title: String {
+            switch self {
+            case .active: "Active"
+            case .all: "All"
+            case .inProcess: TaskStatus.inProcess.title
+            case .pending: TaskStatus.pending.title
+            case .review: TaskStatus.review.title
+            case .complete: TaskStatus.complete.title
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .active: "bolt.circle"
+            case .all: "tray.full"
+            case .inProcess: TaskStatus.inProcess.symbol
+            case .pending: TaskStatus.pending.symbol
+            case .review: TaskStatus.review.symbol
+            case .complete: TaskStatus.complete.symbol
+            }
+        }
+
+        func includes(_ status: TaskStatus) -> Bool {
+            switch self {
+            case .active: status != .complete
+            case .all: true
+            case .inProcess: status == .inProcess
+            case .pending: status == .pending
+            case .review: status == .review
+            case .complete: status == .complete
+            }
+        }
+    }
+
+    /// The list's order: what is being worked on first, what is done last.
+    private static let statusOrder: [TaskStatus] = [.inProcess, .pending, .review, .complete]
 
     private enum ProjectLayout: String {
         case grid, list
@@ -83,6 +126,7 @@ struct IslandTasksView: View {
                 .background(.white.opacity(0.08), in: Capsule())
                 plus("New project") { onPrompt(IslandPrompt(kind: .project(parent: nil))) }
             } else {
+                filterMenu
                 if let id = selectedProjectID {
                     plus("New sub-project", symbol: "folder.badge.plus") { onPrompt(IslandPrompt(kind: .project(parent: id), context: store.project(id)?.name)) }
                 }
@@ -105,6 +149,35 @@ struct IslandTasksView: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+    }
+
+    /// Status filter: Active (default), All, or one status.
+    private var filterMenu: some View {
+        Menu {
+            ForEach(StatusFilter.allCases, id: \.self) { value in
+                Button {
+                    withAnimation(.easeOut(duration: 0.15)) { filter = value }
+                } label: {
+                    Label(value.title, systemImage: value.symbol)
+                }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: filter.symbol).font(.system(size: 10, weight: .bold))
+                Text(filter.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).opacity(0.7)
+            }
+            .foregroundStyle(filter == .active ? .white.opacity(0.85) : .yellow)
+            .padding(.horizontal, 10)
+            .frame(height: 26)
+            .background(.white.opacity(0.1), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Which tasks to list")
     }
 
     private func layoutButton(_ layout: ProjectLayout, symbol: String) -> some View {
@@ -297,33 +370,51 @@ struct IslandTasksView: View {
                     }
                     .padding(.bottom, 4)
                 }
-                if tasks.isEmpty {
-                    Text("No tasks yet — add one with +.")
+                let groups = statusGroups(tasks)
+                if groups.isEmpty {
+                    Text(tasks.isEmpty ? "No tasks yet — add one with +." : filter == .active ? "Everything is complete." : "No \(filter.title.lowercased()) tasks.")
                         .font(.system(size: 12))
                         .foregroundStyle(.white.opacity(0.5))
                         .padding(.horizontal, 6)
                         .padding(.top, 8)
                 }
-                if selection == .all {
-                    // Every task, one group per project; the header opens the project.
-                    ForEach(projectGroups(tasks), id: \.id) { group in
-                        projectHeader(group)
-                        ForEach(group.tasks) { task in taskRow(task, showProject: false) }
-                    }
-                } else {
-                    ForEach(dayGroups(tasks), id: \.day) { group in
-                        Text(group.title)
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.45))
-                            .textCase(.uppercase)
-                            .padding(.horizontal, 6)
-                            .padding(.top, 6)
-                        ForEach(group.tasks) { task in taskRow(task, showProject: task.projectID != selectedProjectID) }
-                    }
+                ForEach(groups, id: \.status) { group in
+                    statusHeader(group)
+                    ForEach(group.tasks) { task in taskRow(task, showProject: task.projectID != selectedProjectID) }
                 }
             }
             .padding(.bottom, 8)
         }
+    }
+
+    private struct StatusGroup {
+        let status: TaskStatus
+        var tasks: [TaskItem]
+    }
+
+    /// The filtered tasks in status order (in process, pending, review, complete),
+    /// newest first within a status; empty statuses are skipped.
+    private func statusGroups(_ tasks: [TaskItem]) -> [StatusGroup] {
+        Self.statusOrder.compactMap { status in
+            guard filter.includes(status) else { return nil }
+            let own = tasks.filter { $0.status == status }
+            return own.isEmpty ? nil : StatusGroup(status: status, tasks: own)
+        }
+    }
+
+    private func statusHeader(_ group: StatusGroup) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: group.status.symbol).font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(group.status == .pending ? .white.opacity(0.85) : group.status.color)
+            Text(group.status.title).font(.system(size: 11, weight: .semibold)).lineLimit(1)
+            Text("\(group.tasks.count)")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.white.opacity(0.5))
+        }
+        .foregroundStyle(.white.opacity(0.85))
+        .padding(.horizontal, 6)
+        .padding(.top, 8)
+        .padding(.bottom, 2)
     }
 
     private func taskRow(_ task: TaskItem, showProject: Bool) -> some View {
@@ -334,74 +425,6 @@ struct IslandTasksView: View {
         } delete: {
             onPrompt(IslandPrompt(kind: .delete(.task(task))))
         }
-    }
-
-    private struct ProjectGroup {
-        /// nil: tasks outside any project.
-        let id: UUID?
-        let title: String
-        var tasks: [TaskItem]
-    }
-
-    /// Tasks by project in the projects' own order (nested ones under their path),
-    /// tasks outside any project last.
-    private func projectGroups(_ tasks: [TaskItem]) -> [ProjectGroup] {
-        var groups: [ProjectGroup] = []
-        for entry in projectTree(under: nil, depth: 0) {
-            let own = tasks.filter { $0.projectID == entry.project.id }
-            guard !own.isEmpty else { continue }
-            groups.append(ProjectGroup(id: entry.project.id, title: store.path(to: entry.project.id).map(\.name).joined(separator: " › "), tasks: own))
-        }
-        let loose = tasks.filter { store.project($0.projectID) == nil }
-        if !loose.isEmpty { groups.append(ProjectGroup(id: nil, title: "No project", tasks: loose)) }
-        return groups
-    }
-
-    private func projectHeader(_ group: ProjectGroup) -> some View {
-        Button {
-            guard let id = group.id else { return }
-            withAnimation(.easeOut(duration: 0.15)) { selection = .project(id) }
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: group.id == nil ? "tray" : "folder.fill").font(.system(size: 10, weight: .semibold))
-                Text(group.title).font(.system(size: 11, weight: .semibold)).lineLimit(1)
-                Text("\(group.tasks.count { $0.status != .complete })/\(group.tasks.count)")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.5))
-                if group.id != nil {
-                    Image(systemName: "chevron.right").font(.system(size: 8, weight: .bold)).foregroundStyle(.white.opacity(0.4))
-                }
-            }
-            .foregroundStyle(.white.opacity(0.85))
-            .padding(.horizontal, 6)
-            .padding(.top, 8)
-            .padding(.bottom, 2)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(group.id == nil)
-    }
-
-    private struct DayGroup {
-        let day: Date
-        let title: String
-        var tasks: [TaskItem]
-    }
-
-    private func dayGroups(_ tasks: [TaskItem]) -> [DayGroup] {
-        let calendar = Calendar.current
-        var groups: [DayGroup] = []
-        for task in tasks {
-            let day = calendar.startOfDay(for: task.createdAt)
-            if let index = groups.firstIndex(where: { $0.day == day }) {
-                groups[index].tasks.append(task)
-            } else {
-                let title = calendar.isDateInToday(day) ? "Today" : calendar.isDateInYesterday(day) ? "Yesterday"
-                    : day.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
-                groups.append(DayGroup(day: day, title: title, tasks: [task]))
-            }
-        }
-        return groups
     }
 
     /// Status icon (click cycles, menu picks), title (click to rename), project, time.
