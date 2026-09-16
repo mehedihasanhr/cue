@@ -9,13 +9,19 @@ struct SnippetFormRow: View {
     let assets: AssetStore
     let finish: (PromptAnswer?) -> Void
 
+    @Environment(AppPreferences.self) private var preferences
+    /// The trigger in front of the keyword: the default from Settings, changeable here.
+    @State private var prefix = ""
     @State private var keyword = ""
     @State private var name = ""
     @State private var text = ""
     @State private var editor = MarkdownEditor.Handle()
     @FocusState private var focus: Field?
 
-    private enum Field { case keyword, name, text }
+    private enum Field { case prefix, keyword, name, text }
+
+    /// What gets typed: the prefix and the keyword together.
+    private var fullKeyword: String { SnippetStore.cleanKeyword(prefix + keyword) }
 
     private var editing: Snippet? {
         if case .snippet(let snippet, _, _) = prompt.kind { return snippet }
@@ -42,15 +48,25 @@ struct SnippetFormRow: View {
             }
             HStack(spacing: 8) {
                 PromptBox {
-                    TextField("Keyword, e.g. ;welcome", text: $keyword)
+                    // The trigger, in its own little box; ";" unless changed.
+                    TextField("", text: $prefix)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Color.brand)
+                        .multilineTextAlignment(.center)
+                        .focused($focus, equals: .prefix)
+                        .onSubmit { focus = .keyword }
+                        .frame(width: 28)
+                        .help("The trigger typed before every keyword (set the default in Settings › Island)")
+                    Rectangle().fill(.primary.opacity(0.15)).frame(width: 1, height: 18)
+                    TextField("keyword, e.g. welcome", text: $keyword)
                         .textFieldStyle(.plain)
                         .font(.system(size: 13, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.primary)
                         .focused($focus, equals: .keyword)
                         .onSubmit { focus = .name }
-                        .padding(.horizontal, 8)
                 }
-                .frame(width: 180)
+                .frame(width: 220)
                 PromptBox {
                     TextField("Name (optional)", text: $name)
                         .textFieldStyle(.plain)
@@ -117,12 +133,10 @@ struct SnippetFormRow: View {
             }
             HStack(spacing: 8) {
                 let blanks = SnippetTemplate.placeholders(in: text).filter { !SnippetTemplate.isBuiltIn($0) }
-                if !blanks.isEmpty {
-                    Text("Asks for: \(blanks.joined(separator: ", "))")
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(.primary.opacity(0.5))
-                        .lineLimit(1)
-                }
+                Text(fullKeyword.isEmpty ? "Type the keyword anywhere to paste this" : "Type \(fullKeyword) anywhere to paste this" + (blanks.isEmpty ? "" : " · asks for \(blanks.joined(separator: ", "))"))
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.primary.opacity(0.5))
+                    .lineLimit(1)
                 Spacer(minLength: 0)
                 Button("Cancel") { finish(nil) }
                     .buttonStyle(.plain)
@@ -153,7 +167,18 @@ struct SnippetFormRow: View {
         .background(KeyWindowFocus())
         .onAppear {
             if case .snippet(let snippet, let initialText, _) = prompt.kind {
-                keyword = snippet?.keyword ?? ""
+                let stored = snippet?.keyword ?? ""
+                let defaultPrefix = preferences.snippetPrefix
+                if !defaultPrefix.isEmpty, stored.hasPrefix(defaultPrefix) {
+                    prefix = defaultPrefix
+                    keyword = String(stored.dropFirst(defaultPrefix.count))
+                } else if stored.isEmpty {
+                    prefix = defaultPrefix
+                } else {
+                    // A keyword saved with another trigger keeps it whole.
+                    prefix = ""
+                    keyword = stored
+                }
                 name = snippet?.name ?? ""
                 text = snippet?.text ?? initialText
             }
@@ -167,7 +192,7 @@ struct SnippetFormRow: View {
 
     private func save() {
         guard valid else { return }
-        finish(PromptAnswer(title: keyword, notes: text, name: name))
+        finish(PromptAnswer(title: fullKeyword, notes: text, name: name))
     }
 }
 

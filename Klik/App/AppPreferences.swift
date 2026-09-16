@@ -33,6 +33,7 @@ final class AppPreferences {
         static let prayerAnnouncements = "prayer.announcements"
         static let prayerAdjustments = "prayer.adjustments"
         static let snippetsEnabled = "snippets.enabled"
+        static let snippetPrefix = "snippets.prefix"
     }
 
     // MARK: Snippets
@@ -40,6 +41,12 @@ final class AppPreferences {
     /// Expand snippet keywords as they are typed in any app (needs Accessibility).
     var snippetsEnabled: Bool {
         didSet { defaults.set(snippetsEnabled, forKey: Key.snippetsEnabled) }
+    }
+
+    /// What every keyword starts with (";" by default) so plain words never expand;
+    /// the form fills it in, and it can be changed there for one snippet.
+    var snippetPrefix: String {
+        didSet { defaults.set(snippetPrefix, forKey: Key.snippetPrefix) }
     }
 
     // MARK: Time & prayer
@@ -285,6 +292,7 @@ final class AppPreferences {
         }
         prayerAnnouncements = defaults.object(forKey: Key.prayerAnnouncements) as? Bool ?? true
         snippetsEnabled = defaults.object(forKey: Key.snippetsEnabled) as? Bool ?? true
+        snippetPrefix = defaults.string(forKey: Key.snippetPrefix) ?? ";"
         let stored = defaults.dictionary(forKey: Key.prayerAdjustments) as? [String: Int] ?? [:]
         prayerAdjustments = Dictionary(uniqueKeysWithValues: stored.compactMap { key, value in Prayer(rawValue: key).map { ($0, value) } })
         customSoundURL = defaults.data(forKey: Key.soundBookmark).flatMap(Self.resolve)

@@ -121,7 +121,19 @@ struct IslandSettingsView: View {
             Section {
                 Toggle(isOn: $preferences.snippetsEnabled) {
                     Text("Expand snippets as you type")
-                    Text("Type a snippet's keyword (;welcome) in any app and Klik replaces it with the snippet. Blanks like {{Name}} are asked for first; {{date}}, {{time}} and {{clipboard}} fill themselves.")
+                    Text("Type a snippet's keyword (\(preferences.snippetPrefix)welcome) in any app and Klik replaces it with the snippet. Blanks like {{Name}} are asked for first; {{date}}, {{time}} and {{clipboard}} fill themselves.")
+                }
+                HStack {
+                    Text("Keyword trigger")
+                    Spacer()
+                    TextField("", text: $preferences.snippetPrefix, prompt: Text(";"))
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(.body, design: .monospaced))
+                        .multilineTextAlignment(.center)
+                        .frame(width: 60)
+                    Text("before every keyword, so ordinary words never expand")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
                 }
                 if !PermissionManager.hasAccessibilityAccess {
                     HStack {

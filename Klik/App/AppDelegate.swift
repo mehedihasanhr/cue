@@ -293,7 +293,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if case .fill(let snippet) = prompt.kind {
             panel = QuickTaskPanel(form: SnippetFillRow(snippet: snippet) { [weak self] answer in finish(answer); self?.quickTaskPanel?.close() })
         } else {
-            panel = QuickTaskPanel(form: SnippetFormRow(prompt: prompt, store: snippets, assets: assets) { [weak self] answer in finish(answer); self?.quickTaskPanel?.close() })
+            panel = QuickTaskPanel(form: SnippetFormRow(prompt: prompt, store: snippets, assets: assets) { [weak self] answer in finish(answer); self?.quickTaskPanel?.close() }
+                .environment(preferences))
         }
         quickTaskPanel = panel
         panel.show(at: NSEvent.mouseLocation, position: preferences.panelPosition)
