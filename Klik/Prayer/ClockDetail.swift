@@ -179,31 +179,35 @@ struct ClockDetail: View {
 
     // MARK: - Formatting
 
-    private static func twelveHour() -> Bool {
-        DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: .current)?.contains("a") ?? true
-    }
+    // Formatters are dear to make and this view redraws every second: one of each.
+    private static let twelveHour = DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: .current)?.contains("a") ?? true
 
-    private static func digits(_ date: Date) -> String {
+    private static let digitsFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.dateFormat = twelveHour() ? "h:mm:ss" : "HH:mm:ss"
-        return formatter.string(from: date)
-    }
+        formatter.dateFormat = twelveHour ? "h:mm:ss" : "HH:mm:ss"
+        return formatter
+    }()
 
-    private static func meridiem(_ date: Date) -> String? {
-        guard twelveHour() else { return nil }
+    private static let meridiemFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "a"
-        return formatter.string(from: date)
-    }
+        return formatter
+    }()
 
-    /// "23 Rabiʿ al-Awwal 1448 AH".
-    private static func hijri(_ date: Date) -> String {
+    private static let hijriFormatter: DateFormatter = {
         var calendar = Calendar(identifier: .islamicUmmAlQura)
         calendar.locale = .current
         let formatter = DateFormatter()
         formatter.calendar = calendar
         formatter.locale = .current
         formatter.setLocalizedDateFormatFromTemplate("d MMMM y G")
-        return formatter.string(from: date)
-    }
+        return formatter
+    }()
+
+    private static func digits(_ date: Date) -> String { digitsFormatter.string(from: date) }
+
+    private static func meridiem(_ date: Date) -> String? { twelveHour ? meridiemFormatter.string(from: date) : nil }
+
+    /// "23 Rabiʿ al-Awwal 1448 AH".
+    private static func hijri(_ date: Date) -> String { hijriFormatter.string(from: date) }
 }

@@ -69,7 +69,8 @@ final class SnippetExpander {
             loggedFirstKey = true
             Log.app.info("Snippets: first keystroke seen")
         }
-        guard !expanding, NSApp.keyWindow == nil else { return } // not while typing into Klik itself
+        // Cheapest checks first: this runs for every keystroke on the Mac.
+        guard !expanding, store.longestKeyword > 0, NSApp.keyWindow == nil else { return } // not while typing into Klik itself
         let modifiers = event.modifierFlags.intersection([.command, .control, .option])
         guard modifiers.isEmpty else { typed = ""; return }
         switch Int(event.keyCode) {
@@ -85,7 +86,7 @@ final class SnippetExpander {
         guard let characters = event.characters, !characters.isEmpty,
               characters.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) }) else { return }
         typed += characters
-        let keep = max(store.longestKeyword, 1)
+        let keep = store.longestKeyword
         if typed.count > keep { typed = String(typed.suffix(keep)) }
         guard let snippet = store.match(endOf: typed) else { return }
         typed = ""

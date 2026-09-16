@@ -151,13 +151,20 @@ struct ClockRow: View {
         }
     }
 
+    private static let twelveHour = DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: .current)?.contains("a") ?? true
+    private static let digitsFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = twelveHour ? "h:mm" : "HH:mm"
+        return formatter
+    }()
+    private static let meridiemFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "a"
+        return formatter
+    }()
+
     private static func parts(_ date: Date) -> (digits: String, meridiem: String?) {
-        let twelveHour = DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: .current)?.contains("a") ?? true
-        let digits = DateFormatter()
-        digits.dateFormat = twelveHour ? "h:mm" : "HH:mm"
-        let meridiem = DateFormatter()
-        meridiem.dateFormat = "a"
-        return (digits.string(from: date), twelveHour ? meridiem.string(from: date) : nil)
+        (digitsFormatter.string(from: date), twelveHour ? meridiemFormatter.string(from: date) : nil)
     }
 
     private var caption: String {

@@ -242,16 +242,19 @@ struct SnippetFillRow: View {
                     onContentSize(naturalWidth, height)
                 }
                 .background {
-                    // The unwrapped width, from a hidden copy laid out without a width.
-                    TemplateFillView(template: snippet.text, values: .constant([:]), focused: $focused)
-                        .fixedSize()
-                        .hidden()
-                        .disabled(true)
-                        .accessibilityHidden(true)
-                        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
-                            naturalWidth = width + 24
-                            onContentSize(naturalWidth, contentHeight)
-                        }
+                    // The unwrapped width, from a hidden copy laid out without a width —
+                    // measured once, then dropped so it costs nothing while typing.
+                    if naturalWidth == 0 {
+                        TemplateFillView(template: snippet.text, values: .constant([:]), focused: $focused)
+                            .fixedSize()
+                            .hidden()
+                            .disabled(true)
+                            .accessibilityHidden(true)
+                            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+                                naturalWidth = width + 24
+                                onContentSize(naturalWidth, contentHeight)
+                            }
+                    }
                 }
             }
             .background(.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -325,7 +328,13 @@ struct TemplateFillView: View {
         case newline
     }
 
-    private var tokens: [Token] {
+    /// Parsed once per template, not on every keystroke into a blank.
+    @State private var tokens: [Token] = []
+    /// The built-ins' values, read once when the form opens (the clipboard at that
+    /// moment), not on every layout.
+    @State private var builtIns: [String: String] = [:]
+
+    private static func tokenize(_ template: String) -> [Token] {
         var result: [Token] = []
         var rest = Substring(template)
         func words(_ text: Substring) {
@@ -353,7 +362,7 @@ struct TemplateFillView: View {
                 case .newline:
                     Color.clear.frame(width: 0, height: 0).layoutValue(key: LineBreak.self, value: true)
                 case .builtIn(let name):
-                    Text(SnippetTemplate.expand("{{\(name)}}", values: [:], clipboard: NSPasteboard.general.string(forType: .string)))
+                    Text(builtIns[name] ?? "")
                         .font(.system(size: 13))
                         .foregroundStyle(.primary.opacity(0.7))
                         .padding(.horizontal, 4)
@@ -363,6 +372,14 @@ struct TemplateFillView: View {
                 case .blank(let name):
                     blankField(name)
                 }
+            }
+        }
+        .onAppear {
+            guard tokens.isEmpty else { return }
+            tokens = Self.tokenize(template)
+            let clipboard = NSPasteboard.general.string(forType: .string)
+            for case .builtIn(let name) in tokens where builtIns[name] == nil {
+                builtIns[name] = SnippetTemplate.expand("{{\(name)}}", values: [:], clipboard: clipboard)
             }
         }
     }
@@ -408,8 +425,22 @@ struct FlowLayout: Layout {
         var size: CGSize
     }
 
+    /// Subview sizes and whether each breaks the line, measured once per layout pass
+    /// rather than once for the size and again for the placement.
+    struct Cache {
+        var sizes: [CGSize] = []
+        var breaks: [Bool] = []
+    }
+
+    func makeCache(subviews: Subviews) -> Cache { measure(subviews) }
+    func updateCache(_ cache: inout Cache, subviews: Subviews) { cache = measure(subviews) }
+
+    private func measure(_ subviews: Subviews) -> Cache {
+        Cache(sizes: subviews.map { $0.sizeThatFits(.unspecified) }, breaks: subviews.map { $0[LineBreak.self] })
+    }
+
     /// Rows wrap at `width` (never, when nil); items sit centred in their row.
-    private func place(_ subviews: Subviews, width: CGFloat?) -> (placements: [Placement], size: CGSize) {
+    private func place(_ cache: Cache, width: CGFloat?) -> (placements: [Placement], size: CGSize) {
         var placements: [Placement] = []
         var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0, maxX: CGFloat = 0
         var rowStart = 0
@@ -419,8 +450,8 @@ struct FlowLayout: Layout {
             }
             rowStart = placements.count
         }
-        for subview in subviews {
-            if subview[LineBreak.self] {
+        for (size, breaksLine) in zip(cache.sizes, cache.breaks) {
+            if breaksLine {
                 closeRow()
                 x = 0
                 y += rowHeight + lineSpacing
@@ -429,7 +460,6 @@ struct FlowLayout: Layout {
                 rowStart = placements.count
                 continue
             }
-            let size = subview.sizeThatFits(.unspecified)
             if let width, x > 0, x + size.width > width {
                 closeRow()
                 x = 0
@@ -445,13 +475,13 @@ struct FlowLayout: Layout {
         return (placements, CGSize(width: maxX, height: y + rowHeight))
     }
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let laid = place(subviews, width: proposal.width)
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) -> CGSize {
+        let laid = place(cache, width: proposal.width)
         return CGSize(width: proposal.width ?? laid.size.width, height: laid.size.height)
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let laid = place(subviews, width: bounds.width)
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) {
+        let laid = place(cache, width: bounds.width)
         for (subview, placement) in zip(subviews, laid.placements) {
             subview.place(at: CGPoint(x: bounds.minX + placement.origin.x, y: bounds.minY + placement.origin.y), anchor: .topLeading,
                           proposal: ProposedViewSize(placement.size))

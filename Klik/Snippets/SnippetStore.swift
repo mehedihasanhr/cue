@@ -94,8 +94,14 @@ nonisolated enum SnippetTemplate {
 /// The snippets, newest first, as one JSON file in the app container.
 @Observable
 final class SnippetStore {
-    private(set) var items: [Snippet] = []
+    private(set) var items: [Snippet] = [] {
+        didSet { reindex() }
+    }
     private let fileURL: URL
+    /// Keywords longest first, and the longest length, for the key monitor's fast path
+    /// (it runs on every keystroke in the system).
+    @ObservationIgnored private var keywordsByLength: [(keyword: String, index: Int)] = []
+    @ObservationIgnored private(set) var longestKeyword = 0
     @ObservationIgnored private let storage = DispatchQueue(label: "com.stackrover.klik.snippets", qos: .utility)
 
     init() {
@@ -107,6 +113,12 @@ final class SnippetStore {
         if let data = try? Data(contentsOf: fileURL), let decoded = try? JSONDecoder().decode([Snippet].self, from: data) {
             items = decoded
         }
+        reindex()
+    }
+
+    private func reindex() {
+        keywordsByLength = items.enumerated().map { ($1.keyword, $0) }.sorted { $0.0.count > $1.0.count }
+        longestKeyword = keywordsByLength.first?.keyword.count ?? 0
     }
 
     /// Keywords are trimmed and unique (a new one replaces an old snippet's keyword).
@@ -149,11 +161,12 @@ final class SnippetStore {
 
     /// The snippet whose keyword the typed text ends with, longest keyword first.
     func match(endOf typed: String) -> Snippet? {
-        items.filter { typed.hasSuffix($0.keyword) }.max { $0.keyword.count < $1.keyword.count }
+        guard !typed.isEmpty else { return nil }
+        for entry in keywordsByLength where typed.hasSuffix(entry.keyword) {
+            return items[entry.index]
+        }
+        return nil
     }
-
-    /// The longest keyword, so the typing buffer never needs to be longer.
-    var longestKeyword: Int { items.map(\.keyword.count).max() ?? 0 }
 
     private func save() {
         guard let data = try? JSONEncoder().encode(items) else { return }
