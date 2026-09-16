@@ -291,7 +291,7 @@ struct FloatingPanelView: View {
                     }
                 }
                 Divider()
-                Button("Delete", role: .destructive) { tasksStore.delete(task) }
+                Button("Delete…", role: .destructive) { onPrompt(IslandPrompt(kind: .delete(.task(task)))) }
             }
     }
 

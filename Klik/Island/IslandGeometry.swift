@@ -39,7 +39,11 @@ nonisolated struct IslandGeometry: Equatable {
     enum Phase: Equatable { case collapsed, flash, prompt, form, expanded }
 
     let screen: ScreenMetrics
+    /// Where every shape is centred: the notch, or the middle of a plain display.
+    let centerX: CGFloat
     let collapsed: CGRect
+    /// The compact box at its fallback width; `rect(for:contentWidth:)` fits it to
+    /// its content.
     let flash: CGRect
     /// A one-line question (a name): a flash with room for a label and a box.
     let prompt: CGRect
@@ -57,7 +61,12 @@ nonisolated struct IslandGeometry: Equatable {
     static let pillWidth: CGFloat = 140
     /// Room around the flash / expanded shape for its shadow.
     static let shadowMargin: CGFloat = 28
+    /// Fallback width of the compact box, before its content has been measured.
     static let flashWidth: CGFloat = 340
+    /// The compact box is always at least this much wider than the closed shape,
+    /// and never wider than `maxFlashWidth`.
+    static let minFlashGrowth: CGFloat = 40
+    static let maxFlashWidth: CGFloat = 480
     static let flashContentHeight: CGFloat = 48
     static let promptContentHeight: CGFloat = 64
     static let formWidth: CGFloat = 460
@@ -81,6 +90,7 @@ nonisolated struct IslandGeometry: Equatable {
             collapsedSize = CGSize(width: Self.pillWidth, height: max(12, screen.menuBarHeight - 2))
             collapsedRadius = 12
         }
+        self.centerX = centerX
         collapsed = Self.hang(size: collapsedSize, centerX: centerX, top: top, in: screen.frame)
         flash = Self.hang(
             size: CGSize(width: Self.flashWidth, height: collapsedSize.height + Self.flashContentHeight),
@@ -111,6 +121,16 @@ nonisolated struct IslandGeometry: Equatable {
         case .form: form
         case .expanded: expanded
         }
+    }
+
+    /// The compact phases (`.flash`, `.prompt`) sized to their content: `contentWidth`
+    /// clamped between a little wider than the closed shape and `maxFlashWidth`.
+    /// Other phases, and a nil width, are the fixed rects.
+    func rect(for phase: Phase, contentWidth: CGFloat?) -> CGRect {
+        guard let contentWidth, phase == .flash || phase == .prompt else { return rect(for: phase) }
+        let width = min(max(contentWidth, collapsed.width + Self.minFlashGrowth), Self.maxFlashWidth).rounded()
+        let fixed = rect(for: phase)
+        return Self.hang(size: CGSize(width: width, height: fixed.height), centerX: centerX, top: screen.frame.maxY, in: screen.frame)
     }
 
     func radius(for phase: Phase) -> CGFloat {

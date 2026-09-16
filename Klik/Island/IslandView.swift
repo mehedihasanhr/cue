@@ -32,10 +32,28 @@ final class IslandModel {
             case .collapsed, .expanded, .prompt, .taskDetail: false
             }
         }
+
+        /// The compact box is as wide as its row (a flash, a status, a confirmation);
+        /// text fields and forms keep a fixed width.
+        var fitsContent: Bool {
+            switch self {
+            case .flash, .status: true
+            case .prompt(let prompt): prompt.isConfirm
+            case .collapsed, .expanded, .taskDetail: false
+            }
+        }
     }
 
     var phase: Phase = .collapsed
     var geometry: IslandGeometry?
+    /// The compact box's row width, reported by the row itself (see `fitsContent`).
+    var contentWidth: CGFloat?
+
+    /// The drawn shape in `phase`: the fixed rect, or the content-fitted one.
+    func shapeRect(for phase: Phase) -> CGRect {
+        guard let geometry else { return .zero }
+        return geometry.rect(for: phase.geometryPhase, contentWidth: phase.fitsContent ? contentWidth : nil)
+    }
     /// A drag with files or an image is over the island.
     var dropping = false
     /// Asks the compact box for a line of text; called by the panel.
@@ -113,7 +131,7 @@ struct IslandView: View {
     var body: some View {
         let phase = model.phase
         if let geometry = model.geometry {
-            let size = geometry.rect(for: phase.geometryPhase).size
+            let size = model.shapeRect(for: phase).size
             let collapsed = phase == .collapsed
             let flare: CGFloat = collapsed ? 6 : IslandGeometry.openFlare
             let shape = NotchShape(flare: flare, topRadius: 0, bottomRadius: geometry.radius(for: phase.geometryPhase))
@@ -128,6 +146,7 @@ struct IslandView: View {
             .contentShape(shape)
             .onTapGesture { if collapsed { model.onTap() } }
             .animation(collapsed ? Self.closeAnimation : Self.openAnimation, value: phase)
+            .animation(Self.openAnimation, value: model.contentWidth)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .environment(\.colorScheme, .dark)
         }
@@ -142,6 +161,7 @@ struct IslandView: View {
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
                 FlashRow(item: item, library: library)
+                    .modifier(MeasuredWidth(model: model))
                     .frame(height: IslandGeometry.flashContentHeight)
             }
             .transition(Self.contentTransition)
@@ -149,6 +169,7 @@ struct IslandView: View {
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
                 StatusRow(status: status)
+                    .modifier(MeasuredWidth(model: model))
                     .frame(height: IslandGeometry.flashContentHeight)
             }
             .transition(Self.contentTransition)
@@ -158,6 +179,10 @@ struct IslandView: View {
                 if prompt.isForm {
                     TaskFormRow(prompt: prompt, store: tasks) { answer in model.onPromptFinished(prompt, answer) }
                         .frame(height: IslandGeometry.formContentHeight)
+                } else if prompt.isConfirm {
+                    ConfirmRow(prompt: prompt, detail: prompt.detail(tasks)) { answer in model.onPromptFinished(prompt, answer) }
+                        .modifier(MeasuredWidth(model: model))
+                        .frame(height: IslandGeometry.promptContentHeight)
                 } else {
                     PromptRow(prompt: prompt) { answer in model.onPromptFinished(prompt, answer) }
                         .frame(height: IslandGeometry.promptContentHeight)
@@ -169,6 +194,7 @@ struct IslandView: View {
                 Color.clear.frame(height: strip)
                 if let task = tasks.tasks.first(where: { $0.id == id }) {
                     TaskDetailRow(task: task, store: tasks, edit: { model.onPrompt(IslandPrompt(kind: .task(project: task.projectID), editing: task)) },
+                                  delete: { model.onPrompt(IslandPrompt(kind: .delete(.task(task)))) },
                                   close: { model.onTaskDetailClosed(task) })
                         .frame(height: IslandGeometry.formContentHeight)
                 }
@@ -188,6 +214,26 @@ struct IslandView: View {
     private static let contentTransition: AnyTransition = .scale(scale: 0.8, anchor: .top)
         .combined(with: .opacity)
         .animation(contentAnimation)
+}
+
+/// Reports a row's ideal width to the model so the compact box can fit it. A hidden
+/// copy laid out at its ideal size does the measuring; the visible row then gets the
+/// clamped width and truncates what does not fit.
+private struct MeasuredWidth: ViewModifier {
+    let model: IslandModel
+
+    func body(content: Content) -> some View {
+        content.background {
+            content
+                .fixedSize()
+                .hidden()
+                .disabled(true) // its buttons must not answer clicks or shortcuts
+                .accessibilityHidden(true)
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+                    model.contentWidth = width
+                }
+        }
+    }
 }
 
 /// "Just captured": the thumbnail and a copied confirmation.
@@ -216,7 +262,7 @@ private struct FlashRow: View {
                     .foregroundStyle(.secondary)
             }
             .lineLimit(1)
-            Spacer(minLength: 0)
+            Spacer(minLength: 12)
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(.green)
@@ -271,7 +317,7 @@ private struct StatusRow: View {
                 }
             }
             .lineLimit(1)
-            Spacer(minLength: 0)
+            Spacer(minLength: 12)
             Image(systemName: status.symbol)
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(status.tint)
@@ -289,6 +335,8 @@ struct IslandPrompt: Hashable {
         case task(project: UUID?)
         /// Rename a card (capture, asset, clipboard entry or color).
         case rename(IslandDetail)
+        /// Confirm deleting a task or a project.
+        case delete(TaskDeletion)
     }
 
     let kind: Kind
@@ -312,8 +360,25 @@ struct IslandPrompt: Hashable {
         return false
     }
 
+    /// A yes/no box (Cancel / Delete) rather than a text field.
+    var isConfirm: Bool {
+        if case .delete = kind { return true }
+        return false
+    }
+
+    /// What a confirmation is about: the task's title, or the project and what goes with it.
+    func detail(_ store: TaskStore) -> String {
+        switch kind {
+        case .delete(.task(let task)): task.title
+        case .delete(.project(let project)): store.deletionSummary(for: project)
+        default: ""
+        }
+    }
+
     var title: String {
         switch kind {
+        case .delete(.task): return "Delete this task?"
+        case .delete(.project): return "Delete this project?"
         case .project(let parent):
             if parent == nil { return "New project" }
             return context.map { "New sub-project in \($0)" } ?? "New sub-project"
@@ -333,6 +398,7 @@ struct IslandPrompt: Hashable {
         case .project: "Project name"
         case .task: "Task title"
         case .rename: "Name"
+        case .delete: ""
         }
     }
 
@@ -341,6 +407,7 @@ struct IslandPrompt: Hashable {
         case .project: "folder.badge.plus"
         case .task: "checklist"
         case .rename: "pencil"
+        case .delete: "trash"
         }
     }
 }
@@ -382,6 +449,48 @@ private struct PromptRow: View {
             }
         }
         .padding(.horizontal, 18)
+        .frame(maxHeight: .infinity)
+    }
+}
+
+/// The compact island's yes/no box: what is about to be deleted, Cancel and Delete.
+/// ⎋ cancels, ↩ deletes; as wide as its content.
+private struct ConfirmRow: View {
+    let prompt: IslandPrompt
+    let detail: String
+    let finish: (PromptAnswer?) -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            PromptBadge(symbol: prompt.symbol, tint: .red)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(prompt.title)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(.white)
+                Text(detail)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+            }
+            .lineLimit(1)
+            Spacer(minLength: 12)
+            Button("Cancel") { finish(nil) }
+                .keyboardShortcut(.cancelAction)
+                .buttonStyle(.plain)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.white.opacity(0.85))
+                .padding(.horizontal, 12)
+                .frame(height: 30)
+                .background(.white.opacity(0.1), in: Capsule())
+            Button("Delete") { finish(PromptAnswer(title: "")) }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.plain)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .frame(height: 30)
+                .background(.red.opacity(0.85), in: Capsule())
+        }
+        .padding(.horizontal, 16)
         .frame(maxHeight: .infinity)
     }
 }
@@ -740,6 +849,7 @@ private struct TaskDetailRow: View {
     let task: TaskItem
     let store: TaskStore
     let edit: () -> Void
+    let delete: () -> Void
     let close: () -> Void
 
     var body: some View {
@@ -785,7 +895,7 @@ private struct TaskDetailRow: View {
                 .contentShape(Rectangle())
                 .onTapGesture(perform: close) // the hint is a button too
                 Spacer(minLength: 0)
-                Button("Delete") { store.delete(task); close() }
+                Button("Delete…", action: delete)
                     .buttonStyle(.plain)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.red.opacity(0.9))

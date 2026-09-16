@@ -56,6 +56,24 @@ final class IslandGeometryTests: XCTestCase {
         XCTAssertEqual(geometry.flash.size, CGSize(width: 340, height: 32 + 48))
     }
 
+    func testCompactBoxFitsItsContentWithinLimits() {
+        let geometry = IslandGeometry(screen: Self.notched, panelSize: Self.panel)
+        // Never narrower than the notch plus a margin, never wider than the cap.
+        XCTAssertEqual(geometry.rect(for: .flash, contentWidth: 10).width, 200 + IslandGeometry.minFlashGrowth)
+        XCTAssertEqual(geometry.rect(for: .flash, contentWidth: 2000).width, IslandGeometry.maxFlashWidth)
+        XCTAssertEqual(geometry.rect(for: .prompt, contentWidth: 300).width, 300)
+        for phase in [IslandGeometry.Phase.flash, .prompt] {
+            let rect = geometry.rect(for: phase, contentWidth: 300)
+            XCTAssertEqual(rect.midX, 756)
+            XCTAssertEqual(rect.maxY, 982)
+            XCTAssertEqual(rect.height, geometry.rect(for: phase).height)
+            XCTAssertEqual(geometry.rect(for: phase, contentWidth: nil), geometry.rect(for: phase))
+        }
+        // Fixed phases ignore the content width.
+        XCTAssertEqual(geometry.rect(for: .form, contentWidth: 100), geometry.form)
+        XCTAssertEqual(geometry.rect(for: .expanded, contentWidth: 100), geometry.expanded)
+    }
+
     func testPlainDisplayGetsAPillOnTheMenuBar() {
         let geometry = IslandGeometry(screen: Self.plain, panelSize: Self.panel)
         XCTAssertEqual(geometry.collapsed.size, CGSize(width: 140, height: 22))

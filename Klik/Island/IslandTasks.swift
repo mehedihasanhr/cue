@@ -171,7 +171,7 @@ struct IslandTasksView: View {
                     }
                     .contextMenu {
                         Button("New Sub-project…") { onPrompt(IslandPrompt(kind: .project(parent: entry.project.id), context: entry.project.name)) }
-                        Button("Delete Project", role: .destructive) { store.deleteProject(entry.project) }
+                        Button("Delete Project…", role: .destructive) { onPrompt(IslandPrompt(kind: .delete(.project(entry.project)))) }
                     }
                 }
                 if store.projects.isEmpty {
@@ -234,7 +234,7 @@ struct IslandTasksView: View {
             withAnimation(.easeOut(duration: 0.15)) { selection = .project(project.id) }
         }
         .contextMenu {
-            Button("Delete Project", role: .destructive) { store.deleteProject(project) }
+            Button("Delete Project…", role: .destructive) { onPrompt(IslandPrompt(kind: .delete(.project(project)))) }
         }
     }
 
@@ -292,7 +292,7 @@ struct IslandTasksView: View {
                             pill(project.name, symbol: "folder", prominent: false) {
                                 withAnimation(.easeOut(duration: 0.15)) { selection = .project(project.id) }
                             }
-                            .contextMenu { Button("Delete Project", role: .destructive) { store.deleteProject(project) } }
+                            .contextMenu { Button("Delete Project…", role: .destructive) { onPrompt(IslandPrompt(kind: .delete(.project(project)))) } }
                         }
                     }
                     .padding(.bottom, 4)
@@ -331,6 +331,8 @@ struct IslandTasksView: View {
             onShowTask(task)
         } edit: {
             onPrompt(IslandPrompt(kind: .task(project: task.projectID), editing: task))
+        } delete: {
+            onPrompt(IslandPrompt(kind: .delete(.task(task))))
         }
     }
 
@@ -409,6 +411,7 @@ struct IslandTasksView: View {
         let showProject: Bool
         let open: () -> Void
         let edit: () -> Void
+        let delete: () -> Void
         @State private var hovering = false
         @State private var renaming = false
 
@@ -491,21 +494,13 @@ struct IslandTasksView: View {
                 .menuIndicator(.hidden)
                 .fixedSize()
                 .frame(width: 88, alignment: .trailing)
-                if hovering {
-                    Button { store.delete(task) } label: {
-                        Image(systemName: "trash").font(.system(size: 10, weight: .semibold)).foregroundStyle(.red.opacity(0.9))
-                            .frame(width: 20, height: 20).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help("Delete")
-                }
             }
             .padding(.horizontal, 6)
             .frame(height: 26)
             .background(hovering ? Color.white.opacity(0.07) : .clear, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
-            .onTapGesture { if !renaming { open() } } // anywhere on the row; the status and trash buttons take precedence
+            .onTapGesture { if !renaming { open() } } // anywhere on the row; the status menu takes precedence
             .contextMenu {
                 ForEach(TaskStatus.allCases, id: \.self) { status in
                     Button(status.title) { store.setStatus(status, for: task) }
@@ -521,7 +516,7 @@ struct IslandTasksView: View {
                     }
                 }
                 Divider()
-                Button("Delete", role: .destructive) { store.delete(task) }
+                Button("Delete…", role: .destructive, action: delete)
             }
         }
     }

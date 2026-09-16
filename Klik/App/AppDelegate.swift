@@ -190,7 +190,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             island.prompt(prompt)
         } else if case .task = prompt.kind {
             quickTask(nil)
+        } else if case .delete(let deletion) = prompt.kind {
+            confirmWithAlert(prompt, deletion)
         }
+    }
+
+    /// Without an island to ask in, a plain alert confirms a deletion.
+    private func confirmWithAlert(_ prompt: IslandPrompt, _ deletion: TaskDeletion) {
+        NSApp.activate()
+        let alert = NSAlert()
+        alert.messageText = prompt.title
+        alert.informativeText = prompt.detail(tasks)
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Delete").hasDestructiveAction = true
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let done = tasks.delete(deletion)
+        FeedbackHUD.show(done.title, symbol: "trash.fill", subtitle: done.subtitle)
     }
 
     private var historyActions: HistoryActions {

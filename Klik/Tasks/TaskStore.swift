@@ -60,6 +60,12 @@ extension TaskStatus {
     }
 }
 
+/// Something the user asked to delete and must confirm first.
+nonisolated enum TaskDeletion: Hashable {
+    case task(TaskItem)
+    case project(TaskProject)
+}
+
 nonisolated struct TaskItem: Identifiable, Codable, Hashable {
     let id: UUID
     var title: String
@@ -185,6 +191,29 @@ final class TaskStore {
         guard !cleaned.isEmpty, let index = projects.firstIndex(where: { $0.id == project.id }) else { return }
         projects[index].name = cleaned
         save()
+    }
+
+    /// What deleting the project takes with it, for a confirmation.
+    func deletionSummary(for project: TaskProject) -> String {
+        let nested = descendants(of: project.id).count - 1
+        let count = tasks(in: project.id).count
+        var parts = [project.name]
+        if count > 0 { parts.append(count == 1 ? "1 task moves to No project" : "\(count) tasks move to No project") }
+        if nested > 0 { parts.append(nested == 1 ? "1 sub-project" : "\(nested) sub-projects") }
+        return parts.joined(separator: " · ")
+    }
+
+    /// A confirmed deletion; returns what the island's status should say.
+    @discardableResult
+    func delete(_ deletion: TaskDeletion) -> (title: String, subtitle: String) {
+        switch deletion {
+        case .task(let task):
+            delete(task)
+            return ("Task deleted", task.title)
+        case .project(let project):
+            deleteProject(project)
+            return ("Project deleted", project.name)
+        }
     }
 
     /// Deletes the project and everything nested in it; their tasks move to no project.

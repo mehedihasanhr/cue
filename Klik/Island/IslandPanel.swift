@@ -313,7 +313,7 @@ struct IslandPanel: View {
         case .clipboard(let item): clipboardCard(item)
         case .asset(let item): assetCard(item)
         case .color(let entry): colorCard(entry)
-        case .task(let task): TaskCard(task: task, store: tasksStore, onOpen: { onShowTask(task) })
+        case .task(let task): TaskCard(task: task, store: tasksStore, onOpen: { onShowTask(task) }, onDelete: { onPrompt(IslandPrompt(kind: .delete(.task(task)))) })
         }
     }
 
@@ -752,7 +752,6 @@ struct CaptureCard: View {
             CardAction(symbol: "eye", help: "Preview", perform: onPreview)
             CardAction(symbol: "pencil", help: "Edit") { actions.edit(item) }
             CopyAction { actions.copy(item) }
-            CardAction(symbol: "trash", help: "Delete", tint: .red) { actions.delete(item) }
         } menu: {
             if let clipboard, clipboard.canPaste { Button("Paste", action: paste) }
             Button("Preview") { actions.preview(item) }
@@ -799,7 +798,6 @@ struct ClipboardCard: View {
                 clipboard.togglePin(item)
             }
             CardAction(symbol: "eye", help: "Preview", perform: onPreview)
-            CardAction(symbol: "trash", help: "Delete", tint: .red) { clipboard.delete(item) }
         } menu: {
             Button("Copy") { copy() }
             if clipboard.canPaste { Button("Paste") { paste() } }
@@ -932,7 +930,6 @@ struct AssetCard: View {
                 assets.copy(item)
                 FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: item.fileName, image: assets.thumbnail(for: item))
             }
-            CardAction(symbol: "trash", help: "Delete", tint: .red) { assets.delete(item) }
         } menu: {
             if let clipboard, clipboard.canPaste { Button("Paste", action: paste) }
             Button("Open") { assets.open(item) }
@@ -1010,7 +1007,6 @@ struct ColorCard: View {
         } actionRow: {
             CopyAction { copy(as: format) }
             CardAction(symbol: "eye", help: "Preview", perform: onPreview)
-            CardAction(symbol: "trash", help: "Delete", tint: .red) { colors.delete(entry) }
         } menu: {
             Button("Copy \(format.title)") { copy(as: format) }
             Menu("Copy as") {
@@ -1049,6 +1045,7 @@ private struct TaskCard: View {
     let task: TaskItem
     let store: TaskStore
     var onOpen: () -> Void = {}
+    var onDelete: () -> Void = {}
     @State private var hovering = false
 
     var body: some View {
@@ -1083,7 +1080,6 @@ private struct TaskCard: View {
                 store.setStatus(task.status.next, for: task)
             }
             CardAction(symbol: "arrow.up.forward", help: "Open", perform: onOpen)
-            CardAction(symbol: "trash", help: "Delete", tint: .red) { store.delete(task) }
         } menu: {
             Button("Open", action: onOpen)
             Menu("Status") {
@@ -1092,7 +1088,7 @@ private struct TaskCard: View {
                 }
             }
             Divider()
-            Button("Delete", role: .destructive) { store.delete(task) }
+            Button("Delete…", role: .destructive, action: onDelete)
         }
     }
 }

@@ -61,8 +61,13 @@ final class IslandController {
         model.onPromptFinished = { [weak self] prompt, answer in
             guard let self else { return }
             removeOutsideClickMonitor()
+            var status: IslandStatus?
             if let answer {
                 switch prompt.kind {
+                case .delete(let deletion):
+                    let done = tasks.delete(deletion)
+                    if case .project = deletion { tasks.pendingSelection = .all }
+                    status = IslandStatus(symbol: "trash.fill", title: done.title, subtitle: done.subtitle)
                 case .project(let parent):
                     if let project = tasks.addProject(named: answer.title, in: parent) {
                         tasks.pendingSelection = .project(project.id)
@@ -80,9 +85,12 @@ final class IslandController {
             } else if case .task(let project) = prompt.kind {
                 tasks.pendingSelection = project.map { .project($0) } ?? .all
             }
-            resignKeyIfNeeded()
             if let answer, case .task = prompt.kind {
-                showStatus(IslandStatus(symbol: "checkmark.circle.fill", title: prompt.editing == nil ? "Task saved" : "Task updated", subtitle: answer.title))
+                status = IslandStatus(symbol: "checkmark.circle.fill", title: prompt.editing == nil ? "Task saved" : "Task updated", subtitle: answer.title)
+            }
+            resignKeyIfNeeded()
+            if let status {
+                showStatus(status)
             } else {
                 setPhase(.expanded, animated: true)
             }
@@ -125,11 +133,11 @@ final class IslandController {
     }
 
     private func pointerMoved() {
-        guard let geometry = model.geometry, !hidden, window.isVisible else { return }
+        guard model.geometry != nil, !hidden, window.isVisible else { return }
         let location = NSEvent.mouseLocation
         // The drawn shapes, not the (mostly transparent) window. The pointer stops at
         // the very top edge (y == maxY), which must count as inside.
-        let frame = geometry.rect(for: model.phase.geometryPhase)
+        let frame = model.shapeRect(for: model.phase)
         let inside = location.x >= frame.minX && location.x <= frame.maxX
             && location.y >= frame.minY && location.y <= frame.maxY
         guard inside != pointerInside else { return }
@@ -245,6 +253,7 @@ final class IslandController {
         flashTask?.cancel()
         setPhase(.prompt(prompt), animated: true)
         installOutsideClickMonitor()
+        if prompt.isConfirm { window.makeKey() } // so ⎋ / ↩ reach the box
     }
 
     /// Opens a task in the compact island; a click outside closes the island, ⎋
@@ -293,12 +302,12 @@ final class IslandController {
     private func installOutsideClickMonitor() {
         removeOutsideClickMonitor()
         let handler: @MainActor () -> Void = { [weak self] in
-            guard let self, let geometry = model.geometry else { return }
+            guard let self, model.geometry != nil else { return }
             switch model.phase {
             case .prompt, .taskDetail: break
             default: return
             }
-            if !geometry.rect(for: model.phase.geometryPhase).contains(NSEvent.mouseLocation) { collapse() }
+            if !model.shapeRect(for: model.phase).contains(NSEvent.mouseLocation) { collapse() }
         }
         if let global = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { _ in
             MainActor.assumeIsolated { handler() }
@@ -340,7 +349,7 @@ final class IslandController {
         flashTask = Task { [weak self] in
             try? await Task.sleep(for: Self.flashDuration)
             guard !Task.isCancelled, let self, model.phase.isFlash else { return }
-            if let geometry = model.geometry, geometry.rect(for: .flash).contains(NSEvent.mouseLocation) {
+            if model.shapeRect(for: model.phase).contains(NSEvent.mouseLocation) {
                 pointerInside = true
                 expand()
             } else {
@@ -415,7 +424,7 @@ final class IslandController {
                 try? await Task.sleep(for: .milliseconds(100))
             }
             guard !Task.isCancelled, let self else { return }
-            if let geometry = model.geometry, geometry.rect(for: model.phase.geometryPhase).contains(NSEvent.mouseLocation) {
+            if model.shapeRect(for: model.phase).contains(NSEvent.mouseLocation) {
                 pointerInside = true
                 return
             }
