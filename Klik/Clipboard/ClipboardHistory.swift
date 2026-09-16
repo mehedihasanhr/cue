@@ -288,8 +288,9 @@ final class ClipboardHistory {
             return true
         }
         guard PermissionManager.hasAccessibilityAccess else { return false }
-        // A beat for the pasteboard to settle before the key press lands.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+        // A beat for the pasteboard to settle, and for key focus to return to the
+        // front app when one of Klik's panels has just closed, before ⌘V lands.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             let source = CGEventSource(stateID: .combinedSessionState)
             for down in [true, false] {
                 guard let event = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: down) else { continue }

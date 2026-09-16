@@ -10,9 +10,13 @@ struct ClipboardPanelView: View {
     let clipboard: ClipboardHistory
     /// Closes the panel; called before pasting so ⌘V lands in the front app.
     var close: () -> Void = {}
+    /// Pasting needs Accessibility access; asks for it the first time it is missing.
+    var onNeedsAccessibility: () -> Void = {}
 
     @State private var search = ""
     @State private var selected = 0
+    /// The row just taken, shown with a tick for a beat before the panel closes.
+    @State private var done: UUID?
     @FocusState private var searchFocused: Bool
 
     private var items: [ClipboardItem] {
@@ -119,7 +123,9 @@ struct ClipboardPanelView: View {
                 }
             }
             Spacer(minLength: 0)
-            if index < 9 {
+            if done == item.id {
+                Image(systemName: "checkmark.circle.fill").font(.system(size: 14, weight: .semibold)).foregroundStyle(.green)
+            } else if index < 9 {
                 Text("⌘\(index + 1)")
                     .font(.system(size: 9.5, weight: .medium, design: .rounded))
                     .foregroundStyle(.white.opacity(selected ? 0.7 : 0.3))
@@ -169,23 +175,28 @@ struct ClipboardPanelView: View {
         return .handled
     }
 
+    /// Copies the row, shows its tick for a beat, closes, and presses ⌘V in the front
+    /// app. No status: the tick is the confirmation.
     private func paste(at index: Int, in items: [ClipboardItem]) {
-        guard items.indices.contains(index) else { return }
+        guard items.indices.contains(index), done == nil else { return }
         let item = items[index]
-        clipboard.copy(item)
-        close()
-        if clipboard.pressPaste() {
-            FeedbackHUD.show("Pasted", symbol: "checkmark.circle.fill", duration: .seconds(1.0))
-        } else {
-            FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: item.contentTitle)
+        take(item) {
+            if !clipboard.pressPaste() { onNeedsAccessibility() }
         }
     }
 
     private func copy(_ item: ClipboardItem) {
+        guard done == nil else { return }
+        take(item) {}
+    }
+
+    private func take(_ item: ClipboardItem, then action: @escaping () -> Void) {
         clipboard.copy(item)
-        close()
-        FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: item.contentTitle,
-                         image: item.kind == .image ? clipboard.thumbnail(for: item) : nil, swatch: item.kind == .color ? PickedColor(hex: item.text) : nil)
+        done = item.id
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+            close()
+            action()
+        }
     }
 
     private func symbol(for item: ClipboardItem) -> String {

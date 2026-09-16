@@ -195,7 +195,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         closeHistory()
-        let content = ClipboardPanelView(clipboard: clipboard, close: { [weak self] in self?.clipboardPanel?.close() })
+        let content = ClipboardPanelView(clipboard: clipboard, close: { [weak self] in self?.clipboardPanel?.close() },
+                                         onNeedsAccessibility: { [weak self] in self?.showOnboarding(for: .accessibility) })
             .environment(preferences)
         let panel = FloatingPanelWindow(rootView: content, size: ClipboardPanelView.size)
         clipboardPanel = panel
