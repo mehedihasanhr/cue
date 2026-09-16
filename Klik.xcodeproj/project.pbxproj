@@ -39,6 +39,7 @@
 				Support/ImageEncoding.swift,
 				Support/LRUCache.swift,
 				Support/PanelPosition.swift,
+				Prayer/PrayerCalculator.swift,
 				Support/SQLite.swift,
 				Tasks/MarkdownView.swift,
 				Tasks/TaskStore.swift,
@@ -391,6 +392,8 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSLocationUsageDescription = "Klik uses your location to compute prayer times on this Mac. It never leaves the device.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Klik uses your location to compute prayer times on this Mac. It never leaves the device.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -417,6 +420,8 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSLocationUsageDescription = "Klik uses your location to compute prayer times on this Mac. It never leaves the device.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Klik uses your location to compute prayer times on this Mac. It never leaves the device.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

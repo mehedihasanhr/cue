@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let assets = AssetStore()
     let colors = ColorStore()
     let tasks = TaskStore()
+    private var prayerClock: PrayerClock?
     let preferences = AppPreferences()
     private lazy var coordinator = CaptureCoordinator(shortcuts: shortcuts)
 
@@ -56,6 +57,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         shortcuts.setAction(for: .pickColor) { [weak self] in self?.pickColor(nil) }
         shortcuts.setAction(for: .quickTask) { [weak self] in self?.quickTask(nil) }
         shortcuts.setAction(for: .clipboardPanel) { [weak self] in self?.showClipboardPanel(nil) }
+
+        let clock = PrayerClock(preferences: preferences)
+        clock.showStatus = { [weak self] status in
+            guard let self else { return }
+            if island?.showStatus(status, quiet: true) != true, island == nil {
+                FeedbackHUD.show(status.title, symbol: status.symbol, duration: status.duration, subtitle: status.subtitle)
+            }
+        }
+        prayerClock = clock
 
         // Diagnostics: `--env KLIK_DEBUG_HOTKEYS=1` writes every shortcut and its status to Pictures/Klik.
         if ProcessInfo.processInfo.environment["KLIK_DEBUG_HOTKEYS"] == "1" {
@@ -138,7 +148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let island {
                 island.place()
             } else {
-                island = IslandController(library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasks, actions: historyActions, preferences: preferences)
+                island = IslandController(library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasks, actions: historyActions, preferences: preferences, clock: prayerClock)
                 library.warmThumbnails()
                 FeedbackHUD.island = { [weak self] status in self?.island?.showStatus(status) ?? false }
             }
@@ -334,7 +344,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func showSettings(_ sender: Any?) {
         if settingsWindow == nil {
-            let controller = SettingsWindowController(model: model, shortcuts: shortcuts, library: library, clipboard: clipboard, preferences: preferences)
+            let controller = SettingsWindowController(model: model, shortcuts: shortcuts, library: library, clipboard: clipboard, preferences: preferences, clock: prayerClock)
             controller.onClose = { [weak self] in
                 self?.settingsWindow = nil
                 self?.shortcuts.isRecording = false

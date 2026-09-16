@@ -9,7 +9,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     private static let paneWidth: CGFloat = 560
 
-    init(model: AppModel, shortcuts: ShortcutController, library: CaptureLibrary, clipboard: ClipboardHistory, preferences: AppPreferences) {
+    init(model: AppModel, shortcuts: ShortcutController, library: CaptureLibrary, clipboard: ClipboardHistory, preferences: AppPreferences, clock: PrayerClock? = nil) {
         let tabs = NSTabViewController()
         tabs.tabStyle = .toolbar
         tabs.canPropagateSelectedChildViewControllerTitle = false
@@ -29,6 +29,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         tabs.addTabViewItem(Self.pane(
             "Editor", symbol: "paintbrush.pointed", height: 780,
             EditorSettingsView().environment(preferences)
+        ))
+        tabs.addTabViewItem(Self.pane(
+            "Time", symbol: "clock", height: 720,
+            TimeSettingsView().environment(preferences).environment(clock)
         ))
         tabs.addTabViewItem(Self.pane(
             "Shortcuts", symbol: "keyboard", height: 410,

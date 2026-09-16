@@ -21,6 +21,72 @@ final class AppPreferences {
         static let clipboardLimit = "clipboard.limit"
         static let colorFormat = "color.format"
         static let panelPosition = "panels.position"
+        static let timeInterval = "clock.interval"
+        static let prayerEnabled = "prayer.enabled"
+        static let prayerMethod = "prayer.method"
+        static let prayerMadhab = "prayer.madhab"
+        static let prayerLocationMode = "prayer.locationMode"
+        static let prayerManualLatitude = "prayer.manualLatitude"
+        static let prayerManualLongitude = "prayer.manualLongitude"
+        static let prayerKnownLatitude = "prayer.knownLatitude"
+        static let prayerKnownLongitude = "prayer.knownLongitude"
+        static let prayerAnnouncements = "prayer.announcements"
+    }
+
+    // MARK: Time & prayer
+
+    static let timeIntervals = [0, 15, 30, 60, 120, 180]
+
+    /// Minutes between the island showing the time (0: never).
+    var timeStatusInterval: Int {
+        didSet { defaults.set(timeStatusInterval, forKey: Key.timeInterval) }
+    }
+
+    var prayerTimesEnabled: Bool {
+        didSet { defaults.set(prayerTimesEnabled, forKey: Key.prayerEnabled) }
+    }
+
+    var prayerMethod: CalculationMethod {
+        didSet { defaults.set(prayerMethod.rawValue, forKey: Key.prayerMethod) }
+    }
+
+    var prayerMadhab: Madhab {
+        didSet { defaults.set(prayerMadhab.rawValue, forKey: Key.prayerMadhab) }
+    }
+
+    enum PrayerLocationMode: String, CaseIterable {
+        case current, manual
+
+        var title: String {
+            switch self {
+            case .current: "Current location"
+            case .manual: "Entered by hand"
+            }
+        }
+    }
+
+    var prayerLocationMode: PrayerLocationMode {
+        didSet { defaults.set(prayerLocationMode.rawValue, forKey: Key.prayerLocationMode) }
+    }
+
+    var prayerManualPlace: Coordinates {
+        didSet {
+            defaults.set(prayerManualPlace.latitude, forKey: Key.prayerManualLatitude)
+            defaults.set(prayerManualPlace.longitude, forKey: Key.prayerManualLongitude)
+        }
+    }
+
+    /// The last fix from Core Location, so times are ready at launch and offline.
+    var prayerKnownPlace: Coordinates? {
+        didSet {
+            defaults.set(prayerKnownPlace?.latitude, forKey: Key.prayerKnownLatitude)
+            defaults.set(prayerKnownPlace?.longitude, forKey: Key.prayerKnownLongitude)
+        }
+    }
+
+    /// Announce each prayer, and the times prayer is not allowed, on the island.
+    var prayerAnnouncements: Bool {
+        didSet { defaults.set(prayerAnnouncements, forKey: Key.prayerAnnouncements) }
     }
 
     // MARK: Panels
@@ -189,6 +255,18 @@ final class AppPreferences {
         clipboardHistoryLimit = defaults.object(forKey: Key.clipboardLimit) as? Int ?? 200
         colorFormat = ColorFormat(rawValue: defaults.string(forKey: Key.colorFormat) ?? "") ?? .hex
         panelPosition = PanelPosition(rawValue: defaults.string(forKey: Key.panelPosition) ?? "") ?? .pointer
+        timeStatusInterval = defaults.object(forKey: Key.timeInterval) as? Int ?? 60
+        prayerTimesEnabled = defaults.bool(forKey: Key.prayerEnabled)
+        prayerMethod = CalculationMethod(rawValue: defaults.string(forKey: Key.prayerMethod) ?? "") ?? .muslimWorldLeague
+        prayerMadhab = Madhab(rawValue: defaults.string(forKey: Key.prayerMadhab) ?? "") ?? .standard
+        prayerLocationMode = PrayerLocationMode(rawValue: defaults.string(forKey: Key.prayerLocationMode) ?? "") ?? .current
+        prayerManualPlace = Coordinates(latitude: defaults.double(forKey: Key.prayerManualLatitude), longitude: defaults.double(forKey: Key.prayerManualLongitude))
+        if let latitude = defaults.object(forKey: Key.prayerKnownLatitude) as? Double, let longitude = defaults.object(forKey: Key.prayerKnownLongitude) as? Double {
+            prayerKnownPlace = Coordinates(latitude: latitude, longitude: longitude)
+        } else {
+            prayerKnownPlace = nil
+        }
+        prayerAnnouncements = defaults.object(forKey: Key.prayerAnnouncements) as? Bool ?? true
         customSoundURL = defaults.data(forKey: Key.soundBookmark).flatMap(Self.resolve)
         customIconURL = defaults.data(forKey: Key.iconBookmark).flatMap(Self.resolve)
         if sound == .custom, customSoundURL == nil { sound = .shutter }

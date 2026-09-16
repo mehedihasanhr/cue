@@ -89,6 +89,19 @@ The macOS defaults (⌘⇧3/4/5/6) are handled by the system first; Klik marks t
 warning if you bind them, and links to Keyboard › Keyboard Shortcuts › Screenshots
 where they can be turned off.
 
+### Time & prayer times
+
+Settings › Time. The island shows the time for a moment on the hour (or every 15 / 30
+minutes, 2 or 3 hours — or never); it waits while the island is open. Turn on **Prayer
+times** and the island announces each prayer as it begins and the three periods when
+prayer is not allowed (after sunrise, at the sun's zenith, before sunset); the open
+island shows the current period and what is left of it. Times are computed on the Mac
+from the sun's position at your location (Core Location, or coordinates entered by
+hand) with the usual calculation methods (Muslim World League, ISNA, Egyptian, Umm
+al-Qura, Karachi, Dubai, Kuwait, Qatar, Singapore, Turkey) and Standard or Hanafi Asr.
+Nothing is fetched from the internet; they refresh at midnight, on wake and when the
+location changes.
+
 ### Launch at login
 
 Klik › Settings › General › **Launch Klik at login** (uses `SMAppService`; macOS may ask

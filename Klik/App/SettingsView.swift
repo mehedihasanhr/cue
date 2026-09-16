@@ -254,6 +254,118 @@ private struct MenuBarIconPicker: View {
     }
 }
 
+// MARK: - Time & prayer
+
+struct TimeSettingsView: View {
+    @Environment(AppPreferences.self) private var preferences
+    @Environment(PrayerClock.self) private var clock: PrayerClock?
+    @State private var latitude = ""
+    @State private var longitude = ""
+
+    var body: some View {
+        @Bindable var preferences = preferences
+        Form {
+            Section {
+                Picker("Show the time every", selection: $preferences.timeStatusInterval) {
+                    ForEach(AppPreferences.timeIntervals, id: \.self) { minutes in
+                        Text(Self.intervalTitle(minutes)).tag(minutes)
+                    }
+                }
+            } header: {
+                Text("Time on the island")
+            } footer: {
+                Text("On the hour, the half hour and so on, the island shows the time for a moment — and the prayer period when prayer times are on. It waits while the island is open.")
+            }
+
+            Section {
+                Toggle(isOn: $preferences.prayerTimesEnabled) {
+                    Text("Prayer times")
+                    Text("Computed on this Mac from the sun's position at your location; nothing is fetched from the internet. They refresh at midnight, on wake and when the location changes.")
+                }
+                Picker("Calculation method", selection: $preferences.prayerMethod) {
+                    ForEach(CalculationMethod.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .disabled(!preferences.prayerTimesEnabled)
+                Picker("Asr", selection: $preferences.prayerMadhab) {
+                    ForEach(Madhab.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .disabled(!preferences.prayerTimesEnabled)
+                Toggle(isOn: $preferences.prayerAnnouncements) {
+                    Text("Announce prayers on the island")
+                    Text("Each prayer as it begins, and the times prayer is not allowed: \(Int(PrayerTimes.sunriseWindow / 60)) min after sunrise, \(Int(PrayerTimes.zenithWindow / 60)) min before Dhuhr, \(Int(PrayerTimes.sunsetWindow / 60)) min before Maghrib.")
+                }
+                .disabled(!preferences.prayerTimesEnabled)
+            } header: {
+                Text("Prayer times")
+            }
+
+            Section {
+                Picker("Location", selection: $preferences.prayerLocationMode) {
+                    ForEach(AppPreferences.PrayerLocationMode.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                if preferences.prayerLocationMode == .manual {
+                    HStack {
+                        TextField("Latitude", text: $latitude, prompt: Text("Latitude (−90…90)"))
+                        TextField("Longitude", text: $longitude, prompt: Text("Longitude (−180…180)"))
+                        Button("Use") { applyManual() }
+                            .disabled(Double(latitude) == nil || Double(longitude) == nil)
+                    }
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(applyManual)
+                } else {
+                    HStack {
+                        Text(clock?.placeDescription ?? "—").foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Locate Now") { clock?.locate() }
+                    }
+                }
+            } header: {
+                Text("Where")
+            } footer: {
+                Text(preferences.prayerLocationMode == .manual
+                     ? "Decimal degrees, e.g. 23.8103, 90.4125 for Dhaka. Positive is north / east."
+                     : "macOS asks once for permission. The last fix is kept, so the times are ready at launch and offline.")
+            }
+            .disabled(!preferences.prayerTimesEnabled)
+
+            if preferences.prayerTimesEnabled, let clock, let today = clock.today {
+                Section {
+                    ForEach(today.ordered, id: \.prayer) { entry in
+                        HStack {
+                            Label(entry.prayer.title, systemImage: entry.prayer.symbol)
+                            Spacer()
+                            Text(PrayerClock.clock(entry.time)).monospacedDigit().foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("Today")
+                } footer: {
+                    Text(clock.prayerLine() ?? "")
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear {
+            latitude = preferences.prayerManualPlace.latitude == 0 ? "" : String(preferences.prayerManualPlace.latitude)
+            longitude = preferences.prayerManualPlace.longitude == 0 ? "" : String(preferences.prayerManualPlace.longitude)
+        }
+    }
+
+    private func applyManual() {
+        guard let lat = Double(latitude), let lon = Double(longitude), (-90...90).contains(lat), (-180...180).contains(lon) else { return }
+        preferences.prayerManualPlace = Coordinates(latitude: lat, longitude: lon)
+    }
+
+    private static func intervalTitle(_ minutes: Int) -> String {
+        switch minutes {
+        case 0: "Never"
+        case 60: "Hour"
+        case let m where m < 60: "\(m) minutes"
+        default: "\(minutes / 60) hours"
+        }
+    }
+}
+
 // MARK: - Clipboard
 
 struct ClipboardSettingsView: View {

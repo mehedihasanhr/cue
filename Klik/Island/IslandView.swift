@@ -296,6 +296,8 @@ struct IslandStatus: Equatable, Identifiable {
     var subtitle: String? = nil
     var image: NSImage? = nil
     var swatch: PickedColor? = nil
+    /// How long the island holds it before closing again.
+    var duration: Duration = .seconds(1.8)
 
     /// Green for done, orange for "nothing to do", white otherwise.
     var tint: Color {

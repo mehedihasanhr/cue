@@ -29,7 +29,7 @@ final class IslandController {
     private static let flashDuration: Duration = .seconds(1.8)
     private static let collapseAnimation: Duration = .milliseconds(380)
 
-    init(library: CaptureLibrary, clipboard: ClipboardHistory, assets: AssetStore, colors: ColorStore, tasks: TaskStore, actions: HistoryActions, preferences: AppPreferences) {
+    init(library: CaptureLibrary, clipboard: ClipboardHistory, assets: AssetStore, colors: ColorStore, tasks: TaskStore, actions: HistoryActions, preferences: AppPreferences, clock: PrayerClock? = nil) {
         self.preferences = preferences
         self.tasks = tasks
         self.library = library
@@ -41,7 +41,8 @@ final class IslandController {
         content.onDragEntered = { [weak self] in self?.dragEntered() }
         content.onDragExited = { [weak self] in self?.model.dropping = false }
         content.onDrop = { [weak self] urls, image in self?.drop(urls: urls, image: image, into: assets) }
-        let host = NSHostingView(rootView: IslandView(model: model, library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasks, actions: actions).environment(preferences))
+        let host = NSHostingView(rootView: IslandView(model: model, library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasks, actions: actions)
+            .environment(preferences).environment(clock))
         host.sizingOptions = []
         host.autoresizingMask = [.width, .height]
         host.frame = content.bounds
@@ -343,9 +344,12 @@ final class IslandController {
     /// Shows a confirmation on the island for a moment: the closed notch grows into
     /// it, the open panel shrinks to it. False when the island is not on screen.
     @discardableResult
-    func showStatus(_ status: IslandStatus) -> Bool {
+    /// `quiet`: an unprompted status (the time, a prayer) that must not interrupt
+    /// the open panel or a form — it is dropped unless the island is closed.
+    func showStatus(_ status: IslandStatus, quiet: Bool = false) -> Bool {
         guard model.geometry != nil, !hidden else { return false }
-        flash(phase: .status(status), overPanel: true)
+        if quiet, model.phase != .collapsed, !model.phase.isFlash { return false }
+        flash(phase: .status(status), overPanel: !quiet)
         return true
     }
 
@@ -359,8 +363,9 @@ final class IslandController {
         removeOutsideClickMonitor()
         window.orderFrontRegardless()
         setPhase(phase, animated: true)
+        let duration: Duration = if case .status(let status) = phase { status.duration } else { Self.flashDuration }
         flashTask = Task { [weak self] in
-            try? await Task.sleep(for: Self.flashDuration)
+            try? await Task.sleep(for: duration)
             guard !Task.isCancelled, let self, model.phase.isFlash else { return }
             if model.shapeRect(for: model.phase).contains(NSEvent.mouseLocation) {
                 pointerInside = true
