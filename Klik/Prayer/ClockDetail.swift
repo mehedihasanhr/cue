@@ -39,7 +39,7 @@ struct ClockDetail: View {
                 footer
             }
             .padding(.horizontal, 18)
-            .padding(.top, 8)
+            .padding(.top, 0)
             .padding(.bottom, 10)
         }
         .foregroundStyle(.white)
