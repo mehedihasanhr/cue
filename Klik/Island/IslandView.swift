@@ -158,6 +158,10 @@ struct IslandView: View {
     static let closeAnimation = Animation.spring(response: 0.45, dampingFraction: 1.0, blendDuration: 0)
     static let contentAnimation = Animation.smooth(duration: 0.28)
 
+    /// Collapsed and settled: the shape is drawn clear so nothing shows beside the
+    /// notch. Closing shrinks into the notch first (black all the way), then fades.
+    @State private var faded = true
+
     var body: some View {
         let phase = model.phase
         if let geometry = model.geometry {
@@ -166,9 +170,9 @@ struct IslandView: View {
             let flare: CGFloat = collapsed ? 6 : IslandGeometry.openFlare
             let shape = NotchShape(flare: flare, topRadius: 0, bottomRadius: geometry.radius(for: phase.geometryPhase))
             ZStack(alignment: .top) {
-                // Collapsed, the island is invisible: nothing peeks out beside the notch
-                // (or sits on a plain menu bar); the tap target stays.
-                shape.fill(collapsed ? Color.clear : Color.black)
+                // Invisible once collapsed (nothing peeks out beside the notch, nor sits
+                // on a plain menu bar); the tap target stays.
+                shape.fill(faded ? Color.clear : Color.black)
                 content(for: phase, strip: geometry.stripHeight)
                     .compositingGroup()
                     .padding(.horizontal, flare) // the body; the flares lie outside it
@@ -187,6 +191,12 @@ struct IslandView: View {
             .animation(Self.openAnimation, value: model.contentWidth)
             .animation(Self.openAnimation, value: model.panelWidth)
             .animation(Self.openAnimation, value: model.clockHeight)
+            .task(id: phase) {
+                guard collapsed else { faded = false; return } // black at once, then grows
+                try? await Task.sleep(for: .milliseconds(460)) // the close animation
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeOut(duration: 0.3)) { faded = true }
+            }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .environment(\.colorScheme, .dark)
         }
