@@ -279,11 +279,11 @@ final class ClipboardHistory {
 
     /// Pastes whatever is on the pasteboard: into Klik's own open editor when there
     /// is one, otherwise by pressing ⌘V in the front app.
-    /// `app`: the application that was in front before Klik took activation for one
-    /// of its panels; activation is handed back to it, and ⌘V is sent once it is in
-    /// front again so the keystroke lands in the field that had the cursor.
+    /// `field`: where the cursor was before Klik took activation for one of its
+    /// panels; the app gets activation back and the field its focus, and ⌘V is sent
+    /// once that has settled so the keystroke lands there.
     @discardableResult
-    func pressPaste(returningTo app: NSRunningApplication? = nil) -> Bool {
+    func pressPaste(returningTo field: FrontField? = nil) -> Bool {
         if let editor = openEditor() {
             editor.window?.makeKeyAndOrderFront(nil)
             editor.window?.makeFirstResponder(editor)
@@ -291,9 +291,8 @@ final class ClipboardHistory {
             return true
         }
         guard PermissionManager.hasAccessibilityAccess else { return false }
-        if let app, app != .current {
-            Self.activate(app)
-            Self.whenFrontmost(app) { Self.postCommandV() }
+        if let field, field.isOtherApp {
+            field.restore { Self.postCommandV() }
         } else {
             // A beat for the pasteboard to settle before the key press lands.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: Self.postCommandV)
@@ -307,13 +306,11 @@ final class ClipboardHistory {
         app.activate(from: .current, options: [])
     }
 
-    /// Hands activation back to `app` (if given) and presses ⌘V once it is in front,
-    /// for anything Klik puts on the pasteboard to land in the field that had the
-    /// cursor.
-    static func pressCommandV(returningTo app: NSRunningApplication?) {
-        if let app, app != .current {
-            activate(app)
-            whenFrontmost(app) { postCommandV() }
+    /// Gives the field (if given) its focus back and presses ⌘V once it has it, for
+    /// anything Klik puts on the pasteboard to land where the cursor was.
+    static func pressCommandV(returningTo field: FrontField?) {
+        if let field, field.isOtherApp {
+            field.restore { postCommandV() }
         } else {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: postCommandV)
         }
@@ -321,7 +318,7 @@ final class ClipboardHistory {
 
     /// Runs `action` once `app` is the frontmost application (polled, with a beat for
     /// its key window to take focus back), or after a second regardless.
-    private static func whenFrontmost(_ app: NSRunningApplication, attempts: Int = 20, then action: @escaping @MainActor () -> Void) {
+    static func whenFrontmost(_ app: NSRunningApplication, attempts: Int = 20, then action: @escaping @MainActor () -> Void) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             if NSWorkspace.shared.frontmostApplication == app || attempts <= 1 {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: action)

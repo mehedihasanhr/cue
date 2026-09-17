@@ -10,9 +10,9 @@ final class SnippetExpander {
     private let store: SnippetStore
     private let assets: AssetStore
     private let preferences: AppPreferences
-    /// Asks the user to fill a snippet's blanks (the app that was in front is passed
-    /// along so the paste can go back to it); the answer comes back through `paste`.
-    var askToFill: (Snippet, NSRunningApplication?) -> Void = { _, _ in }
+    /// Asks the user to fill a snippet's blanks (where the cursor was is passed along
+    /// so the paste can go back there); the answer comes back through `paste`.
+    var askToFill: (Snippet, FrontField) -> Void = { _, _ in }
 
     private var monitors: [Any] = []
     /// The last few characters typed, at most the longest keyword.
@@ -106,7 +106,7 @@ final class SnippetExpander {
                 paste(snippet, values: [:])
             } else {
                 expanding = false
-                askToFill(snippet, NSWorkspace.shared.frontmostApplication)
+                askToFill(snippet, FrontField.capture())
             }
         }
     }
@@ -122,7 +122,7 @@ final class SnippetExpander {
 
     /// Pastes the snippet where the caret is: the pasteboard takes the expansion, ⌘V
     /// goes to the front app, and what was on the pasteboard before comes back.
-    func paste(_ snippet: Snippet, values: [String: String], returningTo app: NSRunningApplication? = nil) {
+    func paste(_ snippet: Snippet, values: [String: String], returningTo field: FrontField? = nil) {
         expanding = true
         let pasteboard = NSPasteboard.general
         let previous = pasteboard.pasteboardItems?.compactMap { item -> NSPasteboardItem? in
@@ -142,8 +142,8 @@ final class SnippetExpander {
         pasteboard.setData(Data(), forType: Clipboard.ownMarker) // the history need not record the expansion
         store.recordUse(snippet)
 
-        ClipboardHistory.pressCommandV(returningTo: app)
-        DispatchQueue.main.asyncAfter(deadline: .now() + (app == nil ? 0.4 : 1.6)) { [weak self] in
+        ClipboardHistory.pressCommandV(returningTo: field)
+        DispatchQueue.main.asyncAfter(deadline: .now() + (field == nil ? 0.4 : 1.6)) { [weak self] in
             if !previous.isEmpty {
                 pasteboard.clearContents()
                 pasteboard.writeObjects(previous)

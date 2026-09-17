@@ -13,7 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let snippets = SnippetStore()
     private var snippetExpander: SnippetExpander?
     /// The app a snippet keyword was typed in, while its blanks are being filled.
-    private var snippetFrontApp: NSRunningApplication?
+    private var snippetFrontField: FrontField?
     private var prayerClock: PrayerClock?
     let preferences = AppPreferences()
     private lazy var coordinator = CaptureCoordinator(shortcuts: shortcuts)
@@ -64,7 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applyClipboardPreference()
 
         let expander = SnippetExpander(store: snippets, assets: assets, preferences: preferences)
-        expander.askToFill = { [weak self] snippet, app in self?.fillSnippet(snippet, from: app) }
+        expander.askToFill = { [weak self] snippet, field in self?.fillSnippet(snippet, from: field) }
         snippetExpander = expander
 
         shortcuts.setAction(for: .fullScreen) { [weak self] in self?.coordinator.captureFullScreen(fromMenu: false) }
@@ -219,19 +219,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         closeHistory()
         // Klik takes activation for the panel (invisibly — it has no menu bar or Dock
         // icon) so that handing it back afterwards restores the other app's key
-        // window and the cursor in its field; a non-activating panel would leave the
-        // field unfocused when it closed.
-        let frontApp = NSWorkspace.shared.frontmostApplication
+        // window; the field that had the cursor is remembered and focused again too.
+        let frontField = FrontField.capture()
         let content = ClipboardPanelView(clipboard: clipboard, close: { [weak self] in self?.clipboardPanel?.close() },
                                          onNeedsAccessibility: { [weak self] in self?.showOnboarding(for: .accessibility) },
-                                         frontApp: frontApp)
+                                         frontField: frontField)
             .environment(preferences)
         let panel = FloatingPanelWindow(rootView: content, size: ClipboardPanelView.size)
         clipboardPanel = panel
         NSApp.activate(ignoringOtherApps: true)
         panel.show(at: NSEvent.mouseLocation, position: preferences.panelPosition)
         // Whatever closes the panel (⎋, a click outside, a pick), the other app gets
-        // activation back so the user is where they were.
+        // activation and the field its focus back, so the user's own ⌘V works too.
         if let observer = clipboardPanelObserver { NotificationCenter.default.removeObserver(observer) }
         clipboardPanelObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: panel, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -239,7 +238,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     NotificationCenter.default.removeObserver(observer)
                     self.clipboardPanelObserver = nil
                 }
-                if let frontApp, frontApp != .current { ClipboardHistory.activate(frontApp) }
+                frontField.restore()
             }
         }
     }
@@ -262,8 +261,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// A snippet's blanks, asked for in the island — or a floating form without one.
     /// Klik takes activation for the form (invisibly) so it can hand it back to the
     /// app afterwards, with the cursor where it was.
-    private func fillSnippet(_ snippet: Snippet, from app: NSRunningApplication?) {
-        snippetFrontApp = app
+    private func fillSnippet(_ snippet: Snippet, from field: FrontField) {
+        snippetFrontField = field
         NSApp.activate(ignoringOtherApps: true)
         // Always a floating form at the pointer — where the keyword was just typed.
         snippetPanel(IslandPrompt(kind: .fill(snippet)), at: .pointer)
@@ -271,12 +270,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The blanks are in (or the form was cancelled): back to the app, then paste.
     private func snippetFilled(_ snippet: Snippet, values: [String: String]?) {
-        let app = snippetFrontApp
-        snippetFrontApp = nil
+        let field = snippetFrontField
+        snippetFrontField = nil
         if let values {
-            snippetExpander?.paste(snippet, values: values, returningTo: app)
-        } else if let app, app != .current {
-            ClipboardHistory.activate(app)
+            snippetExpander?.paste(snippet, values: values, returningTo: field)
+        } else {
+            field?.restore()
         }
     }
 

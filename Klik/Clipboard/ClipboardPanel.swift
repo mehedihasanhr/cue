@@ -12,8 +12,8 @@ struct ClipboardPanelView: View {
     var close: () -> Void = {}
     /// Pasting needs Accessibility access; asks for it the first time it is missing.
     var onNeedsAccessibility: () -> Void = {}
-    /// The app that was in front when the panel opened: the paste goes back to it.
-    var frontApp: NSRunningApplication?
+    /// Where the cursor was when the panel opened: the paste goes back there.
+    var frontField: FrontField?
 
     @State private var search = ""
     @State private var selected = 0
@@ -183,7 +183,7 @@ struct ClipboardPanelView: View {
         guard items.indices.contains(index), done == nil else { return }
         let item = items[index]
         take(item) {
-            if !clipboard.pressPaste(returningTo: frontApp) { onNeedsAccessibility() }
+            if !clipboard.pressPaste(returningTo: frontField) { onNeedsAccessibility() }
         }
     }
 
