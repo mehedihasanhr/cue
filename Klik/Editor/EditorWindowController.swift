@@ -41,10 +41,16 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         window.tabbingMode = .disallowed
         super.init(window: window)
         window.delegate = self
-        // ⎋ closes a preview (like Quick Look); in edit mode the canvas owns ⎋ (deselect).
+        // ⎋ closes a preview (like Quick Look). In edit mode the canvas owns ⎋; this
+        // catches it when a toolbar control has focus instead, so ⎋ still returns to Select.
         window.onEscape = { [weak self] in
-            guard let self, model.mode == .preview else { return false }
-            window.performClose(nil)
+            guard let self else { return false }
+            if model.mode == .preview {
+                window.performClose(nil)
+                return true
+            }
+            guard model.tool != .select else { return false }
+            model.tool = .select
             return true
         }
 

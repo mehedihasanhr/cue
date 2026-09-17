@@ -374,7 +374,8 @@ final class CanvasView: NSView, NSTextViewDelegate, NSUserInterfaceValidations {
         case kVK_Delete, kVK_ForwardDelete:
             model.deleteSelected()
         case kVK_Escape:
-            if model.tool == .crop { model.tool = .select } else { model.select(nil) }
+            // ⎋ steps back: any tool → Select (dropping a crop draft), Select → nothing selected.
+            if model.tool != .select { model.tool = .select } else { model.select(nil) }
         case kVK_Return, kVK_ANSI_KeypadEnter:
             if model.tool == .crop { model.applyCrop() }
         case kVK_LeftArrow: model.nudgeSelected(dx: -step, dy: 0)
