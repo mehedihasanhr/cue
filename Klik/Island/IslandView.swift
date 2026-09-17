@@ -166,7 +166,9 @@ struct IslandView: View {
             let flare: CGFloat = collapsed ? 6 : IslandGeometry.openFlare
             let shape = NotchShape(flare: flare, topRadius: 0, bottomRadius: geometry.radius(for: phase.geometryPhase))
             ZStack(alignment: .top) {
-                shape.fill(.black)
+                // Collapsed, the island is invisible: nothing peeks out beside the notch
+                // (or sits on a plain menu bar); the tap target stays.
+                shape.fill(collapsed ? Color.clear : Color.black)
                 content(for: phase, strip: geometry.stripHeight)
                     .compositingGroup()
                     .padding(.horizontal, flare) // the body; the flares lie outside it
