@@ -157,7 +157,7 @@ struct IslandSettingsView: View {
             Section {
                 Toggle(isOn: $preferences.dynamicIslandEnabled) {
                     Text("Show the Dynamic Island")
-                    Text("Hover over the notch — or the pill at the top of the screen — to open your captures. The island is never part of a screenshot.")
+                    Text("Hover over the notch — or the pill at the top of the screen — to open your captures. The island never appears in Klik's own screenshots.")
                 }
                 Toggle(isOn: $preferences.dynamicIslandOnPlainDisplays) {
                     Text("Also show a pill on displays without a notch")

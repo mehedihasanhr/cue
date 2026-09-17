@@ -27,7 +27,7 @@ final class FloatingPanelWindow: NSPanel {
         isMovableByWindowBackground = true
         isReleasedWhenClosed = false
         hidesOnDeactivate = false
-        sharingType = .none
+        sharingType = .readOnly // shows in screen sharing; Klik's own shots filter it out
         collectionBehavior = [.canJoinAllSpaces, .transient, .fullScreenAuxiliary]
         animationBehavior = .utilityWindow
 

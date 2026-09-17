@@ -2,9 +2,10 @@ import AppKit
 import SwiftUI
 
 /// The always-present panel docked on the notch. Non-activating, so hovering and
-/// clicking never take the user's app out of front; `sharingType = .none` keeps it out
-/// of every capture. It only becomes key when a control inside it (the search field)
-/// is clicked. Hover is detected by `IslandController` from mouse-moved events: a
+/// clicking never take the user's app out of front. It is shareable (`.readOnly`) so
+/// it shows in screen sharing and recordings; Klik's own screenshots leave it out
+/// through their capture filter instead. It only becomes key when a control inside
+/// it (the search field) is clicked. Hover is detected by `IslandController` from mouse-moved events: a
 /// tracking area on a window over the notch never fires.
 final class IslandWindow: NSPanel {
     init() {
@@ -21,7 +22,7 @@ final class IslandWindow: NSPanel {
         // them; just below pop-up menus (101) so the island's own menus still show on top.
         level = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue - 1)
         hidesOnDeactivate = false
-        sharingType = .none
+        sharingType = .readOnly
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false

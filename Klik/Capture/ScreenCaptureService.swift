@@ -44,8 +44,9 @@ final class ScreenCaptureService {
 
     // MARK: - Full display
 
-    func captureDisplay(_ display: SCDisplay, includeCursor: Bool = false) async throws(CaptureError) -> CapturedImage {
-        let filter = SCContentFilter(display: display, excludingWindows: [])
+    /// The whole display, without Klik's own windows (the island, HUDs, panels).
+    func captureDisplay(_ display: SCDisplay, in content: SCShareableContent, includeCursor: Bool = false) async throws(CaptureError) -> CapturedImage {
+        let filter = Self.filterLeavingKlikOut(display: display, in: content)
         let scale = CGFloat(filter.pointPixelScale)
         let configuration = Self.configuration(pointSize: CGSize(width: display.width, height: display.height), scale: scale)
         configuration.showsCursor = includeCursor
@@ -59,7 +60,7 @@ final class ScreenCaptureService {
         let content = try await shareableContent()
         var images: [CGDirectDisplayID: CapturedImage] = [:]
         for display in content.displays {
-            images[display.displayID] = try await captureDisplay(display)
+            images[display.displayID] = try await captureDisplay(display, in: content)
         }
         return images
     }
@@ -80,15 +81,7 @@ final class ScreenCaptureService {
               let display = content.displays.first(where: { $0.displayID == displayID })
         else { throw .noDisplay }
 
-        // Leave out every Klik window (HUDs, the dim overlay, the scrolling preview). By
-        // application when ScreenCaptureKit lists us, else by the windows it does know.
-        let pid = ProcessInfo.processInfo.processIdentifier
-        let ownApps = content.applications.filter { $0.processID == pid }
-        let ownWindows = content.windows.filter { $0.owningApplication?.processID == pid }
-        let filter = ownApps.isEmpty
-            ? SCContentFilter(display: display, excludingWindows: ownWindows)
-            : SCContentFilter(display: display, excludingApplications: ownApps, exceptingWindows: [])
-        Log.capture.info("Region filter excludes \(ownApps.count) app(s) / \(ownWindows.count) own window(s)")
+        let filter = Self.filterLeavingKlikOut(display: display, in: content)
         let scale = CGFloat(filter.pointPixelScale)
 
         let configuration = Self.configuration(pointSize: rect.size, scale: scale)
@@ -117,6 +110,20 @@ final class ScreenCaptureService {
     }
 
     // MARK: - Internals
+
+    /// The display without any Klik window (the island, HUDs, the dim overlay, the
+    /// scrolling preview): by application when ScreenCaptureKit lists us, else by the
+    /// windows it does know. The island is shareable so that screen sharing and
+    /// recordings show it; this filter is what keeps it out of Klik's own shots.
+    private static func filterLeavingKlikOut(display: SCDisplay, in content: SCShareableContent) -> SCContentFilter {
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let ownApps = content.applications.filter { $0.processID == pid }
+        let ownWindows = content.windows.filter { $0.owningApplication?.processID == pid }
+        Log.capture.info("Capture filter excludes \(ownApps.count) app(s) / \(ownWindows.count) own window(s)")
+        return ownApps.isEmpty
+            ? SCContentFilter(display: display, excludingWindows: ownWindows)
+            : SCContentFilter(display: display, excludingApplications: ownApps, exceptingWindows: [])
+    }
 
     private static func configuration(pointSize: CGSize, scale: CGFloat) -> SCStreamConfiguration {
         let configuration = SCStreamConfiguration()

@@ -32,7 +32,7 @@ final class CaptureCoordinator {
                 throw CaptureError.noDisplay
             }
             let includeCursor = UserDefaults.standard.bool(forKey: PreferenceKey.includeCursor)
-            onCaptured?(try await service.captureDisplay(display, includeCursor: includeCursor))
+            onCaptured?(try await service.captureDisplay(display, in: content, includeCursor: includeCursor))
         }
     }
 
