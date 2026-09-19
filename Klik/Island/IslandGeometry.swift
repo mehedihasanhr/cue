@@ -129,7 +129,8 @@ nonisolated struct IslandGeometry: Equatable {
     /// the fixed panel and never wider than the screen. `.form`, and a nil width, are
     /// the fixed rects.
     /// `contentHeight`: for `.form`, the box takes exactly this content height (the
-    /// clock view) instead of the fixed form height.
+    /// clock view) instead of the fixed form height; `contentWidth` widens it as far
+    /// as the open panel would be.
     func rect(for phase: Phase, contentWidth: CGFloat?, contentHeight: CGFloat? = nil) -> CGRect {
         let fixed = rect(for: phase)
         var width = fixed.width
@@ -141,6 +142,7 @@ nonisolated struct IslandGeometry: Equatable {
             if let contentWidth { width = min(max(contentWidth + Self.panelHorizontalPadding * 2, fixed.width), screen.frame.width).rounded() }
         case .form:
             if let contentHeight { height = (collapsed.height + contentHeight).rounded() }
+            if let contentWidth { width = min(max(contentWidth, fixed.width), rect(for: .expanded).width).rounded() }
         case .collapsed:
             break
         }

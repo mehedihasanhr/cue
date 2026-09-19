@@ -51,8 +51,10 @@ final class IslandModel {
     var geometry: IslandGeometry?
     /// The compact box's row width, reported by the row itself (see `fitsContent`).
     var contentWidth: CGFloat?
-    /// The clock view's height, reported by the view, so its box fits it.
+    /// The clock view's height and natural width, reported by the view, so its box
+    /// fits it — nothing in it is ever cut short.
     var clockHeight: CGFloat?
+    var clockWidth: CGFloat?
     /// The open panel's width: wide enough for its tab row, at least the fixed size.
     private(set) var panelWidth: CGFloat = IslandPanel.size.width
     /// The window must grow with the panel; set by the controller.
@@ -70,6 +72,7 @@ final class IslandModel {
         guard let geometry else { return .zero }
         let width: CGFloat? = switch phase {
         case .expanded: panelWidth
+        case .clock: clockWidth
         default: phase.fitsContent ? contentWidth : nil
         }
         let height: CGFloat? = phase == .clock ? clockHeight : nil
@@ -193,6 +196,7 @@ struct IslandView: View {
             .animation(Self.openAnimation, value: model.contentWidth)
             .animation(Self.openAnimation, value: model.panelWidth)
             .animation(Self.openAnimation, value: model.clockHeight)
+            .animation(Self.openAnimation, value: model.clockWidth)
             .task(id: phase) {
                 guard collapsed else { faded = false; return } // black at once, then grows
                 try? await Task.sleep(for: .milliseconds(460)) // the close animation
@@ -258,7 +262,8 @@ struct IslandView: View {
                 Color.clear.frame(height: strip)
                 ClockDetail(clock: clock, openSettings: { model.onOpenTimeSettings() }, close: { model.onClockClosed() })
                     .modifier(IdealHeight { model.clockHeight = $0 })
-                    .frame(width: IslandGeometry.formWidth, height: model.clockHeight ?? IslandGeometry.formContentHeight)
+                    .modifier(IdealWidth { model.clockWidth = $0 })
+                    .frame(width: model.shapeRect(for: .clock).width, height: model.clockHeight ?? IslandGeometry.formContentHeight)
             }
             .transition(Self.contentTransition)
         case .taskDetail(let id):

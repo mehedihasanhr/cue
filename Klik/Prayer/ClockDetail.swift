@@ -88,7 +88,7 @@ struct ClockDetail: View {
 
     /// The six times side by side, the current one lit.
     private func times(_ today: PrayerTimes, status: PrayerStatus, now: Date) -> some View {
-        HStack(spacing: 6) {
+        EqualColumns(spacing: 6) {
             ForEach(today.ordered, id: \.prayer) { entry in
                 let current = status.current == entry.prayer || (status.current == nil && entry.prayer == .sunrise)
                 let next = !current && status.next == entry.prayer && entry.time > now
@@ -98,6 +98,9 @@ struct ClockDetail: View {
                     Text(next ? "Next · \(entry.prayer.title)" : entry.prayer.title).font(.system(size: 10, weight: .semibold))
                     Text(PrayerClock.clock(entry.time)).font(.system(size: 12, weight: .bold)).monospacedDigit()
                 }
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, 10)
                 .foregroundStyle(current ? .black : .white.opacity(past ? 0.45 : 0.9))
                 .frame(maxWidth: .infinity)
                 .frame(height: 58)
@@ -150,11 +153,11 @@ struct ClockDetail: View {
     /// times; the live one in orange.
     private func windows(_ today: PrayerTimes, status: PrayerStatus) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text("Prayer not allowed")
+            Text("Times to avoid")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.45))
                 .accessibilityAddTraits(.isHeader)
-            HStack(spacing: 6) {
+            EqualColumns(spacing: 6) {
                 ForEach(today.forbidden, id: \.start) { window in
                     let live = status.forbidden == window
                     HStack(spacing: 8) {
@@ -171,6 +174,7 @@ struct ClockDetail: View {
                                 .monospacedDigit()
                                 .foregroundStyle(.white.opacity(live ? 1 : 0.85))
                         }
+                        .fixedSize()
                         Spacer(minLength: 0)
                         if live {
                             Text("now")
@@ -195,10 +199,10 @@ struct ClockDetail: View {
     /// "5:46–6:01 AM", or "11:42 AM–12:02 PM" when the window crosses noon.
     private static func range(_ start: Date, _ end: Date) -> String {
         let from = PrayerClock.clock(start), to = PrayerClock.clock(end)
-        guard twelveHour, let fromMeridiem = from.split(separator: " ").last, let toMeridiem = to.split(separator: " ").last,
-              fromMeridiem == toMeridiem, let time = from.split(separator: " ").first
-        else { return "\(from)–\(to)" }
-        return "\(time)–\(to)"
+        // The time and AM/PM are joined by a narrow no-break space in most locales.
+        let fromParts = from.split(whereSeparator: \.isWhitespace), toParts = to.split(whereSeparator: \.isWhitespace)
+        guard twelveHour, fromParts.count == 2, toParts.count == 2, fromParts[1] == toParts[1] else { return "\(from)–\(to)" }
+        return "\(fromParts[0])–\(to)"
     }
 
     private var footer: some View {
@@ -227,6 +231,34 @@ struct ClockDetail: View {
                     .background(.white.opacity(0.08), in: Capsule())
             }
             .buttonStyle(.plain)
+        }
+    }
+
+    // MARK: - Layout
+
+    /// Children side by side at one width each: the widest one's when unconstrained
+    /// (so the island can be measured to fit), or an equal share of the width given.
+    struct EqualColumns: Layout {
+        var spacing: CGFloat = 6
+
+        func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+            guard !subviews.isEmpty else { return .zero }
+            let ideal = subviews.map { $0.sizeThatFits(.unspecified) }
+            let gaps = spacing * CGFloat(subviews.count - 1)
+            let widest = ideal.map(\.width).max() ?? 0
+            let column = proposal.width.map { max(($0 - gaps) / CGFloat(subviews.count), widest) } ?? widest
+            return CGSize(width: column * CGFloat(subviews.count) + gaps, height: ideal.map(\.height).max() ?? 0)
+        }
+
+        func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+            guard !subviews.isEmpty else { return }
+            let gaps = spacing * CGFloat(subviews.count - 1)
+            let column = (bounds.width - gaps) / CGFloat(subviews.count)
+            for (index, subview) in subviews.enumerated() {
+                let x = bounds.minX + (column + spacing) * CGFloat(index)
+                subview.place(at: CGPoint(x: x, y: bounds.minY), anchor: .topLeading,
+                              proposal: ProposedViewSize(width: column, height: bounds.height))
+            }
         }
     }
 
