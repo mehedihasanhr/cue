@@ -26,15 +26,18 @@ struct ClockStatus: Equatable {
         case .fajr: return [.indigo, .orange]
         case .none: return [.yellow, .orange]
         case .dhuhr: return [.yellow, .orange]
-        case .asr: return [.orange, Self.red]
-        case .maghrib: return [Self.red, Self.wine]
+        case .asr: return [Self.ember, Self.red, Self.wine]
+        case .maghrib: return [Self.red, Self.wine, Self.smoke]
         case .isha, .sunrise: return [.indigo, .blue]
         }
     }
 
-    /// The afternoon and sunset reds: a hot red and the deep wine it cools into.
-    static let red = Color(red: 0.93, green: 0.2, blue: 0.16)
-    static let wine = Color(red: 0.5, green: 0.06, blue: 0.22)
+    /// The afternoon and sunset reds: an ember, a hot red, the wine it cools into
+    /// and the dark smoke behind it.
+    static let ember = Color(red: 1.0, green: 0.42, blue: 0.14)
+    static let red = Color(red: 0.93, green: 0.16, blue: 0.14)
+    static let wine = Color(red: 0.55, green: 0.04, blue: 0.18)
+    static let smoke = Color(red: 0.22, green: 0.02, blue: 0.08)
 
     /// How far through the current period we are (0…1), for the progress bar.
     var progress: Double? {
@@ -102,8 +105,8 @@ struct ClockRow: View {
 
     private var badge: some View {
         ZStack {
-            Circle()
-                .fill(LinearGradient(colors: status.tint, startPoint: .topLeading, endPoint: .bottomTrailing))
+            LiquidFill(colors: status.tint)
+                .clipShape(Circle())
             Circle()
                 .strokeBorder(.white.opacity(0.25), lineWidth: 1)
             Image(systemName: symbol)
@@ -296,5 +299,51 @@ struct PrayerPill: View {
         }
         .lineLimit(1)
         .fixedSize()
+    }
+}
+
+/// A tint that looks poured rather than printed: the colours swirl as soft, blurred
+/// blobs over a dark base, with a highlight where light would catch the surface.
+struct LiquidFill: View {
+    let colors: [Color]
+
+    var body: some View {
+        let first = colors.first ?? .orange
+        let middle = colors.count > 2 ? colors[1] : first
+        let last = colors.last ?? .red
+        GeometryReader { proxy in
+            let size = proxy.size
+            let unit = max(size.width, size.height)
+            ZStack {
+                LinearGradient(colors: [middle, last], startPoint: .top, endPoint: .bottom)
+                // Smoke: the dark end curling up from the bottom.
+                Ellipse()
+                    .fill(last)
+                    .frame(width: unit * 1.3, height: unit * 0.9)
+                    .offset(x: unit * 0.2, y: unit * 0.45)
+                    .blur(radius: unit * 0.22)
+                // The hot pool, off-centre.
+                Ellipse()
+                    .fill(first)
+                    .frame(width: unit * 0.95, height: unit * 0.75)
+                    .offset(x: -unit * 0.22, y: -unit * 0.25)
+                    .blur(radius: unit * 0.18)
+                // A second, cooler swirl.
+                Ellipse()
+                    .fill(middle)
+                    .frame(width: unit * 0.7, height: unit * 0.5)
+                    .offset(x: unit * 0.25, y: -unit * 0.05)
+                    .blur(radius: unit * 0.16)
+                // The surface highlight.
+                Ellipse()
+                    .fill(.white.opacity(0.35))
+                    .frame(width: unit * 0.6, height: unit * 0.3)
+                    .offset(x: -unit * 0.18, y: -unit * 0.34)
+                    .blur(radius: unit * 0.14)
+            }
+            .frame(width: size.width, height: size.height)
+            .clipped()
+        }
+        .drawingGroup() // one texture, so the blurs cost nothing on every tick
     }
 }

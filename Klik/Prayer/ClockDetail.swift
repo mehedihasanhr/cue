@@ -51,7 +51,7 @@ struct ClockDetail: View {
     private func header(_ now: Date) -> some View {
         HStack(alignment: .center, spacing: 14) {
             ZStack {
-                Circle().fill(LinearGradient(colors: tint, startPoint: .topLeading, endPoint: .bottomTrailing))
+                LiquidFill(colors: tint).clipShape(Circle())
                 Circle().strokeBorder(.white.opacity(0.25), lineWidth: 1)
                 Image(systemName: clock?.status?.current?.symbol ?? "clock.fill")
                     .font(.system(size: 17, weight: .semibold))
@@ -101,11 +101,17 @@ struct ClockDetail: View {
                 .lineLimit(1)
                 .fixedSize()
                 .padding(.horizontal, 10)
-                .foregroundStyle(current ? .black : .white.opacity(past ? 0.45 : 0.9))
+                .foregroundStyle(current ? .white : .white.opacity(past ? 0.45 : 0.9))
+                .shadow(color: .black.opacity(current ? 0.35 : 0), radius: 1, y: 1)
                 .frame(maxWidth: .infinity)
                 .frame(height: 58)
-                .background(current ? AnyShapeStyle(LinearGradient(colors: tint.map { $0.opacity(0.95) }, startPoint: .top, endPoint: .bottom)) : AnyShapeStyle(Color.white.opacity(next ? 0.1 : 0.07)),
-                            in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background {
+                    if current {
+                        LiquidFill(colors: tint).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    } else {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(next ? 0.1 : 0.07))
+                    }
+                }
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.white.opacity(next ? 0.35 : 0), lineWidth: 1))
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("\(entry.prayer.title) \(PrayerClock.clock(entry.time))\(current ? ", now" : next ? ", next" : past ? ", passed" : "")")
