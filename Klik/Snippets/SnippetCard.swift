@@ -94,7 +94,11 @@ struct SnippetCard: View {
 
     /// The keyword on a brand-coloured tile, for dragging the expansion out.
     static func dragImage(for snippet: Snippet) -> NSImage {
-        let text = snippet.keyword as NSString
+        dragImage(forText: snippet.keyword)
+    }
+
+    static func dragImage(forText string: String) -> NSImage {
+        let text = String(string.prefix(24)) as NSString
         let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .bold)
         let size = text.size(withAttributes: [.font: font])
         let padded = NSSize(width: size.width + 20, height: 28)

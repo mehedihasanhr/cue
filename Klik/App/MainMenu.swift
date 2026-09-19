@@ -27,6 +27,7 @@ enum MainMenu {
             ("Pick Color", #selector(AppDelegate.pickColor(_:))),
             ("Quick Task…", #selector(AppDelegate.quickTask(_:))),
             ("Clipboard List…", #selector(AppDelegate.showClipboardPanel(_:))),
+            ("Command Palette…", #selector(AppDelegate.showCommandPalette(_:))),
         ] {
             let item = captureMenu.addItem(withTitle: title, action: selector, keyEquivalent: "")
             item.target = target

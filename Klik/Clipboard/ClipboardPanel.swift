@@ -87,6 +87,7 @@ struct ClipboardPanelView: View {
                 hint("↑↓", "choose")
                 hint("↩", clipboard.canPaste ? "paste" : "copy")
                 hint("⌘↩", "copy")
+                hint("⌥↩", "plain")
                 hint("⌘1–9", "pick")
                 Spacer(minLength: 0)
                 hint("⎋", "close")
@@ -143,17 +144,42 @@ struct ClipboardPanelView: View {
         .contextMenu {
             Button("Paste") { paste(at: index, in: items) }
             Button("Copy") { copy(item) }
+            if item.kind == .text || item.kind == .link {
+                transformMenu(item)
+            }
             Button(item.pinned ? "Unpin" : "Pin") { clipboard.togglePin(item) }
             Divider()
             Button("Delete", role: .destructive) { clipboard.delete(item) }
         }
     }
 
-    /// ⌘↩ copies without pasting; ⌘1–⌘9 take a row straight away.
+    /// "Paste as…" for a text row: the transforms that would change it. The panel
+    /// closes first so the paste lands where the cursor was.
+    private func transformMenu(_ item: ClipboardItem) -> some View {
+        Menu("Paste as") {
+            ForEach(TextTransform.applicable(to: item.text)) { transform in
+                Button(transform.title) { paste(item, as: transform) }
+            }
+        }
+    }
+
+    private func paste(_ item: ClipboardItem, as transform: TextTransform) {
+        guard done == nil, let result = transform.apply(to: item.text) else { return }
+        done = item.id
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+            close()
+            clipboard.copy(text: result)
+            if !clipboard.pressPaste(returningTo: frontField) { onNeedsAccessibility() }
+        }
+    }
+
+    /// ⌘↩ copies without pasting; ⌥↩ pastes as plain text; ⌘1–⌘9 take a row straight away.
     private func shortcuts(_ items: [ClipboardItem]) -> some View {
         Group {
             Button("") { if items.indices.contains(selected) { copy(items[selected]) } }
                 .keyboardShortcut(.return, modifiers: .command)
+            Button("") { if items.indices.contains(selected) { paste(items[selected], as: .plain) } }
+                .keyboardShortcut(.return, modifiers: .option)
             ForEach(0..<9, id: \.self) { index in
                 Button("") { paste(at: index, in: items) }
                     .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)

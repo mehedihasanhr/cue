@@ -41,6 +41,8 @@
 				Support/PanelPosition.swift,
 				Prayer/PrayerCalculator.swift,
 				Snippets/SnippetStore.swift,
+				Support/QuickAnswers.swift,
+				Clipboard/TextTransform.swift,
 				Support/SQLite.swift,
 				Tasks/MarkdownView.swift,
 				Tasks/TaskStore.swift,

@@ -264,6 +264,7 @@ struct FloatingPanelView: View {
         case .color(let entry): colorCard(entry)
         case .task(let task): taskRow(task)
         case .snippet(let snippet): snippetCard(snippet)
+        case .answer(let answer): AnswerCard(answer: answer, clipboard: clipboard, colors: colors)
         }
     }
 
@@ -276,6 +277,7 @@ struct FloatingPanelView: View {
         case .color(let entry): colorRow(entry)
         case .task(let task): taskRow(task)
         case .snippet(let snippet): snippetRow(snippet)
+        case .answer(let answer): AnswerCard(answer: answer, clipboard: clipboard, colors: colors)
         }
     }
 

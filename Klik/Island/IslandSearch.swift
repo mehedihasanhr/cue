@@ -8,15 +8,18 @@ enum IslandItem: Identifiable {
     case color(ColorEntry)
     case task(TaskItem)
     case snippet(Snippet)
+    /// Worked out from the query itself (a color's formats, a sum); only in search results.
+    case answer(QuickAnswer)
 
-    var id: UUID {
+    var id: String {
         switch self {
-        case .capture(let item): item.id
-        case .clipboard(let item): item.id
-        case .asset(let item): item.id
-        case .color(let entry): entry.id
-        case .task(let task): task.id
-        case .snippet(let snippet): snippet.id
+        case .capture(let item): item.id.uuidString
+        case .clipboard(let item): item.id.uuidString
+        case .asset(let item): item.id.uuidString
+        case .color(let entry): entry.id.uuidString
+        case .task(let task): task.id.uuidString
+        case .snippet(let snippet): snippet.id.uuidString
+        case .answer(let answer): "answer.\(answer.id)"
         }
     }
 
@@ -28,6 +31,7 @@ enum IslandItem: Identifiable {
         case .color: .colors
         case .task: .tasks
         case .snippet: .snippets
+        case .answer: .all
         }
     }
 
@@ -39,6 +43,7 @@ enum IslandItem: Identifiable {
         case .color(let entry): entry.createdAt
         case .task(let task): task.createdAt
         case .snippet(let snippet): snippet.createdAt
+        case .answer: .now
         }
     }
 }
@@ -69,7 +74,7 @@ enum IslandSearch {
         func matches(_ fields: [String?]) -> Bool {
             terms.allSatisfy { term in fields.contains { $0?.localizedCaseInsensitiveContains(term) ?? false } }
         }
-        var hits: [IslandItem] = []
+        var hits: [IslandItem] = QuickAnswers.answers(for: query).map(IslandItem.answer)
         hits += library.items.filter { matches([$0.title, $0.dimensions]) }.map(IslandItem.capture)
         hits += clipboard.items.filter { matches([$0.text, $0.name, $0.sourceName, $0.kind.rawValue]) }.map(IslandItem.clipboard)
         hits += assets.items.filter { matches([$0.fileName]) }.map(IslandItem.asset)

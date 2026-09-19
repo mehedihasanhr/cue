@@ -20,6 +20,7 @@ struct Hotkey: Hashable, Codable {
     static let pickColor = Hotkey(keyCode: UInt32(kVK_ANSI_P), modifiers: UInt32(optionKey | shiftKey))
     static let quickTask = Hotkey(keyCode: UInt32(kVK_ANSI_N), modifiers: UInt32(optionKey | shiftKey))
     static let clipboardPanel = Hotkey(keyCode: UInt32(kVK_ANSI_C), modifiers: UInt32(cmdKey | shiftKey))
+    static let commandPalette = Hotkey(keyCode: UInt32(kVK_Space), modifiers: UInt32(optionKey | shiftKey))
     static let escape = Hotkey(keyCode: UInt32(kVK_Escape), modifiers: 0)
     static let enter = Hotkey(keyCode: UInt32(kVK_Return), modifiers: 0)
 
@@ -106,12 +107,14 @@ enum HotkeyID: UInt32, CaseIterable {
     case quickTask
     /// The clipboard history alone, as a keyboard-driven list.
     case clipboardPanel
+    /// One list over everything: actions, answers, every item.
+    case commandPalette
     /// Registered only while a scrolling capture runs, so ↩ / ⎋ work from any app.
     case confirmCapture = 98
     case cancelCapture = 99
 
     /// The shortcuts a user can rebind in Settings.
-    static let configurable: [HotkeyID] = [.fullScreen, .region, .scrolling, .captureText, .pickColor, .quickTask, .showPanel, .clipboardPanel]
+    static let configurable: [HotkeyID] = [.commandPalette, .fullScreen, .region, .scrolling, .captureText, .pickColor, .quickTask, .showPanel, .clipboardPanel]
 
     var defaultHotkey: Hotkey {
         switch self {
@@ -123,6 +126,7 @@ enum HotkeyID: UInt32, CaseIterable {
         case .pickColor: .pickColor
         case .quickTask: .quickTask
         case .clipboardPanel: .clipboardPanel
+        case .commandPalette: .commandPalette
         case .confirmCapture: .enter
         case .cancelCapture: .escape
         }
@@ -138,6 +142,7 @@ enum HotkeyID: UInt32, CaseIterable {
         case .pickColor: "Pick a color"
         case .quickTask: "Quick task"
         case .clipboardPanel: "Clipboard list"
+        case .commandPalette: "Command palette"
         case .confirmCapture: "Finish capture"
         case .cancelCapture: "Stop capture"
         }

@@ -25,6 +25,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var quickTaskPanel: QuickTaskPanel?
     private var clipboardPanel: FloatingPanelWindow?
     private var clipboardPanelObserver: (any NSObjectProtocol)?
+    private var commandPalette: FloatingPanelWindow?
+    private var commandPaletteObserver: (any NSObjectProtocol)?
 
     private var settingsWindow: SettingsWindowController?
     private var onboardingWindows: [PermissionKind: HostedWindowController] = [:]
@@ -75,6 +77,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         shortcuts.setAction(for: .pickColor) { [weak self] in self?.pickColor(nil) }
         shortcuts.setAction(for: .quickTask) { [weak self] in self?.quickTask(nil) }
         shortcuts.setAction(for: .clipboardPanel) { [weak self] in self?.showClipboardPanel(nil) }
+        shortcuts.setAction(for: .commandPalette) { [weak self] in self?.showCommandPalette(nil) }
 
         // Diagnostics: `--env KLIK_DEBUG_HOTKEYS=1` writes every shortcut and its status to Pictures/Klik.
         if ProcessInfo.processInfo.environment["KLIK_DEBUG_HOTKEYS"] == "1" {
@@ -193,6 +196,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func closeHistory() {
         floatingPanel?.close()
         clipboardPanel?.close()
+        commandPalette?.close()
         island?.collapse(animated: false)
     }
 
@@ -245,6 +249,106 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 frontField.restore()
             }
+        }
+    }
+
+    /// One list over everything (⌥⇧Space by default): actions, quick answers and
+    /// every item, driven by the keyboard. Activation is handled like the clipboard
+    /// list's so a pick lands where the cursor was.
+    @objc func showCommandPalette(_ sender: Any?) {
+        if let panel = commandPalette, panel.isVisible {
+            panel.close()
+            return
+        }
+        closeHistory()
+        let frontField = FrontField.capture()
+        let content = CommandPaletteView(library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasks,
+                                         snippets: snippets, shortcuts: shortcuts, actions: paletteActions(returningTo: frontField),
+                                         close: { [weak self] in self?.commandPalette?.close() },
+                                         onNeedsAccessibility: { [weak self] in self?.showOnboarding(for: .accessibility) })
+            .environment(preferences)
+        let panel = FloatingPanelWindow(rootView: content, size: CommandPaletteView.size)
+        commandPalette = panel
+        NSApp.activate(ignoringOtherApps: true)
+        panel.show(at: NSEvent.mouseLocation, position: preferences.panelPosition)
+        if let observer = commandPaletteObserver { NotificationCenter.default.removeObserver(observer) }
+        commandPaletteObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: panel, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                if let self, let observer = self.commandPaletteObserver {
+                    NotificationCenter.default.removeObserver(observer)
+                    self.commandPaletteObserver = nil
+                }
+                frontField.restore()
+            }
+        }
+    }
+
+    private func paletteActions(returningTo field: FrontField) -> PaletteActions {
+        PaletteActions(
+            run: { [weak self] command in
+                guard let self else { return }
+                switch command {
+                case .captureArea: coordinator.captureArea(fromMenu: true)
+                case .captureFullScreen: coordinator.captureFullScreen(fromMenu: true)
+                case .captureScrolling: coordinator.captureScrolling(fromMenu: true)
+                case .captureText: coordinator.captureText(fromMenu: true)
+                case .pickColor: pickColor(nil)
+                case .newTask: quickTask(nil)
+                case .newSnippet: snippetPanel(IslandPrompt(kind: .snippet(nil, initialText: "", assetID: nil)))
+                case .clipboardList: showClipboardPanel(nil)
+                case .klikPanel: toggleHistoryAtPointer()
+                case .clock: island?.showClock() ?? showSettings(nil)
+                case .settings: showSettings(nil)
+                }
+            },
+            paste: { [weak self] item in
+                guard let self else { return false }
+                copyToPasteboard(item)
+                if clipboard.pressPaste(returningTo: field) { return true }
+                FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
+                return false
+            },
+            copy: { [weak self] item in
+                self?.copyToPasteboard(item)
+                FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
+            },
+            open: { [weak self] item in
+                guard let self else { return }
+                switch item {
+                case .capture(let capture): openEditor(for: capture, mode: .edit)
+                case .clipboard(let entry): clipboard.copy(entry); FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
+                case .asset(let asset): assets.open(asset)
+                case .color(let entry): colors.copy(entry, as: preferences.colorFormat); FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), swatch: entry.color)
+                case .task(let task):
+                    if let island { island.showTask(task) } else { toggleHistoryAtPointer() }
+                case .snippet(let snippet):
+                    if let island { island.prompt(IslandPrompt(kind: .snippet(snippet, initialText: "", assetID: nil))) }
+                    else { snippetPanel(IslandPrompt(kind: .snippet(snippet, initialText: "", assetID: nil))) }
+                case .answer: break
+                }
+            },
+            pasteText: { [weak self] text in
+                guard let self else { return false }
+                clipboard.copy(text: text)
+                if clipboard.pressPaste(returningTo: field) { return true }
+                FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
+                return false
+            }
+        )
+    }
+
+    /// Puts an item on the pasteboard the way its own tab would.
+    private func copyToPasteboard(_ item: IslandItem) {
+        switch item {
+        case .capture(let capture): library.copyToClipboard(capture)
+        case .clipboard(let entry): clipboard.copy(entry)
+        case .asset(let asset): assets.copy(asset)
+        case .color(let entry): colors.copy(entry, as: preferences.colorFormat)
+        case .task(let task): clipboard.copy(text: task.notes.isEmpty ? task.title : "\(task.title)\n\(task.notes)")
+        case .snippet(let snippet):
+            clipboard.copy(text: SnippetTemplate.expand(snippet.text, values: [:], clipboard: NSPasteboard.general.string(forType: .string)))
+            snippets.recordUse(snippet)
+        case .answer(let answer): clipboard.copy(text: answer.value)
         }
     }
 

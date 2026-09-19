@@ -361,11 +361,11 @@ struct IslandPanel: View {
     /// Every hit as a card, grouped by tab, in one strip.
     @ViewBuilder
     private var searchResults: some View {
-        let shown = resultFilter.map { filter in hits.filter { $0.tab == filter } } ?? hits
+        let shown = resultFilter.map { filter in hits.filter { $0.tab == filter || $0.tab == .all } } ?? hits
         if shown.isEmpty {
             empty("Nothing matches “\(search.trimmingCharacters(in: .whitespaces))”", symbol: "magnifyingglass")
         } else {
-            DayStrip(items: shown, section: { StripSection(id: $0.tab, title: $0.tab.title) }, dragPayload: dragPayload, card: itemCard)
+            DayStrip(items: shown, section: { StripSection(id: $0.tab, title: $0.tab == .all ? "Answers" : $0.tab.title) }, dragPayload: dragPayload, card: itemCard)
                 .transition(.opacity)
         }
     }
@@ -379,6 +379,7 @@ struct IslandPanel: View {
         case .color(let entry): colorCard(entry)
         case .task(let task): TaskCard(task: task, store: tasksStore, onOpen: { onShowTask(task) }, onDelete: { onPrompt(IslandPrompt(kind: .delete(.task(task)))) })
         case .snippet(let snippet): snippetCard(snippet)
+        case .answer(let answer): AnswerCard(answer: answer, clipboard: clipboard, colors: colors)
         }
     }
 
@@ -411,6 +412,7 @@ struct IslandPanel: View {
         case .color(let entry): DragPayload(writer: preferences.colorFormat.string(for: entry.color) as NSString, preview: ColorCard.dragImage(for: entry.color))
         case .task: nil
         case .snippet(let snippet): DragPayload(writer: SnippetTemplate.expand(snippet.text, values: [:]) as NSString, preview: SnippetCard.dragImage(for: snippet))
+        case .answer(let answer): DragPayload(writer: answer.value as NSString, preview: answer.color.map(ColorCard.dragImage) ?? SnippetCard.dragImage(forText: answer.value))
         }
     }
 
@@ -909,6 +911,47 @@ struct TabPill: View {
     }
 }
 
+/// "Paste as…" / "Copy as…" for a text entry: plain, trimmed, another case,
+/// pretty JSON, URL-encoded… only the transforms that would change it.
+struct TransformMenus: View {
+    let text: String
+    let clipboard: ClipboardHistory
+    /// Where the paste should go back to (a panel that took activation).
+    var frontField: FrontField? = nil
+
+    var body: some View {
+        let transforms = TextTransform.applicable(to: text)
+        if !transforms.isEmpty {
+            if clipboard.canPaste {
+                Menu("Paste as") {
+                    ForEach(transforms) { transform in
+                        Button(transform.title) { paste(transform) }
+                    }
+                }
+            }
+            Menu("Copy as") {
+                ForEach(transforms) { transform in
+                    Button(transform.title) { copy(transform) }
+                }
+            }
+        }
+    }
+
+    private func copy(_ transform: TextTransform) {
+        guard let result = transform.apply(to: text) else { return }
+        clipboard.copy(text: result)
+        FeedbackHUD.show("Copied as \(transform.title)", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
+    }
+
+    private func paste(_ transform: TextTransform) {
+        guard let result = transform.apply(to: text) else { return }
+        clipboard.copy(text: result)
+        if !clipboard.pressPaste(returningTo: frontField) {
+            FeedbackHUD.show("Copied — press ⌘V to paste", symbol: "doc.on.clipboard", duration: .seconds(1.6))
+        }
+    }
+}
+
 /// Pin / unpin, lit yellow while pinned.
 private struct PinAction: View {
     let pinned: Bool
@@ -1026,6 +1069,9 @@ struct ClipboardCard: View {
                         }
                     }
                 }
+            }
+            if item.kind == .text || item.kind == .link {
+                TransformMenus(text: item.text, clipboard: clipboard)
             }
             Button(item.pinned ? "Unpin" : "Pin") { clipboard.togglePin(item) }
             Button(item.name == nil ? "Name…" : "Rename…", action: onRename)

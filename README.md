@@ -83,11 +83,35 @@ permission (Klik asks on first use) so it can send scroll events to the target a
 
 Defaults: **⌥⇧3** full screen · **⌥⇧4** area · **⌥⇧5** scrolling · **⌥⇧T** capture
 text · **⌥⇧P** pick a color · **⌥⇧N** quick task · **⌥⇧K** the Klik panel ·
-**⌘⇧C** the clipboard list (type to filter, ↑↓, ↩ pastes, ⌘↩ copies, ⌘1–9 picks).
+**⌘⇧C** the clipboard list (type to filter, ↑↓, ↩ pastes, ⌘↩ copies, ⌥↩ pastes as
+plain text, ⌘1–9 picks) · **⌥⇧Space** the command palette.
 Klik › Settings › Shortcuts: click a field and press a new combination (⌫ clears).
 The macOS defaults (⌘⇧3/4/5/6) are handled by the system first; Klik marks them with a
 warning if you bind them, and links to Keyboard › Keyboard Shortcuts › Screenshots
 where they can be turned off.
+
+### Command palette (⌥⇧Space)
+
+One list over everything, driven by the keyboard: Klik's actions (capture area, pick a
+color, new task…), quick answers, and every capture, clipboard entry, asset, color,
+task and snippet. Type to filter, ↑↓ to choose, **↩** pastes the item where the cursor
+was (or runs the action / opens a task), **⌘↩** copies, **⌘O** opens (edit a capture,
+open an asset, edit a snippet), ⌘1–9 pick, ⎋ closes.
+
+### Quick answers
+
+The island search and the palette work some things out on the spot and show them as
+cards to copy: a color in every format (`#0E4FEC`, `ff8800`), a Unix timestamp as a
+date (`1700000000`), hex ↔ decimal ↔ binary (`0x1F`, `255`, `0b1010`), px ↔ rem
+(`256px`, `1.5rem`), base64 (`b64 hello`, or paste base64 to decode), a sum
+(`(3+4)/2`, `2^10`), `uuid`, `now`.
+
+### Paste as…
+
+Right-click a text entry on a clipboard card or in the clipboard list for **Paste as** /
+**Copy as**: plain text, trimmed, one line, lower/UPPER/Title/Sentence case, camelCase,
+snake_case, kebab-case, pretty or minified JSON, URL-encoded/decoded, Markdown → plain
+text, quoted. Only the transforms that would change the text are listed.
 
 ### Snippets (text expander)
 

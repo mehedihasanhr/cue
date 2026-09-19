@@ -214,6 +214,16 @@ final class ClipboardHistory {
         }
     }
 
+    /// Puts plain text on the pasteboard without recording it (a transform, an
+    /// answer): the history keeps what was copied, not what Klik derived from it.
+    func copy(text: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+        pasteboard.setData(Data(), forType: Clipboard.ownMarker)
+        lastChangeCount = pasteboard.changeCount
+    }
+
     /// A pasteboard item with every flavour the entry was copied with, for dragging it
     /// into other apps. Images also get a PNG file (in the clipboard folder) so Finder
     /// and file-only targets accept the drop; file entries carry their original URLs.
