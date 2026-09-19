@@ -16,7 +16,7 @@ struct SnippetCard: View {
     }
 
     var body: some View {
-        CardChrome(hovering: $hovering, onTap: copy) {
+        CardChrome(hovering: $hovering, label: "Snippet \(snippet.keyword)\(snippet.name.isEmpty ? "" : ", \(snippet.name)")", onTap: copy) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
                     Text(snippet.keyword)

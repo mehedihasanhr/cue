@@ -256,5 +256,9 @@ struct PrayerPill: View {
         .fixedSize()
         .contentShape(Capsule())
         .onHover { over in withAnimation(.easeOut(duration: 0.18)) { hovering = over } }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(clock.prayerLine() ?? clock.pill ?? "Prayer times")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("Opens the clock")
     }
 }

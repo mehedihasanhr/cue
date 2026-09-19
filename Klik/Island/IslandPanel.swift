@@ -120,6 +120,8 @@ struct IslandPanel: View {
                         .foregroundStyle(.white)
                         .focused($searchFocused)
                         .onExitCommand { clearSearch() }
+                        .accessibilityLabel("Search")
+                        .accessibilityValue(searching ? "\(hits.count) matches" : "")
                     if searching {
                         Text(hits.isEmpty ? "No matches" : "\(hits.count) \(hits.count == 1 ? "match" : "matches")")
                             .font(.system(size: 11, weight: .medium))
@@ -157,8 +159,8 @@ struct IslandPanel: View {
                 }
             } else {
             HStack(spacing: 8) {
-                ForEach(IslandTab.allCases, id: \.self) { value in
-                    tabPill(value, count: count(for: value))
+                ForEach(Array(IslandTab.allCases.enumerated()), id: \.element) { index, value in
+                    tabPill(value, count: count(for: value), shortcut: index + 1)
                 }
                 Spacer(minLength: 16)
                 if tab == .captures {
@@ -199,13 +201,15 @@ struct IslandPanel: View {
                 case .all:
                     let everything = IslandSearch.everything(library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore, snippets: snippets)
                     if everything.isEmpty {
-                        empty("Nothing yet — capture, copy or drop something", symbol: "square.grid.2x2")
+                        empty("Nothing yet — capture, copy or drop something", symbol: "square.grid.2x2",
+                              action: ("Capture area", "viewfinder", actions.captureArea))
                     } else {
                         DayStrip(items: everything, date: \.date, dragPayload: dragPayload, card: itemCard)
                     }
                 case .captures:
                     if filteredCaptures.isEmpty {
-                        empty(pinnedOnly ? "Nothing pinned" : "No captures yet", symbol: "camera.viewfinder")
+                        empty(pinnedOnly ? "Nothing pinned" : "No captures yet", symbol: "camera.viewfinder",
+                              action: pinnedOnly ? nil : ("Capture area", "viewfinder", actions.captureArea))
                     } else {
                         DayStrip(items: filteredCaptures, date: \.createdAt, pinned: \.pinned, dragPayload: { item in
                             library.fileURL(for: item).map { .file($0, preview: library.thumbnail(for: item)) }
@@ -223,13 +227,15 @@ struct IslandPanel: View {
                     IslandTasksView(store: tasksStore, onPrompt: onPrompt, onShowTask: onShowTask)
                 case .snippets:
                     if snippets.items.isEmpty {
-                        empty("Type a keyword anywhere and Klik pastes the snippet — add one with New", symbol: "text.badge.plus")
+                        empty("Type a keyword anywhere and Klik pastes the snippet", symbol: "text.badge.plus",
+                              action: ("New snippet", "plus", { onPrompt(IslandPrompt(kind: .snippet(nil, initialText: "", assetID: nil))) }))
                     } else {
                         DayStrip(items: snippets.items, date: \.createdAt, dragPayload: snippetDrag, card: snippetCard)
                     }
                 case .colors:
                     if filteredColors.isEmpty {
-                        empty(pinnedOnly ? "Nothing pinned" : "Pick a color anywhere on screen with the eyedropper", symbol: "eyedropper")
+                        empty(pinnedOnly ? "Nothing pinned" : "Pick a color anywhere on screen", symbol: "eyedropper",
+                              action: pinnedOnly ? nil : ("Pick a color", "eyedropper", actions.pickColor))
                     } else {
                         DayStrip(items: filteredColors, date: \.createdAt, pinned: \.pinned, dragPayload: { entry in
                             DragPayload(writer: preferences.colorFormat.string(for: entry.color) as NSString, preview: ColorCard.dragImage(for: entry.color))
@@ -250,6 +256,7 @@ struct IslandPanel: View {
                 }
             }
             .frame(height: Self.rowHeight) // the same whether a tab has cards or not
+            .background { keyboardShortcuts }
             .onChange(of: tab) { _, _ in
                 detail = nil
                 pinnedOnly = false // the filter is per tab; a tab without pinned items has no way to turn it off
@@ -421,10 +428,26 @@ struct IslandPanel: View {
         .background(.white.opacity(0.08), in: Capsule(style: .continuous))
     }
 
-    private func tabPill(_ value: IslandTab, count: Int) -> some View {
-        TabPill(tab: value, count: count, selected: tab == value) {
+    private func tabPill(_ value: IslandTab, count: Int, shortcut: Int) -> some View {
+        TabPill(tab: value, count: count, selected: tab == value, shortcut: shortcut) {
             withAnimation(.easeOut(duration: 0.15)) { tab = value }
         }
+    }
+
+    /// While the island is key (the search field has been clicked): ⌘1–⌘7 switch
+    /// tabs, ⌘F goes to the search field.
+    private var keyboardShortcuts: some View {
+        Group {
+            ForEach(Array(IslandTab.allCases.enumerated()), id: \.element) { index, value in
+                Button("") { withAnimation(.easeOut(duration: 0.15)) { tab = value } }
+                    .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
+            }
+            Button("") { searchFocused = true }
+                .keyboardShortcut("f", modifiers: .command)
+        }
+        .frame(width: 0, height: 0)
+        .opacity(0)
+        .accessibilityHidden(true)
     }
 
     private func open(_ detail: IslandDetail) {
@@ -479,10 +502,24 @@ struct IslandPanel: View {
     /// Height of the card row: header plus cards.
     static var rowHeight: CGFloat { DayStrip<CaptureItem, EmptyView>.headerHeight + DayStrip<CaptureItem, EmptyView>.cardSize.height }
 
-    private func empty(_ message: String, symbol: String) -> some View {
-        VStack(spacing: 6) {
-            Image(systemName: symbol).font(.system(size: 26)).foregroundStyle(.white.opacity(0.5))
-            Text(message).font(.system(size: 13, weight: .medium)).foregroundStyle(.white.opacity(0.7))
+    /// An empty tab says what goes here and, when there is one, offers the next step.
+    private func empty(_ message: String, symbol: String, action: (title: String, symbol: String, perform: () -> Void)? = nil) -> some View {
+        VStack(spacing: 8) {
+            Image(systemName: symbol).font(.system(size: 26)).foregroundStyle(.white.opacity(0.6))
+            Text(message).font(.system(size: 13, weight: .medium)).foregroundStyle(.white.opacity(0.8))
+            if let action {
+                Button(action: action.perform) {
+                    Label(action.title, systemImage: action.symbol)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 12)
+                        .frame(height: 28)
+                        .background(Color.white, in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 4)
+            }
         }
         .frame(maxWidth: .infinity)
         .frame(height: Self.rowHeight)
@@ -603,6 +640,7 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
                         .foregroundStyle(.white.opacity(0.9))
                         .frame(height: Self.headerHeight, alignment: .leading)
                         .offset(x: group.x - offset)
+                        .accessibilityAddTraits(.isHeader)
                 }
                 ForEach(layout.cards.filter { visible.contains($0.x) }) { placed in
                     card(placed.item)
@@ -668,6 +706,8 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
 /// circular action buttons at the top, click and context menu.
 struct CardChrome<Content: View, Actions: View, Menu: View>: View {
     @Binding var hovering: Bool
+    /// What VoiceOver reads for the card (its content is decorative for it).
+    var label: String = ""
     let onTap: () -> Void
     @ViewBuilder let content: () -> Content
     @ViewBuilder let actionRow: () -> Actions
@@ -677,6 +717,10 @@ struct CardChrome<Content: View, Actions: View, Menu: View>: View {
 
     var body: some View {
         content()
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(label)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { onTap() }
             .overlay(alignment: .top) {
                 // Always in the tree (faded out, not hit-testable) so a drag started
                 // from the row survives the pointer leaving the card.
@@ -718,6 +762,7 @@ struct CardAction: View {
         .buttonStyle(.plain)
         .foregroundStyle(tint)
         .help(help)
+        .accessibilityLabel(help)
     }
 }
 
@@ -758,7 +803,7 @@ struct CardCaption<Leading: View>: View {
             HStack(alignment: .center, spacing: 6) {
                 Text(subtitle ?? date.formatted(.relative(presentation: .named)))
                     .font(.system(size: 9.5))
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(.white.opacity(0.8))
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 trailing()
@@ -781,7 +826,7 @@ struct Badge: View {
     var body: some View {
         Text(text)
             .font(.system(size: 8.5, weight: .medium))
-            .foregroundStyle(.white.opacity(0.75))
+            .foregroundStyle(.white.opacity(0.85))
             .padding(.horizontal, 5)
             .padding(.vertical, 1.5)
             .background(.white.opacity(0.16), in: Capsule())
@@ -810,6 +855,7 @@ struct HoverButton: View {
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
         .help(help)
+        .accessibilityLabel(help)
     }
 }
 
@@ -819,6 +865,7 @@ struct TabPill: View {
     let tab: IslandTab
     let count: Int
     let selected: Bool
+    var shortcut: Int? = nil
     let action: () -> Void
     @State private var hovering = false
 
@@ -843,6 +890,10 @@ struct TabPill: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
+        .help(shortcut.map { "\(tab.title)  ⌘\($0)" } ?? tab.title)
+        .accessibilityLabel(tab.title)
+        .accessibilityValue(count > 0 ? "\(count) items" : "empty")
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
 }
 
@@ -867,7 +918,7 @@ struct CaptureCard: View {
     @State private var hovering = false
 
     var body: some View {
-        CardChrome(hovering: $hovering, onTap: { actions.edit(item) }) {
+        CardChrome(hovering: $hovering, label: accessibilityLabel, onTap: { actions.edit(item) }) {
             Color.clear
                 .overlay {
                     if let thumbnail = library.thumbnail(for: item) {
@@ -906,6 +957,12 @@ struct CaptureCard: View {
         }
     }
 
+    private var accessibilityLabel: String {
+        let name = item.hasDefaultName ? "Screenshot" : item.title
+        let when = item.createdAt.formatted(date: .abbreviated, time: .shortened)
+        return "\(name), \(when), \(item.pixelWidth) by \(item.pixelHeight) pixels\(item.pinned ? ", pinned" : "")"
+    }
+
     private func paste() {
         actions.copy(item)
         if clipboard?.pressPaste() == true {
@@ -924,7 +981,7 @@ struct ClipboardCard: View {
     @State private var hovering = false
 
     var body: some View {
-        CardChrome(hovering: $hovering, onTap: copy) {
+        CardChrome(hovering: $hovering, label: "\(item.kind.rawValue.capitalized): \(item.name ?? item.title), \(item.createdAt.formatted(.relative(presentation: .named)))\(item.pinned ? ", pinned" : "")", onTap: copy) {
             content
                 .overlay(alignment: .bottom) {
                     CardCaption(title: item.name ?? "", date: item.createdAt) {
@@ -1065,7 +1122,7 @@ struct AssetCard: View {
     @State private var hovering = false
 
     var body: some View {
-        CardChrome(hovering: $hovering, onTap: { assets.open(item) }) {
+        CardChrome(hovering: $hovering, label: "\(item.fileName), \(item.createdAt.formatted(.relative(presentation: .named)))\(item.pinned ? ", pinned" : "")", onTap: { assets.open(item) }) {
             content
                 .overlay(alignment: .bottom) {
                     CardCaption(title: item.fileName, date: item.createdAt) {
@@ -1142,7 +1199,7 @@ struct ColorCard: View {
     @State private var hovering = false
 
     var body: some View {
-        CardChrome(hovering: $hovering, onTap: onPreview) {
+        CardChrome(hovering: $hovering, label: "Color \(entry.name ?? preferences.colorFormat.string(for: entry.color))\(entry.pinned ? ", pinned" : "")", onTap: onPreview) {
             entry.color.swiftUIColor
                 .overlay(alignment: .topLeading) {
                     if !entry.color.isInSRGBGamut {
@@ -1211,7 +1268,7 @@ private struct TaskCard: View {
     @State private var hovering = false
 
     var body: some View {
-        CardChrome(hovering: $hovering, onTap: onOpen) {
+        CardChrome(hovering: $hovering, label: "Task: \(task.title), \(task.status.title), \(task.priority.title) priority", onTap: onOpen) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: task.status.symbol)

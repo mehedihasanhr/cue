@@ -153,10 +153,12 @@ struct IslandView: View {
     let actions: HistoryActions
     @Environment(PrayerClock.self) private var clock: PrayerClock?
 
-    /// Opening overshoots a touch; closing settles without a bounce.
-    static let openAnimation = Animation.spring(response: 0.36, dampingFraction: 0.82, blendDuration: 0)
-    static let closeAnimation = Animation.spring(response: 0.45, dampingFraction: 1.0, blendDuration: 0)
-    static let contentAnimation = Animation.smooth(duration: 0.28)
+    /// Opening overshoots a touch; closing settles without a bounce. With Reduce
+    /// Motion on, everything is a short ease instead.
+    static var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    static var openAnimation: Animation { reduceMotion ? .easeOut(duration: 0.18) : .spring(response: 0.36, dampingFraction: 0.82, blendDuration: 0) }
+    static var closeAnimation: Animation { reduceMotion ? .easeOut(duration: 0.18) : .spring(response: 0.45, dampingFraction: 1.0, blendDuration: 0) }
+    static var contentAnimation: Animation { reduceMotion ? .easeOut(duration: 0.15) : .smooth(duration: 0.28) }
 
     /// Collapsed and settled: the shape is drawn clear so nothing shows beside the
     /// notch. Closing shrinks into the notch first (black all the way), then fades.
@@ -283,9 +285,9 @@ struct IslandView: View {
         }
     }
 
-    private static let contentTransition: AnyTransition = .scale(scale: 0.8, anchor: .top)
-        .combined(with: .opacity)
-        .animation(contentAnimation)
+    private static var contentTransition: AnyTransition {
+        reduceMotion ? .opacity.animation(contentAnimation) : .scale(scale: 0.8, anchor: .top).combined(with: .opacity).animation(contentAnimation)
+    }
 }
 
 /// Reports a view's ideal width so the island can fit it. A hidden copy laid out at
