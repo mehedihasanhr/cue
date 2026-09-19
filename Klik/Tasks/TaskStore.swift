@@ -319,6 +319,30 @@ final class TaskStore {
         return task
     }
 
+    /// One task to import: `{"project": "Klik", "title": "…", "notes": "…", "priority": "high"}`.
+    nonisolated struct Import: Decodable {
+        var project: String?
+        var title: String
+        var notes: String?
+        var priority: TaskPriority?
+    }
+
+    /// Adds tasks from a JSON list, making projects by name as needed. Listed order is
+    /// kept (the first ends up on top). Returns how many were added.
+    @discardableResult
+    func importTasks(from data: Data) -> Int {
+        guard let entries = try? JSONDecoder().decode([Import].self, from: data) else { return 0 }
+        var added = 0
+        for entry in entries.reversed() {
+            var projectID: UUID?
+            if let name = entry.project?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
+                projectID = (projects.first { $0.parentID == nil && $0.name == name } ?? addProject(named: name))?.id
+            }
+            if addTask(titled: entry.title, notes: entry.notes ?? "", in: projectID, priority: entry.priority ?? .medium) != nil { added += 1 }
+        }
+        return added
+    }
+
     /// Edits a task's title, description and project in one go.
     func update(_ task: TaskItem, title: String, notes: String, projectID: UUID?, priority: TaskPriority) {
         let cleaned = title.trimmingCharacters(in: .whitespacesAndNewlines)

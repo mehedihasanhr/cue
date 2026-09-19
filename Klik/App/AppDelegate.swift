@@ -88,6 +88,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 try? lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
             }
         }
+        // Tooling: `open Klik.app --env KLIK_IMPORT_TASKS='[{"project":…,"title":…}]'` adds tasks at launch.
+        if let json = ProcessInfo.processInfo.environment["KLIK_IMPORT_TASKS"], let data = json.data(using: .utf8) {
+            let added = tasks.importTasks(from: data)
+            Log.app.notice("Imported \(added) task(s)")
+        }
         // Diagnostics: `open Klik.app --env KLIK_DEBUG_PANEL=1` opens the floating panel at launch.
         if ProcessInfo.processInfo.environment["KLIK_DEBUG_PANEL"] == "1" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.toggleHistoryAtPointer() }
