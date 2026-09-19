@@ -50,6 +50,22 @@ nonisolated enum CalculationMethod: String, CaseIterable, Codable {
         }
     }
 
+    /// For a footnote: "Umm al-Qura", "ISNA".
+    var shortTitle: String {
+        switch self {
+        case .muslimWorldLeague: "Muslim World League"
+        case .isna: "ISNA"
+        case .egyptian: "Egyptian"
+        case .ummAlQura: "Umm al-Qura"
+        case .karachi: "Karachi"
+        case .dubai: "Dubai"
+        case .kuwait: "Kuwait"
+        case .qatar: "Qatar"
+        case .singapore: "MUIS"
+        case .turkey: "Diyanet"
+        }
+    }
+
     var fajrAngle: Double {
         switch self {
         case .muslimWorldLeague, .karachi, .kuwait, .qatar, .turkey: 18
@@ -108,6 +124,23 @@ nonisolated struct ForbiddenWindow: Equatable {
             case .sunrise: "Sunrise"
             case .zenith: "Sun at its zenith"
             case .sunset: "Sunset"
+            }
+        }
+
+        /// When in the day, for a label that has to fit: "After sunrise".
+        var shortTitle: String {
+            switch self {
+            case .sunrise: "After sunrise"
+            case .zenith: "Sun overhead"
+            case .sunset: "Before sunset"
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .sunrise: "sunrise"
+            case .zenith: "sun.max"
+            case .sunset: "sunset"
             }
         }
     }

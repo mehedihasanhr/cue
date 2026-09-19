@@ -21,6 +21,10 @@ final class PrayerClock: NSObject {
     private(set) var place: Coordinates?
     /// A word about where the place came from, for Settings.
     private(set) var placeDescription = "Locating…"
+    /// "Umm al-Qura · Hanafi" — how the times are worked out, for a footnote.
+    var methodSummary: String {
+        preferences.prayerMadhab == .hanafi ? "\(preferences.prayerMethod.shortTitle) · Hanafi" : preferences.prayerMethod.shortTitle
+    }
     private(set) var today: PrayerTimes?
     private(set) var tomorrow: PrayerTimes?
     /// Where we are in the day; refreshed at every boundary and each minute.
