@@ -208,7 +208,9 @@ struct ClockRow: View {
 /// closes.
 struct PrayerPill: View {
     let clock: PrayerClock
+    /// The pointer is on the pill or its card.
     @State private var hovering = false
+    @State private var hideTask: Task<Void, Never>?
 
     var body: some View {
         let status = clock.status
@@ -217,34 +219,7 @@ struct PrayerPill: View {
             Image(systemName: forbidden ? "exclamationmark.triangle.fill" : (status?.current ?? status?.next ?? .dhuhr).symbol)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(forbidden ? .orange : .white.opacity(0.85))
-            if hovering, let today = clock.today {
-                HStack(spacing: 10) {
-                    ForEach(today.ordered, id: \.prayer) { entry in
-                        let current = status?.current == entry.prayer || (status?.current == nil && entry.prayer == .sunrise && status?.next == .dhuhr)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(entry.prayer.title)
-                                .font(.system(size: 9.5, weight: .semibold))
-                                .foregroundStyle(current ? Color.brand : .white.opacity(0.5))
-                            Text(PrayerClock.clock(entry.time))
-                                .font(.system(size: 11, weight: current ? .bold : .medium))
-                                .monospacedDigit()
-                                .foregroundStyle(current ? .white : .white.opacity(0.8))
-                        }
-                    }
-                    if let status {
-                        Rectangle().fill(.white.opacity(0.14)).frame(width: 1, height: 22)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(status.forbidden.map { "No prayer · \($0.kind.title.lowercased())" } ?? status.current.map { "\($0.title) closes" } ?? "\(status.next.title) opens")
-                                .font(.system(size: 9.5, weight: .semibold))
-                                .foregroundStyle(status.forbidden == nil ? .white.opacity(0.5) : .orange)
-                            Text(PrayerClock.clock(status.forbidden?.end ?? (status.current == nil ? status.nextStarts : status.ends)))
-                                .font(.system(size: 11, weight: .bold))
-                                .monospacedDigit()
-                        }
-                    }
-                }
-                .transition(.opacity.combined(with: .move(edge: .trailing)))
-            } else if let pill = clock.pill {
+            if let pill = clock.pill {
                 Text(pill).font(.system(size: 12, weight: .semibold)).lineLimit(1)
             }
         }
@@ -255,10 +230,73 @@ struct PrayerPill: View {
         .overlay(Capsule().strokeBorder(hovering ? Color.white.opacity(0.18) : .clear))
         .fixedSize()
         .contentShape(Capsule())
-        .onHover { over in withAnimation(.easeOut(duration: 0.18)) { hovering = over } }
+        .onHover(perform: hover)
+        // The day's times drop down from the pill as a card, so the pill (and the
+        // search field beside it) keep their size.
+        .overlay(alignment: .top) {
+            if hovering, let today = clock.today {
+                card(today, status: status)
+                    .offset(y: 46)
+                    .onHover(perform: hover)
+                    .transition(IslandView.reduceMotion
+                                ? .opacity
+                                : .asymmetric(insertion: .scale(scale: 0.94, anchor: .top).combined(with: .opacity), removal: .opacity))
+            }
+        }
+        .zIndex(hovering ? 1 : 0)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(clock.prayerLine() ?? clock.pill ?? "Prayer times")
         .accessibilityAddTraits(.isButton)
         .accessibilityHint("Opens the clock")
+    }
+
+    /// Shows at once; hides after a beat, so crossing the gap to the card keeps it.
+    private func hover(_ over: Bool) {
+        hideTask?.cancel()
+        if over {
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) { hovering = true }
+        } else {
+            hideTask = Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(140))
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeOut(duration: 0.14)) { hovering = false }
+            }
+        }
+    }
+
+    private func card(_ today: PrayerTimes, status: PrayerStatus?) -> some View {
+        HStack(spacing: 12) {
+            ForEach(today.ordered, id: \.prayer) { entry in
+                let current = status?.current == entry.prayer || (status?.current == nil && entry.prayer == .sunrise && status?.next == .dhuhr)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(entry.prayer.title)
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(current ? Color.brand : .white.opacity(0.5))
+                    Text(PrayerClock.clock(entry.time))
+                        .font(.system(size: 11, weight: current ? .bold : .medium))
+                        .monospacedDigit()
+                        .foregroundStyle(current ? .white : .white.opacity(0.8))
+                }
+            }
+            if let status {
+                Rectangle().fill(.white.opacity(0.14)).frame(width: 1, height: 22)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(status.forbidden.map { "No prayer · \($0.kind.title.lowercased())" } ?? status.current.map { "\($0.title) closes" } ?? "\(status.next.title) opens")
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(status.forbidden == nil ? .white.opacity(0.5) : .orange)
+                    Text(PrayerClock.clock(status.forbidden?.end ?? (status.current == nil ? status.nextStarts : status.ends)))
+                        .font(.system(size: 11, weight: .bold))
+                        .monospacedDigit()
+                }
+            }
+        }
+        .lineLimit(1)
+        .fixedSize()
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.white.opacity(0.12)))
+        .shadow(color: .black.opacity(0.5), radius: 14, y: 6)
+        .accessibilityHidden(true) // the pill's label already says it
     }
 }

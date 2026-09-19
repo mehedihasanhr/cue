@@ -150,6 +150,7 @@ struct IslandPanel: View {
                 }
             }
             .animation(.easeOut(duration: 0.18), value: searching)
+            .zIndex(1) // the prayer pill's card drops over the rows below
 
             if searching {
                 resultBar
