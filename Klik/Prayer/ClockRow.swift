@@ -26,11 +26,15 @@ struct ClockStatus: Equatable {
         case .fajr: return [.indigo, .orange]
         case .none: return [.yellow, .orange]
         case .dhuhr: return [.yellow, .orange]
-        case .asr: return [.orange, .pink]
-        case .maghrib: return [.pink, .purple]
+        case .asr: return [.orange, Self.red]
+        case .maghrib: return [Self.red, Self.wine]
         case .isha, .sunrise: return [.indigo, .blue]
         }
     }
+
+    /// The afternoon and sunset reds: a hot red and the deep wine it cools into.
+    static let red = Color(red: 0.93, green: 0.2, blue: 0.16)
+    static let wine = Color(red: 0.5, green: 0.06, blue: 0.22)
 
     /// How far through the current period we are (0…1), for the progress bar.
     var progress: Double? {
