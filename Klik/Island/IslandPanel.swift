@@ -67,6 +67,11 @@ struct IslandPanel: View {
     @State private var resultFilter: IslandTab?
     /// Captures / Assets / Colors / Clipboard tab: show pinned items only.
     @State private var pinnedOnly = false
+    /// The prayer pill is open, showing the day's times inline.
+    @State private var prayerExpanded = false
+    /// Natural widths of the two top rows; the island fits the wider one.
+    @State private var headerWidth: CGFloat = 0
+    @State private var tabRowWidth: CGFloat = 0
     /// A card opened in place of the row.
     @State private var detail: IslandDetail?
     @AppStorage(IslandTab.storageKey) private var tab: IslandTab = .all
@@ -143,14 +148,14 @@ struct IslandPanel: View {
                 if !searching {
                     Spacer(minLength: 8)
                     if let clock, clock.status != nil {
-                        PrayerPill(clock: clock).onTapGesture(perform: onShowClock)
+                        PrayerPill(clock: clock, expanded: $prayerExpanded, onShowClock: onShowClock)
                     }
                     captureBar
                     circle("gearshape", help: "Settings", action: actions.openSettings)
                 }
             }
             .animation(.easeOut(duration: 0.18), value: searching)
-            .zIndex(1) // the prayer pill's card drops over the rows below
+            .modifier(IdealWidth { headerWidth = $0; reportWidth() })
 
             if searching {
                 resultBar
@@ -188,7 +193,7 @@ struct IslandPanel: View {
                     pinControls(assets.items, pinned: \.pinned) { assets.clear() }
                 }
             }
-            .modifier(IdealWidth { onIdealWidth($0 + Self.horizontalPadding * 2) })
+            .modifier(IdealWidth { tabRowWidth = $0; reportWidth() })
             }
 
             ZStack {
@@ -407,6 +412,12 @@ struct IslandPanel: View {
         case .task: nil
         case .snippet(let snippet): DragPayload(writer: SnippetTemplate.expand(snippet.text, values: [:]) as NSString, preview: SnippetCard.dragImage(for: snippet))
         }
+    }
+
+    /// The island takes the wider of the header (the prayer pill can open wide) and
+    /// the tab row, so neither is ever squeezed.
+    private func reportWidth() {
+        onIdealWidth(max(headerWidth, tabRowWidth) + Self.horizontalPadding * 2)
     }
 
     private func circle(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {

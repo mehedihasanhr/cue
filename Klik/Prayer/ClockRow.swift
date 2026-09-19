@@ -208,9 +208,11 @@ struct ClockRow: View {
 /// closes.
 struct PrayerPill: View {
     let clock: PrayerClock
-    /// The pointer is on the pill or its card.
+    /// Open: the pill stretches to show the day's times inline (the island widens
+    /// with it); a click toggles it.
+    @Binding var expanded: Bool
+    var onShowClock: () -> Void = {}
     @State private var hovering = false
-    @State private var hideTask: Task<Void, Never>?
 
     var body: some View {
         let status = clock.status
@@ -219,53 +221,51 @@ struct PrayerPill: View {
             Image(systemName: forbidden ? "exclamationmark.triangle.fill" : (status?.current ?? status?.next ?? .dhuhr).symbol)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(forbidden ? .orange : .white.opacity(0.85))
-            if let pill = clock.pill {
-                Text(pill).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+            if expanded, let today = clock.today {
+                times(today, status: status)
+                    .transition(IslandView.reduceMotion
+                                ? .opacity
+                                : .asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.9, anchor: .leading)).animation(.easeOut(duration: 0.22).delay(0.06)),
+                                              removal: .opacity.animation(.easeOut(duration: 0.1))))
+                Button(action: onShowClock) {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .frame(width: 24, height: 24)
+                        .background(.white.opacity(0.1), in: Circle())
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .help("Open the clock")
+                .accessibilityLabel("Open the clock")
+                .transition(.opacity)
+            } else if let pill = clock.pill {
+                Text(pill)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+                    .transition(IslandView.reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.9, anchor: .leading)))
             }
         }
         .foregroundStyle(.white.opacity(0.9))
         .padding(.horizontal, 12)
         .frame(height: 40)
-        .background(.white.opacity(forbidden ? 0.14 : 0.08), in: Capsule())
-        .overlay(Capsule().strokeBorder(hovering ? Color.white.opacity(0.18) : .clear))
         .fixedSize()
+        .background(.white.opacity(forbidden ? 0.14 : (expanded ? 0.12 : 0.08)), in: Capsule())
+        .overlay(Capsule().strokeBorder(hovering || expanded ? Color.white.opacity(0.18) : .clear))
         .contentShape(Capsule())
-        .onHover(perform: hover)
-        // The day's times drop down from the pill as a card, so the pill (and the
-        // search field beside it) keep their size.
-        .overlay(alignment: .top) {
-            if hovering, let today = clock.today {
-                card(today, status: status)
-                    .offset(y: 46)
-                    .onHover(perform: hover)
-                    .transition(IslandView.reduceMotion
-                                ? .opacity
-                                : .asymmetric(insertion: .scale(scale: 0.94, anchor: .top).combined(with: .opacity), removal: .opacity))
-            }
+        .onHover { hovering = $0 }
+        .onTapGesture {
+            withAnimation(IslandView.reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.38, dampingFraction: 0.86)) { expanded.toggle() }
         }
-        .zIndex(hovering ? 1 : 0)
-        .accessibilityElement(children: .ignore)
+        .animation(.easeOut(duration: 0.12), value: hovering)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(clock.prayerLine() ?? clock.pill ?? "Prayer times")
+        .accessibilityHint(expanded ? "Hides the day's times" : "Shows the day's times")
         .accessibilityAddTraits(.isButton)
-        .accessibilityHint("Opens the clock")
     }
 
-    /// Shows at once; hides after a beat, so crossing the gap to the card keeps it.
-    private func hover(_ over: Bool) {
-        hideTask?.cancel()
-        if over {
-            withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) { hovering = true }
-        } else {
-            hideTask = Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(140))
-                guard !Task.isCancelled else { return }
-                withAnimation(.easeOut(duration: 0.14)) { hovering = false }
-            }
-        }
-    }
-
-    private func card(_ today: PrayerTimes, status: PrayerStatus?) -> some View {
-        HStack(spacing: 12) {
+    private func times(_ today: PrayerTimes, status: PrayerStatus?) -> some View {
+        HStack(spacing: 10) {
             ForEach(today.ordered, id: \.prayer) { entry in
                 let current = status?.current == entry.prayer || (status?.current == nil && entry.prayer == .sunrise && status?.next == .dhuhr)
                 VStack(alignment: .leading, spacing: 1) {
@@ -292,11 +292,5 @@ struct PrayerPill: View {
         }
         .lineLimit(1)
         .fixedSize()
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.white.opacity(0.12)))
-        .shadow(color: .black.opacity(0.5), radius: 14, y: 6)
-        .accessibilityHidden(true) // the pill's label already says it
     }
 }
