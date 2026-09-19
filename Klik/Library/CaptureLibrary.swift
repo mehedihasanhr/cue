@@ -17,6 +17,10 @@ struct CaptureItem: Identifiable, Codable, Hashable {
     var pinned = false
 
     var title: String { (fileName as NSString).deletingPathExtension }
+    /// Still named the way Klik saved it ("Screenshot 2026-09-19 at 17.20.22"), not renamed.
+    var hasDefaultName: Bool {
+        title.wholeMatch(of: /Screenshot \d{4}-\d{2}-\d{2} at \d{2}\.\d{2}\.\d{2}( \(\d+\))?/) != nil
+    }
     var dimensions: String { "\(pixelWidth) × \(pixelHeight)" }
 
     private enum CodingKeys: String, CodingKey { case id, fileName, bookmark, createdAt, pixelWidth, pixelHeight, scale, pinned }

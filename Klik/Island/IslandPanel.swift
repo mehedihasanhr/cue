@@ -111,11 +111,10 @@ struct IslandPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                circle("gearshape", help: "Settings", action: actions.openSettings)
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass").font(.system(size: 14, weight: .medium))
                         .foregroundStyle(searching ? Color.brand : .white.opacity(0.6))
-                    TextField("Search captures, clipboard, assets, colors, tasks", text: $search)
+                    TextField("Search everything", text: $search)
                         .textFieldStyle(.plain)
                         .font(.system(size: 14))
                         .foregroundStyle(.white)
@@ -144,11 +143,8 @@ struct IslandPanel: View {
                     if let clock, clock.status != nil {
                         PrayerPill(clock: clock).onTapGesture(perform: onShowClock)
                     }
-                    circle("display", help: "Capture full screen", action: actions.captureFullScreen)
-                    circle("viewfinder", help: "Capture area", action: actions.captureArea)
-                    circle("rectangle.expand.vertical", help: "Scrolling capture", action: actions.captureScrolling)
-                    circle("text.viewfinder", help: "Capture text", action: actions.captureText)
-                    circle("eyedropper", help: "Pick a color", action: actions.pickColor)
+                    captureBar
+                    circle("gearshape", help: "Settings", action: actions.openSettings)
                 }
             }
             .animation(.easeOut(duration: 0.18), value: searching)
@@ -406,43 +402,29 @@ struct IslandPanel: View {
     }
 
     private func circle(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(.white)
-                .frame(width: 40, height: 40)
-                .background(.white.opacity(0.1), in: Circle())
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .help(help)
+        HoverButton(symbol: symbol, help: help, size: 40, action: action)
     }
 
-    /// Tabs switch after the pointer rests on them for 250 ms (a click is immediate).
-    private func tabPill(_ value: IslandTab, count: Int) -> some View {
-        let selected = tab == value
-        return Button {
-            withAnimation(.easeOut(duration: 0.15)) { tab = value }
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: value.symbol).font(.system(size: 11, weight: .semibold))
-                Text(value.title).font(.system(size: 12, weight: .semibold))
-                if count > 0 {
-                    Text("\(count)")
-                        .font(.system(size: 10, weight: .semibold))
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background((selected ? Color.black : Color.white).opacity(0.12), in: Capsule())
-                }
-            }
-            .foregroundStyle(selected ? .black : .white.opacity(0.85))
-            .fixedSize()
-            .padding(.horizontal, 12)
-            .frame(height: 28)
-            .background(selected ? Color.white : Color.white.opacity(0.1), in: Capsule())
-            .contentShape(Capsule())
+    /// The capture tools as one group, so they read as a toolbar rather than five
+    /// loose buttons; each names itself in a tooltip.
+    private var captureBar: some View {
+        HStack(spacing: 0) {
+            HoverButton(symbol: "display", help: "Capture full screen", size: 36, action: actions.captureFullScreen)
+            HoverButton(symbol: "viewfinder", help: "Capture area", size: 36, action: actions.captureArea)
+            HoverButton(symbol: "rectangle.expand.vertical", help: "Scrolling capture", size: 36, action: actions.captureScrolling)
+            Rectangle().fill(.white.opacity(0.12)).frame(width: 1, height: 18).padding(.horizontal, 3)
+            HoverButton(symbol: "text.viewfinder", help: "Capture text", size: 36, action: actions.captureText)
+            HoverButton(symbol: "eyedropper", help: "Pick a color", size: 36, action: actions.pickColor)
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 3)
+        .frame(height: 40)
+        .background(.white.opacity(0.08), in: Capsule(style: .continuous))
+    }
+
+    private func tabPill(_ value: IslandTab, count: Int) -> some View {
+        TabPill(tab: value, count: count, selected: tab == value) {
+            withAnimation(.easeOut(duration: 0.15)) { tab = value }
+        }
     }
 
     private func open(_ detail: IslandDetail) {
@@ -651,6 +633,21 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
                         NSCursor.arrow.set()
                     }
             )
+            // Fades at the edges say there is more to scroll to.
+            .overlay(alignment: .leading) {
+                LinearGradient(colors: [.black, .black.opacity(0)], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: 28)
+                    .opacity(offset > 0 ? 1 : 0)
+                    .allowsHitTesting(false)
+            }
+            .overlay(alignment: .trailing) {
+                LinearGradient(colors: [.black.opacity(0), .black], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: 28)
+                    .opacity(offset < maxOffset - 1 ? 1 : 0)
+                    .allowsHitTesting(false)
+            }
+            .animation(.easeOut(duration: 0.15), value: offset > 0)
+            .animation(.easeOut(duration: 0.15), value: offset < maxOffset - 1)
             .background(StripEventView(payloadAt: { point in
                 guard point.y >= Self.headerHeight, let dragPayload,
                       let placed = layout.cards.first(where: { ($0.x - offset...$0.x - offset + Self.cardSize.width).contains(point.x) })
@@ -746,6 +743,8 @@ struct CopyAction: View {
 struct CardCaption<Leading: View>: View {
     let title: String
     let date: Date
+    /// Shown instead of the relative date ("5:20 PM" for a screenshot, say).
+    var subtitle: String? = nil
     @ViewBuilder let trailing: () -> Leading
 
     var body: some View {
@@ -757,7 +756,7 @@ struct CardCaption<Leading: View>: View {
                     .lineLimit(1)
             }
             HStack(alignment: .center, spacing: 6) {
-                Text(date.formatted(.relative(presentation: .named)))
+                Text(subtitle ?? date.formatted(.relative(presentation: .named)))
                     .font(.system(size: 9.5))
                     .foregroundStyle(.white.opacity(0.7))
                     .lineLimit(1)
@@ -787,6 +786,63 @@ struct Badge: View {
             .padding(.vertical, 1.5)
             .background(.white.opacity(0.16), in: Capsule())
             .fixedSize()
+    }
+}
+
+/// A round icon button that lights up under the pointer; the name is its tooltip.
+struct HoverButton: View {
+    let symbol: String
+    let help: String
+    var size: CGFloat = 36
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: size >= 40 ? 15 : 14, weight: .medium))
+                .foregroundStyle(.white.opacity(hovering ? 1 : 0.85))
+                .frame(width: size, height: size)
+                .background(.white.opacity(hovering ? 0.16 : (size >= 40 ? 0.1 : 0)), in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+        .help(help)
+    }
+}
+
+/// One tab: solid white when selected, bare text otherwise (lit under the pointer),
+/// its count as quiet trailing digits.
+struct TabPill: View {
+    let tab: IslandTab
+    let count: Int
+    let selected: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: tab.symbol).font(.system(size: 11, weight: .semibold))
+                Text(tab.title).font(.system(size: 12, weight: .semibold))
+                if count > 0 {
+                    Text("\(count)")
+                        .font(.system(size: 10.5, weight: .medium).monospacedDigit())
+                        .opacity(selected ? 0.55 : 0.5)
+                }
+            }
+            .foregroundStyle(selected ? .black : .white.opacity(hovering ? 1 : 0.75))
+            .fixedSize()
+            .padding(.horizontal, 11)
+            .frame(height: 28)
+            .background(selected ? Color.white : Color.white.opacity(hovering ? 0.1 : 0), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
     }
 }
 
@@ -822,7 +878,10 @@ struct CaptureCard: View {
                 }
                 .clipped()
                 .overlay(alignment: .bottom) {
-                    CardCaption(title: item.title.replacingOccurrences(of: "Screenshot ", with: ""), date: item.createdAt) {
+                    // The day is in the strip's header, so a default-named capture needs
+                    // only its time; a renamed one keeps its name.
+                    CardCaption(title: item.hasDefaultName ? "" : item.title, date: item.createdAt,
+                                subtitle: item.createdAt.formatted(date: .omitted, time: .shortened)) {
                         if item.pinned {
                             Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(.yellow)
                         }
