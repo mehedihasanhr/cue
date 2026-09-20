@@ -46,6 +46,23 @@ final class CaptureCoordinator {
         }
     }
 
+    /// Click a window to capture it alone, with its shadow (or drag an area as usual).
+    func captureWindow(fromMenu: Bool) {
+        start(fromMenu: fromMenu) { [self] in
+            guard let selection = try await CaptureSession().run(mode: .window, using: service) else { return }
+            if let window = selection.window {
+                let content = try await service.shareableContent()
+                if let image = try await service.captureWindow(id: window.id, in: content, fallbackScale: selection.frozen.scale) {
+                    onCaptured?(image)
+                    return
+                }
+                Log.capture.notice("Window \(window.id) not shareable; cropping the frozen frame instead")
+            }
+            guard let image = selection.frozen.cropped(toPoints: selection.localRect) else { throw CaptureError.noDisplay }
+            onCaptured?(image)
+        }
+    }
+
     /// Auto-scroll needs Accessibility; without it the session still runs and the user
     /// scrolls by hand, so the permission is not a gate here.
     func captureScrolling(fromMenu: Bool) {

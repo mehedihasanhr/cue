@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Something the palette can do without an item.
 enum PaletteCommand: CaseIterable, Identifiable {
-    case captureArea, captureFullScreen, captureScrolling, captureText, pickColor
+    case captureArea, captureWindow, captureFullScreen, captureScrolling, captureText, pickColor
     case newTask, newSnippet, clipboardList, klikPanel, clock, settings, unghostPins
 
     var id: Self { self }
@@ -11,6 +11,7 @@ enum PaletteCommand: CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .captureArea: "Capture area"
+        case .captureWindow: "Capture window"
         case .captureFullScreen: "Capture full screen"
         case .captureScrolling: "Scrolling capture"
         case .captureText: "Capture text (OCR)"
@@ -28,6 +29,7 @@ enum PaletteCommand: CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .captureArea: "viewfinder"
+        case .captureWindow: "macwindow"
         case .captureFullScreen: "display"
         case .captureScrolling: "rectangle.expand.vertical"
         case .captureText: "text.viewfinder"
@@ -46,6 +48,7 @@ enum PaletteCommand: CaseIterable, Identifiable {
     var keywords: String {
         switch self {
         case .captureArea: "screenshot region selection"
+        case .captureWindow: "screenshot app shadow"
         case .captureFullScreen: "screenshot display"
         case .captureScrolling: "screenshot long page"
         case .captureText: "ocr read copy text"
@@ -64,6 +67,7 @@ enum PaletteCommand: CaseIterable, Identifiable {
     var tint: Color {
         switch self {
         case .captureArea: .teal
+        case .captureWindow: .cyan
         case .captureFullScreen: .blue
         case .captureScrolling: .indigo
         case .captureText: .green
@@ -82,6 +86,7 @@ enum PaletteCommand: CaseIterable, Identifiable {
     var hotkey: HotkeyID? {
         switch self {
         case .captureArea: .region
+        case .captureWindow: .window
         case .captureFullScreen: .fullScreen
         case .captureScrolling: .scrolling
         case .captureText: .captureText

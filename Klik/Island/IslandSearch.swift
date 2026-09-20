@@ -75,7 +75,7 @@ enum IslandSearch {
             terms.allSatisfy { term in fields.contains { $0?.localizedCaseInsensitiveContains(term) ?? false } }
         }
         var hits: [IslandItem] = QuickAnswers.answers(for: query).map(IslandItem.answer)
-        hits += library.items.filter { matches([$0.title, $0.dimensions]) }.map(IslandItem.capture)
+        hits += library.items.filter { matches([$0.title, $0.dimensions, library.recognizedText[$0.id]]) }.map(IslandItem.capture)
         hits += clipboard.items.filter { matches([$0.text, $0.name, $0.sourceName, $0.kind.rawValue]) }.map(IslandItem.clipboard)
         hits += assets.items.filter { matches([$0.fileName]) }.map(IslandItem.asset)
         hits += colors.items.filter { entry in matches([entry.name] + ColorFormat.allCases.map { $0.string(for: entry.color) }) }.map(IslandItem.color)

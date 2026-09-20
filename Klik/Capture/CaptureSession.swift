@@ -6,6 +6,9 @@ enum CaptureMode {
     case scrolling
     /// Same selection UX as `region`; the result goes to OCR instead of the library.
     case text
+    /// Hover highlights a window, a click takes it (with its shadow); a drag still
+    /// selects an area.
+    case window
 
     /// Area-style modes capture the moment the mouse is released; scrolling waits for "Start".
     var confirmsOnRelease: Bool { self != .scrolling }
@@ -18,6 +21,8 @@ struct RegionSelection {
     let screen: NSScreen
     /// The frozen frame of `screen` the selection was made on.
     let frozen: CapturedImage
+    /// The window that was clicked, in window mode.
+    var window: WindowInfo? = nil
 }
 
 /// Runs one area-selection interaction across all screens: freezes every display,
@@ -30,9 +35,9 @@ final class CaptureSession: SelectionViewDelegate {
 
     func run(mode: CaptureMode, using service: ScreenCaptureService) async throws(CaptureError) -> RegionSelection? {
         let frozen = try await service.captureAllDisplays()
-        // Plain area selection, as in CleanShot: no window hover/pick. (WindowDetector stays
-        // available for a dedicated window-capture mode.)
-        let windows: [WindowInfo] = []
+        // Plain area selection, as in CleanShot, except in window mode, where the
+        // windows on screen light up under the pointer.
+        let windows: [WindowInfo] = mode == .window ? WindowDetector.onScreenWindows() : []
         previousApp = NSWorkspace.shared.frontmostApplication
 
         for screen in NSScreen.screens {
@@ -104,6 +109,6 @@ final class CaptureSession: SelectionViewDelegate {
     func selectionView(_ view: SelectionView, didConfirm rect: CGRect) {
         guard let controller = controllers.first(where: { $0.selectionView === view }) else { return }
         let global = rect.offsetBy(dx: controller.screen.frame.minX, dy: controller.screen.frame.minY)
-        finish(with: RegionSelection(rect: global, screen: controller.screen, frozen: controller.frozen))
+        finish(with: RegionSelection(rect: global, screen: controller.screen, frozen: controller.frozen, window: view.pickedWindow))
     }
 }

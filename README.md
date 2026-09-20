@@ -81,7 +81,7 @@ permission (Klik asks on first use) so it can send scroll events to the target a
 
 ### Shortcuts
 
-Defaults: **⌥⇧3** full screen · **⌥⇧4** area · **⌥⇧5** scrolling · **⌥⇧T** capture
+Defaults: **⌥⇧3** full screen · **⌥⇧4** area · **⌥⇧6** window · **⌥⇧5** scrolling · **⌥⇧T** capture
 text · **⌥⇧P** pick a color · **⌥⇧N** quick task · **⌥⇧K** the Klik panel ·
 **⌘⇧C** the clipboard list (type to filter, ↑↓, ↩ pastes, ⌘↩ copies, ⌥↩ pastes as
 plain text, ⇧↑↓ picks several to paste joined, ⌘1–9 picks) · **⌥⇧Space** the command
@@ -114,6 +114,37 @@ Right-click a text entry on a clipboard card or in the clipboard list for **Past
 snake_case, kebab-case, pretty or minified JSON, URL-encoded/decoded, Markdown → plain
 text, quoted. Only the transforms that would change the text are listed.
 
+### Window capture (⌥⇧6)
+
+Hover lights up the window under the pointer; a click captures it by itself, with its
+shadow, on a transparent background (a drag still selects an area). For a device-frame
+look, open it in the editor and use the Background tool.
+
+### Text in captures
+
+Every capture's text is read (on-device, in the background) when it is saved — older
+ones catch up shortly after launch — so "search everything" finds the screenshot that
+held the error message. "Capture text" keeps code's indentation, and right-clicking a
+text entry on the Clipboard tab offers **Extract** › URLs / e-mail addresses / numbers.
+
+### Palette from a capture
+
+Right-click a capture › **Palette**: keep its six dominant colors in the Colors tab, or
+copy them as CSS variables, Tailwind colors or SwiftUI.
+
+### Tasks from captures, focus sessions
+
+Right-click a capture › **Make Task…** opens the task form with the screenshot
+attached. Right-click a task › **Focus** › 15/25/45/60 minutes starts a session: the
+island's header shows a ring and the time left (click it to open the task, ■ to stop),
+and it says so with a sound when the time is up.
+
+### Sync folder
+
+Settings › General › Sync: keep snippets, colors and tasks as JSON in a folder of your
+own — one in iCloud Drive or Dropbox shares them with your other Macs — and Klik
+reloads when the files change. Task attachments stay on each Mac.
+
 ### Pin a capture to the screen
 
 "Pin to Screen" on a capture (or ⌘P in the palette) floats it above every window to
@@ -138,7 +169,7 @@ Markdown fence with the right language.
 ### URL scheme and command line
 
 `klik://` URLs drive Klik from Shortcuts, Raycast, Alfred, a browser or a script:
-`klik://capture/area|full|scrolling|text`, `klik://color/pick`,
+`klik://capture/area|window|full|scrolling|text`, `klik://color/pick`,
 `klik://task/new?title=…&notes=…&priority=high&project=…`,
 `klik://snippet/add?keyword=;sig&text=…`, `klik://clipboard/copy?text=…`,
 `klik://palette`, `klik://clipboard`, `klik://panel`, `klik://clock`, `klik://settings`.

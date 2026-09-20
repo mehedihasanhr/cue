@@ -29,6 +29,15 @@ nonisolated struct RecognizedText: Sendable {
     let text: String
 
     var isEmpty: Bool { text.isEmpty }
+
+    /// The same lines with their indentation kept — what code wants.
+    var indentedText: String { TextLayout.compose(items, keepIndentation: true) }
+
+    /// Code keeps its indentation; prose comes as plain lines.
+    var bestText: String {
+        let indented = indentedText
+        return CodeSnippet.detect(indented) != nil ? indented : text
+    }
 }
 
 nonisolated enum OCRError: Error, LocalizedError {

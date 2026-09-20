@@ -35,7 +35,7 @@ struct SelectionToolbar: View {
 
     private var confirmTitle: String {
         switch mode {
-        case .region: "Capture"
+        case .region, .window: "Capture"
         case .text: "Copy Text"
         case .scrolling: "Start Capture"
         }
@@ -43,7 +43,7 @@ struct SelectionToolbar: View {
 
     private var confirmIcon: String {
         switch mode {
-        case .region: "camera.fill"
+        case .region, .window: "camera.fill"
         case .text: "text.viewfinder"
         case .scrolling: "arrow.down"
         }

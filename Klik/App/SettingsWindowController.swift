@@ -9,14 +9,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     private static let paneWidth: CGFloat = 560
 
-    init(model: AppModel, shortcuts: ShortcutController, library: CaptureLibrary, clipboard: ClipboardHistory, preferences: AppPreferences, clock: PrayerClock? = nil, share: ShareSettings? = nil) {
+    init(model: AppModel, shortcuts: ShortcutController, library: CaptureLibrary, clipboard: ClipboardHistory, preferences: AppPreferences, clock: PrayerClock? = nil, share: ShareSettings? = nil, sync: SyncFolder? = nil) {
         let tabs = NSTabViewController()
         tabs.tabStyle = .toolbar
         tabs.canPropagateSelectedChildViewControllerTitle = false
 
         tabs.addTabViewItem(Self.pane(
-            "General", symbol: "gearshape", height: 520,
-            GeneralSettingsView().environment(model).environment(library).environment(preferences)
+            "General", symbol: "gearshape", height: 600,
+            GeneralSettingsView().environment(model).environment(library).environment(preferences).environment(sync)
         ))
         tabs.addTabViewItem(Self.pane(
             "Island", symbol: "rectangle.topthird.inset.filled", height: 470,

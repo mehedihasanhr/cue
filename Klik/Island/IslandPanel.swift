@@ -49,6 +49,7 @@ struct IslandPanel: View {
     let actions: HistoryActions
     @Environment(AppPreferences.self) private var preferences
     @Environment(PrayerClock.self) private var clock: PrayerClock?
+    @Environment(FocusTimer.self) private var focusTimer: FocusTimer?
     /// A file or image is being dragged over the island.
     var dropping = false
     /// Asks the island for a line of text in its compact form.
@@ -147,6 +148,9 @@ struct IslandPanel: View {
                 .background(KeyOnFocus(focused: searchFocused))
                 if !searching {
                     Spacer(minLength: 8)
+                    if let focusTimer, focusTimer.isRunning {
+                        FocusPill(timer: focusTimer, onShowTask: onShowTask)
+                    }
                     if let clock, clock.status != nil {
                         PrayerPill(clock: clock, expanded: $prayerExpanded, onShowClock: onShowClock)
                     }
@@ -283,7 +287,7 @@ struct IslandPanel: View {
     // MARK: - Cards
 
     private func captureCard(_ item: CaptureItem) -> some View {
-        CaptureCard(item: item, library: library, actions: actions, clipboard: clipboard, onPreview: { open(.capture(item)) }, onRename: {
+        CaptureCard(item: item, library: library, actions: actions, clipboard: clipboard, colorStore: colors, onPreview: { open(.capture(item)) }, onRename: {
             onPrompt(IslandPrompt(kind: .rename(.capture(item)), initial: item.title.replacingOccurrences(of: "Screenshot ", with: ""), image: library.thumbnail(for: item)))
         })
     }
@@ -377,7 +381,7 @@ struct IslandPanel: View {
         case .clipboard(let item): clipboardCard(item)
         case .asset(let item): assetCard(item)
         case .color(let entry): colorCard(entry)
-        case .task(let task): TaskCard(task: task, store: tasksStore, onOpen: { onShowTask(task) }, onDelete: { onPrompt(IslandPrompt(kind: .delete(.task(task)))) })
+        case .task(let task): TaskCard(task: task, store: tasksStore, focus: focusTimer, onOpen: { onShowTask(task) }, onDelete: { onPrompt(IslandPrompt(kind: .delete(.task(task)))) })
         case .snippet(let snippet): snippetCard(snippet)
         case .answer(let answer): AnswerCard(answer: answer, clipboard: clipboard, colors: colors)
         }
@@ -432,6 +436,7 @@ struct IslandPanel: View {
         HStack(spacing: 0) {
             HoverButton(symbol: "display", help: "Capture full screen", size: 36, action: actions.captureFullScreen)
             HoverButton(symbol: "viewfinder", help: "Capture area", size: 36, action: actions.captureArea)
+            HoverButton(symbol: "macwindow", help: "Capture window (with its shadow)", size: 36, action: actions.captureWindow)
             HoverButton(symbol: "rectangle.expand.vertical", help: "Scrolling capture", size: 36, action: actions.captureScrolling)
             Rectangle().fill(.white.opacity(0.12)).frame(width: 1, height: 18).padding(.horizontal, 3)
             HoverButton(symbol: "text.viewfinder", help: "Capture text", size: 36, action: actions.captureText)
@@ -935,6 +940,17 @@ struct TransformMenus: View {
                 }
             }
         }
+        let extracts = TextExtract.Kind.allCases.map { ($0, TextExtract.extract($0, from: text)) }.filter { !$0.1.isEmpty }
+        if !extracts.isEmpty {
+            Menu("Extract") {
+                ForEach(extracts, id: \.0) { kind, found in
+                    Button("\(kind.title) (\(found.count))") {
+                        clipboard.copy(text: found.joined(separator: "\n"))
+                        FeedbackHUD.show("\(found.count) \(kind.title.lowercased()) copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: found.first)
+                    }
+                }
+            }
+        }
     }
 
     private func copy(_ transform: TextTransform) {
@@ -949,6 +965,52 @@ struct TransformMenus: View {
         if !clipboard.pressPaste(returningTo: frontField) {
             FeedbackHUD.show("Copied — press ⌘V to paste", symbol: "doc.on.clipboard", duration: .seconds(1.6))
         }
+    }
+}
+
+/// The running focus session in the island's header: a ring filling as it goes,
+/// the time left, the task; a click opens the task, the ■ stops it.
+struct FocusPill: View {
+    let timer: FocusTimer
+    var onShowTask: (TaskItem) -> Void = { _ in }
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ZStack {
+                Circle().stroke(.white.opacity(0.18), lineWidth: 2.5)
+                Circle().trim(from: 0, to: timer.progress).stroke(Color.brand, style: SwiftUI.StrokeStyle(lineWidth: 2.5, lineCap: .round)).rotationEffect(.degrees(-90))
+                Image(systemName: "timer").font(.system(size: 8, weight: .bold)).foregroundStyle(.white.opacity(0.85))
+            }
+            .frame(width: 18, height: 18)
+            .animation(.linear(duration: 1), value: timer.progress)
+            Text(timer.clock).font(.system(size: 12, weight: .semibold).monospacedDigit())
+            if let task = timer.task {
+                Text(task.title).font(.system(size: 11)).foregroundStyle(.white.opacity(0.6)).lineLimit(1).frame(maxWidth: 140)
+            }
+            Button { timer.stop() } label: {
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.white.opacity(hovering ? 0.9 : 0.5))
+                    .frame(width: 20, height: 20)
+                    .background(.white.opacity(hovering ? 0.14 : 0), in: Circle())
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .help("Stop the focus session")
+            .accessibilityLabel("Stop focus")
+        }
+        .foregroundStyle(.white.opacity(0.9))
+        .padding(.leading, 10).padding(.trailing, 4)
+        .frame(height: 40)
+        .fixedSize()
+        .background(.white.opacity(0.08), in: Capsule())
+        .overlay(Capsule().strokeBorder(hovering ? Color.white.opacity(0.18) : .clear))
+        .contentShape(Capsule())
+        .onHover { hovering = $0 }
+        .onTapGesture { if let task = timer.task { onShowTask(task) } }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Focus, \(timer.clock) left on \(timer.task?.title ?? "a task")")
     }
 }
 
@@ -968,6 +1030,8 @@ struct CaptureCard: View {
     let actions: HistoryActions
     /// For pasting straight into the front app / an open Klik editor.
     var clipboard: ClipboardHistory? = nil
+    /// Where "Keep Colors" puts the capture's palette.
+    var colorStore: ColorStore? = nil
     var onPreview: () -> Void = {}
     var onRename: () -> Void = {}
     @State private var hovering = false
@@ -1007,11 +1071,36 @@ struct CaptureCard: View {
             Button("Copy to Clipboard") { actions.copy(item) }
             Button("Pin to Screen") { actions.pinToScreen(item) }
             Button("Copy Share Link") { actions.shareLink(item) }
+            Button("Make Task…") { actions.makeTask(item) }
+            Menu("Palette") {
+                Button("Keep Colors in the Colors Tab") { keepPalette() }
+                Divider()
+                ForEach(PaletteExtractor.Export.allCases, id: \.self) { export in
+                    Button("Copy as \(export.title)") { copyPalette(as: export) }
+                }
+            }
             Button(item.pinned ? "Unpin" : "Pin") { library.togglePin(item) }
             Button("Rename…", action: onRename)
             Divider()
             Button("Delete", role: .destructive) { actions.delete(item) }
         }
+    }
+
+    /// The capture's colors, worked out when first asked for.
+    private func palette() -> [PickedColor] { actions.palette(item) }
+
+    private func keepPalette() {
+        let colors = palette()
+        guard !colors.isEmpty else { FeedbackHUD.show("No colors found", symbol: "paintpalette"); return }
+        for color in colors { _ = colorStore?.add(color) }
+        FeedbackHUD.show("\(colors.count) colors kept", symbol: "paintpalette.fill", duration: .seconds(1.4), swatch: colors.first)
+    }
+
+    private func copyPalette(as export: PaletteExtractor.Export) {
+        let colors = palette()
+        guard !colors.isEmpty else { FeedbackHUD.show("No colors found", symbol: "paintpalette"); return }
+        clipboard?.copy(text: PaletteExtractor.text(for: colors, as: export))
+        FeedbackHUD.show("Palette copied as \(export.title)", symbol: "checkmark.circle.fill", duration: .seconds(1.4), swatch: colors.first)
     }
 
     private var accessibilityLabel: String {
@@ -1363,6 +1452,7 @@ struct ColorCard: View {
 private struct TaskCard: View {
     let task: TaskItem
     let store: TaskStore
+    var focus: FocusTimer? = nil
     var onOpen: () -> Void = {}
     var onDelete: () -> Void = {}
     @State private var hovering = false
@@ -1413,6 +1503,17 @@ private struct TaskCard: View {
             Menu("Priority") {
                 ForEach(TaskPriority.allCases, id: \.self) { value in
                     Button { store.setPriority(value, for: task) } label: { Label(value.title, systemImage: value.symbol) }
+                }
+            }
+            if let focus {
+                if focus.task?.id == task.id {
+                    Button("Stop Focus (\(focus.clock) left)") { focus.stop() }
+                } else {
+                    Menu("Focus") {
+                        ForEach(FocusTimer.lengths, id: \.self) { minutes in
+                            Button("\(minutes) minutes") { focus.start(task, minutes: minutes) }
+                        }
+                    }
                 }
             }
             Divider()

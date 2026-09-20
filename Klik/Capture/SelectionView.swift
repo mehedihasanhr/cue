@@ -57,6 +57,9 @@ final class SelectionView: NSView {
         default: false
         }
     }
+    /// The window a click chose (window mode), for a capture of it with its shadow.
+    private(set) var pickedWindow: WindowInfo?
+
     private var hoveredWindow: WindowInfo? {
         didSet { if hoveredWindow != oldValue { needsDisplay = true } }
     }
@@ -234,6 +237,7 @@ final class SelectionView: NSView {
             if isClick {
                 if let window = hoveredWindow {
                     selection = window.frame.intersection(bounds).rounded()
+                    pickedWindow = window
                     phase = .selected
                 } else {
                     selection = nil

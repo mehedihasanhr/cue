@@ -10,7 +10,7 @@ import AppKit
 ///     klik://clipboard/copy?text=…
 ///     klik://palette · klik://clipboard · klik://panel · klik://clock · klik://settings
 enum URLCommand: Equatable {
-    case captureArea, captureFullScreen, captureScrolling, captureText, pickColor
+    case captureArea, captureWindow, captureFullScreen, captureScrolling, captureText, pickColor
     case newTask(title: String?, notes: String, priority: TaskPriority, project: String?)
     case addSnippet(keyword: String, name: String, text: String)
     case copy(String)
@@ -24,6 +24,7 @@ enum URLCommand: Equatable {
         let path = ([url.host ?? ""] + url.pathComponents.filter { $0 != "/" }).map { $0.lowercased() }
         switch path {
         case ["capture", "area"], ["capture"]: self = .captureArea
+        case ["capture", "window"]: self = .captureWindow
         case ["capture", "full"], ["capture", "screen"], ["capture", "fullscreen"]: self = .captureFullScreen
         case ["capture", "scrolling"], ["capture", "scroll"]: self = .captureScrolling
         case ["capture", "text"], ["ocr"]: self = .captureText

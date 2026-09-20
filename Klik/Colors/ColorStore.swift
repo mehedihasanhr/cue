@@ -35,10 +35,11 @@ nonisolated struct ColorEntry: Identifiable, Codable, Hashable {
 /// Colors picked with the eyedropper, newest first. Small, so a JSON file in the
 /// app container is all it needs.
 @Observable
+@MainActor
 final class ColorStore {
     private(set) var items: [ColorEntry] = []
-    private let fileURL: URL
-    @ObservationIgnored private let storage = DispatchQueue(label: "com.stackrover.klik.colors", qos: .utility)
+    /// The file, in the container or the sync folder.
+    @ObservationIgnored private let file: SyncedFile
 
     private static let limit = 500
 
@@ -47,10 +48,21 @@ final class ColorStore {
             ?? FileManager.default.temporaryDirectory
         let folder = support.appendingPathComponent("Klik", isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        fileURL = folder.appendingPathComponent("colors.json")
-        if let data = try? Data(contentsOf: fileURL), let decoded = try? JSONDecoder().decode([ColorEntry].self, from: data) {
+        file = SyncedFile(name: "klik-colors.json", local: folder.appendingPathComponent("colors.json"))
+        if let data = try? Data(contentsOf: file.url), let decoded = try? JSONDecoder().decode([ColorEntry].self, from: data) {
             items = decoded
         }
+        file.changed = { [weak self] data in self?.load(data) }
+    }
+
+    /// Keeps the colors in `folder` (nil: the container), taking what is there.
+    func useSyncFolder(_ folder: URL?) {
+        if let data = file.relocate(to: folder, current: try? JSONEncoder().encode(items)) { load(data) }
+    }
+
+    private func load(_ data: Data) {
+        guard let decoded = try? JSONDecoder().decode([ColorEntry].self, from: data) else { return }
+        items = decoded
     }
 
     /// Records a picked color, newest first.
@@ -112,8 +124,7 @@ final class ColorStore {
 
     private func save() {
         guard let data = try? JSONEncoder().encode(items) else { return }
-        let url = fileURL
-        storage.async { try? data.write(to: url, options: .atomic) }
+        file.write(data)
     }
 }
 

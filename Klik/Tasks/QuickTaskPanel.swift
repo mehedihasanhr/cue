@@ -34,8 +34,7 @@ final class QuickTaskPanel: NSPanel {
         }
     }
 
-    convenience init(store: TaskStore, finish: @escaping (PromptAnswer?) -> Void) {
-        let prompt = IslandPrompt(kind: .task(project: nil))
+    convenience init(store: TaskStore, prompt: IslandPrompt = IslandPrompt(kind: .task(project: nil)), finish: @escaping (PromptAnswer?) -> Void) {
         self.init(finish: finish) { close in
             TaskFormRow(prompt: prompt, store: store) { answer in
                 finish(answer)

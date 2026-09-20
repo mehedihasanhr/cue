@@ -13,9 +13,13 @@ nonisolated enum TextLayout {
     /// A vertical gap larger than this many line heights becomes a paragraph break.
     static let paragraphGapRatio: CGFloat = 0.9
 
-    static func compose(_ items: [RecognizedTextItem]) -> String {
+    /// `keepIndentation`: lines that start to the right of the leftmost one get the
+    /// matching number of leading spaces (a character's width estimated from each
+    /// line), so code keeps its shape.
+    static func compose(_ items: [RecognizedTextItem], keepIndentation: Bool = false) -> String {
         let lines = groupIntoLines(items)
         guard !lines.isEmpty else { return "" }
+        let leftmost = lines.map(\.bounds.minX).min() ?? 0
 
         var output: [String] = []
         var previous: Line?
@@ -28,7 +32,13 @@ nonisolated enum TextLayout {
                     output.append("")
                 }
             }
-            output.append(line.text)
+            var text = line.text
+            if keepIndentation {
+                let characterWidth = line.bounds.width / CGFloat(max(text.count, 1))
+                let indent = characterWidth > 0 ? Int(((line.bounds.minX - leftmost) / characterWidth).rounded()) : 0
+                if indent > 0 { text = String(repeating: " ", count: min(indent, 40)) + text }
+            }
+            output.append(text)
             previous = line
         }
         return output.joined(separator: "\n")

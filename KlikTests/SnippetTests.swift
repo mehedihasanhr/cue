@@ -1,6 +1,7 @@
 import XCTest
 
 /// `{{blanks}}` in snippet templates, and keyword matching.
+@MainActor
 final class SnippetTests: XCTestCase {
     func testPlaceholdersInOrderWithoutDuplicates() {
         let text = "Hi {{Name}}, welcome. {{ sender }} — {{name}} again, {{date}}."

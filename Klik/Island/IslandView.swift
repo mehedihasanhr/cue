@@ -447,6 +447,8 @@ struct IslandPrompt: Hashable {
     var editing: TaskItem? = nil
     /// The current name, prefilled and selected, for renames.
     var initial = ""
+    /// A new task's description to start from (a capture, say).
+    var initialNotes = ""
     /// A thumbnail to show beside a rename.
     var image: NSImage? = nil
     /// A swatch to show beside a rename.
@@ -794,6 +796,7 @@ struct TaskFormRow: View {
                 priority = task.priority
             } else if case .task(let project) = prompt.kind {
                 projectID = project
+                notes = prompt.initialNotes
             }
             Task {
                 try? await Task.sleep(for: .milliseconds(80))

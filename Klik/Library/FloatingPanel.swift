@@ -408,7 +408,7 @@ struct FloatingPanelView: View {
     // MARK: - Cards and rows
 
     private func captureCard(_ item: CaptureItem) -> some View {
-        CaptureCard(item: item, library: library, actions: actions, clipboard: clipboard, onPreview: { actions.preview(item) }, onRename: {
+        CaptureCard(item: item, library: library, actions: actions, clipboard: clipboard, colorStore: colors, onPreview: { actions.preview(item) }, onRename: {
             onPrompt(IslandPrompt(kind: .rename(.capture(item)), initial: item.title.replacingOccurrences(of: "Screenshot ", with: ""), image: library.thumbnail(for: item)))
         })
     }

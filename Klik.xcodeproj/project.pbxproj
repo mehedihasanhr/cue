@@ -45,6 +45,7 @@
 				Clipboard/TextTransform.swift,
 				Clipboard/CodeSnippet.swift,
 				App/URLCommands.swift,
+				Support/SyncFolder.swift,
 				Support/SQLite.swift,
 				Tasks/MarkdownView.swift,
 				Tasks/TaskStore.swift,

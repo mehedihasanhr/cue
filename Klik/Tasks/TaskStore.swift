@@ -180,6 +180,7 @@ nonisolated struct TaskItem: Identifiable, Codable, Hashable {
 /// Quick tasks in the island: a flat list of tasks and a tree of projects, kept as
 /// one small JSON file in the app container.
 @Observable
+@MainActor
 final class TaskStore {
     private(set) var projects: [TaskProject] = []
     private(set) var tasks: [TaskItem] = []   // newest first
@@ -187,7 +188,8 @@ final class TaskStore {
     enum PendingSelection: Equatable { case all, project(UUID) }
     var pendingSelection: PendingSelection?
 
-    private let fileURL: URL
+    /// The file, in the container or the sync folder (attachments stay local).
+    @ObservationIgnored private let file: SyncedFile
     /// Images pasted or dropped into descriptions, referenced as `klik://<name>`.
     private let imagesFolder: URL
     /// Other files dropped into descriptions, referenced as `klik-file://<id>/<name>`.
@@ -204,15 +206,27 @@ final class TaskStore {
             ?? FileManager.default.temporaryDirectory
         let folder = support.appendingPathComponent("Klik", isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        fileURL = folder.appendingPathComponent("tasks.json")
+        file = SyncedFile(name: "klik-tasks.json", local: folder.appendingPathComponent("tasks.json"))
         imagesFolder = folder.appendingPathComponent("TaskImages", isDirectory: true)
         attachmentsFolder = folder.appendingPathComponent("TaskAttachments", isDirectory: true)
         try? FileManager.default.createDirectory(at: imagesFolder, withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: attachmentsFolder, withIntermediateDirectories: true)
-        if let data = try? Data(contentsOf: fileURL), let file = try? JSONDecoder().decode(File.self, from: data) {
-            projects = file.projects
-            tasks = file.tasks
+        if let data = try? Data(contentsOf: file.url), let decoded = try? JSONDecoder().decode(File.self, from: data) {
+            projects = decoded.projects
+            tasks = decoded.tasks
         }
+        file.changed = { [weak self] data in self?.load(data) }
+    }
+
+    /// Keeps the tasks in `folder` (nil: the container), taking what is there.
+    func useSyncFolder(_ folder: URL?) {
+        if let data = file.relocate(to: folder, current: try? JSONEncoder().encode(File(projects: projects, tasks: tasks))) { load(data) }
+    }
+
+    private func load(_ data: Data) {
+        guard let decoded = try? JSONDecoder().decode(File.self, from: data) else { return }
+        projects = decoded.projects
+        tasks = decoded.tasks
     }
 
     // MARK: - Projects
@@ -450,7 +464,6 @@ final class TaskStore {
 
     private func save() {
         guard let data = try? JSONEncoder().encode(File(projects: projects, tasks: tasks)) else { return }
-        let url = fileURL
-        storage.async { try? data.write(to: url, options: .atomic) }
+        file.write(data)
     }
 }

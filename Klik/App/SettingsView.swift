@@ -11,6 +11,7 @@ struct GeneralSettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(CaptureLibrary.self) private var library
     @Environment(AppPreferences.self) private var preferences
+    @Environment(SyncFolder.self) private var sync: SyncFolder?
     @AppStorage(PreferenceKey.includeCursor) private var includeCursor = false
     @State private var launchError: String?
 
@@ -48,6 +49,31 @@ struct GeneralSettingsView: View {
                 }
             } header: {
                 Text("Startup")
+            }
+
+            if let sync {
+                Section {
+                    HStack(spacing: 12) {
+                        SymbolTile(symbol: "arrow.triangle.2.circlepath", tint: .blue)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(sync.url?.lastPathComponent ?? "Not syncing")
+                            Text(sync.url?.path(percentEncoded: false) ?? "Snippets, colors and tasks stay in Klik's own container.")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        Spacer(minLength: 16)
+                        Button(sync.isOn ? "Change…" : "Choose Folder…") { sync.choose() }
+                        if sync.isOn {
+                            Button("Stop") { sync.turnOff() }
+                        }
+                    }
+                } header: {
+                    Text("Sync")
+                } footer: {
+                    Text("Keep snippets, colors and tasks as JSON in a folder — one in iCloud Drive or Dropbox shares them with your other Macs; Klik reloads when the files change. Task attachments stay on this Mac.")
+                }
             }
 
             Section {
@@ -800,6 +826,7 @@ struct ShortcutSettingsView: View {
         case .clipboardPanel: "doc.on.clipboard"
         case .commandPalette: "command"
         case .pasteNext: "square.stack.3d.down.right"
+        case .window: "macwindow"
         case .confirmCapture, .cancelCapture: "xmark"
         }
     }
@@ -816,6 +843,7 @@ struct ShortcutSettingsView: View {
         case .clipboardPanel: .purple
         case .commandPalette: .brand
         case .pasteNext: .teal
+        case .window: .cyan
         case .confirmCapture, .cancelCapture: .gray
         }
     }

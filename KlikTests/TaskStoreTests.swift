@@ -1,6 +1,7 @@
 import XCTest
 
 /// Projects nest; tasks roll up into their parents.
+@MainActor
 final class TaskStoreTests: XCTestCase {
     @MainActor
     func testNestedProjectsAndTaskRollUp() throws {

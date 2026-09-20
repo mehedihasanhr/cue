@@ -27,6 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var clipboardPanelObserver: (any NSObjectProtocol)?
     private var commandPalette: FloatingPanelWindow?
     private let share = ShareSettings()
+    private let focusTimer = FocusTimer()
+    let syncFolder = SyncFolder()
     private var commandPaletteObserver: (any NSObjectProtocol)?
 
     private var settingsWindow: SettingsWindowController?
@@ -54,6 +56,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.onBusyChanged = { [weak self] busy in self?.island?.setHidden(busy) }
         coordinator.onColorPicked = { [weak self] color in self?.handlePickedColor(color) }
 
+        applySyncFolder()
+        focusTimer.announce = { [weak self] status in
+            guard let self else { return }
+            if island?.showStatus(status, quiet: false) != true, island == nil {
+                FeedbackHUD.show(status.title, symbol: status.symbol, duration: status.duration, subtitle: status.subtitle)
+            }
+        }
         // Before the island, which shows the clock's statuses and its pill.
         let clock = PrayerClock(preferences: preferences)
         clock.showStatus = { [weak self] status, quiet in
@@ -80,6 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         shortcuts.setAction(for: .clipboardPanel) { [weak self] in self?.showClipboardPanel(nil) }
         shortcuts.setAction(for: .commandPalette) { [weak self] in self?.showCommandPalette(nil) }
         shortcuts.setAction(for: .pasteNext) { [weak self] in self?.pasteNext() }
+        shortcuts.setAction(for: .window) { [weak self] in self?.coordinator.captureWindow(fromMenu: false) }
 
         // Diagnostics: `--env KLIK_DEBUG_HOTKEYS=1` writes every shortcut and its status to Pictures/Klik.
         if ProcessInfo.processInfo.environment["KLIK_DEBUG_HOTKEYS"] == "1" {
@@ -108,6 +118,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if ProcessInfo.processInfo.environment["KLIK_DEBUG_PANEL"] == "1" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.toggleHistoryAtPointer() }
         }
+        // Older captures get their text read in the background, a while after launch.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in self?.library.indexMissingText() }
         if !PermissionManager.hasScreenCaptureAccess {
             Log.app.notice("Screen Recording not granted; showing onboarding")
             showOnboarding(for: .screenRecording)
@@ -130,6 +142,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         closeHistory()
         switch command {
         case .captureArea: coordinator.captureArea(fromMenu: true)
+        case .captureWindow: coordinator.captureWindow(fromMenu: true)
         case .captureFullScreen: coordinator.captureFullScreen(fromMenu: true)
         case .captureScrolling: coordinator.captureScrolling(fromMenu: true)
         case .captureText: coordinator.captureText(fromMenu: true)
@@ -215,7 +228,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 island.place()
             } else {
                 island = IslandController(library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasks, snippets: snippets,
-                                          actions: historyActions, preferences: preferences, clock: prayerClock)
+                                          actions: historyActions, preferences: preferences, clock: prayerClock, focus: focusTimer)
                 island?.onSnippetFilled = { [weak self] snippet, values in self?.snippetFilled(snippet, values: values) }
                 library.warmThumbnails()
                 FeedbackHUD.island = { [weak self] status in self?.island?.showStatus(status) ?? false }
@@ -301,6 +314,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Moves the snippets, colors and tasks into the sync folder (or back) whenever it changes.
+    private func applySyncFolder() {
+        let folder = withObservationTracking {
+            syncFolder.url
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.applySyncFolder() }
+        }
+        snippets.useSyncFolder(folder)
+        colors.useSyncFolder(folder)
+        tasks.useSyncFolder(folder)
+    }
+
     /// ⌘⇧V: the paste stack — each press pastes the next entry of the history.
     private func pasteNext() {
         guard PermissionManager.hasAccessibilityAccess else { showOnboarding(for: .accessibility); return }
@@ -349,6 +374,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self else { return }
                 switch command {
                 case .captureArea: coordinator.captureArea(fromMenu: true)
+                case .captureWindow: coordinator.captureWindow(fromMenu: true)
                 case .captureFullScreen: coordinator.captureFullScreen(fromMenu: true)
                 case .captureScrolling: coordinator.captureScrolling(fromMenu: true)
                 case .captureText: coordinator.captureText(fromMenu: true)
@@ -517,6 +543,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HistoryActions(
             captureFullScreen: { [weak self] in self?.closeHistoryThen { $0.coordinator.captureFullScreen(fromMenu: true) } },
             captureArea: { [weak self] in self?.closeHistoryThen { $0.coordinator.captureArea(fromMenu: true) } },
+            captureWindow: { [weak self] in self?.closeHistoryThen { $0.coordinator.captureWindow(fromMenu: true) } },
             captureScrolling: { [weak self] in self?.closeHistoryThen { $0.coordinator.captureScrolling(fromMenu: true) } },
             captureText: { [weak self] in self?.closeHistoryThen { $0.coordinator.captureText(fromMenu: true) } },
             pickColor: { [weak self] in self?.closeHistoryThen { $0.pickColor(nil) } },
@@ -528,10 +555,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.library.copyToClipboard(item)
                 FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: item.dimensions, image: self?.library.thumbnail(for: item))
             },
+            palette: { [weak self] item in self?.library.image(for: item).map { PaletteExtractor.dominantColors(in: $0.cgImage) } ?? [] },
             delete: { [weak self] item in self?.deleteCapture(item) },
             pinToScreen: { [weak self] item in self?.pinToScreen(item) },
-            shareLink: { [weak self] item in self?.shareLink(for: item) }
+            shareLink: { [weak self] item in self?.shareLink(for: item) },
+            makeTask: { [weak self] item in self?.makeTask(from: item) }
         )
+    }
+
+    /// A new task with the capture in its description (the island's form, or the
+    /// floating one without an island).
+    private func makeTask(from item: CaptureItem) {
+        guard let image = library.image(for: item), let png = ImageEncoding.png(image.cgImage),
+              let markdown = tasks.saveImage(png) else { return }
+        let prompt = IslandPrompt(kind: .task(project: nil), initialNotes: markdown + "\n")
+        if let island {
+            island.prompt(prompt)
+        } else {
+            quickTaskPanel?.close()
+            let panel = QuickTaskPanel(store: tasks, prompt: prompt) { [weak self] answer in
+                guard let self, let answer else { return }
+                tasks.addTask(titled: answer.title, notes: answer.notes, in: answer.projectID, priority: answer.priority)
+                FeedbackHUD.show("Task added", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
+            }
+            quickTaskPanel = panel
+            panel.show(at: NSEvent.mouseLocation, position: preferences.panelPosition)
+        }
     }
 
     /// Uploads the capture where Settings › Sharing says and puts the link on the
@@ -582,6 +631,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func captureFullScreen(_ sender: Any?) {
         coordinator.captureFullScreen(fromMenu: sender is NSMenuItem)
+    }
+
+    @objc func captureWindow(_ sender: Any?) {
+        coordinator.captureWindow(fromMenu: true)
     }
 
     @objc func captureArea(_ sender: Any?) {
@@ -635,7 +688,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func showSettings(_ sender: Any?) {
         if settingsWindow == nil {
-            let controller = SettingsWindowController(model: model, shortcuts: shortcuts, library: library, clipboard: clipboard, preferences: preferences, clock: prayerClock, share: share)
+            let controller = SettingsWindowController(model: model, shortcuts: shortcuts, library: library, clipboard: clipboard, preferences: preferences, clock: prayerClock, share: share, sync: syncFolder)
             controller.onClose = { [weak self] in
                 self?.settingsWindow = nil
                 self?.shortcuts.isRecording = false
@@ -688,11 +741,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             FeedbackHUD.show("No text detected", symbol: "text.viewfinder")
             return
         }
+        let text = recognized.bestText
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString(recognized.text, forType: .string)
+        pasteboard.setString(text, forType: .string)
         preferences.playCaptureSound()
-        FeedbackHUD.show("Text copied", symbol: "checkmark.circle.fill")
+        let code = CodeSnippet.detect(text)
+        let found = TextExtract.summary(of: text)
+        FeedbackHUD.show(code.map { "\($0.title) copied" } ?? "Text copied", symbol: "checkmark.circle.fill",
+                         subtitle: found.isEmpty ? nil : "Right-click it on the Clipboard tab to copy just the \(found)")
     }
 
     private func deleteCapture(_ item: CaptureItem) {

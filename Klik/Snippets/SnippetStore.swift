@@ -143,11 +143,13 @@ nonisolated enum SnippetTemplate {
 
 /// The snippets, newest first, as one JSON file in the app container.
 @Observable
+@MainActor
 final class SnippetStore {
     private(set) var items: [Snippet] = [] {
         didSet { reindex() }
     }
-    private let fileURL: URL
+    /// The file, in the container or the sync folder.
+    @ObservationIgnored private let file: SyncedFile
     /// Keywords longest first, and the longest length, for the key monitor's fast path
     /// (it runs on every keystroke in the system).
     @ObservationIgnored private var keywordsByLength: [(keyword: String, index: Int)] = []
@@ -159,11 +161,22 @@ final class SnippetStore {
             ?? FileManager.default.temporaryDirectory
         let folder = support.appendingPathComponent("Klik", isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        fileURL = folder.appendingPathComponent("snippets.json")
-        if let data = try? Data(contentsOf: fileURL), let decoded = try? JSONDecoder().decode([Snippet].self, from: data) {
+        file = SyncedFile(name: "klik-snippets.json", local: folder.appendingPathComponent("snippets.json"))
+        if let data = try? Data(contentsOf: file.url), let decoded = try? JSONDecoder().decode([Snippet].self, from: data) {
             items = decoded
         }
         reindex()
+        file.changed = { [weak self] data in self?.load(data) }
+    }
+
+    /// Keeps the snippets in `folder` (nil: the container), taking what is there.
+    func useSyncFolder(_ folder: URL?) {
+        if let data = file.relocate(to: folder, current: try? JSONEncoder().encode(items)) { load(data) }
+    }
+
+    private func load(_ data: Data) {
+        guard let decoded = try? JSONDecoder().decode([Snippet].self, from: data) else { return }
+        items = decoded
     }
 
     private func reindex() {
@@ -220,7 +233,6 @@ final class SnippetStore {
 
     private func save() {
         guard let data = try? JSONEncoder().encode(items) else { return }
-        let url = fileURL
-        storage.async { try? data.write(to: url, options: .atomic) }
+        file.write(data)
     }
 }

@@ -89,6 +89,7 @@ final class CaptureLibrary {
         try? FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: thumbnailFolder, withIntermediateDirectories: true)
         loadIndex()
+        loadTextIndex()
     }
 
     // MARK: - Folder
@@ -135,6 +136,61 @@ final class CaptureLibrary {
 
     // MARK: - Items
 
+    // MARK: - Text in captures
+
+    /// What each capture says, from OCR at save time (or at launch for older ones),
+    /// so the search finds the screenshot that held the error message.
+    private(set) var recognizedText: [UUID: String] = [:]
+    @ObservationIgnored private var indexing = false
+
+    private var textIndexURL: URL { indexURL.deletingLastPathComponent().appendingPathComponent("capture-text.json") }
+
+    private func loadTextIndex() {
+        guard let data = try? Data(contentsOf: textIndexURL), let decoded = try? JSONDecoder().decode([UUID: String].self, from: data) else { return }
+        recognizedText = decoded
+    }
+
+    private func saveTextIndex() {
+        guard let data = try? JSONEncoder().encode(recognizedText) else { return }
+        let url = textIndexURL
+        storage.async { try? data.write(to: url, options: .atomic) }
+    }
+
+    /// Reads the text off one capture in the background and remembers it.
+    private func indexText(of item: CaptureItem, image: CGImage) {
+        Task(priority: .utility) { [weak self] in
+            let recognized = try? await OCRService().recognize(image)
+            await MainActor.run {
+                guard let self, self.items.contains(where: { $0.id == item.id }) else { return }
+                self.recognizedText[item.id] = recognized?.text ?? ""
+                self.saveTextIndex()
+            }
+        }
+    }
+
+    /// Catches up on captures saved before the text index existed, one at a time.
+    func indexMissingText() {
+        guard !indexing else { return }
+        let missing = items.filter { recognizedText[$0.id] == nil }
+        guard !missing.isEmpty else { return }
+        indexing = true
+        Task(priority: .utility) { [weak self] in
+            for item in missing {
+                guard let self else { return }
+                guard let image = await MainActor.run(body: { self.image(for: item)?.cgImage }) else { continue }
+                let recognized = try? await OCRService().recognize(image)
+                await MainActor.run {
+                    self.recognizedText[item.id] = recognized?.text ?? ""
+                }
+                try? await Task.sleep(for: .milliseconds(300))
+            }
+            await MainActor.run {
+                self?.saveTextIndex()
+                self?.indexing = false
+            }
+        }
+    }
+
     /// Lists the capture at once and writes its file in the background.
     @discardableResult
     func add(_ image: CapturedImage) -> CaptureItem {
@@ -148,6 +204,7 @@ final class CaptureLibrary {
         pendingImages[item.id] = image.cgImage
         cacheThumbnail(Self.makeThumbnail(image.cgImage), for: item.id)
         write(image.cgImage, for: item.id, to: url, isNew: true)
+        indexText(of: item, image: image.cgImage)
         return item
     }
 
@@ -160,6 +217,7 @@ final class CaptureLibrary {
         cacheThumbnail(Self.makeThumbnail(cgImage), for: item.id)
         saveIndex()
         write(cgImage, for: item.id, to: url, isNew: false)
+        indexText(of: item, image: cgImage)
     }
 
     /// Encodes and writes on the storage queue, then records the outcome on the main actor.
@@ -213,6 +271,7 @@ final class CaptureLibrary {
         items.removeAll { $0.id == item.id }
         thumbnails[item.id] = nil
         pendingImages[item.id] = nil
+        if recognizedText.removeValue(forKey: item.id) != nil { saveTextIndex() }
         let thumbnailURL = thumbnailURL(for: item.id)
         storage.async { try? FileManager.default.removeItem(at: thumbnailURL) }
         saveIndex()

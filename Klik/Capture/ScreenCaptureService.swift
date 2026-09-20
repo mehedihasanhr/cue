@@ -65,6 +65,22 @@ final class ScreenCaptureService {
         return images
     }
 
+    // MARK: - Window
+
+    /// One window by itself, with its shadow, on a transparent background — the
+    /// way a screenshot for a doc or a post wants it.
+    func captureWindow(id: CGWindowID, in content: SCShareableContent, fallbackScale: CGFloat) async throws(CaptureError) -> CapturedImage? {
+        guard let window = content.windows.first(where: { $0.windowID == id }) else { return nil }
+        let filter = SCContentFilter(desktopIndependentWindow: window)
+        let scale = CGFloat(filter.pointPixelScale) > 0 ? CGFloat(filter.pointPixelScale) : fallbackScale
+        let size = filter.contentRect.size
+        let configuration = Self.configuration(pointSize: size, scale: scale)
+        configuration.ignoreShadowsSingleWindow = false
+        configuration.showsCursor = false
+        let cgImage = try await capture(filter: filter, configuration: configuration)
+        return CapturedImage(cgImage: cgImage, scale: scale, displayID: 0, capturedAt: .now)
+    }
+
     // MARK: - Region
 
     /// Captures `rect` (global AppKit points) on the display that owns `screen`, leaving

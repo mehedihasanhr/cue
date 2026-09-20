@@ -35,7 +35,7 @@ final class IslandController {
     var onSnippetFilled: (Snippet, [String: String]?) -> Void = { _, _ in }
 
     init(library: CaptureLibrary, clipboard: ClipboardHistory, assets: AssetStore, colors: ColorStore, tasks: TaskStore, snippets: SnippetStore,
-         actions: HistoryActions, preferences: AppPreferences, clock: PrayerClock? = nil) {
+         actions: HistoryActions, preferences: AppPreferences, clock: PrayerClock? = nil, focus: FocusTimer? = nil) {
         self.preferences = preferences
         self.tasks = tasks
         self.snippets = snippets
@@ -49,7 +49,7 @@ final class IslandController {
         content.onDragExited = { [weak self] in self?.model.dropping = false }
         content.onDrop = { [weak self] urls, image in self?.drop(urls: urls, image: image, into: assets) }
         let host = NSHostingView(rootView: IslandView(model: model, library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasks, snippets: snippets, actions: actions)
-            .environment(preferences).environment(clock))
+            .environment(preferences).environment(clock).environment(focus))
         host.sizingOptions = []
         host.autoresizingMask = [.width, .height]
         host.frame = content.bounds
