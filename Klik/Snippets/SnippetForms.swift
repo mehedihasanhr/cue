@@ -71,7 +71,7 @@ struct SnippetFormRow: View {
             HStack(alignment: .top, spacing: 8) {
                 VStack(alignment: .leading, spacing: 4) {
                     caption("Trigger")
-                    PromptBox {
+                    PromptBox(focused: focus == .prefix || focus == .keyword) {
                         // The trigger, in its own little box; ";" unless changed.
                         TextField("", text: $prefix)
                             .textFieldStyle(.plain)
@@ -94,7 +94,7 @@ struct SnippetFormRow: View {
                 .frame(width: 220)
                 VStack(alignment: .leading, spacing: 4) {
                     caption("Name")
-                    PromptBox {
+                    PromptBox(focused: focus == .name) {
                         TextField("What it's for (optional)", text: $name)
                             .textFieldStyle(.plain)
                             .font(.system(size: 13, weight: .medium))
@@ -150,7 +150,6 @@ struct SnippetFormRow: View {
                                 }
                             }
                     }
-                    Divider().overlay(.primary.opacity(0.1))
                     HStack(spacing: 8) {
                         InsertMenu { editor.insert($0); focus = .text }
                             .disabled(previewing)
@@ -159,9 +158,9 @@ struct SnippetFormRow: View {
                         } label: {
                             Label(previewing ? "Edit" : "Preview", systemImage: previewing ? "pencil" : "eye")
                                 .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(previewing ? Color.brand : .primary.opacity(0.7))
+                                .foregroundStyle(previewing ? .white : .primary.opacity(0.7))
                                 .padding(.horizontal, 8).frame(height: 24)
-                                .background(.primary.opacity(previewing ? 0.14 : 0.08), in: Capsule())
+                                .background(previewing ? Color.brand.opacity(0.8) : .primary.opacity(0.08), in: Capsule())
                                 .contentShape(Capsule())
                         }
                         .buttonStyle(.plain)
@@ -175,9 +174,11 @@ struct SnippetFormRow: View {
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
+                    .background(.black.opacity(0.18)) // the toolbar: a darker band at the foot of the card
                 }
-                .background(.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(focus == .text ? Color.brand.opacity(0.6) : .primary.opacity(0.15)))
+                .background(.primary.opacity(focus == .text ? 0.1 : 0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .animation(.easeOut(duration: 0.12), value: focus == .text)
                 .frame(maxHeight: .infinity)
             }
             HStack(spacing: 8) {
@@ -312,8 +313,7 @@ struct SnippetFillRow: View {
                     }
                 }
             }
-            .background(.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.primary.opacity(0.15)))
+            .background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .frame(maxHeight: .infinity)
             HStack(spacing: 8) {
                 Text(blanks.count == 1 ? "1 blank" : "\(blanks.count) blanks")

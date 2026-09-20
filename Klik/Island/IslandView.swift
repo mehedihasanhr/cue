@@ -740,8 +740,7 @@ struct TaskFormRow: View {
                                onBacktab: { focus = .title })
                     .focused($focus, equals: .notes)
             }
-            .background(.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.primary.opacity(0.15)))
+            .background(.primary.opacity(focus == .notes ? 0.1 : 0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .frame(maxHeight: .infinity)
             HStack(spacing: 8) {
                 if newProjectName != nil {
@@ -1284,8 +1283,11 @@ struct PromptLabel: View {
 }
 
 /// A bordered field container.
+/// A field's box: tone says what it is — a shade lighter than the panel, lighter
+/// still while it has the focus. No outlines.
 struct PromptBox<Content: View>: View {
     var height: CGFloat = 30
+    var focused = false
     @ViewBuilder let content: () -> Content
 
     var body: some View {
@@ -1293,8 +1295,8 @@ struct PromptBox<Content: View>: View {
             .padding(.trailing, 6)
             .frame(height: height)
             .frame(maxWidth: .infinity)
-            .background(.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.primary.opacity(0.15)))
+            .background(.primary.opacity(focused ? 0.14 : 0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .animation(.easeOut(duration: 0.12), value: focused)
     }
 }
 
