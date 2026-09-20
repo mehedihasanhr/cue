@@ -101,29 +101,9 @@ struct SnippetFormRow: View {
                 .background(.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             } else {
                 VStack(spacing: 0) {
-                    HStack(spacing: 6) {
-                        ForEach(SnippetTemplate.builtIns + ["date:yyyy-MM-dd", "shell:…"], id: \.self) { builtIn in
-                            Button {
-                                editor.insert("{{\(builtIn == "shell:…" ? "shell:" : builtIn)}}")
-                            } label: {
-                                Text("{{\(builtIn)}}")
-                                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                    .foregroundStyle(.primary.opacity(0.8))
-                                    .padding(.horizontal, 7).frame(height: 20)
-                                    .background(.primary.opacity(0.1), in: Capsule())
-                                    .contentShape(Capsule())
-                            }
-                            .buttonStyle(.plain)
-                            .help("Fills itself when pasted")
-                        }
-                        Spacer(minLength: 0)
-                        Text("{{Name}} makes a blank to fill when pasting")
-                            .font(.system(size: 9.5))
-                            .foregroundStyle(.primary.opacity(0.4))
-                            .lineLimit(1)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.top, 6)
+                    BuiltInChips { editor.insert($0) }
+                        .padding(.horizontal, 8)
+                        .padding(.top, 6)
                     MarkdownEditor(text: $text, handle: editor, insertImage: { _ in nil }, insertFile: { _ in nil }, onBacktab: { focus = .name })
                         .focused($focus, equals: .text)
                 }
@@ -485,6 +465,115 @@ struct FlowLayout: Layout {
         for (subview, placement) in zip(subviews, laid.placements) {
             subview.place(at: CGPoint(x: bounds.minX + placement.origin.x, y: bounds.minY + placement.origin.y), anchor: .topLeading,
                           proposal: ProposedViewSize(placement.size))
+        }
+    }
+}
+
+
+// MARK: - Built-in chips
+
+/// One built-in a snippet can use: what to insert and what it does.
+private struct BuiltIn: Identifiable {
+    let token: String
+    let insert: String
+    let about: String
+    var id: String { token }
+
+    static let all: [BuiltIn] = [
+        BuiltIn(token: "{{Name}}", insert: "{{Name}}", about: "A blank: Klik asks for it when the snippet is pasted (any word works)."),
+        BuiltIn(token: "{{date}}", insert: "{{date}}", about: "Today, written out — September 20, 2026."),
+        BuiltIn(token: "{{time}}", insert: "{{time}}", about: "The time now — 5:20 PM."),
+        BuiltIn(token: "{{datetime}}", insert: "{{datetime}}", about: "Date and time — Sep 20, 2026 at 5:20 PM."),
+        BuiltIn(token: "{{date:yyyy-MM-dd}}", insert: "{{date:yyyy-MM-dd}}", about: "The date in a format of your own: yyyy-MM-dd, EEEE, MMM d… ({{time:HH:mm}} too)."),
+        BuiltIn(token: "{{clipboard}}", insert: "{{clipboard}}", about: "Whatever is on the clipboard at that moment."),
+        BuiltIn(token: "{{uuid}}", insert: "{{uuid}}", about: "A fresh UUID."),
+        BuiltIn(token: "{{cursor}}", insert: "{{cursor}}", about: "Where the caret lands after the paste."),
+        BuiltIn(token: "{{shell:…}}", insert: "{{shell:}}", about: "What a shell command prints — {{shell:git branch --show-current}} — given two seconds, inside Klik's sandbox."),
+    ]
+}
+
+/// The built-ins as chips in a row that scrolls sideways, fading at the edges when
+/// there is more; ⓘ opens the whole list with what each one does.
+private struct BuiltInChips: View {
+    let insert: (String) -> Void
+    @State private var showingAll = false
+    @State private var scrolledToStart = true
+    @State private var scrolledToEnd = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(BuiltIn.all) { builtIn in
+                        Button { insert(builtIn.insert) } label: {
+                            Text(builtIn.token)
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .foregroundStyle(builtIn.token == "{{Name}}" ? Color.brand : .primary.opacity(0.8))
+                                .fixedSize()
+                                .padding(.horizontal, 7).frame(height: 20)
+                                .background(builtIn.token == "{{Name}}" ? Color.brand.opacity(0.14) : .primary.opacity(0.1), in: Capsule())
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .help(builtIn.about)
+                        .accessibilityLabel(builtIn.token)
+                        .accessibilityHint(builtIn.about)
+                    }
+                }
+                .onGeometryChange(for: [Bool].self) { proxy in
+                    let frame = proxy.frame(in: .named("chips"))
+                    let width = proxy.bounds(of: .named("chips"))?.width ?? 0
+                    return [frame.minX >= -1, frame.maxX <= width + 1]
+                } action: { edges in
+                    scrolledToStart = edges[0]
+                    scrolledToEnd = edges[1]
+                }
+            }
+            .coordinateSpace(name: "chips")
+            .mask {
+                // Fades say there is more to scroll to, on whichever side is hidden.
+                HStack(spacing: 0) {
+                    LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: scrolledToStart ? 0 : 18)
+                    Color.black
+                    LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: scrolledToEnd ? 0 : 18)
+                }
+                .animation(.easeOut(duration: 0.15), value: scrolledToStart)
+                .animation(.easeOut(duration: 0.15), value: scrolledToEnd)
+            }
+            Button { showingAll.toggle() } label: {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.primary.opacity(0.6))
+                    .frame(width: 22, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Every built-in and what it does")
+            .accessibilityLabel("About the built-ins")
+            .popover(isPresented: $showingAll, arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Built-ins").font(.system(size: 12, weight: .semibold))
+                    ForEach(BuiltIn.all) { builtIn in
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Button { insert(builtIn.insert); showingAll = false } label: {
+                                Text(builtIn.token)
+                                    .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                                    .foregroundStyle(builtIn.token == "{{Name}}" ? Color.brand : .primary)
+                                    .padding(.horizontal, 6).frame(height: 20)
+                                    .background(.primary.opacity(0.1), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .frame(width: 150, alignment: .leading)
+                            Text(builtIn.about).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    Text("Click one to insert it at the caret.").font(.system(size: 10)).foregroundStyle(.tertiary).padding(.top, 2)
+                }
+                .padding(14)
+                .frame(width: 440)
+            }
         }
     }
 }
