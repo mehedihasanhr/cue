@@ -102,9 +102,9 @@ struct SnippetFormRow: View {
             } else {
                 VStack(spacing: 0) {
                     HStack(spacing: 6) {
-                        ForEach(SnippetTemplate.builtIns, id: \.self) { builtIn in
+                        ForEach(SnippetTemplate.builtIns + ["date:yyyy-MM-dd", "shell:…"], id: \.self) { builtIn in
                             Button {
-                                editor.insert("{{\(builtIn)}}")
+                                editor.insert("{{\(builtIn == "shell:…" ? "shell:" : builtIn)}}")
                             } label: {
                                 Text("{{\(builtIn)}}")
                                     .font(.system(size: 10, weight: .medium, design: .monospaced))

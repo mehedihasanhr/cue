@@ -4,7 +4,7 @@ import SwiftUI
 /// Something the palette can do without an item.
 enum PaletteCommand: CaseIterable, Identifiable {
     case captureArea, captureFullScreen, captureScrolling, captureText, pickColor
-    case newTask, newSnippet, clipboardList, klikPanel, clock, settings
+    case newTask, newSnippet, clipboardList, klikPanel, clock, settings, unghostPins
 
     var id: Self { self }
 
@@ -21,6 +21,7 @@ enum PaletteCommand: CaseIterable, Identifiable {
         case .klikPanel: "Klik panel"
         case .clock: "Clock and prayer times"
         case .settings: "Settings"
+        case .unghostPins: "Unghost pinned screenshots"
         }
     }
 
@@ -37,6 +38,7 @@ enum PaletteCommand: CaseIterable, Identifiable {
         case .klikPanel: "cursorarrow.rays"
         case .clock: "clock"
         case .settings: "gearshape"
+        case .unghostPins: "eye"
         }
     }
 
@@ -54,6 +56,7 @@ enum PaletteCommand: CaseIterable, Identifiable {
         case .klikPanel: "library history"
         case .clock: "time prayer"
         case .settings: "preferences shortcuts"
+        case .unghostPins: "pin screenshot click-through see-through"
         }
     }
 
@@ -71,6 +74,7 @@ enum PaletteCommand: CaseIterable, Identifiable {
         case .klikPanel: .cyan
         case .clock: .red
         case .settings: .gray
+        case .unghostPins: .gray
         }
     }
 
@@ -100,6 +104,10 @@ struct PaletteActions {
     /// The secondary verb (⌘O): edit a capture, open an asset, show a task…
     var open: (IslandItem) -> Void
     var pasteText: (String) -> Bool
+    /// ⌘P on a capture: keep it floating on screen.
+    var pin: (IslandItem) -> Void = { _ in }
+    /// ⌘L on a capture: upload it and copy the link.
+    var shareLink: (IslandItem) -> Void = { _ in }
 }
 
 /// One list over everything (⌥⇧Space): actions, quick answers, and every capture,
@@ -281,7 +289,7 @@ struct CommandPaletteView: View {
         case .answer: return (clipboard.canPaste ? "copy" : nil, nil)
         case .item(let item):
             let open: String? = switch item {
-            case .capture: "edit"
+            case .capture: "edit · ⌘P pin · ⌘L link"
             case .asset: "open"
             case .snippet: "edit"
             case .task: nil
@@ -460,6 +468,8 @@ struct CommandPaletteView: View {
         Group {
             Button("") { copy(at: selected, in: rows) }.keyboardShortcut(.return, modifiers: .command)
             Button("") { open(at: selected, in: rows) }.keyboardShortcut("o", modifiers: .command)
+            Button("") { pin(at: selected, in: rows) }.keyboardShortcut("p", modifiers: .command)
+            Button("") { share(at: selected, in: rows) }.keyboardShortcut("l", modifiers: .command)
             ForEach(0..<9, id: \.self) { index in
                 Button("") { perform(at: index, in: rows) }
                     .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
@@ -518,6 +528,20 @@ struct CommandPaletteView: View {
         case .item(let item):
             take(rows[index].id) { actions.copy(item) }
         }
+    }
+
+    /// ⌘L: a capture uploaded, its link copied.
+    private func share(at index: Int, in rows: [Row]) {
+        guard rows.indices.contains(index), case .item(let item) = rows[index], case .capture = item else { return }
+        close()
+        actions.shareLink(item)
+    }
+
+    /// ⌘P: a capture as a floating window.
+    private func pin(at index: Int, in rows: [Row]) {
+        guard rows.indices.contains(index), case .item(let item) = rows[index], case .capture = item else { return }
+        close()
+        actions.pin(item)
     }
 
     private func open(at index: Int, in rows: [Row]) {

@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var clipboardPanel: FloatingPanelWindow?
     private var clipboardPanelObserver: (any NSObjectProtocol)?
     private var commandPalette: FloatingPanelWindow?
+    private let share = ShareSettings()
     private var commandPaletteObserver: (any NSObjectProtocol)?
 
     private var settingsWindow: SettingsWindowController?
@@ -78,6 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         shortcuts.setAction(for: .quickTask) { [weak self] in self?.quickTask(nil) }
         shortcuts.setAction(for: .clipboardPanel) { [weak self] in self?.showClipboardPanel(nil) }
         shortcuts.setAction(for: .commandPalette) { [weak self] in self?.showCommandPalette(nil) }
+        shortcuts.setAction(for: .pasteNext) { [weak self] in self?.pasteNext() }
 
         // Diagnostics: `--env KLIK_DEBUG_HOTKEYS=1` writes every shortcut and its status to Pictures/Klik.
         if ProcessInfo.processInfo.environment["KLIK_DEBUG_HOTKEYS"] == "1" {
@@ -103,6 +105,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !PermissionManager.hasScreenCaptureAccess {
             Log.app.notice("Screen Recording not granted; showing onboarding")
             showOnboarding(for: .screenRecording)
+        }
+    }
+
+    /// `klik://…` from the command line, Shortcuts, Raycast, a browser.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            guard let command = URLCommand(url) else {
+                Log.app.notice("Unknown URL: \(url.absoluteString, privacy: .public)")
+                FeedbackHUD.show("Klik doesn't understand that link", symbol: "link.badge.plus", subtitle: url.absoluteString)
+                continue
+            }
+            run(command)
+        }
+    }
+
+    private func run(_ command: URLCommand) {
+        closeHistory()
+        switch command {
+        case .captureArea: coordinator.captureArea(fromMenu: true)
+        case .captureFullScreen: coordinator.captureFullScreen(fromMenu: true)
+        case .captureScrolling: coordinator.captureScrolling(fromMenu: true)
+        case .captureText: coordinator.captureText(fromMenu: true)
+        case .pickColor: pickColor(nil)
+        case .newTask(let title, let notes, let priority, let project):
+            guard let title else { quickTask(nil); return }
+            let projectID = project.flatMap { name in (tasks.projects.first { $0.parentID == nil && $0.name == name } ?? tasks.addProject(named: name))?.id }
+            if tasks.addTask(titled: title, notes: notes, in: projectID, priority: priority) != nil {
+                FeedbackHUD.show("Task added", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: title)
+            }
+        case .addSnippet(let keyword, let name, let text):
+            if let snippet = snippets.add(keyword: keyword, name: name, text: text) {
+                FeedbackHUD.show("Snippet saved", symbol: "text.badge.checkmark", subtitle: "Type \(snippet.keyword) anywhere")
+            }
+        case .copy(let text):
+            clipboard.copy(text: text)
+            FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: String(text.prefix(60)))
+        case .palette: showCommandPalette(nil)
+        case .clipboard: showClipboardPanel(nil)
+        case .panel: toggleHistoryAtPointer()
+        case .clock: island?.showClock() ?? showSettings(nil)
+        case .settings: showSettings(nil)
         }
     }
 
@@ -252,6 +295,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// ⌘⇧V: the paste stack — each press pastes the next entry of the history.
+    private func pasteNext() {
+        guard PermissionManager.hasAccessibilityAccess else { showOnboarding(for: .accessibility); return }
+        guard let pasted = clipboard.pasteNext() else {
+            FeedbackHUD.show("Nothing to paste", symbol: "doc.on.clipboard", duration: .seconds(1.2))
+            return
+        }
+        island?.showStatus(IslandStatus(symbol: "square.stack.3d.down.right", title: "Pasted \(pasted.position) of \(pasted.of)",
+                                        subtitle: pasted.item.title, duration: .seconds(1.2)), quiet: true)
+    }
+
     /// One list over everything (⌥⇧Space by default): actions, quick answers and
     /// every item, driven by the keyboard. Activation is handled like the clipboard
     /// list's so a pick lands where the cursor was.
@@ -299,6 +353,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case .klikPanel: toggleHistoryAtPointer()
                 case .clock: island?.showClock() ?? showSettings(nil)
                 case .settings: showSettings(nil)
+                case .unghostPins: PinnedCaptureWindow.unghostAll()
                 }
             },
             paste: { [weak self] item in
@@ -333,6 +388,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if clipboard.pressPaste(returningTo: field) { return true }
                 FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
                 return false
+            },
+            pin: { [weak self] item in
+                if case .capture(let capture) = item { self?.pinToScreen(capture) }
+            },
+            shareLink: { [weak self] item in
+                if case .capture(let capture) = item { self?.shareLink(for: capture) }
             }
         )
     }
@@ -461,8 +522,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.library.copyToClipboard(item)
                 FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: item.dimensions, image: self?.library.thumbnail(for: item))
             },
-            delete: { [weak self] item in self?.deleteCapture(item) }
+            delete: { [weak self] item in self?.deleteCapture(item) },
+            pinToScreen: { [weak self] item in self?.pinToScreen(item) },
+            shareLink: { [weak self] item in self?.shareLink(for: item) }
         )
+    }
+
+    /// Uploads the capture where Settings › Sharing says and puts the link on the
+    /// clipboard; the island (or a HUD) says how it went.
+    private func shareLink(for item: CaptureItem) {
+        guard share.isConfigured else {
+            FeedbackHUD.show("Set up sharing first", symbol: "link.badge.plus", subtitle: "Settings › Sharing")
+            showSettings(nil)
+            return
+        }
+        guard let image = library.image(for: item), let png = ImageEncoding.png(image.cgImage) else { return }
+        closeHistory()
+        island?.showStatus(IslandStatus(symbol: "arrow.up.circle", title: "Uploading…", subtitle: item.title, duration: .seconds(20)), quiet: false)
+        let name = share.objectName(for: item.createdAt)
+        let share = share
+        Task { @MainActor [weak self] in
+            do {
+                let url = try await ShareUploader.upload(png, name: name, settings: share)
+                self?.clipboard.copy(text: url.absoluteString)
+                FeedbackHUD.show("Link copied", symbol: "link", duration: .seconds(2.5), subtitle: url.absoluteString, image: self?.library.thumbnail(for: item))
+                Log.app.info("Shared \(item.fileName, privacy: .public) → \(url.absoluteString, privacy: .public)")
+            } catch {
+                FeedbackHUD.show("Upload failed", symbol: "exclamationmark.triangle.fill", duration: .seconds(4), subtitle: error.localizedDescription)
+                Log.app.error("Share failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
+    /// The capture as a floating window to work against (see PinnedCaptureWindow).
+    private func pinToScreen(_ item: CaptureItem) {
+        guard let image = library.image(for: item) else { return }
+        closeHistory()
+        PinnedCaptureWindow.pin(image.nsImage) { [weak self] in
+            self?.library.copyToClipboard(item)
+            FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
+        }
     }
 
     private func closeHistoryThen(_ action: @escaping (AppDelegate) -> Void) {
@@ -530,7 +629,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func showSettings(_ sender: Any?) {
         if settingsWindow == nil {
-            let controller = SettingsWindowController(model: model, shortcuts: shortcuts, library: library, clipboard: clipboard, preferences: preferences, clock: prayerClock)
+            let controller = SettingsWindowController(model: model, shortcuts: shortcuts, library: library, clipboard: clipboard, preferences: preferences, clock: prayerClock, share: share)
             controller.onClose = { [weak self] in
                 self?.settingsWindow = nil
                 self?.shortcuts.isRecording = false

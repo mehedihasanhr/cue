@@ -132,17 +132,24 @@ final class SnippetExpander {
         } ?? []
         let clipboardText = pasteboard.string(forType: .string)
 
+        var caretBack: Int?
         if let assetID = snippet.assetID, let asset = assets.items.first(where: { $0.id == assetID }) {
             assets.copy(asset)
         } else {
-            let expanded = SnippetTemplate.expand(snippet.text, values: values, clipboard: clipboardText)
+            let expansion = SnippetTemplate.expansion(snippet.text, values: values, clipboard: clipboardText)
+            caretBack = expansion.caretBack
             pasteboard.clearContents()
-            pasteboard.setString(expanded, forType: .string)
+            pasteboard.setString(expansion.text, forType: .string)
         }
         pasteboard.setData(Data(), forType: Clipboard.ownMarker) // the history need not record the expansion
         store.recordUse(snippet)
 
-        ClipboardHistory.pressCommandV(returningTo: field)
+        ClipboardHistory.pressCommandV(returningTo: field) {
+            // {{cursor}}: walk the caret back over what follows it, once the paste is in.
+            if let caretBack, caretBack > 0 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { Self.press(kVK_LeftArrow, times: caretBack) }
+            }
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + (field == nil ? 0.4 : 1.6)) { [weak self] in
             if !previous.isEmpty {
                 pasteboard.clearContents()

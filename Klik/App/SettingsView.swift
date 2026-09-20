@@ -799,6 +799,7 @@ struct ShortcutSettingsView: View {
         case .quickTask: "checklist"
         case .clipboardPanel: "doc.on.clipboard"
         case .commandPalette: "command"
+        case .pasteNext: "square.stack.3d.down.right"
         case .confirmCapture, .cancelCapture: "xmark"
         }
     }
@@ -814,6 +815,7 @@ struct ShortcutSettingsView: View {
         case .quickTask: .mint
         case .clipboardPanel: .purple
         case .commandPalette: .brand
+        case .pasteNext: .teal
         case .confirmCapture, .cancelCapture: .gray
         }
     }

@@ -1005,6 +1005,8 @@ struct CaptureCard: View {
             Button("Preview") { actions.preview(item) }
             Button("Edit") { actions.edit(item) }
             Button("Copy to Clipboard") { actions.copy(item) }
+            Button("Pin to Screen") { actions.pinToScreen(item) }
+            Button("Copy Share Link") { actions.shareLink(item) }
             Button(item.pinned ? "Unpin" : "Pin") { library.togglePin(item) }
             Button("Rename…", action: onRename)
             Divider()
@@ -1073,6 +1075,19 @@ struct ClipboardCard: View {
             if item.kind == .text || item.kind == .link {
                 TransformMenus(text: item.text, clipboard: clipboard)
             }
+            if item.kind == .text {
+                let fenced = CodeSnippet.fenced(item.text, as: code)
+                Button("Copy as Code Block") {
+                    clipboard.copy(text: fenced)
+                    FeedbackHUD.show("Copied as ```\(code?.fence ?? "") block", symbol: "chevron.left.forwardslash.chevron.right", duration: .seconds(1.2))
+                }
+                if clipboard.canPaste {
+                    Button("Paste as Code Block") {
+                        clipboard.copy(text: fenced)
+                        clipboard.pressPaste()
+                    }
+                }
+            }
             Button(item.pinned ? "Unpin" : "Pin") { clipboard.togglePin(item) }
             Button(item.name == nil ? "Name…" : "Rename…", action: onRename)
             if item.kind == .text || item.kind == .link || item.kind == .color {
@@ -1100,16 +1115,43 @@ struct ClipboardCard: View {
     }
 
     @ViewBuilder
+    /// Code is recognised once per card, not on every redraw.
+    @State private var language: CodeSnippet.Language??
+
+    private var code: CodeSnippet.Language? {
+        if let language { return language }
+        return nil
+    }
+
+    @ViewBuilder
     private var content: some View {
         switch item.kind {
         case .text:
-            Text(item.text.trimmingCharacters(in: .whitespacesAndNewlines))
-                .font(.system(size: 11))
-                .foregroundStyle(.white.opacity(0.92))
-                .lineLimit(7)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .padding(12)
+            Group {
+                if let code {
+                    Text(CodeSnippet.highlighted(item.text.trimmingCharacters(in: .whitespacesAndNewlines), as: code))
+                        .font(.system(size: 10.5, design: .monospaced))
+                        .lineLimit(7)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .padding(12)
+                        .overlay(alignment: .topTrailing) {
+                            if !hovering {
+                                Badge(text: "\(code.title) · \(item.text.split(whereSeparator: \.isNewline).count) lines")
+                                    .padding(8)
+                            }
+                        }
+                } else {
+                    Text(item.text.trimmingCharacters(in: .whitespacesAndNewlines))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.92))
+                        .lineLimit(7)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .padding(12)
+                }
+            }
+            .onAppear { if language == nil { language = .some(CodeSnippet.detect(item.text)) } }
         case .link:
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {

@@ -184,8 +184,9 @@ final class ClipboardHistory {
     // MARK: - Actions
 
     /// Puts the item back on the pasteboard with every flavour it was copied with
-    /// (without recording it again) and moves it to the top, like a fresh copy.
-    func copy(_ item: ClipboardItem) {
+    /// (without recording it again) and, unless told otherwise, moves it to the top
+    /// like a fresh copy.
+    func copy(_ item: ClipboardItem, promote: Bool = true) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         let contents = (try? database?.query(
@@ -206,12 +207,48 @@ final class ClipboardHistory {
             pasteboard.writeObjects(pasteboardItems)
         }
         lastChangeCount = pasteboard.changeCount
-        if let index = items.firstIndex(of: item), index > 0 {
+        if promote, let index = items.firstIndex(of: item), index > 0 {
             var moved = items.remove(at: index)
             moved.createdAt = .now
             items.insert(moved, at: 0)
             update(moved)
         }
+    }
+
+    // MARK: - Paste stack
+
+    /// Where the next ⌘⇧V paste comes from: the position in `items` (0 = newest).
+    /// Starts over after a pause, or when something new is copied.
+    @ObservationIgnored private var stackPosition = 0
+    @ObservationIgnored private var stackTouched = Date.distantPast
+    @ObservationIgnored private var stackCount = 0
+
+    /// Pastes the next entry in the history — newest first, then the one before it,
+    /// and so on — without reordering the history. Returns what was pasted and its
+    /// position, or nil when there is nothing or pasting is impossible.
+    @discardableResult
+    func pasteNext() -> (item: ClipboardItem, position: Int, of: Int)? {
+        let unpinnedOrder = items // pins stay in place: the stack is the history as shown
+        guard !unpinnedOrder.isEmpty else { return nil }
+        let fresh = Date().timeIntervalSince(stackTouched) > 90 || stackCount != unpinnedOrder.count
+        if fresh { stackPosition = 0 }
+        stackCount = unpinnedOrder.count
+        stackTouched = Date()
+        let item = unpinnedOrder[stackPosition % unpinnedOrder.count]
+        copy(item, promote: false)
+        stackCount = items.count // unchanged by the copy, but keep it honest
+        guard pressPaste() else { return nil }
+        let position = stackPosition
+        stackPosition = (stackPosition + 1) % unpinnedOrder.count
+        return (item, position + 1, unpinnedOrder.count)
+    }
+
+    /// Pastes several entries as one text, newest last, joined by newlines.
+    @discardableResult
+    func paste(joined entries: [ClipboardItem]) -> Bool {
+        let text = entries.reversed().map(\.text).joined(separator: "\n")
+        copy(text: text)
+        return pressPaste()
     }
 
     /// Puts plain text on the pasteboard without recording it (a transform, an
@@ -318,11 +355,11 @@ final class ClipboardHistory {
 
     /// Gives the field (if given) its focus back and presses ⌘V once it has it, for
     /// anything Klik puts on the pasteboard to land where the cursor was.
-    static func pressCommandV(returningTo field: FrontField?) {
+    static func pressCommandV(returningTo field: FrontField?, then done: @escaping @MainActor () -> Void = {}) {
         if let field, field.isOtherApp {
-            field.restore { postCommandV() }
+            field.restore { postCommandV(); done() }
         } else {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: postCommandV)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { postCommandV(); done() }
         }
     }
 

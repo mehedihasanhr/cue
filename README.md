@@ -84,7 +84,8 @@ permission (Klik asks on first use) so it can send scroll events to the target a
 Defaults: **⌥⇧3** full screen · **⌥⇧4** area · **⌥⇧5** scrolling · **⌥⇧T** capture
 text · **⌥⇧P** pick a color · **⌥⇧N** quick task · **⌥⇧K** the Klik panel ·
 **⌘⇧C** the clipboard list (type to filter, ↑↓, ↩ pastes, ⌘↩ copies, ⌥↩ pastes as
-plain text, ⌘1–9 picks) · **⌥⇧Space** the command palette.
+plain text, ⇧↑↓ picks several to paste joined, ⌘1–9 picks) · **⌥⇧Space** the command
+palette · **⌘⇧V** the paste stack (each press pastes the next entry of the history).
 Klik › Settings › Shortcuts: click a field and press a new combination (⌫ clears).
 The macOS defaults (⌘⇧3/4/5/6) are handled by the system first; Klik marks them with a
 warning if you bind them, and links to Keyboard › Keyboard Shortcuts › Screenshots
@@ -113,6 +114,38 @@ Right-click a text entry on a clipboard card or in the clipboard list for **Past
 snake_case, kebab-case, pretty or minified JSON, URL-encoded/decoded, Markdown → plain
 text, quoted. Only the transforms that would change the text are listed.
 
+### Pin a capture to the screen
+
+"Pin to Screen" on a capture (or ⌘P in the palette) floats it above every window to
+work against: drag it anywhere, ⌘= / ⌘- or ⌥-scroll to resize, hover for copy / close /
+ghost (half see-through and click-through; double-click, or the palette's "Unghost
+pinned screenshots", brings it back), ⎋ closes.
+
+### Share links
+
+Settings › Sharing: an **S3-compatible bucket** (AWS S3, Cloudflare R2, MinIO, B2 —
+signed on-device, PUT with public-read) or a **custom endpoint** (PUT raw PNG or POST
+multipart, an optional auth header, the link read from the answer). Then "Copy Share
+Link" on a capture, or ⌘L in the palette, uploads it and puts the link on the
+clipboard. Secrets are kept in the Keychain.
+
+### Code on the clipboard
+
+Text that reads as code is badged with its language and line count and lightly
+highlighted on its card; "Copy as Code Block" / "Paste as Code Block" wrap it in a
+Markdown fence with the right language.
+
+### URL scheme and command line
+
+`klik://` URLs drive Klik from Shortcuts, Raycast, Alfred, a browser or a script:
+`klik://capture/area|full|scrolling|text`, `klik://color/pick`,
+`klik://task/new?title=…&notes=…&priority=high&project=…`,
+`klik://snippet/add?keyword=;sig&text=…`, `klik://clipboard/copy?text=…`,
+`klik://palette`, `klik://clipboard`, `klik://panel`, `klik://clock`, `klik://settings`.
+`Tools/klik` wraps them for the shell (`klik capture area`, `klik task "Fix it" -p high`,
+`klik copy "text"`, `echo hi | klik copy`); run `chmod +x Tools/klik` and put it on your
+PATH, or call it as `sh Tools/klik …`.
+
 ### Snippets (text expander)
 
 The island's **Snippets** tab. Give a snippet a keyword (`;welcome`) and a template;
@@ -123,6 +156,11 @@ can paste an asset (an image or a file) instead of text. Make one with **New** i
 tab, or from a clipboard entry or an asset with **Make Snippet…** in its menu. Needs
 Accessibility access (Settings › Island › Snippets); what was on the clipboard is put
 back after the paste.
+
+Built-ins: `{{date}}`, `{{time}}`, `{{datetime}}`, `{{clipboard}}`, `{{uuid}}`,
+`{{date:yyyy-MM-dd}}` / `{{time:HH:mm}}` (any Unicode date format), `{{cursor}}` (where the
+caret lands after the paste) and `{{shell:git branch --show-current}}` (what a command
+prints, given two seconds, inside Klik's sandbox).
 
 ### Time & prayer times
 

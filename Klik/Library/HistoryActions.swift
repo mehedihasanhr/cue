@@ -13,4 +13,8 @@ struct HistoryActions {
     var edit: (CaptureItem) -> Void
     var copy: (CaptureItem) -> Void
     var delete: (CaptureItem) -> Void
+    /// Keeps the capture floating above every window.
+    var pinToScreen: (CaptureItem) -> Void = { _ in }
+    /// Uploads it and copies the link (Settings › Sharing).
+    var shareLink: (CaptureItem) -> Void = { _ in }
 }

@@ -9,7 +9,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     private static let paneWidth: CGFloat = 560
 
-    init(model: AppModel, shortcuts: ShortcutController, library: CaptureLibrary, clipboard: ClipboardHistory, preferences: AppPreferences, clock: PrayerClock? = nil) {
+    init(model: AppModel, shortcuts: ShortcutController, library: CaptureLibrary, clipboard: ClipboardHistory, preferences: AppPreferences, clock: PrayerClock? = nil, share: ShareSettings? = nil) {
         let tabs = NSTabViewController()
         tabs.tabStyle = .toolbar
         tabs.canPropagateSelectedChildViewControllerTitle = false
@@ -38,6 +38,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             "Time", symbol: "clock", height: 560,
             TimeSettingsView().environment(preferences).environment(clock)
         ))
+        if let share {
+            tabs.addTabViewItem(Self.pane(
+                "Sharing", symbol: "link", height: 520,
+                ShareSettingsView().environment(share)
+            ))
+        }
         tabs.addTabViewItem(Self.pane(
             "Shortcuts", symbol: "keyboard", height: 410,
             ShortcutSettingsView().environment(shortcuts)

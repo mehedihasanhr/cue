@@ -17,6 +17,8 @@ struct ClipboardPanelView: View {
 
     @State private var search = ""
     @State private var selected = 0
+    /// With ⇧↑↓, the other end of a range of rows; ↩ then pastes them all, joined.
+    @State private var anchor: Int?
     /// The row just taken, shown with a tick for a beat before the panel closes.
     @State private var done: UUID?
     @FocusState private var searchFocused: Bool
@@ -44,7 +46,9 @@ struct ClipboardPanelView: View {
                     .onSubmit { paste(at: selected, in: items) }
                     .onKeyPress(.downArrow) { move(1, in: items) }
                     .onKeyPress(.upArrow) { move(-1, in: items) }
-                    .onChange(of: search) { _, _ in selected = 0 }
+                    .onKeyPress(.downArrow, phases: .down) { press in press.modifiers.contains(.shift) ? extend(1, in: items) : .ignored }
+                    .onKeyPress(.upArrow, phases: .down) { press in press.modifiers.contains(.shift) ? extend(-1, in: items) : .ignored }
+                    .onChange(of: search) { _, _ in selected = 0; anchor = nil }
                 if !search.isEmpty {
                     Button { search = "" } label: {
                         Image(systemName: "xmark.circle.fill").font(.system(size: 13)).foregroundStyle(.white.opacity(0.6))
@@ -71,7 +75,7 @@ struct ClipboardPanelView: View {
                     ScrollView {
                         LazyVStack(spacing: 2) {
                             ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                                row(item, index: index, selected: index == selected)
+                                row(item, index: index, selected: index == selected || inRange(index))
                                     .id(item.id)
                             }
                         }
@@ -88,6 +92,7 @@ struct ClipboardPanelView: View {
                 hint("↩", clipboard.canPaste ? "paste" : "copy")
                 hint("⌘↩", "copy")
                 hint("⌥↩", "plain")
+                hint("⇧↑↓", "several")
                 hint("⌘1–9", "pick")
                 Spacer(minLength: 0)
                 hint("⎋", "close")
@@ -199,14 +204,43 @@ struct ClipboardPanelView: View {
 
     private func move(_ delta: Int, in items: [ClipboardItem]) -> KeyPress.Result {
         guard !items.isEmpty else { return .ignored }
+        anchor = nil
         selected = min(max(selected + delta, 0), items.count - 1)
         return .handled
+    }
+
+    private func extend(_ delta: Int, in items: [ClipboardItem]) -> KeyPress.Result {
+        guard !items.isEmpty else { return .ignored }
+        if anchor == nil { anchor = selected }
+        selected = min(max(selected + delta, 0), items.count - 1)
+        return .handled
+    }
+
+    private func inRange(_ index: Int) -> Bool {
+        guard let anchor else { return false }
+        return (min(anchor, selected)...max(anchor, selected)).contains(index)
+    }
+
+    /// The rows in the ⇧-selected range, top to bottom (nil: just the one).
+    private func range(in items: [ClipboardItem]) -> [ClipboardItem]? {
+        guard let anchor, anchor != selected else { return nil }
+        return Array(items[min(anchor, selected)...max(anchor, selected)])
     }
 
     /// Copies the row, shows its tick for a beat, closes, and presses ⌘V in the front
     /// app. No status: the tick is the confirmation.
     private func paste(at index: Int, in items: [ClipboardItem]) {
         guard items.indices.contains(index), done == nil else { return }
+        // Several rows: one paste, top row first, joined by newlines.
+        if index == selected, let several = range(in: items) {
+            done = several.last?.id
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+                close()
+                clipboard.copy(text: several.map(\.text).joined(separator: "\n"))
+                if !clipboard.pressPaste(returningTo: frontField) { onNeedsAccessibility() }
+            }
+            return
+        }
         let item = items[index]
         take(item) {
             if !clipboard.pressPaste(returningTo: frontField) { onNeedsAccessibility() }

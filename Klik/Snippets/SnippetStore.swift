@@ -49,9 +49,26 @@ nonisolated struct Snippet: Identifiable, Codable, Hashable {
 
 /// `{{Name}}` blanks in a template.
 nonisolated enum SnippetTemplate {
-    static let builtIns = ["date", "time", "datetime", "clipboard"]
+    /// The built-ins offered as chips; `date:FORMAT`, `time:FORMAT` and `shell:CMD`
+    /// take an argument after the colon.
+    static let builtIns = ["date", "time", "datetime", "clipboard", "uuid", "cursor"]
 
-    static func isBuiltIn(_ name: String) -> Bool { builtIns.contains(name.lowercased()) }
+    /// Where the caret goes after the paste, as a marker that never appears in text.
+    static let cursorMarker = "\u{FFFF}"
+
+    static func isBuiltIn(_ name: String) -> Bool {
+        let lower = name.lowercased()
+        return builtIns.contains(lower) || lower.hasPrefix("date:") || lower.hasPrefix("time:") || lower.hasPrefix("shell:")
+    }
+
+    /// The expansion and how many characters the caret must go back to sit where
+    /// `{{cursor}}` was (nil: no cursor marker).
+    static func expansion(_ text: String, values: [String: String], now: Date = .now, clipboard: String? = nil) -> (text: String, caretBack: Int?) {
+        let raw = expand(text, values: values, now: now, clipboard: clipboard)
+        guard let marker = raw.range(of: cursorMarker) else { return (raw, nil) }
+        let after = raw[marker.upperBound...].replacingOccurrences(of: cursorMarker, with: "")
+        return (raw[..<marker.lowerBound] + after, after.count)
+    }
 
     /// Every distinct placeholder name, in order of first appearance.
     static func placeholders(in text: String) -> [String] {
@@ -81,13 +98,46 @@ nonisolated enum SnippetTemplate {
 
     private static func value(for name: String, values: [String: String], now: Date, clipboard: String?) -> String {
         if let given = values.first(where: { $0.key.caseInsensitiveCompare(name) == .orderedSame })?.value { return given }
-        switch name.lowercased() {
+        let lower = name.lowercased()
+        switch lower {
         case "date": return now.formatted(date: .long, time: .omitted)
         case "time": return now.formatted(date: .omitted, time: .shortened)
         case "datetime": return now.formatted(date: .abbreviated, time: .shortened)
         case "clipboard": return clipboard ?? ""
-        default: return ""
+        case "uuid": return UUID().uuidString
+        case "cursor": return cursorMarker
+        default: break
         }
+        // "date:yyyy-MM-dd", "time:HH:mm" — a Unicode date format after the colon.
+        if lower.hasPrefix("date:") || lower.hasPrefix("time:") {
+            let formatter = DateFormatter()
+            formatter.dateFormat = String(name.dropFirst(5))
+            return formatter.string(from: now)
+        }
+        // "shell:date +%s" — what the command prints (trimmed), given two seconds.
+        if lower.hasPrefix("shell:") {
+            return shell(String(name.dropFirst(6)))
+        }
+        return ""
+    }
+
+    /// Runs a command through /bin/sh in the user's home and returns its output,
+    /// or "" when it fails or takes longer than two seconds. Runs inside Klik's
+    /// sandbox, so it sees what Klik may see.
+    static func shell(_ command: String) -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", command]
+        process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() } catch { return "" }
+        let deadline = Date().addingTimeInterval(2)
+        while process.isRunning, Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
+        if process.isRunning { process.terminate(); return "" }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 }
 
