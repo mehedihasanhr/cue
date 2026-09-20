@@ -1,9 +1,11 @@
 import AppKit
 import SwiftUI
 
-/// A capture kept floating above every window, to work against: drag it anywhere,
-/// ⌘= / ⌘- or ⌥-scroll to resize, hover for its buttons (ghost = half see-through and
-/// click-through, copy, close), double-click to toggle ghost, ⎋ closes.
+/// A capture kept floating above every window, to work against. It opens at a
+/// handy size (fits 380 pt), and grows or shrinks by dragging its corner grip or
+/// any edge, ⌘= / ⌘- / ⌘0, or ⌥-scroll; drag anywhere else to move it. Hover for
+/// its buttons (ghost = half see-through and click-through, copy, close),
+/// double-click to toggle ghost, ⎋ closes.
 final class PinnedCaptureWindow: NSPanel {
     private static var open: [PinnedCaptureWindow] = []
     private let image: NSImage
@@ -14,7 +16,7 @@ final class PinnedCaptureWindow: NSPanel {
         }
     }
 
-    /// Opens the image near the pointer, at its point size scaled to fit 60% of the screen.
+    /// Opens the image near the pointer, scaled to fit a handy 380 pt box.
     @discardableResult
     static func pin(_ image: NSImage, onCopy: @escaping () -> Void) -> PinnedCaptureWindow {
         let window = PinnedCaptureWindow(image: image, onCopy: onCopy)
@@ -33,8 +35,8 @@ final class PinnedCaptureWindow: NSPanel {
         self.image = image
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
         let visible = screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
-        let limit = CGSize(width: visible.width * 0.6, height: visible.height * 0.6)
-        let scale = min(1, limit.width / max(image.size.width, 1), limit.height / max(image.size.height, 1))
+        let limit = CGSize(width: min(380, visible.width * 0.6), height: min(380, visible.height * 0.6))
+        let scale = min(limit.width / max(image.size.width, 1), limit.height / max(image.size.height, 1))
         let size = CGSize(width: (image.size.width * scale).rounded(), height: (image.size.height * scale).rounded())
         let pointer = NSEvent.mouseLocation
         let origin = CGPoint(x: min(max(pointer.x - size.width / 2, visible.minX), visible.maxX - size.width),
@@ -54,7 +56,9 @@ final class PinnedCaptureWindow: NSPanel {
         minSize = CGSize(width: 80, height: 80 * image.size.height / max(image.size.width, 1))
 
         let content = PinnedCaptureView(image: image, onClose: { [weak self] in self?.close() },
-                                        onGhost: { [weak self] in self?.toggleGhost() }, onCopy: onCopy)
+                                        onGhost: { [weak self] in self?.toggleGhost() }, onCopy: onCopy,
+                                        onResize: { [weak self] width in self?.resize(toWidth: width) },
+                                        onResizeEnded: { [weak self] in self?.resizeOrigin = nil })
         contentView = NSHostingView(rootView: content)
         makeKeyAndOrderFront(nil)
     }
@@ -84,6 +88,19 @@ final class PinnedCaptureWindow: NSPanel {
         zoom(by: 1 + max(-0.5, min(0.5, event.scrollingDeltaY / 100)))
     }
 
+    /// The corner grip: the top-left corner stays put, the width follows the drag.
+    private var resizeOrigin: CGRect?
+
+    private func resize(toWidth width: CGFloat) {
+        let start = resizeOrigin ?? frame
+        resizeOrigin = start
+        let visible = screen?.visibleFrame ?? start
+        let ratio = image.size.height / max(image.size.width, 1)
+        let clampedWidth = max(minSize.width, min(width, visible.maxX - start.minX, (start.maxY - visible.minY) / ratio))
+        let size = CGSize(width: clampedWidth.rounded(), height: (clampedWidth * ratio).rounded())
+        setFrame(CGRect(x: start.minX, y: start.maxY - size.height, width: size.width, height: size.height), display: true)
+    }
+
     /// Scales around the centre, never below the minimum nor beyond the screen.
     private func zoom(by factor: CGFloat) {
         zoom(to: frame.width / max(image.size.width, 1) * factor)
@@ -106,8 +123,12 @@ private struct PinnedCaptureView: View {
     let onClose: () -> Void
     let onGhost: () -> Void
     let onCopy: () -> Void
+    /// The width the corner grip is being dragged to, then that the drag ended.
+    let onResize: (CGFloat) -> Void
+    let onResizeEnded: () -> Void
     @State private var hovering = false
     @State private var copied = false
+    @State private var dragStartWidth: CGFloat?
 
     var body: some View {
         Image(nsImage: image)
@@ -130,6 +151,33 @@ private struct PinnedCaptureView: View {
                     .padding(6)
                     .background(LinearGradient(colors: [.black.opacity(0.6), .black.opacity(0)], startPoint: .top, endPoint: .bottom))
                     .transition(.opacity)
+                }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                // The resize grip: three short diagonal lines, always there faintly,
+                // solid under the pointer; dragging it scales the window from its top-left.
+                GeometryReader { proxy in
+                    Color.clear
+                        .overlay(alignment: .bottomTrailing) {
+                            Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 20, height: 20)
+                                .background(.black.opacity(hovering ? 0.7 : 0.35), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                .padding(5)
+                                .contentShape(Rectangle())
+                                .onHover { over in if over { NSCursor.crosshair.push() } else { NSCursor.pop() } }
+                                .gesture(
+                                    DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                                        .onChanged { value in
+                                            if dragStartWidth == nil { dragStartWidth = proxy.size.width }
+                                            onResize((dragStartWidth ?? proxy.size.width) + value.translation.width)
+                                        }
+                                        .onEnded { _ in dragStartWidth = nil; onResizeEnded() }
+                                )
+                                .help("Drag to resize (⌘= / ⌘- / ⌘0 too)")
+                                .accessibilityLabel("Resize")
+                        }
                 }
             }
             .onHover { over in withAnimation(.easeOut(duration: 0.12)) { hovering = over } }
