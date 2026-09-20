@@ -16,7 +16,29 @@ struct SnippetFormRow: View {
     @State private var name = ""
     @State private var text = ""
     @State private var editor = MarkdownEditor.Handle()
+    @State private var previewing = false
     @FocusState private var focus: Field?
+    @FocusState private var previewFocus: String?
+
+    private var blanks: [String] { SnippetTemplate.placeholders(in: text).filter { !SnippetTemplate.isBuiltIn($0) } }
+
+    /// "2 blanks · 3 built-ins · 34 words".
+    private var stats: String {
+        let builtIns = SnippetTemplate.placeholders(in: text).filter(SnippetTemplate.isBuiltIn).count
+        let words = text.split(whereSeparator: \.isWhitespace).count
+        var parts: [String] = []
+        if !blanks.isEmpty { parts.append("\(blanks.count) blank\(blanks.count == 1 ? "" : "s")") }
+        if builtIns > 0 { parts.append("\(builtIns) built-in\(builtIns == 1 ? "" : "s")") }
+        parts.append("\(words) word\(words == 1 ? "" : "s")")
+        return parts.joined(separator: " · ")
+    }
+
+    private func caption(_ text: String) -> some View {
+        Text(text.uppercased())
+            .font(.system(size: 9, weight: .semibold))
+            .tracking(0.5)
+            .foregroundStyle(.primary.opacity(0.4))
+    }
 
     private enum Field { case prefix, keyword, name, text }
 
@@ -46,35 +68,41 @@ struct SnippetFormRow: View {
                 KeyCap("esc")
                 Text("cancel").font(.system(size: 10)).foregroundStyle(.primary.opacity(0.45))
             }
-            HStack(spacing: 8) {
-                PromptBox {
-                    // The trigger, in its own little box; ";" unless changed.
-                    TextField("", text: $prefix)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 13, weight: .bold, design: .monospaced))
-                        .foregroundStyle(Color.brand)
-                        .multilineTextAlignment(.center)
-                        .focused($focus, equals: .prefix)
-                        .onSubmit { focus = .keyword }
-                        .frame(width: 28)
-                        .help("The trigger typed before every keyword (set the default in Settings › Island)")
-                    Rectangle().fill(.primary.opacity(0.15)).frame(width: 1, height: 18)
-                    TextField("keyword, e.g. welcome", text: $keyword)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(.primary)
-                        .focused($focus, equals: .keyword)
-                        .onSubmit { focus = .name }
+            HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
+                    caption("Trigger")
+                    PromptBox {
+                        // The trigger, in its own little box; ";" unless changed.
+                        TextField("", text: $prefix)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 13, weight: .bold, design: .monospaced))
+                            .foregroundStyle(Color.brand)
+                            .multilineTextAlignment(.center)
+                            .focused($focus, equals: .prefix)
+                            .onSubmit { focus = .keyword }
+                            .frame(width: 28)
+                            .help("The trigger typed before every keyword (set the default in Settings › Island)")
+                        Rectangle().fill(.primary.opacity(0.15)).frame(width: 1, height: 18)
+                        TextField("keyword, e.g. welcome", text: $keyword)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(.primary)
+                            .focused($focus, equals: .keyword)
+                            .onSubmit { focus = .name }
+                    }
                 }
                 .frame(width: 220)
-                PromptBox {
-                    TextField("Name (optional)", text: $name)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.primary)
-                        .focused($focus, equals: .name)
-                        .onSubmit { focus = .text }
-                        .padding(.horizontal, 8)
+                VStack(alignment: .leading, spacing: 4) {
+                    caption("Name")
+                    PromptBox {
+                        TextField("What it's for (optional)", text: $name)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.primary)
+                            .focused($focus, equals: .name)
+                            .onSubmit { focus = .text }
+                            .padding(.horizontal, 8)
+                    }
                 }
             }
             if let assetID, let asset = assets.items.first(where: { $0.id == assetID }) {
@@ -101,22 +129,69 @@ struct SnippetFormRow: View {
                 .background(.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             } else {
                 VStack(spacing: 0) {
-                    BuiltInChips { editor.insert($0) }
-                        .padding(.horizontal, 8)
-                        .padding(.top, 6)
-                    MarkdownEditor(text: $text, handle: editor, insertImage: { _ in nil }, insertFile: { _ in nil }, onBacktab: { focus = .name })
-                        .focused($focus, equals: .text)
+                    if previewing {
+                        ScrollView {
+                            TemplateFillView(template: text, values: .constant([:]), focused: $previewFocus)
+                                .disabled(true)
+                                .padding(12)
+                                .frame(maxWidth: .infinity, alignment: .topLeading)
+                        }
+                        .frame(maxHeight: .infinity)
+                    } else {
+                        MarkdownEditor(text: $text, handle: editor, insertImage: { _ in nil }, insertFile: { _ in nil }, onBacktab: { focus = .name })
+                            .focused($focus, equals: .text)
+                            .overlay(alignment: .topLeading) {
+                                if text.isEmpty {
+                                    Text("Hi {{Name}}, thanks for reaching out — I'll get back to you by {{date}}.")
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(.primary.opacity(0.3))
+                                        .padding(.horizontal, 12).padding(.top, 10)
+                                        .allowsHitTesting(false)
+                                }
+                            }
+                    }
+                    Divider().overlay(.primary.opacity(0.1))
+                    HStack(spacing: 8) {
+                        InsertMenu { editor.insert($0); focus = .text }
+                            .disabled(previewing)
+                        Button {
+                            withAnimation(.easeOut(duration: 0.15)) { previewing.toggle() }
+                        } label: {
+                            Label(previewing ? "Edit" : "Preview", systemImage: previewing ? "pencil" : "eye")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(previewing ? Color.brand : .primary.opacity(0.7))
+                                .padding(.horizontal, 8).frame(height: 24)
+                                .background(.primary.opacity(previewing ? 0.14 : 0.08), in: Capsule())
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .help("See how it pastes, with the blanks and built-ins in place")
+                        .disabled(text.isEmpty)
+                        Spacer(minLength: 0)
+                        Text(stats)
+                            .font(.system(size: 10.5).monospacedDigit())
+                            .foregroundStyle(.primary.opacity(0.45))
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
                 }
                 .background(.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.primary.opacity(0.15)))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(focus == .text ? Color.brand.opacity(0.6) : .primary.opacity(0.15)))
                 .frame(maxHeight: .infinity)
             }
             HStack(spacing: 8) {
-                let blanks = SnippetTemplate.placeholders(in: text).filter { !SnippetTemplate.isBuiltIn($0) }
-                Text(fullKeyword.isEmpty ? "Type the keyword anywhere to paste this" : "Type \(fullKeyword) anywhere to paste this" + (blanks.isEmpty ? "" : " · asks for \(blanks.joined(separator: ", "))"))
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.primary.opacity(0.5))
-                    .lineLimit(1)
+                HStack(spacing: 5) {
+                    Text("Type").font(.system(size: 10.5)).foregroundStyle(.primary.opacity(0.5))
+                    Text(fullKeyword.isEmpty ? "trigger + keyword" : fullKeyword)
+                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(fullKeyword.isEmpty ? .primary.opacity(0.4) : Color.brand)
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background(.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    Text(blanks.isEmpty ? "anywhere to paste this" : "anywhere · asks for \(blanks.joined(separator: ", "))")
+                        .font(.system(size: 10.5)).foregroundStyle(.primary.opacity(0.5))
+                }
+                .lineLimit(1)
                 Spacer(minLength: 0)
                 Button("Cancel") { finish(nil) }
                     .buttonStyle(.plain)
@@ -470,110 +545,67 @@ struct FlowLayout: Layout {
 }
 
 
-// MARK: - Built-in chips
+// MARK: - Insert menu
 
-/// One built-in a snippet can use: what to insert and what it does.
-private struct BuiltIn: Identifiable {
-    let token: String
-    let insert: String
-    let about: String
-    var id: String { token }
-
-    static let all: [BuiltIn] = [
-        BuiltIn(token: "{{Name}}", insert: "{{Name}}", about: "A blank: Klik asks for it when the snippet is pasted (any word works)."),
-        BuiltIn(token: "{{date}}", insert: "{{date}}", about: "Today, written out — September 20, 2026."),
-        BuiltIn(token: "{{time}}", insert: "{{time}}", about: "The time now — 5:20 PM."),
-        BuiltIn(token: "{{datetime}}", insert: "{{datetime}}", about: "Date and time — Sep 20, 2026 at 5:20 PM."),
-        BuiltIn(token: "{{date:yyyy-MM-dd}}", insert: "{{date:yyyy-MM-dd}}", about: "The date in a format of your own: yyyy-MM-dd, EEEE, MMM d… ({{time:HH:mm}} too)."),
-        BuiltIn(token: "{{clipboard}}", insert: "{{clipboard}}", about: "Whatever is on the clipboard at that moment."),
-        BuiltIn(token: "{{uuid}}", insert: "{{uuid}}", about: "A fresh UUID."),
-        BuiltIn(token: "{{cursor}}", insert: "{{cursor}}", about: "Where the caret lands after the paste."),
-        BuiltIn(token: "{{shell:…}}", insert: "{{shell:}}", about: "What a shell command prints — {{shell:git branch --show-current}} — given two seconds, inside Klik's sandbox."),
-    ]
-}
-
-/// The built-ins as chips in a row that scrolls sideways, fading at the edges when
-/// there is more; ⓘ opens the whole list with what each one does.
-private struct BuiltInChips: View {
+/// "Insert ▾": a blank, the date and time in a few shapes, the clipboard, the
+/// caret, a UUID, a shell command — each shown with what it produces right now.
+private struct InsertMenu: View {
     let insert: (String) -> Void
-    @State private var showingAll = false
-    @State private var scrolledToStart = true
-    @State private var scrolledToEnd = false
+
+    private var now: Date { .now }
 
     var body: some View {
-        HStack(spacing: 6) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(BuiltIn.all) { builtIn in
-                        Button { insert(builtIn.insert) } label: {
-                            Text(builtIn.token)
-                                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                .foregroundStyle(builtIn.token == "{{Name}}" ? Color.brand : .primary.opacity(0.8))
-                                .fixedSize()
-                                .padding(.horizontal, 7).frame(height: 20)
-                                .background(builtIn.token == "{{Name}}" ? Color.brand.opacity(0.14) : .primary.opacity(0.1), in: Capsule())
-                                .contentShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .help(builtIn.about)
-                        .accessibilityLabel(builtIn.token)
-                        .accessibilityHint(builtIn.about)
+        Menu {
+            Button {
+                insert("{{Name}}")
+            } label: {
+                Label("Blank to fill in — {{Name}}", systemImage: "rectangle.and.pencil.and.ellipsis")
+            }
+            Text("Any word in {{…}} becomes a blank Klik asks for when pasting")
+            Divider()
+            Section("Date & time") {
+                Button("Date — \(now.formatted(date: .long, time: .omitted))") { insert("{{date}}") }
+                Button("Time — \(now.formatted(date: .omitted, time: .shortened))") { insert("{{time}}") }
+                Button("Date and time — \(now.formatted(date: .abbreviated, time: .shortened))") { insert("{{datetime}}") }
+                Menu("Custom format") {
+                    ForEach(["yyyy-MM-dd", "d MMM yyyy", "EEEE", "MMMM d", "HH:mm", "yyyyMMdd-HHmm"], id: \.self) { format in
+                        let formatter = DateFormatter()
+                        let _ = formatter.dateFormat = format
+                        Button("\(format) — \(formatter.string(from: now))") { insert("{{date:\(format)}}") }
                     }
-                }
-                .onGeometryChange(for: [Bool].self) { proxy in
-                    let frame = proxy.frame(in: .named("chips"))
-                    let width = proxy.bounds(of: .named("chips"))?.width ?? 0
-                    return [frame.minX >= -1, frame.maxX <= width + 1]
-                } action: { edges in
-                    scrolledToStart = edges[0]
-                    scrolledToEnd = edges[1]
+                    Divider()
+                    Button("Other…  {{date:…}}") { insert("{{date:}}") }
                 }
             }
-            .coordinateSpace(name: "chips")
-            .mask {
-                // Fades say there is more to scroll to, on whichever side is hidden.
-                HStack(spacing: 0) {
-                    LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
-                        .frame(width: scrolledToStart ? 0 : 18)
-                    Color.black
-                    LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
-                        .frame(width: scrolledToEnd ? 0 : 18)
-                }
-                .animation(.easeOut(duration: 0.15), value: scrolledToStart)
-                .animation(.easeOut(duration: 0.15), value: scrolledToEnd)
+            Section("At paste time") {
+                Button {
+                    insert("{{clipboard}}")
+                } label: { Label("Clipboard contents", systemImage: "doc.on.clipboard") }
+                Button {
+                    insert("{{cursor}}")
+                } label: { Label("Caret ends up here", systemImage: "text.cursor") }
+                Button {
+                    insert("{{uuid}}")
+                } label: { Label("New UUID", systemImage: "number.square") }
+                Button {
+                    insert("{{shell:}}")
+                } label: { Label("Shell command output…", systemImage: "terminal") }
             }
-            Button { showingAll.toggle() } label: {
-                Image(systemName: "info.circle")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.primary.opacity(0.6))
-                    .frame(width: 22, height: 20)
-                    .contentShape(Rectangle())
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "curlybraces").font(.system(size: 10, weight: .bold))
+                Text("Insert").font(.system(size: 11, weight: .medium))
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).opacity(0.6)
             }
-            .buttonStyle(.plain)
-            .help("Every built-in and what it does")
-            .accessibilityLabel("About the built-ins")
-            .popover(isPresented: $showingAll, arrowEdge: .bottom) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Built-ins").font(.system(size: 12, weight: .semibold))
-                    ForEach(BuiltIn.all) { builtIn in
-                        HStack(alignment: .firstTextBaseline, spacing: 10) {
-                            Button { insert(builtIn.insert); showingAll = false } label: {
-                                Text(builtIn.token)
-                                    .font(.system(size: 10.5, weight: .medium, design: .monospaced))
-                                    .foregroundStyle(builtIn.token == "{{Name}}" ? Color.brand : .primary)
-                                    .padding(.horizontal, 6).frame(height: 20)
-                                    .background(.primary.opacity(0.1), in: Capsule())
-                            }
-                            .buttonStyle(.plain)
-                            .frame(width: 150, alignment: .leading)
-                            Text(builtIn.about).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                    Text("Click one to insert it at the caret.").font(.system(size: 10)).foregroundStyle(.tertiary).padding(.top, 2)
-                }
-                .padding(14)
-                .frame(width: 440)
-            }
+            .foregroundStyle(.primary.opacity(0.8))
+            .padding(.horizontal, 9).frame(height: 24)
+            .background(.primary.opacity(0.1), in: Capsule())
+            .contentShape(Capsule())
         }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Blanks, dates, the clipboard, the caret, a UUID, a shell command")
     }
 }
