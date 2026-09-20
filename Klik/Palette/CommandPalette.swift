@@ -57,6 +57,23 @@ enum PaletteCommand: CaseIterable, Identifiable {
         }
     }
 
+    /// A colour of its own, so the list scans by eye.
+    var tint: Color {
+        switch self {
+        case .captureArea: .teal
+        case .captureFullScreen: .blue
+        case .captureScrolling: .indigo
+        case .captureText: .green
+        case .pickColor: .orange
+        case .newTask: .mint
+        case .newSnippet: .yellow
+        case .clipboardList: .purple
+        case .klikPanel: .cyan
+        case .clock: .red
+        case .settings: .gray
+        }
+    }
+
     /// The shortcut that also does it, for the row's trailing hint.
     var hotkey: HotkeyID? {
         switch self {
@@ -89,7 +106,7 @@ struct PaletteActions {
 /// clipboard entry, asset, color, task and snippet. Type to filter, ↑↓ to choose,
 /// ↩ to paste or run, ⌘↩ to copy, ⌘O to open, ⌘1–9 for the first nine, ⎋ to close.
 struct CommandPaletteView: View {
-    static let size = CGSize(width: 600, height: 460)
+    static let size = CGSize(width: 600, height: 500)
 
     let library: CaptureLibrary
     let clipboard: ClipboardHistory
@@ -156,8 +173,10 @@ struct CommandPaletteView: View {
         let rows = sections.flatMap(\.rows)
         VStack(spacing: 8) {
             HStack(spacing: 8) {
-                Image(systemName: "command").font(.system(size: 13, weight: .semibold)).foregroundStyle(.white.opacity(0.6))
-                TextField("Search, calculate, convert or run…", text: $query)
+                Image(systemName: query.isEmpty ? "command" : "magnifyingglass").font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(query.isEmpty ? .white.opacity(0.6) : Color.brand)
+                    .contentTransition(.symbolEffect(.replace))
+                TextField("Type a command, search, or calculate…", text: $query)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
                     .foregroundStyle(.white)
@@ -186,14 +205,25 @@ struct CommandPaletteView: View {
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 2, pinnedViews: []) {
-                            ForEach(sections) { section in
-                                Text(section.title)
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundStyle(.white.opacity(0.45))
-                                    .padding(.horizontal, 10)
-                                    .padding(.top, 6)
-                                    .accessibilityAddTraits(.isHeader)
+                        LazyVStack(alignment: .leading, spacing: 1, pinnedViews: []) {
+                            ForEach(Array(sections.enumerated()), id: \.element.id) { position, section in
+                                if position > 0 {
+                                    Rectangle().fill(.white.opacity(0.08)).frame(height: 1).padding(.horizontal, 8).padding(.top, 6)
+                                }
+                                HStack {
+                                    Text(section.title.uppercased())
+                                        .font(.system(size: 9.5, weight: .bold))
+                                        .tracking(0.6)
+                                    Spacer()
+                                    if section.rows.count > 1 {
+                                        Text("\(section.rows.count)").font(.system(size: 9.5, weight: .medium).monospacedDigit())
+                                    }
+                                }
+                                .foregroundStyle(.white.opacity(0.4))
+                                .padding(.horizontal, 10)
+                                .padding(.top, 4)
+                                .padding(.bottom, 2)
+                                .accessibilityAddTraits(.isHeader)
                                 ForEach(section.rows) { row in
                                     let index = rows.firstIndex { $0.id == row.id } ?? 0
                                     self.row(row, index: index, selected: index == selected)
@@ -212,12 +242,16 @@ struct CommandPaletteView: View {
             HStack(spacing: 10) {
                 hint("↑↓", "choose")
                 hint("↩", primaryVerb(rows))
-                hint("⌘↩", "copy")
-                hint("⌘O", "open")
+                if let verbs = secondaryVerbs(rows) {
+                    if let copy = verbs.copy { hint("⌘↩", copy) }
+                    if let open = verbs.open { hint("⌘O", open) }
+                }
+                hint("⌘1–9", "pick")
                 Spacer(minLength: 0)
                 hint("⎋", "close")
             }
             .padding(.horizontal, 4)
+            .animation(.easeOut(duration: 0.12), value: selected)
         }
         .padding(14)
         .background { keyboardShortcuts(rows) }
@@ -239,14 +273,32 @@ struct CommandPaletteView: View {
         }
     }
 
+    /// What ⌘↩ and ⌘O do for the chosen row, or nil when they do nothing more than ↩.
+    private func secondaryVerbs(_ rows: [Row]) -> (copy: String?, open: String?)? {
+        guard rows.indices.contains(selected) else { return nil }
+        switch rows[selected] {
+        case .command: return nil
+        case .answer: return (clipboard.canPaste ? "copy" : nil, nil)
+        case .item(let item):
+            let open: String? = switch item {
+            case .capture: "edit"
+            case .asset: "open"
+            case .snippet: "edit"
+            case .task: nil
+            case .clipboard, .color, .answer: nil
+            }
+            return (clipboard.canPaste ? "copy" : nil, open)
+        }
+    }
+
     // MARK: - Rows
 
     @ViewBuilder
     private func row(_ row: Row, index: Int, selected: Bool) -> some View {
         HStack(spacing: 10) {
             icon(for: row)
-                .frame(width: 34, height: 26)
-                .background(.white.opacity(0.08))
+                .frame(width: 30, height: 24)
+                .background(tileTint(for: row).opacity(0.18))
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             VStack(alignment: .leading, spacing: 1) {
                 Text(title(for: row)).font(.system(size: 12.5, weight: .medium)).lineLimit(1)
@@ -254,21 +306,32 @@ struct CommandPaletteView: View {
                     Text(subtitle).font(.system(size: 10)).foregroundStyle(.white.opacity(0.55)).lineLimit(1)
                 }
             }
-            Spacer(minLength: 0)
+            Spacer(minLength: 8)
             if done == row.id {
                 Image(systemName: "checkmark.circle.fill").font(.system(size: 14, weight: .semibold)).foregroundStyle(.green)
             } else if case .command(let command) = row, let hotkey = command.hotkey, let display = shortcuts.entries[hotkey]?.hotkey?.displayString {
-                Text(display).font(.system(size: 10, weight: .medium)).foregroundStyle(.white.opacity(selected ? 0.7 : 0.35))
+                Text(display)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(.white.opacity(selected ? 0.75 : 0.35))
+            } else if selected {
+                Text(rowVerb(row))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.55))
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(.white.opacity(0.1), in: Capsule())
             } else if index < 9 {
                 Text("⌘\(index + 1)")
                     .font(.system(size: 9.5, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(selected ? 0.7 : 0.3))
+                    .foregroundStyle(.white.opacity(0.25))
             }
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(selected ? Color.white.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(selected ? Color.brand.opacity(0.7) : .clear))
+        .padding(.vertical, 4)
+        .background(selected ? Color.white.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(alignment: .leading) {
+            // A brand mark on the left edge, the way a focused row reads without a box.
+            RoundedRectangle(cornerRadius: 1.5).fill(Color.brand).frame(width: 3, height: 18).opacity(selected ? 1 : 0)
+        }
         .contentShape(Rectangle())
         .onTapGesture { perform(at: index, in: nil) }
         .onHover { if $0 { self.selected = index } }
@@ -278,11 +341,38 @@ struct CommandPaletteView: View {
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : [.isButton])
     }
 
+    /// "↩ paste", said on the chosen row.
+    private func rowVerb(_ row: Row) -> String {
+        switch row {
+        case .command: "↩ run"
+        case .answer: clipboard.canPaste ? "↩ paste" : "↩ copy"
+        case .item(let item):
+            if case .task = item { "↩ open" } else { clipboard.canPaste ? "↩ paste" : "↩ copy" }
+        }
+    }
+
+    private func tileTint(for row: Row) -> Color {
+        switch row {
+        case .command(let command): command.tint
+        case .answer: Color.brand
+        case .item(let item):
+            switch item {
+            case .capture: .teal
+            case .clipboard: .purple
+            case .asset: .orange
+            case .color: .white
+            case .task(let task): task.status.color
+            case .snippet: .yellow
+            case .answer: Color.brand
+            }
+        }
+    }
+
     @ViewBuilder
     private func icon(for row: Row) -> some View {
         switch row {
         case .command(let command):
-            Image(systemName: command.symbol).font(.system(size: 13)).foregroundStyle(Color.brand.opacity(0.95))
+            Image(systemName: command.symbol).font(.system(size: 12, weight: .semibold)).foregroundStyle(command.tint)
         case .answer(let answer):
             if let color = answer.color {
                 RoundedRectangle(cornerRadius: 6, style: .continuous).fill(color.swiftUIColor)
