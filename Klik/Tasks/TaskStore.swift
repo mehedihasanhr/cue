@@ -343,6 +343,20 @@ final class TaskStore {
         return added
     }
 
+    /// Sets the status of every task whose title starts with one of `titles`
+    /// (case-insensitive). Returns how many changed. For scripts, like `importTasks`.
+    @discardableResult
+    func setStatus(_ status: TaskStatus, forTitlesStartingWith titles: [String]) -> Int {
+        var changed = 0
+        for task in tasks where task.status != status {
+            if titles.contains(where: { task.title.lowercased().hasPrefix($0.lowercased()) }) {
+                setStatus(status, for: task)
+                changed += 1
+            }
+        }
+        return changed
+    }
+
     /// Edits a task's title, description and project in one go.
     func update(_ task: TaskItem, title: String, notes: String, projectID: UUID?, priority: TaskPriority) {
         let cleaned = title.trimmingCharacters(in: .whitespacesAndNewlines)

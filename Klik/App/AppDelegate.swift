@@ -98,6 +98,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let added = tasks.importTasks(from: data)
             Log.app.notice("Imported \(added) task(s)")
         }
+        // Tooling: `--env KLIK_COMPLETE_TASKS='["Title one","Title two"]'` marks tasks complete by title prefix.
+        if let json = ProcessInfo.processInfo.environment["KLIK_COMPLETE_TASKS"], let data = json.data(using: .utf8),
+           let titles = try? JSONDecoder().decode([String].self, from: data) {
+            let done = tasks.setStatus(.complete, forTitlesStartingWith: titles)
+            Log.app.notice("Completed \(done) task(s)")
+        }
         // Diagnostics: `open Klik.app --env KLIK_DEBUG_PANEL=1` opens the floating panel at launch.
         if ProcessInfo.processInfo.environment["KLIK_DEBUG_PANEL"] == "1" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.toggleHistoryAtPointer() }
