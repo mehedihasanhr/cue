@@ -158,9 +158,10 @@ struct SnippetFormRow: View {
                         } label: {
                             Label(previewing ? "Edit" : "Preview", systemImage: previewing ? "pencil" : "eye")
                                 .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(previewing ? .white : .primary.opacity(0.7))
-                                .padding(.horizontal, 8).frame(height: 24)
-                                .background(previewing ? Color.brand.opacity(0.8) : .primary.opacity(0.08), in: Capsule())
+                                .foregroundStyle(previewing ? .white : .primary.opacity(0.75))
+                                .padding(.horizontal, 9).frame(height: 24)
+                                .background(previewing ? Color.brand.opacity(0.85) : .primary.opacity(0.06), in: Capsule())
+                                .overlay(Capsule().strokeBorder(previewing ? .clear : .primary.opacity(0.14)))
                                 .contentShape(Capsule())
                         }
                         .buttonStyle(.plain)
@@ -173,12 +174,11 @@ struct SnippetFormRow: View {
                             .lineLimit(1)
                     }
                     .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(.black.opacity(0.18)) // the toolbar: a darker band at the foot of the card
+                    .padding(.vertical, 7)
+                    .overlay(alignment: .top) { Rectangle().fill(.primary.opacity(0.1)).frame(height: 1) } // the toolbar's hairline
                 }
-                .background(.primary.opacity(focus == .text ? 0.1 : 0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .animation(.easeOut(duration: 0.12), value: focus == .text)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .fieldChrome(focused: focus == .text)
                 .frame(maxHeight: .infinity)
             }
             HStack(spacing: 8) {
@@ -197,10 +197,11 @@ struct SnippetFormRow: View {
                 Button("Cancel") { finish(nil) }
                     .buttonStyle(.plain)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.primary.opacity(0.7))
-                    .padding(.horizontal, 12)
+                    .foregroundStyle(.primary.opacity(0.75))
+                    .padding(.horizontal, 14)
                     .frame(height: 30)
-                    .background(.primary.opacity(0.1), in: Capsule())
+                    .background(.primary.opacity(0.06), in: Capsule())
+                    .overlay(Capsule().strokeBorder(.primary.opacity(0.14)))
                 Button(action: save) {
                     HStack(spacing: 6) {
                         Text(editing == nil ? "Create" : "Save").font(.system(size: 12, weight: .semibold))
@@ -209,7 +210,12 @@ struct SnippetFormRow: View {
                     .foregroundStyle(.white)
                     .padding(.leading, 14).padding(.trailing, 8)
                     .frame(height: 30)
-                    .background(Color.brand, in: Capsule())
+                    .background(
+                        Capsule().fill(Color.brand)
+                            .overlay(Capsule().fill(LinearGradient(colors: [.white.opacity(0.18), .clear], startPoint: .top, endPoint: .bottom)))
+                    )
+                    .overlay(Capsule().strokeBorder(.white.opacity(0.18)))
+                    .shadow(color: Color.brand.opacity(valid ? 0.35 : 0), radius: 8, y: 2)
                     .opacity(valid ? 1 : 0.5)
                 }
                 .buttonStyle(.plain)
@@ -313,7 +319,7 @@ struct SnippetFillRow: View {
                     }
                 }
             }
-            .background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .fieldChrome()
             .frame(maxHeight: .infinity)
             HStack(spacing: 8) {
                 Text(blanks.count == 1 ? "1 blank" : "\(blanks.count) blanks")
@@ -599,7 +605,8 @@ private struct InsertMenu: View {
             }
             .foregroundStyle(.primary.opacity(0.8))
             .padding(.horizontal, 9).frame(height: 24)
-            .background(.primary.opacity(0.1), in: Capsule())
+            .background(.primary.opacity(0.06), in: Capsule())
+            .overlay(Capsule().strokeBorder(.primary.opacity(0.14)))
             .contentShape(Capsule())
         }
         .menuStyle(.button)

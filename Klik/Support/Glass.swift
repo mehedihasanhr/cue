@@ -87,7 +87,8 @@ struct KeyCap: View {
             .foregroundStyle(.primary.opacity(0.9))
             .padding(.horizontal, 5)
             .padding(.vertical, 1.5)
-            .background(.primary.opacity(0.16), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+            .background(.primary.opacity(0.14), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(.primary.opacity(0.16)))
     }
 }
 

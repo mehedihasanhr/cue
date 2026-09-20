@@ -740,7 +740,7 @@ struct TaskFormRow: View {
                                onBacktab: { focus = .title })
                     .focused($focus, equals: .notes)
             }
-            .background(.primary.opacity(focus == .notes ? 0.1 : 0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .fieldChrome(focused: focus == .notes)
             .frame(maxHeight: .infinity)
             HStack(spacing: 8) {
                 if newProjectName != nil {
@@ -1283,10 +1283,9 @@ struct PromptLabel: View {
 }
 
 /// A bordered field container.
-/// A field's box: tone says what it is — a shade lighter than the panel, lighter
-/// still while it has the focus. No outlines.
+/// A field's box, in the forms' shared chrome.
 struct PromptBox<Content: View>: View {
-    var height: CGFloat = 30
+    var height: CGFloat = 32
     var focused = false
     @ViewBuilder let content: () -> Content
 
@@ -1295,8 +1294,32 @@ struct PromptBox<Content: View>: View {
             .padding(.trailing, 6)
             .frame(height: height)
             .frame(maxWidth: .infinity)
-            .background(.primary.opacity(focused ? 0.14 : 0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .fieldChrome(focused: focused)
+    }
+}
+
+/// The one look every field and card in the forms shares: a faint fill, a hairline
+/// edge a little brighter than it, and — with the focus — a brand edge with a soft
+/// glow. Radius 10 everywhere.
+struct FieldChrome: ViewModifier {
+    var focused = false
+    var radius: CGFloat = 10
+
+    func body(content: Content) -> some View {
+        content
+            .background(.primary.opacity(focused ? 0.07 : 0.05), in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .strokeBorder(focused ? Color.brand.opacity(0.85) : .primary.opacity(0.12), lineWidth: focused ? 1.5 : 1)
+            )
+            .shadow(color: Color.brand.opacity(focused ? 0.25 : 0), radius: 6)
             .animation(.easeOut(duration: 0.12), value: focused)
+    }
+}
+
+extension View {
+    func fieldChrome(focused: Bool = false, radius: CGFloat = 10) -> some View {
+        modifier(FieldChrome(focused: focused, radius: radius))
     }
 }
 
