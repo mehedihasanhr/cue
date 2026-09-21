@@ -96,49 +96,78 @@ struct GeneralSettingsView: View {
     }
 }
 
-/// A little window in the light, the dark, or half of each.
+/// A desktop in the light, the dark, or half of each: wallpaper, menu bar and
+/// a window with its sidebar — the way System Settings shows appearances.
 private struct AppearancePreview: View {
     let appearance: AppPreferences.Appearance
 
     var body: some View {
-        ZStack {
-            switch appearance {
-            case .light: pane(dark: false)
-            case .dark: pane(dark: true)
-            case .system:
-                ZStack {
-                    pane(dark: false)
-                    pane(dark: true).clipShape(HalfMask())
-                }
+        switch appearance {
+        case .light: Desktop(dark: false)
+        case .dark: Desktop(dark: true)
+        case .system:
+            ZStack {
+                Desktop(dark: false)
+                Desktop(dark: true).clipShape(HalfMask())
             }
         }
     }
 
-    private func pane(dark: Bool) -> some View {
-        ZStack {
-            LinearGradient(colors: dark ? [Color(white: 0.16), Color(white: 0.1)] : [Color(white: 0.96), Color(white: 0.88)], startPoint: .top, endPoint: .bottom)
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .fill(dark ? Color(white: 0.22) : .white)
-                .overlay(alignment: .topLeading) {
-                    HStack(spacing: 3) {
-                        ForEach(0..<3) { _ in Circle().fill(dark ? Color(white: 0.4) : Color(white: 0.75)).frame(width: 4, height: 4) }
+    private struct Desktop: View {
+        let dark: Bool
+
+        var body: some View {
+            ZStack(alignment: .top) {
+                LinearGradient(
+                    colors: dark ? [Color(red: 0.16, green: 0.2, blue: 0.42), Color(red: 0.05, green: 0.05, blue: 0.14)]
+                                 : [Color(red: 0.55, green: 0.75, blue: 1), Color(red: 0.85, green: 0.7, blue: 0.98)],
+                    startPoint: .topLeading, endPoint: .bottomTrailing
+                )
+                // The menu bar.
+                Rectangle()
+                    .fill(dark ? Color.black.opacity(0.35) : Color.white.opacity(0.55))
+                    .frame(height: 6)
+                    .overlay(alignment: .leading) {
+                        HStack(spacing: 2.5) {
+                            ForEach(0..<4, id: \.self) { _ in
+                                Capsule().fill(dark ? Color.white.opacity(0.5) : Color.black.opacity(0.45)).frame(width: 5, height: 1.5)
+                            }
+                        }
+                        .padding(.leading, 5)
                     }
-                    .padding(6)
-                }
-                .overlay(alignment: .bottomLeading) {
+                // The window, with a sidebar and a few lines of content.
+                HStack(spacing: 0) {
                     VStack(alignment: .leading, spacing: 3) {
-                        ForEach([0.6, 0.4, 0.5], id: \.self) { width in
-                            Capsule().fill(dark ? Color(white: 0.4) : Color(white: 0.8)).frame(width: 60 * width, height: 3)
+                        HStack(spacing: 2) {
+                            ForEach(0..<3, id: \.self) { _ in
+                                Circle().fill(dark ? Color.white.opacity(0.35) : Color.black.opacity(0.2)).frame(width: 3, height: 3)
+                            }
+                        }
+                        .padding(.bottom, 3)
+                        ForEach([0.9, 0.7, 0.8], id: \.self) { width in
+                            Capsule().fill(dark ? Color.white.opacity(0.22) : Color.black.opacity(0.12)).frame(width: 18 * width, height: 2)
                         }
                     }
-                    .padding(8)
+                    .padding(5)
+                    .frame(width: 30, alignment: .topLeading)
+                    .background(dark ? Color(white: 0.17) : Color(white: 0.93))
+                    VStack(alignment: .leading, spacing: 3) {
+                        Capsule().fill(dark ? Color.white.opacity(0.7) : Color.black.opacity(0.6)).frame(width: 22, height: 2.5)
+                        ForEach([1.0, 0.75, 0.9, 0.6], id: \.self) { width in
+                            Capsule().fill(dark ? Color.white.opacity(0.25) : Color.black.opacity(0.14)).frame(width: 34 * width, height: 2)
+                        }
+                    }
+                    .padding(6)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .background(dark ? Color(white: 0.12) : Color.white)
                 }
-                .padding(.horizontal, 14)
-                .padding(.top, 12)
-                .padding(.bottom, -6)
-                .shadow(color: .black.opacity(dark ? 0.5 : 0.15), radius: 6, y: 3)
+                .frame(width: 74, height: 44)
+                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(Color.white.opacity(dark ? 0.12 : 0.6), lineWidth: 0.5))
+                .shadow(color: .black.opacity(dark ? 0.55 : 0.2), radius: 5, y: 3)
+                .padding(.top, 14)
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     /// The lower-right half, split from the top-right corner to the bottom-left.
@@ -196,7 +225,7 @@ struct IslandSettingsView: View {
 
             SettingsGroup("Panels") {
                 SettingsPreviewPicker(title: "Open panels at", subtitle: "Where the library panel (⌥⇧K) and the quick task (⌥/) appear — on the screen the pointer is on.",
-                                      selection: $preferences.panelPosition, options: PanelPosition.allCases, label: { $0 == .pointer ? "Pointer" : $0.title }, columns: 4) { position in
+                                      selection: $preferences.panelPosition, options: PanelPosition.allCases, label: { $0 == .pointer ? "Pointer" : $0.title }, columns: 4, tileWidth: 92) { position in
                     PanelPositionPreview(position: position)
                 }
             }

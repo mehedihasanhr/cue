@@ -596,6 +596,8 @@ struct SettingsPreviewPicker<Value: Hashable, Preview: View>: View {
     let options: [Value]
     let label: (Value) -> String
     var columns = 3
+    /// The tiles are small pictures, not panels: a fixed width each.
+    var tileWidth: CGFloat = 104
     @ViewBuilder let preview: (Value) -> Preview
 
     var body: some View {
@@ -609,25 +611,30 @@ struct SettingsPreviewPicker<Value: Hashable, Preview: View>: View {
                 }
                 .frame(width: 170, alignment: .leading)
                 Spacer(minLength: 0)
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: columns), spacing: 12) {
+                LazyVGrid(columns: Array(repeating: GridItem(.fixed(tileWidth), spacing: 12), count: columns), alignment: .trailing, spacing: 12) {
                     ForEach(options, id: \.self) { option in
                         Button {
                             withAnimation(.easeOut(duration: 0.15)) { selection = option }
                         } label: {
-                            VStack(spacing: 8) {
+                            VStack(spacing: 7) {
                                 preview(option)
-                                    .frame(maxWidth: .infinity)
-                                    .aspectRatio(1.6, contentMode: .fit)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                    .frame(width: tileWidth, height: tileWidth / 1.5)
+                                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                                     .overlay(
-                                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                            .strokeBorder(selection == option ? Color.brand : Color.primary.opacity(0.1), lineWidth: selection == option ? 2 : 1)
+                                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                            .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                                    )
+                                    .padding(2)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                            .strokeBorder(Color.brand, lineWidth: 1.5)
+                                            .opacity(selection == option ? 1 : 0)
                                     )
                                 Text(label(option))
-                                    .font(.system(size: 13, weight: selection == option ? .medium : .regular))
+                                    .font(.system(size: 12, weight: selection == option ? .medium : .regular))
                                     .lineLimit(1)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 3)
+                                    .padding(.horizontal, 9)
+                                    .padding(.vertical, 2)
                                     .background(selection == option ? Color.primary.opacity(0.12) : Color.clear, in: Capsule())
                             }
                             .contentShape(Rectangle())
@@ -637,7 +644,6 @@ struct SettingsPreviewPicker<Value: Hashable, Preview: View>: View {
                         .accessibilityLabel(label(option))
                     }
                 }
-                .frame(maxWidth: 420)
             }
         }
     }
