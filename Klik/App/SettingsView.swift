@@ -18,103 +18,65 @@ struct GeneralSettingsView: View {
     var body: some View {
         @Bindable var preferences = preferences
         SettingsPane(.general) {
-            Section {
-                Picker("Appearance", selection: $preferences.appearance) {
-                    ForEach(AppPreferences.Appearance.allCases, id: \.self) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented)
-            } header: {
-                Text("Appearance")
-            } footer: {
-                Text("Applies to the editor, the captures panel and this window.")
-            }
-
-            Section {
-                Toggle(isOn: launchAtLoginBinding) {
-                    Text("Launch Klik at login")
-                    Text("Klik lives in the menu bar and has no Dock icon; starting at login keeps the shortcuts ready.")
+            SettingsGroup {
+                SettingsRow("Launch Klik at login", subtitle: "Klik lives in the menu bar and has no Dock icon; starting at login keeps the shortcuts ready.") {
+                    Toggle("Launch at login", isOn: launchAtLoginBinding).toggleStyle(.switch)
                 }
                 if model.launchAtLogin == .requiresApproval {
-                    HStack {
-                        Label("Approval needed in System Settings › General › Login Items", systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                            .font(.callout)
-                        Spacer()
+                    SettingsRow("Approval needed", subtitle: "System Settings › General › Login Items", symbol: "exclamationmark.triangle.fill", tint: .orange) {
                         Button("Open Login Items") { PermissionManager.openLoginItemsSettings() }
-                            .controlSize(.small)
                     }
                 }
                 if let launchError {
-                    Text(launchError).foregroundStyle(.red).font(.callout)
+                    SettingsRow(launchError, symbol: "xmark.octagon.fill", tint: .red)
                 }
-            } header: {
-                Text("Startup")
+            }
+
+            SettingsGroup("Appearance") {
+                SettingsPreviewPicker(title: "Theme", subtitle: "For the editor, the captures panel and this window.",
+                                      selection: $preferences.appearance, options: AppPreferences.Appearance.allCases, label: \.title) { option in
+                    AppearancePreview(appearance: option)
+                }
             }
 
             if let sync {
-                Section {
-                    HStack(spacing: 12) {
-                        SymbolTile(symbol: "arrow.triangle.2.circlepath", tint: .blue)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(sync.url?.lastPathComponent ?? "Not syncing")
-                            Text(sync.url?.path(percentEncoded: false) ?? "Snippets, colors and tasks stay in Klik's own container.")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                        Spacer(minLength: 16)
-                        Button(sync.isOn ? "Change…" : "Choose Folder…") { sync.choose() }
-                        if sync.isOn {
-                            Button("Stop") { sync.turnOff() }
+                SettingsGroup("Sync", footer: "Keep snippets, colors and tasks as JSON in a folder — one in iCloud Drive or Dropbox shares them with your other Macs; Klik reloads when the files change. Task attachments stay on this Mac.") {
+                    SettingsRow(sync.url?.lastPathComponent ?? "Not syncing",
+                                subtitle: sync.url?.path(percentEncoded: false) ?? "Snippets, colors and tasks stay in Klik's own container.",
+                                symbol: "arrow.triangle.2.circlepath", tint: .blue) {
+                        HStack(spacing: 8) {
+                            Button(sync.isOn ? "Change…" : "Choose Folder…") { sync.choose() }
+                            if sync.isOn {
+                                Button("Stop") { sync.turnOff() }
+                            }
                         }
                     }
-                } header: {
-                    Text("Sync")
-                } footer: {
-                    Text("Keep snippets, colors and tasks as JSON in a folder — one in iCloud Drive or Dropbox shares them with your other Macs; Klik reloads when the files change. Task attachments stay on this Mac.")
                 }
             }
 
-            Section {
-                MenuBarIconPicker()
-            } header: {
-                Text("Menu bar icon")
-            } footer: {
-                Text("Custom icons work best as a black-on-transparent PNG or PDF around 18 × 18 points; Klik tints it to match the menu bar.")
+            SettingsGroup("Menu bar icon", footer: "Custom icons work best as a black-on-transparent PNG or PDF around 18 × 18 points; Klik tints it to match the menu bar.") {
+                SettingsCell(vertical: 14) { MenuBarIconPicker() }
             }
 
-            Section {
-                HStack(spacing: 12) {
-                    SymbolTile(symbol: "folder", tint: .orange)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(library.folderIsCustom ? library.folderURL.lastPathComponent : "Pictures › Klik")
-                        Text(library.folderURL.path(percentEncoded: false))
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+            SettingsGroup("Storage", footer: "Every capture is saved here as PNG and listed in the menu bar panel. Deleting a capture from the panel moves the file to the Trash.") {
+                SettingsRow(library.folderIsCustom ? library.folderURL.lastPathComponent : "Pictures › Klik",
+                            subtitle: library.folderURL.path(percentEncoded: false), symbol: "folder", tint: .orange) {
+                    HStack(spacing: 8) {
+                        Button("Choose…") { library.chooseFolder() }
+                        Button(action: { library.revealFolder() }) {
+                            Image(systemName: "arrow.up.forward.app")
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(.secondary)
+                        .help("Reveal in Finder")
                     }
-                    Spacer(minLength: 16)
-                    Button("Choose…") { library.chooseFolder() }
-                    Button(action: { library.revealFolder() }) {
-                        Image(systemName: "arrow.up.forward.app")
-                    }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(.secondary)
-                    .help("Reveal in Finder")
                 }
-                .padding(.vertical, 4)
                 if library.folderIsCustom {
-                    Button("Use Default Folder") { library.useDefaultFolder() }
-                        .controlSize(.small)
+                    SettingsRow("Back to the default folder", subtitle: "Pictures › Klik") {
+                        Button("Use Default Folder") { library.useDefaultFolder() }
+                    }
                 }
-            } header: {
-                Text("Storage")
-            } footer: {
-                Text("Every capture is saved here as PNG and listed in the menu bar panel. Deleting a capture from the panel moves the file to the Trash.")
             }
-
         }
     }
 
@@ -134,6 +96,64 @@ struct GeneralSettingsView: View {
     }
 }
 
+/// A little window in the light, the dark, or half of each.
+private struct AppearancePreview: View {
+    let appearance: AppPreferences.Appearance
+
+    var body: some View {
+        ZStack {
+            switch appearance {
+            case .light: pane(dark: false)
+            case .dark: pane(dark: true)
+            case .system:
+                ZStack {
+                    pane(dark: false)
+                    pane(dark: true).clipShape(HalfMask())
+                }
+            }
+        }
+    }
+
+    private func pane(dark: Bool) -> some View {
+        ZStack {
+            LinearGradient(colors: dark ? [Color(white: 0.16), Color(white: 0.1)] : [Color(white: 0.96), Color(white: 0.88)], startPoint: .top, endPoint: .bottom)
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(dark ? Color(white: 0.22) : .white)
+                .overlay(alignment: .topLeading) {
+                    HStack(spacing: 3) {
+                        ForEach(0..<3) { _ in Circle().fill(dark ? Color(white: 0.4) : Color(white: 0.75)).frame(width: 4, height: 4) }
+                    }
+                    .padding(6)
+                }
+                .overlay(alignment: .bottomLeading) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        ForEach([0.6, 0.4, 0.5], id: \.self) { width in
+                            Capsule().fill(dark ? Color(white: 0.4) : Color(white: 0.8)).frame(width: 60 * width, height: 3)
+                        }
+                    }
+                    .padding(8)
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 12)
+                .padding(.bottom, -6)
+                .shadow(color: .black.opacity(dark ? 0.5 : 0.15), radius: 6, y: 3)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// The lower-right half, split from the top-right corner to the bottom-left.
+    nonisolated private struct HalfMask: Shape {
+        func path(in rect: CGRect) -> Path {
+            var path = Path()
+            path.move(to: CGPoint(x: rect.maxX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+            path.closeSubpath()
+            return path
+        }
+    }
+}
+
 // MARK: - Island & panels
 
 struct IslandSettingsView: View {
@@ -143,75 +163,95 @@ struct IslandSettingsView: View {
     var body: some View {
         @Bindable var preferences = preferences
         SettingsPane(.island) {
-            Section {
-                Toggle(isOn: $preferences.snippetsEnabled) {
-                    Text("Expand snippets as you type")
-                    Text("Type a snippet's keyword (\(preferences.snippetPrefix)welcome) in any app and Klik replaces it with the snippet. Blanks like {{Name}} are asked for first; {{date}}, {{time}} and {{clipboard}} fill themselves.")
+            SettingsGroup("Snippets", footer: "Make snippets in the island's Snippets tab, or from a clipboard entry or an asset with Make Snippet…") {
+                SettingsRow("Expand snippets as you type", subtitle: "Type a snippet's keyword (\(preferences.snippetPrefix)welcome) in any app and Klik replaces it with the snippet. Blanks like {{Name}} are asked for first; {{date}}, {{time}} and {{clipboard}} fill themselves.") {
+                    Toggle("Expand snippets", isOn: $preferences.snippetsEnabled).toggleStyle(.switch)
                 }
-                HStack {
-                    Text("Keyword trigger")
-                    Spacer()
+                SettingsRow("Keyword trigger", subtitle: "Before every keyword, so ordinary words never expand.") {
                     TextField("", text: $preferences.snippetPrefix, prompt: Text(";"))
                         .textFieldStyle(.roundedBorder)
                         .font(.system(.body, design: .monospaced))
                         .multilineTextAlignment(.center)
                         .frame(width: 60)
-                    Text("before every keyword, so ordinary words never expand")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
                 }
                 if !PermissionManager.hasAccessibilityAccess {
-                    HStack {
-                        Label("Needs Accessibility access to see what you type and to paste", systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                            .font(.callout)
-                        Spacer()
+                    SettingsRow("Needs Accessibility access", subtitle: "To see what you type and to paste the snippet.", symbol: "exclamationmark.triangle.fill", tint: .orange) {
                         Button("Grant…") {
                             PermissionManager.requestAccessibilityAccess()
                             PermissionManager.revealAppInFinder()
                         }
-                        .controlSize(.small)
                     }
                 }
-            } header: {
-                Text("Snippets")
-            } footer: {
-                Text("Make snippets in the island's Snippets tab, or from a clipboard entry or an asset with Make Snippet…")
             }
 
-            Section {
-                Toggle(isOn: $preferences.dynamicIslandEnabled) {
-                    Text("Show the Dynamic Island")
-                    Text("Hover over the notch — or the pill at the top of the screen — to open your captures. The island never appears in Klik's own screenshots.")
+            SettingsGroup("Dynamic Island") {
+                SettingsRow("Show the Dynamic Island", subtitle: "Hover over the notch — or the pill at the top of the screen — to open your captures. The island never appears in Klik's own screenshots.") {
+                    Toggle("Show the island", isOn: $preferences.dynamicIslandEnabled).toggleStyle(.switch)
                 }
-                Toggle(isOn: $preferences.dynamicIslandOnPlainDisplays) {
-                    Text("Also show a pill on displays without a notch")
+                SettingsRow("Also show a pill on displays without a notch") {
+                    Toggle("Pill on plain displays", isOn: $preferences.dynamicIslandOnPlainDisplays).toggleStyle(.switch)
                 }
                 .disabled(!preferences.dynamicIslandEnabled)
-            } header: {
-                Text("Dynamic Island")
             }
 
-            Section {
-                Picker("Open panels at", selection: $preferences.panelPosition) {
-                    ForEach(PanelPosition.allCases, id: \.self) { Text($0.title).tag($0) }
+            SettingsGroup("Panels") {
+                SettingsPreviewPicker(title: "Open panels at", subtitle: "Where the library panel (⌥⇧K) and the quick task (⌥/) appear — on the screen the pointer is on.",
+                                      selection: $preferences.panelPosition, options: PanelPosition.allCases, label: { $0 == .pointer ? "Pointer" : $0.title }, columns: 4) { position in
+                    PanelPositionPreview(position: position)
                 }
-            } header: {
-                Text("Panels")
-            } footer: {
-                Text("Where the library panel (⌥⇧K) and the quick task (⌥/) appear — on the screen the pointer is on.")
             }
 
-            Section {
-                Picker("Copy picked colors as", selection: $preferences.colorFormat) {
-                    ForEach(ColorFormat.allCases, id: \.self) { Text($0.title).tag($0) }
+            SettingsGroup("Color picker", footer: "Every other format is one right-click away on a color card.") {
+                SettingsRow("Copy picked colors as") {
+                    Picker("Color format", selection: $preferences.colorFormat) {
+                        ForEach(ColorFormat.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
+                    .fixedSize()
                 }
-            } header: {
-                Text("Color picker")
-            } footer: {
-                Text("Every other format is one right-click away on a color card.")
             }
+        }
+    }
+}
 
+/// A screen with a panel where the position puts it.
+private struct PanelPositionPreview: View {
+    let position: PanelPosition
+
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [Color(white: 0.2), Color(white: 0.12)], startPoint: .top, endPoint: .bottom)
+            GeometryReader { proxy in
+                let panel = CGSize(width: proxy.size.width * 0.34, height: proxy.size.height * 0.42)
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(Color.brand.opacity(0.9))
+                    .overlay(alignment: .top) {
+                        Capsule().fill(.white.opacity(0.5)).frame(width: panel.width * 0.6, height: 2).padding(.top, 3)
+                    }
+                    .frame(width: panel.width, height: panel.height)
+                    .position(point(in: proxy.size, panel: panel))
+                if position == .pointer {
+                    Image(systemName: "cursorarrow")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white)
+                        .position(x: proxy.size.width * 0.5 + panel.width * 0.35, y: proxy.size.height * 0.5 + panel.height * 0.3)
+                }
+            }
+        }
+    }
+
+    private func point(in size: CGSize, panel: CGSize) -> CGPoint {
+        let inset: CGFloat = 6
+        let left = inset + panel.width / 2, right = size.width - inset - panel.width / 2
+        let top = inset + panel.height / 2, bottom = size.height - inset - panel.height / 2
+        let midX = size.width / 2, midY = size.height / 2
+        switch position {
+        case .pointer, .center: return CGPoint(x: midX, y: midY)
+        case .top: return CGPoint(x: midX, y: top)
+        case .bottom: return CGPoint(x: midX, y: bottom)
+        case .topLeft: return CGPoint(x: left, y: top)
+        case .topRight: return CGPoint(x: right, y: top)
+        case .bottomLeft: return CGPoint(x: left, y: bottom)
+        case .bottomRight: return CGPoint(x: right, y: bottom)
         }
     }
 }
@@ -225,47 +265,41 @@ struct CaptureSettingsView: View {
     var body: some View {
         @Bindable var preferences = preferences
         SettingsPane(.capture) {
-            Section("Full screen") {
-                Toggle(isOn: $includeCursor) {
-                    Text("Include mouse pointer")
+            SettingsGroup("Full screen") {
+                SettingsRow("Include mouse pointer") {
+                    Toggle("Include pointer", isOn: $includeCursor).toggleStyle(.switch)
                 }
             }
 
-            Section {
-                Toggle(isOn: $preferences.soundEnabled) {
-                    Text("Play a sound after each capture")
+            SettingsGroup("Sound", footer: "Pick one of the macOS alert sounds or any audio file from your Mac.") {
+                SettingsRow("Play a sound after each capture") {
+                    Toggle("Play a sound", isOn: $preferences.soundEnabled).toggleStyle(.switch)
                 }
-                HStack(spacing: 12) {
-                    SymbolTile(symbol: "speaker.wave.2.fill", tint: .orange)
-                    Picker("Sound", selection: $preferences.sound) {
-                        Text(AppPreferences.Sound.shutter.title).tag(AppPreferences.Sound.shutter)
-                        Divider()
-                        ForEach(AppPreferences.Sound.systemNames, id: \.self) { name in
-                            Text(name).tag(AppPreferences.Sound.system(name))
-                        }
-                        if let url = preferences.customSoundURL {
+                SettingsRow("Sound", symbol: "speaker.wave.2.fill", tint: .orange) {
+                    HStack(spacing: 8) {
+                        Picker("Sound", selection: $preferences.sound) {
+                            Text(AppPreferences.Sound.shutter.title).tag(AppPreferences.Sound.shutter)
                             Divider()
-                            Text(url.lastPathComponent).tag(AppPreferences.Sound.custom)
+                            ForEach(AppPreferences.Sound.systemNames, id: \.self) { name in
+                                Text(name).tag(AppPreferences.Sound.system(name))
+                            }
+                            if let url = preferences.customSoundURL {
+                                Divider()
+                                Text(url.lastPathComponent).tag(AppPreferences.Sound.custom)
+                            }
                         }
+                        .frame(width: 180)
+                        .onChange(of: preferences.sound) { _, new in preferences.play(new) }
+                        Button {
+                            preferences.play(preferences.sound)
+                        } label: {
+                            Image(systemName: "play.fill")
+                        }
+                        .help("Preview")
+                        Button("Choose File…") { preferences.chooseCustomSound() }
                     }
-                    .labelsHidden()
-                    .frame(maxWidth: 220)
-                    .onChange(of: preferences.sound) { _, new in preferences.play(new) }
-                    Button {
-                        preferences.play(preferences.sound)
-                    } label: {
-                        Image(systemName: "play.fill")
-                    }
-                    .help("Preview")
-                    Spacer(minLength: 8)
-                    Button("Choose File…") { preferences.chooseCustomSound() }
                 }
                 .disabled(!preferences.soundEnabled)
-                .padding(.vertical, 2)
-            } header: {
-                Text("Sound")
-            } footer: {
-                Text("Pick one of the macOS alert sounds or any audio file from your Mac.")
             }
         }
     }
@@ -279,7 +313,7 @@ private struct MenuBarIconPicker: View {
     private let columns = Array(repeating: GridItem(.fixed(44), spacing: 8), count: 8)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
                 ForEach(AppPreferences.Icon.symbols, id: \.self) { name in
                     iconCell(selected: preferences.icon == .symbol(name)) {
@@ -300,13 +334,12 @@ private struct MenuBarIconPicker: View {
             }
             HStack {
                 Text("The icon lives in the menu bar; click it to open your captures.")
-                    .font(.callout)
+                    .font(.system(size: 13))
                     .foregroundStyle(.secondary)
                 Spacer()
                 Button("Custom Image…") { preferences.chooseCustomIcon() }
             }
         }
-        .padding(.vertical, 4)
     }
 
     private func iconCell(selected: Bool, @ViewBuilder content: () -> some View, action: @escaping () -> Void) -> some View {
@@ -320,7 +353,7 @@ private struct MenuBarIconPicker: View {
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(selected ? Color.accentColor : Color.primary.opacity(0.12))
+                        .strokeBorder(selected ? Color.accentColor : SettingsPalette.edge)
                 )
         }
         .buttonStyle(.plain)
@@ -338,87 +371,82 @@ struct TimeSettingsView: View {
     var body: some View {
         @Bindable var preferences = preferences
         SettingsPane(.time) {
-            Section {
-                Picker("Show the time every", selection: $preferences.timeStatusInterval) {
-                    ForEach(AppPreferences.timeIntervals, id: \.self) { minutes in
-                        Text(Self.intervalTitle(minutes)).tag(minutes)
+            SettingsGroup("Time on the island", footer: "On the hour, the half hour and so on, the island shows the time for a moment — with the prayer period when prayer times are on. It waits while the island is open.") {
+                SettingsRow("Show the time every") {
+                    Picker("Interval", selection: $preferences.timeStatusInterval) {
+                        ForEach(AppPreferences.timeIntervals, id: \.self) { minutes in
+                            Text(Self.intervalTitle(minutes)).tag(minutes)
+                        }
                     }
+                    .fixedSize()
                 }
-                HStack {
-                    Text("Preview").foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Show on the Island Now") { clock?.preview() }
+                SettingsRow("Preview", subtitle: "Show the time on the island now.") {
+                    Button("Show on the Island") { clock?.preview() }
                 }
-            } header: {
-                Text("Time on the island")
-            } footer: {
-                Text("On the hour, the half hour and so on, the island shows the time for a moment — with the prayer period when prayer times are on. It waits while the island is open.")
             }
 
-            Section {
-                Toggle(isOn: $preferences.prayerTimesEnabled) {
-                    Text("Prayer times")
-                    Text("Computed on this Mac from the sun's position at your location; nothing is fetched from the internet. They refresh at midnight, on wake and when the location changes.")
+            SettingsGroup("Prayer times") {
+                SettingsRow("Prayer times", subtitle: "Computed on this Mac from the sun's position at your location; nothing is fetched from the internet. They refresh at midnight, on wake and when the location changes.") {
+                    Toggle("Prayer times", isOn: $preferences.prayerTimesEnabled).toggleStyle(.switch)
                 }
-                Picker("Calculation method", selection: $preferences.prayerMethod) {
-                    ForEach(CalculationMethod.allCases, id: \.self) { Text($0.title).tag($0) }
-                }
-                .disabled(!preferences.prayerTimesEnabled)
-                Picker("Asr", selection: $preferences.prayerMadhab) {
-                    ForEach(Madhab.allCases, id: \.self) { Text($0.title).tag($0) }
+                SettingsRow("Calculation method") {
+                    Picker("Method", selection: $preferences.prayerMethod) {
+                        ForEach(CalculationMethod.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
+                    .fixedSize()
                 }
                 .disabled(!preferences.prayerTimesEnabled)
-                Toggle(isOn: $preferences.prayerAnnouncements) {
-                    Text("Announce prayers on the island")
-                    Text("Each prayer as it begins, and the times prayer is not allowed: \(Int(PrayerTimes.sunriseWindow / 60)) min after sunrise, \(Int(PrayerTimes.zenithWindow / 60)) min before Dhuhr, \(Int(PrayerTimes.sunsetWindow / 60)) min before Maghrib.")
+                SettingsRow("Asr") {
+                    Picker("Asr", selection: $preferences.prayerMadhab) {
+                        ForEach(Madhab.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
+                    .fixedSize()
                 }
                 .disabled(!preferences.prayerTimesEnabled)
-            } header: {
-                Text("Prayer times")
+                SettingsRow("Announce prayers on the island", subtitle: "Each prayer as it begins, and the times prayer is not allowed: \(Int(PrayerTimes.sunriseWindow / 60)) min after sunrise, \(Int(PrayerTimes.zenithWindow / 60)) min before Dhuhr, \(Int(PrayerTimes.sunsetWindow / 60)) min before Maghrib.") {
+                    Toggle("Announce prayers", isOn: $preferences.prayerAnnouncements).toggleStyle(.switch)
+                }
+                .disabled(!preferences.prayerTimesEnabled)
             }
 
-            Section {
-                Picker("Location", selection: $preferences.prayerLocationMode) {
-                    ForEach(AppPreferences.PrayerLocationMode.allCases, id: \.self) { Text($0.title).tag($0) }
+            SettingsGroup("Where", footer: preferences.prayerLocationMode == .manual
+                          ? "Decimal degrees, e.g. 23.8103, 90.4125 for Dhaka. Positive is north / east."
+                          : "macOS asks once for permission. The last fix is kept, so the times are ready at launch and offline.") {
+                SettingsRow("Location") {
+                    Picker("Location", selection: $preferences.prayerLocationMode) {
+                        ForEach(AppPreferences.PrayerLocationMode.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
+                    .fixedSize()
                 }
                 if preferences.prayerLocationMode == .manual {
-                    HStack {
-                        TextField("Latitude", text: $latitude, prompt: Text("Latitude (−90…90)"))
-                        TextField("Longitude", text: $longitude, prompt: Text("Longitude (−180…180)"))
-                        Button("Use") { applyManual() }
-                            .disabled(Double(latitude) == nil || Double(longitude) == nil)
+                    SettingsRow("Coordinates") {
+                        HStack(spacing: 8) {
+                            TextField("Latitude", text: $latitude, prompt: Text("Latitude (−90…90)")).frame(width: 140)
+                            TextField("Longitude", text: $longitude, prompt: Text("Longitude (−180…180)")).frame(width: 150)
+                            Button("Use") { applyManual() }
+                                .disabled(Double(latitude) == nil || Double(longitude) == nil)
+                        }
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit(applyManual)
                     }
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit(applyManual)
                 } else {
-                    HStack {
-                        Text(clock?.placeDescription ?? "—").foregroundStyle(.secondary)
-                        Spacer()
+                    SettingsRow(clock?.placeDescription ?? "—", symbol: "location.fill", tint: .blue) {
                         Button("Locate Now") { clock?.locate() }
                     }
                 }
-            } header: {
-                Text("Where")
-            } footer: {
-                Text(preferences.prayerLocationMode == .manual
-                     ? "Decimal degrees, e.g. 23.8103, 90.4125 for Dhaka. Positive is north / east."
-                     : "macOS asks once for permission. The last fix is kept, so the times are ready at launch and offline.")
             }
             .disabled(!preferences.prayerTimesEnabled)
 
             if preferences.prayerTimesEnabled, let clock, let today = clock.today {
-                Section {
+                SettingsGroup("Today", footer: "Nudge a time by a few minutes to match your mosque's timetable. \(clock.prayerLine() ?? "")") {
                     ForEach(today.ordered, id: \.prayer) { entry in
                         adjustmentRow(entry.prayer, time: entry.time)
                     }
                     if preferences.prayerAdjustments.values.contains(where: { $0 != 0 }) {
-                        Button("Reset Adjustments") { preferences.prayerAdjustments = [:] }
-                            .controlSize(.small)
+                        SettingsRow("Adjustments") {
+                            Button("Reset") { preferences.prayerAdjustments = [:] }
+                        }
                     }
-                } header: {
-                    Text("Today")
-                } footer: {
-                    Text("Nudge a time by a few minutes to match your mosque's timetable. \(clock.prayerLine() ?? "")")
                 }
             }
         }
@@ -436,17 +464,17 @@ struct TimeSettingsView: View {
             get: { preferences.prayerAdjustments[prayer] ?? 0 },
             set: { preferences.prayerAdjustments[prayer] = $0 }
         )
-        return HStack {
-            Label(prayer.title, systemImage: prayer.symbol)
-            Spacer()
-            Text(PrayerClock.clock(time)).monospacedDigit()
-            Stepper(value: offset, in: -60...60) {
-                Text(offset.wrappedValue == 0 ? "±0" : String(format: "%+d min", offset.wrappedValue))
-                    .monospacedDigit()
-                    .foregroundStyle(offset.wrappedValue == 0 ? .secondary : .primary)
-                    .frame(width: 56, alignment: .trailing)
+        return SettingsRow(prayer.title, symbol: prayer.symbol, tint: .cyan) {
+            HStack(spacing: 12) {
+                Text(PrayerClock.clock(time)).monospacedDigit()
+                Stepper(value: offset, in: -60...60) {
+                    Text(offset.wrappedValue == 0 ? "±0" : String(format: "%+d min", offset.wrappedValue))
+                        .monospacedDigit()
+                        .foregroundStyle(offset.wrappedValue == 0 ? .secondary : .primary)
+                        .frame(width: 56, alignment: .trailing)
+                }
+                .controlSize(.small)
             }
-            .controlSize(.small)
         }
     }
 
@@ -475,26 +503,21 @@ struct ClipboardSettingsView: View {
     var body: some View {
         @Bindable var preferences = preferences
         SettingsPane(.clipboard) {
-            Section {
-                Toggle(isOn: $preferences.clipboardHistoryEnabled) {
-                    Text("Keep a clipboard history")
-                    Text("Text, links, colors, images and files you copy in any app appear in the Dynamic Island's Clipboard tab. Click one to copy it again.")
+            SettingsGroup("History", footer: "Pinned items are always kept. Content that apps mark as concealed (secrets from credential managers) is never recorded, and nothing leaves this Mac.") {
+                SettingsRow("Keep a clipboard history", subtitle: "Text, links, colors, images and files you copy in any app appear in the Dynamic Island's Clipboard tab. Click one to copy it again.") {
+                    Toggle("Keep history", isOn: $preferences.clipboardHistoryEnabled).toggleStyle(.switch)
                 }
-                Picker("Keep the last", selection: $preferences.clipboardHistoryLimit) {
-                    ForEach(AppPreferences.clipboardLimits, id: \.self) { Text("\($0) items").tag($0) }
+                SettingsRow("Keep the last") {
+                    Picker("Limit", selection: $preferences.clipboardHistoryLimit) {
+                        ForEach(AppPreferences.clipboardLimits, id: \.self) { Text("\($0) items").tag($0) }
+                    }
+                    .fixedSize()
                 }
                 .disabled(!preferences.clipboardHistoryEnabled)
-            } header: {
-                Text("History")
-            } footer: {
-                Text("Pinned items are always kept. Content that apps mark as concealed (secrets from credential managers) is never recorded, and nothing leaves this Mac.")
             }
 
-            Section {
-                HStack {
-                    Text("\(clipboard.items.count) item\(clipboard.items.count == 1 ? "" : "s") stored")
-                        .foregroundStyle(.secondary)
-                    Spacer()
+            SettingsGroup {
+                SettingsRow("\(clipboard.items.count) item\(clipboard.items.count == 1 ? "" : "s") stored", subtitle: "Pinned items stay when the history is cleared.") {
                     Button("Clear History…", role: .destructive) { confirmClear = true }
                         .disabled(clipboard.items.allSatisfy(\.pinned))
                 }
@@ -515,7 +538,7 @@ struct PermissionSettingsView: View {
 
     var body: some View {
         SettingsPane(.permissions) {
-            Section {
+            SettingsGroup(footer: "Klik only captures when you ask it to and never uploads anything.") {
                 PermissionRow(
                     symbol: "rectangle.dashed.badge.record", tint: .blue,
                     title: "Screen Recording",
@@ -527,7 +550,7 @@ struct PermissionSettingsView: View {
                 PermissionRow(
                     symbol: "accessibility", tint: .purple,
                     title: "Accessibility",
-                    detail: "Optional. Add Klik to the list with “+” or by dragging it in.",
+                    detail: "Optional: snippets, paste and the front field. Add Klik to the list with “+” or by dragging it in.",
                     granted: model.hasAccessibilityAccess,
                     request: {
                         PermissionManager.requestAccessibilityAccess()
@@ -535,10 +558,6 @@ struct PermissionSettingsView: View {
                     },
                     openSettings: PermissionManager.openAccessibilitySettings
                 )
-            } header: {
-                Text("Permissions")
-            } footer: {
-                Text("Klik only captures when you ask it to and never uploads anything.")
             }
         }
         .onAppear { model.refreshPermissionState() }
@@ -561,41 +580,28 @@ private struct PermissionRow: View {
     let openSettings: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            SymbolTile(symbol: symbol, tint: tint)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                Text(detail)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer(minLength: 16)
-
-            if granted {
-                Label("Granted", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                    .font(.callout.weight(.medium))
-                    .labelStyle(.titleAndIcon)
-            } else {
-                Button("Grant Access…") {
-                    request()
-                    openSettings()
+        SettingsRow(title, subtitle: detail, symbol: symbol, tint: tint) {
+            HStack(spacing: 10) {
+                if granted {
+                    Label("Granted", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .font(.system(size: 13, weight: .medium))
+                        .labelStyle(.titleAndIcon)
+                } else {
+                    Button("Grant Access…") {
+                        request()
+                        openSettings()
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
+                Button(action: openSettings) {
+                    Image(systemName: "arrow.up.forward.app")
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                .help("Open in System Settings")
             }
-
-            Button(action: openSettings) {
-                Image(systemName: "arrow.up.forward.app")
-            }
-            .buttonStyle(.borderless)
-            .foregroundStyle(.secondary)
-            .help("Open in System Settings")
         }
-        .padding(.vertical, 4)
     }
 }
 
@@ -622,66 +628,84 @@ struct EditorSettingsView: View {
         @Bindable var preferences = preferences
         let d = $preferences.editorDefaults
         SettingsPane(.editor) {
-            Section {
-                Toggle(isOn: d.rememberLastUsed) {
-                    Text("Start each editor with the options last used")
-                    Text("Off: every editor starts with the defaults below.")
+            SettingsGroup {
+                SettingsRow("Start each editor with the options last used", subtitle: "Off: every editor starts with the defaults below.") {
+                    Toggle("Remember last used", isOn: d.rememberLastUsed).toggleStyle(.switch)
                 }
             }
 
-            Section("Colors") {
-                LabeledContent("Annotations") { SwatchRow(color: d.color) }
-                LabeledContent("Highlight box") { SwatchRow(color: d.highlightColor) }
+            SettingsGroup("Colors") {
+                SettingsRow("Annotations") { SwatchRow(color: d.color) }
+                SettingsRow("Highlight box") { SwatchRow(color: d.highlightColor) }
             }
 
-            Section("Shapes, lines & arrows") {
+            SettingsGroup("Shapes, lines & arrows") {
                 SliderRow("Stroke width", value: d.strokeWidth, range: EditorDefaults.strokeRange, unit: "px")
-                Picker("Shape", selection: d.shapeKind) {
-                    Text("Rectangle").tag(ShapeKind.rectangle)
-                    Text("Ellipse").tag(ShapeKind.ellipse)
-                    Text("Line").tag(ShapeKind.line)
+                SettingsRow("Shape") {
+                    Picker("Shape", selection: d.shapeKind) {
+                        Label("Rectangle", systemImage: "rectangle").tag(ShapeKind.rectangle)
+                        Label("Ellipse", systemImage: "oval").tag(ShapeKind.ellipse)
+                        Label("Line", systemImage: "line.diagonal").tag(ShapeKind.line)
+                    }
+                    .pickerStyle(.segmented)
+                    .fixedSize()
                 }
-                Picker("Fill", selection: d.fillMode) {
-                    Text("None").tag(FillMode.none)
-                    Text("Solid").tag(FillMode.solid)
-                    Text("Translucent").tag(FillMode.translucent)
+                SettingsRow("Fill") {
+                    Picker("Fill", selection: d.fillMode) {
+                        Text("None").tag(FillMode.none)
+                        Text("Solid").tag(FillMode.solid)
+                        Text("Translucent").tag(FillMode.translucent)
+                    }
+                    .pickerStyle(.segmented)
+                    .fixedSize()
                 }
-                Picker("Arrow head", selection: d.arrowStyle) {
-                    Text("One end").tag(ArrowStyle.single)
-                    Text("Both ends").tag(ArrowStyle.double)
+                SettingsRow("Arrow head") {
+                    Picker("Arrow head", selection: d.arrowStyle) {
+                        Label("One end", systemImage: "arrow.right").tag(ArrowStyle.single)
+                        Label("Both ends", systemImage: "arrow.left.and.right").tag(ArrowStyle.double)
+                    }
+                    .pickerStyle(.segmented)
+                    .fixedSize()
                 }
             }
 
-            Section("Text") {
+            SettingsGroup("Text") {
                 SliderRow("Font size", value: d.fontSize, range: EditorDefaults.fontSizeRange, unit: "pt")
-                LabeledContent("Weight") {
+                SettingsRow("Weight") {
                     HStack(spacing: 10) {
-                        Slider(value: d.fontWeight, in: TextStyle.weightRange)
+                        Slider(value: d.fontWeight, in: TextStyle.weightRange).frame(width: 160)
                         Text(TextStyle(color: .black, fontSize: 12, background: .none, weight: preferences.editorDefaults.fontWeight).weightName)
                             .foregroundStyle(.secondary)
                             .frame(width: 66, alignment: .trailing)
                     }
                 }
-                Picker("Background", selection: d.textBackground) {
-                    Text("None").tag(TextBackground.none)
-                    Text("Solid").tag(TextBackground.solid)
-                    Text("Translucent").tag(TextBackground.translucent)
+                SettingsRow("Background") {
+                    Picker("Background", selection: d.textBackground) {
+                        Text("None").tag(TextBackground.none)
+                        Text("Solid").tag(TextBackground.solid)
+                        Text("Translucent").tag(TextBackground.translucent)
+                    }
+                    .pickerStyle(.segmented)
+                    .fixedSize()
                 }
             }
 
-            Section("Marker, blur & counter") {
+            SettingsGroup("Marker, blur & counter") {
                 SliderRow("Marker width", value: d.highlighterWidth, range: EditorDefaults.highlighterRange, unit: "px")
-                Picker("Blur style", selection: d.blurKind) {
-                    Text("Blur").tag(BlurKind.blur)
-                    Text("Pixelate").tag(BlurKind.pixelate)
+                SettingsRow("Blur style") {
+                    Picker("Blur style", selection: d.blurKind) {
+                        Text("Blur").tag(BlurKind.blur)
+                        Text("Pixelate").tag(BlurKind.pixelate)
+                    }
+                    .pickerStyle(.segmented)
+                    .fixedSize()
                 }
                 SliderRow("Blur strength", value: d.blurIntensity, range: EditorDefaults.blurRange, unit: "")
                 SliderRow("Counter size", value: d.counterSize, range: EditorDefaults.counterRange, unit: "px")
             }
 
-            Section {
-                HStack {
-                    Spacer()
+            SettingsGroup {
+                SettingsRow("Defaults", subtitle: "Back to Klik's own colors, widths and sizes; the option above is kept.") {
                     Button("Restore Defaults") {
                         let remember = preferences.editorDefaults.rememberLastUsed
                         preferences.editorDefaults = EditorDefaults()
@@ -733,9 +757,9 @@ private struct SliderRow: View {
     }
 
     var body: some View {
-        LabeledContent(label) {
+        SettingsRow(label) {
             HStack(spacing: 10) {
-                Slider(value: Binding(get: { value }, set: { value = $0.rounded() }), in: range)
+                Slider(value: Binding(get: { value }, set: { value = $0.rounded() }), in: range).frame(width: 160)
                 Text("\(Int(value))\(unit.isEmpty ? "" : " \(unit)")")
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
@@ -756,54 +780,38 @@ struct ShortcutSettingsView: View {
 
     var body: some View {
         SettingsPane(.shortcuts) {
-            Section {
+            if hasReservedBinding {
+                SettingsGroup {
+                    SettingsRow("A binding matches a macOS screenshot shortcut",
+                                subtitle: "macOS handles ⌘⇧3, ⌘⇧4, ⌘⇧5 and ⌘⇧6 before Klik sees them. Turn them off under Keyboard › Keyboard Shortcuts › Screenshots to use them here.",
+                                symbol: "exclamationmark.triangle.fill", tint: .orange) {
+                        Button("Keyboard Settings…") { PermissionManager.openKeyboardShortcutSettings() }
+                    }
+                }
+            }
+
+            SettingsGroup("Global shortcuts", footer: "Click a field and press a new combination. Shortcuts need ⌘, ⌥ or ⌃ (or a function key); ⌫ removes one, ⎋ keeps the current one.") {
                 ForEach(HotkeyID.configurable, id: \.self) { id in
                     let entry = shortcuts.entries[id]
-                    HStack(spacing: 12) {
-                        SymbolTile(symbol: symbol(for: id), tint: tint(for: id))
-                        Text(id.title)
-                        Spacer(minLength: 16)
-                        ShortcutRecorderView(
-                            hotkey: entry?.hotkey,
-                            onChange: { shortcuts.set($0, for: id) },
-                            onRecordingChanged: { shortcuts.isRecording = $0 }
-                        )
-                        statusIcon(entry?.status ?? .unassigned)
-                            .frame(width: 18)
-                    }
-                    .padding(.vertical, 2)
-                }
-            } header: {
-                Text("Global shortcuts")
-            } footer: {
-                HStack(alignment: .top) {
-                    Text("Click a field and press a new combination. Shortcuts need ⌘, ⌥ or ⌃ (or a function key); ⌫ removes one, ⎋ keeps the current one.")
-                    Spacer(minLength: 12)
-                    Button("Restore Defaults") { shortcuts.restoreDefaults() }
-                        .controlSize(.small)
-                }
-            }
-
-            if hasReservedBinding {
-                Section {
-                    HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("A binding matches a macOS screenshot shortcut")
-                                .fontWeight(.medium)
-                            Text("macOS handles ⌘⇧3, ⌘⇧4, ⌘⇧5 and ⌘⇧6 before Klik sees them. Turn them off under Keyboard › Keyboard Shortcuts › Screenshots to use them here.")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
+                    SettingsRow(id.title, symbol: symbol(for: id), tint: tint(for: id)) {
+                        HStack(spacing: 10) {
+                            ShortcutRecorderView(
+                                hotkey: entry?.hotkey,
+                                onChange: { shortcuts.set($0, for: id) },
+                                onRecordingChanged: { shortcuts.isRecording = $0 }
+                            )
+                            statusIcon(entry?.status ?? .unassigned)
+                                .frame(width: 18)
                         }
-                        Spacer()
-                        Button("Keyboard Settings…") { PermissionManager.openKeyboardShortcutSettings() }
-                            .controlSize(.small)
                     }
                 }
             }
 
+            SettingsGroup {
+                SettingsRow("Defaults", subtitle: "Every shortcut back to what Klik ships with.") {
+                    Button("Restore Defaults") { shortcuts.restoreDefaults() }
+                }
+            }
         }
     }
 
@@ -874,42 +882,47 @@ struct AboutSettingsView: View {
 
     var body: some View {
         SettingsPane(.about) {
-            Section {
-                LabeledContent("Version") {
-                    HStack(spacing: 10) {
-                        Text("\(short) (\(build))").monospacedDigit().foregroundStyle(.secondary)
-                        Button(copied ? "Copied" : "Copy") {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString("Klik \(short) (\(build)) · macOS \(ProcessInfo.processInfo.operatingSystemVersionString)", forType: .string)
-                            copied = true
-                            Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
+            SettingsGroup {
+                SettingsCell(vertical: 16) {
+                    HStack(spacing: 16) {
+                        AppIconTile(size: 56)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Klik").font(.system(size: 17, weight: .semibold))
+                            Text("Screenshots you can annotate, blur and share — built natively for macOS.")
+                                .font(.system(size: 13))
+                                .foregroundStyle(.secondary)
                         }
-                        .controlSize(.small)
-                        .help("Copy the version and macOS version, for a bug report")
+                        Spacer(minLength: 16)
+                        Text("Version \(short) (\(build))")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .font(.system(size: 13))
                     }
                 }
-                LabeledContent("macOS") {
+                SettingsRow("Version", subtitle: "With the macOS version, for a bug report.") {
+                    Button(copied ? "Copied" : "Copy") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString("Klik \(short) (\(build)) · macOS \(ProcessInfo.processInfo.operatingSystemVersionString)", forType: .string)
+                        copied = true
+                        Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
+                    }
+                }
+                SettingsRow("macOS") {
                     Text(ProcessInfo.processInfo.operatingSystemVersionString).foregroundStyle(.secondary)
                 }
             }
 
-            Section {
-                LabeledContent("Klik") {
+            SettingsGroup("On this Mac") {
+                SettingsRow("Klik", subtitle: Bundle.main.bundleURL.path(percentEncoded: false)) {
                     Button("Show in Finder") { PermissionManager.revealAppInFinder() }
-                        .controlSize(.small)
                 }
-                LabeledContent("Captures") {
+                SettingsRow("Captures", subtitle: library.folderURL.path(percentEncoded: false)) {
                     Button("Show in Finder") { library.revealFolder() }
-                        .controlSize(.small)
                 }
-            } header: {
-                Text("On this Mac")
             }
 
-            Section {
-                Text("© \(String(Calendar.current.component(.year, from: .now))) Stackrover. Klik keeps everything on this Mac unless you set up share links.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+            SettingsGroup {
+                SettingsRow("© \(String(Calendar.current.component(.year, from: .now))) Stackrover", subtitle: "Klik keeps everything on this Mac unless you set up share links.")
             }
         }
     }

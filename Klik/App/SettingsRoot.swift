@@ -225,7 +225,10 @@ enum SettingsPalette {
     static let selectedRow = Color.primary.opacity(0.12)
     static let hoveredRow = Color.primary.opacity(0.06)
     static let pill = Color.primary.opacity(0.08)
-    static let edge = Color.primary.opacity(0.12)
+    static let edge = Color.primary.opacity(0.07)
+    /// The cards on a page and the lines between their rows.
+    static let cardFill = Color.primary.opacity(0.045)
+    static let hairline = Color.primary.opacity(0.05)
 
     private static func dynamic(dark: NSColor, light: NSColor) -> NSColor {
         NSColor(name: nil) { $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light }
@@ -255,7 +258,7 @@ struct GlassCard: View {
     private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: radius, style: .continuous) }
 
     private var edge: LinearGradient {
-        LinearGradient(colors: [Color.primary.opacity(0.26), Color.primary.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        LinearGradient(colors: [Color.primary.opacity(0.11), Color.primary.opacity(0.05)], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
     var body: some View {
@@ -391,7 +394,7 @@ private struct SettingsSidebar: View {
                 .font(.system(size: 13, weight: .semibold))
             TextField("Search settings…", text: $navigation.query)
                 .textFieldStyle(.plain)
-                .font(.system(size: 14))
+                .font(.system(size: 13))
                 .focused($searching)
             if !navigation.query.isEmpty {
                 Button {
@@ -422,17 +425,22 @@ private struct SidebarRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                if section == .about {
-                    AppIconTile(size: 22)
-                } else {
-                    SymbolTile(symbol: section.symbol, tint: section.tint, size: 22)
+                Group {
+                    if section == .about {
+                        AppIconTile(size: 22)
+                    } else {
+                        SymbolTile(symbol: section.symbol, tint: section.tint, size: 22)
+                    }
                 }
+                // Toned down: the tiles are signposts, not the point of the page.
+                .saturation(0.8)
+                .brightness(-0.08)
                 Text(section.title)
-                    .font(.system(size: 15))
+                    .font(.system(size: 13))
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 8)
-            .frame(height: 34)
+            .frame(height: 32)
             .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -447,8 +455,8 @@ private struct SidebarRow: View {
 
 // MARK: - Page chrome
 
-/// A settings page: a grouped form under the page's icon, title and subtitle.
-/// Every pane wraps its sections in one so they all look alike.
+/// A settings page: groups of rows, top to bottom, starting under the history
+/// pill. Every pane builds on these so the pages all look alike.
 struct SettingsPane<Content: View>: View {
     let section: SettingsSection
     @ViewBuilder let content: Content
@@ -459,43 +467,179 @@ struct SettingsPane<Content: View>: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            SettingsHeader(section: section)
-            Form { content }
-                .formStyle(.grouped)
-                .scrollContentBackground(.hidden)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 26) {
+                content
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 52)
+            .padding(.bottom, 24)
+        }
+        .accessibilityLabel("\(section.title) settings")
+    }
+}
+
+/// A card of rows, with a plain title above and, when needed, a note below.
+struct SettingsGroup<Content: View>: View {
+    var title: String?
+    var footer: String?
+    @ViewBuilder let content: Content
+
+    init(_ title: String? = nil, footer: String? = nil, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.footer = footer
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let title {
+                Text(title)
+                    .font(.system(size: 15))
+                    .padding(.leading, 12)
+                    .accessibilityAddTraits(.isHeader)
+            }
+            VStack(spacing: 0) {
+                content
+            }
+            // Each row ends in a hairline; the last one falls outside the card.
+            .padding(.bottom, -1)
+            .background(SettingsPalette.cardFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            if let footer {
+                Text(footer)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 }
 
-private struct SettingsHeader: View {
-    let section: SettingsSection
+/// One row of a card: anything, padded, with a hairline under it.
+struct SettingsCell<Content: View>: View {
+    var vertical: CGFloat = 12
+    @ViewBuilder let content: Content
+
+    init(vertical: CGFloat = 12, @ViewBuilder content: () -> Content) {
+        self.vertical = vertical
+        self.content = content()
+    }
 
     var body: some View {
-        VStack(spacing: 6) {
-            Group {
-                if section == .about {
-                    AppIconTile(size: 58)
-                } else {
-                    SymbolTile(symbol: section.symbol, tint: section.tint, size: 52)
-                }
-            }
-            .shadow(color: section.tint.opacity(0.3), radius: 10, y: 5)
-            .padding(.bottom, 10)
-            Text(section.title)
-                .font(.system(size: 26, weight: .bold))
-            Text(section.subtitle)
-                .font(.system(size: 15))
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 460)
+        VStack(spacing: 0) {
+            content
+                .padding(.horizontal, 12)
+                .padding(.vertical, vertical)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Rectangle().fill(SettingsPalette.hairline).frame(height: 1).padding(.horizontal, 12)
         }
-        .frame(maxWidth: .infinity)
-        // Under the back/forward pill, then a little room before the form's inset.
-        .padding(.top, 70)
-        .padding(.bottom, 40)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// A labelled row: the title and what it does on the left, the control on the
+/// right — and a tile before the title when the row is about a thing.
+struct SettingsRow<Control: View>: View {
+    let title: String
+    var subtitle: String?
+    var symbol: String?
+    var tint: Color = .blue
+    @ViewBuilder let control: Control
+
+    init(_ title: String, subtitle: String? = nil, symbol: String? = nil, tint: Color = .blue, @ViewBuilder control: () -> Control) {
+        self.title = title
+        self.subtitle = subtitle
+        self.symbol = symbol
+        self.tint = tint
+        self.control = control()
+    }
+
+    var body: some View {
+        SettingsCell(vertical: subtitle == nil ? 14 : 11) {
+            HStack(spacing: 14) {
+                if let symbol {
+                    SymbolTile(symbol: symbol, tint: tint)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.system(size: 15))
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer(minLength: 16)
+                control
+                    .labelsHidden()
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(title)
+    }
+}
+
+extension SettingsRow where Control == EmptyView {
+    init(_ title: String, subtitle: String? = nil, symbol: String? = nil, tint: Color = .blue) {
+        self.init(title, subtitle: subtitle, symbol: symbol, tint: tint) { EmptyView() }
+    }
+}
+
+/// A row that chooses by picture: the title on the left, a tile per option on
+/// the right with its picture and name, the chosen one named on a pill.
+struct SettingsPreviewPicker<Value: Hashable, Preview: View>: View {
+    let title: String
+    var subtitle: String?
+    @Binding var selection: Value
+    let options: [Value]
+    let label: (Value) -> String
+    var columns = 3
+    @ViewBuilder let preview: (Value) -> Preview
+
+    var body: some View {
+        SettingsCell(vertical: 14) {
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).font(.system(size: 15))
+                    if let subtitle {
+                        Text(subtitle).font(.system(size: 13)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .frame(width: 170, alignment: .leading)
+                Spacer(minLength: 0)
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: columns), spacing: 12) {
+                    ForEach(options, id: \.self) { option in
+                        Button {
+                            withAnimation(.easeOut(duration: 0.15)) { selection = option }
+                        } label: {
+                            VStack(spacing: 8) {
+                                preview(option)
+                                    .frame(maxWidth: .infinity)
+                                    .aspectRatio(1.6, contentMode: .fit)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                            .strokeBorder(selection == option ? Color.brand : Color.primary.opacity(0.1), lineWidth: selection == option ? 2 : 1)
+                                    )
+                                Text(label(option))
+                                    .font(.system(size: 13, weight: selection == option ? .medium : .regular))
+                                    .lineLimit(1)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 3)
+                                    .background(selection == option ? Color.primary.opacity(0.12) : Color.clear, in: Capsule())
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(selection == option ? .isSelected : [])
+                        .accessibilityLabel(label(option))
+                    }
+                }
+                .frame(maxWidth: 420)
+            }
+        }
     }
 }
 

@@ -9,64 +9,69 @@ struct ShareSettingsView: View {
     var body: some View {
         @Bindable var settings = settings
         SettingsPane(.sharing) {
-            Section {
-                Picker("Upload to", selection: $settings.provider) {
-                    ForEach(ShareSettings.Provider.allCases, id: \.self) { Text($0.title).tag($0) }
+            SettingsGroup("Share links", footer: "“Copy Share Link” on a capture (or ⌘L in the command palette) uploads the PNG and puts its link on the clipboard. Keys and secrets are kept in your Keychain.") {
+                SettingsRow("Upload to") {
+                    Picker("Upload to", selection: $settings.provider) {
+                        ForEach(ShareSettings.Provider.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
+                    .fixedSize()
                 }
-                Toggle("Name uploads by capture time", isOn: $settings.datedNames)
-            } header: {
-                Text("Share links")
-            } footer: {
-                Text("“Copy Share Link” on a capture (or ⌘L in the command palette) uploads the PNG and puts its link on the clipboard. Keys and secrets are kept in your Keychain.")
+                SettingsRow("Name uploads by capture time") {
+                    Toggle("Dated names", isOn: $settings.datedNames).toggleStyle(.switch)
+                }
             }
 
             if settings.provider == .s3 {
-                Section {
-                    TextField("Endpoint", text: $settings.endpoint, prompt: Text("s3.amazonaws.com · <account>.r2.cloudflarestorage.com"))
-                    TextField("Region", text: $settings.region, prompt: Text("us-east-1 · auto"))
-                    TextField("Bucket", text: $settings.bucket)
-                    TextField("Key prefix", text: $settings.prefix, prompt: Text("klik/"))
-                    TextField("Access key ID", text: $settings.accessKey)
-                    SecureField("Secret access key", text: $settings.secretKey)
-                    TextField("Public URL base", text: $settings.publicBase, prompt: Text("https://cdn.example.com (optional)"))
-                } header: {
-                    Text("S3-compatible bucket")
-                } footer: {
-                    Text("Uploads are PUT with SigV4 and public-read. With R2, set a public bucket domain as the URL base.")
+                SettingsGroup("S3-compatible bucket", footer: "Uploads are PUT with SigV4 and public-read. With R2, set a public bucket domain as the URL base.") {
+                    field("Endpoint", text: $settings.endpoint, prompt: "s3.amazonaws.com · <account>.r2.cloudflarestorage.com")
+                    field("Region", text: $settings.region, prompt: "us-east-1 · auto")
+                    field("Bucket", text: $settings.bucket)
+                    field("Key prefix", text: $settings.prefix, prompt: "klik/")
+                    field("Access key ID", text: $settings.accessKey)
+                    SettingsRow("Secret access key") {
+                        SecureField("Secret access key", text: $settings.secretKey).textFieldStyle(.roundedBorder).frame(width: 300)
+                    }
+                    field("Public URL base", text: $settings.publicBase, prompt: "https://cdn.example.com (optional)")
                 }
             }
 
             if settings.provider == .custom {
-                Section {
-                    TextField("URL", text: $settings.customURL, prompt: Text("https://example.com/upload/{name}"))
-                    Picker("Method", selection: $settings.customMethod) {
-                        Text("PUT (raw PNG body)").tag(ShareSettings.Method.put)
-                        Text("POST (multipart, field “file”)").tag(ShareSettings.Method.post)
+                SettingsGroup("Custom endpoint", footer: "{name} in the URL becomes the file name. With an empty answer the request URL is the link.") {
+                    field("URL", text: $settings.customURL, prompt: "https://example.com/upload/{name}")
+                    SettingsRow("Method") {
+                        Picker("Method", selection: $settings.customMethod) {
+                            Text("PUT (raw PNG body)").tag(ShareSettings.Method.put)
+                            Text("POST (multipart, field “file”)").tag(ShareSettings.Method.post)
+                        }
+                        .fixedSize()
                     }
-                    HStack {
-                        TextField("Header", text: $settings.customHeaderName, prompt: Text("Authorization"))
-                        SecureField("Value", text: $settings.customHeaderValue, prompt: Text("Bearer …"))
+                    SettingsRow("Header") {
+                        HStack(spacing: 8) {
+                            TextField("Header", text: $settings.customHeaderName, prompt: Text("Authorization")).frame(width: 120)
+                            SecureField("Value", text: $settings.customHeaderValue, prompt: Text("Bearer …")).frame(width: 172)
+                        }
+                        .textFieldStyle(.roundedBorder)
                     }
-                    TextField("Link in JSON answer", text: $settings.customResponseKey, prompt: Text("url · data.link (empty: body is the link)"))
-                } header: {
-                    Text("Custom endpoint")
-                } footer: {
-                    Text("{name} in the URL becomes the file name. With an empty answer the request URL is the link.")
+                    field("Link in JSON answer", text: $settings.customResponseKey, prompt: "url · data.link (empty: body is the link)")
                 }
             }
 
             if settings.provider != .off {
-                Section {
-                    HStack {
+                SettingsGroup {
+                    SettingsRow("Test", subtitle: testResult ?? "Uploads a small image and shows its link here.") {
                         Button(testing ? "Testing…" : "Test Upload") { test() }
                             .disabled(testing || !settings.isConfigured)
-                        Spacer()
-                        if let testResult {
-                            Text(testResult).font(.caption).foregroundStyle(.secondary).lineLimit(2).textSelection(.enabled)
-                        }
                     }
                 }
             }
+        }
+    }
+
+    private func field(_ title: String, text: Binding<String>, prompt: String? = nil) -> some View {
+        SettingsRow(title) {
+            TextField(title, text: text, prompt: prompt.map { Text($0) })
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 300)
         }
     }
 
