@@ -72,7 +72,7 @@ nonisolated struct IslandGeometry: Equatable {
     static let formWidth: CGFloat = 460
     static let formContentHeight: CGFloat = 300
     static let panelHorizontalPadding: CGFloat = 4
-    static let panelBottomPadding: CGFloat = 4
+    static let panelBottomPadding: CGFloat = 8 // with the panel's own 16, the same 24 as its sides
 
     init(screen: ScreenMetrics, panelSize: CGSize) {
         self.screen = screen

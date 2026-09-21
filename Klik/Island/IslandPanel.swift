@@ -38,7 +38,7 @@ enum IslandTab: String, CaseIterable {
 /// row grouped by day, newest first. The row scrolls by dragging (or with the trackpad).
 struct IslandPanel: View {
     /// The panel's smallest size; it widens for a tab row that needs more room.
-    static let size = CGSize(width: 780, height: 316)
+    static let size = CGSize(width: 780, height: 330)
     static let horizontalPadding: CGFloat = 20
 
     let library: CaptureLibrary
