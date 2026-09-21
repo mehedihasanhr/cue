@@ -244,37 +244,55 @@ struct IslandSettingsView: View {
     }
 }
 
-/// A screen with a panel where the position puts it.
-private struct PanelPositionPreview: View {
+/// A desktop with Klik's panel where the position puts it: the same little
+/// wallpaper and menu bar as the theme pictures, and the panel as a pane of dark
+/// glass with its search line and a few rows.
+struct PanelPositionPreview: View {
     let position: PanelPosition
 
     var body: some View {
-        ZStack {
-            LinearGradient(colors: [Color(white: 0.2), Color(white: 0.12)], startPoint: .top, endPoint: .bottom)
+        ZStack(alignment: .top) {
+            LinearGradient(colors: [Color(red: 0.2, green: 0.22, blue: 0.4), Color(red: 0.08, green: 0.08, blue: 0.16)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            Rectangle()
+                .fill(Color.black.opacity(0.35))
+                .frame(height: 5)
             GeometryReader { proxy in
-                let panel = CGSize(width: proxy.size.width * 0.34, height: proxy.size.height * 0.42)
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .fill(Color.brand.opacity(0.9))
-                    .overlay(alignment: .top) {
-                        Capsule().fill(.white.opacity(0.5)).frame(width: panel.width * 0.6, height: 2).padding(.top, 3)
-                    }
-                    .frame(width: panel.width, height: panel.height)
-                    .position(point(in: proxy.size, panel: panel))
+                let panel = CGSize(width: proxy.size.width * 0.36, height: proxy.size.height * 0.46)
+                let center = point(in: proxy.size, panel: panel)
+                pane(size: panel)
+                    .position(center)
                 if position == .pointer {
-                    Image(systemName: "cursorarrow")
+                    Image(systemName: "cursorarrow.rays")
                         .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(.white)
-                        .position(x: proxy.size.width * 0.5 + panel.width * 0.35, y: proxy.size.height * 0.5 + panel.height * 0.3)
+                        .shadow(color: .black.opacity(0.6), radius: 1, y: 1)
+                        .position(x: center.x + panel.width * 0.42, y: center.y + panel.height * 0.42)
                 }
             }
         }
     }
 
+    /// The panel: dark glass, a search line, rows.
+    private func pane(size: CGSize) -> some View {
+        VStack(alignment: .leading, spacing: 2.5) {
+            Capsule().fill(Color.white.opacity(0.28)).frame(height: 3.5)
+            ForEach([0.9, 0.65, 0.8], id: \.self) { width in
+                Capsule().fill(Color.white.opacity(0.14)).frame(width: (size.width - 8) * width, height: 2)
+            }
+        }
+        .padding(4)
+        .frame(width: size.width, height: size.height, alignment: .topLeading)
+        .background(Color(white: 0.1).opacity(0.92), in: RoundedRectangle(cornerRadius: 3.5, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 3.5, style: .continuous).strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.5), radius: 4, y: 2)
+    }
+
     private func point(in size: CGSize, panel: CGSize) -> CGPoint {
-        let inset: CGFloat = 6
+        let inset: CGFloat = 5
         let left = inset + panel.width / 2, right = size.width - inset - panel.width / 2
-        let top = inset + panel.height / 2, bottom = size.height - inset - panel.height / 2
-        let midX = size.width / 2, midY = size.height / 2
+        let top = inset + 5 + panel.height / 2, bottom = size.height - inset - panel.height / 2
+        let midX = size.width / 2, midY = size.height / 2 + 2
         switch position {
         case .pointer, .center: return CGPoint(x: midX, y: midY)
         case .top: return CGPoint(x: midX, y: top)

@@ -164,6 +164,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        // Diagnostics: `--env KLIK_DEBUG_RENDER=panels` draws the panel-position pictures to Pictures/Klik/_render.png.
+        if ProcessInfo.processInfo.environment["KLIK_DEBUG_RENDER"] == "panels" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                let view = LazyVGrid(columns: Array(repeating: GridItem(.fixed(92), spacing: 12), count: 4), spacing: 12) {
+                    ForEach(PanelPosition.allCases, id: \.self) { position in
+                        PanelPositionPreview(position: position)
+                            .frame(width: 92, height: 92 / 1.5)
+                            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    }
+                }
+                .padding(16)
+                .background(Color(red: 0.1, green: 0.1, blue: 0.1))
+                let renderer = ImageRenderer(content: view)
+                renderer.scale = 2
+                if let cg = renderer.cgImage, let png = ImageEncoding.png(cg) {
+                    try? png.write(to: CaptureLibrary.defaultFolder().appendingPathComponent("_render.png"))
+                }
+            }
+        }
         // Diagnostics: `open Klik.app --env KLIK_DEBUG_PANEL=1` opens the floating panel at launch.
         if ProcessInfo.processInfo.environment["KLIK_DEBUG_PANEL"] == "1" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.toggleHistoryAtPointer() }
