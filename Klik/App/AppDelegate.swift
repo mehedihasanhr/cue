@@ -211,6 +211,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        // Diagnostics: `--env KLIK_DEBUG_ISLAND_ANIM=snippets,captures` opens the island on the
+        // first tab, switches to the second, and writes frames of the change (_anim-N.png).
+        if let spec = ProcessInfo.processInfo.environment["KLIK_DEBUG_ISLAND_ANIM"] {
+            let tabs = spec.split(separator: ",").compactMap { IslandTab(rawValue: String($0)) }
+            if tabs.count == 2 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                    UserDefaults.standard.set(tabs[0].rawValue, forKey: IslandTab.storageKey)
+                    self?.island?.expand()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                        guard let self, let island = self.island else { return }
+                        let id = CGWindowID(island.windowNumber)
+                        if let window = NSApp.windows.first(where: { $0.windowNumber == island.windowNumber }),
+                           let x = ["tasks": 277.0, "captures": 380.0, "snippets": 600.0, "colors": 500.0][tabs[1].rawValue] {
+                            // A real click on the tab pill (the path the pointer takes), not a defaults change.
+                            let point = CGPoint(x: window.frame.minX + x, y: NSScreen.screens[0].frame.maxY - (window.frame.maxY - 99))
+                            for type in [CGEventType.leftMouseDown, .leftMouseUp] {
+                                CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
+                            }
+                        } else {
+                            UserDefaults.standard.set(tabs[1].rawValue, forKey: IslandTab.storageKey)
+                        }
+                        for frame in 0..<6 {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(30 + frame * 70)) {
+                                Task { @MainActor in
+                                    let service = ScreenCaptureService()
+                                    guard let content = try? await service.shareableContent(),
+                                          let image = try? await service.captureWindow(id: id, in: content, fallbackScale: 2),
+                                          let png = ImageEncoding.png(image.cgImage) else { return }
+                                    try? png.write(to: CaptureLibrary.defaultFolder().appendingPathComponent("_anim-\(frame).png"))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         // Diagnostics: `open Klik.app --env KLIK_DEBUG_PANEL=1` opens the floating panel at launch.
         if ProcessInfo.processInfo.environment["KLIK_DEBUG_PANEL"] == "1" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.toggleHistoryAtPointer() }

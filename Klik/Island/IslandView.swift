@@ -198,7 +198,9 @@ struct IslandView: View {
                     .compositingGroup()
                     .padding(.horizontal, flare) // the body; the flares lie outside it
             }
-            .frame(width: size.width + flare * 2, height: size.height)
+            // Top-aligned: while the height animates the content may be taller than the
+            // frame, and it must overflow downward (clipped), never slide up.
+            .frame(width: size.width + flare * 2, height: size.height, alignment: .top)
             .clipShape(shape)
             .contentShape(shape)
             .onTapGesture {
