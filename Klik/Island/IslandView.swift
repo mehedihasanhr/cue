@@ -612,8 +612,14 @@ private struct ConfirmRow: View {
 /// bar (images can be pasted or dropped in), and the project — a dropdown that can
 /// also create a new project on the spot.
 struct TaskFormRow: View {
+    /// In the island: a header, a framed editor with its formatting bar, pill
+    /// buttons. Floating: one pane — the text alone on the glass, and a bar of
+    /// glass buttons under it with a round Create.
+    enum Style { case island, floating }
+
     let prompt: IslandPrompt
     let store: TaskStore
+    var style: Style = .island
     let finish: (PromptAnswer?) -> Void
 
     /// The whole task as one text: the first line is the title (with `#project` and
@@ -653,6 +659,170 @@ struct TaskFormRow: View {
     }
 
     var body: some View {
+        Group {
+            switch style {
+            case .island: islandBody
+            case .floating: floatingBody
+            }
+        }
+        .background { priorityShortcuts }
+        .background(KeyWindowFocus())
+        .onAppear {
+            if let task = prompt.editing {
+                text = task.notes.isEmpty ? task.title : task.title + "\n\n" + task.notes
+                projectID = task.projectID
+                priority = task.priority
+            } else if case .task(let project) = prompt.kind {
+                projectID = project
+                text = prompt.initialNotes.isEmpty ? "" : "\n" + prompt.initialNotes
+            }
+            Task {
+                try? await Task.sleep(for: .milliseconds(80))
+                focus = .notes
+                if text.hasPrefix("\n") { editor.moveToStart() }
+            }
+        }
+        .onExitCommand { finish(nil) }
+    }
+
+    private var markdownEditor: some View {
+        MarkdownEditor(text: $text, handle: editor, insertImage: { data in store.saveImage(data) }, insertFile: { url in store.saveAttachment(url) })
+            .focused($focus, equals: .notes)
+            .overlay(alignment: .topLeading) {
+                if text.isEmpty {
+                    Text("What needs doing? First line is the title — #project !priority")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.primary.opacity(0.3))
+                        .padding(.horizontal, 12).padding(.top, 8)
+                        .allowsHitTesting(false)
+                }
+            }
+            .onChange(of: text) { _, _ in applyTokens() }
+    }
+
+    // MARK: Floating
+
+    /// One pane: the text sits straight on the glass, no frame around it; under
+    /// it, plain glyphs on the left (attach, format) and on the right the project,
+    /// the priority as a pill, and a round Create — all glass buttons.
+    private var floatingBody: some View {
+        VStack(spacing: 0) {
+            markdownEditor
+                .padding(.horizontal, 8)
+                .padding(.top, 6)
+                .frame(maxHeight: .infinity)
+            HStack(spacing: 8) {
+                floatingGlyph("plus", help: "Attach an image… (⌘⇧I)") { chooseImage() }
+                Menu {
+                    Button("Bold", action: { editor.wrap("**", "**") }).keyboardShortcut("b")
+                    Button("Italic", action: { editor.wrap("*", "*") }).keyboardShortcut("i")
+                    Button("Heading", action: { editor.prefixLine("## ") }).keyboardShortcut("h", modifiers: [.command, .shift])
+                    Button("Bullet list", action: { editor.prefixLine("- ") }).keyboardShortcut("l", modifiers: [.command, .shift])
+                    Button("Numbered list", action: { editor.prefixLine("1. ") }).keyboardShortcut("n", modifiers: [.command, .shift])
+                    Button("Quote", action: { editor.prefixLine("> ") }).keyboardShortcut("q", modifiers: [.command, .shift])
+                } label: {
+                    Text("/")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(.primary.opacity(0.8))
+                        .frame(width: 32, height: 32)
+                        .contentShape(Rectangle())
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Formatting — first line is the title · #project · !priority")
+                Spacer(minLength: 0)
+                if newProjectName != nil {
+                    PromptBox {
+                        Image(systemName: "folder.badge.plus").font(.system(size: 11, weight: .semibold)).foregroundStyle(.primary.opacity(0.7)).padding(.leading, 8)
+                        InlineTextField(placeholder: "New project name", font: .system(size: 12, weight: .medium), boxed: false) { name in
+                            newProjectName = nil
+                            if let project = store.addProject(named: name) { projectID = project.id }
+                        } cancel: {
+                            newProjectName = nil
+                        }
+                    }
+                    .frame(width: 180)
+                } else {
+                    Menu {
+                        projectMenuItems
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: projectID == nil ? "folder" : "folder.fill").font(.system(size: 12, weight: .semibold))
+                            if let project = store.project(projectID) {
+                                Text(project.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                            }
+                        }
+                        .foregroundStyle(.primary.opacity(0.85))
+                        .padding(.horizontal, projectID == nil ? 0 : 12)
+                        .frame(minWidth: 32, maxWidth: 160)
+                        .frame(height: 32)
+                        .contentShape(Capsule())
+                    }
+                    .menuStyle(.button)
+                    .buttonStyle(.plain)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help("Project")
+                }
+                Menu {
+                    ForEach(TaskPriority.allCases, id: \.self) { value in
+                        Button { priority = value } label: { Label(value.title, systemImage: value.symbol) }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: priority.symbol).font(.system(size: 11, weight: .semibold)).foregroundStyle(priority.color)
+                        Text(priority.title).font(.system(size: 13, weight: .medium))
+                        Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).foregroundStyle(.primary.opacity(0.5))
+                    }
+                    .foregroundStyle(.primary.opacity(0.9))
+                    .padding(.horizontal, 14)
+                    .frame(height: 32)
+                    .glassPill()
+                    .contentShape(Capsule())
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Priority (⌘1–4)")
+                Button(action: create) {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(valid ? Color.white : Color.primary.opacity(0.5))
+                        .frame(width: 34, height: 34)
+                        .background(valid ? Color.brand : Color.primary.opacity(0.12), in: Circle())
+                        .overlay(Circle().strokeBorder(.white.opacity(valid ? 0.25 : 0.1)))
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.return, modifiers: .command)
+                .disabled(!valid)
+                .help(prompt.editing == nil ? "Create (⌘↩)" : "Save (⌘↩)")
+                .animation(.easeOut(duration: 0.15), value: valid)
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 10)
+        }
+        .padding(.top, 4)
+    }
+
+    private func floatingGlyph(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(.primary.opacity(0.8))
+                .frame(width: 32, height: 32)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+
+    // MARK: Island
+
+    private var islandBody: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
                 PromptBadge(symbol: prompt.symbol)
@@ -663,18 +833,7 @@ struct TaskFormRow: View {
             }
             VStack(spacing: 0) {
                 formatBar
-                MarkdownEditor(text: $text, handle: editor, insertImage: { data in store.saveImage(data) }, insertFile: { url in store.saveAttachment(url) })
-                    .focused($focus, equals: .notes)
-                    .overlay(alignment: .topLeading) {
-                        if text.isEmpty {
-                            Text("What needs doing? First line is the title — #project !priority")
-                                .font(.system(size: 13))
-                                .foregroundStyle(.primary.opacity(0.3))
-                                .padding(.horizontal, 12).padding(.top, 8)
-                                .allowsHitTesting(false)
-                        }
-                    }
-                    .onChange(of: text) { _, _ in applyTokens() }
+                markdownEditor
             }
             .fieldChrome(focused: focus == .notes)
             .frame(maxHeight: .infinity)
@@ -717,27 +876,9 @@ struct TaskFormRow: View {
                 .disabled(!valid)
             }
         }
-        .background { priorityShortcuts }
         .padding(.horizontal, 18)
         .padding(.top, 8)
         .padding(.bottom, 12)
-        .background(KeyWindowFocus())
-        .onAppear {
-            if let task = prompt.editing {
-                text = task.notes.isEmpty ? task.title : task.title + "\n\n" + task.notes
-                projectID = task.projectID
-                priority = task.priority
-            } else if case .task(let project) = prompt.kind {
-                projectID = project
-                text = prompt.initialNotes.isEmpty ? "" : "\n" + prompt.initialNotes
-            }
-            Task {
-                try? await Task.sleep(for: .milliseconds(80))
-                focus = .notes
-                if text.hasPrefix("\n") { editor.moveToStart() }
-            }
-        }
-        .onExitCommand { finish(nil) }
     }
 
     /// ⌘1–⌘4 set the priority (urgent → low).
@@ -795,23 +936,28 @@ struct TaskFormRow: View {
     }
 
     /// Every project by its path, "No project", and "New project…".
-    private var projectMenu: some View {
-        Menu {
-            Button("No project") { projectID = nil }
-            if !store.projects.isEmpty { Divider() }
-            ForEach(store.projects.sorted { store.path(to: $0.id).map(\.name).joined(separator: "/") < store.path(to: $1.id).map(\.name).joined(separator: "/") }) { project in
-                Button {
-                    projectID = project.id
-                } label: {
-                    if project.id == projectID {
-                        Label(store.path(to: project.id).map(\.name).joined(separator: " › "), systemImage: "checkmark")
-                    } else {
-                        Text(store.path(to: project.id).map(\.name).joined(separator: " › "))
-                    }
+    @ViewBuilder
+    private var projectMenuItems: some View {
+        Button("No project") { projectID = nil }
+        if !store.projects.isEmpty { Divider() }
+        ForEach(store.projects.sorted { store.path(to: $0.id).map(\.name).joined(separator: "/") < store.path(to: $1.id).map(\.name).joined(separator: "/") }) { project in
+            Button {
+                projectID = project.id
+            } label: {
+                if project.id == projectID {
+                    Label(store.path(to: project.id).map(\.name).joined(separator: " › "), systemImage: "checkmark")
+                } else {
+                    Text(store.path(to: project.id).map(\.name).joined(separator: " › "))
                 }
             }
-            Divider()
-            Button("New Project…") { newProjectName = "" }
+        }
+        Divider()
+        Button("New Project…") { newProjectName = "" }
+    }
+
+    private var projectMenu: some View {
+        Menu {
+            projectMenuItems
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "folder").font(.system(size: 11, weight: .semibold))

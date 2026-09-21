@@ -146,6 +146,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.editClipboardImage(item)
             }
         }
+        // Diagnostics: `--env KLIK_DEBUG_TASK_SHOT=1` opens the quick task and writes a
+        // picture of it (the screen around it) to Pictures/Klik/_task.png.
+        if ProcessInfo.processInfo.environment["KLIK_DEBUG_TASK_SHOT"] == "1" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                self?.quickTask(nil)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                    guard let self, let panel = self.quickTaskPanel else { Log.app.error("Task shot: no panel"); return }
+                    let id = CGWindowID(panel.windowNumber)
+                    Task { @MainActor in
+                        let service = ScreenCaptureService()
+                        guard let content = try? await service.shareableContent(),
+                              let image = try? await service.captureWindow(id: id, in: content, fallbackScale: 2),
+                              let png = ImageEncoding.png(image.cgImage) else { Log.app.error("Task shot: no capture"); return }
+                        try? png.write(to: CaptureLibrary.defaultFolder().appendingPathComponent("_task.png"))
+                    }
+                }
+            }
+        }
         // Diagnostics: `open Klik.app --env KLIK_DEBUG_PANEL=1` opens the floating panel at launch.
         if ProcessInfo.processInfo.environment["KLIK_DEBUG_PANEL"] == "1" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.toggleHistoryAtPointer() }

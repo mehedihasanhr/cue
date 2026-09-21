@@ -29,7 +29,12 @@ struct ShortcutRecorderView: NSViewRepresentable {
 
 final class ShortcutRecorderControl: NSView {
     var hotkey: Hotkey? {
-        didSet { if hotkey != oldValue { needsDisplay = true } }
+        didSet {
+            if hotkey != oldValue {
+                invalidateIntrinsicContentSize()
+                needsDisplay = true
+            }
+        }
     }
     var onChange: ((Hotkey?) -> Void)?
     var onRecordingChanged: ((Bool) -> Void)?
@@ -39,14 +44,34 @@ final class ShortcutRecorderControl: NSView {
             guard isRecording != oldValue else { return }
             pendingModifiers = 0
             onRecordingChanged?(isRecording)
+            invalidateIntrinsicContentSize()
             needsDisplay = true
         }
     }
     private var pendingModifiers: UInt32 = 0
 
-    private static let clearButtonWidth: CGFloat = 26
+    /// The field hugs its keycaps; empty or recording, it is wide enough for its prompt.
+    override var intrinsicContentSize: NSSize {
+        let width: CGFloat
+        if let hotkey, !isRecording {
+            width = Self.capsWidth(Self.caps(for: hotkey)) + Self.padding * 2
+        } else {
+            width = 128
+        }
+        return NSSize(width: width, height: 28)
+    }
 
-    override var intrinsicContentSize: NSSize { NSSize(width: 170, height: 28) }
+    private static let padding: CGFloat = 6
+
+    private static func caps(for hotkey: Hotkey) -> [String] {
+        Hotkey.modifierSymbols(hotkey.modifiers).map(String.init) + [KeyCodeNames.name(for: hotkey.keyCode)]
+    }
+
+    private static func capsWidth(_ caps: [String]) -> CGFloat {
+        let attributes: [NSAttributedString.Key: Any] = [.font: capFont]
+        let widths = caps.map { max(capMinWidth, ceil($0.size(withAttributes: attributes).width) + 10) }
+        return widths.reduce(0, +) + capSpacing * CGFloat(max(0, caps.count - 1))
+    }
     override var acceptsFirstResponder: Bool { true }
     override var focusRingMaskBounds: NSRect { bounds }
 
@@ -57,11 +82,6 @@ final class ShortcutRecorderControl: NSView {
     // MARK: - Mouse
 
     override func mouseDown(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        if !isRecording, hotkey != nil, point.x > bounds.maxX - Self.clearButtonWidth {
-            commit(nil)
-            return
-        }
         if isRecording {
             stop()
         } else {
@@ -157,12 +177,10 @@ final class ShortcutRecorderControl: NSView {
             if modifiers.isEmpty {
                 drawCentered("Type shortcut…", color: .secondaryLabelColor)
             } else {
-                drawCaps(modifiers.map(String.init) + ["…"], trailingInset: 0)
+                drawCaps(modifiers.map(String.init) + ["…"])
             }
         } else if let hotkey {
-            let caps = Hotkey.modifierSymbols(hotkey.modifiers).map(String.init) + [KeyCodeNames.name(for: hotkey.keyCode)]
-            drawCaps(caps, trailingInset: Self.clearButtonWidth)
-            drawClearButton()
+            drawCaps(Self.caps(for: hotkey))
         } else {
             drawCentered("Record Shortcut", color: .secondaryLabelColor)
         }
@@ -175,12 +193,12 @@ final class ShortcutRecorderControl: NSView {
     }
 
     /// Each key as its own little keycap, like System Settings › Keyboard.
-    private func drawCaps(_ caps: [String], trailingInset: CGFloat) {
+    private func drawCaps(_ caps: [String]) {
         let attributes: [NSAttributedString.Key: Any] = [.font: Self.capFont, .foregroundColor: NSColor.labelColor]
         let sizes = caps.map { $0.size(withAttributes: attributes) }
         let widths = sizes.map { max(Self.capMinWidth, ceil($0.width) + 10) }
         let total = widths.reduce(0, +) + Self.capSpacing * CGFloat(max(0, caps.count - 1))
-        var x = ((bounds.width - trailingInset) - total) / 2
+        var x = (bounds.width - total) / 2
         let y = (bounds.height - Self.capHeight) / 2
         for (index, cap) in caps.enumerated() {
             let rect = CGRect(x: x, y: y, width: widths[index], height: Self.capHeight)
@@ -194,15 +212,5 @@ final class ShortcutRecorderControl: NSView {
             cap.draw(at: CGPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2), withAttributes: attributes)
             x += widths[index] + Self.capSpacing
         }
-    }
-
-    private func drawClearButton() {
-        guard let clear = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Clear") else { return }
-        let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
-            .applying(.init(paletteColors: [.secondaryLabelColor, NSColor.labelColor.withAlphaComponent(0.12)]))
-        let image = clear.withSymbolConfiguration(config) ?? clear
-        let side: CGFloat = 14
-        let rect = NSRect(x: bounds.maxX - Self.clearButtonWidth + (Self.clearButtonWidth - side) / 2, y: (bounds.height - side) / 2, width: side, height: side)
-        image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
     }
 }

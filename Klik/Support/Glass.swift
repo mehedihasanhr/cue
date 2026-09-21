@@ -139,6 +139,23 @@ extension View {
     func glassButton(prominent: Bool = false) -> some View {
         buttonStyle(PillButtonStyle(prominent: prominent))
     }
+
+    /// A capsule of glass behind a label — a menu's or a badge's.
+    func glassPill() -> some View {
+        modifier(GlassPill())
+    }
+}
+
+struct GlassPill: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.glassEffect(.regular.interactive(), in: Capsule())
+        } else {
+            content
+                .background(.primary.opacity(0.1), in: Capsule())
+                .overlay(Capsule().strokeBorder(.primary.opacity(0.12)))
+        }
+    }
 }
 
 extension NSCursor {

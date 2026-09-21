@@ -26,17 +26,29 @@ final class QuickTaskPanel: NSPanel {
         let content: Content
 
         var body: some View {
+            let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
             content
                 .padding(.top, 8)
                 .frame(width: sizing.size.width, height: sizing.size.height)
                 .liquidGlass(cornerRadius: 22)
+                // One pane, its edge lit from the top like the light catching glass.
+                .overlay(
+                    shape.strokeBorder(
+                        LinearGradient(stops: [.init(color: Color(red: 0.55, green: 0.5, blue: 0.95).opacity(0.7), location: 0),
+                                               .init(color: Color(red: 0.35, green: 0.75, blue: 0.8).opacity(0.35), location: 0.25),
+                                               .init(color: .primary.opacity(0.1), location: 0.6),
+                                               .init(color: .primary.opacity(0.08), location: 1)],
+                                       startPoint: .top, endPoint: .bottom),
+                        lineWidth: 1
+                    )
+                )
                 .padding(QuickTaskPanel.margin)
         }
     }
 
     convenience init(store: TaskStore, prompt: IslandPrompt = IslandPrompt(kind: .task(project: nil)), finish: @escaping (PromptAnswer?) -> Void) {
         self.init(finish: finish) { close in
-            TaskFormRow(prompt: prompt, store: store) { answer in
+            TaskFormRow(prompt: prompt, store: store, style: .floating) { answer in
                 finish(answer)
                 close()
             }

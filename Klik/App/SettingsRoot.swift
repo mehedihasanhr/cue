@@ -598,7 +598,9 @@ extension SettingsRow where Control == EmptyView {
 }
 
 /// A row that chooses by picture: the title on the left, a tile per option on
-/// the right with its picture and name, the chosen one named on a pill.
+/// the right with its picture and name, the chosen one named on a pill. With
+/// `inPopover`, the row shows only the chosen one on a button, and the tiles
+/// come up in a popover.
 struct SettingsPreviewPicker<Value: Hashable, Preview: View>: View {
     let title: String
     var subtitle: String?
@@ -608,23 +610,63 @@ struct SettingsPreviewPicker<Value: Hashable, Preview: View>: View {
     var columns = 3
     /// The tiles are small pictures, not panels: a fixed width each.
     var tileWidth: CGFloat = 104
+    var inPopover = false
     @ViewBuilder let preview: (Value) -> Preview
+    @State private var open = false
 
     var body: some View {
-        SettingsCell(vertical: 14) {
-            HStack(alignment: .top, spacing: 16) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title).font(SettingsFont.item)
-                    if let subtitle {
-                        Text(subtitle).font(SettingsFont.sub).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        if inPopover {
+            SettingsRow(title, subtitle: subtitle) {
+                Button {
+                    open.toggle()
+                } label: {
+                    HStack(spacing: 8) {
+                        preview(selection)
+                            .frame(width: 30, height: 20)
+                            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                        Text(label(selection)).font(SettingsFont.sub)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.secondary)
                     }
+                    .padding(.leading, 6)
+                    .padding(.trailing, 8)
+                    .frame(height: 28)
+                    .background(SettingsPalette.pill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(SettingsPalette.edge))
+                    .contentShape(Rectangle())
                 }
-                .frame(width: 170, alignment: .leading)
-                Spacer(minLength: 0)
+                .buttonStyle(.plain)
+                .accessibilityLabel(title)
+                .accessibilityValue(label(selection))
+                .popover(isPresented: $open, arrowEdge: .bottom) {
+                    grid(onPick: { open = false })
+                        .padding(12)
+                }
+            }
+        } else {
+            SettingsCell(vertical: 14) {
+                HStack(alignment: .top, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(title).font(SettingsFont.item)
+                        if let subtitle {
+                            Text(subtitle).font(SettingsFont.sub).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .frame(width: 170, alignment: .leading)
+                    Spacer(minLength: 0)
+                    grid(onPick: {})
+                }
+            }
+        }
+    }
+
+    private func grid(onPick: @escaping () -> Void) -> some View {
                 LazyVGrid(columns: Array(repeating: GridItem(.fixed(tileWidth), spacing: 12), count: columns), alignment: .trailing, spacing: 12) {
                     ForEach(options, id: \.self) { option in
                         Button {
                             withAnimation(.easeOut(duration: 0.15)) { selection = option }
+                            onPick()
                         } label: {
                             VStack(spacing: 7) {
                                 preview(option)
@@ -654,8 +696,6 @@ struct SettingsPreviewPicker<Value: Hashable, Preview: View>: View {
                         .accessibilityLabel(label(option))
                     }
                 }
-            }
-        }
     }
 }
 

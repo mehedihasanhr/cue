@@ -227,7 +227,7 @@ struct IslandSettingsView: View {
 
             SettingsGroup("Panels") {
                 SettingsPreviewPicker(title: "Open panels at", subtitle: "Where the library panel (⌥⇧K) and the quick task (⌥/) appear — on the screen the pointer is on.",
-                                      selection: $preferences.panelPosition, options: PanelPosition.allCases, label: { $0 == .pointer ? "Pointer" : $0.title }, columns: 4, tileWidth: 92) { position in
+                                      selection: $preferences.panelPosition, options: PanelPosition.allCases, label: { $0 == .pointer ? "Pointer" : $0.title }, columns: 4, tileWidth: 92, inPopover: true) { position in
                     PanelPositionPreview(position: position)
                 }
             }
