@@ -640,7 +640,7 @@ private struct PermissionRow: View {
                 if granted {
                     Label("Granted", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(.green)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 11, weight: .medium))
                         .labelStyle(.titleAndIcon)
                 } else {
                     Button("Grant Access…") {
@@ -942,16 +942,16 @@ struct AboutSettingsView: View {
                     HStack(spacing: 16) {
                         AppIconTile(size: 56)
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("Klik").font(.system(size: 17, weight: .semibold))
+                            Text("Klik").font(.system(size: 14, weight: .semibold))
                             Text("Screenshots you can annotate, blur and share — built natively for macOS.")
-                                .font(.system(size: 13))
+                                .font(SettingsFont.sub)
                                 .foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 16)
                         Text("Version \(short) (\(build))")
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
-                            .font(.system(size: 13))
+                            .font(SettingsFont.sub)
                     }
                 }
                 SettingsRow("Version", subtitle: "With the macOS version, for a bug report.") {

@@ -455,6 +455,15 @@ private struct SidebarRow: View {
 
 // MARK: - Page chrome
 
+/// The type hierarchy of a page: a group's title, a row's title, what it
+/// does, and a note under a card.
+enum SettingsFont {
+    static let title = Font.system(size: 14)
+    static let item = Font.system(size: 13)
+    static let sub = Font.system(size: 11)
+    static let note = Font.system(size: 9)
+}
+
 /// A settings page: groups of rows, top to bottom, starting under the history
 /// pill. Every pane builds on these so the pages all look alike.
 struct SettingsPane<Content: View>: View {
@@ -495,7 +504,7 @@ struct SettingsGroup<Content: View>: View {
         VStack(alignment: .leading, spacing: 10) {
             if let title {
                 Text(title)
-                    .font(.system(size: 15))
+                    .font(SettingsFont.title)
                     .padding(.leading, 12)
                     .accessibilityAddTraits(.isHeader)
             }
@@ -508,7 +517,7 @@ struct SettingsGroup<Content: View>: View {
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             if let footer {
                 Text(footer)
-                    .font(.system(size: 13))
+                    .font(SettingsFont.note)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 12)
                     .fixedSize(horizontal: false, vertical: true)
@@ -556,17 +565,17 @@ struct SettingsRow<Control: View>: View {
     }
 
     var body: some View {
-        SettingsCell(vertical: subtitle == nil ? 14 : 11) {
+        SettingsCell(vertical: subtitle == nil ? 12 : 10) {
             HStack(spacing: 14) {
                 if let symbol {
                     SymbolTile(symbol: symbol, tint: tint)
                 }
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
-                        .font(.system(size: 15))
+                        .font(SettingsFont.item)
                     if let subtitle {
                         Text(subtitle)
-                            .font(.system(size: 13))
+                            .font(SettingsFont.sub)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -574,6 +583,7 @@ struct SettingsRow<Control: View>: View {
                 Spacer(minLength: 16)
                 control
                     .labelsHidden()
+                    .controlSize(.small)
             }
         }
         .accessibilityElement(children: .contain)
@@ -604,9 +614,9 @@ struct SettingsPreviewPicker<Value: Hashable, Preview: View>: View {
         SettingsCell(vertical: 14) {
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(title).font(.system(size: 15))
+                    Text(title).font(SettingsFont.item)
                     if let subtitle {
-                        Text(subtitle).font(.system(size: 13)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        Text(subtitle).font(SettingsFont.sub).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .frame(width: 170, alignment: .leading)
@@ -631,7 +641,7 @@ struct SettingsPreviewPicker<Value: Hashable, Preview: View>: View {
                                             .opacity(selection == option ? 1 : 0)
                                     )
                                 Text(label(option))
-                                    .font(.system(size: 12, weight: selection == option ? .medium : .regular))
+                                    .font(.system(size: 11, weight: selection == option ? .medium : .regular))
                                     .lineLimit(1)
                                     .padding(.horizontal, 9)
                                     .padding(.vertical, 2)
