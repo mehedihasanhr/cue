@@ -298,7 +298,7 @@ struct IslandPanel: View {
                                   swatch: item.kind == .color ? PickedColor(hex: item.text) : nil))
         }, onSnippet: { text in
             onPrompt(IslandPrompt(kind: .snippet(nil, initialText: text, assetID: nil)))
-        })
+        }, onEdit: { actions.editClipboardImage(item) })
     }
 
     private func assetCard(_ item: AssetItem) -> some View {
@@ -1124,6 +1124,8 @@ struct ClipboardCard: View {
     var onRename: () -> Void = {}
     /// A snippet from this entry's text.
     var onSnippet: (String) -> Void = { _ in }
+    /// An image entry in the editor — annotate, blur, crop — like a capture.
+    var onEdit: () -> Void = {}
     @State private var hovering = false
 
     var body: some View {
@@ -1143,12 +1145,18 @@ struct ClipboardCard: View {
         } actionRow: {
             CopyAction(perform: copy)
             PinAction(pinned: item.pinned) { clipboard.togglePin(item) }
+            if item.kind == .image {
+                CardAction(symbol: "pencil", help: "Edit", perform: onEdit)
+            }
             CardAction(symbol: "eye", help: "Preview", perform: onPreview)
             CardAction(symbol: "trash", help: "Remove", tint: .red) { clipboard.delete(item) }
         } menu: {
             Button("Copy") { copy() }
             if clipboard.canPaste { Button("Paste") { paste() } }
             Button("Preview", action: onPreview)
+            if item.kind == .image {
+                Button("Edit…", action: onEdit)
+            }
             if item.kind == .color, let color = PickedColor(hex: item.text) {
                 Menu("Copy as") {
                     ForEach(ColorFormat.allCases, id: \.self) { format in

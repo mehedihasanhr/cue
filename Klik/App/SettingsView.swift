@@ -338,8 +338,7 @@ struct CaptureSettingsView: View {
 
 // MARK: - Menu bar icon
 
-/// A button showing the icon in use; it opens a popover of every icon to pick
-/// from, and the way to a custom image.
+/// A button showing the icon in use; it opens a popover of every icon to pick from.
 private struct MenuBarIconPicker: View {
     @Environment(AppPreferences.self) private var preferences
     @State private var open = false
@@ -368,41 +367,18 @@ private struct MenuBarIconPicker: View {
         .help("Choose the menu bar icon")
         .accessibilityLabel("Menu bar icon")
         .popover(isPresented: $open, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: 12) {
-                LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
-                    ForEach(AppPreferences.Icon.symbols, id: \.self) { name in
-                        iconCell(selected: preferences.icon == .symbol(name)) {
-                            Image(systemName: name).font(.system(size: 15, weight: .medium))
-                        } action: {
-                            preferences.icon = .symbol(name)
-                        }
-                        .help(name)
-                    }
-                    if let url = preferences.customIconURL, let image = NSImage(contentsOf: url) {
-                        iconCell(selected: preferences.icon == .custom) {
-                            Image(nsImage: image).resizable().aspectRatio(contentMode: .fit).frame(width: 18, height: 18)
-                        } action: {
-                            preferences.icon = .custom
-                        }
-                        .help(url.lastPathComponent)
-                    }
-                }
-                Divider()
-                HStack(alignment: .top, spacing: 12) {
-                    Text("A custom icon works best as a black-on-transparent PNG or PDF around 18 × 18 points; Klik tints it to match the menu bar.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 0)
-                    Button("Custom Image…") {
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
+                ForEach(AppPreferences.Icon.symbols, id: \.self) { name in
+                    iconCell(selected: preferences.icon == .symbol(name)) {
+                        Image(systemName: name).font(.system(size: 15, weight: .medium))
+                    } action: {
+                        preferences.icon = .symbol(name)
                         open = false
-                        preferences.chooseCustomIcon()
                     }
-                    .controlSize(.small)
+                    .help(name)
                 }
             }
             .padding(12)
-            .frame(width: 300)
         }
     }
 

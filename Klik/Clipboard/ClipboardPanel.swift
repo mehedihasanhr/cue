@@ -12,6 +12,8 @@ struct ClipboardPanelView: View {
     var close: () -> Void = {}
     /// Pasting needs Accessibility access; asks for it the first time it is missing.
     var onNeedsAccessibility: () -> Void = {}
+    /// Opens an image entry in the editor (the panel closes first).
+    var onEdit: (ClipboardItem) -> Void = { _ in }
     /// Where the cursor was when the panel opened: the paste goes back there.
     var frontField: FrontField?
 
@@ -151,6 +153,12 @@ struct ClipboardPanelView: View {
             Button("Copy") { copy(item) }
             if item.kind == .text || item.kind == .link {
                 transformMenu(item)
+            }
+            if item.kind == .image {
+                Button("Edit…") {
+                    close()
+                    onEdit(item)
+                }
             }
             Button(item.pinned ? "Unpin" : "Pin") { clipboard.togglePin(item) }
             Divider()

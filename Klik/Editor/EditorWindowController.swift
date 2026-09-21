@@ -179,11 +179,15 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         window?.close()
     }
 
+    /// Told the edited image on every save (a clipboard image goes back on the clipboard).
+    var onSaved: ((CGImage) -> Void)?
+
     @objc func save() {
         model.endTextEditing()
         guard let image = model.renderedImage() else { return }
         library.replaceImage(of: item, with: image)
         model.markSaved()
+        onSaved?(image)
     }
 
     @objc func export() {

@@ -139,6 +139,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        // Diagnostics: `--env KLIK_DEBUG_EDIT_CLIPBOARD=1` opens the newest clipboard image in the editor.
+        if ProcessInfo.processInfo.environment["KLIK_DEBUG_EDIT_CLIPBOARD"] == "1" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                guard let self, let item = self.clipboard.items.first(where: { $0.kind == .image }) else { Log.app.error("No clipboard image to edit"); return }
+                self.editClipboardImage(item)
+            }
+        }
         // Diagnostics: `open Klik.app --env KLIK_DEBUG_PANEL=1` opens the floating panel at launch.
         if ProcessInfo.processInfo.environment["KLIK_DEBUG_PANEL"] == "1" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.toggleHistoryAtPointer() }
@@ -319,6 +326,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let frontField = FrontField.capture()
         let content = ClipboardPanelView(clipboard: clipboard, close: { [weak self] in self?.clipboardPanel?.close() },
                                          onNeedsAccessibility: { [weak self] in self?.showOnboarding(for: .accessibility) },
+                                         onEdit: { [weak self] item in self?.editClipboardImage(item) },
                                          frontField: frontField)
             .environment(preferences)
         let panel = FloatingPanelWindow(rootView: content, size: ClipboardPanelView.size)
@@ -584,7 +592,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             delete: { [weak self] item in self?.deleteCapture(item) },
             pinToScreen: { [weak self] item in self?.pinToScreen(item) },
             shareLink: { [weak self] item in self?.shareLink(for: item) },
-            makeTask: { [weak self] item in self?.makeTask(from: item) }
+            makeTask: { [weak self] item in self?.makeTask(from: item) },
+            editClipboardImage: { [weak self] item in self?.closeHistoryThen { $0.editClipboardImage(item) } }
         )
     }
 
@@ -735,6 +744,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Log.app.info("Captured \(item.fileName, privacy: .public) → clipboard + library")
         island?.flash(item)
         openEditor(for: item, image: image, mode: .edit)
+    }
+
+    /// A clipboard image becomes a capture of its own — saved with the others — and
+    /// opens in the editor; Done puts the edited image back on the clipboard.
+    func editClipboardImage(_ item: ClipboardItem) {
+        guard item.kind == .image, let data = clipboard.imageData(for: item),
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            FeedbackHUD.show("The image could not be read", symbol: "exclamationmark.triangle")
+            return
+        }
+        let image = CapturedImage(cgImage: cgImage, scale: Self.scale(of: source, pixelWidth: cgImage.width, pixelHeight: cgImage.height),
+                                  displayID: 0, capturedAt: item.createdAt)
+        let capture = library.add(image)
+        Log.app.info("Clipboard image → capture \(capture.fileName, privacy: .public) for editing")
+        openEditor(for: capture, image: image, mode: .edit)
+        editorWindows[capture.id]?.onSaved = { edited in
+            Clipboard.copy(edited)
+            FeedbackHUD.show("Edited image copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
+        }
+    }
+
+    /// Pixels per point for an image of unknown origin: what its DPI says, else the
+    /// screen's when it is big enough to be a Retina screenshot, else 1.
+    private static func scale(of source: CGImageSource, pixelWidth: Int, pixelHeight: Int) -> CGFloat {
+        if let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+           let dpi = properties[kCGImagePropertyDPIWidth] as? Double, dpi >= 144 {
+            return (dpi / 72).rounded()
+        }
+        let screenScale = NSScreen.main?.backingScaleFactor ?? 2
+        return pixelWidth >= 1200 && pixelHeight >= 800 ? screenScale : 1
     }
 
     /// Preview and edit share one window per capture; asking to edit an open preview

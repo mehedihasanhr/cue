@@ -166,6 +166,13 @@ Text that reads as code is badged with its language and line count and lightly
 highlighted on its card; "Copy as Code Block" / "Paste as Code Block" wrap it in a
 Markdown fence with the right language.
 
+### Images on the clipboard
+
+An image you copied anywhere can be edited like a capture: the pencil on its
+card in the island, or "Edit…" in its menu (also in the ⌘⇧C panel), saves it
+with your captures and opens it in the editor — annotate, blur, crop — and Done
+puts the result back on the clipboard.
+
 ### URL scheme and command line
 
 `klik://` URLs drive Klik from Shortcuts, Raycast, Alfred, a browser or a script:
