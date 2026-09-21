@@ -26,8 +26,7 @@ final class IslandController {
     private var pendingFlash: CaptureItem?
     private var observers: [any NSObjectProtocol] = []
 
-    private static let closeDelay: Duration = .milliseconds(250)
-    private static let flashDuration: Duration = .seconds(1.8)
+    private var hoverTask: Task<Void, Never>?
     private static let collapseAnimation: Duration = .milliseconds(380)
 
     /// A snippet's blanks were filled in the compact box (nil: cancelled); set by
@@ -269,13 +268,22 @@ final class IslandController {
         guard model.geometry != nil, !hidden, model.phase != .expanded else { return }
         closeTask?.cancel()
         flashTask?.cancel()
+        hoverTask?.cancel()
         window.orderFrontRegardless()
+        if let tab = preferences.islandOpensOn {
+            UserDefaults.standard.set(tab.rawValue, forKey: IslandTab.storageKey)
+        }
         setPhase(.expanded, animated: true)
+        // With no closing on leave (or in click mode) a click outside is the way out.
+        if !preferences.islandCloseOnLeave || preferences.islandOpenMode == .click {
+            installOutsideClickMonitor(forExpanded: true)
+        }
     }
 
     func collapse(animated: Bool = true) {
         flashTask?.cancel()
         closeTask?.cancel()
+        hoverTask?.cancel()
         guard model.phase != .collapsed else { return }
         removeOutsideClickMonitor()
         setPhase(.collapsed, animated: animated)
@@ -293,6 +301,7 @@ final class IslandController {
     /// Show the capture that was just taken for a moment; hovering it meanwhile opens
     /// the full panel instead.
     func flash(_ item: CaptureItem) {
+        guard preferences.islandFlashCaptures else { return }
         if hidden {
             pendingFlash = item
             return
@@ -366,12 +375,15 @@ final class IslandController {
 
     private var outsideClickMonitors: [Any] = []
 
-    private func installOutsideClickMonitor() {
+    /// `forExpanded`: the open panel closes on a click outside too (click mode, or
+    /// when it does not close on leaving).
+    private func installOutsideClickMonitor(forExpanded: Bool = false) {
         removeOutsideClickMonitor()
         let handler: @MainActor () -> Void = { [weak self] in
             guard let self, model.geometry != nil else { return }
             switch model.phase {
             case .prompt, .taskDetail, .clock: break
+            case .expanded where forExpanded: break
             default: return
             }
             if !model.shapeRect(for: model.phase).contains(NSEvent.mouseLocation) { collapse() }
@@ -400,7 +412,7 @@ final class IslandController {
     /// `quiet`: an unprompted status (the time, a prayer) that must not interrupt
     /// the open panel or a form — it is dropped unless the island is closed.
     func showStatus(_ status: IslandStatus, quiet: Bool = false) -> Bool {
-        guard model.geometry != nil, !hidden else { return false }
+        guard model.geometry != nil, !hidden, preferences.islandStatuses || status.clock != nil else { return false }
         if quiet, model.phase != .collapsed, !model.phase.isFlash { return false }
         flash(phase: .status(status), overPanel: !quiet)
         return true
@@ -416,7 +428,7 @@ final class IslandController {
         removeOutsideClickMonitor()
         window.orderFrontRegardless()
         setPhase(phase, animated: true)
-        let duration: Duration = if case .status(let status) = phase { status.duration } else { Self.flashDuration }
+        let duration: Duration = if case .status(let status) = phase { status.duration } else { .seconds(preferences.islandFlashDuration) }
         let isClock = if case .status(let status) = phase { status.clock != nil } else { false }
         flashTask = Task { [weak self] in
             try? await Task.sleep(for: duration)
@@ -488,14 +500,30 @@ final class IslandController {
             return
         default: break
         }
-        if model.phase != .expanded { expand() }
+        guard model.phase != .expanded else { return }
+        // A flash opens at once when hovered; the closed island waits for the delay
+        // — or, in click mode, for a click.
+        if model.phase.isFlash {
+            expand()
+        } else if preferences.islandOpenMode == .hover {
+            let delay = preferences.islandHoverDelay
+            guard delay > 0 else { expand(); return }
+            hoverTask?.cancel()
+            hoverTask = Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(Int(delay * 1000)))
+                guard !Task.isCancelled, let self, pointerInside else { return }
+                expand()
+            }
+        }
     }
 
     private func pointerExited() {
-        guard model.phase == .expanded else { return }
+        hoverTask?.cancel()
+        guard model.phase == .expanded, preferences.islandCloseOnLeave else { return }
         closeTask?.cancel()
+        let delay = preferences.islandCloseDelay
         closeTask = Task { [weak self] in
-            try? await Task.sleep(for: Self.closeDelay)
+            try? await Task.sleep(for: .milliseconds(Int(delay * 1000)))
             // A drag out of the panel or an open menu keeps it open until they finish.
             while !Task.isCancelled, let self, NSEvent.pressedMouseButtons != 0 || menusTracking > 0 {
                 try? await Task.sleep(for: .milliseconds(100))

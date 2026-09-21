@@ -155,13 +155,16 @@ struct IslandView: View {
     let snippets: SnippetStore
     let actions: HistoryActions
     @Environment(PrayerClock.self) private var clock: PrayerClock?
+    @Environment(AppPreferences.self) private var preferences
 
     /// Opening overshoots a touch; closing settles without a bounce. With Reduce
     /// Motion on, everything is a short ease instead.
-    static var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
-    static var openAnimation: Animation { reduceMotion ? .easeOut(duration: 0.18) : .spring(response: 0.36, dampingFraction: 0.82, blendDuration: 0) }
-    static var closeAnimation: Animation { reduceMotion ? .easeOut(duration: 0.18) : .spring(response: 0.45, dampingFraction: 1.0, blendDuration: 0) }
-    static var contentAnimation: Animation { reduceMotion ? .easeOut(duration: 0.15) : .smooth(duration: 0.28) }
+    /// Settings › Island › Animation; the view sets it from the preferences it reads.
+    nonisolated(unsafe) static var animationStyle: AppPreferences.IslandAnimation = .lively
+    static var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion || animationStyle != .lively }
+    static var openAnimation: Animation { animationStyle == .none ? .linear(duration: 0) : reduceMotion ? .easeOut(duration: 0.18) : .spring(response: 0.36, dampingFraction: 0.82, blendDuration: 0) }
+    static var closeAnimation: Animation { animationStyle == .none ? .linear(duration: 0) : reduceMotion ? .easeOut(duration: 0.18) : .spring(response: 0.45, dampingFraction: 1.0, blendDuration: 0) }
+    static var contentAnimation: Animation { animationStyle == .none ? .linear(duration: 0) : reduceMotion ? .easeOut(duration: 0.15) : .smooth(duration: 0.28) }
 
     /// Collapsed and settled: the shape is drawn clear so nothing shows beside the
     /// notch. Closing shrinks into the notch first (black all the way), then fades.
@@ -169,6 +172,7 @@ struct IslandView: View {
 
     var body: some View {
         let phase = model.phase
+        let _ = { Self.animationStyle = preferences.islandAnimation }()
         if let geometry = model.geometry {
             let size = model.shapeRect(for: phase).size
             let collapsed = phase == .collapsed
@@ -177,7 +181,7 @@ struct IslandView: View {
             ZStack(alignment: .top) {
                 // Invisible once collapsed (nothing peeks out beside the notch, nor sits
                 // on a plain menu bar); the tap target stays.
-                shape.fill(faded ? Color.clear : Color.black)
+                shape.fill(faded && !preferences.islandNotchBackground ? Color.clear : Color.black)
                 content(for: phase, strip: geometry.stripHeight)
                     .compositingGroup()
                     .padding(.horizontal, flare) // the body; the flares lie outside it

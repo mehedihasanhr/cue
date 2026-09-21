@@ -205,6 +205,119 @@ struct IslandSettingsView: View {
     var body: some View {
         @Bindable var preferences = preferences
         SettingsPane(.island) {
+            SettingsGroup("Dynamic Island") {
+                SettingsRow("Show the Dynamic Island", subtitle: "Your captures, clipboard, assets, colors, tasks and snippets, docked on the notch. The island never appears in Klik's own screenshots.") {
+                    Toggle("Show the island", isOn: $preferences.dynamicIslandEnabled).toggleStyle(.switch)
+                }
+                SettingsRow("Also show a pill on displays without a notch") {
+                    Toggle("Pill on plain displays", isOn: $preferences.dynamicIslandOnPlainDisplays).toggleStyle(.switch)
+                }
+                .disabled(!preferences.dynamicIslandEnabled)
+                SettingsRow("Notch background", subtitle: "Draw the closed island black beside the notch (a black pill on a plain display). Off: nothing shows until it opens.") {
+                    Toggle("Notch background", isOn: $preferences.islandNotchBackground).toggleStyle(.switch)
+                }
+                .disabled(!preferences.dynamicIslandEnabled)
+            }
+
+            SettingsGroup("Opening and closing") {
+                SettingsRow("Open on", subtitle: preferences.islandOpenMode == .hover
+                            ? "The pointer resting on the island opens it."
+                            : "A click on the island opens it; ⎋ or a click outside closes it.") {
+                    Picker("Open on", selection: $preferences.islandOpenMode) {
+                        ForEach(AppPreferences.IslandOpenMode.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .fixedSize()
+                }
+                if preferences.islandOpenMode == .hover {
+                    SettingsRow("Hover delay", subtitle: "How long the pointer rests on the island before it opens — so passing over the notch does not.") {
+                        SecondsSlider(value: $preferences.islandHoverDelay, range: 0...1.5, step: 0.05, zero: "At once")
+                    }
+                }
+                SettingsRow("Close when the pointer leaves", subtitle: "Off: the island stays open until ⎋ or a click outside it.") {
+                    Toggle("Close on leave", isOn: $preferences.islandCloseOnLeave).toggleStyle(.switch)
+                }
+                if preferences.islandCloseOnLeave {
+                    SettingsRow("Close delay", subtitle: "A moment's grace after the pointer leaves, so a slip does not close it.") {
+                        SecondsSlider(value: $preferences.islandCloseDelay, range: 0.1...3, step: 0.05, zero: "At once")
+                    }
+                }
+                SettingsRow("Opens on", subtitle: "The tab the island shows when it opens.") {
+                    Picker("Opens on", selection: $preferences.islandOpensOn) {
+                        Text("Last used").tag(IslandTab?.none)
+                        Divider()
+                        ForEach(IslandTab.allCases, id: \.self) { Text($0.title).tag(IslandTab?.some($0)) }
+                    }
+                    .fixedSize()
+                }
+            }
+            .disabled(!preferences.dynamicIslandEnabled)
+
+            SettingsGroup("What it shows") {
+                SettingsRow("Flash new captures", subtitle: "Each capture appears on the island for a moment; resting the pointer on it opens the panel.") {
+                    Toggle("Flash captures", isOn: $preferences.islandFlashCaptures).toggleStyle(.switch)
+                }
+                if preferences.islandFlashCaptures {
+                    SettingsRow("For") {
+                        SecondsSlider(value: $preferences.islandFlashDuration, range: 0.5...5, step: 0.1, zero: nil)
+                    }
+                }
+                SettingsRow("Statuses", subtitle: "Pastes from the stack, uploads, focus sessions and saved snippets, said on the island. The time and prayer times have their own settings.") {
+                    Toggle("Statuses", isOn: $preferences.islandStatuses).toggleStyle(.switch)
+                }
+                SettingsRow("Animation", subtitle: "Lively springs open and settles closed; Quick is a short ease; Off goes straight there. Reduce Motion in System Settings always wins.") {
+                    Picker("Animation", selection: $preferences.islandAnimation) {
+                        ForEach(AppPreferences.IslandAnimation.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .fixedSize()
+                }
+            }
+            .disabled(!preferences.dynamicIslandEnabled)
+
+            SettingsGroup("Panels") {
+                SettingsPreviewPicker(title: "Open panels at", subtitle: "Where the library panel (⌥⇧K) and the quick task (⌥/) appear — on the screen the pointer is on.",
+                                      selection: $preferences.panelPosition, options: PanelPosition.allCases, label: { $0 == .pointer ? "Pointer" : $0.title }, columns: 4, tileWidth: 92, inPopover: true) { position in
+                    PanelPositionPreview(position: position)
+                }
+            }
+        }
+    }
+}
+
+/// A slider of seconds with its value beside it ("0.25 s", or a word for zero).
+private struct SecondsSlider: View {
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let step: Double
+    /// What to show at the low end instead of "0 s".
+    let zero: String?
+
+    private var caption: String {
+        if let zero, value <= range.lowerBound { return zero }
+        return String(format: "%.2g s", value)
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Slider(value: $value, in: range, step: step).frame(width: 150)
+            Text(caption)
+                .font(SettingsFont.sub)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(width: 52, alignment: .trailing)
+        }
+    }
+}
+
+// MARK: - Snippets
+
+struct SnippetSettingsView: View {
+    @Environment(AppPreferences.self) private var preferences
+
+    var body: some View {
+        @Bindable var preferences = preferences
+        SettingsPane(.snippets) {
             SettingsGroup("Snippets", footer: "Make snippets in the island's Snippets tab, or from a clipboard entry or an asset with Make Snippet…") {
                 SettingsRow("Expand snippets as you type", subtitle: "Type a snippet's keyword (\(preferences.snippetPrefix)welcome) in any app and Klik replaces it with the snippet. Blanks like {{Name}} are asked for first; {{date}}, {{time}} and {{clipboard}} fill themselves.") {
                     Toggle("Expand snippets", isOn: $preferences.snippetsEnabled).toggleStyle(.switch)
@@ -225,24 +338,18 @@ struct IslandSettingsView: View {
                     }
                 }
             }
+        }
+    }
+}
 
-            SettingsGroup("Dynamic Island") {
-                SettingsRow("Show the Dynamic Island", subtitle: "Hover over the notch — or the pill at the top of the screen — to open your captures. The island never appears in Klik's own screenshots.") {
-                    Toggle("Show the island", isOn: $preferences.dynamicIslandEnabled).toggleStyle(.switch)
-                }
-                SettingsRow("Also show a pill on displays without a notch") {
-                    Toggle("Pill on plain displays", isOn: $preferences.dynamicIslandOnPlainDisplays).toggleStyle(.switch)
-                }
-                .disabled(!preferences.dynamicIslandEnabled)
-            }
+// MARK: - Colors
 
-            SettingsGroup("Panels") {
-                SettingsPreviewPicker(title: "Open panels at", subtitle: "Where the library panel (⌥⇧K) and the quick task (⌥/) appear — on the screen the pointer is on.",
-                                      selection: $preferences.panelPosition, options: PanelPosition.allCases, label: { $0 == .pointer ? "Pointer" : $0.title }, columns: 4, tileWidth: 92, inPopover: true) { position in
-                    PanelPositionPreview(position: position)
-                }
-            }
+struct ColorSettingsView: View {
+    @Environment(AppPreferences.self) private var preferences
 
+    var body: some View {
+        @Bindable var preferences = preferences
+        SettingsPane(.colors) {
             SettingsGroup("Color picker", footer: "Every other format is one right-click away on a color card.") {
                 SettingsRow("Copy picked colors as") {
                     Picker("Color format", selection: $preferences.colorFormat) {

@@ -6,14 +6,14 @@ import SwiftUI
 /// The pages of the Settings window, in sidebar order.
 enum SettingsSection: String, CaseIterable, Identifiable {
     case general, appearance, shortcuts, sharing, permissions, about
-    case island, capture, editor, clipboard, time
+    case island, capture, editor, clipboard, snippets, colors, time
 
     var id: String { rawValue }
 
     /// The sidebar shows the app-wide pages first, then a group per feature.
     static let groups: [[SettingsSection]] = [
         [.general, .appearance, .shortcuts, .sharing, .permissions, .about],
-        [.island, .capture, .editor, .clipboard, .time],
+        [.island, .capture, .editor, .clipboard, .snippets, .colors, .time],
     ]
 
     var title: String {
@@ -28,6 +28,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .capture: "Capture"
         case .editor: "Editor"
         case .clipboard: "Clipboard"
+        case .snippets: "Snippets"
+        case .colors: "Colors"
         case .time: "Time"
         }
     }
@@ -40,10 +42,12 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .sharing: "Where Copy Share Link uploads captures"
         case .permissions: "What macOS lets Klik see and do"
         case .about: "Screenshots you can annotate, blur and share — built natively for macOS"
-        case .island: "The Dynamic Island, panels, snippets and the color picker"
+        case .island: "How the Dynamic Island opens, closes, looks and moves"
         case .capture: "The pointer and the sound after each capture"
         case .editor: "What every new annotation starts as"
         case .clipboard: "What Klik remembers of what you copy"
+        case .snippets: "Text that expands as you type"
+        case .colors: "The color picker and its formats"
         case .time: "The time on the island and prayer times"
         }
     }
@@ -60,6 +64,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .capture: "camera.fill"
         case .editor: "paintbrush.pointed.fill"
         case .clipboard: "doc.on.clipboard.fill"
+        case .snippets: "text.badge.checkmark"
+        case .colors: "eyedropper.halffull"
         case .time: "clock.fill"
         }
     }
@@ -76,6 +82,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .capture: .orange
         case .editor: .purple
         case .clipboard: .teal
+        case .snippets: .mint
+        case .colors: .red
         case .time: .cyan
         }
     }
@@ -89,7 +97,9 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .sharing: ["upload", "s3", "r2", "bucket", "link", "url", "cloud", "endpoint", "custom", "keychain"]
         case .permissions: ["screen recording", "accessibility", "privacy", "access", "grant", "system settings"]
         case .about: ["version", "build", "credits", "stackrover", "copyright", "website"]
-        case .island: ["dynamic island", "notch", "pill", "panel", "position", "snippets", "expand", "keyword", "trigger", "color", "picker", "format", "hex"]
+        case .island: ["dynamic island", "notch", "pill", "panel", "position", "hover", "click", "delay", "open", "close", "background", "flash", "status", "animation", "tab"]
+        case .snippets: ["snippet", "expand", "keyword", "trigger", "text", "type", "accessibility"]
+        case .colors: ["color", "picker", "format", "hex", "rgb", "hsl", "swift", "css"]
         case .capture: ["cursor", "pointer", "mouse", "sound", "shutter", "audio", "full screen"]
         case .editor: ["annotation", "color", "stroke", "width", "shape", "arrow", "fill", "text", "font", "marker", "highlighter", "blur", "pixelate", "counter", "defaults"]
         case .clipboard: ["history", "copy", "paste", "limit", "items", "clear", "pinned"]
@@ -209,6 +219,8 @@ struct SettingsRootView: View {
         case .capture: CaptureSettingsView()
         case .editor: EditorSettingsView()
         case .clipboard: ClipboardSettingsView()
+        case .snippets: SnippetSettingsView()
+        case .colors: ColorSettingsView()
         case .time: TimeSettingsView()
         }
     }

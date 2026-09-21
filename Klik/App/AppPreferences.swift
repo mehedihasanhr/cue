@@ -17,6 +17,16 @@ final class AppPreferences {
         static let appearance = "appearance"
         static let islandEnabled = "island.enabled"
         static let islandPlainDisplays = "island.plainDisplays"
+        static let islandOpenMode = "island.openMode"
+        static let islandHoverDelay = "island.hoverDelay"
+        static let islandCloseDelay = "island.closeDelay"
+        static let islandCloseOnLeave = "island.closeOnLeave"
+        static let islandNotchBackground = "island.notchBackground"
+        static let islandFlashCaptures = "island.flashCaptures"
+        static let islandFlashDuration = "island.flashDuration"
+        static let islandStatuses = "island.statuses"
+        static let islandAnimation = "island.animation"
+        static let islandOpensOn = "island.opensOn"
         static let clipboardEnabled = "clipboard.enabled"
         static let clipboardLimit = "clipboard.limit"
         static let colorFormat = "color.format"
@@ -152,6 +162,81 @@ final class AppPreferences {
         didSet { defaults.set(dynamicIslandOnPlainDisplays, forKey: Key.islandPlainDisplays) }
     }
 
+    /// What opens the island: the pointer resting on it, or a click.
+    enum IslandOpenMode: String, CaseIterable {
+        case hover, click
+
+        var title: String {
+            switch self {
+            case .hover: "Hover"
+            case .click: "Click"
+            }
+        }
+    }
+
+    var islandOpenMode: IslandOpenMode {
+        didSet { defaults.set(islandOpenMode.rawValue, forKey: Key.islandOpenMode) }
+    }
+
+    /// How long the pointer rests on the closed island before it opens (hover mode).
+    var islandHoverDelay: Double {
+        didSet { defaults.set(islandHoverDelay, forKey: Key.islandHoverDelay) }
+    }
+
+    /// How long after the pointer leaves the open island closes.
+    var islandCloseDelay: Double {
+        didSet { defaults.set(islandCloseDelay, forKey: Key.islandCloseDelay) }
+    }
+
+    /// Off: the island stays open until ⎋ or a click outside it.
+    var islandCloseOnLeave: Bool {
+        didSet { defaults.set(islandCloseOnLeave, forKey: Key.islandCloseOnLeave) }
+    }
+
+    /// Draw the closed island black beside the notch (or as a pill) instead of
+    /// keeping it invisible until it opens.
+    var islandNotchBackground: Bool {
+        didSet { defaults.set(islandNotchBackground, forKey: Key.islandNotchBackground) }
+    }
+
+    /// Show each new capture on the island for a moment.
+    var islandFlashCaptures: Bool {
+        didSet { defaults.set(islandFlashCaptures, forKey: Key.islandFlashCaptures) }
+    }
+
+    /// Seconds a new capture stays on the island.
+    var islandFlashDuration: Double {
+        didSet { defaults.set(islandFlashDuration, forKey: Key.islandFlashDuration) }
+    }
+
+    /// Statuses on the island: pastes from the stack, uploads, focus sessions,
+    /// snippets saved. Off: the HUD says them instead.
+    var islandStatuses: Bool {
+        didSet { defaults.set(islandStatuses, forKey: Key.islandStatuses) }
+    }
+
+    enum IslandAnimation: String, CaseIterable {
+        case lively, quick, none
+
+        var title: String {
+            switch self {
+            case .lively: "Lively"
+            case .quick: "Quick"
+            case .none: "Off"
+            }
+        }
+    }
+
+    /// How the island moves: a spring, a short ease, or straight there.
+    var islandAnimation: IslandAnimation {
+        didSet { defaults.set(islandAnimation.rawValue, forKey: Key.islandAnimation) }
+    }
+
+    /// The tab the island opens on; nil is the last one used.
+    var islandOpensOn: IslandTab? {
+        didSet { defaults.set(islandOpensOn?.rawValue ?? "", forKey: Key.islandOpensOn) }
+    }
+
     // MARK: Editor defaults
 
     var editorDefaults: EditorDefaults {
@@ -275,6 +360,16 @@ final class AppPreferences {
         editorDefaults = EditorDefaults.load(from: defaults)
         dynamicIslandEnabled = defaults.object(forKey: Key.islandEnabled) as? Bool ?? true
         dynamicIslandOnPlainDisplays = defaults.object(forKey: Key.islandPlainDisplays) as? Bool ?? true
+        islandOpenMode = IslandOpenMode(rawValue: defaults.string(forKey: Key.islandOpenMode) ?? "") ?? .hover
+        islandHoverDelay = defaults.object(forKey: Key.islandHoverDelay) as? Double ?? 0
+        islandCloseDelay = defaults.object(forKey: Key.islandCloseDelay) as? Double ?? 0.25
+        islandCloseOnLeave = defaults.object(forKey: Key.islandCloseOnLeave) as? Bool ?? true
+        islandNotchBackground = defaults.object(forKey: Key.islandNotchBackground) as? Bool ?? false
+        islandFlashCaptures = defaults.object(forKey: Key.islandFlashCaptures) as? Bool ?? true
+        islandFlashDuration = defaults.object(forKey: Key.islandFlashDuration) as? Double ?? 1.8
+        islandStatuses = defaults.object(forKey: Key.islandStatuses) as? Bool ?? true
+        islandAnimation = IslandAnimation(rawValue: defaults.string(forKey: Key.islandAnimation) ?? "") ?? .lively
+        islandOpensOn = IslandTab(rawValue: defaults.string(forKey: Key.islandOpensOn) ?? "")
         clipboardHistoryEnabled = defaults.object(forKey: Key.clipboardEnabled) as? Bool ?? true
         clipboardHistoryLimit = defaults.object(forKey: Key.clipboardLimit) as? Int ?? 200
         colorFormat = ColorFormat(rawValue: defaults.string(forKey: Key.colorFormat) ?? "") ?? .hex
