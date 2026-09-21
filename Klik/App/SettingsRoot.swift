@@ -497,15 +497,9 @@ struct SettingsPane<Content: View>: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 26) {
                 // General introduces the window with a card (like System Settings);
-                // every other page just says its name.
+                // every other page starts straight on its rows.
                 if section == .general {
                     SettingsHeaderCard(section: section)
-                } else {
-                    Text(section.title)
-                        .font(.system(size: 18, weight: .semibold))
-                        .padding(.leading, 12)
-                        .padding(.bottom, -8)
-                        .accessibilityAddTraits(.isHeader)
                 }
                 content
             }

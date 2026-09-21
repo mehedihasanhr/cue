@@ -442,6 +442,9 @@ struct IslandPrompt: Hashable {
         case snippet(Snippet?, initialText: String, assetID: UUID?)
         /// Fill a snippet's blanks before it is pasted.
         case fill(Snippet)
+        /// A new group for captures, clipboard entries or colors (with an item to
+        /// put in it), or a rename of one.
+        case group(GroupKind, assign: GroupAssignment?, editing: ItemGroup?)
     }
 
     let kind: Kind
@@ -492,6 +495,7 @@ struct IslandPrompt: Hashable {
             if parent == nil { return "New project" }
             return context.map { "New sub-project in \($0)" } ?? "New sub-project"
         case .task: return editing == nil ? "New task" : "Edit task"
+        case .group(_, _, let editing): return editing == nil ? "New group" : "Rename group"
         case .snippet(let snippet, _, let asset): return snippet == nil ? (asset == nil ? "New snippet" : "New snippet from this file") : "Edit snippet"
         case .fill(let snippet): return "Fill in \(snippet.title)"
         case .rename(let detail):
@@ -507,6 +511,7 @@ struct IslandPrompt: Hashable {
     var placeholder: String {
         switch kind {
         case .project: "Project name"
+        case .group: "Group name"
         case .task: "Task title"
         case .rename: "Name"
         case .delete, .snippet, .fill: ""
@@ -515,7 +520,7 @@ struct IslandPrompt: Hashable {
 
     var symbol: String {
         switch kind {
-        case .project: "folder.badge.plus"
+        case .project, .group: "folder.badge.plus"
         case .task: "checklist"
         case .rename: "pencil"
         case .delete: "trash"

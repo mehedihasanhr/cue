@@ -16,6 +16,7 @@ final class IslandController {
     private let clipboard: ClipboardHistory
     private let assets: AssetStore
     private let colors: ColorStore
+    private let groups: GroupStore
 
     private var closeTask: Task<Void, Never>?
     private var flashTask: Task<Void, Never>?
@@ -33,7 +34,7 @@ final class IslandController {
     /// the app delegate.
     var onSnippetFilled: (Snippet, [String: String]?) -> Void = { _, _ in }
 
-    init(library: CaptureLibrary, clipboard: ClipboardHistory, assets: AssetStore, colors: ColorStore, tasks: TaskStore, snippets: SnippetStore,
+    init(library: CaptureLibrary, clipboard: ClipboardHistory, assets: AssetStore, colors: ColorStore, groups: GroupStore, tasks: TaskStore, snippets: SnippetStore,
          actions: HistoryActions, preferences: AppPreferences, clock: PrayerClock? = nil, focus: FocusTimer? = nil) {
         self.preferences = preferences
         self.tasks = tasks
@@ -42,13 +43,14 @@ final class IslandController {
         self.clipboard = clipboard
         self.assets = assets
         self.colors = colors
+        self.groups = groups
 
         let content = IslandDropView(frame: CGRect(origin: .zero, size: window.frame.size))
         content.onDragEntered = { [weak self] in self?.dragEntered() }
         content.onDragExited = { [weak self] in self?.model.dropping = false }
         content.onDrop = { [weak self] urls, image in self?.drop(urls: urls, image: image, into: assets) }
         let host = NSHostingView(rootView: IslandView(model: model, library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasks, snippets: snippets, actions: actions)
-            .environment(preferences).environment(clock).environment(focus))
+            .environment(preferences).environment(clock).environment(focus).environment(groups))
         host.sizingOptions = []
         host.autoresizingMask = [.width, .height]
         host.frame = content.bounds
@@ -110,6 +112,18 @@ final class IslandController {
                 case .project(let parent):
                     if let project = tasks.addProject(named: answer.title, in: parent) {
                         tasks.pendingSelection = .project(project.id)
+                    }
+                case .group(let kind, let assign, let editing):
+                    if let editing {
+                        groups.rename(editing, to: answer.title)
+                    } else if let group = groups.add(name: answer.title, kind: kind) {
+                        switch assign {
+                        case .capture(let id): library.items.first { $0.id == id }.map { library.setGroup($0, group.id) }
+                        case .clipboard(let id): clipboard.items.first { $0.id == id }.map { clipboard.setGroup($0, group.id) }
+                        case .color(let id): colors.items.first { $0.id == id }.map { colors.setGroup($0, group.id) }
+                        case nil: break
+                        }
+                        status = IslandStatus(symbol: "folder.fill.badge.plus", title: "Group “\(group.name)”", subtitle: assign == nil ? "Ready for its first item" : "Moved in")
                     }
                 case .rename(let detail):
                     renamed(detail, to: answer.title)
@@ -189,6 +203,9 @@ final class IslandController {
         pointerInside = inside
         if inside { pointerEntered() } else { pointerExited() }
     }
+
+    /// For diagnostics: the island's window, to capture it.
+    var windowNumber: Int { window.windowNumber }
 
     /// Removes the island; the controller is dropped afterwards.
     func tearDown() {

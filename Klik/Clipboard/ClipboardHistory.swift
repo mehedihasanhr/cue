@@ -54,6 +54,7 @@ final class ClipboardHistory {
             try database.execute(Self.schema)
             // Added after the first release; harmless when the column exists.
             try? database.execute("ALTER TABLE items ADD COLUMN name TEXT")
+            try? database.execute("ALTER TABLE items ADD COLUMN group_id TEXT")
             self.database = database
         } catch {
             Log.app.error("Clipboard history: cannot open database: \(String(describing: error), privacy: .public)")
@@ -390,6 +391,21 @@ final class ClipboardHistory {
         update(items[index])
     }
 
+    /// Puts the entry in a group (nil: out of any).
+    func setGroup(_ item: ClipboardItem, _ groupID: UUID?) {
+        guard let index = items.firstIndex(where: { $0.id == item.id }), items[index].groupID != groupID else { return }
+        items[index].groupID = groupID
+        update(items[index])
+    }
+
+    /// A deleted group's entries are ungrouped.
+    func removeGroup(_ groupID: UUID) {
+        for index in items.indices where items[index].groupID == groupID {
+            items[index].groupID = nil
+            update(items[index])
+        }
+    }
+
     /// Gives the entry a label (empty clears it).
     func rename(_ item: ClipboardItem, to name: String) {
         guard let index = items.firstIndex(of: item) else { return }
@@ -464,7 +480,7 @@ final class ClipboardHistory {
         guard let database else { return }
         do {
             items = try database.query(
-                "SELECT id, kind, text, pixel_width, pixel_height, source_bundle, source_name, created, pinned, name FROM items ORDER BY created DESC"
+                "SELECT id, kind, text, pixel_width, pixel_height, source_bundle, source_name, created, pinned, name, group_id FROM items ORDER BY created DESC"
             ) { row in
                 var item = ClipboardItem(
                     id: UUID(uuidString: row.text(0) ?? "") ?? UUID(),
@@ -476,6 +492,7 @@ final class ClipboardHistory {
                 )
                 item.pinned = row.bool(8)
                 item.name = row.text(9)
+                item.groupID = row.text(10).flatMap(UUID.init(uuidString:))
                 return item
             }
         } catch {
@@ -513,8 +530,9 @@ final class ClipboardHistory {
         guard let database else { return }
         storage.async {
             try? database.run(
-                "UPDATE items SET created = ?, pinned = ?, name = ? WHERE id = ?",
-                [.real(item.createdAt.timeIntervalSince1970), .integer(item.pinned ? 1 : 0), item.name.map(Value.text) ?? .null, .text(item.id.uuidString)]
+                "UPDATE items SET created = ?, pinned = ?, name = ?, group_id = ? WHERE id = ?",
+                [.real(item.createdAt.timeIntervalSince1970), .integer(item.pinned ? 1 : 0), item.name.map(Value.text) ?? .null,
+                 item.groupID.map { Value.text($0.uuidString) } ?? .null, .text(item.id.uuidString)]
             )
         }
     }

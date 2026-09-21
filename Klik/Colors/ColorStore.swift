@@ -12,6 +12,8 @@ nonisolated struct ColorEntry: Identifiable, Codable, Hashable {
     var name: String?
     /// Kept at the top of the list, by "Clear" and by the history limit.
     var pinned = false
+    /// The group (folder) it is in, if any.
+    var groupID: UUID?
 
     init(color: PickedColor, createdAt: Date = .now) {
         id = UUID()
@@ -19,7 +21,7 @@ nonisolated struct ColorEntry: Identifiable, Codable, Hashable {
         self.createdAt = createdAt
     }
 
-    private enum CodingKeys: String, CodingKey { case id, color, createdAt, name, pinned }
+    private enum CodingKeys: String, CodingKey { case id, color, createdAt, name, pinned, groupID }
 
     /// Files written before pinning existed have no `pinned` key.
     init(from decoder: any Decoder) throws {
@@ -29,6 +31,7 @@ nonisolated struct ColorEntry: Identifiable, Codable, Hashable {
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         name = try container.decodeIfPresent(String.self, forKey: .name)
         pinned = try container.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
+        groupID = try container.decodeIfPresent(UUID.self, forKey: .groupID)
     }
 }
 
@@ -108,6 +111,20 @@ final class ColorStore {
     func togglePin(_ entry: ColorEntry) {
         guard let index = items.firstIndex(where: { $0.id == entry.id }) else { return }
         items[index].pinned.toggle()
+        save()
+    }
+
+    /// Puts the color in a group (nil: out of any).
+    func setGroup(_ entry: ColorEntry, _ groupID: UUID?) {
+        guard let index = items.firstIndex(where: { $0.id == entry.id }), items[index].groupID != groupID else { return }
+        items[index].groupID = groupID
+        save()
+    }
+
+    /// A deleted group's colors are ungrouped.
+    func removeGroup(_ groupID: UUID) {
+        guard items.contains(where: { $0.groupID == groupID }) else { return }
+        for index in items.indices where items[index].groupID == groupID { items[index].groupID = nil }
         save()
     }
 

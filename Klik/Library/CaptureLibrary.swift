@@ -15,6 +15,8 @@ struct CaptureItem: Identifiable, Codable, Hashable {
     var scale: Double
     /// Kept at the top of the list and by "Clear".
     var pinned = false
+    /// The group (folder) it is in, if any.
+    var groupID: UUID?
 
     var title: String { (fileName as NSString).deletingPathExtension }
     /// Still named the way Klik saved it ("Screenshot 2026-09-19 at 17.20.22"), not renamed.
@@ -23,7 +25,7 @@ struct CaptureItem: Identifiable, Codable, Hashable {
     }
     var dimensions: String { "\(pixelWidth) × \(pixelHeight)" }
 
-    private enum CodingKeys: String, CodingKey { case id, fileName, bookmark, createdAt, pixelWidth, pixelHeight, scale, pinned }
+    private enum CodingKeys: String, CodingKey { case id, fileName, bookmark, createdAt, pixelWidth, pixelHeight, scale, pinned, groupID }
 
     init(id: UUID, fileName: String, bookmark: Data, createdAt: Date, pixelWidth: Int, pixelHeight: Int, scale: Double) {
         self.id = id
@@ -46,6 +48,7 @@ struct CaptureItem: Identifiable, Codable, Hashable {
         pixelHeight = try container.decode(Int.self, forKey: .pixelHeight)
         scale = try container.decode(Double.self, forKey: .scale)
         pinned = try container.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
+        groupID = try container.decodeIfPresent(UUID.self, forKey: .groupID)
     }
 }
 
@@ -259,6 +262,20 @@ final class CaptureLibrary {
     func togglePin(_ item: CaptureItem) {
         guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
         items[index].pinned.toggle()
+        saveIndex()
+    }
+
+    /// Puts the capture in a group (nil: out of any).
+    func setGroup(_ item: CaptureItem, _ groupID: UUID?) {
+        guard let index = items.firstIndex(where: { $0.id == item.id }), items[index].groupID != groupID else { return }
+        items[index].groupID = groupID
+        saveIndex()
+    }
+
+    /// A deleted group's captures are ungrouped.
+    func removeGroup(_ groupID: UUID) {
+        guard items.contains(where: { $0.groupID == groupID }) else { return }
+        for index in items.indices where items[index].groupID == groupID { items[index].groupID = nil }
         saveIndex()
     }
 

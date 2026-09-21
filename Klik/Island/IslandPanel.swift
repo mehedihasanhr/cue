@@ -50,6 +50,7 @@ struct IslandPanel: View {
     @Environment(AppPreferences.self) private var preferences
     @Environment(PrayerClock.self) private var clock: PrayerClock?
     @Environment(FocusTimer.self) private var focusTimer: FocusTimer?
+    @Environment(GroupStore.self) private var groups
     /// A file or image is being dragged over the island.
     var dropping = false
     /// Asks the island for a line of text in its compact form.
@@ -68,6 +69,8 @@ struct IslandPanel: View {
     @State private var resultFilter: IslandTab?
     /// Captures / Assets / Colors / Clipboard tab: show pinned items only.
     @State private var pinnedOnly = false
+    /// Captures / Clipboard / Colors tab: the group shown (nil: everything).
+    @State private var groupFilter: [GroupKind: UUID] = [:]
     /// The prayer pill is open, showing the day's times inline.
     @State private var prayerExpanded = false
     /// Natural widths of the two top rows; the island fits the wider one.
@@ -88,11 +91,11 @@ struct IslandPanel: View {
     }
 
     private var filteredClipboard: [ClipboardItem] {
-        pinnedOnly ? clipboard.items.filter(\.pinned) : clipboard.items
+        clipboard.items.filter { (!pinnedOnly || $0.pinned) && inGroup($0.groupID, .clipboard) }
     }
 
     private var filteredCaptures: [CaptureItem] {
-        pinnedOnly ? library.items.filter(\.pinned) : library.items
+        library.items.filter { (!pinnedOnly || $0.pinned) && inGroup($0.groupID, .captures) }
     }
 
     private var filteredAssets: [AssetItem] {
@@ -100,7 +103,69 @@ struct IslandPanel: View {
     }
 
     private var filteredColors: [ColorEntry] {
-        pinnedOnly ? colors.items.filter(\.pinned) : colors.items
+        colors.items.filter { (!pinnedOnly || $0.pinned) && inGroup($0.groupID, .colors) }
+    }
+
+    private func inGroup(_ groupID: UUID?, _ kind: GroupKind) -> Bool {
+        guard let wanted = groupFilter[kind] else { return true }
+        return groupID == wanted
+    }
+
+    /// The tab's groups as chips: everything, each group, and a new one. A group's
+    /// chip has Rename and Delete in its menu.
+    private func groupStrip(_ kind: GroupKind) -> some View {
+        let all = groups.groups(for: kind)
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                groupChip("All", symbol: "square.grid.2x2", selected: groupFilter[kind] == nil) { groupFilter[kind] = nil }
+                ForEach(all) { group in
+                    groupChip(group.name, symbol: "folder", selected: groupFilter[kind] == group.id) {
+                        groupFilter[kind] = groupFilter[kind] == group.id ? nil : group.id
+                    }
+                    .contextMenu {
+                        Button("Rename…") { onPrompt(IslandPrompt(kind: .group(kind, assign: nil, editing: group), initial: group.name)) }
+                        Divider()
+                        Button("Delete Group", role: .destructive) {
+                            if groupFilter[kind] == group.id { groupFilter[kind] = nil }
+                            groups.delete(group)
+                        }
+                    }
+                }
+                groupChip(all.isEmpty ? "New group" : "", symbol: "plus", selected: false) {
+                    onPrompt(IslandPrompt(kind: .group(kind, assign: nil, editing: nil)))
+                }
+                .help("A new group — a folder for these")
+            }
+            .padding(.horizontal, 1)
+        }
+        .frame(height: 24)
+        .accessibilityLabel("Groups")
+    }
+
+    private func groupChip(_ title: String, symbol: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: symbol).font(.system(size: 10, weight: .semibold))
+                if !title.isEmpty { Text(title).font(.system(size: 11, weight: .medium)).lineLimit(1) }
+            }
+            .foregroundStyle(selected ? Color.white : .white.opacity(0.75))
+            .padding(.horizontal, title.isEmpty ? 7 : 9)
+            .frame(height: 22)
+            .background(selected ? Color.brand.opacity(0.85) : .white.opacity(0.1), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    /// Which tab's groups the strip shows, if the tab has any.
+    private var groupKind: GroupKind? {
+        switch tab {
+        case .captures: .captures
+        case .clipboard: .clipboard
+        case .colors: .colors
+        default: nil
+        }
     }
 
     /// The "Pinned" filter and "Clear" (everything unpinned) for a tab's items.
@@ -198,6 +263,10 @@ struct IslandPanel: View {
                 }
             }
             .modifier(IdealWidth { tabRowWidth = $0; reportWidth() })
+            if let kind = groupKind {
+                groupStrip(kind)
+                    .padding(.top, -4)
+            }
             }
 
             ZStack {
@@ -218,8 +287,8 @@ struct IslandPanel: View {
                     }
                 case .captures:
                     if filteredCaptures.isEmpty {
-                        empty(pinnedOnly ? "Nothing pinned" : "No captures yet", symbol: "camera.viewfinder",
-                              action: pinnedOnly ? nil : ("Capture area", "viewfinder", actions.captureArea))
+                        empty(groupFilter[.captures] != nil ? "Nothing in this group yet — Group › on a capture's menu" : pinnedOnly ? "Nothing pinned" : "No captures yet", symbol: groupFilter[.captures] != nil ? "folder" : "camera.viewfinder",
+                              action: pinnedOnly || groupFilter[.captures] != nil ? nil : ("Capture area", "viewfinder", actions.captureArea))
                     } else {
                         DayStrip(items: filteredCaptures, date: \.createdAt, pinned: \.pinned, dragPayload: { item in
                             library.fileURL(for: item).map { .file($0, preview: library.thumbnail(for: item)) }
@@ -227,7 +296,7 @@ struct IslandPanel: View {
                     }
                 case .clipboard:
                     if filteredClipboard.isEmpty {
-                        empty(pinnedOnly ? "Nothing pinned" : "Nothing copied yet", symbol: "doc.on.clipboard")
+                        empty(groupFilter[.clipboard] != nil ? "Nothing in this group yet — Group › on an entry's menu" : pinnedOnly ? "Nothing pinned" : "Nothing copied yet", symbol: groupFilter[.clipboard] != nil ? "folder" : "doc.on.clipboard")
                     } else {
                         DayStrip(items: filteredClipboard, date: \.createdAt, pinned: \.pinned, dragPayload: { item in
                             clipboard.dragPayload(for: item)
@@ -244,8 +313,8 @@ struct IslandPanel: View {
                     }
                 case .colors:
                     if filteredColors.isEmpty {
-                        empty(pinnedOnly ? "Nothing pinned" : "Pick a color anywhere on screen", symbol: "eyedropper",
-                              action: pinnedOnly ? nil : ("Pick a color", "eyedropper", actions.pickColor))
+                        empty(groupFilter[.colors] != nil ? "Nothing in this group yet — Group › on a color's menu" : pinnedOnly ? "Nothing pinned" : "Pick a color anywhere on screen", symbol: groupFilter[.colors] != nil ? "folder" : "eyedropper",
+                              action: pinnedOnly || groupFilter[.colors] != nil ? nil : ("Pick a color", "eyedropper", actions.pickColor))
                     } else {
                         DayStrip(items: filteredColors, date: \.createdAt, pinned: \.pinned, dragPayload: { entry in
                             DragPayload(writer: preferences.colorFormat.string(for: entry.color) as NSString, preview: ColorCard.dragImage(for: entry.color))
@@ -289,7 +358,7 @@ struct IslandPanel: View {
     private func captureCard(_ item: CaptureItem) -> some View {
         CaptureCard(item: item, library: library, actions: actions, clipboard: clipboard, colorStore: colors, onPreview: { open(.capture(item)) }, onRename: {
             onPrompt(IslandPrompt(kind: .rename(.capture(item)), initial: item.title.replacingOccurrences(of: "Screenshot ", with: ""), image: library.thumbnail(for: item)))
-        })
+        }, onNewGroup: { onPrompt(IslandPrompt(kind: .group(.captures, assign: .capture(item.id), editing: nil))) })
     }
 
     private func clipboardCard(_ item: ClipboardItem) -> some View {
@@ -298,7 +367,7 @@ struct IslandPanel: View {
                                   swatch: item.kind == .color ? PickedColor(hex: item.text) : nil))
         }, onSnippet: { text in
             onPrompt(IslandPrompt(kind: .snippet(nil, initialText: text, assetID: nil)))
-        }, onEdit: { actions.editClipboardImage(item) })
+        }, onEdit: { actions.editClipboardImage(item) }, onNewGroup: { onPrompt(IslandPrompt(kind: .group(.clipboard, assign: .clipboard(item.id), editing: nil))) })
     }
 
     private func assetCard(_ item: AssetItem) -> some View {
@@ -312,7 +381,7 @@ struct IslandPanel: View {
     private func colorCard(_ entry: ColorEntry) -> some View {
         ColorCard(entry: entry, colors: colors, format: preferences.colorFormat, onPreview: { open(.color(entry)) }, onRename: {
             onPrompt(IslandPrompt(kind: .rename(.color(entry)), initial: entry.name ?? "", swatch: entry.color))
-        })
+        }, onNewGroup: { onPrompt(IslandPrompt(kind: .group(.colors, assign: .color(entry.id), editing: nil))) })
     }
 
     // MARK: - Search
@@ -1034,6 +1103,9 @@ struct CaptureCard: View {
     var colorStore: ColorStore? = nil
     var onPreview: () -> Void = {}
     var onRename: () -> Void = {}
+    /// A new group with this capture in it.
+    var onNewGroup: () -> Void = {}
+    @Environment(GroupStore.self) private var groups: GroupStore?
     @State private var hovering = false
 
     var body: some View {
@@ -1080,6 +1152,9 @@ struct CaptureCard: View {
                 }
             }
             Button(item.pinned ? "Unpin" : "Pin") { library.togglePin(item) }
+            if let groups {
+                GroupMenu(groups: groups, kind: .captures, current: item.groupID, assign: { library.setGroup(item, $0) }, newGroup: onNewGroup)
+            }
             Button("Rename…", action: onRename)
             Divider()
             Button("Delete", role: .destructive) { actions.delete(item) }
@@ -1126,6 +1201,9 @@ struct ClipboardCard: View {
     var onSnippet: (String) -> Void = { _ in }
     /// An image entry in the editor — annotate, blur, crop — like a capture.
     var onEdit: () -> Void = {}
+    /// A new group with this entry in it.
+    var onNewGroup: () -> Void = {}
+    @Environment(GroupStore.self) private var groups: GroupStore?
     @State private var hovering = false
 
     var body: some View {
@@ -1186,6 +1264,9 @@ struct ClipboardCard: View {
                 }
             }
             Button(item.pinned ? "Unpin" : "Pin") { clipboard.togglePin(item) }
+            if let groups {
+                GroupMenu(groups: groups, kind: .clipboard, current: item.groupID, assign: { clipboard.setGroup(item, $0) }, newGroup: onNewGroup)
+            }
             Button(item.name == nil ? "Name…" : "Rename…", action: onRename)
             if item.kind == .text || item.kind == .link || item.kind == .color {
                 Button("Make Snippet…") { onSnippet(item.text) }
@@ -1392,7 +1473,10 @@ struct ColorCard: View {
     let format: ColorFormat
     var onPreview: () -> Void = {}
     var onRename: () -> Void = {}
+    /// A new group with this color in it.
+    var onNewGroup: () -> Void = {}
     @Environment(AppPreferences.self) private var preferences
+    @Environment(GroupStore.self) private var groups: GroupStore?
     @State private var hovering = false
 
     var body: some View {
@@ -1430,6 +1514,9 @@ struct ColorCard: View {
                 }
             }
             Button(entry.pinned ? "Unpin" : "Pin") { colors.togglePin(entry) }
+            if let groups {
+                GroupMenu(groups: groups, kind: .colors, current: entry.groupID, assign: { colors.setGroup(entry, $0) }, newGroup: onNewGroup)
+            }
             Button(entry.name == nil ? "Name…" : "Rename…", action: onRename)
             Divider()
             Button("Delete", role: .destructive) { colors.delete(entry) }
@@ -1674,6 +1761,38 @@ private struct StripEventView: NSViewRepresentable {
         func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
             NSCursor.arrow.set()
             onDragEnded?()
+        }
+    }
+}
+
+
+/// "Group ▸" on a card's menu: none, each group of the kind (the current one
+/// ticked), and a new one.
+struct GroupMenu: View {
+    let groups: GroupStore
+    let kind: GroupKind
+    let current: UUID?
+    let assign: (UUID?) -> Void
+    let newGroup: () -> Void
+
+    var body: some View {
+        Menu("Group") {
+            Button {
+                assign(nil)
+            } label: {
+                if current == nil { Label("None", systemImage: "checkmark") } else { Text("None") }
+            }
+            let all = groups.groups(for: kind)
+            if !all.isEmpty { Divider() }
+            ForEach(all) { group in
+                Button {
+                    assign(group.id)
+                } label: {
+                    if group.id == current { Label(group.name, systemImage: "checkmark") } else { Text(group.name) }
+                }
+            }
+            Divider()
+            Button("New Group…", action: newGroup)
         }
     }
 }

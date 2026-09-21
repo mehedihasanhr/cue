@@ -19,6 +19,8 @@ nonisolated struct ClipboardItem: Identifiable, Codable, Hashable {
     var pinned: Bool
     /// A label given by the user; nil shows the content itself.
     var name: String?
+    /// The group (folder) it is in, if any.
+    var groupID: UUID?
 
     init(id: UUID = UUID(), kind: Kind, text: String, pixelWidth: Int = 0, pixelHeight: Int = 0,
          sourceBundleID: String? = nil, sourceName: String? = nil, createdAt: Date = .now) {

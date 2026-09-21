@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let clipboard = ClipboardHistory()
     let assets = AssetStore()
     let colors = ColorStore()
+    let groups = GroupStore()
     let tasks = TaskStore()
     let snippets = SnippetStore()
     private var snippetExpander: SnippetExpander?
@@ -191,9 +192,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        // Diagnostics: `--env KLIK_DEBUG_ISLAND_SHOT=captures` opens the island on that tab and
+        // writes a picture of it to Pictures/Klik/_island.png.
+        if let tabName = ProcessInfo.processInfo.environment["KLIK_DEBUG_ISLAND_SHOT"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                if let tab = IslandTab(rawValue: tabName) { UserDefaults.standard.set(tab.rawValue, forKey: IslandTab.storageKey) }
+                self?.island?.expand()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                    guard let self, let island = self.island else { return }
+                    let id = CGWindowID(island.windowNumber)
+                    Task { @MainActor in
+                        let service = ScreenCaptureService()
+                        guard let content = try? await service.shareableContent(),
+                              let image = try? await service.captureWindow(id: id, in: content, fallbackScale: 2),
+                              let png = ImageEncoding.png(image.cgImage) else { Log.app.error("Island shot: no capture"); return }
+                        try? png.write(to: CaptureLibrary.defaultFolder().appendingPathComponent("_island.png"))
+                    }
+                }
+            }
+        }
         // Diagnostics: `open Klik.app --env KLIK_DEBUG_PANEL=1` opens the floating panel at launch.
         if ProcessInfo.processInfo.environment["KLIK_DEBUG_PANEL"] == "1" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.toggleHistoryAtPointer() }
+        }
+        groups.onDeleted = { [weak self] group in
+            guard let self else { return }
+            switch group.kind {
+            case .captures: library.removeGroup(group.id)
+            case .clipboard: clipboard.removeGroup(group.id)
+            case .colors: colors.removeGroup(group.id)
+            }
         }
         // Older captures get their text read in the background, a while after launch.
         DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in self?.library.indexMissingText() }
@@ -304,7 +332,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let island {
                 island.place()
             } else {
-                island = IslandController(library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasks, snippets: snippets,
+                island = IslandController(library: library, clipboard: clipboard, assets: assets, colors: colors, groups: groups, tasks: tasks, snippets: snippets,
                                           actions: historyActions, preferences: preferences, clock: prayerClock, focus: focusTimer)
                 island?.onSnippetFilled = { [weak self] snippet, values in self?.snippetFilled(snippet, values: values) }
                 library.warmThumbnails()
@@ -402,6 +430,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         snippets.useSyncFolder(folder)
         colors.useSyncFolder(folder)
         tasks.useSyncFolder(folder)
+        groups.useSyncFolder(folder)
     }
 
     /// ⌘⇧V: the paste stack — each press pastes the next entry of the history.
