@@ -227,7 +227,7 @@ enum SettingsPalette {
     static let pill = Color.primary.opacity(0.08)
     static let edge = Color.primary.opacity(0.07)
     /// The cards on a page and the lines between their rows.
-    static let cardFill = Color.primary.opacity(0.045)
+    static let cardFill = Color.primary.opacity(0.03)
     static let hairline = Color.primary.opacity(0.05)
 
     private static func dynamic(dark: NSColor, light: NSColor) -> NSColor {

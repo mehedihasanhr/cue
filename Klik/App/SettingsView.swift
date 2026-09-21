@@ -349,7 +349,7 @@ private struct MenuBarIconPicker: View {
                 .frame(width: 44, height: 36)
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(selected ? Color.accentColor : Color.primary.opacity(0.07))
+                        .fill(selected ? Color.accentColor : Color.primary.opacity(0.05))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
