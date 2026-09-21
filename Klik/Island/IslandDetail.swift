@@ -21,7 +21,7 @@ struct IslandDetailHeader: View {
         HStack(spacing: 8) {
             Button(action: onClose) {
                 HStack(spacing: 5) {
-                    Image(systemName: "chevron.left").font(.system(size: 11, weight: .bold))
+                    Icon("chevron.left", size: 14, weight: .bold)
                     Text("Back").font(.system(size: 12, weight: .semibold))
                 }
                 .foregroundStyle(.black)
@@ -33,7 +33,7 @@ struct IslandDetailHeader: View {
             .buttonStyle(.plain)
             ForEach(Array(pills.enumerated()), id: \.offset) { _, pill in
                 HStack(spacing: 5) {
-                    Image(systemName: pill.symbol).font(.system(size: 11, weight: .medium))
+                    Icon(pill.symbol, size: 14, weight: .medium)
                     Text(pill.text).font(.system(size: 11, weight: .medium))
                 }
                 .foregroundStyle(.white.opacity(0.85))
@@ -80,7 +80,7 @@ struct IslandDetailHeader: View {
 
     private func small(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Label(title, systemImage: symbol)
+            Label { Text(title) } icon: { Icon(symbol, weight: .medium) }
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.white.opacity(0.8))
                 .padding(.horizontal, 10)
@@ -203,11 +203,11 @@ struct IslandDetailBody: View {
                     .help(value)
                 Spacer(minLength: 0)
                 if copied {
-                    Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(.green)
+                    Icon("checkmark", size: 11, weight: .bold).foregroundStyle(.green)
                 } else if isCurrent {
                     Circle().fill(.white.opacity(0.5)).frame(width: 5, height: 5)
                 } else if hovering {
-                    Image(systemName: "doc.on.doc").font(.system(size: 9, weight: .semibold)).foregroundStyle(.white.opacity(0.6))
+                    Icon("doc.on.doc", size: 11, weight: .semibold).foregroundStyle(.white.opacity(0.6))
                 }
             }
             .padding(.horizontal, 8)
@@ -254,7 +254,7 @@ struct IslandDetailBody: View {
 
     private func detailButton(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Label(title, systemImage: symbol)
+            Label { Text(title) } icon: { Icon(symbol, weight: .medium) }
                 .font(.system(size: 11, weight: .medium))
                 .padding(.horizontal, 10)
                 .frame(height: 28)

@@ -246,7 +246,8 @@ Klik/
 ├── Export/       (Step 5)
 ├── Permissions/  PermissionManager, OnboardingView
 ├── Preview/      Temporary capture viewer (replaced by the editor in Step 3)
-├── Support/      CapturedImage, Log, WindowHosting
+├── Support/      CapturedImage, Log, WindowHosting, Icon (the island's Hugeicons stroke icons,
+│                 by SF Symbol name; HugeIconGlyphs is generated from @hugeicons/core-free-icons, MIT)
 └── Resources/    Assets.xcassets
 Config/           Klik.entitlements, Signing.xcconfig (local)
 ```

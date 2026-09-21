@@ -109,8 +109,7 @@ struct ClockRow: View {
                 .clipShape(Circle())
             Circle()
                 .strokeBorder(.white.opacity(0.25), lineWidth: 1)
-            Image(systemName: symbol)
-                .font(.system(size: 15, weight: .semibold))
+            Icon(symbol, size: 19, weight: .semibold)
                 .foregroundStyle(.white)
                 .shadow(color: .black.opacity(0.25), radius: 1, y: 1)
         }
@@ -136,7 +135,7 @@ struct ClockRow: View {
             // A notification: the prayer's name, with a bell.
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("\(prayer.title) prayer").font(.system(size: 20, weight: .bold, design: .rounded))
-                Image(systemName: "bell.fill").font(.system(size: 11, weight: .bold)).foregroundStyle(status.tint.last ?? .white)
+                Icon("bell.fill", size: 14, weight: .bold).foregroundStyle(status.tint.last ?? .white)
             }
         case .forbidden:
             Text("Prayer not allowed").font(.system(size: 17, weight: .bold, design: .rounded))
@@ -225,8 +224,7 @@ struct PrayerPill: View {
         let status = clock.status
         let forbidden = status?.forbidden != nil
         HStack(spacing: 8) {
-            Image(systemName: forbidden ? "exclamationmark.triangle.fill" : (status?.current ?? status?.next ?? .dhuhr).symbol)
-                .font(.system(size: 11, weight: .semibold))
+            Icon(forbidden ? "exclamationmark.triangle.fill" : (status?.current ?? status?.next ?? .dhuhr).symbol, size: 14, weight: .semibold)
                 .foregroundStyle(forbidden ? .orange : .white.opacity(0.85))
             if expanded, let today = clock.today {
                 times(today, status: status)
@@ -235,8 +233,7 @@ struct PrayerPill: View {
                                 : .asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.9, anchor: .leading)).animation(.easeOut(duration: 0.22).delay(0.06)),
                                               removal: .opacity.animation(.easeOut(duration: 0.1))))
                 Button(action: onShowClock) {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
-                        .font(.system(size: 10, weight: .bold))
+                    Icon("arrow.up.left.and.arrow.down.right", size: 12, weight: .bold)
                         .foregroundStyle(.white.opacity(0.7))
                         .frame(width: 24, height: 24)
                         .background(.white.opacity(0.1), in: Circle())

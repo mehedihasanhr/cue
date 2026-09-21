@@ -106,11 +106,11 @@ struct IslandTasksView: View {
                 pill("Projects", symbol: "chevron.left", prominent: true) { withAnimation(.easeOut(duration: 0.15)) { selection = .projects } }
                 if case .project(let id) = selection {
                     ForEach(store.path(to: id)) { project in
-                        Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold)).foregroundStyle(.white.opacity(0.4))
+                        Icon("chevron.right", size: 11, weight: .bold).foregroundStyle(.white.opacity(0.4))
                         pill(project.name, symbol: nil, prominent: project.id == id) { selection = .project(project.id) }
                     }
                 } else {
-                    Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold)).foregroundStyle(.white.opacity(0.4))
+                    Icon("chevron.right", size: 11, weight: .bold).foregroundStyle(.white.opacity(0.4))
                     pill("All tasks", symbol: nil, prominent: true) {}
                 }
             } else {
@@ -140,7 +140,7 @@ struct IslandTasksView: View {
     private func pill(_ title: String, symbol: String?, prominent: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 5) {
-                if let symbol { Image(systemName: symbol).font(.system(size: 10, weight: .semibold)) }
+                if let symbol { Icon(symbol, size: 12, weight: .semibold) }
                 Text(title).font(.system(size: 11, weight: .medium)).lineLimit(1)
             }
             .foregroundStyle(prominent ? Color.white : .white.opacity(0.75))
@@ -159,14 +159,14 @@ struct IslandTasksView: View {
                 Button {
                     withAnimation(.easeOut(duration: 0.15)) { filter = value }
                 } label: {
-                    Label(value.title, systemImage: value.symbol)
+                    Label { Text(value.title) } icon: { Icon(value.symbol, weight: .medium) }
                 }
             }
         } label: {
             HStack(spacing: 5) {
-                Image(systemName: filter.symbol).font(.system(size: 10, weight: .semibold))
+                Icon(filter.symbol, size: 12, weight: .semibold)
                 Text(filter.title).font(.system(size: 11, weight: .medium)).lineLimit(1)
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).opacity(0.7)
+                Icon("chevron.down", size: 10, weight: .bold).opacity(0.7)
             }
             .foregroundStyle(filter == .active ? .white.opacity(0.75) : .yellow)
             .padding(.horizontal, 9)
@@ -185,8 +185,7 @@ struct IslandTasksView: View {
         Button {
             withAnimation(.easeOut(duration: 0.15)) { projectLayout = layout }
         } label: {
-            Image(systemName: symbol)
-                .font(.system(size: 10, weight: .semibold))
+            Icon(symbol, size: 12, weight: .semibold)
                 .foregroundStyle(projectLayout == layout ? Color.white : .white.opacity(0.7))
                 .frame(width: 24, height: 18)
                 .background(projectLayout == layout ? Color.brand.opacity(0.85) : .clear, in: Capsule())
@@ -198,8 +197,7 @@ struct IslandTasksView: View {
 
     private func plus(_ help: String, symbol: String = "plus", action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 10, weight: .semibold))
+            Icon(symbol, size: 12, weight: .semibold)
                 .foregroundStyle(.white.opacity(0.75))
                 .padding(.horizontal, 7)
                 .frame(height: 22)
@@ -276,7 +274,7 @@ struct IslandTasksView: View {
 
         var body: some View {
             HStack(spacing: 8) {
-                Image(systemName: symbol).font(.system(size: 12)).foregroundStyle(.white.opacity(0.8)).frame(width: 18)
+                Icon(symbol, size: 15).foregroundStyle(.white.opacity(0.8)).frame(width: 18)
                 Text(title).font(.system(size: 12, weight: .medium)).lineLimit(1)
                 Spacer(minLength: 8)
                 if count > 0 {
@@ -291,7 +289,7 @@ struct IslandTasksView: View {
                 Text(count == 0 ? "No tasks" : "\(done)/\(count)")
                     .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.55))
                     .frame(width: 52, alignment: .trailing)
-                Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold)).foregroundStyle(.white.opacity(hovering ? 0.7 : 0.3))
+                Icon("chevron.right", size: 11, weight: .bold).foregroundStyle(.white.opacity(hovering ? 0.7 : 0.3))
             }
             .padding(.leading, 6 + CGFloat(depth) * 16)
             .padding(.trailing, 8)
@@ -325,7 +323,7 @@ struct IslandTasksView: View {
 
         var body: some View {
             VStack(alignment: .leading, spacing: 6) {
-                Image(systemName: symbol).font(.system(size: 18)).foregroundStyle(.white.opacity(0.85))
+                Icon(symbol, size: 22).foregroundStyle(.white.opacity(0.85))
                 Spacer(minLength: 0)
                 Text(title).font(.system(size: 13, weight: .semibold)).lineLimit(2)
                 HStack(spacing: 6) {
@@ -408,7 +406,7 @@ struct IslandTasksView: View {
 
     private func statusHeader(_ group: StatusGroup) -> some View {
         HStack(spacing: 6) {
-            Image(systemName: group.status.symbol).font(.system(size: 10, weight: .semibold))
+            Icon(group.status.symbol, size: 12, weight: .semibold)
                 .foregroundStyle(group.status == .pending ? .white.opacity(0.85) : group.status.color)
             Text(group.status.title).font(.system(size: 11, weight: .semibold)).lineLimit(1)
             Text("\(group.tasks.count)")
@@ -449,12 +447,11 @@ struct IslandTasksView: View {
                         Button {
                             store.setStatus(status, for: task)
                         } label: {
-                            Label(status.title, systemImage: status.symbol)
+                            Label { Text(status.title) } icon: { Icon(status.symbol, weight: .medium) }
                         }
                     }
                 } label: {
-                    Image(systemName: task.status.symbol)
-                        .font(.system(size: 13, weight: .medium))
+                    Icon(task.status.symbol, size: 16, weight: .medium)
                         .foregroundStyle(task.status.color)
                         .frame(width: 20, height: 20)
                         .contentShape(Rectangle())
@@ -482,8 +479,7 @@ struct IslandTasksView: View {
                         .lineLimit(1)
                 }
                 if task.hasMore {
-                    Image(systemName: "text.alignleft")
-                        .font(.system(size: 9, weight: .semibold))
+                    Icon("text.alignleft", size: 11, weight: .semibold)
                         .foregroundStyle(.white.opacity(0.45))
                         .help(task.summary)
                 }
@@ -504,11 +500,11 @@ struct IslandTasksView: View {
                 // without opening the task.
                 Menu {
                     ForEach(TaskPriority.allCases, id: \.self) { value in
-                        Button { store.setPriority(value, for: task) } label: { Label(value.title, systemImage: value.symbol) }
+                        Button { store.setPriority(value, for: task) } label: { Label { Text(value.title) } icon: { Icon(value.symbol, weight: .medium) } }
                     }
                 } label: {
                     HStack(spacing: 4) {
-                        Image(systemName: task.priority.symbol).font(.system(size: 9, weight: .bold))
+                        Icon(task.priority.symbol, size: 11, weight: .bold)
                         Text(task.priority.title).font(.system(size: 10, weight: .semibold))
                     }
                     .foregroundStyle(task.priority == .medium ? .white.opacity(0.7) : task.priority.color)
@@ -525,12 +521,12 @@ struct IslandTasksView: View {
                 .help("Priority")
                 Menu {
                     ForEach(TaskStatus.allCases, id: \.self) { status in
-                        Button { store.setStatus(status, for: task) } label: { Label(status.title, systemImage: status.symbol) }
+                        Button { store.setStatus(status, for: task) } label: { Label { Text(status.title) } icon: { Icon(status.symbol, weight: .medium) } }
                     }
                 } label: {
                     HStack(spacing: 4) {
                         Text(task.status.title).font(.system(size: 10, weight: .semibold))
-                        Image(systemName: "chevron.down").font(.system(size: 7, weight: .bold)).opacity(0.7)
+                        Icon("chevron.down", size: 9, weight: .bold).opacity(0.7)
                     }
                     .foregroundStyle(task.status == .pending ? .white.opacity(0.8) : task.status.color)
                     .padding(.horizontal, 8)
@@ -556,7 +552,7 @@ struct IslandTasksView: View {
                 }
                 Menu("Priority") {
                     ForEach(TaskPriority.allCases, id: \.self) { value in
-                        Button { store.setPriority(value, for: task) } label: { Label(value.title, systemImage: value.symbol) }
+                        Button { store.setPriority(value, for: task) } label: { Label { Text(value.title) } icon: { Icon(value.symbol, weight: .medium) } }
                     }
                 }
                 Divider()

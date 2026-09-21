@@ -19,8 +19,7 @@ struct AnswerCard: View {
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     if answer.color == nil {
-                        Image(systemName: answer.symbol)
-                            .font(.system(size: 16, weight: .semibold))
+                        Icon(answer.symbol, size: 20, weight: .semibold)
                             .foregroundStyle(Color.brand.opacity(0.95))
                             .padding(.bottom, 2)
                     }

@@ -376,8 +376,7 @@ private struct FlashRow: View {
             }
             .lineLimit(1)
             Spacer(minLength: 12)
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 17, weight: .semibold))
+            Icon("checkmark.circle.fill", size: 21, weight: .semibold)
                 .foregroundStyle(.green)
         }
         .foregroundStyle(.white)
@@ -435,8 +434,7 @@ private struct StatusRow: View {
             }
             .lineLimit(1)
             Spacer(minLength: 12)
-            Image(systemName: status.symbol)
-                .font(.system(size: 17, weight: .semibold))
+            Icon(status.symbol, size: 21, weight: .semibold)
                 .foregroundStyle(status.tint)
         }
         .foregroundStyle(.white)
@@ -759,8 +757,7 @@ struct TaskFormRow: View {
             VStack(spacing: 1) {
                 ForEach(shown, id: \.element.id) { index, row in
                     HStack(spacing: 9) {
-                        Image(systemName: row.symbol)
-                            .font(.system(size: 11, weight: .semibold))
+                        Icon(row.symbol, size: 14, weight: .semibold)
                             .foregroundStyle(row.tint == .primary ? Color.primary.opacity(0.8) : row.tint)
                             .frame(width: 16)
                         Text(row.title).font(.system(size: 12, weight: .medium)).lineLimit(1)
@@ -896,7 +893,7 @@ struct TaskFormRow: View {
                 Spacer(minLength: 0)
                 if newProjectName != nil {
                     PromptBox {
-                        Image(systemName: "folder.badge.plus").font(.system(size: 11, weight: .semibold)).foregroundStyle(.primary.opacity(0.7)).padding(.leading, 8)
+                        Icon("folder.badge.plus", size: 14, weight: .semibold).foregroundStyle(.primary.opacity(0.7)).padding(.leading, 8)
                         InlineTextField(placeholder: "New project name", font: .system(size: 12, weight: .medium), boxed: false) { name in
                             newProjectName = nil
                             if let project = store.addProject(named: name) { projectID = project.id }
@@ -910,7 +907,7 @@ struct TaskFormRow: View {
                         projectMenuItems
                     } label: {
                         HStack(spacing: 6) {
-                            Image(systemName: projectID == nil ? "folder" : "folder.fill").font(.system(size: 12, weight: .semibold))
+                            Icon(projectID == nil ? "folder" : "folder.fill", size: 15, weight: .semibold)
                             if let project = store.project(projectID) {
                                 Text(project.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
                             }
@@ -929,13 +926,13 @@ struct TaskFormRow: View {
                 }
                 Menu {
                     ForEach(TaskPriority.allCases, id: \.self) { value in
-                        Button { priority = value } label: { Label(value.title, systemImage: value.symbol) }
+                        Button { priority = value } label: { Label { Text(value.title) } icon: { Icon(value.symbol, weight: .medium) } }
                     }
                 } label: {
                     HStack(spacing: 6) {
-                        Image(systemName: priority.symbol).font(.system(size: 11, weight: .semibold)).foregroundStyle(priority.color)
+                        Icon(priority.symbol, size: 14, weight: .semibold).foregroundStyle(priority.color)
                         Text(priority.title).font(.system(size: 13, weight: .medium))
-                        Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).foregroundStyle(.primary.opacity(0.5))
+                        Icon("chevron.down", size: 11, weight: .bold).foregroundStyle(.primary.opacity(0.5))
                     }
                     .foregroundStyle(.primary.opacity(0.9))
                     .padding(.horizontal, 14)
@@ -949,8 +946,7 @@ struct TaskFormRow: View {
                 .fixedSize()
                 .help("Priority (⌘1–4)")
                 Button(action: create) {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 14, weight: .bold))
+                    Icon("arrow.up", size: 18, weight: .bold)
                         .foregroundStyle(valid ? Color.white : Color.primary.opacity(0.5))
                         .frame(width: 34, height: 34)
                         .background(valid ? Color.brand : Color.primary.opacity(0.12), in: Circle())
@@ -971,8 +967,7 @@ struct TaskFormRow: View {
 
     private func floatingGlyph(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 15, weight: .medium))
+            Icon(symbol, size: 19, weight: .medium)
                 .foregroundStyle(.primary.opacity(0.8))
                 .frame(width: 32, height: 32)
                 .contentShape(Rectangle())
@@ -1001,7 +996,7 @@ struct TaskFormRow: View {
             HStack(spacing: 8) {
                 if newProjectName != nil {
                     PromptBox {
-                        Image(systemName: "folder.badge.plus").font(.system(size: 11, weight: .semibold)).foregroundStyle(.primary.opacity(0.7)).padding(.leading, 8)
+                        Icon("folder.badge.plus", size: 14, weight: .semibold).foregroundStyle(.primary.opacity(0.7)).padding(.leading, 8)
                         InlineTextField(placeholder: "New project name", font: .system(size: 12, weight: .medium), boxed: false) { name in
                             newProjectName = nil
                             if let project = store.addProject(named: name) { projectID = project.id }
@@ -1078,8 +1073,7 @@ struct TaskFormRow: View {
 
     private func formatButton(_ symbol: String, help: String, shortcut: KeyboardShortcut, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 10.5, weight: .semibold))
+            Icon(symbol, size: 13, weight: .semibold)
                 .foregroundStyle(.primary.opacity(0.8))
                 .frame(width: 24, height: 22)
                 .contentShape(Rectangle())
@@ -1108,7 +1102,7 @@ struct TaskFormRow: View {
                 projectID = project.id
             } label: {
                 if project.id == projectID {
-                    Label(store.path(to: project.id).map(\.name).joined(separator: " › "), systemImage: "checkmark")
+                    Label { Text(store.path(to: project.id).map(\.name).joined(separator: " › ")) } icon: { Icon("checkmark", weight: .medium) }
                 } else {
                     Text(store.path(to: project.id).map(\.name).joined(separator: " › "))
                 }
@@ -1123,11 +1117,11 @@ struct TaskFormRow: View {
             projectMenuItems
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "folder").font(.system(size: 11, weight: .semibold))
+                Icon("folder", size: 14, weight: .semibold)
                 Text(store.project(projectID).map { store.path(to: $0.id).map(\.name).joined(separator: " › ") } ?? "No project")
                     .font(.system(size: 12, weight: .medium))
                     .lineLimit(1)
-                Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
+                Icon("chevron.down", size: 11, weight: .bold)
             }
             .foregroundStyle(.primary)
             .padding(.horizontal, 12)
@@ -1191,7 +1185,7 @@ private struct TaskDetailRow: View {
                 PromptBadge(symbol: task.status.symbol, tint: task.status == .pending ? Color.white.opacity(0.2) : task.status.color)
                 HStack(spacing: 6) {
                     if let project = store.project(task.projectID) {
-                        Label(store.path(to: project.id).map(\.name).joined(separator: " › "), systemImage: "folder")
+                        Label { Text(store.path(to: project.id).map(\.name).joined(separator: " › ")) } icon: { Icon("folder", weight: .medium) }
                     }
                     Text("Added \(task.createdAt.formatted(date: .abbreviated, time: .shortened))")
                 }
@@ -1225,7 +1219,7 @@ private struct TaskDetailRow: View {
                     .frame(height: 30)
                     .background(.white.opacity(0.08), in: Capsule())
                 Button(action: edit) {
-                    Label("Edit", systemImage: "pencil")
+                    Label { Text("Edit") } icon: { Icon("pencil", weight: .medium) }
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.primary)
                         .padding(.horizontal, 14)
@@ -1244,13 +1238,13 @@ private struct TaskDetailRow: View {
     private var statusMenu: some View {
         Menu {
             ForEach(TaskStatus.allCases, id: \.self) { status in
-                Button { store.setStatus(status, for: task) } label: { Label(status.title, systemImage: status.symbol) }
+                Button { store.setStatus(status, for: task) } label: { Label { Text(status.title) } icon: { Icon(status.symbol, weight: .medium) } }
             }
         } label: {
             HStack(spacing: 5) {
-                Image(systemName: task.status.symbol).font(.system(size: 11, weight: .semibold)).foregroundStyle(task.status.color)
+                Icon(task.status.symbol, size: 14, weight: .semibold).foregroundStyle(task.status.color)
                 Text(task.status.title).font(.system(size: 12, weight: .semibold))
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).foregroundStyle(.white.opacity(0.5))
+                Icon("chevron.down", size: 10, weight: .bold).foregroundStyle(.white.opacity(0.5))
             }
             .foregroundStyle(.primary.opacity(0.9))
             .padding(.horizontal, 10)
@@ -1273,13 +1267,13 @@ struct PriorityMenu: View {
     var body: some View {
         Menu {
             ForEach(TaskPriority.allCases, id: \.self) { value in
-                Button { pick(value) } label: { Label(value.title, systemImage: value.symbol) }
+                Button { pick(value) } label: { Label { Text(value.title) } icon: { Icon(value.symbol, weight: .medium) } }
             }
         } label: {
             HStack(spacing: 5) {
-                Image(systemName: priority.symbol).font(.system(size: 11, weight: .semibold)).foregroundStyle(priority.color)
+                Icon(priority.symbol, size: 14, weight: .semibold).foregroundStyle(priority.color)
                 Text(priority.title).font(.system(size: 12, weight: .semibold))
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).foregroundStyle(.primary.opacity(0.5))
+                Icon("chevron.down", size: 10, weight: .bold).foregroundStyle(.primary.opacity(0.5))
             }
             .foregroundStyle(.primary.opacity(0.9))
             .padding(.horizontal, 10)
@@ -1302,8 +1296,7 @@ struct PromptBadge: View {
     var tint: Color = .brand
 
     var body: some View {
-        Image(systemName: symbol)
-            .font(.system(size: 14, weight: .semibold))
+        Icon(symbol, size: 18, weight: .semibold)
             .foregroundStyle(.white)
             .frame(width: 32, height: 32)
             .background(tint, in: Circle())

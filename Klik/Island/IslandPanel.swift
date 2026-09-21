@@ -222,7 +222,7 @@ struct IslandPanel: View {
     private func groupChip(_ title: String, symbol: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 5) {
-                Image(systemName: symbol).font(.system(size: 10, weight: .semibold))
+                Icon(symbol, size: 12, weight: .semibold)
                 if !title.isEmpty { Text(title).font(.system(size: 11, weight: .medium)).lineLimit(1) }
             }
             .foregroundStyle(selected ? Color.white : .white.opacity(0.75))
@@ -323,7 +323,7 @@ struct IslandPanel: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass").font(.system(size: 14, weight: .medium))
+                    Icon("magnifyingglass", size: 18, weight: .medium)
                         .foregroundStyle(searching ? Color.brand : .white.opacity(0.6))
                     TextField("Search everything", text: $search)
                         .textFieldStyle(.plain)
@@ -339,7 +339,7 @@ struct IslandPanel: View {
                             .foregroundStyle(.white.opacity(0.55))
                             .fixedSize()
                         Button(action: clearSearch) {
-                            Image(systemName: "xmark.circle.fill").font(.system(size: 14)).foregroundStyle(.white.opacity(0.6))
+                            Icon("xmark.circle.fill", size: 18).foregroundStyle(.white.opacity(0.6))
                         }
                         .buttonStyle(.plain)
                         .help("Clear the search")
@@ -572,7 +572,7 @@ struct IslandPanel: View {
             withAnimation(.easeOut(duration: 0.15)) { resultFilter = value }
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: symbol).font(.system(size: 11, weight: .semibold))
+                Icon(symbol, size: 14, weight: .semibold)
                 Text(title).font(.system(size: 12, weight: .semibold))
                 Text("\(count)")
                     .font(.system(size: 10, weight: .semibold))
@@ -703,7 +703,7 @@ struct IslandPanel: View {
     /// A `smallButton` that stays lit while on.
     private func smallToggle(_ title: String, symbol: String, help: String, isOn: Binding<Bool>) -> some View {
         Button { isOn.wrappedValue.toggle() } label: {
-            Label(title, systemImage: symbol)
+            Label { Text(title) } icon: { Icon(symbol, weight: .medium) }
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(isOn.wrappedValue ? .yellow : .white.opacity(0.7))
                 .padding(.horizontal, 10)
@@ -717,7 +717,7 @@ struct IslandPanel: View {
 
     private func smallButton(_ title: String, symbol: String, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Label(title, systemImage: symbol)
+            Label { Text(title) } icon: { Icon(symbol, weight: .medium) }
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.white.opacity(0.7))
                 .padding(.horizontal, 10)
@@ -737,7 +737,7 @@ struct IslandPanel: View {
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color.brand, style: SwiftUI.StrokeStyle(lineWidth: 2, dash: [8, 6])))
             .overlay {
                 VStack(spacing: 6) {
-                    Image(systemName: "tray.and.arrow.down.fill").font(.system(size: 28)).foregroundStyle(.white)
+                    Icon("tray.and.arrow.down.fill", size: 35).foregroundStyle(.white)
                     Text("Drop to save as an asset").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
                 }
             }
@@ -751,11 +751,11 @@ struct IslandPanel: View {
     /// An empty tab says what goes here and, when there is one, offers the next step.
     private func empty(_ message: String, symbol: String, action: (title: String, symbol: String, perform: () -> Void)? = nil) -> some View {
         VStack(spacing: 8) {
-            Image(systemName: symbol).font(.system(size: 26)).foregroundStyle(.white.opacity(0.6))
+            Icon(symbol, size: 32).foregroundStyle(.white.opacity(0.6))
             Text(message).font(.system(size: 13, weight: .medium)).foregroundStyle(.white.opacity(0.8))
             if let action {
                 Button(action: action.perform) {
-                    Label(action.title, systemImage: action.symbol)
+                    Label { Text(action.title) } icon: { Icon(action.symbol, weight: .medium) }
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.black)
                         .padding(.horizontal, 12)
@@ -998,8 +998,7 @@ struct CardAction: View {
 
     var body: some View {
         Button(action: perform) {
-            Image(systemName: symbol)
-                .font(.system(size: 12, weight: .bold))
+            Icon(symbol, size: 15, weight: .bold)
                 .frame(width: 30, height: 30)
                 .background(.black.opacity(0.8), in: Circle())
                 .overlay(Circle().strokeBorder(.white.opacity(0.35)))
@@ -1090,8 +1089,7 @@ struct HoverButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: size >= 40 ? 15 : 14, weight: .medium))
+            Icon(symbol, size: size >= 40 ? 19 : 18, weight: .medium)
                 .foregroundStyle(.white.opacity(hovering ? 1 : 0.85))
                 .frame(width: size, height: size)
                 .background(.white.opacity(hovering ? 0.16 : (size >= 40 ? 0.1 : 0)), in: Circle())
@@ -1118,7 +1116,7 @@ struct TabPill: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                Image(systemName: tab.symbol).font(.system(size: 11, weight: .semibold))
+                Icon(tab.symbol, size: 14, weight: .semibold)
                 Text(tab.title).font(.system(size: 12, weight: .semibold))
                 if count > 0 {
                     Text("\(count)")
@@ -1207,7 +1205,7 @@ struct FocusPill: View {
             ZStack {
                 Circle().stroke(.white.opacity(0.18), lineWidth: 2.5)
                 Circle().trim(from: 0, to: timer.progress).stroke(Color.brand, style: SwiftUI.StrokeStyle(lineWidth: 2.5, lineCap: .round)).rotationEffect(.degrees(-90))
-                Image(systemName: "timer").font(.system(size: 8, weight: .bold)).foregroundStyle(.white.opacity(0.85))
+                Icon("timer", size: 10, weight: .bold).foregroundStyle(.white.opacity(0.85))
             }
             .frame(width: 18, height: 18)
             .animation(.linear(duration: 1), value: timer.progress)
@@ -1216,8 +1214,7 @@ struct FocusPill: View {
                 Text(task.title).font(.system(size: 11)).foregroundStyle(.white.opacity(0.6)).lineLimit(1).frame(maxWidth: 140)
             }
             Button { timer.stop() } label: {
-                Image(systemName: "stop.fill")
-                    .font(.system(size: 9, weight: .bold))
+                Icon("stop.fill", size: 11, weight: .bold)
                     .foregroundStyle(.white.opacity(hovering ? 0.9 : 0.5))
                     .frame(width: 20, height: 20)
                     .background(.white.opacity(hovering ? 0.14 : 0), in: Circle())
@@ -1283,7 +1280,7 @@ struct CaptureCard: View {
                     CardCaption(title: item.hasDefaultName ? "" : item.title, date: item.createdAt,
                                 subtitle: item.createdAt.formatted(date: .omitted, time: .shortened)) {
                         if item.pinned {
-                            Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(.yellow)
+                            Icon("pin.fill", size: 11).foregroundStyle(.yellow)
                         }
                         Badge(text: item.dimensions)
                     }
@@ -1370,7 +1367,7 @@ struct ClipboardCard: View {
                 .overlay(alignment: .bottom) {
                     CardCaption(title: item.name ?? "", date: item.createdAt) {
                         if item.pinned {
-                            Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(.yellow)
+                            Icon("pin.fill", size: 11).foregroundStyle(.yellow)
                         }
                         if let icon = clipboard.sourceIcon(for: item) {
                             Image(nsImage: icon).resizable().frame(width: 16, height: 16)
@@ -1491,7 +1488,7 @@ struct ClipboardCard: View {
         case .link:
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
-                    Image(systemName: "link").font(.system(size: 11, weight: .semibold))
+                    Icon("link", size: 14, weight: .semibold)
                     Text(URL(string: item.text)?.host ?? item.text).font(.system(size: 12, weight: .semibold)).lineLimit(1)
                 }
                 .foregroundStyle(.white)
@@ -1530,7 +1527,7 @@ struct ClipboardCard: View {
         case .files:
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
-                    Image(systemName: item.filePaths.count > 1 ? "doc.on.doc" : "doc").font(.system(size: 12, weight: .semibold))
+                    Icon(item.filePaths.count > 1 ? "doc.on.doc" : "doc", size: 15, weight: .semibold)
                     Text(item.filePaths.count > 1 ? "\(item.filePaths.count) files" : "File").font(.system(size: 12, weight: .semibold))
                 }
                 .foregroundStyle(.white)
@@ -1566,7 +1563,7 @@ struct AssetCard: View {
                 .overlay(alignment: .bottom) {
                     CardCaption(title: item.fileName, date: item.createdAt) {
                         if item.pinned {
-                            Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(.yellow)
+                            Icon("pin.fill", size: 11).foregroundStyle(.yellow)
                         }
                         Badge(text: item.kind == .image && item.pixelWidth > 0 ? item.dimensions : item.sizeText)
                     }
@@ -1660,7 +1657,7 @@ struct ColorCard: View {
                 .overlay(alignment: .bottom) {
                     CardCaption(title: entry.name ?? format.string(for: entry.color), date: entry.createdAt) {
                         if entry.pinned {
-                            Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(.yellow)
+                            Icon("pin.fill", size: 11).foregroundStyle(.yellow)
                         }
                         if entry.name != nil || format != .hex { Badge(text: ColorFormat.hex.string(for: entry.color)) }
                     }
@@ -1720,8 +1717,7 @@ private struct TaskCard: View {
         CardChrome(hovering: $hovering, label: "Task: \(task.title), \(task.status.title), \(task.priority.title) priority", onTap: onOpen) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: task.status.symbol)
-                        .font(.system(size: 13, weight: .medium))
+                    Icon(task.status.symbol, size: 16, weight: .medium)
                         .foregroundStyle(task.status.color)
                     Text(task.title)
                         .font(.system(size: 12, weight: .semibold))
@@ -1741,7 +1737,7 @@ private struct TaskCard: View {
             .overlay(alignment: .bottom) {
                 CardCaption(title: store.project(task.projectID)?.name ?? "", date: task.createdAt) {
                     if task.priority != .medium {
-                        Image(systemName: task.priority.symbol).font(.system(size: 9, weight: .bold)).foregroundStyle(task.priority.color)
+                        Icon(task.priority.symbol, size: 11, weight: .bold).foregroundStyle(task.priority.color)
                             .help(task.priority.title)
                     }
                     Badge(text: task.status.title)
@@ -1756,12 +1752,12 @@ private struct TaskCard: View {
             Button("Open", action: onOpen)
             Menu("Status") {
                 ForEach(TaskStatus.allCases, id: \.self) { status in
-                    Button { store.setStatus(status, for: task) } label: { Label(status.title, systemImage: status.symbol) }
+                    Button { store.setStatus(status, for: task) } label: { Label { Text(status.title) } icon: { Icon(status.symbol, weight: .medium) } }
                 }
             }
             Menu("Priority") {
                 ForEach(TaskPriority.allCases, id: \.self) { value in
-                    Button { store.setPriority(value, for: task) } label: { Label(value.title, systemImage: value.symbol) }
+                    Button { store.setPriority(value, for: task) } label: { Label { Text(value.title) } icon: { Icon(value.symbol, weight: .medium) } }
                 }
             }
             if let focus {
@@ -1956,7 +1952,7 @@ struct GroupMenu: View {
             Button {
                 assign(nil)
             } label: {
-                if current == nil { Label("None", systemImage: "checkmark") } else { Text("None") }
+                if current == nil { Label { Text("None") } icon: { Icon("checkmark", weight: .medium) } } else { Text("None") }
             }
             let all = groups.groups(for: kind)
             if !all.isEmpty { Divider() }
@@ -1964,7 +1960,7 @@ struct GroupMenu: View {
                 Button {
                     assign(group.id)
                 } label: {
-                    if group.id == current { Label(group.name, systemImage: "checkmark") } else { Text(group.name) }
+                    if group.id == current { Label { Text(group.name) } icon: { Icon("checkmark", weight: .medium) } } else { Text(group.name) }
                 }
             }
             Divider()
