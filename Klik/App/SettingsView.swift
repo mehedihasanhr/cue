@@ -54,8 +54,10 @@ struct GeneralSettingsView: View {
                 }
             }
 
-            SettingsGroup("Menu bar icon", footer: "Custom icons work best as a black-on-transparent PNG or PDF around 18 × 18 points; Klik tints it to match the menu bar.") {
-                SettingsCell(vertical: 14) { MenuBarIconPicker() }
+            SettingsGroup("Menu bar icon") {
+                SettingsRow("Icon", subtitle: "The icon lives in the menu bar; click it to open your captures.") {
+                    MenuBarIconPicker()
+                }
             }
 
             SettingsGroup("Storage", footer: "Every capture is saved here as PNG and listed in the menu bar panel. Deleting a capture from the panel moves the file to the Trash.") {
@@ -336,37 +338,85 @@ struct CaptureSettingsView: View {
 
 // MARK: - Menu bar icon
 
+/// A button showing the icon in use; it opens a popover of every icon to pick
+/// from, and the way to a custom image.
 private struct MenuBarIconPicker: View {
     @Environment(AppPreferences.self) private var preferences
+    @State private var open = false
 
-    private let columns = Array(repeating: GridItem(.fixed(44), spacing: 8), count: 8)
+    private let columns = Array(repeating: GridItem(.fixed(40), spacing: 6), count: 6)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
-                ForEach(AppPreferences.Icon.symbols, id: \.self) { name in
-                    iconCell(selected: preferences.icon == .symbol(name)) {
-                        Image(systemName: name).font(.system(size: 15, weight: .medium))
-                    } action: {
-                        preferences.icon = .symbol(name)
+        Button {
+            open.toggle()
+        } label: {
+            HStack(spacing: 8) {
+                current
+                    .frame(width: 20, height: 20)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.leading, 8)
+            .padding(.trailing, 7)
+            .frame(height: 28)
+            .background(SettingsPalette.pill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(SettingsPalette.edge))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Choose the menu bar icon")
+        .accessibilityLabel("Menu bar icon")
+        .popover(isPresented: $open, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 12) {
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
+                    ForEach(AppPreferences.Icon.symbols, id: \.self) { name in
+                        iconCell(selected: preferences.icon == .symbol(name)) {
+                            Image(systemName: name).font(.system(size: 15, weight: .medium))
+                        } action: {
+                            preferences.icon = .symbol(name)
+                        }
+                        .help(name)
                     }
-                    .help(name)
+                    if let url = preferences.customIconURL, let image = NSImage(contentsOf: url) {
+                        iconCell(selected: preferences.icon == .custom) {
+                            Image(nsImage: image).resizable().aspectRatio(contentMode: .fit).frame(width: 18, height: 18)
+                        } action: {
+                            preferences.icon = .custom
+                        }
+                        .help(url.lastPathComponent)
+                    }
                 }
-                if let url = preferences.customIconURL, let image = NSImage(contentsOf: url) {
-                    iconCell(selected: preferences.icon == .custom) {
-                        Image(nsImage: image).resizable().aspectRatio(contentMode: .fit).frame(width: 18, height: 18)
-                    } action: {
-                        preferences.icon = .custom
+                Divider()
+                HStack(alignment: .top, spacing: 12) {
+                    Text("A custom icon works best as a black-on-transparent PNG or PDF around 18 × 18 points; Klik tints it to match the menu bar.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Button("Custom Image…") {
+                        open = false
+                        preferences.chooseCustomIcon()
                     }
-                    .help(url.lastPathComponent)
+                    .controlSize(.small)
                 }
             }
-            HStack {
-                Text("The icon lives in the menu bar; click it to open your captures.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button("Custom Image…") { preferences.chooseCustomIcon() }
+            .padding(12)
+            .frame(width: 300)
+        }
+    }
+
+    /// The icon in use, as the menu bar shows it.
+    @ViewBuilder
+    private var current: some View {
+        switch preferences.icon {
+        case .symbol(let name):
+            Image(systemName: name).font(.system(size: 14, weight: .medium))
+        case .custom:
+            if let url = preferences.customIconURL, let image = NSImage(contentsOf: url) {
+                Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
+            } else {
+                Image(systemName: "photo").font(.system(size: 14, weight: .medium))
             }
         }
     }
@@ -375,7 +425,7 @@ private struct MenuBarIconPicker: View {
         Button(action: action) {
             content()
                 .foregroundStyle(selected ? Color.white : Color.primary)
-                .frame(width: 44, height: 36)
+                .frame(width: 40, height: 34)
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(selected ? Color.accentColor : Color.primary.opacity(0.05))
