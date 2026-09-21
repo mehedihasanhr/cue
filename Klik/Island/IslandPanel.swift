@@ -180,7 +180,7 @@ struct IslandPanel: View {
         }
     }
 
-    /// The strip under the tabs: Recent, Pinned, each group, and a new one. A
+    /// The strip under the cards: Recent, Pinned, each group, and a new one. A
     /// group's chip has Rename and Delete in its menu.
     private func groupStrip(_ kind: GroupKind) -> some View {
         let all = groups.groups(for: kind)
@@ -407,11 +407,6 @@ struct IslandPanel: View {
                 }
             }
             .modifier(IdealWidth { tabRowWidth = $0; reportWidth() })
-            if let kind = groupKind {
-                groupStrip(kind)
-            } else if tab == .all {
-                allStrip
-            }
             }
 
             ZStack {
@@ -501,6 +496,12 @@ struct IslandPanel: View {
             }
             .onChange(of: search, refreshHits)
             .onChange(of: library.items.count + clipboard.items.count + assets.items.count + colors.items.count + tasksStore.tasks.count, refreshHits)
+            // The groups under the cards, a footer to the tab.
+            if let kind = groupKind {
+                groupStrip(kind)
+            } else if tab == .all {
+                allStrip
+            }
         }
         .padding(.horizontal, Self.horizontalPadding)
         // Straight under the menu bar (the strip above is its height), plus a hair.
