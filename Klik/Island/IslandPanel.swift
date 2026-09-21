@@ -818,7 +818,7 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
         self.card = card
     }
 
-    static var cardSize: CGSize { CGSize(width: 200, height: 160) }
+    static var cardSize: CGSize { CGSize(width: 176, height: 140) }
     static var spacing: CGFloat { 10 }
     static var groupSpacing: CGFloat { 22 }
     static var headerHeight: CGFloat { 24 }
@@ -999,8 +999,8 @@ struct CardAction: View {
 
     var body: some View {
         Button(action: perform) {
-            Icon(symbol, size: 15, weight: .bold)
-                .frame(width: 30, height: 30)
+            Icon(symbol, size: 14, weight: .bold)
+                .frame(width: 27, height: 27)
                 .background(.black.opacity(0.8), in: Circle())
                 .overlay(Circle().strokeBorder(.white.opacity(0.35)))
                 .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
@@ -1104,8 +1104,8 @@ struct HoverButton: View {
     }
 }
 
-/// One tab, its name alone: solid white when selected, bare text otherwise (lit
-/// under the pointer), its count as quiet trailing digits.
+/// One tab, its name alone in an outlined capsule: solid white when selected,
+/// bare otherwise (lit under the pointer), its count as quiet trailing digits.
 struct TabPill: View {
     let tab: IslandTab
     let count: Int
@@ -1117,18 +1117,20 @@ struct TabPill: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                Text(tab.title).font(.system(size: 12, weight: .semibold))
+                Text(tab.title).font(.system(size: 13))
                 if count > 0 {
                     Text("\(count)")
-                        .font(.system(size: 10.5, weight: .medium).monospacedDigit())
+                        .font(.system(size: 11).monospacedDigit())
                         .opacity(selected ? 0.55 : 0.5)
                 }
             }
             .foregroundStyle(selected ? .black : .white.opacity(hovering ? 1 : 0.75))
             .fixedSize()
-            .padding(.horizontal, 11)
+            .padding(.horizontal, 12)
             .frame(height: 28)
-            .background(selected ? Color.white : Color.white.opacity(hovering ? 0.1 : 0), in: Capsule())
+            .background(selected ? Color.white : Color.white.opacity(hovering ? 0.08 : 0), in: Capsule())
+            // An outline, faint on purpose.
+            .overlay(Capsule().strokeBorder(Color.white.opacity(0.015)))
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
