@@ -53,7 +53,7 @@ nonisolated struct IslandGeometry: Equatable {
     /// Bottom corner radius of the shape in each phase.
     let collapsedRadius: CGFloat
     let flashRadius: CGFloat = 18
-    let expandedRadius: CGFloat = 28
+    let expandedRadius: CGFloat = 34
     /// Outward curve where the open panel meets the top of the screen.
     static let openFlare: CGFloat = 24
 
