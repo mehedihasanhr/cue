@@ -676,7 +676,7 @@ struct IslandPanel: View {
 
     private func tabPill(_ value: IslandTab, count: Int, shortcut: Int) -> some View {
         TabPill(tab: value, count: count, selected: tab == value, shortcut: shortcut) {
-            withAnimation(.easeOut(duration: 0.15)) { tab = value }
+            withAnimation(IslandView.openAnimation) { tab = value } // the same curve the shape follows, so the two move as one
         }
     }
 
@@ -685,7 +685,7 @@ struct IslandPanel: View {
     private var keyboardShortcuts: some View {
         Group {
             ForEach(Array(IslandTab.allCases.enumerated()), id: \.element) { index, value in
-                Button("") { withAnimation(.easeOut(duration: 0.15)) { tab = value } }
+                Button("") { withAnimation(IslandView.openAnimation) { tab = value } }
                     .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
             }
             Button("") { searchFocused = true }
