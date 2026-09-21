@@ -880,8 +880,17 @@ struct MarkdownEditor: NSViewRepresentable {
             textView.insertText(replacement, replacementRange: range)
         }
 
-        /// Removes the token at the caret (a `/command` once it has run).
-        func removeToken() { replaceToken(with: "") }
+        /// Removes the token at the caret (a `/command` once it has run, a `#project`
+        /// or `!priority` once picked) and the space before it, so no gap is left.
+        func removeToken() {
+            guard let textView, let (_, range) = Self.token(in: textView) else { return }
+            let text = textView.string as NSString
+            var whole = range
+            if whole.location > 0, text.character(at: whole.location - 1) == 0x20 {
+                whole = NSRange(location: whole.location - 1, length: whole.length + 1)
+            }
+            textView.insertText("", replacementRange: whole)
+        }
     }
 
     func makeNSView(context: Context) -> NSScrollView {

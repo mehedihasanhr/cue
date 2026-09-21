@@ -139,7 +139,9 @@ The editor shows Markdown as what it means while you type — `# ` starts a head
 `- ` a bullet, `1. ` a numbered list, `[ ] ` in a bullet a checkbox, `> ` a quote,
 ```` ``` ```` a code block, and `**bold**`, `*italic*`, `` `code` `` or `~~struck~~`
 turn into the style as they close. `/` lists every format, `#` picks a project, `!` a
-priority, all from the keyboard. What is saved is still Markdown.
+priority, all from the keyboard; a pick shows in the buttons under the text and the
+token goes. What is saved is still Markdown. The floating pane (⌥/) moves by the
+strip along its top, so a drag in the text selects.
 
 ### Tasks from captures, focus sessions
 

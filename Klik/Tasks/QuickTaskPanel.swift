@@ -5,7 +5,8 @@ import SwiftUI
 /// down from anywhere without going to the island. Frosted dark glass with a grain
 /// so text stays legible over anything; the island's cards (captures, clipboard
 /// entries, assets, colors) can be dragged into its description or pasted there.
-/// Closes on ⎋, on Create / Cancel, on a click outside, or when it loses key status.
+/// Moves by the strip along its top, so a drag in the text selects. Closes on ⎋,
+/// on Create / Cancel, on a click outside, or when it loses key status.
 final class QuickTaskPanel: NSPanel {
     static let defaultSize = CGSize(width: IslandGeometry.formWidth, height: IslandGeometry.formContentHeight + 8)
     /// Room around the glass for its shadow.
@@ -75,7 +76,7 @@ final class QuickTaskPanel: NSPanel {
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false // the glass draws its own
-        isMovableByWindowBackground = true
+        isMovableByWindowBackground = false // the strip along the top moves it
         isReleasedWhenClosed = false
         hidesOnDeactivate = false
         sharingType = .readOnly // shows in screen sharing; Klik's own shots filter it out

@@ -158,11 +158,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         guard let editor = self?.quickTaskPanel?.editor else { return }
                         // Typed a character at a time, so the editor's Markdown shortcuts run.
                         for character in typed {
-                            if character == "\n" { editor.insertNewline(nil) } else { editor.insertText(String(character), replacementRange: editor.selectedRange()) }
+                            switch character {
+                            case "\n": editor.insertNewline(nil)
+                            case "\t": editor.doCommand(by: #selector(NSResponder.insertTab(_:))) // picks a suggestion
+                            default: editor.insertText(String(character), replacementRange: editor.selectedRange())
+                            }
                         }
                     }
                 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                // KLIK_DEBUG_TASK_CLICK=x,y clicks there, measured from the glass's top-left corner.
+                if let spec = ProcessInfo.processInfo.environment["KLIK_DEBUG_TASK_CLICK"] {
+                    let parts = spec.split(separator: ",").compactMap { Double($0) }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                        guard let panel = self?.quickTaskPanel, parts.count == 2 else { return }
+                        let point = CGPoint(x: panel.frame.minX + 24 + parts[0], y: NSScreen.screens[0].frame.maxY - (panel.frame.maxY - 24 - parts[1]))
+                        for type in [CGEventType.leftMouseDown, .leftMouseUp] {
+                            CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
+                        }
+                    }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { [weak self] in
                     guard let self, let panel = self.quickTaskPanel else { Log.app.error("Task shot: no panel"); return }
                     let id = CGWindowID(panel.windowNumber)
                     Task { @MainActor in

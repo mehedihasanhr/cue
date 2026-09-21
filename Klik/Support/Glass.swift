@@ -141,20 +141,45 @@ extension View {
     }
 
     /// A capsule of glass behind a label — a menu's or a badge's.
-    func glassPill() -> some View {
-        modifier(GlassPill())
+    func glassPill(tint: Color? = nil) -> some View {
+        modifier(GlassShape(shape: Capsule(), tint: tint))
+    }
+
+    /// A round glass button face.
+    func glassCircle(tint: Color? = nil) -> some View {
+        modifier(GlassShape(shape: Circle(), tint: tint))
     }
 }
 
-struct GlassPill: ViewModifier {
+/// Liquid Glass in a shape (a fill with a hairline edge before macOS 26), tinted or
+/// clear. Siblings in one `GlassEffectContainer` blend as they move.
+struct GlassShape<S: InsettableShape>: ViewModifier {
+    let shape: S
+    var tint: Color?
+
     func body(content: Content) -> some View {
         if #available(macOS 26.0, *) {
-            content.glassEffect(.regular.interactive(), in: Capsule())
+            if let tint {
+                content.glassEffect(.regular.tint(tint).interactive(), in: shape)
+            } else {
+                content.glassEffect(.regular.interactive(), in: shape)
+            }
         } else {
             content
-                .background(.primary.opacity(0.1), in: Capsule())
-                .overlay(Capsule().strokeBorder(.primary.opacity(0.12)))
+                .background(tint ?? .primary.opacity(0.1), in: shape)
+                .overlay(shape.strokeBorder(.primary.opacity(tint == nil ? 0.12 : 0.2)))
         }
+    }
+}
+
+/// A strip that drags the window it is in — the handle at the top of a floating pane.
+struct WindowDragStrip: NSViewRepresentable {
+    func makeNSView(context: Context) -> Handle { Handle() }
+    func updateNSView(_ view: Handle, context: Context) {}
+
+    final class Handle: NSView {
+        override var mouseDownCanMoveWindow: Bool { false }
+        override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
     }
 }
 

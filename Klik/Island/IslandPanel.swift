@@ -1103,8 +1103,8 @@ struct HoverButton: View {
     }
 }
 
-/// One tab: solid white when selected, bare text otherwise (lit under the pointer),
-/// its count as quiet trailing digits.
+/// One tab, its name alone: solid white when selected, bare text otherwise (lit
+/// under the pointer), its count as quiet trailing digits.
 struct TabPill: View {
     let tab: IslandTab
     let count: Int
@@ -1116,7 +1116,6 @@ struct TabPill: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                Icon(tab.symbol, size: 14, weight: .semibold)
                 Text(tab.title).font(.system(size: 12, weight: .semibold))
                 if count > 0 {
                     Text("\(count)")

@@ -653,6 +653,8 @@ struct TaskFormRow: View {
     @State private var projectID: UUID?
     @State private var priority: TaskPriority = .medium
     @State private var newProjectName: String?
+    /// A project named with `#` that does not exist yet: made when the task is.
+    @State private var pendingProject: String?
     @State private var editor = MarkdownEditor.Handle()
     @FocusState private var focus: Field?
     /// The token at the caret (`/`, `#` or `!` and what follows), and the row
@@ -701,14 +703,18 @@ struct TaskFormRow: View {
         case "#":
             let projects = store.projects.sorted { store.path(to: $0.id).map(\.name).joined(separator: "/") < store.path(to: $1.id).map(\.name).joined(separator: "/") }
             var rows = projects.filter { matches($0.name) }.map { project in
+                // The pick shows in the project button; the token has done its work.
                 Suggestion(id: project.id.uuidString, symbol: "folder", title: store.path(to: project.id).map(\.name).joined(separator: " › "), pick: {
                     projectID = project.id
-                    editor.replaceToken(with: "#" + TaskTokens.compact(project.name) + " ")
+                    pendingProject = nil
+                    editor.removeToken()
                 })
             }
             if !query.isEmpty, !projects.contains(where: { TaskTokens.compact($0.name) == query }) {
                 rows.append(Suggestion(id: "new", symbol: "folder.badge.plus", title: "New project “\(token.dropFirst())”", detail: "created when the task is", pick: {
-                    editor.replaceToken(with: token + " ")
+                    pendingProject = String(token.dropFirst())
+                    projectID = nil
+                    editor.removeToken()
                 }))
             }
             return rows
@@ -716,7 +722,7 @@ struct TaskFormRow: View {
             return TaskPriority.allCases.filter { matches($0.title) }.map { value in
                 Suggestion(id: value.rawValue, symbol: value.symbol, title: value.title, detail: "⌘\((TaskPriority.allCases.firstIndex(of: value) ?? 0) + 1)", tint: value.color, pick: {
                     priority = value
-                    editor.replaceToken(with: "!" + value.rawValue + " ")
+                    editor.removeToken()
                 })
             }
         default:
@@ -860,11 +866,25 @@ struct TaskFormRow: View {
     /// the priority as a pill, and a round Create — all glass buttons.
     private var floatingBody: some View {
         VStack(spacing: 0) {
+            // The strip the window moves by: a grabber, like a sheet's.
+            WindowDragStrip()
+                .frame(height: 14)
+                .overlay { Capsule().fill(.primary.opacity(0.18)).frame(width: 36, height: 4) }
             markdownEditor
                 .padding(.horizontal, 8)
-                .padding(.top, 6)
                 .frame(maxHeight: .infinity)
-            HStack(spacing: 8) {
+            floatingBar
+                .padding(.horizontal, 12)
+                .padding(.bottom, 10)
+        }
+    }
+
+    /// Glass buttons under the text: attach and format on the left; the project, the
+    /// priority and a round Create (brand-tinted once there is something to create)
+    /// on the right.
+    @ViewBuilder
+    private var floatingBar: some View {
+        let bar = HStack(spacing: 8) {
                 floatingGlyph("plus", help: "Attach an image… (⌘⇧I)") { chooseImage() }
                 Menu {
                     Button("Bold", action: { editor.bold() }).keyboardShortcut("b")
@@ -880,10 +900,11 @@ struct TaskFormRow: View {
                     Button("Code block", action: { editor.block(.code) })
                 } label: {
                     Text("/")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(.primary.opacity(0.8))
-                        .frame(width: 32, height: 32)
-                        .contentShape(Rectangle())
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.primary.opacity(0.85))
+                        .frame(width: 34, height: 34)
+                        .glassCircle()
+                        .contentShape(Circle())
                 }
                 .menuStyle(.button)
                 .buttonStyle(.plain)
@@ -906,16 +927,18 @@ struct TaskFormRow: View {
                     Menu {
                         projectMenuItems
                     } label: {
+                        let name = store.project(projectID)?.name ?? pendingProject
                         HStack(spacing: 6) {
-                            Icon(projectID == nil ? "folder" : "folder.fill", size: 15, weight: .semibold)
-                            if let project = store.project(projectID) {
-                                Text(project.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                            Icon(pendingProject != nil ? "folder.badge.plus" : (projectID == nil ? "folder" : "folder.fill"), size: 15, weight: .semibold)
+                            if let name {
+                                Text(name).font(.system(size: 13, weight: .medium)).lineLimit(1)
                             }
                         }
                         .foregroundStyle(.primary.opacity(0.85))
-                        .padding(.horizontal, projectID == nil ? 0 : 12)
-                        .frame(minWidth: 32, maxWidth: 160)
-                        .frame(height: 32)
+                        .padding(.horizontal, name == nil ? 0 : 14)
+                        .frame(minWidth: 34, maxWidth: 180)
+                        .frame(height: 34)
+                        .glassPill()
                         .contentShape(Capsule())
                     }
                     .menuStyle(.button)
@@ -936,7 +959,7 @@ struct TaskFormRow: View {
                     }
                     .foregroundStyle(.primary.opacity(0.9))
                     .padding(.horizontal, 14)
-                    .frame(height: 32)
+                    .frame(height: 34)
                     .glassPill()
                     .contentShape(Capsule())
                 }
@@ -949,8 +972,7 @@ struct TaskFormRow: View {
                     Icon("arrow.up", size: 18, weight: .bold)
                         .foregroundStyle(valid ? Color.white : Color.primary.opacity(0.5))
                         .frame(width: 34, height: 34)
-                        .background(valid ? Color.brand : Color.primary.opacity(0.12), in: Circle())
-                        .overlay(Circle().strokeBorder(.white.opacity(valid ? 0.25 : 0.1)))
+                        .glassCircle(tint: valid ? Color.brand : nil)
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
@@ -959,18 +981,20 @@ struct TaskFormRow: View {
                 .help(prompt.editing == nil ? "Create (⌘↩)" : "Save (⌘↩)")
                 .animation(.easeOut(duration: 0.15), value: valid)
             }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 10)
+        if #available(macOS 26.0, *) {
+            GlassEffectContainer(spacing: 8) { bar }
+        } else {
+            bar
         }
-        .padding(.top, 4)
     }
 
     private func floatingGlyph(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Icon(symbol, size: 19, weight: .medium)
-                .foregroundStyle(.primary.opacity(0.8))
-                .frame(width: 32, height: 32)
-                .contentShape(Rectangle())
+                .foregroundStyle(.primary.opacity(0.85))
+                .frame(width: 34, height: 34)
+                .glassCircle()
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .help(help)
@@ -1095,11 +1119,12 @@ struct TaskFormRow: View {
     /// Every project by its path, "No project", and "New project…".
     @ViewBuilder
     private var projectMenuItems: some View {
-        Button("No project") { projectID = nil }
+        Button("No project") { projectID = nil; pendingProject = nil }
         if !store.projects.isEmpty { Divider() }
         ForEach(store.projects.sorted { store.path(to: $0.id).map(\.name).joined(separator: "/") < store.path(to: $1.id).map(\.name).joined(separator: "/") }) { project in
             Button {
                 projectID = project.id
+                pendingProject = nil
             } label: {
                 if project.id == projectID {
                     Label { Text(store.path(to: project.id).map(\.name).joined(separator: " › ")) } icon: { Icon("checkmark", weight: .medium) }
@@ -1142,7 +1167,7 @@ struct TaskFormRow: View {
         let cleaned = parsed.title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !TaskText.plain(cleaned).isEmpty else { return }
         var projectID = projectID
-        if let name = parsed.project {
+        if let name = parsed.project ?? pendingProject {
             // A `#` token names the project; one that matches nothing is created.
             if let project = store.projects.first(where: { TaskTokens.compact($0.name) == TaskTokens.compact(name) }) {
                 projectID = project.id
