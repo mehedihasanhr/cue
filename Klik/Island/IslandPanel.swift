@@ -405,10 +405,8 @@ struct IslandPanel: View {
             .modifier(IdealWidth { tabRowWidth = $0; reportWidth() })
             if let kind = groupKind {
                 groupStrip(kind)
-                    .padding(.top, -4)
             } else if tab == .all {
                 allStrip
-                    .padding(.top, -4)
             }
             }
 
