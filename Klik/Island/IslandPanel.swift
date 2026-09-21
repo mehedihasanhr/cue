@@ -496,17 +496,18 @@ struct IslandPanel: View {
             }
             .onChange(of: search, refreshHits)
             .onChange(of: library.items.count + clipboard.items.count + assets.items.count + colors.items.count + tasksStore.tasks.count, refreshHits)
-            // The groups under the cards, a footer to the tab.
+            // The groups under the cards, a footer to the tab: set off from the cards,
+            // close to the edge.
             if let kind = groupKind {
-                groupStrip(kind)
+                groupStrip(kind).padding(.top, 6)
             } else if tab == .all {
-                allStrip
+                allStrip.padding(.top, 6)
             }
         }
         .padding(.horizontal, Self.horizontalPadding)
         // Straight under the menu bar (the strip above is its height), plus a hair.
         .padding(.top, 1)
-        .padding(.bottom, 16)
+        .padding(.bottom, groupKind != nil || tab == .all ? 10 : 16)
         .modifier(IdealHeight { onIdealHeight($0) })
         .frame(width: width, alignment: .top)
         .frame(maxHeight: Self.size.height, alignment: .top)
@@ -1104,8 +1105,8 @@ struct HoverButton: View {
     }
 }
 
-/// One tab, its name alone in an outlined capsule: solid white when selected,
-/// bare otherwise (lit under the pointer), its count as quiet trailing digits.
+/// One tab, its name alone in an outlined capsule: the outline lit when selected,
+/// faint otherwise (a little fill under the pointer), its count as quiet digits.
 struct TabPill: View {
     let tab: IslandTab
     let count: Int
@@ -1124,13 +1125,13 @@ struct TabPill: View {
                         .opacity(selected ? 0.55 : 0.5)
                 }
             }
-            .foregroundStyle(selected ? .black : .white.opacity(hovering ? 1 : 0.75))
+            .foregroundStyle(.white.opacity(selected || hovering ? 1 : 0.7))
             .fixedSize()
             .padding(.horizontal, 12)
             .frame(height: 28)
-            .background(selected ? Color.white : Color.white.opacity(hovering ? 0.08 : 0), in: Capsule())
-            // An outline, faint on purpose.
-            .overlay(Capsule().strokeBorder(Color.white.opacity(0.015)))
+            .background(Color.white.opacity(selected ? 0.1 : (hovering ? 0.05 : 0)), in: Capsule())
+            // An outline: faint on purpose, lit for the selected tab.
+            .overlay(Capsule().strokeBorder(Color.white.opacity(selected ? 0.35 : 0.015)))
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
