@@ -5,20 +5,21 @@ import SwiftUI
 
 /// The pages of the Settings window, in sidebar order.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, shortcuts, sharing, permissions, about
+    case general, appearance, shortcuts, sharing, permissions, about
     case island, capture, editor, clipboard, time
 
     var id: String { rawValue }
 
     /// The sidebar shows the app-wide pages first, then a group per feature.
     static let groups: [[SettingsSection]] = [
-        [.general, .shortcuts, .sharing, .permissions, .about],
+        [.general, .appearance, .shortcuts, .sharing, .permissions, .about],
         [.island, .capture, .editor, .clipboard, .time],
     ]
 
     var title: String {
         switch self {
         case .general: "General"
+        case .appearance: "Appearance"
         case .shortcuts: "Shortcuts"
         case .sharing: "Sharing"
         case .permissions: "Permissions"
@@ -33,7 +34,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
-        case .general: "Appearance, startup, sync, the menu bar icon and where captures go"
+        case .general: "Startup, sync, the menu bar icon and where captures go"
+        case .appearance: "The theme, in the editor, the panels and this window"
         case .shortcuts: "The keys that reach Klik from any app"
         case .sharing: "Where Copy Share Link uploads captures"
         case .permissions: "What macOS lets Klik see and do"
@@ -49,6 +51,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .general: "gearshape.fill"
+        case .appearance: "paintpalette.fill"
         case .shortcuts: "command"
         case .sharing: "link"
         case .permissions: "lock.shield.fill"
@@ -64,6 +67,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     var tint: Color {
         switch self {
         case .general: .gray
+        case .appearance: Color(red: 0.75, green: 0.3, blue: 0.5)
         case .shortcuts: .indigo
         case .sharing: .blue
         case .permissions: .green
@@ -79,7 +83,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     /// What the sidebar search matches besides the title: the settings on the page.
     var keywords: [String] {
         switch self {
-        case .general: ["appearance", "dark", "light", "theme", "login", "startup", "launch", "sync", "icloud", "dropbox", "folder", "menu bar", "icon", "storage", "pictures", "save"]
+        case .general: ["login", "startup", "launch", "sync", "icloud", "dropbox", "folder", "menu bar", "icon", "storage", "pictures", "save"]
+        case .appearance: ["theme", "dark", "light", "system", "mode", "look"]
         case .shortcuts: ["hotkey", "keyboard", "keys", "global", "bindings", "record", "screenshot", "⌘"]
         case .sharing: ["upload", "s3", "r2", "bucket", "link", "url", "cloud", "endpoint", "custom", "keychain"]
         case .permissions: ["screen recording", "accessibility", "privacy", "access", "grant", "system settings"]
@@ -195,6 +200,7 @@ struct SettingsRootView: View {
     private var detail: some View {
         switch navigation.section {
         case .general: GeneralSettingsView()
+        case .appearance: AppearanceSettingsView()
         case .shortcuts: ShortcutSettingsView()
         case .sharing: ShareSettingsView()
         case .permissions: PermissionSettingsView()

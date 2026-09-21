@@ -32,13 +32,6 @@ struct GeneralSettingsView: View {
                 }
             }
 
-            SettingsGroup("Appearance") {
-                SettingsPreviewPicker(title: "Theme", subtitle: "For the editor, the captures panel and this window.",
-                                      selection: $preferences.appearance, options: AppPreferences.Appearance.allCases, label: \.title) { option in
-                    AppearancePreview(appearance: option)
-                }
-            }
-
             if let sync {
                 SettingsGroup("Sync", footer: "Keep snippets, colors and tasks as JSON in a folder — one in iCloud Drive or Dropbox shares them with your other Macs; Klik reloads when the files change. Task attachments stay on this Mac.") {
                     SettingsRow(sync.url?.lastPathComponent ?? "Not syncing",
@@ -95,6 +88,24 @@ struct GeneralSettingsView: View {
                 model.launchAtLogin = LaunchAtLogin.state
             }
         )
+    }
+}
+
+// MARK: - Appearance
+
+struct AppearanceSettingsView: View {
+    @Environment(AppPreferences.self) private var preferences
+
+    var body: some View {
+        @Bindable var preferences = preferences
+        SettingsPane(.appearance) {
+            SettingsGroup("Theme") {
+                SettingsPreviewPicker(title: "Theme", subtitle: "For the editor, the captures panel and this window.",
+                                      selection: $preferences.appearance, options: AppPreferences.Appearance.allCases, label: \.title) { option in
+                    AppearancePreview(appearance: option)
+                }
+            }
+        }
     }
 }
 
