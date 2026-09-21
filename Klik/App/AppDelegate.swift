@@ -151,6 +151,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if ProcessInfo.processInfo.environment["KLIK_DEBUG_TASK_SHOT"] == "1" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
                 self?.quickTask(nil)
+                // KLIK_DEBUG_TASK_TEXT is typed into it first (a "/" brings the list up).
+                if let typed = ProcessInfo.processInfo.environment["KLIK_DEBUG_TASK_TEXT"] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                        guard let editor = self?.quickTaskPanel?.editor else { return }
+                        editor.insertText(typed, replacementRange: editor.selectedRange())
+                        editor.didChangeText()
+                    }
+                }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
                     guard let self, let panel = self.quickTaskPanel else { Log.app.error("Task shot: no panel"); return }
                     let id = CGWindowID(panel.windowNumber)

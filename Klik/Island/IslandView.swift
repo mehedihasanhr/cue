@@ -634,8 +634,129 @@ struct TaskFormRow: View {
     @State private var newProjectName: String?
     @State private var editor = MarkdownEditor.Handle()
     @FocusState private var focus: Field?
+    /// The token at the caret (`/`, `#` or `!` and what follows), and the row
+    /// highlighted in the list it brings up.
+    @State private var token: String?
+    @State private var highlighted = 0
 
     private enum Field { case notes }
+
+    /// One row of a suggestion list: what it shows and what picking it does.
+    private struct Suggestion: Identifiable {
+        let id: String
+        let symbol: String
+        let title: String
+        var detail: String?
+        var tint: Color = .primary
+        let pick: () -> Void
+    }
+
+    /// `/` lists the formatting commands, `#` the projects, `!` the priorities —
+    /// narrowed by what is typed after the mark.
+    private var suggestions: [Suggestion] {
+        guard let token, let mark = token.first else { return [] }
+        let query = token.dropFirst().lowercased()
+        func matches(_ text: String) -> Bool { query.isEmpty || TaskTokens.compact(text).contains(query) }
+        switch mark {
+        case "/":
+            let commands: [(String, String, String?, () -> Void)] = [
+                ("bold", "Bold", "⌘B", { editor.removeToken(); editor.wrap("**", "**") }),
+                ("italic", "Italic", "⌘I", { editor.removeToken(); editor.wrap("*", "*") }),
+                ("textformat.size", "Heading", "⌘⇧H", { editor.removeToken(); editor.prefixLine("## ") }),
+                ("list.bullet", "Bullet list", "⌘⇧L", { editor.removeToken(); editor.prefixLine("- ") }),
+                ("list.number", "Numbered list", "⌘⇧N", { editor.removeToken(); editor.prefixLine("1. ") }),
+                ("checklist", "Checklist", nil, { editor.removeToken(); editor.prefixLine("- [ ] ") }),
+                ("text.quote", "Quote", "⌘⇧Q", { editor.removeToken(); editor.prefixLine("> ") }),
+                ("chevron.left.forwardslash.chevron.right", "Code block", nil, { editor.removeToken(); editor.insert("```\n\n```") }),
+                ("photo", "Image…", "⌘⇧I", { editor.removeToken(); chooseImage() }),
+                ("folder", "Project…", "#", { editor.replaceToken(with: "#") }),
+                ("flag", "Priority…", "!", { editor.replaceToken(with: "!") }),
+            ]
+            return commands.filter { matches($0.1) }.map { Suggestion(id: $0.1, symbol: $0.0, title: $0.1, detail: $0.2, pick: $0.3) }
+        case "#":
+            let projects = store.projects.sorted { store.path(to: $0.id).map(\.name).joined(separator: "/") < store.path(to: $1.id).map(\.name).joined(separator: "/") }
+            var rows = projects.filter { matches($0.name) }.map { project in
+                Suggestion(id: project.id.uuidString, symbol: "folder", title: store.path(to: project.id).map(\.name).joined(separator: " › "), pick: {
+                    projectID = project.id
+                    editor.replaceToken(with: "#" + TaskTokens.compact(project.name) + " ")
+                })
+            }
+            if !query.isEmpty, !projects.contains(where: { TaskTokens.compact($0.name) == query }) {
+                rows.append(Suggestion(id: "new", symbol: "folder.badge.plus", title: "New project “\(token.dropFirst())”", detail: "created when the task is", pick: {
+                    editor.replaceToken(with: token + " ")
+                }))
+            }
+            return rows
+        case "!":
+            return TaskPriority.allCases.filter { matches($0.title) }.map { value in
+                Suggestion(id: value.rawValue, symbol: value.symbol, title: value.title, detail: "⌘\((TaskPriority.allCases.firstIndex(of: value) ?? 0) + 1)", tint: value.color, pick: {
+                    priority = value
+                    editor.replaceToken(with: "!" + value.rawValue + " ")
+                })
+            }
+        default:
+            return []
+        }
+    }
+
+    /// ↑ ↓ move, ↩ ⇥ pick, ⎋ dismisses — while a list is up; otherwise the editor
+    /// keeps its keys.
+    private func intercept(_ selector: Selector) -> Bool {
+        let rows = suggestions
+        guard token != nil, !rows.isEmpty else { return false }
+        switch selector {
+        case #selector(NSResponder.moveUp(_:)):
+            highlighted = (highlighted - 1 + rows.count) % rows.count
+        case #selector(NSResponder.moveDown(_:)):
+            highlighted = (highlighted + 1) % rows.count
+        case #selector(NSResponder.insertNewline(_:)), #selector(NSResponder.insertTab(_:)):
+            rows[min(highlighted, rows.count - 1)].pick()
+            token = nil
+        case #selector(NSResponder.cancelOperation(_:)):
+            token = nil
+        default:
+            return false
+        }
+        return true
+    }
+
+    /// The list, above the caret's line: drawn at the bottom of the editor.
+    @ViewBuilder
+    private var suggestionList: some View {
+        let rows = suggestions
+        if token != nil, !rows.isEmpty {
+            // Seven rows at a time, the window sliding with the highlight.
+            let visible = 7
+            let first = max(0, min(highlighted - visible + 1, rows.count - visible))
+            let shown = Array(rows.enumerated()).filter { $0.offset >= first && $0.offset < first + visible }
+            VStack(spacing: 1) {
+                ForEach(shown, id: \.element.id) { index, row in
+                    HStack(spacing: 9) {
+                        Image(systemName: row.symbol)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(row.tint == .primary ? Color.primary.opacity(0.8) : row.tint)
+                            .frame(width: 16)
+                        Text(row.title).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                        Spacer(minLength: 8)
+                        if let detail = row.detail {
+                            Text(detail).font(.system(size: 10)).foregroundStyle(.primary.opacity(0.45))
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .frame(height: 24)
+                    .background(index == highlighted ? Color.primary.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .contentShape(Rectangle())
+                    .onTapGesture { row.pick(); token = nil }
+                    .onHover { if $0 { highlighted = index } }
+                }
+            }
+            .padding(4)
+            .frame(width: 260)
+            .liquidGlass(cornerRadius: 10)
+            .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .bottomLeading)))
+            .accessibilityLabel("Suggestions")
+        }
+    }
 
     /// The first line that says anything, stripped of heading and list marks.
     private var firstLine: String {
@@ -692,6 +813,19 @@ struct TaskFormRow: View {
     private var markdownEditor: some View {
         MarkdownEditor(text: $text, handle: editor, insertImage: { data in store.saveImage(data) }, insertFile: { url in store.saveAttachment(url) })
             .focused($focus, equals: .notes)
+            .overlay(alignment: .bottomLeading) {
+                suggestionList
+                    .padding(.leading, 8)
+                    .padding(.bottom, 6)
+                    .animation(.easeOut(duration: 0.12), value: token)
+            }
+            .onAppear {
+                editor.onToken = { new in
+                    if new != token { highlighted = 0 }
+                    token = new
+                }
+                editor.interceptCommand = { intercept($0) }
+            }
             .overlay(alignment: .topLeading) {
                 if text.isEmpty {
                     Text("What needs doing? First line is the title — #project !priority")
@@ -1025,12 +1159,44 @@ struct MarkdownEditor: NSViewRepresentable {
     /// Lets the toolbar reach the text view.
     final class Handle {
         weak var textView: EditorTextView?
+        /// The word the caret is in when it starts with `/`, `#` or `!` (nil otherwise),
+        /// reported on every change — for the form's suggestion lists.
+        var onToken: (String?) -> Void = { _ in }
+        /// A chance to take ↑ ↓ ↩ ⇥ ⎋ before the text view does (true: taken).
+        var interceptCommand: (Selector) -> Bool = { _ in false }
 
         func wrap(_ prefix: String, _ suffix: String) { textView?.wrapSelection(prefix, suffix) }
         func prefixLine(_ prefix: String) { textView?.prefixCurrentLine(prefix) }
         func insert(_ string: String) { textView?.insertMarkdown(string) }
         /// Puts the caret at the very start (a form seeded with an attachment wants the title typed above it).
         func moveToStart() { textView?.setSelectedRange(NSRange(location: 0, length: 0)) }
+
+        /// The token at the caret (see `onToken`) and where it is.
+        static func token(in textView: NSTextView) -> (String, NSRange)? {
+            let text = textView.string as NSString
+            let caret = textView.selectedRange().location
+            guard textView.selectedRange().length == 0, caret <= text.length else { return nil }
+            var start = caret
+            while start > 0 {
+                let character = Character(UnicodeScalar(text.character(at: start - 1)) ?? " ")
+                if character.isWhitespace || character.isNewline { break }
+                start -= 1
+            }
+            let range = NSRange(location: start, length: caret - start)
+            let word = text.substring(with: range)
+            guard let first = word.first, "/#!".contains(first) else { return nil }
+            return (word, range)
+        }
+
+        /// Replaces the token at the caret with `replacement`.
+        func replaceToken(with replacement: String) {
+            guard let textView, let (_, range) = Self.token(in: textView) else { return }
+            textView.insertText(replacement, replacementRange: range)
+            textView.didChangeText()
+        }
+
+        /// Removes the token at the caret (a `/command` once it has run).
+        func removeToken() { replaceToken(with: "") }
     }
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -1070,15 +1236,29 @@ struct MarkdownEditor: NSViewRepresentable {
         textView.string = text
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
+    func makeCoordinator() -> Coordinator { Coordinator(text: $text, handle: handle) }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         var text: Binding<String>
-        init(text: Binding<String>) { self.text = text }
+        let handle: Handle
+        init(text: Binding<String>, handle: Handle) {
+            self.text = text
+            self.handle = handle
+        }
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             text.wrappedValue = textView.string
+            handle.onToken(Handle.token(in: textView)?.0)
+        }
+
+        func textViewDidChangeSelection(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            handle.onToken(Handle.token(in: textView)?.0)
+        }
+
+        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            handle.interceptCommand(commandSelector)
         }
     }
 
