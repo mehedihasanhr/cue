@@ -18,8 +18,10 @@ nonisolated struct AssetItem: Identifiable, Codable, Hashable {
     var createdAt: Date
     /// Kept at the top of the list and by "Clear".
     var pinned = false
+    /// The group (folder) it is in, if any.
+    var groupID: UUID?
 
-    private enum CodingKeys: String, CodingKey { case id, fileName, kind, byteSize, pixelWidth, pixelHeight, createdAt, pinned }
+    private enum CodingKeys: String, CodingKey { case id, fileName, kind, byteSize, pixelWidth, pixelHeight, createdAt, pinned, groupID }
 
     init(id: UUID, fileName: String, kind: Kind, byteSize: Int, pixelWidth: Int, pixelHeight: Int, createdAt: Date) {
         self.id = id
@@ -42,6 +44,7 @@ nonisolated struct AssetItem: Identifiable, Codable, Hashable {
         pixelHeight = try container.decode(Int.self, forKey: .pixelHeight)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         pinned = try container.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
+        groupID = try container.decodeIfPresent(UUID.self, forKey: .groupID)
     }
 
     var title: String { (fileName as NSString).deletingPathExtension }
@@ -239,6 +242,20 @@ final class AssetStore {
         saveIndex()
     }
 
+    /// Puts the asset in a group (nil: out of any).
+    func setGroup(_ item: AssetItem, _ groupID: UUID?) {
+        guard let index = items.firstIndex(where: { $0.id == item.id }), items[index].groupID != groupID else { return }
+        items[index].groupID = groupID
+        saveIndex()
+    }
+
+    /// A deleted group's assets are ungrouped.
+    func removeGroup(_ groupID: UUID) {
+        guard items.contains(where: { $0.groupID == groupID }) else { return }
+        for index in items.indices where items[index].groupID == groupID { items[index].groupID = nil }
+        saveIndex()
+    }
+
     func delete(_ item: AssetItem) {
         items.removeAll { $0.id == item.id }
         thumbnails[item.id] = nil
@@ -246,10 +263,10 @@ final class AssetStore {
         removeFolder(of: item)
     }
 
-    /// Removes everything except pinned items.
+    /// Removes the recent assets — everything neither pinned nor in a group.
     func clear() {
-        let removed = items.filter { !$0.pinned }
-        items.removeAll { !$0.pinned }
+        let removed = items.filter { !$0.pinned && $0.groupID == nil }
+        items.removeAll { !$0.pinned && $0.groupID == nil }
         for item in removed { thumbnails[item.id] = nil }
         saveIndex()
         removed.forEach(removeFolder)

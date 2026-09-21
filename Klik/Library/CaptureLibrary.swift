@@ -281,7 +281,7 @@ final class CaptureLibrary {
 
     /// Every capture that is not pinned, for "Clear" (each goes through `delete` so
     /// open editors close with them).
-    var unpinned: [CaptureItem] { items.filter { !$0.pinned } }
+    var unpinned: [CaptureItem] { items.filter { !$0.pinned && $0.groupID == nil } }
 
     func delete(_ item: CaptureItem) {
         let url = storedURL(for: item)

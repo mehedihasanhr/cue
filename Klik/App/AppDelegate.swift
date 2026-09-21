@@ -221,6 +221,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .captures: library.removeGroup(group.id)
             case .clipboard: clipboard.removeGroup(group.id)
             case .colors: colors.removeGroup(group.id)
+            case .assets: assets.removeGroup(group.id)
             }
         }
         // Older captures get their text read in the background, a while after launch.

@@ -2,7 +2,7 @@ import Foundation
 
 /// What a group holds.
 nonisolated enum GroupKind: String, Codable, CaseIterable {
-    case captures, clipboard, colors
+    case captures, clipboard, colors, assets
 }
 
 /// A folder of the user's making, for captures, clipboard entries or colors.
@@ -22,13 +22,14 @@ nonisolated struct ItemGroup: Identifiable, Codable, Hashable {
 
 /// An item to put in a group as soon as the group exists.
 nonisolated enum GroupAssignment: Hashable {
-    case capture(UUID), clipboard(UUID), color(UUID)
+    case capture(UUID), clipboard(UUID), color(UUID), asset(UUID)
 
     var kind: GroupKind {
         switch self {
         case .capture: .captures
         case .clipboard: .clipboard
         case .color: .colors
+        case .asset: .assets
         }
     }
 }

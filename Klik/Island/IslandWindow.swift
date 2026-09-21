@@ -67,13 +67,13 @@ final class IslandDropView: NSView {
     }
 
     override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        guard Self.canAccept(sender) else { return [] }
+        guard IslandDrag.current == nil, Self.canAccept(sender) else { return [] }
         onDragEntered?()
         return .copy
     }
 
     override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        Self.canAccept(sender) ? .copy : []
+        IslandDrag.current == nil && Self.canAccept(sender) ? .copy : []
     }
 
     override func draggingExited(_ sender: (any NSDraggingInfo)?) {
@@ -85,6 +85,7 @@ final class IslandDropView: NSView {
     }
 
     override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        guard IslandDrag.current == nil else { return false }
         let pasteboard = sender.draggingPasteboard
         let urls = (pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
         let image = urls.isEmpty ? (pasteboard.data(forType: .png) ?? pasteboard.data(forType: .tiff)) : nil

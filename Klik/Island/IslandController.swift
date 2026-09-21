@@ -121,6 +121,7 @@ final class IslandController {
                         case .capture(let id): library.items.first { $0.id == id }.map { library.setGroup($0, group.id) }
                         case .clipboard(let id): clipboard.items.first { $0.id == id }.map { clipboard.setGroup($0, group.id) }
                         case .color(let id): colors.items.first { $0.id == id }.map { colors.setGroup($0, group.id) }
+                        case .asset(let id): assets.items.first { $0.id == id }.map { assets.setGroup($0, group.id) }
                         case nil: break
                         }
                         status = IslandStatus(symbol: "folder.fill.badge.plus", title: "Group “\(group.name)”", subtitle: assign == nil ? "Ready for its first item" : "Moved in")
@@ -487,6 +488,8 @@ final class IslandController {
     /// A file or image dragged over the island: open on the Assets tab and show the
     /// drop hint.
     private func dragEntered() {
+        // A card of the island's own, on its way to a group chip — not a file arriving.
+        guard IslandDrag.current == nil else { return }
         UserDefaults.standard.set(IslandTab.assets.rawValue, forKey: IslandTab.storageKey)
         expand()
         model.dropping = true

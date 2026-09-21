@@ -114,7 +114,7 @@ struct IslandTasksView: View {
                     pill("All tasks", symbol: nil, prominent: true) {}
                 }
             } else {
-                Text("Projects").font(.system(size: 13, weight: .semibold))
+                Text("Projects").font(.system(size: 12, weight: .semibold)).foregroundStyle(.white.opacity(0.85))
             }
             Spacer(minLength: 0)
             if selection == .projects {
@@ -133,19 +133,20 @@ struct IslandTasksView: View {
                 plus("New task") { onPrompt(IslandPrompt(kind: .task(project: selectedProjectID))) }
             }
         }
-        .frame(height: 28)
+        .frame(height: 24)
     }
 
+    // The same chips as the group strip on the other tabs.
     private func pill(_ title: String, symbol: String?, prominent: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 5) {
-                if let symbol { Image(systemName: symbol).font(.system(size: 10, weight: .bold)) }
-                Text(title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                if let symbol { Image(systemName: symbol).font(.system(size: 10, weight: .semibold)) }
+                Text(title).font(.system(size: 11, weight: .medium)).lineLimit(1)
             }
-            .foregroundStyle(prominent ? .black : .white.opacity(0.85))
-            .padding(.horizontal, 10)
-            .frame(height: 26)
-            .background(prominent ? Color.white : Color.white.opacity(0.1), in: Capsule())
+            .foregroundStyle(prominent ? Color.white : .white.opacity(0.75))
+            .padding(.horizontal, 9)
+            .frame(height: 22)
+            .background(prominent ? Color.brand.opacity(0.85) : .white.opacity(0.1), in: Capsule())
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -163,13 +164,13 @@ struct IslandTasksView: View {
             }
         } label: {
             HStack(spacing: 5) {
-                Image(systemName: filter.symbol).font(.system(size: 10, weight: .bold))
-                Text(filter.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                Image(systemName: filter.symbol).font(.system(size: 10, weight: .semibold))
+                Text(filter.title).font(.system(size: 11, weight: .medium)).lineLimit(1)
                 Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).opacity(0.7)
             }
-            .foregroundStyle(filter == .active ? .white.opacity(0.85) : .yellow)
-            .padding(.horizontal, 10)
-            .frame(height: 26)
+            .foregroundStyle(filter == .active ? .white.opacity(0.75) : .yellow)
+            .padding(.horizontal, 9)
+            .frame(height: 22)
             .background(.white.opacity(0.1), in: Capsule())
             .contentShape(Capsule())
         }
@@ -185,10 +186,10 @@ struct IslandTasksView: View {
             withAnimation(.easeOut(duration: 0.15)) { projectLayout = layout }
         } label: {
             Image(systemName: symbol)
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(projectLayout == layout ? .black : .white.opacity(0.7))
-                .frame(width: 24, height: 22)
-                .background(projectLayout == layout ? Color.white : .clear, in: Capsule())
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(projectLayout == layout ? Color.white : .white.opacity(0.7))
+                .frame(width: 24, height: 18)
+                .background(projectLayout == layout ? Color.brand.opacity(0.85) : .clear, in: Capsule())
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -198,10 +199,12 @@ struct IslandTasksView: View {
     private func plus(_ help: String, symbol: String = "plus", action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 12, weight: .bold))
-                .frame(width: 26, height: 26)
-                .background(.white.opacity(0.12), in: Circle())
-                .contentShape(Circle())
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.75))
+                .padding(.horizontal, 7)
+                .frame(height: 22)
+                .background(.white.opacity(0.1), in: Capsule())
+                .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .help(help)

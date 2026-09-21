@@ -1,3 +1,4 @@
+import UniformTypeIdentifiers
 import AppKit
 import SwiftUI
 
@@ -67,10 +68,69 @@ struct IslandPanel: View {
     @FocusState private var searchFocused: Bool
     /// While searching: show hits from this tab only (nil: every tab).
     @State private var resultFilter: IslandTab?
-    /// Captures / Assets / Colors / Clipboard tab: show pinned items only.
-    @State private var pinnedOnly = false
-    /// Captures / Clipboard / Colors tab: the group shown (nil: everything).
-    @State private var groupFilter: [GroupKind: UUID] = [:]
+    /// Captures / Clipboard / Colors tab: what the strip under the tabs shows —
+    /// recent (neither pinned nor grouped), pinned, or one group.
+    enum StripFilter: Hashable {
+        case recent, pinned, group(UUID)
+    }
+
+    @State private var stripFilter: [GroupKind: StripFilter] = [:]
+    /// The All tab's strip: recent, pinned, or a group of any kind.
+    @State private var allFilter: StripFilter = .recent
+
+    private func filter(_ kind: GroupKind) -> StripFilter { stripFilter[kind] ?? .recent }
+
+    /// The All tab: recent is what is neither pinned nor grouped (tasks and snippets
+    /// count as recent); pinned and each group are shown on their own.
+    private var filteredEverything: [IslandItem] {
+        let everything = IslandSearch.everything(library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore, snippets: snippets)
+        return everything.filter { item in
+            switch allFilter {
+            case .recent: !item.pinned && item.groupID == nil
+            case .pinned: item.pinned
+            case .group(let id): item.groupID == id
+            }
+        }
+    }
+
+    /// The strip on the All tab: Recent, Pinned, then every group with its kind's symbol.
+    private var allStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                groupChip("Recent", symbol: "clock", selected: allFilter == .recent) { allFilter = .recent }
+                groupChip("Pinned", symbol: allFilter == .pinned ? "pin.fill" : "pin", selected: allFilter == .pinned) { allFilter = .pinned }
+                if !groups.groups.isEmpty {
+                    Rectangle().fill(.white.opacity(0.15)).frame(width: 1, height: 14).padding(.horizontal, 2)
+                }
+                ForEach(groups.groups) { group in
+                    groupChip(group.name, symbol: Self.symbol(for: group.kind), selected: allFilter == .group(group.id)) {
+                        allFilter = .group(group.id)
+                    }
+                    .modifier(GroupDrop(kind: group.kind) { move($0, to: .group(group.id)) })
+                    .contextMenu {
+                        Button("Rename…") { onPrompt(IslandPrompt(kind: .group(group.kind, assign: nil, editing: group), initial: group.name)) }
+                        Divider()
+                        Button("Delete Group", role: .destructive) {
+                            if allFilter == .group(group.id) { allFilter = .recent }
+                            groups.delete(group)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 1)
+        }
+        .frame(height: 24)
+        .accessibilityLabel("Groups")
+    }
+
+    private static func symbol(for kind: GroupKind) -> String {
+        switch kind {
+        case .captures: "photo.on.rectangle"
+        case .clipboard: "doc.on.clipboard"
+        case .colors: "paintpalette"
+        case .assets: "tray.full"
+        }
+    }
     /// The prayer pill is open, showing the day's times inline.
     @State private var prayerExpanded = false
     /// Natural widths of the two top rows; the island fits the wider one.
@@ -91,42 +151,55 @@ struct IslandPanel: View {
     }
 
     private var filteredClipboard: [ClipboardItem] {
-        clipboard.items.filter { (!pinnedOnly || $0.pinned) && inGroup($0.groupID, .clipboard) }
+        clipboard.items.filter { shown(pinned: $0.pinned, groupID: $0.groupID, .clipboard) }
     }
 
     private var filteredCaptures: [CaptureItem] {
-        library.items.filter { (!pinnedOnly || $0.pinned) && inGroup($0.groupID, .captures) }
+        library.items.filter { shown(pinned: $0.pinned, groupID: $0.groupID, .captures) }
     }
 
     private var filteredAssets: [AssetItem] {
-        pinnedOnly ? assets.items.filter(\.pinned) : assets.items
+        assets.items.filter { shown(pinned: $0.pinned, groupID: $0.groupID, .assets) }
     }
 
     private var filteredColors: [ColorEntry] {
-        colors.items.filter { (!pinnedOnly || $0.pinned) && inGroup($0.groupID, .colors) }
+        colors.items.filter { shown(pinned: $0.pinned, groupID: $0.groupID, .colors) }
     }
 
-    private func inGroup(_ groupID: UUID?, _ kind: GroupKind) -> Bool {
-        guard let wanted = groupFilter[kind] else { return true }
-        return groupID == wanted
+    /// Recent is what is neither pinned nor in a group; Pinned is every pin,
+    /// grouped or not; a group is its items, pinned or not.
+    private func shown(pinned: Bool, groupID: UUID?, _ kind: GroupKind) -> Bool {
+        switch filter(kind) {
+        case .recent: !pinned && groupID == nil
+        case .pinned: pinned
+        case .group(let id): groupID == id
+        }
     }
 
-    /// The tab's groups as chips: everything, each group, and a new one. A group's
-    /// chip has Rename and Delete in its menu.
+    /// The strip under the tabs: Recent, Pinned, each group, and a new one. A
+    /// group's chip has Rename and Delete in its menu.
     private func groupStrip(_ kind: GroupKind) -> some View {
         let all = groups.groups(for: kind)
+        let current = filter(kind)
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
-                groupChip("All", symbol: "square.grid.2x2", selected: groupFilter[kind] == nil) { groupFilter[kind] = nil }
+                groupChip("Recent", symbol: "clock", selected: current == .recent) { stripFilter[kind] = .recent }
+                    .modifier(GroupDrop(kind: kind) { move($0, to: .recent) })
+                groupChip("Pinned", symbol: current == .pinned ? "pin.fill" : "pin", selected: current == .pinned) { stripFilter[kind] = .pinned }
+                    .modifier(GroupDrop(kind: kind) { move($0, to: .pinned) })
+                if !all.isEmpty {
+                    Rectangle().fill(.white.opacity(0.15)).frame(width: 1, height: 14).padding(.horizontal, 2)
+                }
                 ForEach(all) { group in
-                    groupChip(group.name, symbol: "folder", selected: groupFilter[kind] == group.id) {
-                        groupFilter[kind] = groupFilter[kind] == group.id ? nil : group.id
+                    groupChip(group.name, symbol: "folder", selected: current == .group(group.id)) {
+                        stripFilter[kind] = .group(group.id)
                     }
+                    .modifier(GroupDrop(kind: kind) { move($0, to: .group(group.id)) })
                     .contextMenu {
                         Button("Rename…") { onPrompt(IslandPrompt(kind: .group(kind, assign: nil, editing: group), initial: group.name)) }
                         Divider()
                         Button("Delete Group", role: .destructive) {
-                            if groupFilter[kind] == group.id { groupFilter[kind] = nil }
+                            if current == .group(group.id) { stripFilter[kind] = .recent }
                             groups.delete(group)
                         }
                     }
@@ -158,24 +231,87 @@ struct IslandPanel: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
+    /// A card dropped on a chip: into that group, pinned, or back to recent
+    /// (ungrouped and unpinned).
+    private func move(_ item: GroupAssignment, to target: StripFilter) {
+        switch item {
+        case .capture(let id):
+            guard let capture = library.items.first(where: { $0.id == id }) else { return }
+            switch target {
+            case .recent:
+                library.setGroup(capture, nil)
+                if capture.pinned { library.togglePin(capture) }
+            case .pinned:
+                if !capture.pinned { library.togglePin(capture) }
+            case .group(let groupID):
+                library.setGroup(capture, groupID)
+            }
+        case .clipboard(let id):
+            guard let entry = clipboard.items.first(where: { $0.id == id }) else { return }
+            switch target {
+            case .recent:
+                clipboard.setGroup(entry, nil)
+                if entry.pinned, let fresh = clipboard.items.first(where: { $0.id == id }) { clipboard.togglePin(fresh) }
+            case .pinned:
+                if !entry.pinned { clipboard.togglePin(entry) }
+            case .group(let groupID):
+                clipboard.setGroup(entry, groupID)
+            }
+        case .color(let id):
+            guard let entry = colors.items.first(where: { $0.id == id }) else { return }
+            switch target {
+            case .recent:
+                colors.setGroup(entry, nil)
+                if entry.pinned { colors.togglePin(entry) }
+            case .pinned:
+                if !entry.pinned { colors.togglePin(entry) }
+            case .group(let groupID):
+                colors.setGroup(entry, groupID)
+            }
+        case .asset(let id):
+            guard let asset = assets.items.first(where: { $0.id == id }) else { return }
+            switch target {
+            case .recent:
+                assets.setGroup(asset, nil)
+                if asset.pinned { assets.togglePin(asset) }
+            case .pinned:
+                if !asset.pinned { assets.togglePin(asset) }
+            case .group(let groupID):
+                assets.setGroup(asset, groupID)
+            }
+        }
+        let name: String = switch target {
+        case .recent: "Recent"
+        case .pinned: "Pinned"
+        case .group(let groupID): groups.group(groupID)?.name ?? "the group"
+        }
+        FeedbackHUD.show("Moved to \(name)", symbol: "folder.fill", duration: .seconds(1))
+    }
+
+    private func emptyText(_ kind: GroupKind, none: String) -> String {
+        switch filter(kind) {
+        case .recent: none
+        case .pinned: "Nothing pinned"
+        case .group: "Nothing in this group yet — Group › on a card's menu"
+        }
+    }
+
+    private func emptySymbol(_ kind: GroupKind, _ symbol: String) -> String {
+        switch filter(kind) {
+        case .recent: symbol
+        case .pinned: "pin"
+        case .group: "folder"
+        }
+    }
+
     /// Which tab's groups the strip shows, if the tab has any.
     private var groupKind: GroupKind? {
         switch tab {
         case .captures: .captures
         case .clipboard: .clipboard
         case .colors: .colors
+        case .assets: .assets
         default: nil
-        }
-    }
-
-    /// The "Pinned" filter and "Clear" (everything unpinned) for a tab's items.
-    @ViewBuilder
-    private func pinControls<Item>(_ items: [Item], pinned: KeyPath<Item, Bool>, clear: @escaping () -> Void) -> some View {
-        if items.contains(where: { $0[keyPath: pinned] }) {
-            smallToggle("Pinned", symbol: pinnedOnly ? "pin.fill" : "pin", help: "Show only pinned items", isOn: $pinnedOnly)
-        }
-        if items.contains(where: { !$0[keyPath: pinned] }) {
-            smallButton("Clear", symbol: "trash", help: "Remove every unpinned item", action: clear)
         }
     }
 
@@ -238,18 +374,20 @@ struct IslandPanel: View {
                     tabPill(value, count: count(for: value), shortcut: index + 1)
                 }
                 Spacer(minLength: 16)
-                if tab == .captures {
-                    pinControls(library.items, pinned: \.pinned) { library.unpinned.forEach(actions.delete) }
+                if tab == .captures, library.items.contains(where: { !$0.pinned }) {
+                    smallButton("Clear", symbol: "trash", help: "Remove every unpinned capture") { library.unpinned.forEach(actions.delete) }
                 }
                 if tab == .snippets {
                     smallButton("New", symbol: "plus", help: "A new snippet") { onPrompt(IslandPrompt(kind: .snippet(nil, initialText: "", assetID: nil))) }
                 }
                 if tab == .colors {
                     smallButton("Pick", symbol: "eyedropper", help: "Pick a color from the screen", action: actions.pickColor)
-                    pinControls(colors.items, pinned: \.pinned) { colors.clear() }
+                    if colors.items.contains(where: { !$0.pinned }) {
+                        smallButton("Clear", symbol: "trash", help: "Remove every unpinned color") { colors.clear() }
+                    }
                 }
-                if tab == .clipboard {
-                    pinControls(clipboard.items, pinned: \.pinned) { clipboard.clear() }
+                if tab == .clipboard, clipboard.items.contains(where: { !$0.pinned }) {
+                    smallButton("Clear", symbol: "trash", help: "Remove every unpinned entry") { clipboard.clear() }
                 }
                 if tab == .assets {
                     smallButton("Paste", symbol: "doc.on.clipboard", help: "Save the image or files on the clipboard as assets") {
@@ -259,12 +397,17 @@ struct IslandPanel: View {
                             FeedbackHUD.show("No image or file on the clipboard", symbol: "tray")
                         }
                     }
-                    pinControls(assets.items, pinned: \.pinned) { assets.clear() }
+                    if assets.items.contains(where: { !$0.pinned && $0.groupID == nil }) {
+                        smallButton("Clear", symbol: "trash", help: "Remove every recent asset") { assets.clear() }
+                    }
                 }
             }
             .modifier(IdealWidth { tabRowWidth = $0; reportWidth() })
             if let kind = groupKind {
                 groupStrip(kind)
+                    .padding(.top, -4)
+            } else if tab == .all {
+                allStrip
                     .padding(.top, -4)
             }
             }
@@ -278,28 +421,39 @@ struct IslandPanel: View {
                 } else {
                 switch tab {
                 case .all:
-                    let everything = IslandSearch.everything(library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore, snippets: snippets)
+                    let everything = filteredEverything
                     if everything.isEmpty {
-                        empty("Nothing yet — capture, copy or drop something", symbol: "square.grid.2x2",
-                              action: ("Capture area", "viewfinder", actions.captureArea))
+                        switch allFilter {
+                        case .recent:
+                            empty("Nothing yet — capture, copy or drop something", symbol: "square.grid.2x2",
+                                  action: ("Capture area", "viewfinder", actions.captureArea))
+                        case .pinned:
+                            empty("Nothing pinned", symbol: "pin")
+                        case .group:
+                            empty("Nothing in this group yet — Group › on a card's menu", symbol: "folder")
+                        }
                     } else {
                         DayStrip(items: everything, date: \.date, dragPayload: dragPayload, card: itemCard)
                     }
                 case .captures:
                     if filteredCaptures.isEmpty {
-                        empty(groupFilter[.captures] != nil ? "Nothing in this group yet — Group › on a capture's menu" : pinnedOnly ? "Nothing pinned" : "No captures yet", symbol: groupFilter[.captures] != nil ? "folder" : "camera.viewfinder",
-                              action: pinnedOnly || groupFilter[.captures] != nil ? nil : ("Capture area", "viewfinder", actions.captureArea))
+                        empty(emptyText(.captures, none: "No captures yet"), symbol: emptySymbol(.captures, "camera.viewfinder"),
+                              action: filter(.captures) == .recent ? ("Capture area", "viewfinder", actions.captureArea) : nil)
                     } else {
                         DayStrip(items: filteredCaptures, date: \.createdAt, pinned: \.pinned, dragPayload: { item in
-                            library.fileURL(for: item).map { .file($0, preview: library.thumbnail(for: item)) }
+                            library.fileURL(for: item).map { .file($0, preview: library.thumbnail(for: item), reference: .capture(item.id)) }
                         }, card: captureCard)
                     }
                 case .clipboard:
                     if filteredClipboard.isEmpty {
-                        empty(groupFilter[.clipboard] != nil ? "Nothing in this group yet — Group › on an entry's menu" : pinnedOnly ? "Nothing pinned" : "Nothing copied yet", symbol: groupFilter[.clipboard] != nil ? "folder" : "doc.on.clipboard")
+                        empty(emptyText(.clipboard, none: "Nothing copied yet"), symbol: emptySymbol(.clipboard, "doc.on.clipboard"))
                     } else {
                         DayStrip(items: filteredClipboard, date: \.createdAt, pinned: \.pinned, dragPayload: { item in
-                            clipboard.dragPayload(for: item)
+                            clipboard.dragPayload(for: item).map { payload in
+                                var own = payload
+                                own.reference = .clipboard(item.id)
+                                return own
+                            }
                         }, card: clipboardCard)
                     }
                 case .tasks:
@@ -313,19 +467,19 @@ struct IslandPanel: View {
                     }
                 case .colors:
                     if filteredColors.isEmpty {
-                        empty(groupFilter[.colors] != nil ? "Nothing in this group yet — Group › on a color's menu" : pinnedOnly ? "Nothing pinned" : "Pick a color anywhere on screen", symbol: groupFilter[.colors] != nil ? "folder" : "eyedropper",
-                              action: pinnedOnly || groupFilter[.colors] != nil ? nil : ("Pick a color", "eyedropper", actions.pickColor))
+                        empty(emptyText(.colors, none: "Pick a color anywhere on screen"), symbol: emptySymbol(.colors, "eyedropper"),
+                              action: filter(.colors) == .recent ? ("Pick a color", "eyedropper", actions.pickColor) : nil)
                     } else {
                         DayStrip(items: filteredColors, date: \.createdAt, pinned: \.pinned, dragPayload: { entry in
-                            DragPayload(writer: preferences.colorFormat.string(for: entry.color) as NSString, preview: ColorCard.dragImage(for: entry.color))
+                            DragPayload(writer: preferences.colorFormat.string(for: entry.color) as NSString, preview: ColorCard.dragImage(for: entry.color), reference: .color(entry.id))
                         }, card: colorCard)
                     }
                 case .assets:
                     if filteredAssets.isEmpty {
-                        empty(pinnedOnly ? "Nothing pinned" : "Drop images or files here to keep them handy", symbol: "tray.and.arrow.down")
+                        empty(emptyText(.assets, none: "Drop images or files here to keep them handy"), symbol: emptySymbol(.assets, "tray.and.arrow.down"))
                     } else {
                         DayStrip(items: filteredAssets, date: \.createdAt, pinned: \.pinned, dragPayload: { item in
-                            .file(assets.fileURL(for: item), preview: assets.thumbnail(for: item))
+                            .file(assets.fileURL(for: item), preview: assets.thumbnail(for: item), reference: .asset(item.id))
                         }, card: assetCard)
                     }
                 }
@@ -338,7 +492,6 @@ struct IslandPanel: View {
             .background { keyboardShortcuts }
             .onChange(of: tab) { _, _ in
                 detail = nil
-                pinnedOnly = false // the filter is per tab; a tab without pinned items has no way to turn it off
             }
             .onChange(of: searching) { _, _ in
                 detail = nil
@@ -375,7 +528,7 @@ struct IslandPanel: View {
             onPrompt(IslandPrompt(kind: .rename(.asset(item)), initial: item.title, image: assets.thumbnail(for: item)))
         }, onSnippet: {
             onPrompt(IslandPrompt(kind: .snippet(nil, initialText: "", assetID: item.id)))
-        })
+        }, onNewGroup: { onPrompt(IslandPrompt(kind: .group(.assets, assign: .asset(item.id), editing: nil))) })
     }
 
     private func colorCard(_ entry: ColorEntry) -> some View {
@@ -1397,6 +1550,9 @@ struct AssetCard: View {
     var onRename: () -> Void = {}
     /// A snippet that pastes this file.
     var onSnippet: () -> Void = {}
+    /// A new group with this asset in it.
+    var onNewGroup: () -> Void = {}
+    @Environment(GroupStore.self) private var groups: GroupStore?
     @State private var hovering = false
 
     var body: some View {
@@ -1425,6 +1581,9 @@ struct AssetCard: View {
             Button("Copy") { assets.copy(item) }
             Button("Reveal in Finder") { assets.reveal(item) }
             Button(item.pinned ? "Unpin" : "Pin") { assets.togglePin(item) }
+            if let groups {
+                GroupMenu(groups: groups, kind: .assets, current: item.groupID, assign: { assets.setGroup(item, $0) }, newGroup: onNewGroup)
+            }
             Button("Rename…", action: onRename)
             Button("Make Snippet…", action: onSnippet)
             Divider()
@@ -1633,12 +1792,21 @@ private struct KeyOnFocus: NSViewRepresentable {
 struct DragPayload {
     let writer: any NSPasteboardWriting
     let preview: NSImage
+    /// Which of Klik's own items this is, for drops inside the island (onto a group).
+    var reference: GroupAssignment?
 
     /// A file: other apps get a file URL carrying the sandbox extension they need to
     /// read a file in Klik's container.
-    static func file(_ url: URL, preview: NSImage?) -> DragPayload {
-        DragPayload(writer: url as NSURL, preview: preview ?? NSWorkspace.shared.icon(forFile: url.path))
+    static func file(_ url: URL, preview: NSImage?, reference: GroupAssignment? = nil) -> DragPayload {
+        DragPayload(writer: url as NSURL, preview: preview ?? NSWorkspace.shared.icon(forFile: url.path), reference: reference)
     }
+}
+
+/// The item being dragged out of a strip right now, so the island's own drop
+/// targets (the group chips) know what it is, and the island does not take its
+/// own card for a file arriving from outside.
+enum IslandDrag {
+    nonisolated(unsafe) static var current: GroupAssignment?
 }
 
 /// The AppKit side of the row: starts drags out of the island and reports
@@ -1735,6 +1903,7 @@ private struct StripEventView: NSViewRepresentable {
         }
 
         private func beginDrag(_ payload: DragPayload, at location: CGPoint, event: NSEvent) {
+            IslandDrag.current = payload.reference
             let item = NSDraggingItem(pasteboardWriter: payload.writer)
             let image = payload.preview
             let side: CGFloat = 140
@@ -1760,6 +1929,8 @@ private struct StripEventView: NSViewRepresentable {
 
         func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
             NSCursor.arrow.set()
+            // The drop handler runs first; clear a beat later so it can still read it.
+            DispatchQueue.main.async { IslandDrag.current = nil }
             onDragEnded?()
         }
     }
@@ -1793,6 +1964,52 @@ struct GroupMenu: View {
             }
             Divider()
             Button("New Group…", action: newGroup)
+        }
+    }
+}
+
+
+/// A chip that takes one of the island's own cards: it lights while a card of the
+/// right kind hovers, and hands the card over on the drop.
+private struct GroupDrop: ViewModifier {
+    let kind: GroupKind
+    let drop: (GroupAssignment) -> Void
+    @State private var targeted = false
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(Capsule().strokeBorder(Color.brand, lineWidth: 1.5).opacity(targeted && IslandDrag.current?.kind == kind ? 1 : 0))
+            .scaleEffect(targeted && IslandDrag.current?.kind == kind ? 1.06 : 1)
+            .animation(.easeOut(duration: 0.12), value: targeted)
+            .onDrop(of: [.item], isTargeted: $targeted) { _ in
+                guard let item = IslandDrag.current, item.kind == kind else { return false }
+                drop(item)
+                return true
+            }
+    }
+}
+
+
+extension IslandItem {
+    /// Pinned, for what can be (tasks and snippets cannot).
+    var pinned: Bool {
+        switch self {
+        case .capture(let item): item.pinned
+        case .clipboard(let item): item.pinned
+        case .asset(let item): item.pinned
+        case .color(let entry): entry.pinned
+        case .task, .snippet, .answer: false
+        }
+    }
+
+    /// The group it is in, for what can be grouped.
+    var groupID: UUID? {
+        switch self {
+        case .capture(let item): item.groupID
+        case .clipboard(let item): item.groupID
+        case .asset(let item): item.groupID
+        case .color(let entry): entry.groupID
+        case .task, .snippet, .answer: nil
         }
     }
 }

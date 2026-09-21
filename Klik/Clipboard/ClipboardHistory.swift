@@ -422,8 +422,8 @@ final class ClipboardHistory {
 
     /// Removes everything except pinned items.
     func clear() {
-        let removed = items.filter { !$0.pinned }
-        items.removeAll { !$0.pinned }
+        let removed = items.filter { !$0.pinned && $0.groupID == nil }
+        items.removeAll { !$0.pinned && $0.groupID == nil }
         for item in removed { thumbnails[item.id] = nil }
         remove(removed)
     }

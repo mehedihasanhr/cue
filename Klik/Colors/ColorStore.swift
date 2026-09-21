@@ -134,8 +134,9 @@ final class ColorStore {
     }
 
     /// Removes everything except pinned colors.
+    /// Removes the recent colors — everything neither pinned nor in a group.
     func clear() {
-        items.removeAll { !$0.pinned }
+        items.removeAll { !$0.pinned && $0.groupID == nil }
         save()
     }
 
