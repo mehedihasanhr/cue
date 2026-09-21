@@ -499,9 +499,10 @@ struct IslandPanel: View {
             .onChange(of: library.items.count + clipboard.items.count + assets.items.count + colors.items.count + tasksStore.tasks.count, refreshHits)
         }
         .padding(.horizontal, Self.horizontalPadding)
-        .padding(.top, 0)
+        // Straight under the menu bar (the strip above is its height), plus a hair.
+        .padding(.top, 1)
         .padding(.bottom, 16)
-        .frame(width: width, height: Self.size.height)
+        .frame(width: width, height: Self.size.height, alignment: .top)
     }
 
     // MARK: - Cards
