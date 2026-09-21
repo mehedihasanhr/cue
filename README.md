@@ -132,6 +132,15 @@ text entry on the Clipboard tab offers **Extract** › URLs / e-mail addresses /
 Right-click a capture › **Palette**: keep its six dominant colors in the Colors tab, or
 copy them as CSS variables, Tailwind colors or SwiftUI.
 
+### Writing a task
+
+A task is one text, not a title and a description: lists show its first line, plain.
+The editor shows Markdown as what it means while you type — `# ` starts a heading,
+`- ` a bullet, `1. ` a numbered list, `[ ] ` in a bullet a checkbox, `> ` a quote,
+```` ``` ```` a code block, and `**bold**`, `*italic*`, `` `code` `` or `~~struck~~`
+turn into the style as they close. `/` lists every format, `#` picks a project, `!` a
+priority, all from the keyboard. What is saved is still Markdown.
+
 ### Tasks from captures, focus sessions
 
 Right-click a capture › **Make Task…** opens the task form with the screenshot

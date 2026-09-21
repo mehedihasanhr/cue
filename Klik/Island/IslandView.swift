@@ -549,6 +549,8 @@ struct IslandPrompt: Hashable {
 struct PromptAnswer {
     var title: String
     var notes = ""
+    /// A task's whole text (its title is the first line of it).
+    var text = ""
     var projectID: UUID?
     var priority: TaskPriority = .medium
     /// A snippet's name.
@@ -681,14 +683,18 @@ struct TaskFormRow: View {
         switch mark {
         case "/":
             let commands: [(String, String, String?, () -> Void)] = [
-                ("bold", "Bold", "⌘B", { editor.removeToken(); editor.wrap("**", "**") }),
-                ("italic", "Italic", "⌘I", { editor.removeToken(); editor.wrap("*", "*") }),
-                ("textformat.size", "Heading", "⌘⇧H", { editor.removeToken(); editor.prefixLine("## ") }),
-                ("list.bullet", "Bullet list", "⌘⇧L", { editor.removeToken(); editor.prefixLine("- ") }),
-                ("list.number", "Numbered list", "⌘⇧N", { editor.removeToken(); editor.prefixLine("1. ") }),
-                ("checklist", "Checklist", nil, { editor.removeToken(); editor.prefixLine("- [ ] ") }),
-                ("text.quote", "Quote", "⌘⇧Q", { editor.removeToken(); editor.prefixLine("> ") }),
-                ("chevron.left.forwardslash.chevron.right", "Code block", nil, { editor.removeToken(); editor.insert("```\n\n```") }),
+                ("bold", "Bold", "⌘B", { editor.removeToken(); editor.bold() }),
+                ("italic", "Italic", "⌘I", { editor.removeToken(); editor.italic() }),
+                ("strikethrough", "Strikethrough", "⌘⇧X", { editor.removeToken(); editor.strikethrough() }),
+                ("chevron.left.forwardslash.chevron.right", "Code", "⌘E", { editor.removeToken(); editor.code() }),
+                ("textformat.size.larger", "Heading 1", nil, { editor.removeToken(); editor.block(.heading1) }),
+                ("textformat.size", "Heading 2", "⌘⇧H", { editor.removeToken(); editor.block(.heading2) }),
+                ("textformat.size.smaller", "Heading 3", nil, { editor.removeToken(); editor.block(.heading3) }),
+                ("list.bullet", "Bullet list", "⌘⇧L", { editor.removeToken(); editor.block(.bullet) }),
+                ("list.number", "Numbered list", "⌘⇧N", { editor.removeToken(); editor.block(.numbered) }),
+                ("checklist", "Checklist", "⌘⇧T", { editor.removeToken(); editor.block(.todo) }),
+                ("text.quote", "Quote", "⌘⇧Q", { editor.removeToken(); editor.block(.quote) }),
+                ("curlybraces", "Code block", nil, { editor.removeToken(); editor.block(.code) }),
                 ("photo", "Image…", "⌘⇧I", { editor.removeToken(); chooseImage() }),
                 ("folder", "Project…", "#", { editor.replaceToken(with: "#") }),
                 ("flag", "Priority…", "!", { editor.replaceToken(with: "!") }),
@@ -779,21 +785,11 @@ struct TaskFormRow: View {
         }
     }
 
-    /// The first line that says anything, stripped of heading and list marks.
-    private var firstLine: String {
-        let line = text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty } ?? ""
-        return line.replacing(/^(#{1,6}\s+|[-*+]\s+\[[ xX]\]\s+|[-*+]\s+|\d+[.)]\s+|>\s+)/, with: "")
-    }
+    /// The first line that says anything, without its block mark — where the
+    /// `#project` and `!priority` tokens live.
+    private var firstLine: String { TaskText.splitMark(TaskText.titleLine(of: text)).body }
 
-    /// Everything after the first line that says anything.
-    private var rest: String {
-        var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        guard let index = lines.firstIndex(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) else { return "" }
-        lines.removeSubrange(...index)
-        return lines.joined(separator: "\n").trimmingCharacters(in: .newlines)
-    }
-
-    private var valid: Bool { !TaskTokens.parse(firstLine).title.trimmingCharacters(in: .whitespaces).isEmpty }
+    private var valid: Bool { !TaskText.plain(TaskTokens.parse(firstLine).title).isEmpty }
 
     /// `#project` / `!priority` on the first line drive the pickers as they are typed.
     private func applyTokens() {
@@ -815,7 +811,7 @@ struct TaskFormRow: View {
         .background(KeyWindowFocus())
         .onAppear {
             if let task = prompt.editing {
-                text = task.notes.isEmpty ? task.title : task.title + "\n\n" + task.notes
+                text = task.text
                 projectID = task.projectID
                 priority = task.priority
             } else if case .task(let project) = prompt.kind {
@@ -832,7 +828,8 @@ struct TaskFormRow: View {
     }
 
     private var markdownEditor: some View {
-        MarkdownEditor(text: $text, handle: editor, insertImage: { data in store.saveImage(data) }, insertFile: { url in store.saveAttachment(url) })
+        MarkdownEditor(text: $text, handle: editor, insertImage: { data in store.saveImage(data) }, insertFile: { url in store.saveAttachment(url) },
+                       imageURL: { store.imageURL(for: $0) }, attachmentURL: { store.attachmentURL(for: $0) }, fontSize: style == .floating ? 13 : 12)
             .focused($focus, equals: .notes)
             .overlay(alignment: .bottomLeading) {
                 suggestionList
@@ -849,7 +846,7 @@ struct TaskFormRow: View {
             }
             .overlay(alignment: .topLeading) {
                 if text.isEmpty {
-                    Text("What needs doing? First line is the title — #project !priority")
+                    Text("What needs doing? #project · !priority · / for formatting")
                         .font(.system(size: 13))
                         .foregroundStyle(.primary.opacity(0.3))
                         .padding(.horizontal, 12).padding(.top, 8)
@@ -873,12 +870,17 @@ struct TaskFormRow: View {
             HStack(spacing: 8) {
                 floatingGlyph("plus", help: "Attach an image… (⌘⇧I)") { chooseImage() }
                 Menu {
-                    Button("Bold", action: { editor.wrap("**", "**") }).keyboardShortcut("b")
-                    Button("Italic", action: { editor.wrap("*", "*") }).keyboardShortcut("i")
-                    Button("Heading", action: { editor.prefixLine("## ") }).keyboardShortcut("h", modifiers: [.command, .shift])
-                    Button("Bullet list", action: { editor.prefixLine("- ") }).keyboardShortcut("l", modifiers: [.command, .shift])
-                    Button("Numbered list", action: { editor.prefixLine("1. ") }).keyboardShortcut("n", modifiers: [.command, .shift])
-                    Button("Quote", action: { editor.prefixLine("> ") }).keyboardShortcut("q", modifiers: [.command, .shift])
+                    Button("Bold", action: { editor.bold() }).keyboardShortcut("b")
+                    Button("Italic", action: { editor.italic() }).keyboardShortcut("i")
+                    Button("Strikethrough", action: { editor.strikethrough() }).keyboardShortcut("x", modifiers: [.command, .shift])
+                    Button("Code", action: { editor.code() }).keyboardShortcut("e")
+                    Divider()
+                    Button("Heading", action: { editor.block(.heading2) }).keyboardShortcut("h", modifiers: [.command, .shift])
+                    Button("Bullet list", action: { editor.block(.bullet) }).keyboardShortcut("l", modifiers: [.command, .shift])
+                    Button("Numbered list", action: { editor.block(.numbered) }).keyboardShortcut("n", modifiers: [.command, .shift])
+                    Button("Checklist", action: { editor.block(.todo) }).keyboardShortcut("t", modifiers: [.command, .shift])
+                    Button("Quote", action: { editor.block(.quote) }).keyboardShortcut("q", modifiers: [.command, .shift])
+                    Button("Code block", action: { editor.block(.code) })
                 } label: {
                     Text("/")
                         .font(.system(size: 15, weight: .medium))
@@ -890,7 +892,7 @@ struct TaskFormRow: View {
                 .buttonStyle(.plain)
                 .menuIndicator(.hidden)
                 .fixedSize()
-                .help("Formatting — first line is the title · #project · !priority")
+                .help("Formatting — type / in the text · #project · !priority")
                 Spacer(minLength: 0)
                 if newProjectName != nil {
                     PromptBox {
@@ -1054,15 +1056,17 @@ struct TaskFormRow: View {
     /// Bold, italic, heading, list, quote, image — applied to the selection or the line.
     private var formatBar: some View {
         HStack(spacing: 2) {
-            formatButton("bold", help: "Bold", shortcut: KeyboardShortcut("b")) { editor.wrap("**", "**") }
-            formatButton("italic", help: "Italic", shortcut: KeyboardShortcut("i")) { editor.wrap("*", "*") }
-            formatButton("textformat.size", help: "Heading", shortcut: KeyboardShortcut("h", modifiers: [.command, .shift])) { editor.prefixLine("## ") }
-            formatButton("list.bullet", help: "Bullet list", shortcut: KeyboardShortcut("l", modifiers: [.command, .shift])) { editor.prefixLine("- ") }
-            formatButton("list.number", help: "Numbered list", shortcut: KeyboardShortcut("n", modifiers: [.command, .shift])) { editor.prefixLine("1. ") }
-            formatButton("text.quote", help: "Quote", shortcut: KeyboardShortcut("q", modifiers: [.command, .shift])) { editor.prefixLine("> ") }
+            formatButton("bold", help: "Bold", shortcut: KeyboardShortcut("b")) { editor.bold() }
+            formatButton("italic", help: "Italic", shortcut: KeyboardShortcut("i")) { editor.italic() }
+            formatButton("strikethrough", help: "Strikethrough", shortcut: KeyboardShortcut("x", modifiers: [.command, .shift])) { editor.strikethrough() }
+            formatButton("textformat.size", help: "Heading", shortcut: KeyboardShortcut("h", modifiers: [.command, .shift])) { editor.block(.heading2) }
+            formatButton("list.bullet", help: "Bullet list", shortcut: KeyboardShortcut("l", modifiers: [.command, .shift])) { editor.block(.bullet) }
+            formatButton("list.number", help: "Numbered list", shortcut: KeyboardShortcut("n", modifiers: [.command, .shift])) { editor.block(.numbered) }
+            formatButton("checklist", help: "Checklist", shortcut: KeyboardShortcut("t", modifiers: [.command, .shift])) { editor.block(.todo) }
+            formatButton("text.quote", help: "Quote", shortcut: KeyboardShortcut("q", modifiers: [.command, .shift])) { editor.block(.quote) }
             formatButton("photo", help: "Insert image…", shortcut: KeyboardShortcut("i", modifiers: [.command, .shift])) { chooseImage() }
             Spacer(minLength: 0)
-            Text("first line = title · #project · !priority · ⌘1–4 priority · ⌘B ⌘I")
+            Text("/ formats · #project · !priority · ⌘1–4 priority · ⌘B ⌘I")
                 .font(.system(size: 9.5))
                 .foregroundStyle(.primary.opacity(0.4))
                 .lineLimit(1)
@@ -1091,7 +1095,7 @@ struct TaskFormRow: View {
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url, let data = try? Data(contentsOf: url),
               let markdown = store.saveImage(data) else { return }
-        editor.insert(markdown)
+        editor.insertBlock(markdown)
     }
 
     /// Every project by its path, "No project", and "New project…".
@@ -1137,10 +1141,12 @@ struct TaskFormRow: View {
         .fixedSize()
     }
 
+    /// The whole text is the task; the tokens on its first line pick the project
+    /// and priority and are taken out of it.
     private func create() {
         let parsed = TaskTokens.parse(firstLine)
         let cleaned = parsed.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleaned.isEmpty else { return }
+        guard !TaskText.plain(cleaned).isEmpty else { return }
         var projectID = projectID
         if let name = parsed.project {
             // A `#` token names the project; one that matches nothing is created.
@@ -1150,7 +1156,8 @@ struct TaskFormRow: View {
                 projectID = project.id
             }
         }
-        finish(PromptAnswer(title: cleaned, notes: rest, projectID: projectID, priority: parsed.priority ?? priority))
+        let saved = TaskText.replacingTitle(of: text, with: cleaned).trimmingCharacters(in: .whitespacesAndNewlines)
+        finish(PromptAnswer(title: TaskText.plain(cleaned), text: saved, projectID: projectID, priority: parsed.priority ?? priority))
     }
 }
 
@@ -1169,220 +1176,6 @@ extension KeyboardShortcut {
 /// A plain-text Markdown editor (an `NSTextView`) that takes pasted and dropped
 /// images and files, saving them through `insertImage` / `insertFile` and inserting
 /// the returned Markdown.
-struct MarkdownEditor: NSViewRepresentable {
-    @Binding var text: String
-    let handle: Handle
-    let insertImage: (Data) -> String?
-    let insertFile: (URL) -> String?
-    /// ⇧⇥ in the editor (moves focus back to the title).
-    var onBacktab: () -> Void = {}
-
-    /// Lets the toolbar reach the text view.
-    final class Handle {
-        weak var textView: EditorTextView?
-        /// The word the caret is in when it starts with `/`, `#` or `!` (nil otherwise),
-        /// reported on every change — for the form's suggestion lists.
-        var onToken: (String?) -> Void = { _ in }
-        /// A chance to take ↑ ↓ ↩ ⇥ ⎋ before the text view does (true: taken).
-        var interceptCommand: (Selector) -> Bool = { _ in false }
-
-        func wrap(_ prefix: String, _ suffix: String) { textView?.wrapSelection(prefix, suffix) }
-        func prefixLine(_ prefix: String) { textView?.prefixCurrentLine(prefix) }
-        func insert(_ string: String) { textView?.insertMarkdown(string) }
-        /// Puts the caret at the very start (a form seeded with an attachment wants the title typed above it).
-        func moveToStart() { textView?.setSelectedRange(NSRange(location: 0, length: 0)) }
-
-        /// The token at the caret (see `onToken`) and where it is.
-        static func token(in textView: NSTextView) -> (String, NSRange)? {
-            let text = textView.string as NSString
-            let caret = textView.selectedRange().location
-            guard textView.selectedRange().length == 0, caret <= text.length else { return nil }
-            var start = caret
-            while start > 0 {
-                let character = Character(UnicodeScalar(text.character(at: start - 1)) ?? " ")
-                if character.isWhitespace || character.isNewline { break }
-                start -= 1
-            }
-            let range = NSRange(location: start, length: caret - start)
-            let word = text.substring(with: range)
-            guard let first = word.first, "/#!".contains(first) else { return nil }
-            return (word, range)
-        }
-
-        /// Replaces the token at the caret with `replacement`.
-        func replaceToken(with replacement: String) {
-            guard let textView, let (_, range) = Self.token(in: textView) else { return }
-            textView.insertText(replacement, replacementRange: range)
-            textView.didChangeText()
-        }
-
-        /// Removes the token at the caret (a `/command` once it has run).
-        func removeToken() { replaceToken(with: "") }
-    }
-
-    func makeNSView(context: Context) -> NSScrollView {
-        let textView = EditorTextView()
-        textView.delegate = context.coordinator
-        textView.string = text
-        textView.font = .systemFont(ofSize: 12)
-        textView.textColor = .labelColor
-        textView.insertionPointColor = .labelColor
-        textView.backgroundColor = .clear
-        textView.drawsBackground = false
-        textView.isRichText = false
-        textView.allowsUndo = true
-        textView.isAutomaticQuoteSubstitutionEnabled = false
-        textView.isAutomaticDashSubstitutionEnabled = false
-        textView.textContainerInset = NSSize(width: 6, height: 6)
-        textView.isVerticallyResizable = true
-        textView.isHorizontallyResizable = false
-        textView.autoresizingMask = [.width]
-        textView.textContainer?.widthTracksTextView = true
-        textView.insertImage = insertImage
-        textView.insertFile = insertFile
-        textView.onBacktab = onBacktab
-        textView.registerForDraggedTypes([.fileURL, .png, .tiff])
-        handle.textView = textView
-
-        let scroll = NSScrollView()
-        scroll.documentView = textView
-        scroll.hasVerticalScroller = true
-        scroll.drawsBackground = false
-        scroll.autohidesScrollers = true
-        return scroll
-    }
-
-    func updateNSView(_ scroll: NSScrollView, context: Context) {
-        guard let textView = scroll.documentView as? EditorTextView, textView.string != text else { return }
-        textView.string = text
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator(text: $text, handle: handle) }
-
-    final class Coordinator: NSObject, NSTextViewDelegate {
-        var text: Binding<String>
-        let handle: Handle
-        init(text: Binding<String>, handle: Handle) {
-            self.text = text
-            self.handle = handle
-        }
-
-        func textDidChange(_ notification: Notification) {
-            guard let textView = notification.object as? NSTextView else { return }
-            text.wrappedValue = textView.string
-            handle.onToken(Handle.token(in: textView)?.0)
-        }
-
-        func textViewDidChangeSelection(_ notification: Notification) {
-            guard let textView = notification.object as? NSTextView else { return }
-            handle.onToken(Handle.token(in: textView)?.0)
-        }
-
-        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-            handle.interceptCommand(commandSelector)
-        }
-    }
-
-    final class EditorTextView: NSTextView {
-        var insertImage: ((Data) -> String?)?
-        var insertFile: ((URL) -> String?)?
-        var onBacktab: (() -> Void)?
-
-        override var acceptsFirstResponder: Bool { true }
-
-        override func insertBacktab(_ sender: Any?) {
-            onBacktab?()
-        }
-
-        // Pasting an image or files inserts them as Markdown; text pastes as plain text.
-        override func paste(_ sender: Any?) {
-            if takeContent(from: NSPasteboard.general) { return }
-            pasteAsPlainText(sender)
-        }
-
-        // NSTextView has its own ideas about which drags it takes (and consults them
-        // again in `draggingUpdated` / `prepareForDragOperation`), so every step is
-        // overridden for files and images — the island's cards among them.
-        private static func carriesContent(_ sender: any NSDraggingInfo) -> Bool {
-            let types = sender.draggingPasteboard.types ?? []
-            return types.contains(.fileURL) || types.contains(.png) || types.contains(.tiff)
-        }
-
-        override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
-            Self.carriesContent(sender) ? .copy : super.draggingEntered(sender)
-        }
-
-        override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
-            Self.carriesContent(sender) ? .copy : super.draggingUpdated(sender)
-        }
-
-        override func prepareForDragOperation(_ sender: any NSDraggingInfo) -> Bool {
-            Self.carriesContent(sender) || super.prepareForDragOperation(sender)
-        }
-
-        override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
-            if Self.carriesContent(sender) {
-                window?.makeFirstResponder(self)
-                return takeContent(from: sender.draggingPasteboard)
-            }
-            return super.performDragOperation(sender)
-        }
-
-        override func concludeDragOperation(_ sender: (any NSDraggingInfo)?) {
-            if let sender, Self.carriesContent(sender) { return }
-            super.concludeDragOperation(sender)
-        }
-
-        /// Files become images (when they are pictures) or attachments; raw image
-        /// data becomes an image. Returns false when there is nothing of the kind.
-        func takeContent(from pasteboard: NSPasteboard) -> Bool {
-            if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
-                var inserted = false
-                for url in urls {
-                    let isImage = ["png", "jpg", "jpeg", "gif", "heic", "tiff", "webp"].contains(url.pathExtension.lowercased())
-                    let markdown = isImage ? (try? Data(contentsOf: url)).flatMap { insertImage?($0) } : insertFile?(url)
-                    if let markdown {
-                        insertMarkdown(markdown)
-                        inserted = true
-                    }
-                }
-                return inserted
-            }
-            guard let data = pasteboard.data(forType: .png) ?? pasteboard.data(forType: .tiff), let markdown = insertImage?(data) else { return false }
-            insertMarkdown(markdown)
-            return true
-        }
-
-        /// Inserts on its own line and tells the delegate.
-        func insertMarkdown(_ markdown: String) {
-            let range = selectedRange()
-            let text = string as NSString
-            let needsNewlineBefore = range.location > 0 && text.character(at: range.location - 1) != 10
-            let snippet = (needsNewlineBefore ? "\n" : "") + markdown + "\n"
-            insertText(snippet, replacementRange: range)
-            didChangeText()
-        }
-
-        func wrapSelection(_ prefix: String, _ suffix: String) {
-            let range = selectedRange()
-            let selected = (string as NSString).substring(with: range)
-            let replacement = prefix + (selected.isEmpty ? "text" : selected) + suffix
-            insertText(replacement, replacementRange: range)
-            if selected.isEmpty {
-                setSelectedRange(NSRange(location: range.location + prefix.count, length: 4))
-            }
-            didChangeText()
-        }
-
-        func prefixCurrentLine(_ prefix: String) {
-            let text = string as NSString
-            let lineRange = text.lineRange(for: NSRange(location: selectedRange().location, length: 0))
-            insertText(prefix, replacementRange: NSRange(location: lineRange.location, length: 0))
-            didChangeText()
-        }
-    }
-}
-
 /// A task in the compact island: title, project and status on top, the rendered
 /// description below, Edit and Close.
 private struct TaskDetailRow: View {
@@ -1396,34 +1189,22 @@ private struct TaskDetailRow: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 PromptBadge(symbol: task.status.symbol, tint: task.status == .pending ? Color.white.opacity(0.2) : task.status.color)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(task.title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .strikethrough(task.status == .complete, color: .white.opacity(0.5))
-                        .lineLimit(1)
-                    HStack(spacing: 6) {
-                        if let project = store.project(task.projectID) {
-                            Label(store.path(to: project.id).map(\.name).joined(separator: " › "), systemImage: "folder")
-                        }
-                        Text("Added \(task.createdAt.formatted(date: .abbreviated, time: .shortened))")
+                HStack(spacing: 6) {
+                    if let project = store.project(task.projectID) {
+                        Label(store.path(to: project.id).map(\.name).joined(separator: " › "), systemImage: "folder")
                     }
-                    .font(.system(size: 10))
-                    .foregroundStyle(.white.opacity(0.5))
-                    .lineLimit(1)
+                    Text("Added \(task.createdAt.formatted(date: .abbreviated, time: .shortened))")
                 }
+                .font(.system(size: 11))
+                .foregroundStyle(.white.opacity(0.55))
+                .lineLimit(1)
                 Spacer(minLength: 0)
                 PriorityMenu(priority: task.priority) { store.setPriority($0, for: task) }
                 statusMenu
             }
             ScrollView {
-                if task.notes.isEmpty {
-                    Text("No description — Edit to add one.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.white.opacity(0.45))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                    MarkdownView(markdown: task.notes, imageURL: { store.imageURL(for: $0) }, attachmentURL: { store.attachmentURL(for: $0) })
-                }
+                MarkdownView(markdown: task.text, imageURL: { store.imageURL(for: $0) }, attachmentURL: { store.attachmentURL(for: $0) })
+                    .opacity(task.status == .complete ? 0.6 : 1)
             }
             .padding(10)
             .frame(maxWidth: .infinity, maxHeight: .infinity)

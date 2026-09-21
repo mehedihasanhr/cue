@@ -138,7 +138,7 @@ struct SnippetFormRow: View {
                         }
                         .frame(maxHeight: .infinity)
                     } else {
-                        MarkdownEditor(text: $text, handle: editor, insertImage: { _ in nil }, insertFile: { _ in nil }, onBacktab: { focus = .name })
+                        MarkdownEditor(text: $text, handle: editor, insertImage: { _ in nil }, insertFile: { _ in nil }, plain: true, onBacktab: { focus = .name })
                             .focused($focus, equals: .text)
                             .overlay(alignment: .topLeading) {
                                 if text.isEmpty {

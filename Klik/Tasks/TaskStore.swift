@@ -146,34 +146,120 @@ nonisolated enum TaskDeletion: Hashable {
 
 nonisolated struct TaskItem: Identifiable, Codable, Hashable {
     let id: UUID
-    var title: String
-    var notes: String
+    /// The whole task as Markdown. There is no title of its own: lists show the
+    /// first line that says anything (`title`), plain.
+    var text: String
     var projectID: UUID?
     var status: TaskStatus
     var priority: TaskPriority
     var createdAt: Date
 
-    init(title: String, notes: String = "", projectID: UUID?, priority: TaskPriority = .medium) {
+    init(text: String, projectID: UUID?, priority: TaskPriority = .medium) {
         id = UUID()
-        self.title = title
-        self.notes = notes
+        self.text = text
         self.projectID = projectID
         status = .pending
         self.priority = priority
         createdAt = .now
     }
 
-    private enum CodingKeys: String, CodingKey { case id, title, notes, projectID, status, priority, createdAt }
+    /// The first line that says anything, without Markdown — for lists.
+    var title: String { TaskText.title(of: text) }
+    /// What follows the title line, plain and on one line — for a card's preview.
+    var summary: String { TaskText.summary(of: text) }
+    /// Whether there is more than the title line.
+    var hasMore: Bool { !summary.isEmpty }
+
+    // `title` and `notes` are what older builds wrote (and read): the text is their join.
+    private enum CodingKeys: String, CodingKey { case id, text, title, notes, projectID, status, priority, createdAt }
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
-        title = try container.decode(String.self, forKey: .title)
-        notes = try container.decodeIfPresent(String.self, forKey: .notes) ?? ""
+        if let text = try container.decodeIfPresent(String.self, forKey: .text) {
+            self.text = text
+        } else {
+            let title = try container.decodeIfPresent(String.self, forKey: .title) ?? ""
+            let notes = try container.decodeIfPresent(String.self, forKey: .notes) ?? ""
+            text = TaskText.join(title: title, notes: notes)
+        }
         projectID = try container.decodeIfPresent(UUID.self, forKey: .projectID)
         status = try container.decode(TaskStatus.self, forKey: .status)
         priority = try container.decodeIfPresent(TaskPriority.self, forKey: .priority) ?? .medium
         createdAt = try container.decode(Date.self, forKey: .createdAt)
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(text, forKey: .text)
+        try container.encode(title, forKey: .title)
+        try container.encodeIfPresent(projectID, forKey: .projectID)
+        try container.encode(status, forKey: .status)
+        try container.encode(priority, forKey: .priority)
+        try container.encode(createdAt, forKey: .createdAt)
+    }
+}
+
+/// A task's text and the lines in it: the title line, what follows, and plain
+/// renderings of Markdown for places that show one line.
+nonisolated enum TaskText {
+    /// A line's block mark (`## `, `- [ ] `, `1. `, `> `…) and what follows it.
+    static func splitMark(_ line: String) -> (mark: String, body: String) {
+        guard let match = line.firstMatch(of: #/^(#{1,6}\s+|[-*+]\s+\[[ xX]\]\s+|[-*+]\s+|\d+[.)]\s+|>\s+)/#) else { return ("", line) }
+        return (String(match.0), String(line[match.range.upperBound...]))
+    }
+
+    /// The lines, and the index of the first that says anything.
+    private static func lines(of text: String) -> (lines: [String], first: Int?) {
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        return (lines, lines.firstIndex { !$0.trimmingCharacters(in: .whitespaces).isEmpty })
+    }
+
+    /// The first line that says anything, as written.
+    static func titleLine(of text: String) -> String {
+        let (lines, first) = lines(of: text)
+        return first.map { lines[$0].trimmingCharacters(in: .whitespaces) } ?? ""
+    }
+
+    /// The title line without its block mark or inline Markdown.
+    static func title(of text: String) -> String {
+        plain(splitMark(titleLine(of: text)).body)
+    }
+
+    /// Everything after the title line, plain, on one line.
+    static func summary(of text: String) -> String {
+        let (lines, first) = lines(of: text)
+        guard let first else { return "" }
+        return lines[(first + 1)...]
+            .map { plain(splitMark($0.trimmingCharacters(in: .whitespaces)).body) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
+    /// The text with its title line's body replaced (the block mark, if any, stays).
+    static func replacingTitle(of text: String, with title: String) -> String {
+        var (lines, first) = lines(of: text)
+        guard let first else { return title }
+        lines[first] = splitMark(lines[first].trimmingCharacters(in: .whitespaces)).mark + title
+        return lines.joined(separator: "\n")
+    }
+
+    /// A title and a description as one text (what older builds stored).
+    static func join(title: String, notes: String) -> String {
+        let notes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        return notes.isEmpty ? title : title + "\n\n" + notes
+    }
+
+    /// Inline Markdown stripped: emphasis and code marks gone, links and images
+    /// reduced to their text.
+    static func plain(_ inline: String) -> String {
+        var text = inline
+        text = text.replacing(#/!\[([^\]]*)\]\([^)]*\)/#) { match in match.1.isEmpty ? "Image" : String(match.1) }
+        text = text.replacing(#/\[([^\]]+)\]\([^)]*\)/#) { match in String(match.1) }
+        text = text.replacing(#/(\*\*|__|~~|`)(.+?)\1/#) { match in String(match.2) }
+        text = text.replacing(#/(^|[^\w*_])[*_](\S(?:.*?\S)?)[*_]($|[^\w*_])/#) { match in String(match.1) + String(match.2) + String(match.3) }
+        return text.trimmingCharacters(in: .whitespaces)
     }
 }
 
@@ -323,14 +409,21 @@ final class TaskStore {
 
     // MARK: - Tasks
 
+    /// Adds a task from its whole text; nothing is added for a text that says nothing.
     @discardableResult
-    func addTask(titled title: String, notes: String = "", in projectID: UUID?, priority: TaskPriority = .medium) -> TaskItem? {
-        let cleaned = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleaned.isEmpty else { return nil }
-        let task = TaskItem(title: cleaned, notes: notes.trimmingCharacters(in: .whitespacesAndNewlines), projectID: projectID, priority: priority)
+    func addTask(text: String, in projectID: UUID?, priority: TaskPriority = .medium) -> TaskItem? {
+        let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !TaskText.title(of: cleaned).isEmpty else { return nil }
+        let task = TaskItem(text: cleaned, projectID: projectID, priority: priority)
         tasks.insert(task, at: 0)
         save()
         return task
+    }
+
+    /// Adds a task from a title and a description (URL commands, imports).
+    @discardableResult
+    func addTask(titled title: String, notes: String = "", in projectID: UUID?, priority: TaskPriority = .medium) -> TaskItem? {
+        addTask(text: TaskText.join(title: title.trimmingCharacters(in: .whitespacesAndNewlines), notes: notes), in: projectID, priority: priority)
     }
 
     /// One task to import: `{"project": "Klik", "title": "…", "notes": "…", "priority": "high"}`.
@@ -371,13 +464,12 @@ final class TaskStore {
         return changed
     }
 
-    /// Edits a task's title, description and project in one go.
-    func update(_ task: TaskItem, title: String, notes: String, projectID: UUID?, priority: TaskPriority) {
-        let cleaned = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleaned.isEmpty else { return }
+    /// Edits a task's text, project and priority in one go.
+    func update(_ task: TaskItem, text: String, projectID: UUID?, priority: TaskPriority) {
+        let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !TaskText.title(of: cleaned).isEmpty else { return }
         update(task) {
-            $0.title = cleaned
-            $0.notes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+            $0.text = cleaned
             $0.projectID = projectID
             $0.priority = priority
         }
@@ -439,10 +531,11 @@ final class TaskStore {
         update(task) { $0.priority = priority }
     }
 
+    /// Replaces the title line (the rest of the text stays).
     func rename(_ task: TaskItem, to title: String) {
         let cleaned = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return }
-        update(task) { $0.title = cleaned }
+        update(task) { $0.text = TaskText.replacingTitle(of: $0.text, with: cleaned) }
     }
 
     func move(_ task: TaskItem, to projectID: UUID?) {

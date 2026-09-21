@@ -8,10 +8,18 @@ nonisolated enum MarkdownBlock: Equatable {
     case paragraph(String)
     case bullets([String])
     case numbered([String])
+    case checklist([CheckItem])
     case quote(String)
+    /// A fenced code block.
+    case code(String)
     case image(alt: String, source: String)
     /// A line that is just a link to an attached file.
     case attachment(name: String, source: String)
+
+    struct CheckItem: Equatable {
+        var done: Bool
+        var text: String
+    }
 
     /// Splits Markdown text into blocks. Consecutive plain lines join into one
     /// paragraph; a blank line separates blocks.
@@ -20,19 +28,36 @@ nonisolated enum MarkdownBlock: Equatable {
         var paragraph: [String] = []
         var bullets: [String] = []
         var numbered: [String] = []
+        var checklist: [CheckItem] = []
         var quote: [String] = []
+        var code: [String]?
 
         func flush() {
             if !paragraph.isEmpty { blocks.append(.paragraph(paragraph.joined(separator: " "))); paragraph = [] }
             if !bullets.isEmpty { blocks.append(.bullets(bullets)); bullets = [] }
             if !numbered.isEmpty { blocks.append(.numbered(numbered)); numbered = [] }
+            if !checklist.isEmpty { blocks.append(.checklist(checklist)); checklist = [] }
             if !quote.isEmpty { blocks.append(.quote(quote.joined(separator: " "))); quote = [] }
         }
 
         for rawLine in markdown.components(separatedBy: .newlines) {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
+            if var lines = code {
+                if line == "```" {
+                    blocks.append(.code(lines.joined(separator: "\n")))
+                    code = nil
+                } else {
+                    lines.append(rawLine)
+                    code = lines
+                }
+                continue
+            }
+            if line.hasPrefix("```") { flush(); code = []; continue }
             if line.isEmpty { flush(); continue }
-            if let image = imageLine(line) {
+            if let item = checkItem(line) {
+                if !paragraph.isEmpty || !bullets.isEmpty || !numbered.isEmpty || !quote.isEmpty { flush() }
+                checklist.append(item)
+            } else if let image = imageLine(line) {
                 flush()
                 blocks.append(image)
             } else if let attachment = attachmentLine(line) {
@@ -45,19 +70,25 @@ nonisolated enum MarkdownBlock: Equatable {
             } else if line.hasPrefix("> ") || line == ">" {
                 if !paragraph.isEmpty || !bullets.isEmpty || !numbered.isEmpty { flush() }
                 quote.append(String(line.dropFirst(1)).trimmingCharacters(in: .whitespaces))
-            } else if line.hasPrefix("- ") || line.hasPrefix("* ") || line.hasPrefix("• ") {
-                if !paragraph.isEmpty || !numbered.isEmpty || !quote.isEmpty { flush() }
+            } else if line.hasPrefix("- ") || line.hasPrefix("* ") || line.hasPrefix("+ ") || line.hasPrefix("• ") {
+                if !paragraph.isEmpty || !numbered.isEmpty || !checklist.isEmpty || !quote.isEmpty { flush() }
                 bullets.append(String(line.dropFirst(2)))
             } else if let item = numberedItem(line) {
-                if !paragraph.isEmpty || !bullets.isEmpty || !quote.isEmpty { flush() }
+                if !paragraph.isEmpty || !bullets.isEmpty || !checklist.isEmpty || !quote.isEmpty { flush() }
                 numbered.append(item)
             } else {
-                if !bullets.isEmpty || !numbered.isEmpty || !quote.isEmpty { flush() }
+                if !bullets.isEmpty || !numbered.isEmpty || !checklist.isEmpty || !quote.isEmpty { flush() }
                 paragraph.append(line)
             }
         }
         flush()
+        if let code { blocks.append(.code(code.joined(separator: "\n"))) }
         return blocks
+    }
+
+    private static func checkItem(_ line: String) -> CheckItem? {
+        guard let match = line.wholeMatch(of: #/[-*+]\s+\[([ xX])\]\s*(.*)/#) else { return nil }
+        return CheckItem(done: match.1 != " ", text: String(match.2))
     }
 
     private static func imageLine(_ line: String) -> MarkdownBlock? {
@@ -130,6 +161,27 @@ struct MarkdownView: View {
                     }
                 }
             }
+        case .checklist(let items):
+            VStack(alignment: .leading, spacing: 3) {
+                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Image(systemName: item.done ? "checkmark.square.fill" : "square")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(item.done ? Color(red: 0x0E / 255, green: 0x4F / 255, blue: 0xEC / 255) : .white.opacity(0.6))
+                        inline(item.text)
+                            .font(.system(size: 12))
+                            .strikethrough(item.done, color: .white.opacity(0.5))
+                            .foregroundStyle(item.done ? .white.opacity(0.55) : .white)
+                    }
+                }
+            }
+        case .code(let text):
+            Text(text)
+                .font(.system(size: 11, design: .monospaced))
+                .textSelection(.enabled)
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         case .quote(let text):
             HStack(spacing: 8) {
                 RoundedRectangle(cornerRadius: 1.5).fill(Color(red: 0x0E / 255, green: 0x4F / 255, blue: 0xEC / 255)).frame(width: 3)

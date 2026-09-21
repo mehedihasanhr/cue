@@ -156,8 +156,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if let typed = ProcessInfo.processInfo.environment["KLIK_DEBUG_TASK_TEXT"] {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
                         guard let editor = self?.quickTaskPanel?.editor else { return }
-                        editor.insertText(typed, replacementRange: editor.selectedRange())
-                        editor.didChangeText()
+                        // Typed a character at a time, so the editor's Markdown shortcuts run.
+                        for character in typed {
+                            if character == "\n" { editor.insertNewline(nil) } else { editor.insertText(String(character), replacementRange: editor.selectedRange()) }
+                        }
                     }
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
@@ -581,7 +583,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .clipboard(let entry): clipboard.copy(entry)
         case .asset(let asset): assets.copy(asset)
         case .color(let entry): colors.copy(entry, as: preferences.colorFormat)
-        case .task(let task): clipboard.copy(text: task.notes.isEmpty ? task.title : "\(task.title)\n\(task.notes)")
+        case .task(let task): clipboard.copy(text: task.text)
         case .snippet(let snippet):
             clipboard.copy(text: SnippetTemplate.expand(snippet.text, values: [:], clipboard: NSPasteboard.general.string(forType: .string)))
             snippets.recordUse(snippet)
@@ -720,7 +722,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             quickTaskPanel?.close()
             let panel = QuickTaskPanel(store: tasks, prompt: prompt) { [weak self] answer in
                 guard let self, let answer else { return }
-                tasks.addTask(titled: answer.title, notes: answer.notes, in: answer.projectID, priority: answer.priority)
+                tasks.addTask(text: answer.text, in: answer.projectID, priority: answer.priority)
                 FeedbackHUD.show("Task added", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
             }
             quickTaskPanel = panel
@@ -819,7 +821,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         closeHistory()
         let panel = QuickTaskPanel(store: tasks) { [weak self] answer in
             guard let self, let answer else { return }
-            tasks.addTask(titled: answer.title, notes: answer.notes, in: answer.projectID, priority: answer.priority)
+            tasks.addTask(text: answer.text, in: answer.projectID, priority: answer.priority)
             FeedbackHUD.show("Task added", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
         }
         quickTaskPanel = panel

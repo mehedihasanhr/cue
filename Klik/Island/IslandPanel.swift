@@ -1729,8 +1729,8 @@ private struct TaskCard: View {
                         .foregroundStyle(task.status == .complete ? .white.opacity(0.5) : .white)
                         .lineLimit(2)
                 }
-                if !task.notes.isEmpty {
-                    Text(task.notes)
+                if task.hasMore {
+                    Text(task.summary)
                         .font(.system(size: 11))
                         .foregroundStyle(.white.opacity(0.7))
                         .lineLimit(4)

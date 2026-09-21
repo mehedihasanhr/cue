@@ -481,11 +481,11 @@ struct IslandTasksView: View {
                         .foregroundStyle(task.status == .complete ? .white.opacity(0.5) : .white)
                         .lineLimit(1)
                 }
-                if !task.notes.isEmpty {
+                if task.hasMore {
                     Image(systemName: "text.alignleft")
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.45))
-                        .help(task.notes)
+                        .help(task.summary)
                 }
                 Spacer(minLength: 4)
                 if showProject, let project = store.project(task.projectID) {

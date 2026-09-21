@@ -89,7 +89,7 @@ final class QuickTaskPanel: NSPanel {
         host.autoresizingMask = [.width, .height]
         // Anything dropped on the panel — not just on the editor — goes into the description.
         let container = DropCatcher(frame: full)
-        container.editor = { [weak self] in self?.editor as? MarkdownEditor.EditorTextView }
+        container.editor = { [weak self] in self?.editor as? RichTextView }
         container.addSubview(host)
         contentView = container
     }
@@ -97,7 +97,7 @@ final class QuickTaskPanel: NSPanel {
     /// The panel's content view: forwards files and images dropped anywhere on the
     /// glass to the description editor.
     private final class DropCatcher: NSView {
-        var editor: () -> MarkdownEditor.EditorTextView? = { nil }
+        var editor: () -> RichTextView? = { nil }
 
         override init(frame: CGRect) {
             super.init(frame: frame)
@@ -146,7 +146,7 @@ final class QuickTaskPanel: NSPanel {
     /// The description editor, for pasting island cards into it.
     var editor: NSTextView? {
         func find(in view: NSView) -> NSTextView? {
-            if let editor = view as? MarkdownEditor.EditorTextView { return editor }
+            if let editor = view as? RichTextView { return editor }
             for subview in view.subviews { if let found = find(in: subview) { return found } }
             return nil
         }

@@ -48,6 +48,7 @@
 				Support/SyncFolder.swift,
 				Support/SQLite.swift,
 				Tasks/MarkdownView.swift,
+				Tasks/RichTextEditor.swift,
 				Tasks/TaskStore.swift,
 				Support/Log.swift,
 			);
