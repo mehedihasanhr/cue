@@ -8,7 +8,7 @@ struct ShareSettingsView: View {
 
     var body: some View {
         @Bindable var settings = settings
-        Form {
+        SettingsPane(.sharing) {
             Section {
                 Picker("Upload to", selection: $settings.provider) {
                     ForEach(ShareSettings.Provider.allCases, id: \.self) { Text($0.title).tag($0) }
@@ -68,7 +68,6 @@ struct ShareSettingsView: View {
                 }
             }
         }
-        .formStyle(.grouped)
     }
 
     /// Uploads a tiny image and shows the link (or the error) inline.

@@ -1,68 +1,46 @@
 import AppKit
 import SwiftUI
 
-/// The Settings window: native toolbar-style tabs (like System Settings / Xcode
-/// preferences), each hosting a SwiftUI pane. The window resizes to fit the
-/// selected pane.
+/// The Settings window: a sidebar of pages (searchable, an icon tile each) and
+/// the chosen page on the right — the layout of System Settings and Raycast.
+/// The title bar is transparent so the sidebar runs to the top, under the
+/// traffic lights; the window remembers its size and the last page.
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     var onClose: (() -> Void)?
 
-    private static let paneWidth: CGFloat = 560
+    private let navigation = SettingsNavigation()
 
     init(model: AppModel, shortcuts: ShortcutController, library: CaptureLibrary, clipboard: ClipboardHistory, preferences: AppPreferences, clock: PrayerClock? = nil, share: ShareSettings? = nil, sync: SyncFolder? = nil) {
-        let tabs = NSTabViewController()
-        tabs.tabStyle = .toolbar
-        tabs.canPropagateSelectedChildViewControllerTitle = false
+        let root = SettingsRootView()
+            .environment(navigation)
+            .environment(model)
+            .environment(shortcuts)
+            .environment(library)
+            .environment(clipboard)
+            .environment(preferences)
+            .environment(clock)
+            .environment(share)
+            .environment(sync)
+            .frame(minWidth: 820, minHeight: 540)
 
-        tabs.addTabViewItem(Self.pane(
-            "General", symbol: "gearshape", height: 600,
-            GeneralSettingsView().environment(model).environment(library).environment(preferences).environment(sync)
-        ))
-        tabs.addTabViewItem(Self.pane(
-            "Island", symbol: "rectangle.topthird.inset.filled", height: 470,
-            IslandSettingsView().environment(preferences).environment(model)
-        ))
-        tabs.addTabViewItem(Self.pane(
-            "Capture", symbol: "camera", height: 330,
-            CaptureSettingsView().environment(preferences)
-        ))
-        tabs.addTabViewItem(Self.pane(
-            "Clipboard", symbol: "doc.on.clipboard", height: 340,
-            ClipboardSettingsView().environment(clipboard).environment(preferences)
-        ))
-        tabs.addTabViewItem(Self.pane(
-            "Editor", symbol: "paintbrush.pointed", height: 560,
-            EditorSettingsView().environment(preferences)
-        ))
-        tabs.addTabViewItem(Self.pane(
-            "Time", symbol: "clock", height: 560,
-            TimeSettingsView().environment(preferences).environment(clock)
-        ))
-        if let share {
-            tabs.addTabViewItem(Self.pane(
-                "Sharing", symbol: "link", height: 520,
-                ShareSettingsView().environment(share)
-            ))
-        }
-        tabs.addTabViewItem(Self.pane(
-            "Shortcuts", symbol: "keyboard", height: 410,
-            ShortcutSettingsView().environment(shortcuts)
-        ))
-        tabs.addTabViewItem(Self.pane(
-            "Permissions", symbol: "lock.shield", height: 300,
-            PermissionSettingsView().environment(model)
-        ))
-        tabs.addTabViewItem(Self.pane(
-            "About", symbol: "info.circle", height: 300,
-            AboutSettingsView()
-        ))
-
-        let window = NSWindow(contentViewController: tabs)
+        let host = NSHostingController(rootView: root)
+        let window = NSWindow(contentViewController: host)
         window.title = "Klik Settings"
-        window.styleMask = [.titled, .closable]
-        window.toolbarStyle = .preference
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        // An empty toolbar only makes the title bar taller, so the traffic lights
+        // sit inside the sidebar card rather than on its top edge.
+        let toolbar = NSToolbar(identifier: "KlikSettings")
+        toolbar.showsBaselineSeparator = false
+        toolbar.allowsUserCustomization = false
+        window.toolbar = toolbar
+        window.toolbarStyle = .unified
+        window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
+        window.setContentSize(CGSize(width: 920, height: 640))
         window.center()
+        window.setFrameAutosaveName("KlikSettings")
         super.init(window: window)
         window.delegate = self
     }
@@ -72,23 +50,17 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         fatalError("init(coder:) is not supported")
     }
 
-    private static func pane(_ title: String, symbol: String, height: CGFloat, _ view: some View) -> NSTabViewItem {
-        let host = NSHostingController(rootView: view.frame(width: paneWidth, height: height))
-        host.title = title
-        host.preferredContentSize = CGSize(width: paneWidth, height: height)
-        let item = NSTabViewItem(viewController: host)
-        item.label = title
-        item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
-        return item
-    }
-
     /// Opens in front of every other app's windows and takes focus, however Klik
     /// was asked (the island, the menu bar, a hotkey — none of which activate it).
-    func present() {
+    /// With a `section`, that page is shown.
+    func present(_ section: SettingsSection? = nil) {
+        if let section { navigation.go(section) }
         showWindow(nil)
         guard let window else { return }
         window.orderFrontRegardless()
         NSApp.activateForOverlay(keyWindow: window)
+        // The search field would take focus as the first field; the page reads better without a caret in it.
+        window.makeFirstResponder(nil)
     }
 
     func windowWillClose(_ notification: Notification) {

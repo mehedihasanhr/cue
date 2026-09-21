@@ -17,7 +17,7 @@ struct GeneralSettingsView: View {
 
     var body: some View {
         @Bindable var preferences = preferences
-        Form {
+        SettingsPane(.general) {
             Section {
                 Picker("Appearance", selection: $preferences.appearance) {
                     ForEach(AppPreferences.Appearance.allCases, id: \.self) { Text($0.title).tag($0) }
@@ -116,7 +116,6 @@ struct GeneralSettingsView: View {
             }
 
         }
-        .formStyle(.grouped)
     }
 
     private var launchAtLoginBinding: Binding<Bool> {
@@ -143,7 +142,7 @@ struct IslandSettingsView: View {
 
     var body: some View {
         @Bindable var preferences = preferences
-        Form {
+        SettingsPane(.island) {
             Section {
                 Toggle(isOn: $preferences.snippetsEnabled) {
                     Text("Expand snippets as you type")
@@ -214,7 +213,6 @@ struct IslandSettingsView: View {
             }
 
         }
-        .formStyle(.grouped)
     }
 }
 
@@ -226,7 +224,7 @@ struct CaptureSettingsView: View {
 
     var body: some View {
         @Bindable var preferences = preferences
-        Form {
+        SettingsPane(.capture) {
             Section("Full screen") {
                 Toggle(isOn: $includeCursor) {
                     Text("Include mouse pointer")
@@ -238,7 +236,7 @@ struct CaptureSettingsView: View {
                     Text("Play a sound after each capture")
                 }
                 HStack(spacing: 12) {
-                    SymbolTile(symbol: "speaker.wave.2.fill", tint: .pink)
+                    SymbolTile(symbol: "speaker.wave.2.fill", tint: .orange)
                     Picker("Sound", selection: $preferences.sound) {
                         Text(AppPreferences.Sound.shutter.title).tag(AppPreferences.Sound.shutter)
                         Divider()
@@ -270,7 +268,6 @@ struct CaptureSettingsView: View {
                 Text("Pick one of the macOS alert sounds or any audio file from your Mac.")
             }
         }
-        .formStyle(.grouped)
     }
 }
 
@@ -340,7 +337,7 @@ struct TimeSettingsView: View {
 
     var body: some View {
         @Bindable var preferences = preferences
-        Form {
+        SettingsPane(.time) {
             Section {
                 Picker("Show the time every", selection: $preferences.timeStatusInterval) {
                     ForEach(AppPreferences.timeIntervals, id: \.self) { minutes in
@@ -425,7 +422,6 @@ struct TimeSettingsView: View {
                 }
             }
         }
-        .formStyle(.grouped)
         .onAppear {
             latitude = preferences.prayerManualPlace.latitude == 0 ? "" : String(preferences.prayerManualPlace.latitude)
             longitude = preferences.prayerManualPlace.longitude == 0 ? "" : String(preferences.prayerManualPlace.longitude)
@@ -478,7 +474,7 @@ struct ClipboardSettingsView: View {
 
     var body: some View {
         @Bindable var preferences = preferences
-        Form {
+        SettingsPane(.clipboard) {
             Section {
                 Toggle(isOn: $preferences.clipboardHistoryEnabled) {
                     Text("Keep a clipboard history")
@@ -504,7 +500,6 @@ struct ClipboardSettingsView: View {
                 }
             }
         }
-        .formStyle(.grouped)
         .confirmationDialog("Clear the clipboard history?", isPresented: $confirmClear) {
             Button("Clear History", role: .destructive) { clipboard.clear() }
         } message: {
@@ -519,7 +514,7 @@ struct PermissionSettingsView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        Form {
+        SettingsPane(.permissions) {
             Section {
                 PermissionRow(
                     symbol: "rectangle.dashed.badge.record", tint: .blue,
@@ -546,7 +541,6 @@ struct PermissionSettingsView: View {
                 Text("Klik only captures when you ask it to and never uploads anything.")
             }
         }
-        .formStyle(.grouped)
         .onAppear { model.refreshPermissionState() }
         .task {
             while !Task.isCancelled {
@@ -608,13 +602,14 @@ private struct PermissionRow: View {
 struct SymbolTile: View {
     let symbol: String
     let tint: Color
+    var size: CGFloat = 28
 
     var body: some View {
         Image(systemName: symbol)
-            .font(.system(size: 14, weight: .medium))
+            .font(.system(size: size / 2, weight: size >= 48 ? .semibold : .medium))
             .foregroundStyle(.white)
-            .frame(width: 28, height: 28)
-            .background(tint.gradient, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .frame(width: size, height: size)
+            .background(tint.gradient, in: RoundedRectangle(cornerRadius: size / 4, style: .continuous))
     }
 }
 
@@ -626,7 +621,7 @@ struct EditorSettingsView: View {
     var body: some View {
         @Bindable var preferences = preferences
         let d = $preferences.editorDefaults
-        Form {
+        SettingsPane(.editor) {
             Section {
                 Toggle(isOn: d.rememberLastUsed) {
                     Text("Start each editor with the options last used")
@@ -695,7 +690,6 @@ struct EditorSettingsView: View {
                 }
             }
         }
-        .formStyle(.grouped)
     }
 }
 
@@ -761,7 +755,7 @@ struct ShortcutSettingsView: View {
     }
 
     var body: some View {
-        Form {
+        SettingsPane(.shortcuts) {
             Section {
                 ForEach(HotkeyID.configurable, id: \.self) { id in
                     let entry = shortcuts.entries[id]
@@ -811,7 +805,6 @@ struct ShortcutSettingsView: View {
             }
 
         }
-        .formStyle(.grouped)
     }
 
     private func symbol(for id: HotkeyID) -> String {
@@ -838,7 +831,7 @@ struct ShortcutSettingsView: View {
         case .scrolling: .indigo
         case .showPanel: .orange
         case .captureText: .green
-        case .pickColor: .pink
+        case .pickColor: .red
         case .quickTask: .mint
         case .clipboardPanel: .purple
         case .commandPalette: .brand
@@ -873,53 +866,58 @@ struct ShortcutSettingsView: View {
 // MARK: - About
 
 struct AboutSettingsView: View {
-    private var version: String {
-        let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
-        return "Version \(short) (\(build))"
-    }
+    @Environment(CaptureLibrary.self) private var library
+    @State private var copied = false
+
+    private var short: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?" }
+    private var build: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?" }
 
     var body: some View {
-        VStack(spacing: 14) {
-            Image(nsImage: NSImage(named: "AppIcon") ?? NSApp.applicationIconImage)
-                .resizable()
-                .interpolation(.high)
-                .frame(width: 96, height: 96)
-                .shadow(color: .blue.opacity(0.25), radius: 12, y: 6)
+        SettingsPane(.about) {
+            Section {
+                LabeledContent("Version") {
+                    HStack(spacing: 10) {
+                        Text("\(short) (\(build))").monospacedDigit().foregroundStyle(.secondary)
+                        Button(copied ? "Copied" : "Copy") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString("Klik \(short) (\(build)) · macOS \(ProcessInfo.processInfo.operatingSystemVersionString)", forType: .string)
+                            copied = true
+                            Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
+                        }
+                        .controlSize(.small)
+                        .help("Copy the version and macOS version, for a bug report")
+                    }
+                }
+                LabeledContent("macOS") {
+                    Text(ProcessInfo.processInfo.operatingSystemVersionString).foregroundStyle(.secondary)
+                }
+            }
 
-            VStack(spacing: 4) {
-                Text("Klik")
-                    .font(.title.weight(.semibold))
-                Text(version)
+            Section {
+                LabeledContent("Klik") {
+                    Button("Show in Finder") { PermissionManager.revealAppInFinder() }
+                        .controlSize(.small)
+                }
+                LabeledContent("Captures") {
+                    Button("Show in Finder") { library.revealFolder() }
+                        .controlSize(.small)
+                }
+            } header: {
+                Text("On this Mac")
+            }
+
+            Section {
+                Text("© \(String(Calendar.current.component(.year, from: .now))) Stackrover. Klik keeps everything on this Mac unless you set up share links.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
-
-            Text("Screenshots you can annotate, blur and share — built natively for macOS.")
-                .font(.callout)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: 360)
-
-            Spacer(minLength: 0)
-
-            Text("© \(String(Calendar.current.component(.year, from: .now))) Stackrover")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
         }
-        .padding(28)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
-#Preview("General") {
-    GeneralSettingsView().environment(AppModel()).environment(CaptureLibrary()).environment(AppPreferences()).frame(width: 560, height: 470)
-}
-
-#Preview("Shortcuts") {
-    ShortcutSettingsView().environment(ShortcutController()).frame(width: 560, height: 400)
-}
-
-#Preview("About") {
-    AboutSettingsView().frame(width: 560, height: 300)
+#Preview("Settings") {
+    SettingsRootView()
+        .environment(SettingsNavigation()).environment(AppModel()).environment(CaptureLibrary()).environment(AppPreferences())
+        .environment(ShortcutController()).environment(ClipboardHistory())
+        .frame(width: 920, height: 640)
 }

@@ -114,6 +114,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let done = tasks.setStatus(.complete, forTitlesStartingWith: titles)
             Log.app.notice("Completed \(done) task(s)")
         }
+        // Diagnostics: `--env KLIK_DEBUG_SETTINGS_SHOT=general` opens Settings on that page and
+        // writes a picture of the window to Pictures/Klik/_settings-<page>.png.
+        if let page = ProcessInfo.processInfo.environment["KLIK_DEBUG_SETTINGS_SHOT"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                guard let self else { return }
+                showSettings(nil)
+                settingsWindow?.present(SettingsSection(rawValue: page))
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                    guard let self, let window = self.settingsWindow?.window else { return }
+                    let id = CGWindowID(window.windowNumber)
+                    Task { @MainActor in
+                        let service = ScreenCaptureService()
+                        do {
+                            let content = try await service.shareableContent()
+                            guard let image = try await service.captureWindow(id: id, in: content, fallbackScale: 2),
+                                  let png = ImageEncoding.png(image.cgImage) else { Log.app.error("Settings shot: window \(id) not found"); return }
+                            try png.write(to: CaptureLibrary.defaultFolder().appendingPathComponent("_settings-\(page).png"))
+                            Log.app.notice("Settings shot written")
+                        } catch {
+                            Log.app.error("Settings shot failed: \(String(describing: error), privacy: .public)")
+                        }
+                    }
+                }
+            }
+        }
         // Diagnostics: `open Klik.app --env KLIK_DEBUG_PANEL=1` opens the floating panel at launch.
         if ProcessInfo.processInfo.environment["KLIK_DEBUG_PANEL"] == "1" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.toggleHistoryAtPointer() }
