@@ -916,7 +916,7 @@ struct AboutSettingsView: View {
 }
 
 #Preview("Settings") {
-    SettingsRootView()
+    SettingsRootView(buttons: WindowButtons(close: {}, minimize: {}, zoom: {}))
         .environment(SettingsNavigation()).environment(AppModel()).environment(CaptureLibrary()).environment(AppPreferences())
         .environment(ShortcutController()).environment(ClipboardHistory())
         .frame(width: 920, height: 640)

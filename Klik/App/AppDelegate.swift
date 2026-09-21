@@ -122,14 +122,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 showSettings(nil)
                 settingsWindow?.present(SettingsSection(rawValue: page))
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-                    guard let self, let window = self.settingsWindow?.window else { return }
-                    let id = CGWindowID(window.windowNumber)
+                    guard let self, let window = self.settingsWindow?.window, let screen = window.screen else { return }
+                    let rect = window.frame.insetBy(dx: -24, dy: -24)
                     Task { @MainActor in
-                        let service = ScreenCaptureService()
                         do {
-                            let content = try await service.shareableContent()
-                            guard let image = try await service.captureWindow(id: id, in: content, fallbackScale: 2),
-                                  let png = ImageEncoding.png(image.cgImage) else { Log.app.error("Settings shot: window \(id) not found"); return }
+                            // The screen around the window rather than the window alone,
+                            // so its glass is seen over the desktop as it really is.
+                            let image = try await ScreenCaptureService().captureRegionIncludingKlik(rect, on: screen)
+                            guard let png = ImageEncoding.png(image) else { return }
                             try png.write(to: CaptureLibrary.defaultFolder().appendingPathComponent("_settings-\(page).png"))
                             Log.app.notice("Settings shot written")
                         } catch {

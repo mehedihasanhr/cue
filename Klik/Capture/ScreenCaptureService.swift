@@ -89,6 +89,19 @@ final class ScreenCaptureService {
         try await makeRegionCapturer(rect, on: screen).capture()
     }
 
+    /// Diagnostics only: `rect` as the screen shows it, Klik's own windows included —
+    /// the way to see a translucent Klik window over the desktop from outside.
+    func captureRegionIncludingKlik(_ rect: CGRect, on screen: NSScreen) async throws(CaptureError) -> CGImage {
+        let content = try await shareableContent()
+        guard let displayID = screen.displayID,
+              let display = content.displays.first(where: { $0.displayID == displayID })
+        else { throw .noDisplay }
+        let filter = SCContentFilter(display: display, excludingWindows: [])
+        let configuration = Self.configuration(pointSize: rect.size, scale: CGFloat(filter.pointPixelScale))
+        configuration.sourceRect = CGRect(x: rect.minX - screen.frame.minX, y: screen.frame.maxY - rect.maxY, width: rect.width, height: rect.height)
+        return try await capture(filter: filter, configuration: configuration)
+    }
+
     /// Prepares a filter + configuration once so repeated captures of the same region
     /// (scrolling capture) skip the shareable-content query.
     func makeRegionCapturer(_ rect: CGRect, on screen: NSScreen) async throws(CaptureError) -> RegionCapturer {

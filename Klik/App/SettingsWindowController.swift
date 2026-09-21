@@ -11,7 +11,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let navigation = SettingsNavigation()
 
     init(model: AppModel, shortcuts: ShortcutController, library: CaptureLibrary, clipboard: ClipboardHistory, preferences: AppPreferences, clock: PrayerClock? = nil, share: ShareSettings? = nil, sync: SyncFolder? = nil) {
-        let root = SettingsRootView()
+        // The window is made first so the traffic lights can reach it.
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 920, height: 640), styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+        let buttons = WindowButtons(close: { [weak window] in window?.performClose(nil) },
+                                    minimize: { [weak window] in window?.miniaturize(nil) },
+                                    zoom: { [weak window] in window?.zoom(nil) })
+        let root = SettingsRootView(buttons: buttons)
             .environment(navigation)
             .environment(model)
             .environment(shortcuts)
@@ -23,19 +28,18 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             .environment(sync)
             .frame(minWidth: 820, minHeight: 540)
 
-        let host = NSHostingController(rootView: root)
-        let window = NSWindow(contentViewController: host)
+        window.contentViewController = NSHostingController(rootView: root)
         window.title = "Klik Settings"
-        window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        // An empty toolbar only makes the title bar taller, so the traffic lights
-        // sit inside the sidebar card rather than on its top edge.
-        let toolbar = NSToolbar(identifier: "KlikSettings")
-        toolbar.showsBaselineSeparator = false
-        toolbar.allowsUserCustomization = false
-        window.toolbar = toolbar
-        window.toolbarStyle = .unified
+        // The content draws the window: glass with a 24 pt corner, and its own
+        // traffic lights inside the sidebar card, so the system's are hidden.
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = true
+        for button in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+            window.standardWindowButton(button)?.isHidden = true
+        }
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
         window.setContentSize(CGSize(width: 920, height: 640))

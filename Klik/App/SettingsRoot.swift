@@ -152,33 +152,37 @@ final class SettingsNavigation {
 
 /// The Settings window's content: a sidebar card on the left (search on top, an
 /// icon tile per page; the traffic lights sit inside it), the chosen page on the
-/// right under a big header, with back and forward buttons over it.
+/// right under a big header, with back and forward buttons over it. The whole
+/// window is glass — the desktop shows faintly through — with a 24 pt corner.
 struct SettingsRootView: View {
+    let buttons: WindowButtons
     @Environment(SettingsNavigation.self) private var navigation
     @Environment(ShareSettings.self) private var share: ShareSettings?
 
-    static let sidebarWidth: CGFloat = 230
+    static let sidebarWidth: CGFloat = 225
     /// How far the sidebar card sits in from the window's edges.
-    static let inset: CGFloat = 10
+    static let inset: CGFloat = 8
+    static let windowRadius: CGFloat = 24
     static let cardRadius: CGFloat = 16
-
-    /// The card's fill: a shade lighter than the window in the dark, white-ish in the light.
-    static let cardFill = Color(nsColor: NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? NSColor(white: 1, alpha: 0.055) : NSColor(white: 1, alpha: 0.72)
-    })
 
     var body: some View {
         HStack(spacing: 0) {
-            SettingsSidebar(sections: sections)
+            SettingsSidebar(sections: sections, buttons: buttons)
                 .frame(width: Self.sidebarWidth)
-                .background(Self.cardFill, in: RoundedRectangle(cornerRadius: Self.cardRadius, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: Self.cardRadius, style: .continuous).strokeBorder(.primary.opacity(0.08)))
+                .background { GlassCard(radius: Self.cardRadius) }
                 .padding([.leading, .top, .bottom], Self.inset)
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .overlay(alignment: .topLeading) { HistoryButtons().padding(.top, Self.inset).padding(.leading, 12) }
+                .overlay(alignment: .topLeading) { HistoryButtons().padding(.top, 15).padding(.leading, 10) }
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background {
+            // The desktop, blurred and darkened almost to a flat colour.
+            ZStack {
+                GlassMaterial()
+                SettingsPalette.page
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: Self.windowRadius, style: .continuous))
         .ignoresSafeArea()
     }
 
@@ -204,6 +208,91 @@ struct SettingsRootView: View {
     }
 }
 
+// MARK: - Glass
+
+/// The window's colours, measured off Raycast's settings: a near-black page, a
+/// card a shade lighter with the desktop's tint, fills as fractions of white.
+enum SettingsPalette {
+    /// Over the glass: almost opaque, so the desktop only just shows (lands on
+    /// #181919 over a typical desktop).
+    static let page = Color(nsColor: dynamic(dark: NSColor(red: 0x10 / 255, green: 0x11 / 255, blue: 0x11 / 255, alpha: 0.94),
+                                             light: NSColor(red: 0xF2 / 255, green: 0xF2 / 255, blue: 0xF4 / 255, alpha: 0.9)))
+    /// Over the card's glass, which is left to show more of the desktop (about
+    /// #1E2325: a shade lighter than the page, with the desktop's tint).
+    static let card = Color(nsColor: dynamic(dark: NSColor(red: 0x0F / 255, green: 0x12 / 255, blue: 0x13 / 255, alpha: 0.79),
+                                             light: NSColor(white: 1, alpha: 0.6)))
+    static let field = Color.primary.opacity(0.11)
+    static let selectedRow = Color.primary.opacity(0.12)
+    static let hoveredRow = Color.primary.opacity(0.06)
+    static let pill = Color.primary.opacity(0.08)
+    static let edge = Color.primary.opacity(0.12)
+
+    private static func dynamic(dark: NSColor, light: NSColor) -> NSColor {
+        NSColor(name: nil) { $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light }
+    }
+}
+
+/// The desktop behind the window, blurred — the base of every glass surface.
+struct GlassMaterial: NSViewRepresentable {
+    var material: NSVisualEffectView.Material = .hudWindow
+
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = material
+        view.blendingMode = .behindWindow
+        view.state = .active
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) { view.material = material }
+}
+
+/// A rounded pane of glass: blurred desktop, a light tint, a grain of noise, and
+/// an edge that catches the light at the top-left.
+struct GlassCard: View {
+    var radius: CGFloat
+
+    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: radius, style: .continuous) }
+
+    private var edge: LinearGradient {
+        LinearGradient(colors: [Color.primary.opacity(0.26), Color.primary.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+
+    var body: some View {
+        ZStack {
+            GlassMaterial()
+            SettingsPalette.card
+            NoiseTexture.image
+                .resizable(resizingMode: .tile)
+                .opacity(0.008)
+                .blendMode(.plusLighter)
+        }
+        .clipShape(shape)
+        .overlay(shape.strokeBorder(edge, lineWidth: 1))
+    }
+}
+
+/// A small tile of random grey, made once; tiled over glass it reads as grain.
+enum NoiseTexture {
+    static let image: Image = {
+        let side = 128
+        var pixels = [UInt8](repeating: 0, count: side * side)
+        var state: UInt32 = 0x9E37_79B9
+        for i in pixels.indices {
+            state ^= state << 13; state ^= state >> 17; state ^= state << 5
+            pixels[i] = UInt8(truncatingIfNeeded: state)
+        }
+        let data = Data(pixels)
+        guard let provider = CGDataProvider(data: data as CFData),
+              let cg = CGImage(width: side, height: side, bitsPerComponent: 8, bitsPerPixel: 8, bytesPerRow: side,
+                               space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue),
+                               provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent) else {
+            return Image(systemName: "square")
+        }
+        return Image(nsImage: NSImage(cgImage: cg, size: NSSize(width: side, height: side)))
+    }()
+}
+
 /// Back and forward through the pages visited, in one pill (⌘[ and ⌘]).
 private struct HistoryButtons: View {
     @Environment(SettingsNavigation.self) private var navigation
@@ -215,8 +304,8 @@ private struct HistoryButtons: View {
             button("chevron.right", help: "Forward", enabled: navigation.canGoForward, key: "]") { navigation.forward() }
         }
         .frame(height: 30)
-        .background(SettingsRootView.cardFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.primary.opacity(0.08)))
+        .background(SettingsPalette.pill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(SettingsPalette.edge))
     }
 
     private func button(_ symbol: String, help: String, enabled: Bool, key: KeyEquivalent, action: @escaping () -> Void) -> some View {
@@ -239,27 +328,30 @@ private struct HistoryButtons: View {
 
 private struct SettingsSidebar: View {
     let sections: [[SettingsSection]]
+    let buttons: WindowButtons
     @Environment(SettingsNavigation.self) private var navigation
     @FocusState private var searching: Bool
 
     var body: some View {
         VStack(spacing: 0) {
             searchField
-                .padding(.horizontal, 12)
-                // Below the window's traffic lights, which sit inside the card.
-                .padding(.top, 46)
+                .padding(.leading, 10)
+                .padding(.trailing, 8)
+                // Below the traffic lights, which sit inside the card.
+                .padding(.top, 48)
                 .padding(.bottom, 14)
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(filtered.enumerated()), id: \.offset) { index, group in
-                        if index > 0 { Spacer().frame(height: 16) }
+                        if index > 0 { Spacer().frame(height: 14) }
                         ForEach(group) { section in
                             SidebarRow(section: section, selected: navigation.section == section) { navigation.go(section) }
                         }
                     }
                 }
-                .padding(.horizontal, 8)
+                .padding(.leading, 10)
+                .padding(.trailing, 8)
                 .padding(.bottom, 10)
             }
             .overlay {
@@ -278,6 +370,12 @@ private struct SettingsSidebar: View {
         .onExitCommand { navigation.query = ""; searching = false }
         .background {
             Button("") { searching = true }.keyboardShortcut("f").hidden()
+        }
+        .overlay(alignment: .topLeading) {
+            // The editor's lights, which sit where the card wants them (the system's are hidden).
+            TrafficLights(onClose: buttons.close, onMinimize: buttons.minimize, onZoom: buttons.zoom)
+                .padding(.top, 6)
+                .padding(.leading, 6)
         }
     }
 
@@ -307,8 +405,8 @@ private struct SettingsSidebar: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 32)
-        .background(.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(Color.brand.opacity(searching ? 0.8 : 0), lineWidth: 1.5))
+        .background(SettingsPalette.field, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.brand.opacity(searching ? 0.8 : 0), lineWidth: 1.5))
         .animation(.easeOut(duration: 0.12), value: searching)
         .help("Search settings (⌘F)")
     }
@@ -323,22 +421,22 @@ private struct SidebarRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 if section == .about {
                     AppIconTile(size: 22)
                 } else {
                     SymbolTile(symbol: section.symbol, tint: section.tint, size: 22)
                 }
                 Text(section.title)
-                    .font(.system(size: 14))
+                    .font(.system(size: 15))
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 8)
             .frame(height: 34)
-            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .background(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(.primary.opacity(selected ? 0.1 : hovering ? 0.05 : 0))
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(selected ? SettingsPalette.selectedRow : hovering ? SettingsPalette.hoveredRow : Color.clear)
             )
         }
         .buttonStyle(.plain)
@@ -394,8 +492,8 @@ private struct SettingsHeader: View {
         }
         .frame(maxWidth: .infinity)
         // Under the back/forward pill, then a little room before the form's inset.
-        .padding(.top, 60)
-        .padding(.bottom, 24)
+        .padding(.top, 70)
+        .padding(.bottom, 40)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
     }
