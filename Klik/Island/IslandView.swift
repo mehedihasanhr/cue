@@ -57,6 +57,8 @@ final class IslandModel {
     var clockWidth: CGFloat?
     /// The open panel's width: wide enough for its tab row, at least the fixed size.
     private(set) var panelWidth: CGFloat = IslandPanel.size.width
+    /// The open panel's height: what its content needs, at most the fixed size.
+    private(set) var panelHeight: CGFloat = IslandPanel.size.height
     /// The window must grow with the panel; set by the controller.
     var onPanelWidthChanged: () -> Void = {}
 
@@ -67,6 +69,12 @@ final class IslandModel {
         onPanelWidthChanged()
     }
 
+    func setPanelHeight(_ height: CGFloat) {
+        let height = min(height, IslandPanel.size.height).rounded()
+        guard height != panelHeight else { return }
+        panelHeight = height
+    }
+
     /// The drawn shape in `phase`: the fixed rect, or the content-fitted one.
     func shapeRect(for phase: Phase) -> CGRect {
         guard let geometry else { return .zero }
@@ -75,7 +83,11 @@ final class IslandModel {
         case .clock: clockWidth
         default: phase.fitsContent ? contentWidth : nil
         }
-        let height: CGFloat? = phase == .clock ? clockHeight : nil
+        let height: CGFloat? = switch phase {
+        case .clock: clockHeight
+        case .expanded: panelHeight
+        default: nil
+        }
         return geometry.rect(for: phase.geometryPhase, contentWidth: width, contentHeight: height)
     }
     /// A drag with files or an image is over the island.
@@ -199,6 +211,7 @@ struct IslandView: View {
             .animation(collapsed ? Self.closeAnimation : Self.openAnimation, value: phase)
             .animation(Self.openAnimation, value: model.contentWidth)
             .animation(Self.openAnimation, value: model.panelWidth)
+            .animation(Self.openAnimation, value: model.panelHeight)
             .animation(Self.openAnimation, value: model.clockHeight)
             .animation(Self.openAnimation, value: model.clockWidth)
             .task(id: phase) {
@@ -285,7 +298,8 @@ struct IslandView: View {
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
                 IslandPanel(library: library, clipboard: clipboard, assets: assets, colors: colors, tasksStore: tasks, snippets: snippets, actions: actions, dropping: model.dropping,
-                            width: model.panelWidth, onIdealWidth: { model.setPanelWidth($0) }, onPrompt: { model.onPrompt($0) }, onShowTask: { model.onShowTask($0) },
+                            width: model.panelWidth, onIdealWidth: { model.setPanelWidth($0) }, onIdealHeight: { model.setPanelHeight($0) },
+                            onPrompt: { model.onPrompt($0) }, onShowTask: { model.onShowTask($0) },
                             onShowClock: { model.onShowClock() })
                     .padding(.horizontal, IslandGeometry.panelHorizontalPadding)
                     .padding(.bottom, IslandGeometry.panelBottomPadding)

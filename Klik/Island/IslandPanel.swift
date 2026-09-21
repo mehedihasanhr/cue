@@ -38,6 +38,8 @@ enum IslandTab: String, CaseIterable {
 /// row grouped by day, newest first. The row scrolls by dragging (or with the trackpad).
 struct IslandPanel: View {
     /// The panel's smallest size; it widens for a tab row that needs more room.
+    /// The least width and the most height: the panel grows wider for its tab row
+    /// and takes only the height its content needs.
     static let size = CGSize(width: 780, height: 330)
     static let horizontalPadding: CGFloat = 20
 
@@ -59,6 +61,8 @@ struct IslandPanel: View {
     var width: CGFloat = IslandPanel.size.width
     /// The width the tab row would like, so nothing in it is ever truncated.
     var onIdealWidth: (CGFloat) -> Void = { _ in }
+    /// The height the content needs, so the island is no taller.
+    var onIdealHeight: (CGFloat) -> Void = { _ in }
     var onPrompt: (IslandPrompt) -> Void = { _ in }
     /// Opens a task in the compact island.
     var onShowTask: (TaskItem) -> Void = { _ in }
@@ -502,7 +506,9 @@ struct IslandPanel: View {
         // Straight under the menu bar (the strip above is its height), plus a hair.
         .padding(.top, 1)
         .padding(.bottom, 16)
-        .frame(width: width, height: Self.size.height, alignment: .top)
+        .modifier(IdealHeight { onIdealHeight($0) })
+        .frame(width: width, alignment: .top)
+        .frame(maxHeight: Self.size.height, alignment: .top)
     }
 
     // MARK: - Cards
