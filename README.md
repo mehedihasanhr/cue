@@ -61,7 +61,7 @@ If a grant ever gets stuck, clear it and re-grant: `tccutil reset ScreenCapture 
    notch to open the Dynamic Island and use its capture buttons. A capture lands on
    the clipboard and in the island, and opens in the editor — or, with Settings ›
    Capture › **After a capture › Copy to the clipboard**, is just copied. The menu
-   bar icon only holds Settings and Quit.
+   bar icon lists the tools too.
 
 ### Area capture (⌥⇧4)
 
@@ -87,7 +87,15 @@ text · **⌥⇧P** pick a color · **⌥⇧N** quick task · **⌥⇧M** quick 
 **⌘⇧C** the clipboard list (type to filter, ↑↓, ↩ pastes, ⌘↩ copies, ⌥↩ pastes as
 plain text, ⇧↑↓ picks several to paste joined, ⌘1–9 picks) · **⌥⇧Space** the command
 palette · **⌘⇧V** the paste stack (each press pastes the next entry of the history).
-Klik › Settings › Shortcuts: click a field and press a new combination (⌫ clears).
+The menu bar icon lists every tool and panel with its shortcut, then Settings and
+Quit. Klik › Settings › Shortcuts: click a field and press a new combination (⌫ clears).
+
+### The Klik panel (⌥⇧K)
+
+A movable glass panel at the pointer: a search across everything, the capture
+tools, and every capture, clipboard entry, asset and color by day, as a grid of
+cards or a list. A click on a card copies it; dragging one carries it into another
+app. That is all it does — pinning, groups, editing and deleting live in the island.
 The macOS defaults (⌘⇧3/4/5/6) are handled by the system first; Klik marks them with a
 warning if you bind them, and links to Keyboard › Keyboard Shortcuts › Screenshots
 where they can be turned off.

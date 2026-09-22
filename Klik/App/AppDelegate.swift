@@ -3,7 +3,7 @@ import os
 import AppKit
 import SwiftUI
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let model = AppModel()
     let shortcuts = ShortcutController()
     let library = CaptureLibrary()
@@ -375,8 +375,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         // Diagnostics: `open Klik.app --env KLIK_DEBUG_PANEL=1` opens the floating panel at launch.
+        // With KLIK_DEBUG_PANEL_SHOT=1 too, a picture of it lands in Pictures/Klik/_panel.png.
         if ProcessInfo.processInfo.environment["KLIK_DEBUG_PANEL"] == "1" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.toggleHistoryAtPointer() }
+            if ProcessInfo.processInfo.environment["KLIK_DEBUG_PANEL_SHOT"] == "1" {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+                    guard let panel = self?.floatingPanel else { return }
+                    let id = CGWindowID(panel.windowNumber)
+                    Task { @MainActor in
+                        let service = ScreenCaptureService()
+                        guard let content = try? await service.shareableContent(),
+                              let image = try? await service.captureWindow(id: id, in: content, fallbackScale: 2),
+                              let png = ImageEncoding.png(image.cgImage) else { return }
+                        try? png.write(to: CaptureLibrary.defaultFolder().appendingPathComponent("_panel.png"))
+                    }
+                }
+            }
         }
         groups.onDeleted = { [weak self] group in
             guard let self else { return }
@@ -449,18 +463,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Status item
 
-    /// The menu bar item is a plain dropdown — Settings and Quit. Everything else
-    /// lives in the Dynamic Island, the floating panel (⌥⇧K) and the shortcuts.
+    /// The menu bar item: every capture tool and the panels, with their shortcuts,
+    /// then Settings and Quit. Built as it opens, so a changed shortcut shows.
     private func installStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         let menu = NSMenu()
-        menu.addItem(makeItem("Settings…", #selector(showSettings(_:)), keyEquivalent: ",", modifiers: .command))
-        menu.addItem(.separator())
-        menu.addItem(makeItem("Quit Klik", #selector(NSApplication.terminate(_:)), keyEquivalent: "q", modifiers: .command))
+        menu.delegate = self
         item.menu = menu
         statusItem = item
         statusMenu = menu
         applyMenuBarIcon()
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu === statusMenu else { return }
+        menu.removeAllItems()
+        let tools: [(String, Selector, HotkeyID)] = [
+            ("Capture Full Screen", #selector(captureFullScreen(_:)), .fullScreen),
+            ("Capture Area", #selector(captureArea(_:)), .region),
+            ("Capture Window", #selector(captureWindow(_:)), .window),
+            ("Scrolling Capture", #selector(captureScrolling(_:)), .scrolling),
+            ("Capture Text", #selector(captureText(_:)), .captureText),
+            ("Pick Color", #selector(pickColor(_:)), .pickColor),
+        ]
+        for (title, selector, id) in tools { menu.addItem(shortcutItem(title, selector, id)) }
+        menu.addItem(.separator())
+        let panels: [(String, Selector, HotkeyID)] = [
+            ("Klik Panel", #selector(showPanel(_:)), .showPanel),
+            ("Clipboard List", #selector(showClipboardPanel(_:)), .clipboardPanel),
+            ("Command Palette", #selector(showCommandPalette(_:)), .commandPalette),
+            ("Quick Task…", #selector(quickTask(_:)), .quickTask),
+            ("Quick Note…", #selector(quickNote(_:)), .quickNote),
+        ]
+        for (title, selector, id) in panels { menu.addItem(shortcutItem(title, selector, id)) }
+        menu.addItem(.separator())
+        menu.addItem(makeItem("Settings…", #selector(showSettings(_:)), keyEquivalent: ",", modifiers: .command))
+        menu.addItem(.separator())
+        menu.addItem(makeItem("Quit Klik", #selector(NSApplication.terminate(_:)), keyEquivalent: "q", modifiers: .command))
+    }
+
+    /// A menu item showing the shortcut set for the action in Settings, if any.
+    private func shortcutItem(_ title: String, _ action: Selector, _ id: HotkeyID) -> NSMenuItem {
+        let hotkey = shortcuts.hotkey(for: id)
+        return makeItem(title, action, keyEquivalent: hotkey?.menuKeyEquivalent ?? "", modifiers: hotkey?.menuModifierMask ?? [])
+    }
+
+    /// The floating panel at the pointer (the ⌥⇧K shortcut's action, from the menu).
+    @objc func showPanel(_ sender: Any?) {
+        toggleHistoryAtPointer()
     }
 
     /// Keeps the status item image in sync with the Settings choice.
@@ -545,11 +595,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         closeHistory()
-        let content = FloatingPanelView(
-            library: library, clipboard: clipboard, assets: assets, colors: colors, tasksStore: tasks, snippets: snippets, actions: historyActions,
-            onPrompt: { [weak self] prompt in self?.promptFromFloatingPanel(prompt) },
-            onShowTask: { [weak self] task in self?.floatingPanel?.close(); self?.island?.showTask(task) }
-        )
+        let content = FloatingPanelView(library: library, clipboard: clipboard, assets: assets, colors: colors, tasksStore: tasks, snippets: snippets, actions: historyActions)
         .environment(preferences)
         .environment(notes)
         let panel = FloatingPanelWindow(rootView: content)
@@ -725,23 +771,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Creation and renaming from the floating panel go through the island's compact
-    /// box; without the island, tasks fall back to the floating task form.
-    private func promptFromFloatingPanel(_ prompt: IslandPrompt) {
-        floatingPanel?.close()
-        if let island {
-            island.prompt(prompt)
-        } else if case .task = prompt.kind {
-            quickTask(nil)
-        } else if case .delete(let deletion) = prompt.kind {
-            confirmWithAlert(prompt, deletion)
-        } else if case .snippet = prompt.kind {
-            snippetPanel(prompt)
-        } else if case .note = prompt.kind {
-            notePanel(prompt)
-        }
-    }
-
     /// A snippet's blanks, asked for in the island — or a floating form without one.
     /// Klik takes activation for the form (invisibly) so it can hand it back to the
     /// app afterwards, with the cursor where it was.
@@ -805,20 +834,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         quickTaskPanel = panel
         panel.show(at: NSEvent.mouseLocation, position: position ?? preferences.panelPosition)
-    }
-
-    /// Without an island to ask in, a plain alert confirms a deletion.
-    private func confirmWithAlert(_ prompt: IslandPrompt, _ deletion: TaskDeletion) {
-        NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert()
-        alert.messageText = prompt.title
-        alert.informativeText = prompt.detail(tasks)
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Delete").hasDestructiveAction = true
-        alert.addButton(withTitle: "Cancel")
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        let done = tasks.delete(deletion)
-        FeedbackHUD.show(done.title, symbol: "trash.fill", subtitle: done.subtitle)
     }
 
     private var historyActions: HistoryActions {

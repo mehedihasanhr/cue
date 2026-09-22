@@ -93,102 +93,42 @@ final class FloatingPanelWindow: NSPanel {
     }
 }
 
-/// The panel's content: search, capture buttons, a grid/list switch, the tabs, and
-/// the current tab's items scrolling vertically by day.
+/// The panel's content: a search field, the capture tools and a grid/list switch on
+/// top; every capture, clipboard entry, asset and color below, newest first by day.
+/// A card copies its item on a click and drags it out — nothing more: pinning,
+/// grouping, editing and deleting are the island's job.
 struct FloatingPanelView: View {
     let library: CaptureLibrary
     let clipboard: ClipboardHistory
     let assets: AssetStore
     let colors: ColorStore
+    // Only for the search, which looks across everything.
     let tasksStore: TaskStore
     let snippets: SnippetStore
     @Environment(NoteStore.self) private var notes
     let actions: HistoryActions
-    var onPrompt: (IslandPrompt) -> Void = { _ in }
-    var onShowTask: (TaskItem) -> Void = { _ in }
 
     @Environment(AppPreferences.self) private var preferences
     @State private var search = ""
     @FocusState private var searchFocused: Bool
-    /// While searching: show hits from this tab only (nil: every tab).
-    @State private var resultFilter: IslandTab?
-    @AppStorage(IslandTab.storageKey) private var tab: IslandTab = .all
     @AppStorage("floating.layout") private var layout: Layout = .grid
+    /// Matches for the current search — computed once per keystroke.
+    @State private var hits: [IslandItem] = []
 
     enum Layout: String { case grid, list }
 
-    private static let cardSize = CGSize(width: 200, height: 160)
+    private static let cardHeight: CGFloat = 150
+    private static let columns = [GridItem(.adaptive(minimum: 196, maximum: 260), spacing: 10, alignment: .top)]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass").font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(searching ? Color.brand : .white.opacity(0.6))
-                    TextField("Search everything", text: $search)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 13))
-                        .foregroundStyle(.white)
-                        .focused($searchFocused) // ⎋ falls through to the panel, which closes
-                    if searching {
-                        Text(hits.isEmpty ? "No matches" : "\(hits.count) \(hits.count == 1 ? "match" : "matches")")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.55))
-                            .fixedSize()
-                        Button { search = "" } label: {
-                            Image(systemName: "xmark.circle.fill").font(.system(size: 13)).foregroundStyle(.white.opacity(0.6))
-                        }
-                        .buttonStyle(.plain)
-                        .help("Clear the search")
-                    }
-                }
-                .padding(.horizontal, 12)
-                .frame(height: 34)
-                .background(.white.opacity(searching ? 0.14 : 0.1), in: Capsule(style: .continuous))
-                .overlay(Capsule(style: .continuous).strokeBorder(searching ? Color.brand.opacity(0.8) : .clear, lineWidth: 1.5))
-                if !searching {
-                    Spacer(minLength: 4)
-                    circle("display", help: "Capture full screen", action: actions.captureFullScreen)
-                    circle("viewfinder", help: "Capture area", action: actions.captureArea)
-                    circle("rectangle.expand.vertical", help: "Scrolling capture", action: actions.captureScrolling)
-                    circle("text.viewfinder", help: "Capture text", action: actions.captureText)
-                    circle("eyedropper", help: "Pick a color", action: actions.pickColor)
-                }
-            }
-            .animation(.easeOut(duration: 0.18), value: searching)
-            HStack(spacing: 8) {
-                if searching {
-                    resultPill(nil, title: "All", count: hits.count, symbol: "magnifyingglass")
-                    ForEach(IslandSearch.counts(hits), id: \.tab) { entry in
-                        resultPill(entry.tab, title: entry.tab.title, count: entry.count, symbol: entry.tab.symbol)
-                    }
-                } else {
-                    ForEach(preferences.islandTabs, id: \.self) { value in
-                        tabPill(value)
-                    }
-                }
-                Spacer(minLength: 0)
-                if searching || tab != .tasks {
-                    HStack(spacing: 2) {
-                        layoutButton(.grid, symbol: "square.grid.2x2")
-                        layoutButton(.list, symbol: "list.bullet")
-                    }
-                    .padding(2)
-                    .background(.white.opacity(0.1), in: Capsule())
-                }
-            }
+        VStack(alignment: .leading, spacing: 14) {
+            header
             Group {
-                if searching { searchResults } else { content }
+                if searching { results } else { everything }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .onChange(of: searching) { _, _ in resultFilter = nil }
             .onChange(of: search, refreshHits)
-            .onChange(of: preferences.islandTabs, initial: true) { _, tabs in
-                // The tab that was showing has been turned off: fall back to All.
-                if !tabs.contains(tab) { tab = .all }
-                refreshHits()
-            }
-            .onChange(of: library.items.count + clipboard.items.count + assets.items.count + colors.items.count + tasksStore.tasks.count, refreshHits)
+            .onChange(of: library.items.count + clipboard.items.count + assets.items.count + colors.items.count, refreshHits)
         }
         .padding(18)
         .foregroundStyle(.white)
@@ -196,71 +136,128 @@ struct FloatingPanelView: View {
         .onAppear { DispatchQueue.main.async { searchFocused = true } }
     }
 
-    // MARK: - Search
+    // MARK: - Header
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 8) {
+                Icon("magnifyingglass", size: 14, weight: .medium)
+                    .foregroundStyle(searching ? Color.brand : .white.opacity(0.6))
+                TextField("Search everything", text: $search)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.white)
+                    .focused($searchFocused) // ⎋ falls through to the panel, which closes
+                if searching {
+                    Text(hits.isEmpty ? "No matches" : "\(hits.count) \(hits.count == 1 ? "match" : "matches")")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.55))
+                        .fixedSize()
+                    Button { search = "" } label: {
+                        Icon("xmark.circle.fill", size: 14).foregroundStyle(.white.opacity(0.6))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Clear the search")
+                }
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 36)
+            .background(.white.opacity(searching ? 0.14 : 0.1), in: Capsule(style: .continuous))
+            .overlay(Capsule(style: .continuous).strokeBorder(searching ? Color.brand.opacity(0.8) : .clear, lineWidth: 1.5))
+            HStack(spacing: 4) {
+                tool("display", help: "Capture full screen", action: actions.captureFullScreen)
+                tool("viewfinder", help: "Capture area", action: actions.captureArea)
+                tool("rectangle.expand.vertical", help: "Scrolling capture", action: actions.captureScrolling)
+                tool("text.viewfinder", help: "Capture text", action: actions.captureText)
+                tool("eyedropper", help: "Pick a color", action: actions.pickColor)
+            }
+            .padding(3)
+            .background(.white.opacity(0.08), in: Capsule())
+            HStack(spacing: 2) {
+                layoutButton(.grid, symbol: "square.grid.2x2")
+                layoutButton(.list, symbol: "list.bullet")
+            }
+            .padding(3)
+            .background(.white.opacity(0.08), in: Capsule())
+        }
+    }
+
+    private func tool(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
+        ToolButton(symbol: symbol, help: help, action: action)
+    }
+
+    private struct ToolButton: View {
+        let symbol: String
+        let help: String
+        let action: () -> Void
+        @State private var hovering = false
+
+        var body: some View {
+            Button(action: action) {
+                Icon(symbol, size: 14, weight: .medium)
+                    .foregroundStyle(.white.opacity(hovering ? 1 : 0.85))
+                    .frame(width: 30, height: 30)
+                    .background(.white.opacity(hovering ? 0.16 : 0), in: Circle())
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
+            .animation(.easeOut(duration: 0.12), value: hovering)
+            .help(help)
+        }
+    }
+
+    private func layoutButton(_ value: Layout, symbol: String) -> some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.15)) { layout = value }
+        } label: {
+            Icon(symbol, size: 12, weight: .bold)
+                .foregroundStyle(layout == value ? .black : .white.opacity(0.7))
+                .frame(width: 30, height: 30)
+                .background(layout == value ? Color.white : .clear, in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help(value == .grid ? "Grid" : "List")
+    }
+
+    // MARK: - Items
 
     private var searching: Bool { !search.trimmingCharacters(in: .whitespaces).isEmpty }
 
-    /// Matches across every tab for the current search — computed once per keystroke,
-    /// not once per view that shows them.
-    @State private var hits: [IslandItem] = []
+    /// What the panel holds: captures, clipboard entries, assets and colors (the
+    /// features that are on), newest first.
+    private var items: [IslandItem] {
+        let all = library.items.map(IslandItem.capture) + clipboard.items.map(IslandItem.clipboard)
+            + assets.items.map(IslandItem.asset) + colors.items.map(IslandItem.color)
+        return all.filter(preferences.shows).sorted { $0.date > $1.date }
+    }
 
     private func refreshHits() {
-        hits = searching ? IslandSearch.hits(for: search, library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore, snippets: snippets, notes: notes).filter(preferences.shows) : []
-    }
-
-    private func resultPill(_ value: IslandTab?, title: String, count: Int, symbol: String) -> some View {
-        let selected = resultFilter == value
-        return Button {
-            withAnimation(.easeOut(duration: 0.15)) { resultFilter = value }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: symbol).font(.system(size: 10, weight: .semibold))
-                Text(title).font(.system(size: 11, weight: .semibold))
-                Text("\(count)")
-                    .font(.system(size: 9.5, weight: .semibold))
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 1)
-                    .background((selected ? Color.black : Color.white).opacity(0.12), in: Capsule())
+        guard searching else { hits = []; return }
+        hits = IslandSearch.hits(for: search, library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore, snippets: snippets, notes: notes)
+            .filter { hit in
+                switch hit {
+                case .capture, .clipboard, .asset, .color, .answer: preferences.shows(hit)
+                case .task, .snippet, .note: false
+                }
             }
-            .foregroundStyle(selected ? .black : .white.opacity(0.85))
-            .padding(.horizontal, 10)
-            .frame(height: 26)
-            .background(selected ? Color.brand : Color.white.opacity(0.1), in: Capsule())
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
     }
 
-    /// Hits grouped by tab, as cards or rows like the tabs themselves.
     @ViewBuilder
-    private var searchResults: some View {
-        let shown = resultFilter.map { filter in hits.filter { $0.tab == filter } } ?? hits
-        if shown.isEmpty {
-            VStack(spacing: 6) {
-                Image(systemName: "magnifyingglass").font(.system(size: 22)).foregroundStyle(.white.opacity(0.4))
-                Text("Nothing matches “\(search.trimmingCharacters(in: .whitespaces))”").font(.system(size: 13, weight: .medium)).foregroundStyle(.white.opacity(0.6))
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    private var everything: some View {
+        let items = items
+        if items.isEmpty {
+            empty("Nothing yet — capture, copy or drop something")
         } else {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
-                    ForEach(IslandTab.allCases, id: \.self) { tab in
-                        let group = shown.filter { $0.tab == tab }
-                        if !group.isEmpty {
-                            Text(tab.title)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.white.opacity(0.85))
-                                .padding(.top, 4)
-                            if layout == .grid, tab != .tasks {
-                                LazyVGrid(columns: [GridItem(.adaptive(minimum: Self.cardSize.width, maximum: Self.cardSize.width), spacing: 10, alignment: .leading)], alignment: .leading, spacing: 10) {
-                                    ForEach(group) { hit in hitCard(hit) }
-                                }
-                            } else {
-                                LazyVStack(spacing: 2) {
-                                    ForEach(group) { hit in hitRow(hit) }
-                                }
-                            }
-                        }
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    ForEach(dayGroups(items), id: \.day) { group in
+                        Text(group.title)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.85))
+                            .padding(.top, 4)
+                        section(group.items)
                     }
                 }
                 .padding(.bottom, 8)
@@ -269,262 +266,247 @@ struct FloatingPanelView: View {
     }
 
     @ViewBuilder
-    private func hitCard(_ hit: IslandItem) -> some View {
-        switch hit {
-        case .capture(let item): captureCard(item)
-        case .clipboard(let item): clipboardCard(item)
-        case .asset(let item): assetCard(item)
-        case .color(let entry): colorCard(entry)
-        case .task(let task): taskRow(task)
-        case .snippet(let snippet): snippetCard(snippet)
-        case .note(let note): noteCard(note)
-        case .answer(let answer): AnswerCard(answer: answer, clipboard: clipboard, colors: colors)
+    private var results: some View {
+        if hits.isEmpty {
+            empty("Nothing matches “\(search.trimmingCharacters(in: .whitespaces))”")
+        } else {
+            ScrollView {
+                section(hits).padding(.bottom, 8)
+            }
         }
+    }
+
+    private func empty(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(.white.opacity(0.6))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ViewBuilder
-    private func hitRow(_ hit: IslandItem) -> some View {
-        switch hit {
-        case .capture(let item): captureRow(item)
-        case .clipboard(let item): clipboardRow(item)
-        case .asset(let item): assetRow(item)
-        case .color(let entry): colorRow(entry)
-        case .task(let task): taskRow(task)
-        case .snippet(let snippet): snippetRow(snippet)
-        case .note(let note): noteRow(note)
-        case .answer(let answer): AnswerCard(answer: answer, clipboard: clipboard, colors: colors)
-        }
-    }
-
-    private func noteCard(_ note: Note) -> some View {
-        NoteCard(note: note, store: notes, clipboard: clipboard, onEdit: { onPrompt(IslandPrompt(kind: .note(note))) })
-    }
-
-    private func noteRow(_ note: Note) -> some View {
-        ListRow(symbol: "note.text", title: note.title, subtitle: note.summary.isEmpty ? note.updatedAt.formatted(.relative(presentation: .named)) : note.summary) {
-            onPrompt(IslandPrompt(kind: .note(note)))
-        }
-        .contextMenu {
-            Button("Edit…") { onPrompt(IslandPrompt(kind: .note(note))) }
-            Button("Copy as Markdown") { clipboard.copy(text: note.text) }
-            Divider()
-            Button("Delete", role: .destructive) { notes.delete(note) }
-        }
-    }
-
-    private func snippetCard(_ snippet: Snippet) -> some View {
-        SnippetCard(snippet: snippet, store: snippets, assets: assets, clipboard: clipboard,
-                    onEdit: { onPrompt(IslandPrompt(kind: .snippet(snippet, initialText: "", assetID: nil))) })
-    }
-
-    private func snippetRow(_ snippet: Snippet) -> some View {
-        ListRow(symbol: "text.badge.plus", title: "\(snippet.keyword)  \(snippet.name)",
-                subtitle: snippet.assetID != nil ? "Pastes a file" : snippet.text.replacingOccurrences(of: "\n", with: " ")) {
-            SnippetCard.copy(snippet, store: snippets, assets: assets)
-        }
-        .contextMenu {
-            Button("Copy") { SnippetCard.copy(snippet, store: snippets, assets: assets) }
-            Button("Edit…") { onPrompt(IslandPrompt(kind: .snippet(snippet, initialText: "", assetID: nil))) }
-            Divider()
-            Button("Delete", role: .destructive) { snippets.delete(snippet) }
-        }
-    }
-
-    private func taskRow(_ task: TaskItem) -> some View {
-        let project = tasksStore.project(task.projectID)
-        return ListRow(symbol: task.status.symbol, title: task.title,
-                       subtitle: "\(task.status.title) · \(task.priority.title)\(project.map { " · \($0.name)" } ?? "") · \(task.createdAt.formatted(.relative(presentation: .named)))") { onShowTask(task) }
-            .contextMenu {
-                Button("Open") { onShowTask(task) }
-                Menu("Status") {
-                    ForEach(TaskStatus.allCases, id: \.self) { status in
-                        Button { tasksStore.setStatus(status, for: task) } label: { Label(status.title, systemImage: status.symbol) }
-                    }
-                }
-                Menu("Priority") {
-                    ForEach(TaskPriority.allCases, id: \.self) { value in
-                        Button { tasksStore.setPriority(value, for: task) } label: { Label(value.title, systemImage: value.symbol) }
-                    }
-                }
-                Divider()
-                Button("Delete…", role: .destructive) { onPrompt(IslandPrompt(kind: .delete(.task(task)))) }
+    private func section(_ items: [IslandItem]) -> some View {
+        if layout == .grid {
+            LazyVGrid(columns: Self.columns, alignment: .leading, spacing: 10) {
+                ForEach(items) { item in card(item).frame(height: Self.cardHeight) }
             }
-    }
-
-    // MARK: - Header pieces
-
-    private func circle(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.white)
-                .frame(width: 34, height: 34)
-                .background(.white.opacity(0.12), in: Circle())
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .help(help)
-    }
-
-    private func tabPill(_ value: IslandTab) -> some View {
-        let selected = tab == value
-        let count: Int = switch value {
-        case .all: library.items.count + clipboard.items.count + assets.items.count + colors.items.count + tasksStore.tasks.count
-        case .captures: library.items.count
-        case .clipboard: clipboard.items.count
-        case .assets: assets.items.count
-        case .colors: colors.items.count
-        case .tasks: tasksStore.tasks.filter { $0.status != .complete }.count
-        case .snippets: snippets.items.count
-        case .notes: notes.notes.count
-        }
-        return Button {
-            withAnimation(.easeOut(duration: 0.15)) { tab = value }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: value.symbol).font(.system(size: 10, weight: .semibold))
-                Text(value.title).font(.system(size: 11.5, weight: .semibold))
-                if count > 0 {
-                    Text("\(count)").font(.system(size: 9.5, weight: .semibold))
-                        .padding(.horizontal, 4).padding(.vertical, 1)
-                        .background((selected ? Color.black : Color.white).opacity(0.12), in: Capsule())
-                }
+        } else {
+            LazyVStack(spacing: 2) {
+                ForEach(items) { item in row(item) }
             }
-            .foregroundStyle(selected ? .black : .white.opacity(0.85))
-            .padding(.horizontal, 10)
-            .frame(height: 26)
-            .background(selected ? Color.white : Color.white.opacity(0.12), in: Capsule())
-            .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
     }
 
-    private func layoutButton(_ value: Layout, symbol: String) -> some View {
-        Button {
-            withAnimation(.easeOut(duration: 0.15)) { layout = value }
-        } label: {
-            Image(systemName: symbol)
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(layout == value ? .black : .white.opacity(0.7))
-                .frame(width: 24, height: 22)
-                .background(layout == value ? Color.white : .clear, in: Capsule())
-                .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .help(value == .grid ? "Grid" : "List")
+    private struct DayGroup {
+        let day: Date
+        let title: String
+        var items: [IslandItem]
     }
 
-    // MARK: - Content
+    /// Pinned items first in their own group, then each day's.
+    private func dayGroups(_ items: [IslandItem]) -> [DayGroup] {
+        let calendar = Calendar.current
+        var groups: [DayGroup] = []
+        let pinned = items.filter(\.pinned)
+        if !pinned.isEmpty { groups.append(DayGroup(day: .distantFuture, title: "Pinned", items: pinned)) }
+        for item in items where !item.pinned {
+            let day = calendar.startOfDay(for: item.date)
+            if let index = groups.firstIndex(where: { $0.day == day }) {
+                groups[index].items.append(item)
+            } else {
+                let title = calendar.isDateInToday(day) ? "Today" : calendar.isDateInYesterday(day) ? "Yesterday"
+                    : day.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+                groups.append(DayGroup(day: day, title: title, items: [item]))
+            }
+        }
+        return groups
+    }
+
+    // MARK: - Cards
 
     @ViewBuilder
-    private var content: some View {
-        switch tab {
-        case .all:
-            list(IslandSearch.everything(library: library, clipboard: clipboard, assets: assets, colors: colors, snippets: snippets, notes: notes).filter(preferences.shows),
-                 date: \.date, empty: "Nothing yet — capture, copy or drop something", card: hitCard, row: hitRow)
-        case .tasks:
-            IslandTasksView(store: tasksStore, onPrompt: onPrompt, onShowTask: onShowTask)
-        case .snippets:
-            list(snippets.items, date: \.createdAt, empty: "No snippets yet — make one from a clipboard entry or an asset, or with New in the island", card: snippetCard, row: snippetRow)
-        case .notes:
-            list(notes.notes, date: \.updatedAt, empty: "No notes yet — ⌥⇧M opens one anywhere", card: noteCard, row: noteRow)
-        case .captures:
-            list(library.items, date: \.createdAt, pinned: \.pinned, empty: "No captures yet", card: captureCard, row: captureRow)
-        case .clipboard:
-            list(clipboard.items, date: \.createdAt, pinned: \.pinned, empty: "Nothing copied yet", card: clipboardCard, row: clipboardRow)
-        case .assets:
-            list(assets.items, date: \.createdAt, pinned: \.pinned, empty: "No assets yet — drop files on the island", card: assetCard, row: assetRow)
-        case .colors:
-            list(colors.items, date: \.createdAt, pinned: \.pinned, empty: "No colors yet — use the eyedropper", card: colorCard, row: colorRow)
-        }
-    }
-
-    // MARK: - Cards and rows
-
-    private func captureCard(_ item: CaptureItem) -> some View {
-        CaptureCard(item: item, library: library, actions: actions, clipboard: clipboard, colorStore: colors, onPreview: { actions.preview(item) }, onRename: {
-            onPrompt(IslandPrompt(kind: .rename(.capture(item)), initial: item.title.replacingOccurrences(of: "Screenshot ", with: ""), image: library.thumbnail(for: item)))
-        })
-    }
-
-    private func captureRow(_ item: CaptureItem) -> some View {
-        ListRow(image: library.thumbnail(for: item), symbol: "photo", title: item.title.replacingOccurrences(of: "Screenshot ", with: ""),
-                subtitle: "\(item.dimensions) · \(item.createdAt.formatted(.relative(presentation: .named)))") { actions.edit(item) }
-            .contextMenu {
-                Button("Preview") { actions.preview(item) }
-                Button("Edit") { actions.edit(item) }
-                Button("Copy to Clipboard") { actions.copy(item) }
-                Button(item.pinned ? "Unpin" : "Pin") { library.togglePin(item) }
-                Divider()
-                Button("Delete", role: .destructive) { actions.delete(item) }
+    private func card(_ item: IslandItem) -> some View {
+        switch item {
+        case .capture(let capture):
+            QuickCard(label: "Screenshot \(capture.dimensions), \(capture.createdAt.formatted(.relative(presentation: .named)))",
+                      payload: { library.fileURL(for: capture).map { .file($0, preview: library.thumbnail(for: capture), reference: .capture(capture.id)) } },
+                      copy: { actions.copy(capture) }) {
+                picture(library.thumbnail(for: capture))
+                    .overlay(alignment: .bottom) {
+                        CardCaption(title: "", date: capture.createdAt, subtitle: capture.createdAt.formatted(date: .omitted, time: .shortened)) {
+                            Badge(text: capture.dimensions)
+                        }
+                    }
             }
-    }
-
-    private func clipboardCard(_ item: ClipboardItem) -> some View {
-        ClipboardCard(item: item, clipboard: clipboard, onRename: {
-            onPrompt(IslandPrompt(kind: .rename(.clipboard(item)), initial: item.name ?? "", image: clipboard.thumbnail(for: item), swatch: item.kind == .color ? PickedColor(hex: item.text) : nil))
-        })
-    }
-
-    private func clipboardRow(_ item: ClipboardItem) -> some View {
-        ListRow(image: clipboard.thumbnail(for: item), swatch: item.kind == .color ? PickedColor(hex: item.text) : nil,
-                symbol: clipboardSymbol(item), title: item.title,
-                subtitle: "\(item.sourceName ?? item.kind.rawValue.capitalized) · \(item.createdAt.formatted(.relative(presentation: .named)))") {
-            clipboard.copy(item)
-            FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
-        }
-        .contextMenu {
-            Button("Copy") { clipboard.copy(item) }
-            Button(item.pinned ? "Unpin" : "Pin") { clipboard.togglePin(item) }
-            if item.kind == .text || item.kind == .link || item.kind == .color {
-                Button("Make Snippet…") { onPrompt(IslandPrompt(kind: .snippet(nil, initialText: item.text, assetID: nil))) }
+        case .clipboard(let entry):
+            QuickCard(label: "\(entry.kind.rawValue.capitalized): \(entry.name ?? entry.title), \(entry.createdAt.formatted(.relative(presentation: .named)))",
+                      payload: { clipboard.dragPayload(for: entry).map { var own = $0; own.reference = .clipboard(entry.id); return own } },
+                      copy: {
+                          clipboard.copy(entry)
+                          FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: entry.contentTitle, image: clipboard.thumbnail(for: entry))
+                      }) {
+                clipboardContent(entry)
+                    .overlay(alignment: .bottom) {
+                        CardCaption(title: entry.name ?? "", date: entry.createdAt) {
+                            if let icon = clipboard.sourceIcon(for: entry) {
+                                Image(nsImage: icon).resizable().frame(width: 16, height: 16).help(entry.sourceName ?? "")
+                            }
+                        }
+                    }
             }
-            Divider()
-            Button("Delete", role: .destructive) { clipboard.delete(item) }
-        }
-    }
-
-    private func assetCard(_ item: AssetItem) -> some View {
-        AssetCard(item: item, assets: assets, clipboard: clipboard, onRename: {
-            onPrompt(IslandPrompt(kind: .rename(.asset(item)), initial: item.title, image: assets.thumbnail(for: item)))
-        })
-    }
-
-    private func assetRow(_ item: AssetItem) -> some View {
-        ListRow(image: assets.thumbnail(for: item), symbol: "doc", title: item.fileName,
-                subtitle: "\(item.kind == .image ? item.dimensions : item.sizeText) · \(item.createdAt.formatted(.relative(presentation: .named)))") { assets.open(item) }
-            .contextMenu {
-                Button("Open") { assets.open(item) }
-                Button("Copy") { assets.copy(item) }
-                Button("Reveal in Finder") { assets.reveal(item) }
-                Button(item.pinned ? "Unpin" : "Pin") { assets.togglePin(item) }
-                Button("Make Snippet…") { onPrompt(IslandPrompt(kind: .snippet(nil, initialText: "", assetID: item.id))) }
-                Divider()
-                Button("Delete", role: .destructive) { assets.delete(item) }
-            }
-    }
-
-    private func colorCard(_ entry: ColorEntry) -> some View {
-        ColorCard(entry: entry, colors: colors, format: preferences.colorFormat, onRename: {
-            onPrompt(IslandPrompt(kind: .rename(.color(entry)), initial: entry.name ?? "", swatch: entry.color))
-        })
-    }
-
-    private func colorRow(_ entry: ColorEntry) -> some View {
-        ListRow(swatch: entry.color, symbol: "paintpalette", title: entry.name ?? preferences.colorFormat.string(for: entry.color),
-                subtitle: "\(ColorFormat.hex.string(for: entry.color)) · \(entry.createdAt.formatted(.relative(presentation: .named)))") {
-            colors.copy(entry, as: preferences.colorFormat)
-            FeedbackHUD.show("\(preferences.colorFormat.string(for: entry.color)) copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
-        }
-        .contextMenu {
-            Menu("Copy as") {
-                ForEach(ColorFormat.allCases, id: \.self) { format in
-                    Button(format.string(for: entry.color)) { colors.copy(entry, as: format) }
+        case .asset(let asset):
+            QuickCard(label: "\(asset.fileName), \(asset.createdAt.formatted(.relative(presentation: .named)))",
+                      payload: { .file(assets.fileURL(for: asset), preview: assets.thumbnail(for: asset), reference: .asset(asset.id)) },
+                      copy: {
+                          assets.copy(asset)
+                          FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: asset.fileName, image: assets.thumbnail(for: asset))
+                      }) {
+                Group {
+                    if asset.kind == .image {
+                        picture(assets.thumbnail(for: asset))
+                    } else {
+                        VStack(spacing: 8) {
+                            Image(nsImage: NSWorkspace.shared.icon(forFile: assets.fileURL(for: asset).path)).resizable().frame(width: 44, height: 44)
+                            Text((asset.fileName as NSString).pathExtension.uppercased())
+                                .font(.system(size: 10, weight: .semibold)).foregroundStyle(.white.opacity(0.6))
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
+                .overlay(alignment: .bottom) {
+                    CardCaption(title: asset.fileName, date: asset.createdAt) {
+                        Badge(text: asset.kind == .image ? asset.dimensions : asset.sizeText)
+                    }
                 }
             }
-            Button(entry.pinned ? "Unpin" : "Pin") { colors.togglePin(entry) }
-            Divider()
-            Button("Delete", role: .destructive) { colors.delete(entry) }
+        case .color(let entry):
+            let format = preferences.colorFormat
+            QuickCard(label: "Color \(entry.name ?? format.string(for: entry.color))",
+                      payload: { DragPayload(writer: format.string(for: entry.color) as NSString, preview: ColorCard.dragImage(for: entry.color), reference: .color(entry.id)) },
+                      copy: {
+                          colors.copy(entry, as: format)
+                          FeedbackHUD.show("\(format.string(for: entry.color)) copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), swatch: entry.color)
+                      }) {
+                entry.color.swiftUIColor
+                    .overlay(alignment: .topLeading) {
+                        Text(format.string(for: entry.color))
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(entry.color.isDark ? .white : .black)
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background((entry.color.isDark ? Color.white : Color.black).opacity(0.18), in: Capsule())
+                            .padding(10)
+                    }
+                    .overlay(alignment: .bottom) {
+                        CardCaption(title: entry.name ?? "", date: entry.createdAt) { EmptyView() }
+                    }
+            }
+        case .answer(let answer):
+            AnswerCard(answer: answer, clipboard: clipboard, colors: colors)
+        case .task, .snippet, .note:
+            EmptyView()
+        }
+    }
+
+    private func picture(_ image: NSImage?) -> some View {
+        Color.clear
+            .overlay {
+                if let image {
+                    Image(nsImage: image).resizable().scaledToFill()
+                } else {
+                    Color.white.opacity(0.1)
+                }
+            }
+            .clipped()
+    }
+
+    @ViewBuilder
+    private func clipboardContent(_ item: ClipboardItem) -> some View {
+        switch item.kind {
+        case .text:
+            Text(item.text.trimmingCharacters(in: .whitespacesAndNewlines))
+                .font(.system(size: 11.5))
+                .foregroundStyle(.white.opacity(0.92))
+                .lineLimit(6)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(12)
+                .padding(.bottom, 20) // clear of the caption
+        case .link:
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Icon("link", size: 14, weight: .semibold)
+                    Text(URL(string: item.text)?.host ?? item.text).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                }
+                Text(item.text).font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.65)).lineLimit(3)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(12)
+        case .color:
+            let components = item.colorComponents ?? (0.5, 0.5, 0.5)
+            Color(red: components.red, green: components.green, blue: components.blue)
+                .overlay(alignment: .topLeading) {
+                    Text(item.text)
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(.black.opacity(0.35), in: Capsule())
+                        .padding(10)
+                }
+        case .image:
+            picture(clipboard.thumbnail(for: item))
+                .overlay(alignment: .topTrailing) { Badge(text: item.dimensions).padding(8) }
+        case .files:
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Icon(item.filePaths.count > 1 ? "doc.on.doc" : "doc", size: 15, weight: .semibold)
+                    Text(item.filePaths.count > 1 ? "\(item.filePaths.count) files" : "File").font(.system(size: 12, weight: .semibold))
+                }
+                ForEach(item.filePaths.prefix(3), id: \.self) { path in
+                    Text((path as NSString).lastPathComponent).font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.75)).lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(12)
+        }
+    }
+
+    // MARK: - Rows
+
+    @ViewBuilder
+    private func row(_ item: IslandItem) -> some View {
+        switch item {
+        case .capture(let capture):
+            ListRow(image: library.thumbnail(for: capture), symbol: "photo", title: capture.title.replacingOccurrences(of: "Screenshot ", with: ""),
+                    subtitle: "\(capture.dimensions) · \(capture.createdAt.formatted(.relative(presentation: .named)))",
+                    payload: { library.fileURL(for: capture).map { .file($0, preview: library.thumbnail(for: capture), reference: .capture(capture.id)) } }) {
+                actions.copy(capture)
+            }
+        case .clipboard(let entry):
+            ListRow(image: clipboard.thumbnail(for: entry), swatch: entry.kind == .color ? PickedColor(hex: entry.text) : nil,
+                    symbol: clipboardSymbol(entry), title: entry.title,
+                    subtitle: "\(entry.sourceName ?? entry.kind.rawValue.capitalized) · \(entry.createdAt.formatted(.relative(presentation: .named)))",
+                    payload: { clipboard.dragPayload(for: entry) }) {
+                clipboard.copy(entry)
+                FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
+            }
+        case .asset(let asset):
+            ListRow(image: assets.thumbnail(for: asset), symbol: "doc", title: asset.fileName,
+                    subtitle: "\(asset.kind == .image ? asset.dimensions : asset.sizeText) · \(asset.createdAt.formatted(.relative(presentation: .named)))",
+                    payload: { .file(assets.fileURL(for: asset), preview: assets.thumbnail(for: asset), reference: .asset(asset.id)) }) {
+                assets.copy(asset)
+                FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: asset.fileName)
+            }
+        case .color(let entry):
+            let format = preferences.colorFormat
+            ListRow(swatch: entry.color, symbol: "paintpalette", title: entry.name ?? format.string(for: entry.color),
+                    subtitle: "\(ColorFormat.hex.string(for: entry.color)) · \(entry.createdAt.formatted(.relative(presentation: .named)))",
+                    payload: { DragPayload(writer: format.string(for: entry.color) as NSString, preview: ColorCard.dragImage(for: entry.color), reference: .color(entry.id)) }) {
+                colors.copy(entry, as: format)
+                FeedbackHUD.show("\(format.string(for: entry.color)) copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), swatch: entry.color)
+            }
+        case .answer(let answer):
+            AnswerCard(answer: answer, clipboard: clipboard, colors: colors).frame(height: Self.cardHeight)
+        case .task, .snippet, .note:
+            EmptyView()
         }
     }
 
@@ -538,76 +520,50 @@ struct FloatingPanelView: View {
         }
     }
 
-    /// Items by day: cards in a grid, or compact rows.
-    private func list<Item: Identifiable, Card: View, Row: View>(
-        _ items: [Item], date: KeyPath<Item, Date>, pinned: KeyPath<Item, Bool>? = nil, empty: String,
-        @ViewBuilder card: @escaping (Item) -> Card, @ViewBuilder row: @escaping (Item) -> Row
-    ) -> some View {
-        Group {
-            if items.isEmpty {
-                VStack(spacing: 6) {
-                    Text(empty).font(.system(size: 13, weight: .medium)).foregroundStyle(.white.opacity(0.6))
-                }
+    /// A card: the item, a Copy pill while hovered, a brand outline. A click copies,
+    /// a drag carries the item out.
+    private struct QuickCard<Content: View>: View {
+        let label: String
+        let payload: () -> DragPayload?
+        let copy: () -> Void
+        @ViewBuilder let content: () -> Content
+        @State private var hovering = false
+
+        var body: some View {
+            content()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 8, pinnedViews: []) {
-                        ForEach(dayGroups(items, date: date, pinned: pinned), id: \.day) { group in
-                            Text(group.title)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.white.opacity(0.85))
-                                .padding(.top, 4)
-                            if layout == .grid {
-                                LazyVGrid(columns: [GridItem(.adaptive(minimum: Self.cardSize.width, maximum: Self.cardSize.width), spacing: 10, alignment: .leading)], alignment: .leading, spacing: 10) {
-                                    ForEach(group.items) { item in card(item) }
-                                }
-                            } else {
-                                LazyVStack(spacing: 2) {
-                                    ForEach(group.items) { item in row(item) }
-                                }
-                            }
-                        }
+                .background(Color.white.opacity(0.07))
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(hovering ? Color.brand : .white.opacity(0.1), lineWidth: hovering ? 2 : 1))
+                .overlay(alignment: .topTrailing) {
+                    HStack(spacing: 5) {
+                        Icon("doc.on.doc", size: 11, weight: .semibold)
+                        Text("Copy").font(.system(size: 11, weight: .semibold))
                     }
-                    .padding(.bottom, 8)
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 9)
+                    .frame(height: 24)
+                    .background(Color.white, in: Capsule())
+                    .padding(8)
+                    .opacity(hovering ? 1 : 0)
                 }
-            }
+                .overlay(DragSource(payload: payload, onClick: copy, onHover: { hovering = $0 }))
+                .animation(.easeOut(duration: 0.12), value: hovering)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(label)
+                .accessibilityAction { copy() }
         }
-    }
-
-    private struct DayGroup<Item> {
-        let day: Date
-        let title: String
-        var items: [Item]
-    }
-
-    /// Pinned items (if `pinned` is given) come first in their own group.
-    private func dayGroups<Item>(_ items: [Item], date: KeyPath<Item, Date>, pinned: KeyPath<Item, Bool>? = nil) -> [DayGroup<Item>] {
-        let calendar = Calendar.current
-        var groups: [DayGroup<Item>] = []
-        if let pinned {
-            let pinnedItems = items.filter { $0[keyPath: pinned] }
-            if !pinnedItems.isEmpty { groups.append(DayGroup(day: .distantFuture, title: "Pinned", items: pinnedItems)) }
-        }
-        for item in items where !(pinned.map { item[keyPath: $0] } ?? false) {
-            let day = calendar.startOfDay(for: item[keyPath: date])
-            if let index = groups.firstIndex(where: { $0.day == day }) {
-                groups[index].items.append(item)
-            } else {
-                let title = calendar.isDateInToday(day) ? "Today" : calendar.isDateInYesterday(day) ? "Yesterday"
-                    : day.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
-                groups.append(DayGroup(day: day, title: title, items: [item]))
-            }
-        }
-        return groups
     }
 
     /// A compact row for the list layout: thumbnail / swatch / icon, title, subtitle.
+    /// A click copies, a drag carries the item out.
     private struct ListRow: View {
         var image: NSImage? = nil
         var swatch: PickedColor? = nil
         let symbol: String
         let title: String
         let subtitle: String
+        let payload: () -> DragPayload?
         let action: () -> Void
         @State private var hovering = false
 
@@ -619,7 +575,7 @@ struct FloatingPanelView: View {
                     } else if let image {
                         Color.clear.overlay { Image(nsImage: image).resizable().scaledToFill() }.clipped()
                     } else {
-                        Image(systemName: symbol).font(.system(size: 14)).foregroundStyle(.white.opacity(0.7))
+                        Icon(symbol, size: 15).foregroundStyle(.white.opacity(0.7))
                     }
                 }
                 .frame(width: 56, height: 36)
@@ -630,13 +586,107 @@ struct FloatingPanelView: View {
                     Text(subtitle).font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.55)).lineLimit(1)
                 }
                 Spacer(minLength: 0)
+                if hovering {
+                    Icon("doc.on.doc", size: 12, weight: .semibold).foregroundStyle(.white.opacity(0.7)).padding(.trailing, 4)
+                }
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .background(hovering ? Color.white.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-            .contentShape(Rectangle())
-            .onHover { hovering = $0 }
-            .onTapGesture(perform: action)
+            .overlay(DragSource(payload: payload, onClick: action, onHover: { hovering = $0 }))
+            .animation(.easeOut(duration: 0.12), value: hovering)
+        }
+    }
+}
+
+/// The AppKit side of a card or row: a press that moves becomes a drag out of the
+/// panel (a file URL carrying the sandbox extension other apps need, or the text);
+/// a press released in place is a click. Hover is reported from here too, so the
+/// view above never misses it.
+private struct DragSource: NSViewRepresentable {
+    let payload: () -> DragPayload?
+    let onClick: () -> Void
+    let onHover: (Bool) -> Void
+
+    func makeNSView(context: Context) -> SourceView {
+        let view = SourceView()
+        update(view)
+        return view
+    }
+
+    func updateNSView(_ view: SourceView, context: Context) {
+        update(view)
+    }
+
+    private func update(_ view: SourceView) {
+        view.payload = payload
+        view.onClick = onClick
+        view.onHover = onHover
+    }
+
+    final class SourceView: NSView, NSDraggingSource {
+        var payload: (() -> DragPayload?)?
+        var onClick: (() -> Void)?
+        var onHover: ((Bool) -> Void)?
+        private var pressStart: CGPoint?
+        private var tracking: NSTrackingArea?
+
+        override var mouseDownCanMoveWindow: Bool { false }
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            if let tracking { removeTrackingArea(tracking) }
+            let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self)
+            addTrackingArea(area)
+            tracking = area
+        }
+
+        override func mouseEntered(with event: NSEvent) { onHover?(true) }
+        override func mouseExited(with event: NSEvent) { onHover?(false) }
+
+        override func mouseDown(with event: NSEvent) {
+            pressStart = event.locationInWindow
+        }
+
+        override func mouseDragged(with event: NSEvent) {
+            guard let start = pressStart else { return }
+            let dx = event.locationInWindow.x - start.x, dy = event.locationInWindow.y - start.y
+            guard hypot(dx, dy) >= 5 else { return }
+            pressStart = nil
+            guard let payload = payload?() else { return }
+            IslandDrag.current = payload.reference
+            let item = NSDraggingItem(pasteboardWriter: payload.writer)
+            let image = payload.preview
+            let side: CGFloat = 140
+            let scale = min(side / max(image.size.width, 1), side / max(image.size.height, 1), 1)
+            let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+            let local = convert(start, from: nil)
+            item.setDraggingFrame(CGRect(x: local.x - size.width / 2, y: local.y - size.height / 2, width: size.width, height: size.height), contents: image)
+            beginDraggingSession(with: [item], event: event, source: self)
+        }
+
+        override func mouseUp(with event: NSEvent) {
+            guard pressStart != nil else { return }
+            pressStart = nil
+            onClick?()
+        }
+
+        func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+            .copy
+        }
+
+        func draggingSession(_ session: NSDraggingSession, willBeginAt screenPoint: NSPoint) {
+            NSCursor.closedHand.set()
+        }
+
+        func draggingSession(_ session: NSDraggingSession, movedTo screenPoint: NSPoint) {
+            NSCursor.closedHand.set()
+        }
+
+        func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+            NSCursor.arrow.set()
+            DispatchQueue.main.async { IslandDrag.current = nil }
         }
     }
 }
