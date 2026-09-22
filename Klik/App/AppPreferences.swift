@@ -27,6 +27,8 @@ final class AppPreferences {
         static let islandStatuses = "island.statuses"
         static let islandAnimation = "island.animation"
         static let islandPreview = "island.preview"
+        static let islandPreviewOnHover = "island.previewOnHover"
+        static let islandPreviewHoverDelay = "island.previewHoverDelay"
         static let islandOpensOn = "island.opensOn"
         static let clipboardEnabled = "clipboard.enabled"
         static let clipboardLimit = "clipboard.limit"
@@ -291,6 +293,16 @@ final class AppPreferences {
         didSet { defaults.set(islandPreview.rawValue, forKey: Key.islandPreview) }
     }
 
+    /// With the pane: resting the pointer on a card opens it there.
+    var islandPreviewOnHover: Bool {
+        didSet { defaults.set(islandPreviewOnHover, forKey: Key.islandPreviewOnHover) }
+    }
+
+    /// How long the pointer rests on a card before the pane shows it.
+    var islandPreviewHoverDelay: Double {
+        didSet { defaults.set(islandPreviewHoverDelay, forKey: Key.islandPreviewHoverDelay) }
+    }
+
     /// How the island moves: a spring, a short ease, or straight there.
     var islandAnimation: IslandAnimation {
         didSet { defaults.set(islandAnimation.rawValue, forKey: Key.islandAnimation) }
@@ -434,6 +446,8 @@ final class AppPreferences {
         islandStatuses = defaults.object(forKey: Key.islandStatuses) as? Bool ?? true
         islandAnimation = IslandAnimation(rawValue: defaults.string(forKey: Key.islandAnimation) ?? "") ?? .lively
         islandPreview = IslandPreview(rawValue: defaults.string(forKey: Key.islandPreview) ?? "") ?? .inline
+        islandPreviewOnHover = defaults.object(forKey: Key.islandPreviewOnHover) as? Bool ?? true
+        islandPreviewHoverDelay = defaults.object(forKey: Key.islandPreviewHoverDelay) as? Double ?? 0.5
         islandOpensOn = IslandTab(rawValue: defaults.string(forKey: Key.islandOpensOn) ?? "")
         clipboardHistoryEnabled = defaults.object(forKey: Key.clipboardEnabled) as? Bool ?? true
         clipboardHistoryLimit = defaults.object(forKey: Key.clipboardLimit) as? Int ?? 200

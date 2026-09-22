@@ -282,12 +282,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     default: break
                     }
                 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + (previewKind == nil ? 1.5 : 4)) { [weak self] in
+                // KLIK_DEBUG_ISLAND_KEYS="right,right,left" presses those keys in the island
+                // (made key first), a third of a second apart.
+                if let keys = ProcessInfo.processInfo.environment["KLIK_DEBUG_ISLAND_KEYS"] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+                        self?.island?.debugMakeKey()
+                        for (index, key) in keys.split(separator: ",").enumerated() {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3 * Double(index + 1)) {
+                                let code: Int = switch key { case "left": kVK_LeftArrow; case "right": kVK_RightArrow; case "up": kVK_UpArrow; case "down": kVK_DownArrow; default: kVK_Escape }
+                                Self.debugPress(CGKeyCode(code), flags: [])
+                            }
+                        }
+                    }
+                }
+                let shotDelay: Double = previewKind == nil && ProcessInfo.processInfo.environment["KLIK_DEBUG_ISLAND_KEYS"] == nil ? 1.5 : 4
+                DispatchQueue.main.asyncAfter(deadline: .now() + shotDelay) { [weak self] in
                     guard let self, let island = self.island else { return }
                     let id = CGWindowID(island.windowNumber)
                     Task { @MainActor in
                         let service = ScreenCaptureService()
-                        if previewKind != nil, let screen = NSScreen.main {
+                        if previewKind != nil || ProcessInfo.processInfo.environment["KLIK_DEBUG_ISLAND_KEYS"] != nil, let screen = NSScreen.main {
                             var rect = screen.frame
                             rect.size.height = 1000
                             rect.origin.y = screen.frame.maxY - 1000

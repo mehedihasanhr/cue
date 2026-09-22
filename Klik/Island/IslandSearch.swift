@@ -38,6 +38,17 @@ enum IslandItem: Identifiable {
         }
     }
 
+    /// What can open in the island's detail or the preview pane.
+    var detail: IslandDetail? {
+        switch self {
+        case .capture(let item): .capture(item)
+        case .clipboard(let item): .clipboard(item)
+        case .asset(let item): .asset(item)
+        case .color(let entry): .color(entry)
+        case .task, .snippet, .note, .answer: nil
+        }
+    }
+
     var date: Date {
         switch self {
         case .capture(let item): item.createdAt

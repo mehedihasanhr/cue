@@ -148,6 +148,10 @@ struct IslandPanel: View {
     @State private var tabRowWidth: CGFloat = 0
     /// A card opened in place of the row.
     @State private var detail: IslandDetail?
+    /// The card ← → moved to (an `IslandItem` id), outlined in the strip.
+    @State private var selectedID: String?
+    /// The pointer resting on a card; the pane opens it after the delay.
+    @State private var hoverTask: Task<Void, Never>?
     @AppStorage(IslandTab.storageKey) private var tab: IslandTab = .all
 
     private var searching: Bool { !search.trimmingCharacters(in: .whitespaces).isEmpty }
@@ -339,6 +343,9 @@ struct IslandPanel: View {
                         .foregroundStyle(.white)
                         .focused($searchFocused)
                         .onExitCommand { clearSearch() }
+                        // With nothing typed the arrows walk the cards, not the caret.
+                        .onKeyPress(.leftArrow) { search.isEmpty ? moveSelection(-1) : .ignored }
+                        .onKeyPress(.rightArrow) { search.isEmpty ? moveSelection(1) : .ignored }
                         .accessibilityLabel("Search")
                         .accessibilityValue(searching ? "\(hits.count) matches" : "")
                     if searching {
@@ -443,6 +450,8 @@ struct IslandPanel: View {
                         }
                     } else {
                         DayStrip(items: everything, date: \.date, dragPayload: dragPayload, card: itemCard)
+                            .selecting { $0.id == selectedID }
+                            .onCardHover { hover($0) }
                     }
                 case .captures:
                     if filteredCaptures.isEmpty {
@@ -452,6 +461,8 @@ struct IslandPanel: View {
                         DayStrip(items: filteredCaptures, date: \.createdAt, pinned: \.pinned, dragPayload: { item in
                             library.fileURL(for: item).map { .file($0, preview: library.thumbnail(for: item), reference: .capture(item.id)) }
                         }, card: captureCard)
+                            .selecting { IslandItem.capture($0).id == selectedID }
+                            .onCardHover { hover($0.map(IslandItem.capture)) }
                     }
                 case .clipboard:
                     if filteredClipboard.isEmpty {
@@ -464,6 +475,8 @@ struct IslandPanel: View {
                                 return own
                             }
                         }, card: clipboardCard)
+                            .selecting { IslandItem.clipboard($0).id == selectedID }
+                            .onCardHover { hover($0.map(IslandItem.clipboard)) }
                     }
                 case .tasks:
                     IslandTasksView(store: tasksStore, onPrompt: onPrompt, onShowTask: onShowTask)
@@ -473,6 +486,7 @@ struct IslandPanel: View {
                               action: ("New snippet", "plus", { onPrompt(IslandPrompt(kind: .snippet(nil, initialText: "", assetID: nil))) }))
                     } else {
                         DayStrip(items: snippets.items, date: \.createdAt, dragPayload: snippetDrag, card: snippetCard)
+                            .selecting { IslandItem.snippet($0).id == selectedID }
                     }
                 case .notes:
                     if notes.notes.isEmpty {
@@ -480,6 +494,7 @@ struct IslandPanel: View {
                               action: ("New note", "plus", { onPrompt(IslandPrompt(kind: .note(nil))) }))
                     } else {
                         DayStrip(items: notes.notes, date: \.updatedAt, dragPayload: noteDrag, card: noteCard)
+                            .selecting { IslandItem.note($0).id == selectedID }
                     }
                 case .colors:
                     if filteredColors.isEmpty {
@@ -489,6 +504,8 @@ struct IslandPanel: View {
                         DayStrip(items: filteredColors, date: \.createdAt, pinned: \.pinned, dragPayload: { entry in
                             DragPayload(writer: preferences.colorFormat.string(for: entry.color) as NSString, preview: ColorCard.dragImage(for: entry.color), reference: .color(entry.id))
                         }, card: colorCard)
+                            .selecting { IslandItem.color($0).id == selectedID }
+                            .onCardHover { hover($0.map(IslandItem.color)) }
                     }
                 case .assets:
                     if filteredAssets.isEmpty {
@@ -497,6 +514,8 @@ struct IslandPanel: View {
                         DayStrip(items: filteredAssets, date: \.createdAt, pinned: \.pinned, dragPayload: { item in
                             .file(assets.fileURL(for: item), preview: assets.thumbnail(for: item), reference: .asset(item.id))
                         }, card: assetCard)
+                            .selecting { IslandItem.asset($0).id == selectedID }
+                            .onCardHover { hover($0.map(IslandItem.asset)) }
                     }
                 }
                 }
@@ -507,8 +526,11 @@ struct IslandPanel: View {
             .frame(height: Self.rowHeight) // the same whether a tab has cards or not
             .padding(.top, 6)
             .background { keyboardShortcuts }
+            .onKeyPress(.leftArrow) { moveSelection(-1) }
+            .onKeyPress(.rightArrow) { moveSelection(1) }
             .onChange(of: tab) { _, _ in
                 detail = nil
+                selectedID = nil
             }
             .onChange(of: tabs, initial: true) { _, tabs in
                 // The tab that was showing has been turned off: fall back to All.
@@ -743,6 +765,49 @@ struct IslandPanel: View {
         }
     }
 
+    /// The pointer rests on a card (nil: on none): with the pane and hover on, the
+    /// card opens there after the delay.
+    private func hover(_ item: IslandItem?) {
+        hoverTask?.cancel()
+        hoverTask = nil
+        guard let item, let detail = item.detail, preferences.islandPreview == .pane, preferences.islandPreviewOnHover else { return }
+        let delay = preferences.islandPreviewHoverDelay
+        hoverTask = Task { @MainActor in
+            if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
+            guard !Task.isCancelled else { return }
+            selectedID = item.id
+            onPreviewPane(detail)
+        }
+    }
+
+    /// The cards of the tab, in the order the strip shows them (pinned first).
+    private var navigable: [IslandItem] {
+        if searching { return hits.filter { if case .answer = $0 { false } else { true } } }
+        switch tab {
+        case .all: return filteredEverything
+        case .captures: return (filteredCaptures.filter(\.pinned) + filteredCaptures.filter { !$0.pinned }).map(IslandItem.capture)
+        case .clipboard: return (filteredClipboard.filter(\.pinned) + filteredClipboard.filter { !$0.pinned }).map(IslandItem.clipboard)
+        case .assets: return (filteredAssets.filter(\.pinned) + filteredAssets.filter { !$0.pinned }).map(IslandItem.asset)
+        case .colors: return (filteredColors.filter(\.pinned) + filteredColors.filter { !$0.pinned }).map(IslandItem.color)
+        case .snippets: return snippets.items.map(IslandItem.snippet)
+        case .notes: return notes.notes.map(IslandItem.note)
+        case .tasks: return []
+        }
+    }
+
+    /// ← → walk the cards; a card that can be previewed opens as it is reached.
+    private func moveSelection(_ delta: Int) -> KeyPress.Result {
+        let items = navigable
+        guard !items.isEmpty else { return .ignored }
+        let current = items.firstIndex { $0.id == selectedID }
+        let next = current.map { min(max($0 + delta, 0), items.count - 1) } ?? (delta > 0 ? 0 : items.count - 1)
+        let item = items[next]
+        selectedID = item.id
+        hoverTask?.cancel()
+        if let detail = item.detail { open(detail) }
+        return .handled
+    }
+
     /// A `smallButton` that stays lit while on.
     private func smallToggle(_ title: String, symbol: String, help: String, isOn: Binding<Bool>) -> some View {
         Button { isOn.wrappedValue.toggle() } label: {
@@ -835,6 +900,22 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
     /// drag on a card then drags it into other apps; a horizontal drag scrolls the row.
     var dragPayload: ((Item) -> DragPayload?)? = nil
     @ViewBuilder let card: (Item) -> Card
+    /// The card outlined as the one chosen (← → move it), scrolled into view.
+    var isSelected: (Item) -> Bool = { _ in false }
+    /// The pointer came to rest on a card (nil: left the cards).
+    var onHover: (Item?) -> Void = { _ in }
+
+    func selecting(_ isSelected: @escaping (Item) -> Bool) -> DayStrip {
+        var copy = self
+        copy.isSelected = isSelected
+        return copy
+    }
+
+    func onCardHover(_ onHover: @escaping (Item?) -> Void) -> DayStrip {
+        var copy = self
+        copy.onHover = onHover
+        return copy
+    }
 
     /// Grouped by day ("Today", "Yesterday", "Wed, Jul 22"); items flagged `pinned`
     /// go first in a "Pinned" group.
@@ -933,10 +1014,23 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
                 }
                 ForEach(layout.cards.filter { visible.contains($0.x) }) { placed in
                     card(placed.item)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .strokeBorder(Color.brand, lineWidth: 2)
+                                .opacity(isSelected(placed.item) ? 1 : 0)
+                                .allowsHitTesting(false)
+                        )
+                        .onHover { inside in onHover(inside ? placed.item : nil) }
                         .offset(x: placed.x - offset, y: Self.headerHeight)
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
+            // The chosen card is brought into view (← → walk past the edges).
+            .onChange(of: layout.cards.first { isSelected($0.item) }?.x) { _, x in
+                guard let x else { return }
+                if x < offset { self.offset = max(0, x) }
+                else if x + Self.cardSize.width > offset + proxy.size.width { self.offset = min(maxOffset, x + Self.cardSize.width - proxy.size.width) }
+            }
             .contentShape(Rectangle())
             // Horizontal drags scroll the row. Vertical ones are taken by the AppKit
             // layer underneath before SwiftUI's gesture settles (see StripEventView).

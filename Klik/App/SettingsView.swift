@@ -263,12 +263,22 @@ struct IslandSettingsView: View {
                 SettingsRow("Statuses", subtitle: "Pastes, uploads, focus sessions and saved snippets.") {
                     Toggle("Statuses", isOn: $preferences.islandStatuses).toggleStyle(.switch)
                 }
-                SettingsRow("Preview opens", subtitle: "A card's eye: in the cards' place, or in a pane under the island with the cards still there.") {
+                SettingsRow("Preview opens", subtitle: "A card's eye: in the cards' place, or in a pane under the island with the cards still there. ← → move between cards.") {
                     Picker("Preview", selection: $preferences.islandPreview) {
                         ForEach(AppPreferences.IslandPreview.allCases, id: \.self) { Text($0.title).tag($0) }
                     }
                     .pickerStyle(.segmented)
                     .fixedSize()
+                }
+                if preferences.islandPreview == .pane {
+                    SettingsRow("Open the preview on hover") {
+                        Toggle("Preview on hover", isOn: $preferences.islandPreviewOnHover).toggleStyle(.switch)
+                    }
+                    if preferences.islandPreviewOnHover {
+                        SettingsRow("Hover delay") {
+                            SecondsSlider(value: $preferences.islandPreviewHoverDelay, range: 0...2, step: 0.05, zero: "At once")
+                        }
+                    }
                 }
                 SettingsRow("Animation") {
                     Picker("Animation", selection: $preferences.islandAnimation) {

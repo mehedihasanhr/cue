@@ -156,7 +156,10 @@ A card's eye opens it in the cards' place — or, with Settings › Island › *
 opens › Below it**, in a pane under the island while the cards stay: an image at
 full width, a color as a band with every format (click one to copy it, the Copy
 button's menu has them too), a link with the page's picture, title and summary,
-text in full. The pane counts as part of the island for the pointer.
+text in full. The pane counts as part of the island for the pointer. With **Open the
+preview on hover**, resting the pointer on a card opens it after the **Hover delay**;
+once the island has the keyboard (a click in it), **← →** walk the cards and open
+each in turn.
 
 ### Quick notes
 
