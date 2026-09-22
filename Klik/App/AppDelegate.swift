@@ -269,11 +269,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
                 if let tab = IslandTab(rawValue: tabName) { UserDefaults.standard.set(tab.rawValue, forKey: IslandTab.storageKey) }
                 self?.island?.expand()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                // KLIK_DEBUG_ISLAND_PREVIEW=capture|clipboard|color|asset opens the tab's first
+                // such item in the pane under the island; the shot then takes the screen around both.
+                let previewKind = ProcessInfo.processInfo.environment["KLIK_DEBUG_ISLAND_PREVIEW"]
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                    guard let self, let island = self.island, let previewKind else { return }
+                    switch previewKind {
+                    case "capture": if let item = library.items.first { island.showPreview(.capture(item)) }
+                    case "clipboard": if let item = clipboard.items.first(where: { $0.kind == .link }) ?? clipboard.items.first { island.showPreview(.clipboard(item)) }
+                    case "color": if let entry = colors.items.first { island.showPreview(.color(entry)) }
+                    case "asset": if let item = assets.items.first { island.showPreview(.asset(item)) }
+                    default: break
+                    }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + (previewKind == nil ? 1.5 : 4)) { [weak self] in
                     guard let self, let island = self.island else { return }
                     let id = CGWindowID(island.windowNumber)
                     Task { @MainActor in
                         let service = ScreenCaptureService()
+                        if previewKind != nil, let screen = NSScreen.main {
+                            var rect = screen.frame
+                            rect.size.height = 1000
+                            rect.origin.y = screen.frame.maxY - 1000
+                            guard let image = try? await service.captureRegionIncludingKlik(rect, on: screen), let png = ImageEncoding.png(image) else { return }
+                            try? png.write(to: CaptureLibrary.defaultFolder().appendingPathComponent("_island.png"))
+                            return
+                        }
                         guard let content = try? await service.shareableContent(),
                               let image = try? await service.captureWindow(id: id, in: content, fallbackScale: 2),
                               let png = ImageEncoding.png(image.cgImage) else { Log.app.error("Island shot: no capture"); return }

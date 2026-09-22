@@ -26,6 +26,7 @@ final class AppPreferences {
         static let islandFlashDuration = "island.flashDuration"
         static let islandStatuses = "island.statuses"
         static let islandAnimation = "island.animation"
+        static let islandPreview = "island.preview"
         static let islandOpensOn = "island.opensOn"
         static let clipboardEnabled = "clipboard.enabled"
         static let clipboardLimit = "clipboard.limit"
@@ -274,6 +275,22 @@ final class AppPreferences {
         }
     }
 
+    enum IslandPreview: String, CaseIterable {
+        case inline, pane
+
+        var title: String {
+            switch self {
+            case .inline: "In the island"
+            case .pane: "Below it"
+            }
+        }
+    }
+
+    /// Where an opened card shows: in the cards' place, or in a pane under the island.
+    var islandPreview: IslandPreview {
+        didSet { defaults.set(islandPreview.rawValue, forKey: Key.islandPreview) }
+    }
+
     /// How the island moves: a spring, a short ease, or straight there.
     var islandAnimation: IslandAnimation {
         didSet { defaults.set(islandAnimation.rawValue, forKey: Key.islandAnimation) }
@@ -416,6 +433,7 @@ final class AppPreferences {
         islandFlashDuration = defaults.object(forKey: Key.islandFlashDuration) as? Double ?? 1.8
         islandStatuses = defaults.object(forKey: Key.islandStatuses) as? Bool ?? true
         islandAnimation = IslandAnimation(rawValue: defaults.string(forKey: Key.islandAnimation) ?? "") ?? .lively
+        islandPreview = IslandPreview(rawValue: defaults.string(forKey: Key.islandPreview) ?? "") ?? .inline
         islandOpensOn = IslandTab(rawValue: defaults.string(forKey: Key.islandOpensOn) ?? "")
         clipboardHistoryEnabled = defaults.object(forKey: Key.clipboardEnabled) as? Bool ?? true
         clipboardHistoryLimit = defaults.object(forKey: Key.clipboardLimit) as? Int ?? 200

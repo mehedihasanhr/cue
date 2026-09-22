@@ -71,6 +71,8 @@ struct IslandPanel: View {
     var onShowTask: (TaskItem) -> Void = { _ in }
     /// Opens the clock in the compact island (the prayer pill).
     var onShowClock: () -> Void = {}
+    /// Opens a card in the pane under the island (Settings › Island › Preview opens).
+    var onPreviewPane: (IslandDetail) -> Void = { _ in }
     @State private var search = ""
     @FocusState private var searchFocused: Bool
     /// While searching: show hits from this tab only (nil: every tab).
@@ -734,7 +736,11 @@ struct IslandPanel: View {
     }
 
     private func open(_ detail: IslandDetail) {
-        withAnimation(.easeOut(duration: 0.15)) { self.detail = detail }
+        if preferences.islandPreview == .pane {
+            onPreviewPane(detail)
+        } else {
+            withAnimation(.easeOut(duration: 0.15)) { self.detail = detail }
+        }
     }
 
     /// A `smallButton` that stays lit while on.

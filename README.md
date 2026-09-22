@@ -150,6 +150,14 @@ attached. Right-click a task › **Focus** › 15/25/45/60 minutes starts a sess
 island's header shows a ring and the time left (click it to open the task, ■ to stop),
 and it says so with a sound when the time is up.
 
+### Preview pane
+
+A card's eye opens it in the cards' place — or, with Settings › Island › **Preview
+opens › Below it**, in a pane under the island while the cards stay: an image at
+full width, a color as a band with every format (click one to copy it, the Copy
+button's menu has them too), a link with the page's picture, title and summary,
+text in full. The pane counts as part of the island for the pointer.
+
 ### Quick notes
 
 **⌥⇧M** (or Notes › New in the island, or `klik://note`) opens a note at the pointer:

@@ -51,9 +51,12 @@ struct IslandDetailHeader: View {
         }
     }
 
-    private struct Pill { let symbol: String; let text: String }
+    struct Pill { let symbol: String; let text: String }
 
-    private var pills: [Pill] {
+    private var pills: [Pill] { Self.pills(for: detail, library: library) }
+
+    /// What the item is, in a few pills: its kind, size, source.
+    static func pills(for detail: IslandDetail, library: CaptureLibrary) -> [Pill] {
         switch detail {
         case .capture(let item):
             return [Pill(symbol: "photo", text: "Screenshot"), Pill(symbol: "aspectratio", text: item.dimensions), Pill(symbol: "info.circle", text: Self.fileSize(library.fileURL(for: item)))]

@@ -8,11 +8,15 @@ import SwiftUI
 @MainActor
 final class IslandController {
     private let window = IslandWindow()
+    /// The pane under the island for an opened card, made when first needed.
+    private var previewPane: PreviewPaneWindow?
+    private var previewDetail: IslandDetail?
     private let model = IslandModel()
     private let preferences: AppPreferences
     private let tasks: TaskStore
     private let snippets: SnippetStore
     private let notes: NoteStore
+    private let actions: HistoryActions
     private let library: CaptureLibrary
     private let clipboard: ClipboardHistory
     private let assets: AssetStore
@@ -41,6 +45,7 @@ final class IslandController {
         self.tasks = tasks
         self.snippets = snippets
         self.notes = notes
+        self.actions = actions
         self.library = library
         self.clipboard = clipboard
         self.assets = assets
@@ -64,9 +69,10 @@ final class IslandController {
         model.onShowTask = { [weak self] task in self?.showTask(task) }
         model.onPanelWidthChanged = { [weak self] in
             // Reported from inside a layout pass; the window resizes after it.
-            DispatchQueue.main.async { self?.fitWindow() }
+            DispatchQueue.main.async { self?.fitWindow(); self?.placePreview() }
         }
         model.onShowClock = { [weak self] in self?.showClock() }
+        model.onPreviewPane = { [weak self] detail in self?.showPreview(detail) }
         model.onClockClosed = { [weak self] in
             guard let self else { return }
             removeOutsideClickMonitor()
@@ -203,9 +209,7 @@ final class IslandController {
         let location = NSEvent.mouseLocation
         // The drawn shapes, not the (mostly transparent) window. The pointer stops at
         // the very top edge (y == maxY), which must count as inside.
-        let frame = model.shapeRect(for: model.phase)
-        let inside = location.x >= frame.minX && location.x <= frame.maxX
-            && location.y >= frame.minY && location.y <= frame.maxY
+        let inside = contains(location)
         guard inside != pointerInside else { return }
         pointerInside = inside
         if inside { pointerEntered() } else { pointerExited() }
@@ -213,6 +217,52 @@ final class IslandController {
 
     /// For diagnostics: the island's window, to capture it.
     var windowNumber: Int { window.windowNumber }
+
+    /// The island's drawn shape, and the preview pane under it (with the gap
+    /// between): what the pointer may rest on without the island closing.
+    private func contains(_ location: CGPoint) -> Bool {
+        let shape = model.shapeRect(for: model.phase)
+        if location.x >= shape.minX, location.x <= shape.maxX, location.y >= shape.minY, location.y <= shape.maxY { return true }
+        guard let pane = previewPane, pane.isVisible, model.phase == .expanded else { return false }
+        var frame = pane.frame
+        frame.size.height += PreviewPaneWindow.gap
+        return frame.contains(location)
+    }
+
+    // MARK: - Preview pane
+
+    /// Shows the card in the pane under the island (Settings › Island › Preview opens).
+    func showPreview(_ detail: IslandDetail) {
+        let pane = previewPane ?? PreviewPaneWindow()
+        previewPane = pane
+        previewDetail = detail
+        let view = PreviewPaneView(detail: detail, library: library, clipboard: clipboard, assets: assets, colors: colors, actions: actions,
+                                   onClose: { [weak self] in self?.hidePreview() })
+            .environment(preferences)
+        if let host = pane.contentView as? NSHostingView<AnyView> {
+            host.rootView = AnyView(view)
+        } else {
+            let host = NSHostingView(rootView: AnyView(view))
+            host.sizingOptions = []
+            pane.contentView = host
+        }
+        placePreview()
+        pane.orderFrontRegardless()
+    }
+
+    func hidePreview() {
+        previewDetail = nil
+        previewPane?.orderOut(nil)
+    }
+
+    /// Under the island's open shape, as wide as it, with a gap.
+    private func placePreview() {
+        guard let pane = previewPane, let detail = previewDetail else { return }
+        let shape = model.shapeRect(for: .expanded)
+        let height = PreviewPaneView.height(for: detail, clipboard: clipboard)
+        let rect = CGRect(x: shape.minX, y: shape.minY - PreviewPaneWindow.gap - height, width: shape.width, height: height)
+        pane.setFrame(rect, display: true)
+    }
 
     /// Removes the island; the controller is dropped afterwards.
     func tearDown() {
@@ -410,7 +460,7 @@ final class IslandController {
             case .expanded where forExpanded: break
             default: return
             }
-            if !model.shapeRect(for: model.phase).contains(NSEvent.mouseLocation) { collapse() }
+            if !contains(NSEvent.mouseLocation) { collapse() }
         }
         if let global = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { _ in
             MainActor.assumeIsolated { handler() }
@@ -468,6 +518,7 @@ final class IslandController {
     }
 
     private func setPhase(_ phase: IslandModel.Phase, animated: Bool) {
+        if phase != .expanded { hidePreview() }
         if animated {
             let animation = phase == .collapsed ? IslandView.closeAnimation : IslandView.openAnimation
             withAnimation(animation) { model.phase = phase }
@@ -555,7 +606,7 @@ final class IslandController {
                 try? await Task.sleep(for: .milliseconds(100))
             }
             guard !Task.isCancelled, let self else { return }
-            if model.shapeRect(for: model.phase).contains(NSEvent.mouseLocation) {
+            if contains(NSEvent.mouseLocation) {
                 pointerInside = true
                 return
             }

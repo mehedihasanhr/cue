@@ -105,6 +105,8 @@ final class IslandModel {
     /// Opens the clock in the compact island (a click on a clock status or the
     /// prayer pill); set by the controller.
     var onShowClock: () -> Void = {}
+    /// Opens a card in the pane under the island; set by the controller.
+    var onPreviewPane: (IslandDetail) -> Void = { _ in }
     /// Leaves the clock; set by the controller.
     var onClockClosed: () -> Void = {}
     /// Settings › Time, from the clock; set by the controller.
@@ -306,7 +308,7 @@ struct IslandView: View {
                 IslandPanel(library: library, clipboard: clipboard, assets: assets, colors: colors, tasksStore: tasks, snippets: snippets, actions: actions, dropping: model.dropping,
                             width: model.panelWidth, onIdealWidth: { model.setPanelWidth($0) }, onIdealHeight: { model.setPanelHeight($0) },
                             onPrompt: { model.onPrompt($0) }, onShowTask: { model.onShowTask($0) },
-                            onShowClock: { model.onShowClock() })
+                            onShowClock: { model.onShowClock() }, onPreviewPane: { model.onPreviewPane($0) })
                     .padding(.horizontal, IslandGeometry.panelHorizontalPadding)
                     .padding(.bottom, IslandGeometry.panelBottomPadding)
             }
