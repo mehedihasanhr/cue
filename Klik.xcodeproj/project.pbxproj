@@ -392,7 +392,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Config/Klik.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -406,7 +406,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.2.0;
+				MARKETING_VERSION = 0.2.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.stackrover.klik;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -421,7 +421,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Config/Klik.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -435,7 +435,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.2.0;
+				MARKETING_VERSION = 0.2.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.stackrover.klik;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -447,9 +447,9 @@
 			baseConfigurationReference = 4B4C494B000000000000A003 /* Signing.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = "";
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 0.2.0;
+				MARKETING_VERSION = 0.2.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.stackrover.klik.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
@@ -461,9 +461,9 @@
 			baseConfigurationReference = 4B4C494B000000000000A003 /* Signing.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = "";
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 0.2.0;
+				MARKETING_VERSION = 0.2.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.stackrover.klik.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
