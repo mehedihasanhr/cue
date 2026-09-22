@@ -104,7 +104,8 @@ struct PreviewPaneView: View {
             switch item.kind {
             case .image, .link: 460
             case .color: 400
-            case .text, .files: 320
+            case .files: 320
+            case .text: ClipboardTextPreview.presentation(of: item, clipboard: clipboard).label == nil ? 320 : 440
             }
         }
     }
@@ -122,9 +123,19 @@ struct PreviewPaneView: View {
 
     // MARK: Header
 
+    /// The item's pills, plus what a text entry is (rich text, a language, Markdown).
+    private var pills: [IslandDetailHeader.Pill] {
+        var pills = IslandDetailHeader.pills(for: detail, library: library)
+        if case .clipboard(let item) = detail, item.kind == .text {
+            let presentation = ClipboardTextPreview.presentation(of: item, clipboard: clipboard)
+            if let label = presentation.label { pills.insert(IslandDetailHeader.Pill(symbol: presentation.symbol, text: label), at: 1) }
+        }
+        return pills
+    }
+
     private var header: some View {
         HStack(spacing: 8) {
-            ForEach(Array(IslandDetailHeader.pills(for: detail, library: library).enumerated()), id: \.offset) { _, pill in
+            ForEach(Array(pills.enumerated()), id: \.offset) { _, pill in
                 HStack(spacing: 5) {
                     Icon(pill.symbol, size: 14, weight: .medium)
                     Text(pill.text).font(.system(size: 11, weight: .medium))
@@ -428,7 +439,7 @@ struct PreviewPaneView: View {
                 textView(item.text)
             }
         case .text:
-            textView(item.text)
+            ClipboardTextPreview(item: item, clipboard: clipboard)
         }
     }
 

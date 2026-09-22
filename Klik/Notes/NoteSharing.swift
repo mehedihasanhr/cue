@@ -245,6 +245,9 @@ nonisolated enum NoteMarkdown {
                 out += "<p><i>\(escape(alt.isEmpty ? "Image" : alt))</i></p>"
             case .attachment(let name, _):
                 out += "<p><i>\(escape(name))</i></p>"
+            case .table(let header, let rows):
+                out += "<table><tr>" + header.map { "<th>\(inline($0))</th>" }.joined() + "</tr>"
+                    + rows.map { "<tr>" + $0.map { "<td>\(inline($0))</td>" }.joined() + "</tr>" }.joined() + "</table>"
             }
             first = false
         }
@@ -298,6 +301,12 @@ nonisolated enum NoteMarkdown {
                 blocks.append(notionBlock("paragraph", ["rich_text": [plainText(alt.isEmpty ? "Image" : alt, italic: true)]]))
             case .attachment(let name, _):
                 blocks.append(notionBlock("paragraph", ["rich_text": [plainText(name, italic: true)]]))
+            case .table(let header, let rows):
+                // Notion's table block: a table_width and one table_row child per row, the header first.
+                let width = max(header.count, rows.map(\.count).max() ?? 0)
+                let cells: ([String]) -> [[[String: Any]]] = { row in (0..<width).map { richText($0 < row.count ? row[$0] : "") } }
+                let children = ([header] + rows).map { notionBlock("table_row", ["cells": cells($0)]) }
+                blocks.append(notionBlock("table", ["table_width": width, "has_column_header": true, "has_row_header": false, "children": children]))
             }
         }
         return blocks

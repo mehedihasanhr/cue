@@ -15,6 +15,8 @@ nonisolated enum MarkdownBlock: Equatable {
     case image(alt: String, source: String)
     /// A line that is just a link to an attached file.
     case attachment(name: String, source: String)
+    /// A pipe table: the header row, then the rows (cells as inline Markdown).
+    case table(header: [String], rows: [[String]])
 
     struct CheckItem: Equatable {
         var done: Bool
@@ -31,6 +33,7 @@ nonisolated enum MarkdownBlock: Equatable {
         var checklist: [CheckItem] = []
         var quote: [String] = []
         var code: [String]?
+        var table: [[String]] = []
 
         func flush() {
             if !paragraph.isEmpty { blocks.append(.paragraph(paragraph.joined(separator: " "))); paragraph = [] }
@@ -38,6 +41,12 @@ nonisolated enum MarkdownBlock: Equatable {
             if !numbered.isEmpty { blocks.append(.numbered(numbered)); numbered = [] }
             if !checklist.isEmpty { blocks.append(.checklist(checklist)); checklist = [] }
             if !quote.isEmpty { blocks.append(.quote(quote.joined(separator: " "))); quote = [] }
+            if !table.isEmpty {
+                // The second line is the |---|---| rule; without one, every line is a row.
+                let rule = table.count > 1 && table[1].allSatisfy { $0.allSatisfy { ":-".contains($0) } && $0.contains("-") }
+                blocks.append(.table(header: table[0], rows: Array(table.dropFirst(rule ? 2 : 1))))
+                table = []
+            }
         }
 
         for rawLine in markdown.components(separatedBy: .newlines) {
@@ -54,6 +63,13 @@ nonisolated enum MarkdownBlock: Equatable {
             }
             if line.hasPrefix("```") { flush(); code = []; continue }
             if line.isEmpty { flush(); continue }
+            if let cells = tableRow(line) {
+                if table.isEmpty { flush() }
+                table.append(cells)
+                continue
+            } else if !table.isEmpty {
+                flush()
+            }
             if let item = checkItem(line) {
                 if !paragraph.isEmpty || !bullets.isEmpty || !numbered.isEmpty || !quote.isEmpty { flush() }
                 checklist.append(item)
@@ -107,6 +123,15 @@ nonisolated enum MarkdownBlock: Equatable {
         let name = String(line[line.index(after: line.startIndex)..<close])
         let source = String(line[line.index(close, offsetBy: 2)..<line.index(before: line.endIndex)])
         return .attachment(name: name, source: source)
+    }
+
+    /// `| a | b |` (the outer pipes optional when there is an inner one).
+    private static func tableRow(_ line: String) -> [String]? {
+        guard line.hasPrefix("|") || line.hasSuffix("|"), line.filter({ $0 == "|" }).count >= 2 else { return nil }
+        var body = Substring(line)
+        if body.hasPrefix("|") { body = body.dropFirst() }
+        if body.hasSuffix("|") { body = body.dropLast() }
+        return body.split(separator: "|", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
     }
 
     private static func numberedItem(_ line: String) -> String? {
@@ -221,7 +246,41 @@ struct MarkdownView: View {
             }
             .buttonStyle(.plain)
             .help(url == nil ? "File missing" : "Open")
+        case .table(let header, let rows):
+            tableView(header: header, rows: rows)
         }
+    }
+
+    /// Columns as wide as their longest cell, the header bold, hairlines between rows.
+    private func tableView(header: [String], rows: [[String]]) -> some View {
+        let columns = max(header.count, rows.map(\.count).max() ?? 0)
+        func cell(_ cells: [String], _ index: Int) -> String { index < cells.count ? cells[index] : "" }
+        return ScrollView(.horizontal, showsIndicators: false) {
+            Grid(alignment: .topLeading, horizontalSpacing: 0, verticalSpacing: 0) {
+                GridRow {
+                    ForEach(0..<columns, id: \.self) { column in
+                        inline(cell(header, column)).font(.system(size: 11.5, weight: .semibold))
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .background(.white.opacity(0.08))
+                ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                    Divider().overlay(.white.opacity(0.12)).gridCellUnsizedAxes(.horizontal)
+                    GridRow {
+                        ForEach(0..<columns, id: \.self) { column in
+                            inline(cell(row, column)).font(.system(size: 11.5))
+                                .padding(.horizontal, 10).padding(.vertical, 5)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    .background(index % 2 == 1 ? Color.white.opacity(0.03) : .clear)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.white.opacity(0.12)))
+        }
+        .padding(.vertical, 2)
     }
 
     /// Inline Markdown (bold, italic, code, links) through Foundation's parser.

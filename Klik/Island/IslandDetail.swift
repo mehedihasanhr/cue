@@ -388,14 +388,7 @@ struct IslandDetailBody: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         case .text, .link:
             HStack(alignment: .top, spacing: 16) {
-                ScrollView {
-                    Text(item.text)
-                        .font(.system(size: 12))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
-                        .padding(12)
-                }
-                .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                ClipboardTextPreview(item: item, clipboard: clipboard, compact: true)
                 VStack(alignment: .leading, spacing: 8) {
                     detailButton("Copy", symbol: "doc.on.doc") {
                         clipboard.copy(item)

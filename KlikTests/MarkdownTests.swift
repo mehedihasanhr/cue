@@ -27,6 +27,25 @@ final class MarkdownTests: XCTestCase {
         ])
     }
 
+    func testTables() {
+        let markdown = """
+        Columns:
+        | Column | Description |
+        |---|:---:|
+        | Order Number | Order number/ID. |
+        | Customer | Who placed it |
+        after
+        """
+        XCTAssertEqual(MarkdownBlock.parse(markdown), [
+            .paragraph("Columns:"),
+            .table(header: ["Column", "Description"], rows: [["Order Number", "Order number/ID."], ["Customer", "Who placed it"]]),
+            .paragraph("after"),
+        ])
+        // No rule line: every line is a row after the header; a lone pipe is not a table.
+        XCTAssertEqual(MarkdownBlock.parse("| a | b |\n| c | d |"), [.table(header: ["a", "b"], rows: [["c", "d"]])])
+        XCTAssertEqual(MarkdownBlock.parse("this | that"), [.paragraph("this | that")])
+    }
+
     func testEdgeCases() {
         XCTAssertEqual(MarkdownBlock.parse(""), [])
         XCTAssertEqual(MarkdownBlock.parse("   \n\n"), [])

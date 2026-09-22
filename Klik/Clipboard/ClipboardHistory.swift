@@ -22,6 +22,8 @@ final class ClipboardHistory {
     private(set) var thumbnailVersion = 0
 
     @ObservationIgnored private var thumbnails = LRUCache<UUID, NSImage>(capacity: 300)
+    /// Rich flavours already parsed for the previews (nil: the entry has none).
+    @ObservationIgnored private var richTexts: [UUID: NSAttributedString?] = [:]
     @ObservationIgnored private var loadingThumbnails: Set<UUID> = []
     @ObservationIgnored private var icons: [String: NSImage] = [:]
     @ObservationIgnored private var timer: Timer?
@@ -166,9 +168,11 @@ final class ClipboardHistory {
         item.sourceName = source?.localizedName
 
         if let newest = items.first, newest.kind == item.kind, newest.text == item.text, item.kind != .image {
-            // Same thing copied again: just refresh its time.
+            // Same thing copied again: refresh its time, and its flavours — the same
+            // words may now come with formatting (or without).
             items[0].createdAt = item.createdAt
             update(items[0])
+            replaceContents(of: items[0], with: contents)
             return
         }
         items.insert(item, at: 0)
@@ -180,6 +184,27 @@ final class ClipboardHistory {
         let index: Int
         let type: String
         let data: Data
+    }
+
+    /// The entry's text with its formatting, when it was copied with RTF or HTML:
+    /// what the previews show as the original. Parsed once per entry.
+    func richText(for item: ClipboardItem) -> NSAttributedString? {
+        guard item.kind == .text else { return nil }
+        if let cached = richTexts[item.id] { return cached }
+        let contents = (try? database?.query(
+            "SELECT type, data FROM contents WHERE item_id = ? AND item_index = 0 AND type IN (?, ?)",
+            [.text(item.id.uuidString), .text(NSPasteboard.PasteboardType.rtf.rawValue), .text(NSPasteboard.PasteboardType.html.rawValue)]
+        ) { row in (type: row.text(0) ?? "", data: row.blob(1) ?? Data()) }) ?? []
+        var rich: NSAttributedString?
+        if let rtf = contents.first(where: { $0.type == NSPasteboard.PasteboardType.rtf.rawValue }) {
+            rich = NSAttributedString(rtf: rtf.data, documentAttributes: nil)
+        } else if let html = contents.first(where: { $0.type == NSPasteboard.PasteboardType.html.rawValue }), html.data.count < 400_000 {
+            rich = NSAttributedString(html: html.data, options: [.characterEncoding: String.Encoding.utf8.rawValue], documentAttributes: nil)
+                .map(Self.systemFonts)
+        }
+        if let text = rich, text.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { rich = nil }
+        richTexts[item.id] = .some(rich)
+        return rich
     }
 
     // MARK: - Actions
@@ -526,6 +551,37 @@ final class ClipboardHistory {
                 }
             } catch {
                 Log.app.error("Clipboard history: cannot save: \(String(describing: error), privacy: .public)")
+            }
+        }
+    }
+
+    /// HTML without a font of its own comes out in Times; the system font reads
+    /// better and is what the page most likely used. Weights and slants are kept.
+    private static func systemFonts(_ text: NSAttributedString) -> NSAttributedString {
+        let copy = NSMutableAttributedString(attributedString: text)
+        copy.enumerateAttribute(.font, in: NSRange(location: 0, length: copy.length)) { value, range, _ in
+            guard let font = value as? NSFont, font.familyName == "Times" || font.familyName == "Times New Roman" else { return }
+            let traits = NSFontManager.shared.traits(of: font)
+            var replacement = NSFont.systemFont(ofSize: font.pointSize, weight: traits.contains(.boldFontMask) ? .bold : .regular)
+            if traits.contains(.italicFontMask) { replacement = NSFontManager.shared.convert(replacement, toHaveTrait: .italicFontMask) }
+            copy.addAttribute(.font, value: replacement, range: range)
+        }
+        return copy
+    }
+
+    /// The flavours of an entry copied again, in place of the old ones.
+    private func replaceContents(of item: ClipboardItem, with contents: [Content]) {
+        guard let database else { return }
+        richTexts[item.id] = nil
+        storage.async {
+            try? database.transaction {
+                try database.run("DELETE FROM contents WHERE item_id = ?", [.text(item.id.uuidString)])
+                for content in contents {
+                    try database.run(
+                        "INSERT INTO contents (item_id, item_index, type, data) VALUES (?,?,?,?)",
+                        [.text(item.id.uuidString), .integer(Int64(content.index)), .text(content.type), .blob(content.data)]
+                    )
+                }
             }
         }
     }

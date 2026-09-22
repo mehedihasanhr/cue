@@ -143,6 +143,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
+        // Diagnostics: `--env KLIK_DEBUG_CLIPBOARD_ROUNDTRIP=1` puts the newest clipboard entry
+        // back on the pasteboard after 5 s and lists the pasteboard's types before and after
+        // in Pictures/Klik/_roundtrip.txt.
+        if ProcessInfo.processInfo.environment["KLIK_DEBUG_CLIPBOARD_ROUNDTRIP"] == "1" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+                guard let self else { return }
+                func types() -> String {
+                    (NSPasteboard.general.pasteboardItems ?? []).enumerated().map { index, item in
+                        "item \(index): " + item.types.map { "\($0.rawValue) (\(item.data(forType: $0)?.count ?? 0) B)" }.joined(separator: ", ")
+                    }.joined(separator: "\n")
+                }
+                var report = "BEFORE\n" + types() + "\n"
+                if let newest = clipboard.items.first {
+                    report += "\nNEWEST \(newest.kind) \(newest.title.prefix(60))\n"
+                    clipboard.copy(newest, promote: false)
+                    report += "\nAFTER\n" + types() + "\n"
+                }
+                try? report.write(to: CaptureLibrary.defaultFolder().appendingPathComponent("_roundtrip.txt"), atomically: true, encoding: .utf8)
+            }
+        }
         // Diagnostics: `--env KLIK_DEBUG_CLIPBOARD_PASTE=1` (with a text document in front)
         // brings up the clipboard list, presses ↩ (the top entry pastes into the document),
         // then ⌘A ⌘C — `pbpaste` then shows whether the paste landed.
