@@ -84,6 +84,8 @@ struct KeyCap: View {
     var body: some View {
         Text(label)
             .font(.caption.weight(.semibold).monospaced())
+            .lineLimit(1)
+            .fixedSize()
             .foregroundStyle(.primary.opacity(0.9))
             .padding(.horizontal, 5)
             .padding(.vertical, 1.5)

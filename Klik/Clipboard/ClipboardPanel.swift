@@ -89,12 +89,11 @@ struct ClipboardPanelView: View {
                 }
             }
 
+            // What fits in the width; ⌥↩ (plain) and ⇧↑↓ (several) work unlisted.
             HStack(spacing: 10) {
                 hint("↑↓", "choose")
                 hint("↩", clipboard.canPaste ? "paste" : "copy")
                 hint("⌘↩", "copy")
-                hint("⌥↩", "plain")
-                hint("⇧↑↓", "several")
                 hint("⌘1–9", "pick")
                 Spacer(minLength: 0)
                 hint("⎋", "close")
@@ -208,6 +207,7 @@ struct ClipboardPanelView: View {
             KeyCap(key)
             Text(label).font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
         }
+        .fixedSize()
     }
 
     private func move(_ delta: Int, in items: [ClipboardItem]) -> KeyPress.Result {

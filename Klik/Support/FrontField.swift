@@ -31,6 +31,12 @@ struct FrontField {
     /// app is in front, then runs `action` (a beat later, for the focus to settle).
     func restore(then action: @escaping @MainActor () -> Void = {}) {
         guard let app, isOtherApp else { action(); return }
+        if NSWorkspace.shared.frontmostApplication == app {
+            // Klik never took activation (a non-activating panel): the app kept its
+            // cursor; a beat for the panel to be gone, so the keys reach the app.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: action)
+            return
+        }
         ClipboardHistory.activate(app)
         ClipboardHistory.whenFrontmost(app) {
             focusElement()

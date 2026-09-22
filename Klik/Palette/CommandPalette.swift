@@ -490,6 +490,7 @@ struct CommandPaletteView: View {
             KeyCap(key)
             Text(label).font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
         }
+        .fixedSize()
     }
 
     private func move(_ delta: Int, in rows: [Row]) -> KeyPress.Result {

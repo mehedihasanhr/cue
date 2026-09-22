@@ -1,3 +1,4 @@
+import Carbon.HIToolbox
 import os
 import AppKit
 import SwiftUI
@@ -135,6 +136,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             Log.app.notice("Settings shot written")
                         } catch {
                             Log.app.error("Settings shot failed: \(String(describing: error), privacy: .public)")
+                        }
+                    }
+                }
+            }
+        }
+        // Diagnostics: `--env KLIK_DEBUG_CLIPBOARD_PASTE=1` (with a text document in front)
+        // brings up the clipboard list, presses ↩ (the top entry pastes into the document),
+        // then ⌘A ⌘C — `pbpaste` then shows whether the paste landed.
+        if ProcessInfo.processInfo.environment["KLIK_DEBUG_CLIPBOARD_PASTE"] == "1" {
+            func state(_ step: String) {
+                Log.app.notice("Paste test \(step, privacy: .public): responder \(NSApp.keyWindow?.firstResponder.map { String(describing: type(of: $0)) } ?? "-", privacy: .public), front \(NSWorkspace.shared.frontmostApplication?.localizedName ?? "-", privacy: .public), active \(NSApp.isActive), key \(NSApp.keyWindow.map { String(describing: type(of: $0)) } ?? "none", privacy: .public)")
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+                state("before")
+                self?.showClipboardPanel(nil)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+                    state("panel up")
+                    // A picture of the list first, to Pictures/Klik/_clip.png.
+                    if let window = self?.clipboardPanel, let screen = window.screen {
+                        Task { @MainActor in
+                            if let image = try? await ScreenCaptureService().captureRegionIncludingKlik(window.frame, on: screen), let png = ImageEncoding.png(image) {
+                                try? png.write(to: CaptureLibrary.defaultFolder().appendingPathComponent("_clip.png"))
+                            }
+                            Self.debugPress(CGKeyCode(kVK_Return), flags: [])
+                        }
+                        return
+                    }
+                    Self.debugPress(CGKeyCode(kVK_Return), flags: [])
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        state("after return")
+                        // ⌘A ⌘C: the document's text lands on the pasteboard for `pbpaste`.
+                        Self.debugPress(CGKeyCode(kVK_ANSI_A), flags: .maskCommand)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { Self.debugPress(CGKeyCode(kVK_ANSI_C), flags: .maskCommand) }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                            guard let screen = NSScreen.main else { return }
+                            Task { @MainActor in
+                                if let image = try? await ScreenCaptureService().captureRegionIncludingKlik(screen.frame, on: screen), let png = ImageEncoding.png(image) {
+                                    try? png.write(to: CaptureLibrary.defaultFolder().appendingPathComponent("_paste.png"))
+                                }
+                                Log.app.notice("Clipboard paste test done")
+                            }
                         }
                     }
                 }
@@ -447,9 +489,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         closeHistory()
-        // Klik takes activation for the panel (invisibly — it has no menu bar or Dock
-        // icon) so that handing it back afterwards restores the other app's key
-        // window; the field that had the cursor is remembered and focused again too.
+        // The panel takes the keyboard without activating Klik, so the other app stays
+        // in front with its cursor where it was; the field is remembered all the same,
+        // for the paste to be sent once the panel has gone.
         let frontField = FrontField.capture()
         let content = ClipboardPanelView(clipboard: clipboard, close: { [weak self] in self?.clipboardPanel?.close() },
                                          onNeedsAccessibility: { [weak self] in self?.showOnboarding(for: .accessibility) },
@@ -458,10 +500,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .environment(preferences)
         let panel = FloatingPanelWindow(rootView: content, size: ClipboardPanelView.size)
         clipboardPanel = panel
-        NSApp.activate(ignoringOtherApps: true)
         panel.show(at: NSEvent.mouseLocation, position: preferences.panelPosition)
         // Whatever closes the panel (⎋, a click outside, a pick), the other app gets
-        // activation and the field its focus back, so the user's own ⌘V works too.
+        // the keyboard back (and activation, should Klik have taken it meanwhile).
         if let observer = clipboardPanelObserver { NotificationCenter.default.removeObserver(observer) }
         clipboardPanelObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: panel, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -515,7 +556,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .environment(preferences)
         let panel = FloatingPanelWindow(rootView: content, size: CommandPaletteView.size)
         commandPalette = panel
-        NSApp.activate(ignoringOtherApps: true)
         panel.show(at: NSEvent.mouseLocation, position: preferences.panelPosition)
         if let observer = commandPaletteObserver { NotificationCenter.default.removeObserver(observer) }
         commandPaletteObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: panel, queue: .main) { [weak self] _ in
@@ -809,6 +849,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func captureText(_ sender: Any?) {
         coordinator.captureText(fromMenu: sender is NSMenuItem)
+    }
+
+    /// A key press for the diagnostics above, sent as the user's would be.
+    private static func debugPress(_ key: CGKeyCode, flags: CGEventFlags) {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        for down in [true, false] {
+            guard let event = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: down) else { continue }
+            event.flags = flags
+            event.post(tap: .cghidEventTap)
+        }
     }
 
     /// The pixel picker. The picked color is listed under Colors in the island and

@@ -56,6 +56,13 @@ final class FloatingPanelWindow: NSPanel {
     override func close() {
         removeMonitors()
         super.close()
+        // AppKit hands key status to the next of Klik's windows that will take it —
+        // the island — and the keyboard stays with Klik instead of going back to the
+        // user's app. Ordering that window out and in again is the only way to drop it.
+        if let key = NSApp.keyWindow as? NSPanel, key !== self, key.styleMask.contains(.nonactivatingPanel), key.isVisible {
+            key.orderOut(nil)
+            key.orderFrontRegardless()
+        }
     }
 
     override func cancelOperation(_ sender: Any?) {

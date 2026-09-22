@@ -338,7 +338,11 @@ final class ClipboardHistory {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { editor.paste(nil) }
             return true
         }
-        guard PermissionManager.hasAccessibilityAccess else { return false }
+        guard PermissionManager.hasAccessibilityAccess else {
+            Log.app.notice("Paste: no Accessibility access")
+            return false
+        }
+        Log.app.info("Paste: to \(field?.app?.localizedName ?? "the front app", privacy: .public), Klik active \(NSApp.isActive)")
         if let field, field.isOtherApp {
             field.restore { Self.postCommandV() }
         } else {
