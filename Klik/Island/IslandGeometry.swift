@@ -55,12 +55,12 @@ nonisolated struct IslandGeometry: Equatable {
     let flashRadius: CGFloat = 18
     let expandedRadius: CGFloat = 34
     /// Outward curve where the open panel meets the top of the screen.
-    static let openFlare: CGFloat = 24
+    static let openFlare: CGFloat = 40
 
     /// Plain-display pill.
     static let pillWidth: CGFloat = 140
     /// Room around the flash / expanded shape for its shadow.
-    static let shadowMargin: CGFloat = 28
+    static let shadowMargin: CGFloat = 44
     /// Fallback width of the compact box, before its content has been measured.
     static let flashWidth: CGFloat = 340
     /// The compact box is always at least this much wider than the closed shape,
