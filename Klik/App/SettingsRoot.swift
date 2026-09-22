@@ -34,6 +34,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         }
     }
 
+    /// What the sidebar search matches besides the title and keywords.
     var subtitle: String {
         switch self {
         case .general: "Startup, sync, the menu bar icon and where captures go"
@@ -483,7 +484,8 @@ enum SettingsFont {
 }
 
 /// A settings page: groups of rows, top to bottom, starting under the history
-/// pill. Every pane builds on these so the pages all look alike.
+/// pill. Every pane builds on these so the pages all look alike. A row's
+/// subtitle and a group's footer are for what the title cannot say alone.
 struct SettingsPane<Content: View>: View {
     let section: SettingsSection
     @ViewBuilder let content: Content
@@ -496,11 +498,6 @@ struct SettingsPane<Content: View>: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 26) {
-                // General introduces the window with a card (like System Settings);
-                // every other page starts straight on its rows.
-                if section == .general {
-                    SettingsHeaderCard(section: section)
-                }
                 content
             }
             .padding(.horizontal, 16)
@@ -508,31 +505,6 @@ struct SettingsPane<Content: View>: View {
             .padding(.bottom, 24)
         }
         .accessibilityLabel("\(section.title) settings")
-    }
-}
-
-/// The page's tile, name and what it is for, in a card.
-private struct SettingsHeaderCard: View {
-    let section: SettingsSection
-
-    var body: some View {
-        VStack(spacing: 6) {
-            SymbolTile(symbol: section.symbol, tint: section.tint, size: 52)
-                .shadow(color: section.tint.opacity(0.3), radius: 8, y: 4)
-                .padding(.bottom, 8)
-            Text(section.title)
-                .font(.system(size: 22, weight: .bold))
-            Text(section.subtitle)
-                .font(SettingsFont.item)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 440)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 24)
-        .background(SettingsPalette.cardFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isHeader)
     }
 }
 

@@ -19,7 +19,7 @@ struct GeneralSettingsView: View {
         @Bindable var preferences = preferences
         SettingsPane(.general) {
             SettingsGroup {
-                SettingsRow("Launch Klik at login", subtitle: "Klik lives in the menu bar and has no Dock icon; starting at login keeps the shortcuts ready.") {
+                SettingsRow("Launch Klik at login") {
                     Toggle("Launch at login", isOn: launchAtLoginBinding).toggleStyle(.switch)
                 }
                 if model.launchAtLogin == .requiresApproval {
@@ -33,9 +33,9 @@ struct GeneralSettingsView: View {
             }
 
             if let sync {
-                SettingsGroup("Sync", footer: "Keep snippets, colors and tasks as JSON in a folder — one in iCloud Drive or Dropbox shares them with your other Macs; Klik reloads when the files change. Task attachments stay on this Mac.") {
+                SettingsGroup("Sync", footer: "A folder in iCloud Drive or Dropbox shares snippets, colors and tasks with your other Macs.") {
                     SettingsRow(sync.url?.lastPathComponent ?? "Not syncing",
-                                subtitle: sync.url?.path(percentEncoded: false) ?? "Snippets, colors and tasks stay in Klik's own container.",
+                                subtitle: sync.url?.path(percentEncoded: false),
                                 symbol: "arrow.triangle.2.circlepath", tint: .blue) {
                         HStack(spacing: 8) {
                             Button(sync.isOn ? "Change…" : "Choose Folder…") { sync.choose() }
@@ -48,12 +48,12 @@ struct GeneralSettingsView: View {
             }
 
             SettingsGroup("Menu bar icon") {
-                SettingsRow("Icon", subtitle: "The icon lives in the menu bar; click it to open your captures.") {
+                SettingsRow("Icon") {
                     MenuBarIconPicker()
                 }
             }
 
-            SettingsGroup("Storage", footer: "Every capture is saved here as PNG and listed in the menu bar panel. Deleting a capture from the panel moves the file to the Trash.") {
+            SettingsGroup("Storage") {
                 SettingsRow(library.folderIsCustom ? library.folderURL.lastPathComponent : "Pictures › Klik",
                             subtitle: library.folderURL.path(percentEncoded: false), symbol: "folder", tint: .orange) {
                     HStack(spacing: 8) {
@@ -67,7 +67,7 @@ struct GeneralSettingsView: View {
                     }
                 }
                 if library.folderIsCustom {
-                    SettingsRow("Back to the default folder", subtitle: "Pictures › Klik") {
+                    SettingsRow("Default folder", subtitle: "Pictures › Klik") {
                         Button("Use Default Folder") { library.useDefaultFolder() }
                     }
                 }
@@ -100,7 +100,7 @@ struct AppearanceSettingsView: View {
         @Bindable var preferences = preferences
         SettingsPane(.appearance) {
             SettingsGroup("Theme") {
-                SettingsPreviewPicker(title: "Theme", subtitle: "For the editor, the captures panel and this window.",
+                SettingsPreviewPicker(title: "Theme",
                                       selection: $preferences.appearance, options: AppPreferences.Appearance.allCases, label: \.title) { option in
                     AppearancePreview(appearance: option)
                 }
@@ -206,23 +206,21 @@ struct IslandSettingsView: View {
         @Bindable var preferences = preferences
         SettingsPane(.island) {
             SettingsGroup("Dynamic Island") {
-                SettingsRow("Show the Dynamic Island", subtitle: "Your captures, clipboard, assets, colors, tasks and snippets, docked on the notch. The island never appears in Klik's own screenshots.") {
+                SettingsRow("Show the Dynamic Island") {
                     Toggle("Show the island", isOn: $preferences.dynamicIslandEnabled).toggleStyle(.switch)
                 }
                 SettingsRow("Also show a pill on displays without a notch") {
                     Toggle("Pill on plain displays", isOn: $preferences.dynamicIslandOnPlainDisplays).toggleStyle(.switch)
                 }
                 .disabled(!preferences.dynamicIslandEnabled)
-                SettingsRow("Notch background", subtitle: "Draw the closed island black beside the notch (a black pill on a plain display). Off: nothing shows until it opens.") {
+                SettingsRow("Notch background", subtitle: "Black beside the notch while closed.") {
                     Toggle("Notch background", isOn: $preferences.islandNotchBackground).toggleStyle(.switch)
                 }
                 .disabled(!preferences.dynamicIslandEnabled)
             }
 
             SettingsGroup("Opening and closing") {
-                SettingsRow("Open on", subtitle: preferences.islandOpenMode == .hover
-                            ? "The pointer resting on the island opens it."
-                            : "A click on the island opens it; ⎋ or a click outside closes it.") {
+                SettingsRow("Open on") {
                     Picker("Open on", selection: $preferences.islandOpenMode) {
                         ForEach(AppPreferences.IslandOpenMode.allCases, id: \.self) { Text($0.title).tag($0) }
                     }
@@ -230,19 +228,19 @@ struct IslandSettingsView: View {
                     .fixedSize()
                 }
                 if preferences.islandOpenMode == .hover {
-                    SettingsRow("Hover delay", subtitle: "How long the pointer rests on the island before it opens — so passing over the notch does not.") {
+                    SettingsRow("Hover delay") {
                         SecondsSlider(value: $preferences.islandHoverDelay, range: 0...1.5, step: 0.05, zero: "At once")
                     }
                 }
-                SettingsRow("Close when the pointer leaves", subtitle: "Off: the island stays open until ⎋ or a click outside it.") {
+                SettingsRow("Close when the pointer leaves") {
                     Toggle("Close on leave", isOn: $preferences.islandCloseOnLeave).toggleStyle(.switch)
                 }
                 if preferences.islandCloseOnLeave {
-                    SettingsRow("Close delay", subtitle: "A moment's grace after the pointer leaves, so a slip does not close it.") {
+                    SettingsRow("Close delay") {
                         SecondsSlider(value: $preferences.islandCloseDelay, range: 0.1...3, step: 0.05, zero: "At once")
                     }
                 }
-                SettingsRow("Opens on", subtitle: "The tab the island shows when it opens.") {
+                SettingsRow("Opens on") {
                     Picker("Opens on", selection: $preferences.islandOpensOn) {
                         Text("Last used").tag(IslandTab?.none)
                         Divider()
@@ -254,7 +252,7 @@ struct IslandSettingsView: View {
             .disabled(!preferences.dynamicIslandEnabled)
 
             SettingsGroup("What it shows") {
-                SettingsRow("Flash new captures", subtitle: "Each capture appears on the island for a moment; resting the pointer on it opens the panel.") {
+                SettingsRow("Flash new captures") {
                     Toggle("Flash captures", isOn: $preferences.islandFlashCaptures).toggleStyle(.switch)
                 }
                 if preferences.islandFlashCaptures {
@@ -262,10 +260,10 @@ struct IslandSettingsView: View {
                         SecondsSlider(value: $preferences.islandFlashDuration, range: 0.5...5, step: 0.1, zero: nil)
                     }
                 }
-                SettingsRow("Statuses", subtitle: "Pastes from the stack, uploads, focus sessions and saved snippets, said on the island. The time and prayer times have their own settings.") {
+                SettingsRow("Statuses", subtitle: "Pastes, uploads, focus sessions and saved snippets.") {
                     Toggle("Statuses", isOn: $preferences.islandStatuses).toggleStyle(.switch)
                 }
-                SettingsRow("Animation", subtitle: "Lively springs open and settles closed; Quick is a short ease; Off goes straight there. Reduce Motion in System Settings always wins.") {
+                SettingsRow("Animation") {
                     Picker("Animation", selection: $preferences.islandAnimation) {
                         ForEach(AppPreferences.IslandAnimation.allCases, id: \.self) { Text($0.title).tag($0) }
                     }
@@ -276,7 +274,7 @@ struct IslandSettingsView: View {
             .disabled(!preferences.dynamicIslandEnabled)
 
             SettingsGroup("Panels") {
-                SettingsPreviewPicker(title: "Open panels at", subtitle: "Where the library panel (⌥⇧K) and the quick task (⌥/) appear — on the screen the pointer is on.",
+                SettingsPreviewPicker(title: "Open panels at", subtitle: "The library panel and the quick task.",
                                       selection: $preferences.panelPosition, options: PanelPosition.allCases, label: { $0 == .pointer ? "Pointer" : $0.title }, columns: 4, tileWidth: 92, inPopover: true) { position in
                     PanelPositionPreview(position: position)
                 }
@@ -318,11 +316,11 @@ struct SnippetSettingsView: View {
     var body: some View {
         @Bindable var preferences = preferences
         SettingsPane(.snippets) {
-            SettingsGroup("Snippets", footer: "Make snippets in the island's Snippets tab, or from a clipboard entry or an asset with Make Snippet…") {
-                SettingsRow("Expand snippets as you type", subtitle: "Type a snippet's keyword (\(preferences.snippetPrefix)welcome) in any app and Klik replaces it with the snippet. Blanks like {{Name}} are asked for first; {{date}}, {{time}} and {{clipboard}} fill themselves.") {
+            SettingsGroup("Snippets") {
+                SettingsRow("Expand snippets as you type", subtitle: "Type \(preferences.snippetPrefix)keyword in any app.") {
                     Toggle("Expand snippets", isOn: $preferences.snippetsEnabled).toggleStyle(.switch)
                 }
-                SettingsRow("Keyword trigger", subtitle: "Before every keyword, so ordinary words never expand.") {
+                SettingsRow("Keyword trigger") {
                     TextField("", text: $preferences.snippetPrefix, prompt: Text(";"))
                         .textFieldStyle(.roundedBorder)
                         .font(.system(.body, design: .monospaced))
@@ -330,7 +328,7 @@ struct SnippetSettingsView: View {
                         .frame(width: 60)
                 }
                 if !PermissionManager.hasAccessibilityAccess {
-                    SettingsRow("Needs Accessibility access", subtitle: "To see what you type and to paste the snippet.", symbol: "exclamationmark.triangle.fill", tint: .orange) {
+                    SettingsRow("Needs Accessibility access", symbol: "exclamationmark.triangle.fill", tint: .orange) {
                         Button("Grant…") {
                             PermissionManager.requestAccessibilityAccess()
                             PermissionManager.revealAppInFinder()
@@ -350,7 +348,7 @@ struct ColorSettingsView: View {
     var body: some View {
         @Bindable var preferences = preferences
         SettingsPane(.colors) {
-            SettingsGroup("Color picker", footer: "Every other format is one right-click away on a color card.") {
+            SettingsGroup("Color picker") {
                 SettingsRow("Copy picked colors as") {
                     Picker("Color format", selection: $preferences.colorFormat) {
                         ForEach(ColorFormat.allCases, id: \.self) { Text($0.title).tag($0) }
@@ -438,7 +436,7 @@ struct CaptureSettingsView: View {
                 }
             }
 
-            SettingsGroup("Sound", footer: "Pick one of the macOS alert sounds or any audio file from your Mac.") {
+            SettingsGroup("Sound") {
                 SettingsRow("Play a sound after each capture") {
                     Toggle("Play a sound", isOn: $preferences.soundEnabled).toggleStyle(.switch)
                 }
@@ -562,7 +560,7 @@ struct TimeSettingsView: View {
     var body: some View {
         @Bindable var preferences = preferences
         SettingsPane(.time) {
-            SettingsGroup("Time on the island", footer: "On the hour, the half hour and so on, the island shows the time for a moment — with the prayer period when prayer times are on. It waits while the island is open.") {
+            SettingsGroup("Time on the island") {
                 SettingsRow("Show the time every") {
                     Picker("Interval", selection: $preferences.timeStatusInterval) {
                         ForEach(AppPreferences.timeIntervals, id: \.self) { minutes in
@@ -571,13 +569,13 @@ struct TimeSettingsView: View {
                     }
                     .fixedSize()
                 }
-                SettingsRow("Preview", subtitle: "Show the time on the island now.") {
+                SettingsRow("Preview") {
                     Button("Show on the Island") { clock?.preview() }
                 }
             }
 
             SettingsGroup("Prayer times") {
-                SettingsRow("Prayer times", subtitle: "Computed on this Mac from the sun's position at your location; nothing is fetched from the internet. They refresh at midnight, on wake and when the location changes.") {
+                SettingsRow("Prayer times", subtitle: "Computed on this Mac from your location.") {
                     Toggle("Prayer times", isOn: $preferences.prayerTimesEnabled).toggleStyle(.switch)
                 }
                 SettingsRow("Calculation method") {
@@ -594,15 +592,13 @@ struct TimeSettingsView: View {
                     .fixedSize()
                 }
                 .disabled(!preferences.prayerTimesEnabled)
-                SettingsRow("Announce prayers on the island", subtitle: "Each prayer as it begins, and the times prayer is not allowed: \(Int(PrayerTimes.sunriseWindow / 60)) min after sunrise, \(Int(PrayerTimes.zenithWindow / 60)) min before Dhuhr, \(Int(PrayerTimes.sunsetWindow / 60)) min before Maghrib.") {
+                SettingsRow("Announce prayers on the island", subtitle: "Each prayer as it begins, and the forbidden times.") {
                     Toggle("Announce prayers", isOn: $preferences.prayerAnnouncements).toggleStyle(.switch)
                 }
                 .disabled(!preferences.prayerTimesEnabled)
             }
 
-            SettingsGroup("Where", footer: preferences.prayerLocationMode == .manual
-                          ? "Decimal degrees, e.g. 23.8103, 90.4125 for Dhaka. Positive is north / east."
-                          : "macOS asks once for permission. The last fix is kept, so the times are ready at launch and offline.") {
+            SettingsGroup("Where", footer: preferences.prayerLocationMode == .manual ? "Decimal degrees, e.g. 23.8103, 90.4125." : nil) {
                 SettingsRow("Location") {
                     Picker("Location", selection: $preferences.prayerLocationMode) {
                         ForEach(AppPreferences.PrayerLocationMode.allCases, id: \.self) { Text($0.title).tag($0) }
@@ -629,7 +625,7 @@ struct TimeSettingsView: View {
             .disabled(!preferences.prayerTimesEnabled)
 
             if preferences.prayerTimesEnabled, let clock, let today = clock.today {
-                SettingsGroup("Today", footer: "Nudge a time by a few minutes to match your mosque's timetable. \(clock.prayerLine() ?? "")") {
+                SettingsGroup("Today", footer: "Adjust to match your mosque's timetable.") {
                     ForEach(today.ordered, id: \.prayer) { entry in
                         adjustmentRow(entry.prayer, time: entry.time)
                     }
@@ -694,8 +690,8 @@ struct ClipboardSettingsView: View {
     var body: some View {
         @Bindable var preferences = preferences
         SettingsPane(.clipboard) {
-            SettingsGroup("History", footer: "Pinned items are always kept. Content that apps mark as concealed (secrets from credential managers) is never recorded, and nothing leaves this Mac.") {
-                SettingsRow("Keep a clipboard history", subtitle: "Text, links, colors, images and files you copy in any app appear in the Dynamic Island's Clipboard tab. Click one to copy it again.") {
+            SettingsGroup("History", footer: "Concealed content, like passwords, is never recorded.") {
+                SettingsRow("Keep a clipboard history") {
                     Toggle("Keep history", isOn: $preferences.clipboardHistoryEnabled).toggleStyle(.switch)
                 }
                 SettingsRow("Keep the last") {
@@ -708,7 +704,7 @@ struct ClipboardSettingsView: View {
             }
 
             SettingsGroup {
-                SettingsRow("\(clipboard.items.count) item\(clipboard.items.count == 1 ? "" : "s") stored", subtitle: "Pinned items stay when the history is cleared.") {
+                SettingsRow("\(clipboard.items.count) item\(clipboard.items.count == 1 ? "" : "s") stored") {
                     Button("Clear History…", role: .destructive) { confirmClear = true }
                         .disabled(clipboard.items.allSatisfy(\.pinned))
                 }
@@ -729,11 +725,11 @@ struct PermissionSettingsView: View {
 
     var body: some View {
         SettingsPane(.permissions) {
-            SettingsGroup(footer: "Klik only captures when you ask it to and never uploads anything.") {
+            SettingsGroup {
                 PermissionRow(
                     symbol: "rectangle.dashed.badge.record", tint: .blue,
                     title: "Screen Recording",
-                    detail: "Required for every capture. Takes effect after relaunching Klik.",
+                    detail: "For every capture. Relaunch Klik after granting.",
                     granted: model.hasScreenCaptureAccess,
                     request: { PermissionManager.requestScreenCaptureAccess() },
                     openSettings: PermissionManager.openScreenRecordingSettings
@@ -741,7 +737,7 @@ struct PermissionSettingsView: View {
                 PermissionRow(
                     symbol: "accessibility", tint: .purple,
                     title: "Accessibility",
-                    detail: "Optional: snippets, paste and the front field. Add Klik to the list with “+” or by dragging it in.",
+                    detail: "Snippets, paste and the front field.",
                     granted: model.hasAccessibilityAccess,
                     request: {
                         PermissionManager.requestAccessibilityAccess()
@@ -820,7 +816,7 @@ struct EditorSettingsView: View {
         let d = $preferences.editorDefaults
         SettingsPane(.editor) {
             SettingsGroup {
-                SettingsRow("Start each editor with the options last used", subtitle: "Off: every editor starts with the defaults below.") {
+                SettingsRow("Start each editor with the options last used") {
                     Toggle("Remember last used", isOn: d.rememberLastUsed).toggleStyle(.switch)
                 }
             }
@@ -896,7 +892,7 @@ struct EditorSettingsView: View {
             }
 
             SettingsGroup {
-                SettingsRow("Defaults", subtitle: "Back to Klik's own colors, widths and sizes; the option above is kept.") {
+                SettingsRow("Defaults") {
                     Button("Restore Defaults") {
                         let remember = preferences.editorDefaults.rememberLastUsed
                         preferences.editorDefaults = EditorDefaults()
@@ -974,14 +970,14 @@ struct ShortcutSettingsView: View {
             if hasReservedBinding {
                 SettingsGroup {
                     SettingsRow("A binding matches a macOS screenshot shortcut",
-                                subtitle: "macOS handles ⌘⇧3, ⌘⇧4, ⌘⇧5 and ⌘⇧6 before Klik sees them. Turn them off under Keyboard › Keyboard Shortcuts › Screenshots to use them here.",
+                                subtitle: "Turn it off in System Settings › Keyboard › Shortcuts › Screenshots.",
                                 symbol: "exclamationmark.triangle.fill", tint: .orange) {
                         Button("Keyboard Settings…") { PermissionManager.openKeyboardShortcutSettings() }
                     }
                 }
             }
 
-            SettingsGroup("Global shortcuts", footer: "Click a field and press a new combination. Shortcuts need ⌘, ⌥ or ⌃ (or a function key); ⌫ removes one, ⎋ keeps the current one.") {
+            SettingsGroup("Global shortcuts", footer: "Click a field and press the keys. ⌫ removes one.") {
                 ForEach(HotkeyID.configurable, id: \.self) { id in
                     let entry = shortcuts.entries[id]
                     SettingsRow(id.title, symbol: symbol(for: id), tint: tint(for: id)) {
@@ -999,7 +995,7 @@ struct ShortcutSettingsView: View {
             }
 
             SettingsGroup {
-                SettingsRow("Defaults", subtitle: "Every shortcut back to what Klik ships with.") {
+                SettingsRow("Defaults") {
                     Button("Restore Defaults") { shortcuts.restoreDefaults() }
                 }
             }
@@ -1090,7 +1086,7 @@ struct AboutSettingsView: View {
                             .font(SettingsFont.sub)
                     }
                 }
-                SettingsRow("Version", subtitle: "With the macOS version, for a bug report.") {
+                SettingsRow("Version") {
                     Button(copied ? "Copied" : "Copy") {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString("Klik \(short) (\(build)) · macOS \(ProcessInfo.processInfo.operatingSystemVersionString)", forType: .string)
@@ -1113,7 +1109,7 @@ struct AboutSettingsView: View {
             }
 
             SettingsGroup {
-                SettingsRow("© \(String(Calendar.current.component(.year, from: .now))) Stackrover", subtitle: "Klik keeps everything on this Mac unless you set up share links.")
+                SettingsRow("© \(String(Calendar.current.component(.year, from: .now))) Stackrover")
             }
         }
     }

@@ -9,7 +9,7 @@ struct ShareSettingsView: View {
     var body: some View {
         @Bindable var settings = settings
         SettingsPane(.sharing) {
-            SettingsGroup("Share links", footer: "“Copy Share Link” on a capture (or ⌘L in the command palette) uploads the PNG and puts its link on the clipboard. Keys and secrets are kept in your Keychain.") {
+            SettingsGroup("Share links", footer: "Keys are kept in your Keychain.") {
                 SettingsRow("Upload to") {
                     Picker("Upload to", selection: $settings.provider) {
                         ForEach(ShareSettings.Provider.allCases, id: \.self) { Text($0.title).tag($0) }
@@ -22,7 +22,7 @@ struct ShareSettingsView: View {
             }
 
             if settings.provider == .s3 {
-                SettingsGroup("S3-compatible bucket", footer: "Uploads are PUT with SigV4 and public-read. With R2, set a public bucket domain as the URL base.") {
+                SettingsGroup("S3-compatible bucket", footer: "With R2, set the public bucket domain as the URL base.") {
                     field("Endpoint", text: $settings.endpoint, prompt: "s3.amazonaws.com · <account>.r2.cloudflarestorage.com")
                     field("Region", text: $settings.region, prompt: "us-east-1 · auto")
                     field("Bucket", text: $settings.bucket)
@@ -36,7 +36,7 @@ struct ShareSettingsView: View {
             }
 
             if settings.provider == .custom {
-                SettingsGroup("Custom endpoint", footer: "{name} in the URL becomes the file name. With an empty answer the request URL is the link.") {
+                SettingsGroup("Custom endpoint", footer: "{name} in the URL becomes the file name.") {
                     field("URL", text: $settings.customURL, prompt: "https://example.com/upload/{name}")
                     SettingsRow("Method") {
                         Picker("Method", selection: $settings.customMethod) {
@@ -58,7 +58,7 @@ struct ShareSettingsView: View {
 
             if settings.provider != .off {
                 SettingsGroup {
-                    SettingsRow("Test", subtitle: testResult ?? "Uploads a small image and shows its link here.") {
+                    SettingsRow("Test", subtitle: testResult) {
                         Button(testing ? "Testing…" : "Test Upload") { test() }
                             .disabled(testing || !settings.isConfigured)
                     }
