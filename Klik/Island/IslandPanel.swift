@@ -60,6 +60,8 @@ struct IslandPanel: View {
     @Environment(GroupStore.self) private var groups
     /// A file or image is being dragged over the island.
     var dropping = false
+    /// Captures picked for one comparison sheet, in the order they were picked.
+    @State private var compareSelection: [UUID] = []
     /// Asks the island for a line of text in its compact form.
     /// The current width (the island fits it to `onIdealWidth`).
     var width: CGFloat = IslandPanel.size.width
@@ -421,6 +423,11 @@ struct IslandPanel: View {
                     tabPill(value, count: count(for: value), shortcut: index + 1)
                 }
                 Spacer(minLength: 16)
+                if tab == .captures, !comparing.isEmpty {
+                    smallButton("Compare \(comparing.count)", symbol: "rectangle.split.2x1",
+                                help: "Lay the picked captures out in one picture and copy it", action: compareSelected)
+                    smallButton("Deselect", symbol: "xmark", help: "Drop the comparison picks") { compareSelection = [] }
+                }
                 if tab == .captures, library.items.contains(where: { !$0.pinned }) {
                     smallButton("Clear", symbol: "trash", help: "Remove every unpinned capture") { library.unpinned.forEach(actions.delete) }
                 }
@@ -603,7 +610,55 @@ struct IslandPanel: View {
     private func captureCard(_ item: CaptureItem) -> some View {
         CaptureCard(item: item, library: library, actions: actions, clipboard: clipboard, colorStore: colors, onPreview: { open(.capture(item)) }, onRename: {
             onPrompt(IslandPrompt(kind: .rename(.capture(item)), initial: item.title.replacingOccurrences(of: "Screenshot ", with: ""), image: library.thumbnail(for: item)))
-        }, onNewGroup: { onPrompt(IslandPrompt(kind: .group(.captures, assign: .capture(item.id), editing: nil))) })
+        }, onNewGroup: { onPrompt(IslandPrompt(kind: .group(.captures, assign: .capture(item.id), editing: nil))) },
+                    compareIndex: comparing.firstIndex(of: item.id).map { $0 + 1 },
+                    onToggleCompare: { toggleCompare(item) })
+            .modifier(CompareDrop(owner: .capture(item.id), resolve: draggedImage, accept: { actions.compare(item, $0) }))
+    }
+
+    /// The picks that are still in the library, in the order they were picked.
+    private var comparing: [UUID] {
+        compareSelection.filter { id in library.items.contains { $0.id == id } }
+    }
+
+    private func toggleCompare(_ item: CaptureItem) {
+        if let index = compareSelection.firstIndex(of: item.id) {
+            compareSelection.remove(at: index)
+        } else {
+            compareSelection.append(item.id)
+        }
+    }
+
+    /// The picked captures in one picture, kept and copied. The first pick is the base
+    /// the others are laid beside, so the order they were picked in is the order shown.
+    private func compareSelected() {
+        let picks = comparing.compactMap { id in library.items.first { $0.id == id } }
+        guard let base = picks.first else { return }
+        guard picks.count > 1 else {
+            FeedbackHUD.show("Pick another capture to compare with", symbol: "rectangle.split.2x1")
+            return
+        }
+        let others = picks.dropFirst().compactMap { library.image(for: $0) }
+        guard !others.isEmpty else {
+            FeedbackHUD.show("The picked captures could not be read", symbol: "exclamationmark.triangle")
+            return
+        }
+        actions.compare(base, others)
+        compareSelection = []
+    }
+
+    /// One of Klik's own cards as an image, for a card dropped onto a capture.
+    private func draggedImage(_ source: GroupAssignment) -> CapturedImage? {
+        switch source {
+        case .capture(let id):
+            library.items.first { $0.id == id }.flatMap { library.image(for: $0) }
+        case .asset(let id):
+            assets.items.first { $0.id == id }.map { assets.fileURL(for: $0) }.flatMap { ImageDrop.captured(at: $0) }
+        case .clipboard(let id):
+            clipboard.items.first { $0.id == id }.flatMap { clipboard.imageData(for: $0) }.flatMap { ImageDrop.captured(from: $0) }
+        case .color:
+            nil
+        }
     }
 
     private func clipboardCard(_ item: ClipboardItem) -> some View {
@@ -1507,11 +1562,15 @@ struct CaptureCard: View {
     var onRename: () -> Void = {}
     /// A new group with this capture in it.
     var onNewGroup: () -> Void = {}
+    /// Its place (from 1) in the comparison being built, if it is in one.
+    var compareIndex: Int? = nil
+    /// Put it in the comparison, or take it out; nil where comparing is not offered.
+    var onToggleCompare: (() -> Void)? = nil
     @Environment(GroupStore.self) private var groups: GroupStore?
     @State private var hovering = false
 
     var body: some View {
-        CardChrome(hovering: $hovering, label: accessibilityLabel, onTap: { actions.copy(item) }) {
+        CardChrome(hovering: $hovering, label: accessibilityLabel, onTap: tap) {
             Color.clear
                 .overlay {
                     if let thumbnail = library.thumbnail(for: item) {
@@ -1557,9 +1616,52 @@ struct CaptureCard: View {
             if let groups {
                 GroupMenu(groups: groups, kind: .captures, current: item.groupID, assign: { library.setGroup(item, $0) }, newGroup: onNewGroup)
             }
+            if let onToggleCompare {
+                Button(compareIndex == nil ? "Add to Comparison" : "Remove from Comparison", action: onToggleCompare)
+            }
             Button("Rename…", action: onRename)
             Divider()
             Button("Delete", role: .destructive) { actions.delete(item) }
+        }
+        .overlay(alignment: .topTrailing) { compareToggle }
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Color.brand, lineWidth: 2)
+                .opacity(compareIndex == nil ? 0 : 1)
+                .allowsHitTesting(false)
+        }
+    }
+
+    /// ⌘-click adds the card to the comparison instead of copying it, which is how
+    /// several captures are picked without leaving the row.
+    private func tap() {
+        if let onToggleCompare, NSEvent.modifierFlags.contains(.command) {
+            onToggleCompare()
+            return
+        }
+        actions.copy(item)
+    }
+
+    /// The tick in the corner: the card's number while it is in a comparison, an empty
+    /// ring while the pointer is on the card.
+    @ViewBuilder private var compareToggle: some View {
+        if let onToggleCompare, compareIndex != nil || hovering {
+            Button(action: onToggleCompare) {
+                Group {
+                    if let compareIndex {
+                        Text("\(compareIndex)").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
+                    } else {
+                        Icon("plus", size: 12, weight: .bold).foregroundStyle(.white.opacity(0.9))
+                    }
+                }
+                .frame(width: 24, height: 24)
+                .background(compareIndex == nil ? AnyShapeStyle(.black.opacity(0.8)) : AnyShapeStyle(Color.brand), in: Circle())
+                .overlay(Circle().strokeBorder(.white.opacity(0.35)))
+                .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
+            }
+            .buttonStyle(.plain)
+            .padding(8)
+            .help(compareIndex == nil ? "Add to the comparison (⌘-click)" : "Remove from the comparison")
         }
     }
 
@@ -2215,6 +2317,66 @@ struct GroupMenu: View {
     }
 }
 
+
+/// A capture card takes images dropped onto it — another of Klik's cards, or a file
+/// from anywhere — and hands them over to be laid out beside the capture. Dropping a
+/// design on a screenshot is the quickest way to a before-and-after for a chat or an
+/// agent: the comparison lands on the clipboard.
+private struct CompareDrop: ViewModifier {
+    /// The card underneath, so dropping a card on itself does nothing.
+    let owner: GroupAssignment
+    /// One of Klik's own items as an image, when the drag started inside the island.
+    let resolve: (GroupAssignment) -> CapturedImage?
+    let accept: ([CapturedImage]) -> Void
+    @State private var targeted = false
+
+    /// A drag from inside the island is taken unless it is this very card; anything
+    /// from outside is read for images when it lands.
+    private var accepting: Bool {
+        guard let source = IslandDrag.current else { return true }
+        return source != owner
+    }
+
+    func body(content: Content) -> some View {
+        let lit = targeted && accepting
+        content
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(Color.brand, lineWidth: 2)
+                    .opacity(lit ? 1 : 0)
+                    .allowsHitTesting(false)
+            }
+            .overlay(alignment: .top) {
+                if lit {
+                    Label("Compare", systemImage: "rectangle.split.2x1")
+                        .font(.system(size: 11, weight: .semibold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.brand, in: Capsule())
+                        .foregroundStyle(.white)
+                        .padding(.top, 6)
+                        .allowsHitTesting(false)
+                }
+            }
+            .animation(.easeOut(duration: 0.12), value: lit)
+            .onDrop(of: ImageDrop.contentTypes, isTargeted: $targeted) { providers in
+                if let source = IslandDrag.current {
+                    guard source != owner, let image = resolve(source) else { return false }
+                    accept([image])
+                    return true
+                }
+                Task { @MainActor in
+                    let images = await ImageDrop.captures(from: providers)
+                    guard !images.isEmpty else {
+                        FeedbackHUD.show("No image in what was dropped", symbol: "photo")
+                        return
+                    }
+                    accept(images)
+                }
+                return true
+            }
+    }
+}
 
 /// A chip that takes one of the island's own cards: it lights while a card of the
 /// right kind hovers, and hands the card over on the drop.

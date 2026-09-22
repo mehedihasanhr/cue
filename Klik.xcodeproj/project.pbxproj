@@ -28,6 +28,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Capture/Scrolling/FrameStitcher.swift,
+				Editor/Rendering/CompareComposer.swift,
 				Clipboard/ClipboardItem.swift,
 				Colors/ColorMath.swift,
 				Island/IslandGeometry.swift,

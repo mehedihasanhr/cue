@@ -22,6 +22,8 @@ struct HistoryActions {
     var shareLink: (CaptureItem) -> Void = { _ in }
     /// A new task with the capture attached.
     var makeTask: (CaptureItem) -> Void = { _ in }
+    /// Lays other images beside the capture, keeps the comparison and copies it.
+    var compare: (CaptureItem, [CapturedImage]) -> Void = { _, _ in }
     /// Opens a clipboard image in the editor, as a capture of its own.
     var editClipboardImage: (ClipboardItem) -> Void = { _ in }
 }

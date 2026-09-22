@@ -240,6 +240,21 @@ work against: drag it anywhere, ⌘= / ⌘- or ⌥-scroll to resize, hover for c
 ghost (half see-through and click-through; double-click, or the palette's "Unghost
 pinned screenshots", brings it back), ⎋ closes.
 
+### Compare images
+
+Drop image files on the editor canvas (or press the split-rectangle button in its
+toolbar) and they are laid out beside what you are editing — annotations, crop and all
+— in one picture: side by side for tall shots, stacked for wide ones. ⌘Z puts the
+single image back.
+
+In the island's Captures tab, ⌘-click cards (or the ⊕ in a card's corner) to pick two
+or more; they are numbered in the order picked, and "Compare N" in the tab row lays
+them out in one picture, keeps it with your captures and copies it — ready to paste
+into a chat or an agent. "Deselect" drops the picks.
+
+Dragging one card onto another capture card does the same for two, and files dragged
+from Finder onto a capture card are compared with it.
+
 ### Share links
 
 Settings › Sharing: an **S3-compatible bucket** (AWS S3, Cloudflare R2, MinIO, B2 —

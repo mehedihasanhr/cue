@@ -916,8 +916,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             pinToScreen: { [weak self] item in self?.pinToScreen(item) },
             shareLink: { [weak self] item in self?.shareLink(for: item) },
             makeTask: { [weak self] item in self?.makeTask(from: item) },
+            compare: { [weak self] item, images in self?.compare(item, with: images) },
             editClipboardImage: { [weak self] item in self?.closeHistoryThen { $0.editClipboardImage(item) } }
         )
+    }
+
+    /// An image dropped on a capture card: the two are laid out in one picture, kept
+    /// as a capture of its own and copied, ready to paste into a chat or an agent.
+    private func compare(_ item: CaptureItem, with images: [CapturedImage]) {
+        guard !images.isEmpty else { return }
+        guard let base = library.image(for: item) else {
+            FeedbackHUD.show("The capture could not be read", symbol: "exclamationmark.triangle")
+            return
+        }
+        let pieces = [CompareComposer.Piece(base)] + images.map(CompareComposer.Piece.init)
+        guard let composed = CompareComposer.compose(pieces) else {
+            FeedbackHUD.show("The images could not be combined", symbol: "exclamationmark.triangle")
+            return
+        }
+        Clipboard.copy(composed.cgImage)
+        let capture = library.add(composed)
+        Log.app.info("Compared \(pieces.count, privacy: .public) images → \(capture.fileName, privacy: .public)")
+        FeedbackHUD.show("\(pieces.count) images compared · copied", symbol: "checkmark.circle.fill",
+                         duration: .seconds(1.6), subtitle: composed.dimensionsDescription, image: library.thumbnail(for: capture))
     }
 
     /// A new task with the capture in its description (the island's form, or the

@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Window-control actions supplied by the window controller.
 struct WindowButtons {
@@ -16,7 +17,10 @@ struct EditorView: View {
     let onExport: () -> Void
     let onDelete: () -> Void
     let onDone: () -> Void
+    /// Pick images to lay beside this one (the toolbar's Compare button).
+    var onAddImages: () -> Void = {}
     let windowButtons: WindowButtons
+    @State private var dropTargeted = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -24,7 +28,7 @@ struct EditorView: View {
                 PreviewToolbar(model: model, title: title, fileName: fileName, onCopy: onCopy, onDelete: onDelete, windowButtons: windowButtons)
                 Divider()
             } else {
-                EditorToolbar(model: model, fileName: fileName, onCopy: onCopy, onSave: onSave, onExport: onExport, onDelete: onDelete, onDone: onDone, windowButtons: windowButtons)
+                EditorToolbar(model: model, fileName: fileName, onCopy: onCopy, onSave: onSave, onExport: onExport, onDelete: onDelete, onDone: onDone, onAddImages: onAddImages, windowButtons: windowButtons)
                 Divider()
                 // The options row only appears when there is something to set.
                 if model.tool != .background, !(model.tool == .select && model.selectedID == nil) {
@@ -39,6 +43,13 @@ struct EditorView: View {
                 }
                 CanvasRepresentable(model: model)
             }
+            .overlay { CompareDropTarget(active: dropTargeted) }
+            // Images dropped on the canvas are laid beside this one, so a capture can be
+            // compared with a design, a previous run, or anything else on disk.
+            .onDrop(of: ImageDrop.contentTypes, isTargeted: $dropTargeted) { providers in
+                compare(with: providers)
+                return true
+            }
             Divider()
             EditorStatusBar(model: model)
         }
@@ -50,6 +61,46 @@ struct EditorView: View {
                 model.zoomCommand = .fit
             }
         }
+    }
+
+    /// Reads the dropped images off the main thread's back and composes them in.
+    private func compare(with providers: [NSItemProvider]) {
+        Task { @MainActor in
+            let images = await ImageDrop.captures(from: providers)
+            guard !images.isEmpty else {
+                FeedbackHUD.show("No image in what was dropped", symbol: "photo")
+                return
+            }
+            guard model.compare(with: images) else {
+                FeedbackHUD.show("The images could not be combined", symbol: "exclamationmark.triangle")
+                return
+            }
+            if model.mode == .preview { model.mode = .edit }
+            FeedbackHUD.show(images.count == 1 ? "Image added" : "\(images.count) images added",
+                             symbol: "rectangle.split.2x1", duration: .seconds(1.2))
+        }
+    }
+}
+
+/// The frame and hint shown while images hover over the canvas.
+private struct CompareDropTarget: View {
+    let active: Bool
+
+    var body: some View {
+        ZStack {
+            Color.accentColor.opacity(0.08)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.accentColor, style: SwiftUI.StrokeStyle(lineWidth: 2, dash: [7, 5]))
+                .padding(6)
+            Label("Drop to compare", systemImage: "rectangle.split.2x1")
+                .font(.system(size: 13, weight: .semibold))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .background(.regularMaterial, in: Capsule())
+        }
+        .opacity(active ? 1 : 0)
+        .animation(.easeOut(duration: 0.12), value: active)
+        .allowsHitTesting(false)
     }
 }
 
@@ -131,6 +182,7 @@ struct EditorToolbar: View {
     let onExport: () -> Void
     let onDelete: () -> Void
     let onDone: () -> Void
+    var onAddImages: () -> Void = {}
     let windowButtons: WindowButtons
     @State private var copied = false
 
@@ -170,6 +222,7 @@ struct EditorToolbar: View {
                             withAnimation { copied = false }
                         }
                     }
+                    IconButton(symbol: "rectangle.split.2x1", help: "Compare with other images — or drop them on the canvas", action: onAddImages)
                     IconButton(symbol: "square.and.arrow.up", help: "Export… (⇧⌘S)", action: onExport)
                     DragOutView(
                         fileName: fileName,

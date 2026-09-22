@@ -63,6 +63,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
             onExport: { [weak self] in self?.export() },
             onDelete: { [weak self] in self?.deleteCapture() },
             onDone: { [weak self] in self?.done() },
+            onAddImages: { [weak self] in self?.addImages() },
             windowButtons: WindowButtons(
                 close: { [weak self] in self?.window?.performClose(nil) },
                 minimize: { [weak self] in self?.window?.miniaturize(nil) },
@@ -188,6 +189,32 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         library.replaceImage(of: item, with: image)
         model.markSaved()
         onSaved?(image)
+    }
+
+    /// Compare: pick images from disk and lay them beside this capture.
+    @objc func addImages() {
+        model.endTextEditing()
+        guard let window else { return }
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.message = "Choose images to place beside this capture."
+        panel.prompt = "Compare"
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard let self, response == .OK else { return }
+            let images = panel.urls.compactMap { ImageDrop.captured(at: $0) }
+            guard !images.isEmpty else {
+                FeedbackHUD.show("No image could be read", symbol: "photo")
+                return
+            }
+            guard model.compare(with: images) else {
+                FeedbackHUD.show("The images could not be combined", symbol: "exclamationmark.triangle")
+                return
+            }
+            if model.mode == .preview { model.mode = .edit }
+            Log.app.info("Editor: compared with \(images.count, privacy: .public) picked image(s)")
+        }
     }
 
     @objc func export() {

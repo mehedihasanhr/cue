@@ -244,6 +244,42 @@ final class EditorViewModel {
 
     func markSaved() { isDirty = false }
 
+    // MARK: - Compare
+
+    /// Lays `images` beside what is on the canvas and makes that the document: the
+    /// current annotations, crop and background are flattened into the first piece, so
+    /// the comparison shows exactly what was on screen. ⌘Z brings the single image back.
+    @discardableResult
+    func compare(with images: [CapturedImage], axis: CompareAxis = .auto) -> Bool {
+        guard !images.isEmpty else { return false }
+        endTextEditing()
+        // The backdrop is left off the flattened piece and re-applied to the result, so
+        // the padding and gradient frame the whole comparison rather than one image.
+        var flattened = document
+        let background = flattened.background
+        flattened.background = nil
+        guard let base = DocumentExporter.render(flattened, effects: effects) else { return false }
+        let pieces = [CompareComposer.Piece(image: base, scale: document.scale)] + images.map(CompareComposer.Piece.init)
+        guard let composed = CompareComposer.compose(pieces, axis: axis) else { return false }
+
+        let previous = document
+        var next = EditorDocument(image: composed)
+        next.background = background
+        // Counters already drawn into the flattened piece are not offered again.
+        next.nextCounter = document.nextCounter
+        document = next
+        selectedID = nil
+        draft = nil
+        editingTextID = nil
+        // The crop tool always has a draft rect while it is selected.
+        cropDraft = tool == .crop ? next.imageRect : nil
+        effects.invalidate()
+        isDirty = true
+        registerUndo(returningTo: previous)
+        zoomCommand = .fit
+        return true
+    }
+
     // MARK: - Selection
 
     var selected: Annotation? {
