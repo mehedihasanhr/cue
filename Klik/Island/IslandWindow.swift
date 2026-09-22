@@ -42,9 +42,23 @@ final class IslandWindow: NSPanel {
     }
 
     var onEscape: (() -> Void)?
+    /// ← (-1) or → (+1) pressed with nothing in the island taking it (no field is
+    /// being typed in): the panel walks its cards.
+    var onArrow: ((Int) -> Void)?
 
     override func cancelOperation(_ sender: Any?) {
         onEscape?()
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if !(firstResponder is NSTextView), event.modifierFlags.intersection([.command, .option, .control]).isEmpty {
+            switch event.keyCode {
+            case 123: onArrow?(-1); return
+            case 124: onArrow?(1); return
+            default: break
+            }
+        }
+        super.keyDown(with: event)
     }
 }
 

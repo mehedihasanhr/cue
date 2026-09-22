@@ -29,6 +29,50 @@ final class PreviewPaneWindow: NSPanel {
     override var canBecomeKey: Bool { false }
 }
 
+/// What the pane shows, and which way the next item comes in from.
+@Observable
+@MainActor
+final class PreviewPaneModel {
+    var detail: IslandDetail?
+    /// +1: the next item slides in from the right (the pointer moved right), -1 from
+    /// the left, 0: it fades.
+    var direction = 0
+}
+
+/// The pane's frame and its content, which slides sideways from one item to the next.
+struct PreviewPaneRoot: View {
+    let model: PreviewPaneModel
+    let library: CaptureLibrary
+    let clipboard: ClipboardHistory
+    let assets: AssetStore
+    let colors: ColorStore
+    let actions: HistoryActions
+    let onClose: () -> Void
+
+    var body: some View {
+        ZStack {
+            if let detail = model.detail {
+                PreviewPaneView(detail: detail, library: library, clipboard: clipboard, assets: assets, colors: colors, actions: actions, onClose: onClose)
+                    .id(detail)
+                    .transition(transition)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(white: 0.03))
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(.white.opacity(0.1)))
+        .environment(\.colorScheme, .dark)
+    }
+
+    private var transition: AnyTransition {
+        switch model.direction {
+        case 1: .asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .move(edge: .leading).combined(with: .opacity))
+        case -1: .asymmetric(insertion: .move(edge: .leading).combined(with: .opacity), removal: .move(edge: .trailing).combined(with: .opacity))
+        default: .opacity
+        }
+    }
+}
+
 /// The pane's content: pills about the item and its actions in a row, the item below.
 struct PreviewPaneView: View {
     let detail: IslandDetail
@@ -63,10 +107,6 @@ struct PreviewPaneView: View {
         .frame(maxHeight: .infinity, alignment: .top)
         .padding(16)
         .foregroundStyle(.white)
-        .background(Color(white: 0.03))
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(.white.opacity(0.1)))
-        .environment(\.colorScheme, .dark)
     }
 
     // MARK: Header

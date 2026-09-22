@@ -105,8 +105,14 @@ final class IslandModel {
     /// Opens the clock in the compact island (a click on a clock status or the
     /// prayer pill); set by the controller.
     var onShowClock: () -> Void = {}
-    /// Opens a card in the pane under the island; set by the controller.
-    var onPreviewPane: (IslandDetail) -> Void = { _ in }
+    /// Opens a card in the pane under the island (+1: the next item slides in from
+    /// the right, -1 from the left, 0: fades); set by the controller.
+    var onPreviewPane: (IslandDetail, Int) -> Void = { _, _ in }
+    /// Whether the pane is showing something; set by the controller.
+    var previewOpen = false
+    /// An arrow key that reached the window (the delta, and a count so each press
+    /// is seen); set by the controller.
+    var arrowPress: (delta: Int, tick: Int) = (0, 0)
     /// Leaves the clock; set by the controller.
     var onClockClosed: () -> Void = {}
     /// Settings › Time, from the clock; set by the controller.
@@ -308,7 +314,7 @@ struct IslandView: View {
                 IslandPanel(library: library, clipboard: clipboard, assets: assets, colors: colors, tasksStore: tasks, snippets: snippets, actions: actions, dropping: model.dropping,
                             width: model.panelWidth, onIdealWidth: { model.setPanelWidth($0) }, onIdealHeight: { model.setPanelHeight($0) },
                             onPrompt: { model.onPrompt($0) }, onShowTask: { model.onShowTask($0) },
-                            onShowClock: { model.onShowClock() }, onPreviewPane: { model.onPreviewPane($0) })
+                            onShowClock: { model.onShowClock() }, onPreviewPane: { model.onPreviewPane($0, $1) }, previewOpen: model.previewOpen, arrowPress: model.arrowPress)
                     .padding(.horizontal, IslandGeometry.panelHorizontalPadding)
                     .padding(.bottom, IslandGeometry.panelBottomPadding)
             }

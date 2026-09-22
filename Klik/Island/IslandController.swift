@@ -10,7 +10,8 @@ final class IslandController {
     private let window = IslandWindow()
     /// The pane under the island for an opened card, made when first needed.
     private var previewPane: PreviewPaneWindow?
-    private var previewDetail: IslandDetail?
+    private let previewModel = PreviewPaneModel()
+    private var previewDetail: IslandDetail? { previewModel.detail }
     private let model = IslandModel()
     private let preferences: AppPreferences
     private let tasks: TaskStore
@@ -72,7 +73,11 @@ final class IslandController {
             DispatchQueue.main.async { self?.fitWindow(); self?.placePreview() }
         }
         model.onShowClock = { [weak self] in self?.showClock() }
-        model.onPreviewPane = { [weak self] detail in self?.showPreview(detail) }
+        model.onPreviewPane = { [weak self] detail, direction in self?.showPreview(detail, direction: direction) }
+        window.onArrow = { [weak self] delta in
+            guard let self, model.phase == .expanded else { return }
+            model.arrowPress = (delta, model.arrowPress.tick + 1)
+        }
         model.onClockClosed = { [weak self] in
             guard let self else { return }
             removeOutsideClickMonitor()
@@ -234,26 +239,35 @@ final class IslandController {
     // MARK: - Preview pane
 
     /// Shows the card in the pane under the island (Settings › Island › Preview opens).
-    func showPreview(_ detail: IslandDetail) {
+    /// An open pane slides to the next item in `direction` (+1: from the right).
+    func showPreview(_ detail: IslandDetail, direction: Int = 0) {
         let pane = previewPane ?? PreviewPaneWindow()
-        previewPane = pane
-        previewDetail = detail
-        let view = PreviewPaneView(detail: detail, library: library, clipboard: clipboard, assets: assets, colors: colors, actions: actions,
-                                   onClose: { [weak self] in self?.hidePreview() })
-            .environment(preferences)
-        if let host = pane.contentView as? NSHostingView<AnyView> {
-            host.rootView = AnyView(view)
-        } else {
-            let host = NSHostingView(rootView: AnyView(view))
+        if previewPane == nil {
+            previewPane = pane
+            let root = PreviewPaneRoot(model: previewModel, library: library, clipboard: clipboard, assets: assets, colors: colors, actions: actions,
+                                       onClose: { [weak self] in self?.hidePreview() })
+                .environment(preferences)
+            let host = NSHostingView(rootView: root)
             host.sizingOptions = []
             pane.contentView = host
         }
+        guard previewModel.detail != detail else { return }
+        if pane.isVisible, previewModel.detail != nil {
+            previewModel.direction = direction
+            withAnimation(.easeOut(duration: 0.28)) { previewModel.detail = detail }
+        } else {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { previewModel.detail = detail }
+        }
+        model.previewOpen = true
         placePreview()
         pane.orderFrontRegardless()
     }
 
     func hidePreview() {
-        previewDetail = nil
+        previewModel.detail = nil
+        model.previewOpen = false
         previewPane?.orderOut(nil)
     }
 

@@ -295,7 +295,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         }
                     }
                 }
-                let shotDelay: Double = previewKind == nil && ProcessInfo.processInfo.environment["KLIK_DEBUG_ISLAND_KEYS"] == nil ? 1.5 : 4
+                // KLIK_DEBUG_ISLAND_SHOT_DELAY overrides when the picture is taken (seconds after opening).
+                let shotDelay: Double = ProcessInfo.processInfo.environment["KLIK_DEBUG_ISLAND_SHOT_DELAY"].flatMap(Double.init)
+                    ?? (previewKind == nil && ProcessInfo.processInfo.environment["KLIK_DEBUG_ISLAND_KEYS"] == nil ? 1.5 : 4)
                 DispatchQueue.main.asyncAfter(deadline: .now() + shotDelay) { [weak self] in
                     guard let self, let island = self.island else { return }
                     let id = CGWindowID(island.windowNumber)

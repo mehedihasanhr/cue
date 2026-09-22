@@ -1,3 +1,4 @@
+
 import UniformTypeIdentifiers
 import AppKit
 import SwiftUI
@@ -71,8 +72,13 @@ struct IslandPanel: View {
     var onShowTask: (TaskItem) -> Void = { _ in }
     /// Opens the clock in the compact island (the prayer pill).
     var onShowClock: () -> Void = {}
-    /// Opens a card in the pane under the island (Settings › Island › Preview opens).
-    var onPreviewPane: (IslandDetail) -> Void = { _ in }
+    /// Opens a card in the pane under the island (Settings › Island › Preview opens);
+    /// the direction says which way the pane slides to it.
+    var onPreviewPane: (IslandDetail, Int) -> Void = { _, _ in }
+    /// The pane is showing something: the next card opens at once, sliding in.
+    var previewOpen = false
+    /// ← → that reached the window rather than a view (see `IslandWindow`).
+    var arrowPress: (delta: Int, tick: Int) = (0, 0)
     @State private var search = ""
     @FocusState private var searchFocused: Bool
     /// While searching: show hits from this tab only (nil: every tab).
@@ -528,6 +534,7 @@ struct IslandPanel: View {
             .background { keyboardShortcuts }
             .onKeyPress(.leftArrow) { moveSelection(-1) }
             .onKeyPress(.rightArrow) { moveSelection(1) }
+            .onChange(of: arrowPress.tick) { _, _ in _ = moveSelection(arrowPress.delta) }
             .onChange(of: tab) { _, _ in
                 detail = nil
                 selectedID = nil
@@ -757,26 +764,35 @@ struct IslandPanel: View {
         .accessibilityHidden(true)
     }
 
-    private func open(_ detail: IslandDetail) {
+    private func open(_ detail: IslandDetail, direction: Int = 0) {
         if preferences.islandPreview == .pane {
-            onPreviewPane(detail)
+            onPreviewPane(detail, direction)
         } else {
             withAnimation(.easeOut(duration: 0.15)) { self.detail = detail }
         }
     }
 
+    /// Which way `item` lies from the chosen card: +1 right, -1 left, 0 unknown.
+    private func direction(to item: IslandItem) -> Int {
+        let items = navigable
+        guard let from = items.firstIndex(where: { $0.id == selectedID }), let to = items.firstIndex(where: { $0.id == item.id }), from != to else { return 0 }
+        return to > from ? 1 : -1
+    }
+
     /// The pointer rests on a card (nil: on none): with the pane and hover on, the
-    /// card opens there after the delay.
+    /// card opens there after the delay — at once, sliding over, while the pane
+    /// already shows a card.
     private func hover(_ item: IslandItem?) {
         hoverTask?.cancel()
         hoverTask = nil
         guard let item, let detail = item.detail, preferences.islandPreview == .pane, preferences.islandPreviewOnHover else { return }
-        let delay = preferences.islandPreviewHoverDelay
+        let delay = previewOpen ? 0 : preferences.islandPreviewHoverDelay
+        let direction = direction(to: item)
         hoverTask = Task { @MainActor in
             if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
             guard !Task.isCancelled else { return }
             selectedID = item.id
-            onPreviewPane(detail)
+            onPreviewPane(detail, direction)
         }
     }
 
@@ -802,9 +818,10 @@ struct IslandPanel: View {
         let current = items.firstIndex { $0.id == selectedID }
         let next = current.map { min(max($0 + delta, 0), items.count - 1) } ?? (delta > 0 ? 0 : items.count - 1)
         let item = items[next]
+        let direction = direction(to: item)
         selectedID = item.id
         hoverTask?.cancel()
-        if let detail = item.detail { open(detail) }
+        if let detail = item.detail { open(detail, direction: direction) }
         return .handled
     }
 
