@@ -49,6 +49,37 @@ enum NoteSharing {
         }
     }
 
+    /// Whether a destination has what it needs to be sent to.
+    static func isSetUp(_ destination: NoteDestination, preferences: AppPreferences) -> Bool {
+        switch destination {
+        case .obsidian, .appleNotes: true
+        case .notion: !preferences.notesNotionToken.trimmingCharacters(in: .whitespaces).isEmpty && !notionID(preferences.notesNotionParent).isEmpty
+        }
+    }
+
+    /// The destinations a new note goes to on its own: chosen in Settings and set up.
+    static func connected(_ preferences: AppPreferences) -> [NoteDestination] {
+        NoteDestination.allCases.filter { preferences.notesSendTo.contains($0.rawValue) && isSetUp($0, preferences: preferences) }
+    }
+
+    /// Every destination that is set up, whether or not it is a default.
+    static func available(_ preferences: AppPreferences) -> [NoteDestination] {
+        NoteDestination.allCases.filter { isSetUp($0, preferences: preferences) }
+    }
+
+    /// A note just saved: sent to the destinations chosen for it (the form's
+    /// "Save as", defaulting to Settings), each reported on the HUD.
+    static func send(_ note: Note, to rawValues: [String], preferences: AppPreferences) {
+        for destination in NoteDestination.allCases where rawValues.contains(destination.rawValue) && isSetUp(destination, preferences: preferences) {
+            sendWithFeedback(note, to: destination, preferences: preferences)
+        }
+    }
+
+    /// A note saved without the form (the URL scheme): the defaults.
+    static func sendToConnected(_ note: Note, preferences: AppPreferences) {
+        send(note, to: connected(preferences).map(\.rawValue), preferences: preferences)
+    }
+
     /// Sends, and says how it went on the HUD.
     static func sendWithFeedback(_ note: Note, to destination: NoteDestination, preferences: AppPreferences) {
         Task { @MainActor in

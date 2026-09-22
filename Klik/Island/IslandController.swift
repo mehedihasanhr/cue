@@ -112,10 +112,9 @@ final class IslandController {
                     onSnippetFilled(snippet, answer.values)
                     collapseAfterPrompt = true
                 case .note(let existing):
-                    // `answer.name` set: the form saved it itself (before a Send).
-                    let saved = answer.name.isEmpty ? (existing.map { notes.update($0, text: answer.text) } ?? notes.add(text: answer.text)) : nil
-                    let title = saved?.title ?? answer.title
-                    status = IslandStatus(symbol: "note.text", title: existing == nil ? "Note saved" : "Note updated", subtitle: title)
+                    let saved = existing.map { notes.update($0, text: answer.text) } ?? notes.add(text: answer.text)
+                    status = IslandStatus(symbol: "note.text", title: existing == nil ? "Note saved" : "Note updated", subtitle: saved?.title ?? answer.title)
+                    if existing == nil, let saved { NoteSharing.send(saved, to: answer.sendTo, preferences: preferences) }
                 case .project(let parent):
                     if let project = tasks.addProject(named: answer.title, in: parent) {
                         tasks.pendingSelection = .project(project.id)

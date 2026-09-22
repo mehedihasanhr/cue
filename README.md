@@ -160,12 +160,14 @@ your other devices, an Obsidian vault folder shows them in Obsidian. The folder 
 watched, so notes edited elsewhere (Obsidian, another Mac) show up in the island. Only
 the folder's top level is read; images go in `attachments/` beside the notes.
 
-**Send** (in the form, or a card's menu) puts a note in **Obsidian** (through its
-`obsidian://new` link; name the vault in Settings, else the last one opened), **Apple
-Notes** (in the folder named in Settings; macOS asks once to let Klik control Notes)
-or **Notion** (an internal integration's secret and the page or database to put pages
-under; the secret stays in the Keychain, headings, lists, to-dos, quotes and code
-become the matching blocks).
+Saving can also put a new note in **Obsidian** (through its `obsidian://new` link;
+name the vault in Settings, else the last one opened), **Apple Notes** (in the folder
+named in Settings; macOS asks once to let Klik control Notes) or **Notion** (an
+internal integration's secret and the page or database to put pages under; the secret
+stays in the Keychain; headings, lists, to-dos, quotes and code become the matching
+blocks). Settings › Notes › **Send new notes to…** sets the defaults; the form's
+**Save as** menu changes them for one note ("Klik only" keeps it in the folder). A
+card's menu sends an existing note anywhere later.
 
 ### Sync folder
 

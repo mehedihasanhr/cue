@@ -48,6 +48,7 @@ final class AppPreferences {
         static let notesObsidianVault = "notes.obsidianVault"
         static let notesAppleNotesFolder = "notes.appleNotesFolder"
         static let notesNotionParent = "notes.notionParent"
+        static let notesSendTo = "notes.sendTo"
         static let snippetsEnabled = "snippets.enabled"
         static let snippetPrefix = "snippets.prefix"
     }
@@ -76,6 +77,11 @@ final class AppPreferences {
     /// The Notion integration's secret, in the Keychain.
     var notesNotionToken: String {
         didSet { Keychain.set(notesNotionToken, for: "notes.notion.token") }
+    }
+
+    /// Where every new note is sent as it is saved (raw values of `NoteDestination`).
+    var notesSendTo: Set<String> {
+        didSet { defaults.set(Array(notesSendTo).sorted(), forKey: Key.notesSendTo) }
     }
 
     // MARK: Snippets
@@ -434,6 +440,7 @@ final class AppPreferences {
         notesAppleNotesFolder = defaults.string(forKey: Key.notesAppleNotesFolder) ?? "Klik"
         notesNotionParent = defaults.string(forKey: Key.notesNotionParent) ?? ""
         notesNotionToken = Keychain.get("notes.notion.token") ?? ""
+        notesSendTo = Set(defaults.stringArray(forKey: Key.notesSendTo) ?? [])
         snippetsEnabled = defaults.object(forKey: Key.snippetsEnabled) as? Bool ?? true
         snippetPrefix = defaults.string(forKey: Key.snippetPrefix) ?? ";"
         let stored = defaults.dictionary(forKey: Key.prayerAdjustments) as? [String: Int] ?? [:]

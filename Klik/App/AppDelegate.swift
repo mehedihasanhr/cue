@@ -374,6 +374,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let text else { quickNote(nil); return }
             if let note = notes.add(text: text) {
                 FeedbackHUD.show("Note saved", symbol: "note.text", duration: .seconds(1.2), subtitle: note.title)
+                NoteSharing.sendToConnected(note, preferences: preferences)
             }
         case .copy(let text):
             clipboard.copy(text: text)
@@ -929,9 +930,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         quickTaskPanel?.close()
         let form = NoteFormRow(prompt: prompt, store: notes, style: .floating) { [weak self] answer in
             guard let self else { return }
-            if let answer, answer.name.isEmpty, case .note(let existing) = prompt.kind {
+            if let answer, case .note(let existing) = prompt.kind {
                 let saved = existing.map { notes.update($0, text: answer.text) } ?? notes.add(text: answer.text)
-                if let saved { FeedbackHUD.show(existing == nil ? "Note saved" : "Note updated", symbol: "note.text", duration: .seconds(1.2), subtitle: saved.title) }
+                if let saved {
+                    FeedbackHUD.show(existing == nil ? "Note saved" : "Note updated", symbol: "note.text", duration: .seconds(1.2), subtitle: saved.title)
+                    if existing == nil { NoteSharing.send(saved, to: answer.sendTo, preferences: preferences) }
+                }
             }
             quickTaskPanel?.close()
         }

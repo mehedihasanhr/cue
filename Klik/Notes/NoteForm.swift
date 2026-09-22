@@ -3,9 +3,10 @@ import UniformTypeIdentifiers
 import SwiftUI
 
 /// The note form: one Markdown text whose first line is the title, with the
-/// formatting bar (images can be pasted or dropped in) and, when a destination is
-/// set up, a Send menu. In the island it has a header and pill buttons; floating
-/// (the quick note, ⌥⇧M) it is one pane of glass with round buttons under the text.
+/// formatting bar (images can be pasted or dropped in). Saving also sends a new
+/// note wherever Settings › Notes says. In the island it has a header and pill
+/// buttons; floating (the quick note, ⌥⇧M) it is one pane of glass with round
+/// buttons under the text.
 struct NoteFormRow: View {
     enum Style { case island, floating }
 
@@ -21,6 +22,9 @@ struct NoteFormRow: View {
     /// The `/` token at the caret and the row highlighted in the list it brings up.
     @State private var token: String?
     @State private var highlighted = 0
+    /// Where this note goes besides its folder — Settings' defaults, changed with
+    /// "Save as" for this note only.
+    @State private var sendTo: Set<NoteDestination> = []
 
     private var editing: Note? {
         if case .note(let note) = prompt.kind { return note }
@@ -76,6 +80,7 @@ struct NoteFormRow: View {
         .background(KeyWindowFocus())
         .onAppear {
             text = editing?.text ?? prompt.initialNotes
+            sendTo = Set(NoteSharing.connected(preferences))
             Task {
                 try? await Task.sleep(for: .milliseconds(80))
                 focused = true
@@ -179,28 +184,29 @@ struct NoteFormRow: View {
             .fixedSize()
             .help("Formatting — type / in the text")
             Spacer(minLength: 0)
-            Menu {
-                sendMenuItems
-            } label: {
-                HStack(spacing: 6) {
-                    Icon("paperplane", size: 14, weight: .semibold)
-                    Text("Send").font(.system(size: 13, weight: .medium))
-                    Icon("chevron.down", size: 11, weight: .bold).foregroundStyle(.primary.opacity(0.5))
+            if editing == nil, !available.isEmpty {
+                Menu {
+                    saveAsItems
+                } label: {
+                    HStack(spacing: 6) {
+                        Icon("paperplane", size: 14, weight: .semibold)
+                        Text(saveAsLabel).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                        Icon("chevron.down", size: 11, weight: .bold).foregroundStyle(.primary.opacity(0.5))
+                    }
+                    .foregroundStyle(.primary.opacity(0.9))
+                    .padding(.horizontal, 14)
+                    .frame(height: 34)
+                    .glassPill()
+                    .contentShape(Capsule())
                 }
-                .foregroundStyle(.primary.opacity(0.9))
-                .padding(.horizontal, 14)
-                .frame(height: 34)
-                .glassPill()
-                .contentShape(Capsule())
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Save as: where this note goes besides its folder (defaults in Settings › Notes)")
             }
-            .menuStyle(.button)
-            .buttonStyle(.plain)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .disabled(!valid)
-            .help("Save the note and send it to Obsidian, Apple Notes or Notion")
             Button(action: save) {
-                Icon("arrow.up", size: 18, weight: .bold)
+                Icon("checkmark", size: 17, weight: .bold)
                     .foregroundStyle(valid ? Color.white : Color.primary.opacity(0.5))
                     .frame(width: 34, height: 34)
                     .glassCircle(tint: valid ? Color.brand : nil)
@@ -249,25 +255,26 @@ struct NoteFormRow: View {
             .fieldChrome(focused: focused)
             .frame(maxHeight: .infinity)
             HStack(spacing: 8) {
-                Menu {
-                    sendMenuItems
-                } label: {
-                    HStack(spacing: 6) {
-                        Icon("paperplane", size: 14, weight: .semibold)
-                        Text("Send to").font(.system(size: 12, weight: .medium))
-                        Icon("chevron.down", size: 11, weight: .bold)
+                if editing == nil, !available.isEmpty {
+                    Menu {
+                        saveAsItems
+                    } label: {
+                        HStack(spacing: 6) {
+                            Icon("paperplane", size: 14, weight: .semibold)
+                            Text(saveAsLabel).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                            Icon("chevron.down", size: 11, weight: .bold)
+                        }
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 12)
+                        .frame(height: 30)
+                        .background(.primary.opacity(0.1), in: Capsule())
+                        .contentShape(Capsule())
                     }
-                    .foregroundStyle(.primary)
-                    .padding(.horizontal, 12)
-                    .frame(height: 30)
-                    .background(.primary.opacity(0.1), in: Capsule())
-                    .contentShape(Capsule())
+                    .menuStyle(.button)
+                    .buttonStyle(.plain)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
                 }
-                .menuStyle(.button)
-                .buttonStyle(.plain)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .disabled(!valid)
                 Spacer(minLength: 0)
                 Button("Cancel") { finish(nil) }
                     .buttonStyle(.plain)
@@ -346,18 +353,37 @@ struct NoteFormRow: View {
         Button("Code block", action: { editor.block(.code) })
     }
 
-    /// Obsidian, Apple Notes, Notion — each saves the note first, then sends it.
+    /// The destinations set up in Settings; the ticked ones get this note.
+    private var available: [NoteDestination] { NoteSharing.available(preferences) }
+
+    /// "Klik only", or the chosen destinations.
+    private var saveAsLabel: String {
+        let chosen = NoteDestination.allCases.filter { sendTo.contains($0) }
+        return chosen.isEmpty ? "Klik only" : chosen.map(\.title).joined(separator: " · ")
+    }
+
+    /// One tick per destination; "Klik only" clears them. Settings › Notes sets the defaults.
     @ViewBuilder
-    private var sendMenuItems: some View {
-        ForEach(NoteDestination.allCases) { destination in
+    private var saveAsItems: some View {
+        Button {
+            sendTo = []
+        } label: {
+            if sendTo.isEmpty { Label { Text("Klik only") } icon: { Icon("checkmark", weight: .medium) } } else { Text("Klik only") }
+        }
+        Divider()
+        ForEach(available) { destination in
             Button {
-                send(to: destination)
+                if sendTo.contains(destination) { sendTo.remove(destination) } else { sendTo.insert(destination) }
             } label: {
-                Label { Text(destination.title) } icon: { Icon(destination.symbol, weight: .medium) }
+                if sendTo.contains(destination) {
+                    Label { Text(destination.title) } icon: { Icon("checkmark", weight: .medium) }
+                } else {
+                    Text(destination.title)
+                }
             }
         }
         Divider()
-        Button("Set up in Settings…") { NSApp.sendAction(#selector(AppDelegate.showNotesSettings(_:)), to: nil, from: nil) }
+        Button("Defaults in Settings…") { NSApp.sendAction(#selector(AppDelegate.showNotesSettings(_:)), to: nil, from: nil) }
     }
 
     private func chooseImage() {
@@ -372,16 +398,7 @@ struct NoteFormRow: View {
     /// The whole text is the note; `answer.text` carries it back.
     private func save() {
         guard valid else { return }
-        finish(PromptAnswer(title: TaskText.title(of: text), text: text))
+        finish(PromptAnswer(title: TaskText.title(of: text), text: text, sendTo: editing == nil ? sendTo.map(\.rawValue) : []))
     }
 
-    /// Saves (or updates) the note here and now, closes, and sends the saved note;
-    /// `answer.name` carries the note's id so the caller does not save it again.
-    private func send(to destination: NoteDestination) {
-        guard valid else { return }
-        let saved = editing.map { store.update($0, text: text) } ?? store.add(text: text)
-        guard let saved else { return }
-        finish(PromptAnswer(title: saved.title, text: saved.text, name: saved.id))
-        NoteSharing.sendWithFeedback(saved, to: destination, preferences: preferences)
-    }
 }

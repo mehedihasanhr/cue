@@ -563,6 +563,8 @@ struct PromptAnswer {
     var name = ""
     /// A snippet's filled blanks.
     var values: [String: String] = [:]
+    /// Where a new note goes besides its folder (`NoteDestination` raw values).
+    var sendTo: [String] = []
 }
 
 /// The compact island's one-line form: an icon, what is being created, and the field.

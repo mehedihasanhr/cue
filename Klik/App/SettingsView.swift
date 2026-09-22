@@ -372,7 +372,8 @@ struct NotesSettingsView: View {
             }
             .disabled(!preferences.notesEnabled)
 
-            SettingsGroup("Obsidian") {
+            SettingsGroup("Obsidian", footer: "Through Obsidian's own link; the note lands in the vault named here, or the last one opened.") {
+                sendRow(.obsidian)
                 SettingsRow("Vault name") {
                     TextField("Vault", text: $preferences.notesObsidianVault, prompt: Text("Last opened"))
                         .textFieldStyle(.roundedBorder)
@@ -382,6 +383,7 @@ struct NotesSettingsView: View {
             .disabled(!preferences.notesEnabled)
 
             SettingsGroup("Apple Notes", footer: "macOS asks once to let Klik control Notes.") {
+                sendRow(.appleNotes)
                 SettingsRow("Folder") {
                     TextField("Folder", text: $preferences.notesAppleNotesFolder, prompt: Text("Notes"))
                         .textFieldStyle(.roundedBorder)
@@ -391,6 +393,7 @@ struct NotesSettingsView: View {
             .disabled(!preferences.notesEnabled)
 
             SettingsGroup("Notion", footer: "An internal integration's secret, shared with the page or database. Kept in your Keychain.") {
+                sendRow(.notion)
                 SettingsRow("Integration secret") {
                     SecureField("Secret", text: $preferences.notesNotionToken, prompt: Text("ntn_…"))
                         .textFieldStyle(.roundedBorder)
@@ -408,6 +411,19 @@ struct NotesSettingsView: View {
             }
             .disabled(!preferences.notesEnabled)
         }
+    }
+
+    /// "Send new notes here": on once the destination is set up.
+    private func sendRow(_ destination: NoteDestination) -> some View {
+        let setUp = NoteSharing.isSetUp(destination, preferences: preferences)
+        let binding = Binding(
+            get: { preferences.notesSendTo.contains(destination.rawValue) },
+            set: { on in if on { preferences.notesSendTo.insert(destination.rawValue) } else { preferences.notesSendTo.remove(destination.rawValue) } }
+        )
+        return SettingsRow("Send new notes to \(destination.title)", subtitle: setUp ? nil : "Fill in the rows below first.") {
+            Toggle("Send", isOn: binding).toggleStyle(.switch)
+        }
+        .disabled(!setUp)
     }
 
     private func checkNotion() {
