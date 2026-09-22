@@ -28,10 +28,15 @@ enum Clipboard {
         providers.append(provider)
     }
 
-    /// For data that is already encoded (a saved capture): plain and immediate.
+    /// For data that is already encoded (a saved capture): plain and immediate. TIFF
+    /// rides along, since apps that take only that (Pages, Mail's older editor) would
+    /// otherwise see nothing to paste.
     static func copy(pngData: Data, to pasteboard: NSPasteboard = .general) {
         pasteboard.clearContents()
         pasteboard.setData(pngData, forType: .png)
+        if let tiff = NSBitmapImageRep(data: pngData)?.tiffRepresentation {
+            pasteboard.setData(tiff, forType: .tiff)
+        }
         pasteboard.setData(Data(), forType: Clipboard.ownMarker)
     }
 

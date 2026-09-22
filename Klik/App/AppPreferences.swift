@@ -13,6 +13,7 @@ final class AppPreferences {
         static let sound = "sound.choice"
         static let soundBookmark = "sound.customBookmark"
         static let icon = "menuBar.icon"
+        static let iconMarkMigrated = "menuBar.icon.markMigrated"
         static let iconBookmark = "menuBar.customBookmark"
         static let appearance = "appearance"
         static let islandEnabled = "island.enabled"
@@ -36,6 +37,7 @@ final class AppPreferences {
         static let colorPickerEnabled = "color.enabled"
         static let colorFormat = "color.format"
         static let panelPosition = "panels.position"
+        static let panelColumns = "panels.columns"
         static let timeEnabled = "clock.enabled"
         static let timeInterval = "clock.interval"
         static let prayerEnabled = "prayer.enabled"
@@ -53,6 +55,9 @@ final class AppPreferences {
         static let notesAppleNotesFolder = "notes.appleNotesFolder"
         static let notesNotionParent = "notes.notionParent"
         static let notesSendTo = "notes.sendTo"
+        static let notesPanelClarity = "notes.panelClarity"
+        static let notesPanelWidth = "notes.panelWidth"
+        static let notesPanelHeight = "notes.panelHeight"
         static let tasksServerURL = "tasks.server.url"
         static let tasksSyncEnabled = "tasks.sync.enabled"
         static let tasksSyncInterval = "tasks.sync.interval"
@@ -92,6 +97,24 @@ final class AppPreferences {
     /// Where every new note is sent as it is saved (raw values of `NoteDestination`).
     var notesSendTo: Set<String> {
         didSet { defaults.set(Array(notesSendTo).sorted(), forKey: Key.notesSendTo) }
+    }
+
+    /// How clear the quick note's glass is: 0 frosted (the default), 1 nearly clear.
+    var notesPanelClarity: Double {
+        didSet { defaults.set(notesPanelClarity, forKey: Key.notesPanelClarity) }
+    }
+
+    /// The quick note's last size (nil: the default), kept once it is resized.
+    var notesPanelSize: CGSize? {
+        didSet {
+            if let size = notesPanelSize {
+                defaults.set(Double(size.width), forKey: Key.notesPanelWidth)
+                defaults.set(Double(size.height), forKey: Key.notesPanelHeight)
+            } else {
+                defaults.removeObject(forKey: Key.notesPanelWidth)
+                defaults.removeObject(forKey: Key.notesPanelHeight)
+            }
+        }
     }
 
     // MARK: Tasks
@@ -224,6 +247,12 @@ final class AppPreferences {
     var panelPosition: PanelPosition {
         didSet { defaults.set(panelPosition.rawValue, forKey: Key.panelPosition) }
     }
+
+    /// Cards per row in the floating panel's grid.
+    var panelColumns: Int {
+        didSet { defaults.set(panelColumns, forKey: Key.panelColumns) }
+    }
+    static let panelColumnRange = 2...6
 
     // MARK: Color picker
 
@@ -465,6 +494,8 @@ final class AppPreferences {
     // MARK: Menu-bar icon
 
     enum Icon: Hashable {
+        /// Klik's own mark, the default.
+        case mark
         case symbol(String)
         case custom
 
@@ -476,13 +507,18 @@ final class AppPreferences {
 
         var storageValue: String {
             switch self {
+            case .mark: "mark"
             case .symbol(let name): name
             case .custom: "custom"
             }
         }
 
         init(storageValue: String) {
-            self = storageValue == "custom" ? .custom : .symbol(storageValue)
+            switch storageValue {
+            case "mark": self = .mark
+            case "custom": self = .custom
+            default: self = .symbol(storageValue)
+            }
         }
     }
 
@@ -497,7 +533,13 @@ final class AppPreferences {
     init() {
         soundEnabled = defaults.object(forKey: Key.soundEnabled) as? Bool ?? true
         sound = Sound(storageValue: defaults.string(forKey: Key.sound) ?? "shutter")
-        icon = Icon(storageValue: defaults.string(forKey: Key.icon) ?? "camera.viewfinder")
+        // Klik had a camera glyph before it had a mark of its own; anyone still on
+        // that default moves across once, and a chosen icon is left alone.
+        if defaults.string(forKey: Key.icon) == "camera.viewfinder", !defaults.bool(forKey: Key.iconMarkMigrated) {
+            defaults.set("mark", forKey: Key.icon)
+        }
+        defaults.set(true, forKey: Key.iconMarkMigrated)
+        icon = Icon(storageValue: defaults.string(forKey: Key.icon) ?? "mark")
         appearance = Appearance(rawValue: defaults.string(forKey: Key.appearance) ?? "") ?? .system
         editorDefaults = EditorDefaults.load(from: defaults)
         dynamicIslandEnabled = defaults.object(forKey: Key.islandEnabled) as? Bool ?? true
@@ -521,6 +563,7 @@ final class AppPreferences {
         colorPickerEnabled = defaults.object(forKey: Key.colorPickerEnabled) as? Bool ?? true
         colorFormat = ColorFormat(rawValue: defaults.string(forKey: Key.colorFormat) ?? "") ?? .hex
         panelPosition = PanelPosition(rawValue: defaults.string(forKey: Key.panelPosition) ?? "") ?? .pointer
+        panelColumns = min(max(defaults.object(forKey: Key.panelColumns) as? Int ?? 4, Self.panelColumnRange.lowerBound), Self.panelColumnRange.upperBound)
         timeEnabled = defaults.object(forKey: Key.timeEnabled) as? Bool ?? true
         timeStatusInterval = defaults.object(forKey: Key.timeInterval) as? Int ?? 60
         prayerTimesEnabled = defaults.bool(forKey: Key.prayerEnabled)
@@ -540,6 +583,12 @@ final class AppPreferences {
         notesNotionParent = defaults.string(forKey: Key.notesNotionParent) ?? ""
         notesNotionToken = Keychain.get("notes.notion.token") ?? ""
         notesSendTo = Set(defaults.stringArray(forKey: Key.notesSendTo) ?? [])
+        notesPanelClarity = defaults.object(forKey: Key.notesPanelClarity) as? Double ?? 0
+        if let width = defaults.object(forKey: Key.notesPanelWidth) as? Double, let height = defaults.object(forKey: Key.notesPanelHeight) as? Double {
+            notesPanelSize = CGSize(width: width, height: height)
+        } else {
+            notesPanelSize = nil
+        }
         tasksServerURL = defaults.string(forKey: Key.tasksServerURL) ?? ""
         tasksServerToken = Keychain.get("tasks.server.token") ?? ""
         tasksSyncEnabled = defaults.object(forKey: Key.tasksSyncEnabled) as? Bool ?? false
@@ -623,6 +672,14 @@ final class AppPreferences {
     /// The status-item image for the current choice (template so it adapts to the menu bar).
     func menuBarImage() -> NSImage? {
         switch icon {
+        case .mark:
+            guard let mark = NSImage(named: "KlikMark") else { return nil }
+            let image = NSImage(size: Self.fit(mark.size, height: 17), flipped: false) { rect in
+                mark.draw(in: rect)
+                return true
+            }
+            image.isTemplate = true
+            return image
         case .symbol(let name):
             let image = NSImage(systemSymbolName: name, accessibilityDescription: "Klik")
             image?.isTemplate = true

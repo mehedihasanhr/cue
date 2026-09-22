@@ -295,6 +295,11 @@ struct IslandSettingsView: View {
                                       selection: $preferences.panelPosition, options: PanelPosition.allCases, label: { $0 == .pointer ? "Pointer" : $0.title }, columns: 4, tileWidth: 92, inPopover: true) { position in
                     PanelPositionPreview(position: position)
                 }
+                SettingsRow("Grid columns", subtitle: "Cards per row in the library panel's grid.") {
+                    Stepper(value: $preferences.panelColumns, in: AppPreferences.panelColumnRange) {
+                        Text("\(preferences.panelColumns)").monospacedDigit().frame(width: 20, alignment: .trailing)
+                    }
+                }
             }
         }
     }
@@ -366,6 +371,22 @@ struct NotesSettingsView: View {
     var body: some View {
         @Bindable var preferences = preferences
         SettingsPane(.notes, enabled: $preferences.notesEnabled) {
+            SettingsGroup("Floating note", footer: "The quick note (⌥⇧M). Pin it from its own bar to keep it above other apps; drag its corner to resize it.") {
+                SettingsRow("Glass", subtitle: "Frosted keeps the text easy to read; clear shows what is behind the note.") {
+                    HStack(spacing: 8) {
+                        Text("Frosted").font(SettingsFont.sub).foregroundStyle(.secondary)
+                        Slider(value: $preferences.notesPanelClarity, in: 0...1).frame(width: 150)
+                        Text("Clear").font(SettingsFont.sub).foregroundStyle(.secondary)
+                    }
+                }
+                if preferences.notesPanelSize != nil {
+                    SettingsRow("Size", subtitle: "Opens at the size it was last dragged to.") {
+                        Button("Use Default Size") { preferences.notesPanelSize = nil }
+                    }
+                }
+            }
+            .disabled(!preferences.notesEnabled)
+
             SettingsGroup("Where notes live", footer: "One Markdown file per note. A folder in iCloud Drive syncs them; an Obsidian vault shows them there.") {
                 if let notes {
                     SettingsRow(notes.folderIsCustom ? notes.folderURL.lastPathComponent : "Klik's own folder",
@@ -748,6 +769,13 @@ private struct MenuBarIconPicker: View {
         .accessibilityLabel("Menu bar icon")
         .popover(isPresented: $open, arrowEdge: .bottom) {
             LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
+                iconCell(selected: preferences.icon == .mark) {
+                    Image("KlikMark").resizable().aspectRatio(contentMode: .fit).frame(width: 15, height: 15)
+                } action: {
+                    preferences.icon = .mark
+                    open = false
+                }
+                .help("Klik")
                 ForEach(AppPreferences.Icon.symbols, id: \.self) { name in
                     iconCell(selected: preferences.icon == .symbol(name)) {
                         Image(systemName: name).font(.system(size: 15, weight: .medium))
@@ -766,6 +794,8 @@ private struct MenuBarIconPicker: View {
     @ViewBuilder
     private var current: some View {
         switch preferences.icon {
+        case .mark:
+            Image("KlikMark").resizable().aspectRatio(contentMode: .fit)
         case .symbol(let name):
             Image(systemName: name).font(.system(size: 14, weight: .medium))
         case .custom:

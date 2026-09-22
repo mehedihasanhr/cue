@@ -50,17 +50,24 @@ struct ClipboardPanelView: View {
                     .onKeyPress(.upArrow) { move(-1, in: items) }
                     .onKeyPress(.downArrow, phases: .down) { press in press.modifiers.contains(.shift) ? extend(1, in: items) : .ignored }
                     .onKeyPress(.upArrow, phases: .down) { press in press.modifiers.contains(.shift) ? extend(-1, in: items) : .ignored }
+                    .onKeyPress(.home) { jump(to: 0, in: items) }
+                    .onKeyPress(.end) { jump(to: items.count - 1, in: items) }
+                    .onKeyPress(.pageUp) { move(-8, in: items) }
+                    .onKeyPress(.pageDown) { move(8, in: items) }
                     .onChange(of: search) { _, _ in selected = 0; anchor = nil }
                 if !search.isEmpty {
                     Button { search = "" } label: {
-                        Image(systemName: "xmark.circle.fill").font(.system(size: 13)).foregroundStyle(.white.opacity(0.6))
+                        Image(systemName: "xmark.circle.fill").font(.system(size: 13)).foregroundStyle(.white.opacity(0.7))
                     }
                     .buttonStyle(.plain)
+                    .help("Clear the search (⎋ closes the panel)")
+                    .accessibilityLabel("Clear the search")
                 }
                 Text("\(items.count)")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(.white.opacity(0.6))
                     .fixedSize()
+                    .accessibilityLabel(search.isEmpty ? "\(items.count) entries" : "\(items.count) matches")
             }
             .padding(.horizontal, 12)
             .frame(height: 36)
@@ -68,15 +75,31 @@ struct ClipboardPanelView: View {
 
             if items.isEmpty {
                 Spacer()
-                Text(clipboard.items.isEmpty ? "Nothing copied yet" : "No matches")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.white.opacity(0.5))
+                VStack(spacing: 4) {
+                    Text(clipboard.items.isEmpty ? "Nothing copied yet" : "No matches")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.75))
+                    Text(clipboard.items.isEmpty ? "Copy anything and it lands here." : "Try fewer words, or ⎋ to close.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.55))
+                }
+                .accessibilityElement(children: .combine)
                 Spacer()
             } else {
                 ScrollViewReader { proxy in
-                    ScrollView {
+                    FadingScrollView(depth: 22) {
                         LazyVStack(spacing: 2) {
                             ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                                if let title = heading(before: index, in: items) {
+                                    Text(title)
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundStyle(.white.opacity(0.5))
+                                        .padding(.horizontal, 8)
+                                        .padding(.top, index == 0 ? 2 : 8)
+                                        .padding(.bottom, 2)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .accessibilityAddTraits(.isHeader)
+                                }
                                 row(item, index: index, selected: index == selected || inRange(index))
                                     .id(item.id)
                             }
@@ -94,11 +117,13 @@ struct ClipboardPanelView: View {
                 hint("↑↓", "choose")
                 hint("↩", clipboard.canPaste ? "paste" : "copy")
                 hint("⌘↩", "copy")
-                hint("⌘1–9", "pick")
+                hint("⌘P", "pin")
                 Spacer(minLength: 0)
                 hint("⎋", "close")
             }
             .padding(.horizontal, 4)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Keys: up and down choose, return \(clipboard.canPaste ? "pastes" : "copies"), command return copies, command 1 to 9 pick a row, command P pins, command delete removes, escape closes")
         }
         .padding(14)
         .background { shortcuts(items) }
@@ -128,7 +153,7 @@ struct ClipboardPanelView: View {
                         Image(nsImage: icon).resizable().frame(width: 12, height: 12)
                     }
                     Text("\(item.sourceName ?? item.kind.rawValue.capitalized) · \(item.createdAt.formatted(.relative(presentation: .named)))")
-                        .font(.system(size: 10)).foregroundStyle(.white.opacity(0.55)).lineLimit(1)
+                        .font(.system(size: 10)).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
                 }
             }
             Spacer(minLength: 0)
@@ -137,19 +162,20 @@ struct ClipboardPanelView: View {
             } else if index < 9 {
                 Text("⌘\(index + 1)")
                     .font(.system(size: 9.5, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(selected ? 0.7 : 0.3))
+                    .foregroundStyle(.white.opacity(selected ? 0.85 : 0.45))
             }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
-        .background(selected ? Color.white.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(selected ? Color.brand.opacity(0.7) : .clear))
+        .background(selected ? Color.white.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(selected ? Color.brand.opacity(0.8) : .clear, lineWidth: 1.5))
         .contentShape(Rectangle())
         .onTapGesture { paste(at: index, in: items) }
         .onHover { if $0 { self.selected = index } }
         .contextMenu {
             Button("Paste") { paste(at: index, in: items) }
             Button("Copy") { copy(item) }
+                .keyboardShortcut(.return, modifiers: .command)
             if item.kind == .text || item.kind == .link {
                 transformMenu(item)
             }
@@ -160,9 +186,48 @@ struct ClipboardPanelView: View {
                 }
             }
             Button(item.pinned ? "Unpin" : "Pin") { clipboard.togglePin(item) }
+                .keyboardShortcut("p", modifiers: .command)
             Divider()
-            Button("Delete", role: .destructive) { clipboard.delete(item) }
+            Button("Delete", role: .destructive) { delete(item, at: index, in: items) }
+                .keyboardShortcut(.delete, modifiers: .command)
         }
+        // One element per row, so VoiceOver reads the entry rather than its parts,
+        // and the menu's actions are on the rotor instead of a right-click away.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(describe(item))
+        .accessibilityValue(index < 9 ? "Command \(index + 1)" : "")
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityHint(clipboard.canPaste ? "Pastes into the app you came from" : "Copies to the clipboard")
+        .accessibilityAction { paste(at: index, in: items) }
+        .accessibilityAction(named: "Copy") { copy(item) }
+        .accessibilityAction(named: item.pinned ? "Unpin" : "Pin") { clipboard.togglePin(item) }
+        .accessibilityAction(named: "Delete") { delete(item, at: index, in: items) }
+    }
+
+    /// What VoiceOver says for a row: what it is, where it came from, when, and
+    /// whether it is pinned.
+    private func describe(_ item: ClipboardItem) -> String {
+        var parts = ["\(item.kind.rawValue.capitalized): \(item.title)"]
+        if let source = item.sourceName { parts.append("from \(source)") }
+        parts.append(item.createdAt.formatted(.relative(presentation: .named)))
+        if item.pinned { parts.append("pinned") }
+        return parts.joined(separator: ", ")
+    }
+
+    /// "Pinned" over the pinned rows and "Recent" over the rest — only when both are
+    /// there and nothing is being searched for, so the list stays a plain list.
+    private func heading(before index: Int, in items: [ClipboardItem]) -> String? {
+        guard search.isEmpty, items.contains(where: \.pinned), items.contains(where: { !$0.pinned }) else { return nil }
+        if index == 0 { return items[0].pinned ? "Pinned" : "Recent" }
+        guard items[index - 1].pinned, !items[index].pinned else { return nil }
+        return "Recent"
+    }
+
+    /// Deletes the row and keeps the selection where it was on screen.
+    private func delete(_ item: ClipboardItem, at index: Int, in items: [ClipboardItem]) {
+        clipboard.delete(item)
+        anchor = nil
+        selected = min(index, items.count - 2 >= 0 ? items.count - 2 : 0)
     }
 
     /// "Paste as…" for a text row: the transforms that would change it. The panel
@@ -196,6 +261,10 @@ struct ClipboardPanelView: View {
                 Button("") { paste(at: index, in: items) }
                     .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
             }
+            Button("") { if items.indices.contains(selected) { clipboard.togglePin(items[selected]) } }
+                .keyboardShortcut("p", modifiers: .command)
+            Button("") { if items.indices.contains(selected) { delete(items[selected], at: selected, in: items) } }
+                .keyboardShortcut(.delete, modifiers: .command)
         }
         .frame(width: 0, height: 0)
         .opacity(0)
@@ -205,7 +274,7 @@ struct ClipboardPanelView: View {
     private func hint(_ key: String, _ label: String) -> some View {
         HStack(spacing: 4) {
             KeyCap(key)
-            Text(label).font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+            Text(label).font(.system(size: 10)).foregroundStyle(.white.opacity(0.6))
         }
         .fixedSize()
     }
@@ -214,6 +283,13 @@ struct ClipboardPanelView: View {
         guard !items.isEmpty else { return .ignored }
         anchor = nil
         selected = min(max(selected + delta, 0), items.count - 1)
+        return .handled
+    }
+
+    private func jump(to index: Int, in items: [ClipboardItem]) -> KeyPress.Result {
+        guard !items.isEmpty else { return .ignored }
+        anchor = nil
+        selected = min(max(index, 0), items.count - 1)
         return .handled
     }
 

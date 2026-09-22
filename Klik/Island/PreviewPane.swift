@@ -98,6 +98,9 @@ struct PreviewPaneView: View {
     let onEdit: (IslandDetail) -> Void
     let onClose: () -> Void
     @Environment(AppPreferences.self) private var preferences
+    /// The copy button just copied: it says so for a moment.
+    @State private var copied = false
+    @State private var copiedTask: Task<Void, Never>?
 
     /// The pane's height for an item: taller for pictures.
     static func height(for detail: IslandDetail, clipboard: ClipboardHistory) -> CGFloat {
@@ -183,37 +186,69 @@ struct PreviewPaneView: View {
         if let color = previewColor {
             Menu {
                 ForEach(ColorFormat.allCases, id: \.self) { format in
-                    Button(format.string(for: color)) { copyColor(color, as: format) }
+                    Button(format.string(for: color)) { copyColor(color, as: format); showCopied() }
                 }
             } label: {
-                HStack(spacing: 6) {
-                    Icon("doc.on.doc", size: 14, weight: .medium)
-                    Text("Copy").font(.system(size: 12, weight: .semibold))
-                    Icon("chevron.down", size: 11, weight: .bold).foregroundStyle(.white.opacity(0.6))
-                }
-                .padding(.horizontal, 12)
-                .frame(height: 30)
-                .background(.white.opacity(0.12), in: Capsule())
-                .contentShape(Capsule())
+                copyLabel(chevron: true)
             } primaryAction: {
                 copyColor(color, as: preferences.colorFormat)
+                showCopied()
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
             .fixedSize()
         } else {
-            Button(action: copy) {
-                HStack(spacing: 6) {
-                    Icon("doc.on.doc", size: 14, weight: .medium)
-                    Text("Copy").font(.system(size: 12, weight: .semibold))
-                }
-                .padding(.horizontal, 12)
-                .frame(height: 30)
-                .background(.white.opacity(0.12), in: Capsule())
-                .contentShape(Capsule())
+            Button {
+                copy()
+                showCopied()
+            } label: {
+                copyLabel(chevron: false)
             }
             .buttonStyle(.plain)
+        }
+    }
+
+    /// The button's pill: "Copy", or a green "Copied" for a moment after a click. The
+    /// label crossfades (and shrinks a touch; a fade alone with reduced motion) while
+    /// the pill keeps its width, so nothing around it moves.
+    private func copyLabel(chevron: Bool) -> some View {
+        HStack(spacing: 6) {
+            ZStack {
+                if copied {
+                    HStack(spacing: 6) {
+                        Icon("checkmark", size: 14, weight: .semibold)
+                        Text("Copied").font(.system(size: 12, weight: .semibold))
+                    }
+                } else {
+                    HStack(spacing: 6) {
+                        Icon("doc.on.doc", size: 14, weight: .medium)
+                        Text("Copy").font(.system(size: 12, weight: .semibold))
+                    }
+                }
+            }
+            .transition(IslandView.reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.9)))
+            .frame(minWidth: 62) // room for the longer word, so the pill does not jump
+            if chevron {
+                Icon("chevron.down", size: 11, weight: .bold).foregroundStyle(.white.opacity(0.6))
+            }
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 12)
+        .frame(height: 30)
+        .background(copied ? Color.green.opacity(0.85) : .white.opacity(0.12), in: Capsule())
+        .contentShape(Capsule())
+        .animation(.easeOut(duration: 0.15), value: copied)
+    }
+
+    /// Says Copied on the button for a moment; another click restarts the moment.
+    private func showCopied() {
+        copiedTask?.cancel()
+        copied = true
+        copiedTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.2))
+            guard !Task.isCancelled else { return }
+            copied = false
         }
     }
 

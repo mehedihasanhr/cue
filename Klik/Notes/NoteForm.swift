@@ -16,6 +16,8 @@ struct NoteFormRow: View {
     let finish: (PromptAnswer?) -> Void
 
     @Environment(AppPreferences.self) private var preferences
+    /// The floating window's size, pin and glass — nil in the island.
+    @Environment(QuickTaskPanel.Chrome.self) private var chrome: QuickTaskPanel.Chrome?
     @State private var text = ""
     @State private var editor = MarkdownEditor.Handle()
     @FocusState private var focused: Bool
@@ -57,6 +59,12 @@ struct NoteFormRow: View {
 
     private func intercept(_ selector: Selector) -> Bool {
         let rows = suggestions
+        // ⎋ never reaches the window from a text view (AppKit's own cancelOperation
+        // swallows it), so the form closes itself — the list of commands first.
+        if selector == #selector(NSResponder.cancelOperation(_:)) {
+            if token != nil, !rows.isEmpty { token = nil } else { finish(nil) }
+            return true
+        }
         guard token != nil, !rows.isEmpty else { return false }
         switch selector {
         case #selector(NSResponder.moveUp(_:)): highlighted = (highlighted - 1 + rows.count) % rows.count
@@ -64,7 +72,6 @@ struct NoteFormRow: View {
         case #selector(NSResponder.insertNewline(_:)), #selector(NSResponder.insertTab(_:)):
             rows[min(highlighted, rows.count - 1)].pick()
             token = nil
-        case #selector(NSResponder.cancelOperation(_:)): token = nil
         default: return false
         }
         return true
@@ -162,6 +169,27 @@ struct NoteFormRow: View {
                 .padding(.horizontal, 12)
                 .padding(.bottom, 10)
         }
+        // Pinned, nothing closes the note by itself — so it gets a close button.
+        .overlay(alignment: .topTrailing) {
+            if chrome?.pinned == true {
+                Button { finish(nil) } label: {
+                    Icon("xmark", size: 11, weight: .bold)
+                        .foregroundStyle(.primary.opacity(0.85))
+                        .frame(width: 22, height: 22)
+                        .glassCircle()
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .padding(6)
+                .help("Close the note (⎋)")
+                .transition(IslandView.reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.9)))
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: chrome?.pinned)
+        // Settings › Notes decides how clear the glass is, live while it is open.
+        .onAppear { chrome?.clarity = preferences.notesPanelClarity }
+        .onChange(of: chrome?.size) { _, size in if let size { preferences.notesPanelSize = size } }
+        .onChange(of: preferences.notesPanelClarity) { _, clarity in chrome?.clarity = clarity }
     }
 
     @ViewBuilder
@@ -183,46 +211,70 @@ struct NoteFormRow: View {
             .menuIndicator(.hidden)
             .fixedSize()
             .help("Formatting — type / in the text")
-            Spacer(minLength: 0)
-            if editing == nil, !available.isEmpty {
-                Menu {
-                    saveAsItems
-                } label: {
-                    HStack(spacing: 6) {
-                        Icon("paperplane", size: 14, weight: .semibold)
-                        Text(saveAsLabel).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                        Icon("chevron.down", size: 11, weight: .bold).foregroundStyle(.primary.opacity(0.5))
-                    }
-                    .foregroundStyle(.primary.opacity(0.9))
-                    .padding(.horizontal, 14)
-                    .frame(height: 34)
-                    .glassPill()
-                    .contentShape(Capsule())
+            if let chrome {
+                @Bindable var chrome = chrome
+                Button { chrome.pinned.toggle() } label: {
+                    Icon(chrome.pinned ? "pin.fill" : "pin", size: 17, weight: .medium)
+                        .foregroundStyle(chrome.pinned ? Color.white : .primary.opacity(0.85))
+                        .frame(width: 34, height: 34)
+                        .glassCircle(tint: chrome.pinned ? Color.brand : nil)
+                        .contentShape(Circle())
                 }
-                .menuStyle(.button)
                 .buttonStyle(.plain)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("Save as: where this note goes besides its folder (defaults in Settings › Notes)")
+                .help(chrome.pinned ? "Pinned: stays open above other apps until closed" : "Pin: keep it open above other apps")
+                .animation(.easeOut(duration: 0.15), value: chrome.pinned)
             }
-            Button(action: save) {
-                Icon("checkmark", size: 17, weight: .bold)
-                    .foregroundStyle(valid ? Color.white : Color.primary.opacity(0.5))
-                    .frame(width: 34, height: 34)
-                    .glassCircle(tint: valid ? Color.brand : nil)
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .keyboardShortcut(.return, modifiers: .command)
-            .disabled(!valid)
-            .help("Save (⌘↩)")
-            .animation(.easeOut(duration: 0.15), value: valid)
+            Spacer(minLength: 0)
+            saveButton
         }
         if #available(macOS 26.0, *) {
             GlassEffectContainer(spacing: 8) { bar }
         } else {
             bar
         }
+    }
+
+    /// Save, with a chevron beside it for where the note goes besides its folder —
+    /// one capsule split in two, like a menu button.
+    @ViewBuilder
+    private var saveButton: some View {
+        let sending = editing == nil && !available.isEmpty
+        HStack(spacing: 0) {
+            Button(action: save) {
+                HStack(spacing: 6) {
+                    Icon(sendTo.isEmpty ? "checkmark" : "paperplane", size: 14, weight: .bold)
+                    Text("Save").font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                }
+                .foregroundStyle(valid ? Color.white : Color.primary.opacity(0.5))
+                .padding(.leading, 14)
+                .padding(.trailing, sending ? 10 : 14)
+                .frame(height: 34)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(.return, modifiers: .command)
+            .disabled(!valid)
+            .help(sendTo.isEmpty ? "Save (⌘↩)" : "Save and send to \(saveAsLabel) (⌘↩)")
+            if sending {
+                Divider().frame(height: 18).opacity(0.35)
+                Menu {
+                    saveAsItems
+                } label: {
+                    Icon("chevron.down", size: 11, weight: .bold)
+                        .foregroundStyle(valid ? Color.white.opacity(0.9) : Color.primary.opacity(0.5))
+                        .frame(width: 28, height: 34)
+                        .contentShape(Rectangle())
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Where this note goes besides its folder — now: \(saveAsLabel)")
+            }
+        }
+        .fixedSize()
+        .glassPill(tint: valid ? Color.brand : nil)
+        .animation(.easeOut(duration: 0.15), value: valid)
     }
 
     private func floatingGlyph(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
