@@ -472,6 +472,16 @@ private struct LinkPreviewView: View {
                     .aspectRatio(contentMode: .fill)
                     .frame(maxWidth: .infinity, maxHeight: 250)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay {
+                        if metadata?.isVideo == true {
+                            Icon("play.fill", size: 22, weight: .bold)
+                                .foregroundStyle(.white)
+                                .frame(width: 56, height: 56)
+                                .background(.black.opacity(0.55), in: Circle())
+                        }
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture { NSWorkspace.shared.open(url) }
             } else if metadata == nil, !failed {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(.white.opacity(0.06))
@@ -500,29 +510,71 @@ struct LinkMetadata: Sendable {
     var title: String?
     var description: String?
     var imageData: Data?
+    /// A video (YouTube, Vimeo): the picture gets a play badge.
+    var isVideo = false
 
     private static let cache = LinkMetadataCache()
+    private static let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Klik"
+    /// YouTube's page is over a megabyte before its meta tags; enough is read to reach them.
+    private static let htmlLimit = 4_000_000
 
     static func fetch(_ url: URL) async -> LinkMetadata? {
         if let cached = await cache.get(url) { return cached }
-        var request = URLRequest(url: url, timeoutInterval: 8)
-        request.setValue("Mozilla/5.0 (Macintosh) Klik", forHTTPHeaderField: "User-Agent")
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-              let html = String(data: data.prefix(600_000), encoding: .utf8) ?? String(data: data.prefix(600_000), encoding: .isoLatin1)
+        var found = await fromOEmbed(url)
+        if found == nil { found = await fromHTML(url) }
+        guard var metadata = found else { return nil }
+        if let pictureURL = metadata.pictureURL { metadata.imageData = await picture(pictureURL) }
+        await cache.set(url, metadata)
+        return metadata
+    }
+
+    private var pictureURL: URL?
+
+    /// Video sites answer oEmbed with the title, the channel and a thumbnail —
+    /// small and quick, where the page itself is huge.
+    private static func fromOEmbed(_ url: URL) async -> LinkMetadata? {
+        guard let host = url.host()?.lowercased() else { return nil }
+        let endpoint: String
+        if host == "youtu.be" || host.hasSuffix("youtube.com") { endpoint = "https://www.youtube.com/oembed" }
+        else if host.hasSuffix("vimeo.com") { endpoint = "https://vimeo.com/api/oembed.json" }
+        else { return nil }
+        var components = URLComponents(string: endpoint)
+        components?.queryItems = [URLQueryItem(name: "url", value: url.absoluteString), URLQueryItem(name: "format", value: "json")]
+        guard let oembedURL = components?.url, let data = await get(oembedURL),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        var metadata = LinkMetadata()
+        metadata.title = json["title"] as? String
+        metadata.description = [json["author_name"] as? String, json["provider_name"] as? String].compactMap { $0 }.joined(separator: " · ")
+        metadata.pictureURL = (json["thumbnail_url"] as? String).flatMap(URL.init)
+        metadata.isVideo = (json["type"] as? String) == "video"
+        return metadata.title == nil ? nil : metadata
+    }
+
+    /// Open Graph / Twitter tags, else the `<title>` and the description meta.
+    private static func fromHTML(_ url: URL) async -> LinkMetadata? {
+        guard let data = await get(url),
+              let html = String(data: data.prefix(htmlLimit), encoding: .utf8) ?? String(data: data.prefix(htmlLimit), encoding: .isoLatin1)
         else { return nil }
         var metadata = LinkMetadata()
         metadata.title = meta("og:title", in: html) ?? meta("twitter:title", in: html) ?? titleTag(html)
         metadata.description = meta("og:description", in: html) ?? meta("twitter:description", in: html) ?? meta("description", in: html)
-        if let picture = meta("og:image", in: html) ?? meta("twitter:image", in: html), let pictureURL = URL(string: picture, relativeTo: url)?.absoluteURL {
-            var pictureRequest = URLRequest(url: pictureURL, timeoutInterval: 8)
-            pictureRequest.setValue("Mozilla/5.0 (Macintosh) Klik", forHTTPHeaderField: "User-Agent")
-            if let (imageData, _) = try? await URLSession.shared.data(for: pictureRequest), imageData.count < 8_000_000, NSImage(data: imageData) != nil {
-                metadata.imageData = imageData
-            }
-        }
-        await cache.set(url, metadata)
+        if let picture = meta("og:image", in: html) ?? meta("twitter:image", in: html) { metadata.pictureURL = URL(string: picture, relativeTo: url)?.absoluteURL }
+        metadata.isVideo = (meta("og:type", in: html) ?? "").hasPrefix("video")
         return metadata
+    }
+
+    private static func picture(_ url: URL) async -> Data? {
+        guard let data = await get(url), data.count < 8_000_000, NSImage(data: data) != nil else { return nil }
+        return data
+    }
+
+    private static func get(_ url: URL) async -> Data? {
+        var request = URLRequest(url: url, timeoutInterval: 8)
+        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("en", forHTTPHeaderField: "Accept-Language")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return nil }
+        return data
     }
 
     /// `<meta property="og:title" content="…">` in either attribute order, unescaped.
