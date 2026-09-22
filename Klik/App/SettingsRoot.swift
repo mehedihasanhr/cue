@@ -486,12 +486,16 @@ enum SettingsFont {
 /// A settings page: groups of rows, top to bottom, starting under the history
 /// pill. Every pane builds on these so the pages all look alike. A row's
 /// subtitle and a group's footer are for what the title cannot say alone.
+/// A page about a feature that can be turned off takes `enabled`: the switch
+/// sits at the top right, level with the history pill.
 struct SettingsPane<Content: View>: View {
     let section: SettingsSection
+    var enabled: Binding<Bool>?
     @ViewBuilder let content: Content
 
-    init(_ section: SettingsSection, @ViewBuilder content: () -> Content) {
+    init(_ section: SettingsSection, enabled: Binding<Bool>? = nil, @ViewBuilder content: () -> Content) {
         self.section = section
+        self.enabled = enabled
         self.content = content()
     }
 
@@ -501,10 +505,42 @@ struct SettingsPane<Content: View>: View {
                 content
             }
             .padding(.horizontal, 16)
-            .padding(.top, 52)
+            .padding(.top, 64)
             .padding(.bottom, 24)
         }
+        .overlay(alignment: .topTrailing) {
+            if let enabled {
+                FeatureSwitch(title: section.title, isOn: enabled)
+                    .padding(.top, 15)
+                    .padding(.trailing, 16)
+            }
+        }
         .accessibilityLabel("\(section.title) settings")
+    }
+}
+
+/// The feature's name and a switch, in a pill like the history buttons'.
+private struct FeatureSwitch: View {
+    let title: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(isOn ? "On" : "Off")
+                .font(SettingsFont.sub)
+                .foregroundStyle(.secondary)
+                .frame(width: 20, alignment: .trailing)
+            Toggle(title, isOn: $isOn)
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .controlSize(.small)
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, 8)
+        .frame(height: 30)
+        .background(SettingsPalette.pill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(SettingsPalette.edge))
+        .help(isOn ? "Turn \(title.lowercased()) off" : "Turn \(title.lowercased()) on")
     }
 }
 

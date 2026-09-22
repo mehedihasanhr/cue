@@ -204,20 +204,16 @@ struct IslandSettingsView: View {
 
     var body: some View {
         @Bindable var preferences = preferences
-        SettingsPane(.island) {
+        SettingsPane(.island, enabled: $preferences.dynamicIslandEnabled) {
             SettingsGroup("Dynamic Island") {
-                SettingsRow("Show the Dynamic Island") {
-                    Toggle("Show the island", isOn: $preferences.dynamicIslandEnabled).toggleStyle(.switch)
-                }
                 SettingsRow("Also show a pill on displays without a notch") {
                     Toggle("Pill on plain displays", isOn: $preferences.dynamicIslandOnPlainDisplays).toggleStyle(.switch)
                 }
-                .disabled(!preferences.dynamicIslandEnabled)
                 SettingsRow("Notch background", subtitle: "Black beside the notch while closed.") {
                     Toggle("Notch background", isOn: $preferences.islandNotchBackground).toggleStyle(.switch)
                 }
-                .disabled(!preferences.dynamicIslandEnabled)
             }
+            .disabled(!preferences.dynamicIslandEnabled)
 
             SettingsGroup("Opening and closing") {
                 SettingsRow("Open on") {
@@ -315,11 +311,8 @@ struct SnippetSettingsView: View {
 
     var body: some View {
         @Bindable var preferences = preferences
-        SettingsPane(.snippets) {
-            SettingsGroup("Snippets") {
-                SettingsRow("Expand snippets as you type", subtitle: "Type \(preferences.snippetPrefix)keyword in any app.") {
-                    Toggle("Expand snippets", isOn: $preferences.snippetsEnabled).toggleStyle(.switch)
-                }
+        SettingsPane(.snippets, enabled: $preferences.snippetsEnabled) {
+            SettingsGroup("Snippets", footer: "Type \(preferences.snippetPrefix)keyword in any app to expand a snippet.") {
                 SettingsRow("Keyword trigger") {
                     TextField("", text: $preferences.snippetPrefix, prompt: Text(";"))
                         .textFieldStyle(.roundedBorder)
@@ -336,6 +329,7 @@ struct SnippetSettingsView: View {
                     }
                 }
             }
+            .disabled(!preferences.snippetsEnabled)
         }
     }
 }
@@ -689,19 +683,16 @@ struct ClipboardSettingsView: View {
 
     var body: some View {
         @Bindable var preferences = preferences
-        SettingsPane(.clipboard) {
+        SettingsPane(.clipboard, enabled: $preferences.clipboardHistoryEnabled) {
             SettingsGroup("History", footer: "Concealed content, like passwords, is never recorded.") {
-                SettingsRow("Keep a clipboard history") {
-                    Toggle("Keep history", isOn: $preferences.clipboardHistoryEnabled).toggleStyle(.switch)
-                }
                 SettingsRow("Keep the last") {
                     Picker("Limit", selection: $preferences.clipboardHistoryLimit) {
                         ForEach(AppPreferences.clipboardLimits, id: \.self) { Text("\($0) items").tag($0) }
                     }
                     .fixedSize()
                 }
-                .disabled(!preferences.clipboardHistoryEnabled)
             }
+            .disabled(!preferences.clipboardHistoryEnabled)
 
             SettingsGroup {
                 SettingsRow("\(clipboard.items.count) item\(clipboard.items.count == 1 ? "" : "s") stored") {
