@@ -24,6 +24,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private lazy var coordinator = CaptureCoordinator(shortcuts: shortcuts)
 
     private var statusItem: NSStatusItem?
+    /// Blinks the mark in the menu bar, when the mark is what is shown there.
+    private var blinker: StatusItemBlinker?
     private var statusMenu: NSMenu?
     private var floatingPanel: FloatingPanelWindow?
     private var island: IslandController?
@@ -52,6 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // The bundle launches as an agent; the preference decides whether Klik takes
         // a Dock tile, so it can be turned off without reinstalling.
         preferences.applyDockVisibility()
+        AppIconBlinker.shared.start()
         // Alerts, onboarding and the About pane all draw the brand icon from the asset
         // catalog, independent of the icon-services cache for this bundle path.
         if let icon = NSImage(named: "AppIcon") { NSApp.applicationIconImage = icon }
@@ -521,6 +524,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         guard menu === statusMenu else { return }
         menu.removeAllItems()
+        menu.addItem(brandHeader())
+        menu.addItem(.separator())
         let tools: [(String, Selector, HotkeyID)] = [
             ("Capture Full Screen", #selector(captureFullScreen(_:)), .fullScreen),
             ("Capture Area", #selector(captureArea(_:)), .region),
@@ -543,6 +548,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(makeItem("Settings…", #selector(showSettings(_:)), keyEquivalent: ",", modifiers: .command))
         menu.addItem(.separator())
         menu.addItem(makeItem("Quit Klik", #selector(NSApplication.terminate(_:)), keyEquivalent: "q", modifiers: .command))
+    }
+
+    /// The mark and the app's name over the menu: which app this is, at a glance,
+    /// and what VoiceOver reads first.
+    private func brandHeader() -> NSMenuItem {
+        let item = NSMenuItem()
+        item.isEnabled = false
+        item.image = KlikMarkImage.template(height: 14)
+        let name = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        item.attributedTitle = NSAttributedString(
+            string: name.map { "Klik \($0)" } ?? "Klik",
+            attributes: [.font: NSFont.systemFont(ofSize: 12, weight: .semibold), .foregroundColor: NSColor.secondaryLabelColor]
+        )
+        return item
     }
 
     /// A menu item showing the shortcut set for the action in Settings, if any. The
@@ -568,11 +587,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         toggleHistoryAtPointer()
     }
 
+    /// The mark blinks at what it just took — or, when the menu bar is showing a
+    /// glyph instead, that glyph gives once the way a shutter does.
+    private func pulseStatusItem() {
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        AppIconBlinker.shared.blink()
+        if let blinker {
+            blinker.blink()
+            return
+        }
+        guard let button = statusItem?.button else { return }
+        button.wantsLayer = true
+        guard let layer = button.layer else { return }
+        // Apple's shape for a thing that lands: a touch of give, response ≈ 0.35 s.
+        let pulse = CASpringAnimation(keyPath: "transform.scale")
+        pulse.fromValue = 0.82
+        pulse.toValue = 1
+        pulse.mass = 1
+        pulse.stiffness = 322 // (2π / 0.35)²
+        pulse.damping = 28.7 // 2 · 0.8 · √stiffness
+        pulse.duration = pulse.settlingDuration
+        layer.add(pulse, forKey: "klik.pulse")
+    }
+
     /// Keeps the status item image in sync with the Settings choice.
     private func applyMenuBarIcon() {
         withObservationTracking {
-            statusItem?.button?.image = preferences.menuBarImage()
-                ?? NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "Klik")
+            blinker?.stop()
+            blinker = nil
+            // The mark is drawn from its paths so it can blink; every other choice is
+            // a still image.
+            if preferences.icon == .mark, let button = statusItem?.button {
+                blinker = StatusItemBlinker(button: button, height: 17)
+            } else {
+                let image = preferences.menuBarImage()
+                    ?? NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "Klik")
+                image?.accessibilityDescription = "Klik"
+                statusItem?.button?.image = image
+            }
+            // VoiceOver and the Accessibility Inspector name the item, not its glyph.
+            statusItem?.button?.setAccessibilityLabel("Klik")
+            statusItem?.button?.toolTip = "Klik — capture, clipboard and notes"
         } onChange: { [weak self] in
             Task { @MainActor in self?.applyMenuBarIcon() }
         }
@@ -1157,6 +1212,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         preferences.playCaptureSound()
         let item = library.add(image)
         Log.app.info("Captured \(item.fileName, privacy: .public) → clipboard + library")
+        pulseStatusItem()
         island?.flash(item)
         switch preferences.afterCapture {
         case .edit: openEditor(for: item, image: image, mode: .edit)

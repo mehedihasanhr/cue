@@ -773,7 +773,7 @@ private struct MenuBarIconPicker: View {
         .popover(isPresented: $open, arrowEdge: .bottom) {
             LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
                 iconCell(selected: preferences.icon == .mark) {
-                    Image("KlikMark").resizable().aspectRatio(contentMode: .fit).frame(width: 15, height: 15)
+                    KlikMarkView().frame(width: 15, height: 15)
                 } action: {
                     preferences.icon = .mark
                     open = false
@@ -798,7 +798,7 @@ private struct MenuBarIconPicker: View {
     private var current: some View {
         switch preferences.icon {
         case .mark:
-            Image("KlikMark").resizable().aspectRatio(contentMode: .fit)
+            KlikMarkView()
         case .symbol(let name):
             Image(systemName: name).font(.system(size: 14, weight: .medium))
         case .custom:

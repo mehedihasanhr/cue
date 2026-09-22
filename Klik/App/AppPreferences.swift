@@ -13,7 +13,7 @@ final class AppPreferences {
         static let sound = "sound.choice"
         static let soundBookmark = "sound.customBookmark"
         static let icon = "menuBar.icon"
-        static let iconMarkMigrated = "menuBar.icon.markMigrated"
+        static let iconMarkMigrated = "menuBar.icon.markMigrated.2"
         static let iconBookmark = "menuBar.customBookmark"
         static let appearance = "appearance"
         static let showInDock = "app.showInDock"
@@ -553,9 +553,10 @@ final class AppPreferences {
     init() {
         soundEnabled = defaults.object(forKey: Key.soundEnabled) as? Bool ?? true
         sound = Sound(storageValue: defaults.string(forKey: Key.sound) ?? "shutter")
-        // Klik had a camera glyph before it had a mark of its own; anyone still on
-        // that default moves across once, and a chosen icon is left alone.
-        if defaults.string(forKey: Key.icon) == "camera.viewfinder", !defaults.bool(forKey: Key.iconMarkMigrated) {
+        // Klik borrowed a camera glyph before it had a mark of its own; every one of
+        // those moves across once. An image the user chose from disk is left alone,
+        // and a glyph can be picked again in Settings.
+        if !defaults.bool(forKey: Key.iconMarkMigrated), defaults.string(forKey: Key.icon) != "custom" {
             defaults.set("mark", forKey: Key.icon)
         }
         defaults.set(true, forKey: Key.iconMarkMigrated)

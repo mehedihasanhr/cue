@@ -775,17 +775,40 @@ struct SettingsPreviewPicker<Value: Hashable, Preview: View>: View {
     }
 }
 
-/// The app icon in a tile, the size of a `SymbolTile`.
+/// The app icon in a tile, the size of a `SymbolTile`. Larger than a signpost — in
+/// the About pane — it answers the pointer: a little lift under it, a press that
+/// gives. A signpost-sized tile stays still; it is read, not used.
 struct AppIconTile: View {
     var size: CGFloat = 28
+    /// Below this the tile is a signpost in a list and does not react.
+    private var interactive: Bool { size >= 40 }
+
+    @State private var hovering = false
+    @State private var pressed = false
+
+    private static var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
     var body: some View {
-        Image(nsImage: NSImage(named: "AppIcon") ?? NSApp.applicationIconImage)
-            .resizable()
-            .interpolation(.high)
-            .frame(width: size, height: size)
+        // Drawn rather than shipped flat, so it can blink where it is big enough to
+        // be looked at; the signpost-sized tiles keep still.
+        BlinkingAppIcon(side: size, blinks: interactive)
             // The icon has its own rounded shape; a little larger so it lines up
             // with the symbol tiles' edges.
-            .scaleEffect(1.12)
+            .scaleEffect(1.12 * lift)
+            .shadow(color: .black.opacity(interactive && hovering ? 0.22 : 0), radius: 10, y: 4)
+            .animation(Self.reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.3, dampingFraction: 1), value: lift)
+            .onHover { over in guard interactive else { return }; hovering = over }
+            // Pressure comes back the instant the mouse goes down, not on release.
+            .onLongPressGesture(minimumDuration: 0, pressing: { down in
+                guard interactive else { return }
+                pressed = down
+            }, perform: {})
+            .allowsHitTesting(interactive)
+    }
+
+    private var lift: CGFloat {
+        guard interactive else { return 1 }
+        if pressed { return 0.96 }
+        return hovering ? 1.04 : 1
     }
 }

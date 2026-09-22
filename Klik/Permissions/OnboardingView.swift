@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Shown when a permission is missing. Polls the permission so the UI flips to
@@ -8,6 +9,10 @@ struct OnboardingView: View {
     var onGranted: (() -> Void)?
 
     @State private var hasAccess: Bool
+    /// The icon settles into place as the window opens, and again the moment access
+    /// is granted — the one part of this window worth a moment of motion.
+    @State private var arrived = false
+    @State private var celebrate = false
 
     init(kind: PermissionKind, onGranted: (() -> Void)? = nil) {
         self.kind = kind
@@ -17,19 +22,39 @@ struct OnboardingView: View {
 
     private var needsRelaunch: Bool { kind == .screenRecording }
 
+    private static var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    /// Arrival: no overshoot, nothing was thrown.
+    private static var arrival: Animation { reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.4, dampingFraction: 1) }
+    /// The grant: a touch of give, the way a thing settles when it lands.
+    private static var settle: Animation { reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.35, dampingFraction: 0.8) }
+
     var body: some View {
         VStack(spacing: 20) {
             ZStack(alignment: .bottomTrailing) {
-                Image(nsImage: NSImage(named: "AppIcon") ?? NSApp.applicationIconImage)
-                    .resizable()
-                    .interpolation(.high)
-                    .frame(width: 84, height: 84)
+                BlinkingAppIcon(side: 84)
                 Image(systemName: hasAccess ? "checkmark.circle.fill" : icon)
                     .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(.white, hasAccess ? Color.green : Color.accentColor)
                     .background(Circle().fill(Color(nsColor: .windowBackgroundColor)).padding(-3))
                     .offset(x: 6, y: 6)
                     .contentTransition(.symbolEffect(.replace))
+            }
+            .scaleEffect(arrived ? (celebrate ? 1.06 : 1) : 0.94)
+            .opacity(arrived ? 1 : 0)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(hasAccess ? "Klik — \(name) access granted" : "Klik — \(name) access needed")
+            .onAppear {
+                // Critically damped: it arrives, it does not bounce for attention.
+                withAnimation(Self.arrival) { arrived = true }
+            }
+            .onChange(of: hasAccess) { _, granted in
+                guard granted, !Self.reduceMotion else { return }
+                // Granted is the rare, good moment: a little overshoot, once.
+                withAnimation(Self.settle) { celebrate = true }
+                Task {
+                    try? await Task.sleep(for: .milliseconds(180))
+                    withAnimation(Self.settle) { celebrate = false }
+                }
             }
 
             VStack(spacing: 6) {
@@ -49,6 +74,15 @@ struct OnboardingView: View {
                         step(2, "Choose **Open System Settings** and turn on **Klik** under \(settingsPane).")
                         step(3, "Come back here and click **Relaunch Klik**.")
                     case .accessibility:
+                        HStack(spacing: 8) {
+                            KlikMarkView()
+                                .frame(width: 14, height: 14)
+                                .foregroundStyle(.primary)
+                            Text("Look for this mark beside **Klik** in the list.")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
+                        .accessibilityElement(children: .combine)
                         step(1, "Click **Add Klik to Accessibility**. System Settings and a Finder window with Klik open side by side.")
                         step(2, "Drag **Klik** from Finder into the Accessibility list (or click **+** and choose it), then turn it on.")
                         step(3, "Come back here — Klik picks it up automatically.")
