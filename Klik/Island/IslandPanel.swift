@@ -84,10 +84,10 @@ struct IslandPanel: View {
 
     private func filter(_ kind: GroupKind) -> StripFilter { stripFilter[kind] ?? .recent }
 
-    /// The All tab: recent is what is neither pinned nor grouped (tasks and snippets
-    /// count as recent); pinned and each group are shown on their own.
+    /// The All tab: recent is what is neither pinned nor grouped (snippets count
+    /// as recent); pinned and each group are shown on their own. Tasks are not here.
     private var filteredEverything: [IslandItem] {
-        let everything = IslandSearch.everything(library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore, snippets: snippets)
+        let everything = IslandSearch.everything(library: library, clipboard: clipboard, assets: assets, colors: colors, snippets: snippets)
         return everything.filter { item in
             guard preferences.shows(item) else { return false }
             return switch allFilter {
@@ -637,7 +637,7 @@ struct IslandPanel: View {
 
     private func count(for tab: IslandTab) -> Int {
         switch tab {
-        case .all: library.items.count + clipboard.items.count + assets.items.count + tasksStore.tasks.count
+        case .all: library.items.count + clipboard.items.count + assets.items.count
             + (preferences.shows(.colors) ? colors.items.count : 0) + (preferences.shows(.snippets) ? snippets.items.count : 0)
         case .captures: library.items.count
         case .clipboard: clipboard.items.count

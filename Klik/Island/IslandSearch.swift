@@ -54,15 +54,15 @@ enum IslandItem: Identifiable {
 /// "invoice pdf" finds the asset "Invoice March.pdf". Results keep the tab order
 /// (captures, clipboard, assets, colors, tasks), newest first within a tab.
 enum IslandSearch {
-    /// Everything, newest first, for the All tab.
+    /// Everything, newest first, for the All tab. Tasks stay on their own tab;
+    /// search still finds them.
     static func everything(library: CaptureLibrary, clipboard: ClipboardHistory, assets: AssetStore,
-                           colors: ColorStore, tasks: TaskStore, snippets: SnippetStore) -> [IslandItem] {
+                           colors: ColorStore, snippets: SnippetStore) -> [IslandItem] {
         var items: [IslandItem] = []
         items += library.items.map(IslandItem.capture)
         items += clipboard.items.map(IslandItem.clipboard)
         items += assets.items.map(IslandItem.asset)
         items += colors.items.map(IslandItem.color)
-        items += tasks.tasks.filter { $0.status != .complete }.map(IslandItem.task) // done tasks are the Tasks tab's "Complete" filter
         items += snippets.items.map(IslandItem.snippet)
         return items.sorted { $0.date > $1.date }
     }

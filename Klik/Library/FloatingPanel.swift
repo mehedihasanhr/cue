@@ -393,7 +393,7 @@ struct FloatingPanelView: View {
     private var content: some View {
         switch tab {
         case .all:
-            list(IslandSearch.everything(library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore, snippets: snippets).filter(preferences.shows),
+            list(IslandSearch.everything(library: library, clipboard: clipboard, assets: assets, colors: colors, snippets: snippets).filter(preferences.shows),
                  date: \.date, empty: "Nothing yet — capture, copy or drop something", card: hitCard, row: hitRow)
         case .tasks:
             IslandTasksView(store: tasksStore, onPrompt: onPrompt, onShowTask: onShowTask)
