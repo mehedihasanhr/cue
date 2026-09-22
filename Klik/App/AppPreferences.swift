@@ -13,6 +13,7 @@ final class AppPreferences {
         static let sound = "sound.choice"
         static let soundBookmark = "sound.customBookmark"
         static let icon = "menuBar.icon"
+        static let iconMarkMigrated = "menuBar.icon.markMigrated"
         static let iconBookmark = "menuBar.customBookmark"
         static let appearance = "appearance"
         static let islandEnabled = "island.enabled"
@@ -493,6 +494,8 @@ final class AppPreferences {
     // MARK: Menu-bar icon
 
     enum Icon: Hashable {
+        /// Klik's own mark, the default.
+        case mark
         case symbol(String)
         case custom
 
@@ -504,13 +507,18 @@ final class AppPreferences {
 
         var storageValue: String {
             switch self {
+            case .mark: "mark"
             case .symbol(let name): name
             case .custom: "custom"
             }
         }
 
         init(storageValue: String) {
-            self = storageValue == "custom" ? .custom : .symbol(storageValue)
+            switch storageValue {
+            case "mark": self = .mark
+            case "custom": self = .custom
+            default: self = .symbol(storageValue)
+            }
         }
     }
 
@@ -525,7 +533,13 @@ final class AppPreferences {
     init() {
         soundEnabled = defaults.object(forKey: Key.soundEnabled) as? Bool ?? true
         sound = Sound(storageValue: defaults.string(forKey: Key.sound) ?? "shutter")
-        icon = Icon(storageValue: defaults.string(forKey: Key.icon) ?? "camera.viewfinder")
+        // Klik had a camera glyph before it had a mark of its own; anyone still on
+        // that default moves across once, and a chosen icon is left alone.
+        if defaults.string(forKey: Key.icon) == "camera.viewfinder", !defaults.bool(forKey: Key.iconMarkMigrated) {
+            defaults.set("mark", forKey: Key.icon)
+        }
+        defaults.set(true, forKey: Key.iconMarkMigrated)
+        icon = Icon(storageValue: defaults.string(forKey: Key.icon) ?? "mark")
         appearance = Appearance(rawValue: defaults.string(forKey: Key.appearance) ?? "") ?? .system
         editorDefaults = EditorDefaults.load(from: defaults)
         dynamicIslandEnabled = defaults.object(forKey: Key.islandEnabled) as? Bool ?? true
@@ -658,6 +672,14 @@ final class AppPreferences {
     /// The status-item image for the current choice (template so it adapts to the menu bar).
     func menuBarImage() -> NSImage? {
         switch icon {
+        case .mark:
+            guard let mark = NSImage(named: "KlikMark") else { return nil }
+            let image = NSImage(size: Self.fit(mark.size, height: 17), flipped: false) { rect in
+                mark.draw(in: rect)
+                return true
+            }
+            image.isTemplate = true
+            return image
         case .symbol(let name):
             let image = NSImage(systemSymbolName: name, accessibilityDescription: "Klik")
             image?.isTemplate = true

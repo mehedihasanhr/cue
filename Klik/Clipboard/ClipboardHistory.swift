@@ -221,15 +221,35 @@ final class ClipboardHistory {
         ) { row in Content(index: Int(row.integer(0)), type: row.text(1) ?? "", data: row.blob(2) ?? Data()) }) ?? []
 
         if contents.isEmpty {
-            // A failed read: the preview is all there is.
-            pasteboard.setString(item.text, forType: .string)
+            // A failed read: the preview, or the thumbnail for a picture, is all there is.
+            if item.kind == .image, let thumbnail = thumbnails[item.id], let tiff = thumbnail.tiffRepresentation {
+                pasteboard.setData(tiff, forType: .tiff)
+                if let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+                    pasteboard.setData(png, forType: .png)
+                }
+            } else {
+                pasteboard.setString(item.text, forType: .string)
+            }
         } else {
             var pasteboardItems: [NSPasteboardItem] = []
             for content in contents {
                 while pasteboardItems.count <= content.index { pasteboardItems.append(NSPasteboardItem()) }
                 pasteboardItems[content.index].setData(content.data, forType: NSPasteboard.PasteboardType(content.type))
             }
-            pasteboardItems.first?.setData(Data(), forType: Clipboard.ownMarker)
+            // A picture stored as PNG alone pastes nowhere in apps that ask for TIFF;
+            // plain text likewise stands in for a flavour only its own app understands.
+            if let first = pasteboardItems.first {
+                let types = Set(contents.filter { $0.index == 0 }.map(\.type))
+                if types.contains(NSPasteboard.PasteboardType.png.rawValue), !types.contains(NSPasteboard.PasteboardType.tiff.rawValue),
+                   let png = contents.first(where: { $0.index == 0 && $0.type == NSPasteboard.PasteboardType.png.rawValue })?.data,
+                   let tiff = NSBitmapImageRep(data: png)?.tiffRepresentation {
+                    first.setData(tiff, forType: .tiff)
+                }
+                if !types.contains(NSPasteboard.PasteboardType.string.rawValue), !item.text.isEmpty, item.kind != .image {
+                    first.setString(item.text, forType: .string)
+                }
+                first.setData(Data(), forType: Clipboard.ownMarker)
+            }
             pasteboard.writeObjects(pasteboardItems)
         }
         lastChangeCount = pasteboard.changeCount

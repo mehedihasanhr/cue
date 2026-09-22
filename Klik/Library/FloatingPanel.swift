@@ -126,8 +126,10 @@ struct FloatingPanelView: View {
     private static let cardHeight: CGFloat = 150
     /// As many equal columns as Settings › Panels says (4 by default).
     private var columns: [GridItem] {
-        Array(repeating: GridItem(.flexible(), spacing: 10, alignment: .top), count: preferences.panelColumns)
+        Array(repeating: GridItem(.flexible(), spacing: Self.gap, alignment: .top), count: preferences.panelColumns)
     }
+    /// Between cards, across and down.
+    private static let gap: CGFloat = 14
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -280,8 +282,8 @@ struct FloatingPanelView: View {
         if items.isEmpty {
             empty("Nothing yet — capture, copy or drop something")
         } else {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
+            FadingScrollView {
+                LazyVStack(alignment: .leading, spacing: Self.gap) {
                     ForEach(dayGroups(items), id: \.day) { group in
                         Text(group.title)
                             .font(.system(size: 12, weight: .semibold))
@@ -300,7 +302,7 @@ struct FloatingPanelView: View {
         if hits.isEmpty {
             empty("Nothing matches “\(search.trimmingCharacters(in: .whitespaces))”")
         } else {
-            ScrollView {
+            FadingScrollView {
                 section(hits).padding(.bottom, 8)
             }
         }
@@ -316,7 +318,7 @@ struct FloatingPanelView: View {
     @ViewBuilder
     private func section(_ items: [IslandItem]) -> some View {
         if layout == .grid {
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
+            LazyVGrid(columns: columns, alignment: .leading, spacing: Self.gap) {
                 ForEach(items) { item in card(item).frame(height: Self.cardHeight) }
             }
         } else {
@@ -570,6 +572,12 @@ struct FloatingPanelView: View {
                 .background(Color.white.opacity(0.07))
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(hovering ? Color.brand : .white.opacity(0.1), lineWidth: hovering ? 2 : 1))
+                // Two ways in, because either layer can end up on top: AppKit for the
+                // press (a drag carries the item out), SwiftUI for the click. Whichever
+                // arrives first copies — `perform` only ever runs once.
+                .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .onTapGesture(perform: perform)
+                .onHover { hovering = $0 }
                 .overlay(DragSource(payload: payload, onClick: perform, onHover: { hovering = $0 }))
                 // The pill sits above the card's AppKit layer, so it takes its own
                 // clicks: "Copy" while hovered, a green "Copied" once it has (a fade
@@ -661,6 +669,9 @@ struct FloatingPanelView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .background(hovering ? Color.white.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .onTapGesture(perform: perform)
+            .onHover { hovering = $0 }
             .overlay(DragSource(payload: payload, onClick: perform, onHover: { hovering = $0 }))
             .animation(.easeOut(duration: 0.12), value: hovering)
             .animation(.easeOut(duration: 0.15), value: copied)

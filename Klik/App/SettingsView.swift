@@ -769,6 +769,13 @@ private struct MenuBarIconPicker: View {
         .accessibilityLabel("Menu bar icon")
         .popover(isPresented: $open, arrowEdge: .bottom) {
             LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
+                iconCell(selected: preferences.icon == .mark) {
+                    Image("KlikMark").resizable().aspectRatio(contentMode: .fit).frame(width: 15, height: 15)
+                } action: {
+                    preferences.icon = .mark
+                    open = false
+                }
+                .help("Klik")
                 ForEach(AppPreferences.Icon.symbols, id: \.self) { name in
                     iconCell(selected: preferences.icon == .symbol(name)) {
                         Image(systemName: name).font(.system(size: 15, weight: .medium))
@@ -787,6 +794,8 @@ private struct MenuBarIconPicker: View {
     @ViewBuilder
     private var current: some View {
         switch preferences.icon {
+        case .mark:
+            Image("KlikMark").resizable().aspectRatio(contentMode: .fit)
         case .symbol(let name):
             Image(systemName: name).font(.system(size: 14, weight: .medium))
         case .custom:

@@ -390,18 +390,26 @@ final class CaptureLibrary {
             Clipboard.copy(pending)
             return true
         }
-        guard let url = fileURL(for: item) else {
-            Log.app.error("Capture copy: no file for \(item.fileName, privacy: .public)")
-            return false
-        }
-        return withScopedAccess(to: url) {
-            guard let data = try? Data(contentsOf: url) else {
-                Log.app.error("Capture copy: cannot read \(url.lastPathComponent, privacy: .public)")
-                return false
+        // The bookmark first, then the plain file in the folder: a bookmark can resolve
+        // to a file that is no longer readable, and the copy must not give up there.
+        let candidates = [fileURL(for: item), folderURL.appendingPathComponent(item.fileName)].compactMap { $0 }
+        for url in candidates {
+            let copied = withScopedAccess(to: url) { () -> Bool in
+                guard let data = try? Data(contentsOf: url) else { return false }
+                Clipboard.copy(pngData: data)
+                return true
             }
-            Clipboard.copy(pngData: data)
+            if copied { return true }
+        }
+        // Last resort: whatever is on screen in the card.
+        if let image = thumbnails[item.id], let tiff = image.tiffRepresentation,
+           let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+            Log.app.error("Capture copy: \(item.fileName, privacy: .public) unreadable — copied its preview instead")
+            Clipboard.copy(pngData: png)
             return true
         }
+        Log.app.error("Capture copy: nothing to copy for \(item.fileName, privacy: .public)")
+        return false
     }
 
     /// The item's file, whether or not it has been written yet.
