@@ -155,7 +155,7 @@ struct FloatingPanelView: View {
                         resultPill(entry.tab, title: entry.tab.title, count: entry.count, symbol: entry.tab.symbol)
                     }
                 } else {
-                    ForEach(IslandTab.allCases, id: \.self) { value in
+                    ForEach(preferences.islandTabs, id: \.self) { value in
                         tabPill(value)
                     }
                 }
@@ -175,6 +175,11 @@ struct FloatingPanelView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .onChange(of: searching) { _, _ in resultFilter = nil }
             .onChange(of: search, refreshHits)
+            .onChange(of: preferences.islandTabs, initial: true) { _, tabs in
+                // The tab that was showing has been turned off: fall back to All.
+                if !tabs.contains(tab) { tab = .all }
+                refreshHits()
+            }
             .onChange(of: library.items.count + clipboard.items.count + assets.items.count + colors.items.count + tasksStore.tasks.count, refreshHits)
         }
         .padding(18)
@@ -192,7 +197,7 @@ struct FloatingPanelView: View {
     @State private var hits: [IslandItem] = []
 
     private func refreshHits() {
-        hits = searching ? IslandSearch.hits(for: search, library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore, snippets: snippets) : []
+        hits = searching ? IslandSearch.hits(for: search, library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore, snippets: snippets).filter(preferences.shows) : []
     }
 
     private func resultPill(_ value: IslandTab?, title: String, count: Int, symbol: String) -> some View {
@@ -388,7 +393,7 @@ struct FloatingPanelView: View {
     private var content: some View {
         switch tab {
         case .all:
-            list(IslandSearch.everything(library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore, snippets: snippets),
+            list(IslandSearch.everything(library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore, snippets: snippets).filter(preferences.shows),
                  date: \.date, empty: "Nothing yet — capture, copy or drop something", card: hitCard, row: hitRow)
         case .tasks:
             IslandTasksView(store: tasksStore, onPrompt: onPrompt, onShowTask: onShowTask)

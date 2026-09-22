@@ -89,7 +89,8 @@ struct IslandPanel: View {
     private var filteredEverything: [IslandItem] {
         let everything = IslandSearch.everything(library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore, snippets: snippets)
         return everything.filter { item in
-            switch allFilter {
+            guard preferences.shows(item) else { return false }
+            return switch allFilter {
             case .recent: !item.pinned && item.groupID == nil
             case .pinned: item.pinned
             case .group(let id): item.groupID == id
@@ -146,12 +147,14 @@ struct IslandPanel: View {
 
     private var searching: Bool { !search.trimmingCharacters(in: .whitespaces).isEmpty }
 
+    private var tabs: [IslandTab] { preferences.islandTabs }
+
     /// Matches across every tab for the current search — computed once per keystroke,
     /// not once per view that shows them.
     @State private var hits: [IslandItem] = []
 
     private func refreshHits() {
-        hits = searching ? IslandSearch.hits(for: search, library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore, snippets: snippets) : []
+        hits = searching ? IslandSearch.hits(for: search, library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore, snippets: snippets).filter(preferences.shows) : []
     }
 
     private var filteredClipboard: [ClipboardItem] {
@@ -374,7 +377,7 @@ struct IslandPanel: View {
                 }
             } else {
             HStack(spacing: 8) {
-                ForEach(Array(IslandTab.allCases.enumerated()), id: \.element) { index, value in
+                ForEach(Array(tabs.enumerated()), id: \.element) { index, value in
                     tabPill(value, count: count(for: value), shortcut: index + 1)
                 }
                 Spacer(minLength: 16)
@@ -491,6 +494,11 @@ struct IslandPanel: View {
             .background { keyboardShortcuts }
             .onChange(of: tab) { _, _ in
                 detail = nil
+            }
+            .onChange(of: tabs, initial: true) { _, tabs in
+                // The tab that was showing has been turned off: fall back to All.
+                if !tabs.contains(tab) { tab = .all }
+                refreshHits()
             }
             .onChange(of: searching) { _, _ in
                 detail = nil
@@ -629,7 +637,8 @@ struct IslandPanel: View {
 
     private func count(for tab: IslandTab) -> Int {
         switch tab {
-        case .all: library.items.count + clipboard.items.count + assets.items.count + colors.items.count + tasksStore.tasks.count + snippets.items.count
+        case .all: library.items.count + clipboard.items.count + assets.items.count + tasksStore.tasks.count
+            + (preferences.shows(.colors) ? colors.items.count : 0) + (preferences.shows(.snippets) ? snippets.items.count : 0)
         case .captures: library.items.count
         case .clipboard: clipboard.items.count
         case .assets: assets.items.count
@@ -688,7 +697,7 @@ struct IslandPanel: View {
     /// tabs, ⌘F goes to the search field.
     private var keyboardShortcuts: some View {
         Group {
-            ForEach(Array(IslandTab.allCases.enumerated()), id: \.element) { index, value in
+            ForEach(Array(tabs.enumerated()), id: \.element) { index, value in
                 Button("") { withAnimation(IslandView.openAnimation) { tab = value } }
                     .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
             }

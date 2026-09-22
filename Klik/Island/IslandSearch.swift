@@ -92,3 +92,18 @@ enum IslandSearch {
         }
     }
 }
+
+extension AppPreferences {
+    /// The tabs on offer: Snippets and Colors go when their feature is off in Settings.
+    var islandTabs: [IslandTab] { IslandTab.allCases.filter(shows) }
+
+    func shows(_ tab: IslandTab) -> Bool {
+        switch tab {
+        case .snippets: snippetsEnabled
+        case .colors: colorPickerEnabled
+        default: true
+        }
+    }
+
+    func shows(_ item: IslandItem) -> Bool { shows(item.tab) }
+}
