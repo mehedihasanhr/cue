@@ -635,14 +635,14 @@ struct IslandPanel: View {
                     onEdit: { onPrompt(IslandPrompt(kind: .snippet(snippet, initialText: "", assetID: nil))) })
     }
 
+    /// How many cards the tab shows under its strip filter (Recent, Pinned, a group).
     private func count(for tab: IslandTab) -> Int {
         switch tab {
-        case .all: library.items.count + clipboard.items.count + assets.items.count
-            + (preferences.shows(.colors) ? colors.items.count : 0) + (preferences.shows(.snippets) ? snippets.items.count : 0)
-        case .captures: library.items.count
-        case .clipboard: clipboard.items.count
-        case .assets: assets.items.count
-        case .colors: colors.items.count
+        case .all: filteredEverything.count
+        case .captures: filteredCaptures.count
+        case .clipboard: filteredClipboard.count
+        case .assets: filteredAssets.count
+        case .colors: filteredColors.count
         case .tasks: tasksStore.tasks.count { $0.status != .complete }
         case .snippets: snippets.items.count
         }
