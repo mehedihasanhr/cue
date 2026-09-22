@@ -11,7 +11,7 @@ Link01 Timer01 Stop ArrowUp02 ArrowUpRight01 LinkSquare02 Download04 AspectRatio
 TextAlignLeft TextFont Globe02 Image01 LeftToRightListBullet LeftToRightListNumber Zap Circle Progress03 Fire EqualSign
 Sunrise Sun03 Sun01 Sun02 Sunset MoonStar Alert02 Bell ArrowExpand01 TextBold TextItalic TextStrikethrough
 Heading01 Heading02 Heading03 LeftToRightBlockQuote CodeSquare SourceCode TaskDone01 Calendar03 Ruler Lock LockOpen Function
-Keyboard Sparkles""".split()
+Keyboard Sparkles Note01 NoteAdd Sent""".split()
 out = ['// Generated from @hugeicons/core-free-icons 4.3.5 (MIT, https://hugeicons.com) by',
        '// Tools/hugeicons/gen.py. Each entry is the icon\'s 24×24 paths: "S" strokes,',
        '// "F" fills, "B" both.',

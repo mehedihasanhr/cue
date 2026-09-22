@@ -3,6 +3,7 @@
 #
 #   klik capture [area|full|scrolling|text]     klik color
 #   klik task "Title" [-n notes] [-p priority] [-P project]
+#   klik note ["Text"]      (no text, or piped text: the note; none at all opens the form)
 #   klik snippet ";kw" "Template text" [-n name]
 #   klik copy "text"        klik palette | clipboard | panel | clock | settings
 #   klik url 'klik://…'     (any URL, as is)
@@ -46,6 +47,9 @@ case "$command" in
             esac
         done
         open_url "klik://task/new?title=$(encode "$title")&notes=$(encode "$notes")&priority=$(encode "$priority")&project=$(encode "$project")" ;;
+    note)
+        if [ $# -ge 1 ]; then text="$1"; elif [ ! -t 0 ]; then text=$(cat); else text=""; fi
+        open_url "klik://note/new?text=$(encode "$text")" ;;
     snippet)
         [ $# -ge 2 ] || usage
         keyword="$1"; text="$2"; shift 2

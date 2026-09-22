@@ -12,6 +12,7 @@ final class IslandController {
     private let preferences: AppPreferences
     private let tasks: TaskStore
     private let snippets: SnippetStore
+    private let notes: NoteStore
     private let library: CaptureLibrary
     private let clipboard: ClipboardHistory
     private let assets: AssetStore
@@ -35,10 +36,11 @@ final class IslandController {
     var onSnippetFilled: (Snippet, [String: String]?) -> Void = { _, _ in }
 
     init(library: CaptureLibrary, clipboard: ClipboardHistory, assets: AssetStore, colors: ColorStore, groups: GroupStore, tasks: TaskStore, snippets: SnippetStore,
-         actions: HistoryActions, preferences: AppPreferences, clock: PrayerClock? = nil, focus: FocusTimer? = nil) {
+         notes: NoteStore, actions: HistoryActions, preferences: AppPreferences, clock: PrayerClock? = nil, focus: FocusTimer? = nil) {
         self.preferences = preferences
         self.tasks = tasks
         self.snippets = snippets
+        self.notes = notes
         self.library = library
         self.clipboard = clipboard
         self.assets = assets
@@ -50,7 +52,7 @@ final class IslandController {
         content.onDragExited = { [weak self] in self?.model.dropping = false }
         content.onDrop = { [weak self] urls, image in self?.drop(urls: urls, image: image, into: assets) }
         let host = NSHostingView(rootView: IslandView(model: model, library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasks, snippets: snippets, actions: actions)
-            .environment(preferences).environment(clock).environment(focus).environment(groups))
+            .environment(preferences).environment(clock).environment(focus).environment(groups).environment(notes))
         host.sizingOptions = []
         host.autoresizingMask = [.width, .height]
         host.frame = content.bounds
@@ -109,6 +111,11 @@ final class IslandController {
                 case .fill(let snippet):
                     onSnippetFilled(snippet, answer.values)
                     collapseAfterPrompt = true
+                case .note(let existing):
+                    // `answer.name` set: the form saved it itself (before a Send).
+                    let saved = answer.name.isEmpty ? (existing.map { notes.update($0, text: answer.text) } ?? notes.add(text: answer.text)) : nil
+                    let title = saved?.title ?? answer.title
+                    status = IslandStatus(symbol: "note.text", title: existing == nil ? "Note saved" : "Note updated", subtitle: title)
                 case .project(let parent):
                     if let project = tasks.addProject(named: answer.title, in: parent) {
                         tasks.pendingSelection = .project(project.id)

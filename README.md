@@ -82,7 +82,7 @@ permission (Klik asks on first use) so it can send scroll events to the target a
 ### Shortcuts
 
 Defaults: **⌥⇧3** full screen · **⌥⇧4** area · **⌥⇧6** window · **⌥⇧5** scrolling · **⌥⇧T** capture
-text · **⌥⇧P** pick a color · **⌥⇧N** quick task · **⌥⇧K** the Klik panel ·
+text · **⌥⇧P** pick a color · **⌥⇧N** quick task · **⌥⇧M** quick note · **⌥⇧K** the Klik panel ·
 **⌘⇧C** the clipboard list (type to filter, ↑↓, ↩ pastes, ⌘↩ copies, ⌥↩ pastes as
 plain text, ⇧↑↓ picks several to paste joined, ⌘1–9 picks) · **⌥⇧Space** the command
 palette · **⌘⇧V** the paste stack (each press pastes the next entry of the history).
@@ -150,6 +150,23 @@ attached. Right-click a task › **Focus** › 15/25/45/60 minutes starts a sess
 island's header shows a ring and the time left (click it to open the task, ■ to stop),
 and it says so with a sound when the time is up.
 
+### Quick notes
+
+**⌥⇧M** (or Notes › New in the island, or `klik://note`) opens a note at the pointer:
+Markdown, the first line is the title, `/` for formatting, images pasted or dropped in;
+**⌘↩** saves. Each note is one `.md` file named after its title, in Klik's own folder
+or — Settings › Notes › Choose… — any folder: one in iCloud Drive syncs the notes with
+your other devices, an Obsidian vault folder shows them in Obsidian. The folder is
+watched, so notes edited elsewhere (Obsidian, another Mac) show up in the island. Only
+the folder's top level is read; images go in `attachments/` beside the notes.
+
+**Send** (in the form, or a card's menu) puts a note in **Obsidian** (through its
+`obsidian://new` link; name the vault in Settings, else the last one opened), **Apple
+Notes** (in the folder named in Settings; macOS asks once to let Klik control Notes)
+or **Notion** (an internal integration's secret and the page or database to put pages
+under; the secret stays in the Keychain, headings, lists, to-dos, quotes and code
+become the matching blocks).
+
 ### Sync folder
 
 Settings › General › Sync: keep snippets, colors and tasks as JSON in a folder of your
@@ -188,7 +205,7 @@ puts the result back on the clipboard.
 
 `klik://` URLs drive Klik from Shortcuts, Raycast, Alfred, a browser or a script:
 `klik://capture/area|window|full|scrolling|text`, `klik://color/pick`,
-`klik://task/new?title=…&notes=…&priority=high&project=…`,
+`klik://task/new?title=…&notes=…&priority=high&project=…`, `klik://note/new?text=…`,
 `klik://snippet/add?keyword=;sig&text=…`, `klik://clipboard/copy?text=…`,
 `klik://palette`, `klik://clipboard`, `klik://panel`, `klik://clock`, `klik://settings`.
 `Tools/klik` wraps them for the shell (`klik capture area`, `klik task "Fix it" -p high`,
@@ -247,6 +264,8 @@ Klik/
 │   └── Scrolling/  ScrollingCaptureService, AccessibilityScroller, FrameStitcher, ScrollingHUD
 ├── Editor/       (Step 3–4)
 ├── Export/       (Step 5)
+├── Notes/        NoteStore (Markdown files, the folder watched), NoteForm, NoteCard,
+│                 NoteSharing (Obsidian, Apple Notes, Notion)
 ├── Permissions/  PermissionManager, OnboardingView
 ├── Preview/      Temporary capture viewer (replaced by the editor in Step 3)
 ├── Support/      CapturedImage, Log, WindowHosting, Icon (the island's Hugeicons stroke icons,

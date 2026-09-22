@@ -102,6 +102,7 @@ struct FloatingPanelView: View {
     let colors: ColorStore
     let tasksStore: TaskStore
     let snippets: SnippetStore
+    @Environment(NoteStore.self) private var notes
     let actions: HistoryActions
     var onPrompt: (IslandPrompt) -> Void = { _ in }
     var onShowTask: (TaskItem) -> Void = { _ in }
@@ -204,7 +205,7 @@ struct FloatingPanelView: View {
     @State private var hits: [IslandItem] = []
 
     private func refreshHits() {
-        hits = searching ? IslandSearch.hits(for: search, library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore, snippets: snippets).filter(preferences.shows) : []
+        hits = searching ? IslandSearch.hits(for: search, library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasksStore, snippets: snippets, notes: notes).filter(preferences.shows) : []
     }
 
     private func resultPill(_ value: IslandTab?, title: String, count: Int, symbol: String) -> some View {
@@ -276,6 +277,7 @@ struct FloatingPanelView: View {
         case .color(let entry): colorCard(entry)
         case .task(let task): taskRow(task)
         case .snippet(let snippet): snippetCard(snippet)
+        case .note(let note): noteCard(note)
         case .answer(let answer): AnswerCard(answer: answer, clipboard: clipboard, colors: colors)
         }
     }
@@ -289,7 +291,24 @@ struct FloatingPanelView: View {
         case .color(let entry): colorRow(entry)
         case .task(let task): taskRow(task)
         case .snippet(let snippet): snippetRow(snippet)
+        case .note(let note): noteRow(note)
         case .answer(let answer): AnswerCard(answer: answer, clipboard: clipboard, colors: colors)
+        }
+    }
+
+    private func noteCard(_ note: Note) -> some View {
+        NoteCard(note: note, store: notes, clipboard: clipboard, onEdit: { onPrompt(IslandPrompt(kind: .note(note))) })
+    }
+
+    private func noteRow(_ note: Note) -> some View {
+        ListRow(symbol: "note.text", title: note.title, subtitle: note.summary.isEmpty ? note.updatedAt.formatted(.relative(presentation: .named)) : note.summary) {
+            onPrompt(IslandPrompt(kind: .note(note)))
+        }
+        .contextMenu {
+            Button("Edit…") { onPrompt(IslandPrompt(kind: .note(note))) }
+            Button("Copy as Markdown") { clipboard.copy(text: note.text) }
+            Divider()
+            Button("Delete", role: .destructive) { notes.delete(note) }
         }
     }
 
@@ -357,6 +376,7 @@ struct FloatingPanelView: View {
         case .colors: colors.items.count
         case .tasks: tasksStore.tasks.filter { $0.status != .complete }.count
         case .snippets: snippets.items.count
+        case .notes: notes.notes.count
         }
         return Button {
             withAnimation(.easeOut(duration: 0.15)) { tab = value }
@@ -400,12 +420,14 @@ struct FloatingPanelView: View {
     private var content: some View {
         switch tab {
         case .all:
-            list(IslandSearch.everything(library: library, clipboard: clipboard, assets: assets, colors: colors, snippets: snippets).filter(preferences.shows),
+            list(IslandSearch.everything(library: library, clipboard: clipboard, assets: assets, colors: colors, snippets: snippets, notes: notes).filter(preferences.shows),
                  date: \.date, empty: "Nothing yet — capture, copy or drop something", card: hitCard, row: hitRow)
         case .tasks:
             IslandTasksView(store: tasksStore, onPrompt: onPrompt, onShowTask: onShowTask)
         case .snippets:
             list(snippets.items, date: \.createdAt, empty: "No snippets yet — make one from a clipboard entry or an asset, or with New in the island", card: snippetCard, row: snippetRow)
+        case .notes:
+            list(notes.notes, date: \.updatedAt, empty: "No notes yet — ⌥⇧M opens one anywhere", card: noteCard, row: noteRow)
         case .captures:
             list(library.items, date: \.createdAt, pinned: \.pinned, empty: "No captures yet", card: captureCard, row: captureRow)
         case .clipboard:

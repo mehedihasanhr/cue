@@ -27,6 +27,7 @@ enum MainMenu {
             ("Capture Text", #selector(AppDelegate.captureText(_:))),
             ("Pick Color", #selector(AppDelegate.pickColor(_:))),
             ("Quick Task…", #selector(AppDelegate.quickTask(_:))),
+            ("Quick Note…", #selector(AppDelegate.quickNote(_:))),
             ("Clipboard List…", #selector(AppDelegate.showClipboardPanel(_:))),
             ("Command Palette…", #selector(AppDelegate.showCommandPalette(_:))),
         ] {

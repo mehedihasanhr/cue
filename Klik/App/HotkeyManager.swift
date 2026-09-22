@@ -19,6 +19,7 @@ struct Hotkey: Hashable, Codable {
     static let captureText = Hotkey(keyCode: UInt32(kVK_ANSI_T), modifiers: UInt32(optionKey | shiftKey))
     static let pickColor = Hotkey(keyCode: UInt32(kVK_ANSI_P), modifiers: UInt32(optionKey | shiftKey))
     static let quickTask = Hotkey(keyCode: UInt32(kVK_ANSI_N), modifiers: UInt32(optionKey | shiftKey))
+    static let quickNote = Hotkey(keyCode: UInt32(kVK_ANSI_M), modifiers: UInt32(optionKey | shiftKey))
     static let clipboardPanel = Hotkey(keyCode: UInt32(kVK_ANSI_C), modifiers: UInt32(cmdKey | shiftKey))
     static let commandPalette = Hotkey(keyCode: UInt32(kVK_Space), modifiers: UInt32(optionKey | shiftKey))
     static let pasteNext = Hotkey(keyCode: UInt32(kVK_ANSI_V), modifiers: UInt32(cmdKey | shiftKey))
@@ -107,6 +108,8 @@ enum HotkeyID: UInt32, CaseIterable {
     case pickColor
     /// A floating "new task" form at the pointer.
     case quickTask
+    /// A floating note at the pointer.
+    case quickNote
     /// The clipboard history alone, as a keyboard-driven list.
     case clipboardPanel
     /// One list over everything: actions, answers, every item.
@@ -120,7 +123,7 @@ enum HotkeyID: UInt32, CaseIterable {
     case cancelCapture = 99
 
     /// The shortcuts a user can rebind in Settings.
-    static let configurable: [HotkeyID] = [.commandPalette, .fullScreen, .region, .window, .scrolling, .captureText, .pickColor, .quickTask, .showPanel, .clipboardPanel, .pasteNext]
+    static let configurable: [HotkeyID] = [.commandPalette, .fullScreen, .region, .window, .scrolling, .captureText, .pickColor, .quickTask, .quickNote, .showPanel, .clipboardPanel, .pasteNext]
 
     var defaultHotkey: Hotkey {
         switch self {
@@ -131,6 +134,7 @@ enum HotkeyID: UInt32, CaseIterable {
         case .captureText: .captureText
         case .pickColor: .pickColor
         case .quickTask: .quickTask
+        case .quickNote: .quickNote
         case .clipboardPanel: .clipboardPanel
         case .commandPalette: .commandPalette
         case .pasteNext: .pasteNext
@@ -149,6 +153,7 @@ enum HotkeyID: UInt32, CaseIterable {
         case .captureText: "Capture text (OCR)"
         case .pickColor: "Pick a color"
         case .quickTask: "Quick task"
+        case .quickNote: "Quick note"
         case .clipboardPanel: "Clipboard list"
         case .commandPalette: "Command palette"
         case .pasteNext: "Paste next (paste stack)"

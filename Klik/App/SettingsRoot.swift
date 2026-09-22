@@ -6,14 +6,14 @@ import SwiftUI
 /// The pages of the Settings window, in sidebar order.
 enum SettingsSection: String, CaseIterable, Identifiable {
     case general, appearance, shortcuts, sharing, permissions, about
-    case island, capture, editor, clipboard, snippets, colors, time
+    case island, capture, editor, clipboard, snippets, notes, colors, time
 
     var id: String { rawValue }
 
     /// The sidebar shows the app-wide pages first, then a group per feature.
     static let groups: [[SettingsSection]] = [
         [.general, .appearance, .shortcuts, .sharing, .permissions, .about],
-        [.island, .capture, .editor, .clipboard, .snippets, .colors, .time],
+        [.island, .capture, .editor, .clipboard, .snippets, .notes, .colors, .time],
     ]
 
     var title: String {
@@ -29,6 +29,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .editor: "Editor"
         case .clipboard: "Clipboard"
         case .snippets: "Snippets"
+        case .notes: "Notes"
         case .colors: "Colors"
         case .time: "Time"
         }
@@ -48,6 +49,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .editor: "What every new annotation starts as"
         case .clipboard: "What Klik remembers of what you copy"
         case .snippets: "Text that expands as you type"
+        case .notes: "Quick notes, where they live, and where they can be sent"
         case .colors: "The color picker and its formats"
         case .time: "The time on the island and prayer times"
         }
@@ -66,6 +68,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .editor: "paintbrush.pointed.fill"
         case .clipboard: "doc.on.clipboard.fill"
         case .snippets: "text.badge.checkmark"
+        case .notes: "note.text"
         case .colors: "eyedropper.halffull"
         case .time: "clock.fill"
         }
@@ -84,6 +87,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .editor: .purple
         case .clipboard: .teal
         case .snippets: .mint
+        case .notes: .yellow
         case .colors: .red
         case .time: .cyan
         }
@@ -100,6 +104,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .about: ["version", "build", "credits", "stackrover", "copyright", "website"]
         case .island: ["dynamic island", "notch", "pill", "panel", "position", "hover", "click", "delay", "open", "close", "background", "flash", "status", "animation", "tab"]
         case .snippets: ["snippet", "expand", "keyword", "trigger", "text", "type", "accessibility"]
+        case .notes: ["note", "quick note", "markdown", "folder", "icloud", "obsidian", "vault", "apple notes", "notion", "sync"]
         case .colors: ["color", "picker", "format", "hex", "rgb", "hsl", "swift", "css"]
         case .capture: ["cursor", "pointer", "mouse", "sound", "shutter", "audio", "full screen"]
         case .editor: ["annotation", "color", "stroke", "width", "shape", "arrow", "fill", "text", "font", "marker", "highlighter", "blur", "pixelate", "counter", "defaults"]
@@ -221,6 +226,7 @@ struct SettingsRootView: View {
         case .editor: EditorSettingsView()
         case .clipboard: ClipboardSettingsView()
         case .snippets: SnippetSettingsView()
+        case .notes: NotesSettingsView()
         case .colors: ColorSettingsView()
         case .time: TimeSettingsView()
         }

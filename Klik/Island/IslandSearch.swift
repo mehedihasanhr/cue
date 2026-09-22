@@ -8,6 +8,7 @@ enum IslandItem: Identifiable {
     case color(ColorEntry)
     case task(TaskItem)
     case snippet(Snippet)
+    case note(Note)
     /// Worked out from the query itself (a color's formats, a sum); only in search results.
     case answer(QuickAnswer)
 
@@ -19,6 +20,7 @@ enum IslandItem: Identifiable {
         case .color(let entry): entry.id.uuidString
         case .task(let task): task.id.uuidString
         case .snippet(let snippet): snippet.id.uuidString
+        case .note(let note): "note.\(note.id)"
         case .answer(let answer): "answer.\(answer.id)"
         }
     }
@@ -31,6 +33,7 @@ enum IslandItem: Identifiable {
         case .color: .colors
         case .task: .tasks
         case .snippet: .snippets
+        case .note: .notes
         case .answer: .all
         }
     }
@@ -43,6 +46,7 @@ enum IslandItem: Identifiable {
         case .color(let entry): entry.createdAt
         case .task(let task): task.createdAt
         case .snippet(let snippet): snippet.createdAt
+        case .note(let note): note.updatedAt
         case .answer: .now
         }
     }
@@ -57,18 +61,19 @@ enum IslandSearch {
     /// Everything, newest first, for the All tab. Tasks stay on their own tab;
     /// search still finds them.
     static func everything(library: CaptureLibrary, clipboard: ClipboardHistory, assets: AssetStore,
-                           colors: ColorStore, snippets: SnippetStore) -> [IslandItem] {
+                           colors: ColorStore, snippets: SnippetStore, notes: NoteStore) -> [IslandItem] {
         var items: [IslandItem] = []
         items += library.items.map(IslandItem.capture)
         items += clipboard.items.map(IslandItem.clipboard)
         items += assets.items.map(IslandItem.asset)
         items += colors.items.map(IslandItem.color)
         items += snippets.items.map(IslandItem.snippet)
+        items += notes.notes.map(IslandItem.note)
         return items.sorted { $0.date > $1.date }
     }
 
     static func hits(for query: String, library: CaptureLibrary, clipboard: ClipboardHistory, assets: AssetStore,
-                     colors: ColorStore, tasks: TaskStore, snippets: SnippetStore) -> [IslandItem] {
+                     colors: ColorStore, tasks: TaskStore, snippets: SnippetStore, notes: NoteStore) -> [IslandItem] {
         let terms = query.split(whereSeparator: \.isWhitespace).map(String.init)
         guard !terms.isEmpty else { return [] }
         func matches(_ fields: [String?]) -> Bool {
@@ -81,6 +86,7 @@ enum IslandSearch {
         hits += colors.items.filter { entry in matches([entry.name] + ColorFormat.allCases.map { $0.string(for: entry.color) }) }.map(IslandItem.color)
         hits += tasks.tasks.filter { matches([$0.text, tasks.project($0.projectID)?.name, $0.status.title, $0.priority.title]) }.map(IslandItem.task)
         hits += snippets.items.filter { matches([$0.keyword, $0.name, $0.text]) }.map(IslandItem.snippet)
+        hits += notes.notes.filter { matches([$0.title, $0.text]) }.map(IslandItem.note)
         return hits
     }
 
@@ -100,6 +106,7 @@ extension AppPreferences {
     func shows(_ tab: IslandTab) -> Bool {
         switch tab {
         case .snippets: snippetsEnabled
+        case .notes: notesEnabled
         case .colors: colorPickerEnabled
         default: true
         }

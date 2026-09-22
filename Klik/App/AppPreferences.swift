@@ -44,8 +44,38 @@ final class AppPreferences {
         static let prayerKnownLongitude = "prayer.knownLongitude"
         static let prayerAnnouncements = "prayer.announcements"
         static let prayerAdjustments = "prayer.adjustments"
+        static let notesEnabled = "notes.enabled"
+        static let notesObsidianVault = "notes.obsidianVault"
+        static let notesAppleNotesFolder = "notes.appleNotesFolder"
+        static let notesNotionParent = "notes.notionParent"
         static let snippetsEnabled = "snippets.enabled"
         static let snippetPrefix = "snippets.prefix"
+    }
+
+    // MARK: Notes
+
+    var notesEnabled: Bool {
+        didSet { defaults.set(notesEnabled, forKey: Key.notesEnabled) }
+    }
+
+    /// The Obsidian vault "Send to Obsidian" writes into (empty: the last one opened).
+    var notesObsidianVault: String {
+        didSet { defaults.set(notesObsidianVault, forKey: Key.notesObsidianVault) }
+    }
+
+    /// The Apple Notes folder new notes go in (empty: the account's default).
+    var notesAppleNotesFolder: String {
+        didSet { defaults.set(notesAppleNotesFolder, forKey: Key.notesAppleNotesFolder) }
+    }
+
+    /// The Notion page or database new pages go under (an id or its URL).
+    var notesNotionParent: String {
+        didSet { defaults.set(notesNotionParent, forKey: Key.notesNotionParent) }
+    }
+
+    /// The Notion integration's secret, in the Keychain.
+    var notesNotionToken: String {
+        didSet { Keychain.set(notesNotionToken, for: "notes.notion.token") }
     }
 
     // MARK: Snippets
@@ -399,6 +429,11 @@ final class AppPreferences {
             prayerKnownPlace = nil
         }
         prayerAnnouncements = defaults.object(forKey: Key.prayerAnnouncements) as? Bool ?? true
+        notesEnabled = defaults.object(forKey: Key.notesEnabled) as? Bool ?? true
+        notesObsidianVault = defaults.string(forKey: Key.notesObsidianVault) ?? ""
+        notesAppleNotesFolder = defaults.string(forKey: Key.notesAppleNotesFolder) ?? "Klik"
+        notesNotionParent = defaults.string(forKey: Key.notesNotionParent) ?? ""
+        notesNotionToken = Keychain.get("notes.notion.token") ?? ""
         snippetsEnabled = defaults.object(forKey: Key.snippetsEnabled) as? Bool ?? true
         snippetPrefix = defaults.string(forKey: Key.snippetPrefix) ?? ";"
         let stored = defaults.dictionary(forKey: Key.prayerAdjustments) as? [String: Int] ?? [:]

@@ -338,6 +338,94 @@ struct SnippetSettingsView: View {
     }
 }
 
+// MARK: - Notes
+
+struct NotesSettingsView: View {
+    @Environment(AppPreferences.self) private var preferences
+    @Environment(NoteStore.self) private var notes: NoteStore?
+    @State private var notionCheck: String?
+    @State private var checking = false
+
+    var body: some View {
+        @Bindable var preferences = preferences
+        SettingsPane(.notes, enabled: $preferences.notesEnabled) {
+            SettingsGroup("Where notes live", footer: "One Markdown file per note. A folder in iCloud Drive syncs them; an Obsidian vault shows them there.") {
+                if let notes {
+                    SettingsRow(notes.folderIsCustom ? notes.folderURL.lastPathComponent : "Klik's own folder",
+                                subtitle: notes.folderURL.path(percentEncoded: false), symbol: "folder", tint: .yellow) {
+                        HStack(spacing: 8) {
+                            Button("Choose…") { notes.chooseFolder() }
+                            Button(action: { notes.revealFolder() }) {
+                                Image(systemName: "arrow.up.forward.app")
+                            }
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(.secondary)
+                            .help("Reveal in Finder")
+                        }
+                    }
+                    if notes.folderIsCustom {
+                        SettingsRow("Default folder") {
+                            Button("Use Default Folder") { notes.useDefaultFolder() }
+                        }
+                    }
+                }
+            }
+            .disabled(!preferences.notesEnabled)
+
+            SettingsGroup("Obsidian") {
+                SettingsRow("Vault name") {
+                    TextField("Vault", text: $preferences.notesObsidianVault, prompt: Text("Last opened"))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 220)
+                }
+            }
+            .disabled(!preferences.notesEnabled)
+
+            SettingsGroup("Apple Notes", footer: "macOS asks once to let Klik control Notes.") {
+                SettingsRow("Folder") {
+                    TextField("Folder", text: $preferences.notesAppleNotesFolder, prompt: Text("Notes"))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 220)
+                }
+            }
+            .disabled(!preferences.notesEnabled)
+
+            SettingsGroup("Notion", footer: "An internal integration's secret, shared with the page or database. Kept in your Keychain.") {
+                SettingsRow("Integration secret") {
+                    SecureField("Secret", text: $preferences.notesNotionToken, prompt: Text("ntn_…"))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 300)
+                }
+                SettingsRow("Page or database", subtitle: "Its link, or its id.") {
+                    TextField("Parent", text: $preferences.notesNotionParent, prompt: Text("https://www.notion.so/…"))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 300)
+                }
+                SettingsRow("Connection", subtitle: notionCheck) {
+                    Button(checking ? "Checking…" : "Check") { checkNotion() }
+                        .disabled(checking || preferences.notesNotionToken.isEmpty)
+                }
+            }
+            .disabled(!preferences.notesEnabled)
+        }
+    }
+
+    private func checkNotion() {
+        checking = true
+        notionCheck = nil
+        let token = preferences.notesNotionToken
+        Task { @MainActor in
+            do {
+                let name = try await NoteSharing.notionCheck(token: token)
+                notionCheck = "Connected as \(name)"
+            } catch {
+                notionCheck = error.localizedDescription
+            }
+            checking = false
+        }
+    }
+}
+
 // MARK: - Colors
 
 struct ColorSettingsView: View {
@@ -1012,6 +1100,7 @@ struct ShortcutSettingsView: View {
         case .captureText: "text.viewfinder"
         case .pickColor: "eyedropper"
         case .quickTask: "checklist"
+        case .quickNote: "note.text"
         case .clipboardPanel: "doc.on.clipboard"
         case .commandPalette: "command"
         case .pasteNext: "square.stack.3d.down.right"
@@ -1029,6 +1118,7 @@ struct ShortcutSettingsView: View {
         case .captureText: .green
         case .pickColor: .red
         case .quickTask: .mint
+        case .quickNote: .yellow
         case .clipboardPanel: .purple
         case .commandPalette: .brand
         case .pasteNext: .teal

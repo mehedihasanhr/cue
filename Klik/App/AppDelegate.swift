@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let groups = GroupStore()
     let tasks = TaskStore()
     let snippets = SnippetStore()
+    let notes = NoteStore()
     private var snippetExpander: SnippetExpander?
     /// The app a snippet keyword was typed in, while its blanks are being filled.
     private var snippetFrontField: FrontField?
@@ -88,6 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         shortcuts.setAction(for: .captureText) { [weak self] in self?.coordinator.captureText(fromMenu: false) }
         shortcuts.setAction(for: .pickColor) { [weak self] in self?.pickColor(nil) }
         shortcuts.setAction(for: .quickTask) { [weak self] in self?.quickTask(nil) }
+        shortcuts.setAction(for: .quickNote) { [weak self] in self?.quickNote(nil) }
         shortcuts.setAction(for: .clipboardPanel) { [weak self] in self?.showClipboardPanel(nil) }
         shortcuts.setAction(for: .commandPalette) { [weak self] in self?.showCommandPalette(nil) }
         shortcuts.setAction(for: .pasteNext) { [weak self] in self?.pasteNext() }
@@ -182,6 +184,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        // Diagnostics: `--env KLIK_DEBUG_NOTE_SCRIPT=1` compiles (does not run) the Apple Notes
+        // script for a sample note and logs the outcome.
+        if ProcessInfo.processInfo.environment["KLIK_DEBUG_NOTE_SCRIPT"] == "1" {
+            let sample = Note(id: "Sample", text: "Sample \"note\"\n\n- one **two**\n- [ ] three\n\n> quote", createdAt: .now, updatedAt: .now)
+            for folder in ["Klik", ""] {
+                var error: NSDictionary?
+                let compiled = NSAppleScript(source: NoteSharing.appleNotesScript(sample, folder: folder))?.compileAndReturnError(&error) ?? false
+                Log.app.notice("Notes script (folder \(folder.isEmpty ? "none" : folder, privacy: .public)): \(compiled ? "compiles" : "does not compile", privacy: .public) \(String(describing: error ?? [:]), privacy: .public)")
+            }
+        }
         // Diagnostics: `--env KLIK_DEBUG_EDIT_CLIPBOARD=1` opens the newest clipboard image in the editor.
         if ProcessInfo.processInfo.environment["KLIK_DEBUG_EDIT_CLIPBOARD"] == "1" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
@@ -189,11 +201,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.editClipboardImage(item)
             }
         }
-        // Diagnostics: `--env KLIK_DEBUG_TASK_SHOT=1` opens the quick task and writes a
-        // picture of it (the screen around it) to Pictures/Klik/_task.png.
-        if ProcessInfo.processInfo.environment["KLIK_DEBUG_TASK_SHOT"] == "1" {
+        // Diagnostics: `--env KLIK_DEBUG_TASK_SHOT=1` opens the quick task (`=note`: the
+        // quick note) and writes a picture of it (the screen around it) to Pictures/Klik/_task.png.
+        if let shot = ProcessInfo.processInfo.environment["KLIK_DEBUG_TASK_SHOT"], shot == "1" || shot == "note" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
-                self?.quickTask(nil)
+                if shot == "note" { self?.quickNote(nil) } else { self?.quickTask(nil) }
                 // KLIK_DEBUG_TASK_TEXT is typed into it first (a "/" brings the list up).
                 if let typed = ProcessInfo.processInfo.environment["KLIK_DEBUG_TASK_TEXT"] {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
@@ -358,6 +370,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let snippet = snippets.add(keyword: keyword, name: name, text: text) {
                 FeedbackHUD.show("Snippet saved", symbol: "text.badge.checkmark", subtitle: "Type \(snippet.keyword) anywhere")
             }
+        case .newNote(let text):
+            guard let text else { quickNote(nil); return }
+            if let note = notes.add(text: text) {
+                FeedbackHUD.show("Note saved", symbol: "note.text", duration: .seconds(1.2), subtitle: note.title)
+            }
         case .copy(let text):
             clipboard.copy(text: text)
             FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: String(text.prefix(60)))
@@ -429,7 +446,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 island.place()
             } else {
                 island = IslandController(library: library, clipboard: clipboard, assets: assets, colors: colors, groups: groups, tasks: tasks, snippets: snippets,
-                                          actions: historyActions, preferences: preferences, clock: prayerClock, focus: focusTimer)
+                                          notes: notes, actions: historyActions, preferences: preferences, clock: prayerClock, focus: focusTimer)
                 island?.onSnippetFilled = { [weak self] snippet, values in self?.snippetFilled(snippet, values: values) }
                 library.warmThumbnails()
                 FeedbackHUD.island = { [weak self] status in self?.island?.showStatus(status) ?? false }
@@ -477,6 +494,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onShowTask: { [weak self] task in self?.floatingPanel?.close(); self?.island?.showTask(task) }
         )
         .environment(preferences)
+        .environment(notes)
         let panel = FloatingPanelWindow(rootView: content)
         floatingPanel = panel
         panel.show(at: NSEvent.mouseLocation, position: preferences.panelPosition)
@@ -554,6 +572,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                          close: { [weak self] in self?.commandPalette?.close() },
                                          onNeedsAccessibility: { [weak self] in self?.showOnboarding(for: .accessibility) })
             .environment(preferences)
+            .environment(notes)
         let panel = FloatingPanelWindow(rootView: content, size: CommandPaletteView.size)
         commandPalette = panel
         panel.show(at: NSEvent.mouseLocation, position: preferences.panelPosition)
@@ -582,6 +601,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case .pickColor: pickColor(nil)
                 case .newTask: quickTask(nil)
                 case .newSnippet: snippetPanel(IslandPrompt(kind: .snippet(nil, initialText: "", assetID: nil)))
+                case .newNote: quickNote(nil)
                 case .clipboardList: showClipboardPanel(nil)
                 case .klikPanel: toggleHistoryAtPointer()
                 case .clock: island?.showClock() ?? showSettings(nil)
@@ -612,6 +632,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case .snippet(let snippet):
                     if let island { island.prompt(IslandPrompt(kind: .snippet(snippet, initialText: "", assetID: nil))) }
                     else { snippetPanel(IslandPrompt(kind: .snippet(snippet, initialText: "", assetID: nil))) }
+                case .note(let note): notePanel(IslandPrompt(kind: .note(note)))
                 case .answer: break
                 }
             },
@@ -642,6 +663,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .snippet(let snippet):
             clipboard.copy(text: SnippetTemplate.expand(snippet.text, values: [:], clipboard: NSPasteboard.general.string(forType: .string)))
             snippets.recordUse(snippet)
+        case .note(let note): clipboard.copy(text: note.text)
         case .answer(let answer): clipboard.copy(text: answer.value)
         }
     }
@@ -658,6 +680,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             confirmWithAlert(prompt, deletion)
         } else if case .snippet = prompt.kind {
             snippetPanel(prompt)
+        } else if case .note = prompt.kind {
+            notePanel(prompt)
         }
     }
 
@@ -881,6 +905,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                          subtitle: ColorFormat.oklch.string(for: entry.color), swatch: entry.color)
     }
 
+    /// A floating note at the pointer (⌥⇧M by default): jot it down, ⌘↩ saves it
+    /// to the notes folder; Send puts it in Obsidian, Apple Notes or Notion too.
+    @objc func quickNote(_ sender: Any?) {
+        if let panel = quickTaskPanel, panel.isVisible, isNotePanel {
+            panel.close()
+            return
+        }
+        notePanel(IslandPrompt(kind: .note(nil)))
+    }
+
+    /// Settings › Notes, from a note form's Send menu.
+    @objc func showNotesSettings(_ sender: Any?) {
+        showSettings(nil)
+        settingsWindow?.present(.notes)
+    }
+
+    private var isNotePanel = false
+
+    /// The note form (new or an edit) as a floating window at the pointer.
+    private func notePanel(_ prompt: IslandPrompt) {
+        closeHistory()
+        quickTaskPanel?.close()
+        let form = NoteFormRow(prompt: prompt, store: notes, style: .floating) { [weak self] answer in
+            guard let self else { return }
+            if let answer, answer.name.isEmpty, case .note(let existing) = prompt.kind {
+                let saved = existing.map { notes.update($0, text: answer.text) } ?? notes.add(text: answer.text)
+                if let saved { FeedbackHUD.show(existing == nil ? "Note saved" : "Note updated", symbol: "note.text", duration: .seconds(1.2), subtitle: saved.title) }
+            }
+            quickTaskPanel?.close()
+        }
+        .environment(preferences)
+        let panel = QuickTaskPanel(form: form)
+        quickTaskPanel = panel
+        isNotePanel = true
+        // Island cards pasted while the note is open land in its text.
+        clipboard.openEditor = { [weak self] in
+            guard let panel = self?.quickTaskPanel, panel.isVisible else { return nil }
+            return panel.editor
+        }
+        panel.show(at: NSEvent.mouseLocation, position: preferences.panelPosition)
+    }
+
     /// A floating "new task" form at the pointer (⌥/ by default).
     @objc func quickTask(_ sender: Any?) {
         if let panel = quickTaskPanel, panel.isVisible {
@@ -888,6 +954,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         closeHistory()
+        isNotePanel = false
         let panel = QuickTaskPanel(store: tasks) { [weak self] answer in
             guard let self, let answer else { return }
             tasks.addTask(text: answer.text, in: answer.projectID, priority: answer.priority)
@@ -904,7 +971,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func showSettings(_ sender: Any?) {
         if settingsWindow == nil {
-            let controller = SettingsWindowController(model: model, shortcuts: shortcuts, library: library, clipboard: clipboard, preferences: preferences, clock: prayerClock, share: share, sync: syncFolder)
+            let controller = SettingsWindowController(model: model, shortcuts: shortcuts, library: library, clipboard: clipboard, preferences: preferences, clock: prayerClock, share: share, sync: syncFolder, notes: notes)
             controller.onClose = { [weak self] in
                 self?.settingsWindow = nil
                 self?.shortcuts.isRecording = false

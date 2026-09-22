@@ -4,7 +4,7 @@ import SwiftUI
 /// Something the palette can do without an item.
 enum PaletteCommand: CaseIterable, Identifiable {
     case captureArea, captureWindow, captureFullScreen, captureScrolling, captureText, pickColor
-    case newTask, newSnippet, clipboardList, klikPanel, clock, settings, unghostPins
+    case newTask, newNote, newSnippet, clipboardList, klikPanel, clock, settings, unghostPins
 
     var id: Self { self }
 
@@ -17,6 +17,7 @@ enum PaletteCommand: CaseIterable, Identifiable {
         case .captureText: "Capture text (OCR)"
         case .pickColor: "Pick a color"
         case .newTask: "New task"
+        case .newNote: "New note"
         case .newSnippet: "New snippet"
         case .clipboardList: "Clipboard list"
         case .klikPanel: "Klik panel"
@@ -35,6 +36,7 @@ enum PaletteCommand: CaseIterable, Identifiable {
         case .captureText: "text.viewfinder"
         case .pickColor: "eyedropper"
         case .newTask: "checklist"
+        case .newNote: "note.text"
         case .newSnippet: "text.badge.plus"
         case .clipboardList: "doc.on.clipboard"
         case .klikPanel: "cursorarrow.rays"
@@ -54,6 +56,7 @@ enum PaletteCommand: CaseIterable, Identifiable {
         case .captureText: "ocr read copy text"
         case .pickColor: "eyedropper picker"
         case .newTask: "todo add"
+        case .newNote: "jot memo markdown obsidian notion"
         case .newSnippet: "text expander template"
         case .clipboardList: "history paste"
         case .klikPanel: "library history"
@@ -73,6 +76,7 @@ enum PaletteCommand: CaseIterable, Identifiable {
         case .captureText: .green
         case .pickColor: .orange
         case .newTask: .mint
+        case .newNote: .orange
         case .newSnippet: .yellow
         case .clipboardList: .purple
         case .klikPanel: .cyan
@@ -92,6 +96,7 @@ enum PaletteCommand: CaseIterable, Identifiable {
         case .captureText: .captureText
         case .pickColor: .pickColor
         case .newTask: .quickTask
+        case .newNote: .quickNote
         case .clipboardList: .clipboardPanel
         case .klikPanel: .showPanel
         default: nil
@@ -129,6 +134,7 @@ struct CommandPaletteView: View {
     let snippets: SnippetStore
     let shortcuts: ShortcutController
     let actions: PaletteActions
+    @Environment(NoteStore.self) private var notes
     var close: () -> Void = {}
     var onNeedsAccessibility: () -> Void = {}
 
@@ -172,7 +178,7 @@ struct CommandPaletteView: View {
             terms.allSatisfy { "\(command.title) \(command.keywords)".localizedCaseInsensitiveContains($0) }
         }.map(Row.command)
         let items = Array(IslandSearch.hits(for: query, library: library, clipboard: clipboard, assets: assets,
-                                            colors: colors, tasks: tasks, snippets: snippets)
+                                            colors: colors, tasks: tasks, snippets: snippets, notes: notes)
             .filter { if case .answer = $0 { false } else { true } }.prefix(40)).map(Row.item)
         return [
             Section(title: "Answers", rows: answers),
@@ -270,7 +276,7 @@ struct CommandPaletteView: View {
         .background { keyboardShortcuts(rows) }
         .foregroundStyle(.white)
         .onAppear {
-            recent = Array(IslandSearch.everything(library: library, clipboard: clipboard, assets: assets, colors: colors, snippets: snippets).prefix(8))
+            recent = Array(IslandSearch.everything(library: library, clipboard: clipboard, assets: assets, colors: colors, snippets: snippets, notes: notes).filter(preferences.shows).prefix(8))
             DispatchQueue.main.async { focused = true }
         }
     }
@@ -296,7 +302,7 @@ struct CommandPaletteView: View {
             let open: String? = switch item {
             case .capture: "edit · ⌘P pin · ⌘L link"
             case .asset: "open"
-            case .snippet: "edit"
+            case .snippet, .note: "edit"
             case .task: nil
             case .clipboard, .color, .answer: nil
             }
@@ -376,6 +382,7 @@ struct CommandPaletteView: View {
             case .color: .white
             case .task(let task): task.status.color
             case .snippet: .yellow
+            case .note: .orange
             case .answer: Color.brand
             }
         }
@@ -416,6 +423,8 @@ struct CommandPaletteView: View {
                 Image(systemName: task.status.symbol).font(.system(size: 13)).foregroundStyle(task.status.color)
             case .snippet:
                 Image(systemName: "text.badge.checkmark").font(.system(size: 13)).foregroundStyle(.white.opacity(0.7))
+            case .note:
+                Image(systemName: "note.text").font(.system(size: 13)).foregroundStyle(.white.opacity(0.7))
             case .answer(let answer):
                 Image(systemName: answer.symbol).font(.system(size: 13)).foregroundStyle(.white.opacity(0.8))
             }
@@ -434,6 +443,7 @@ struct CommandPaletteView: View {
             case .color(let entry): entry.name ?? preferences.colorFormat.string(for: entry.color)
             case .task(let task): task.title
             case .snippet(let snippet): snippet.keyword + (snippet.name.isEmpty ? "" : " · \(snippet.name)")
+            case .note(let note): note.title
             case .answer(let answer): answer.value
             }
         }
@@ -452,6 +462,7 @@ struct CommandPaletteView: View {
             case .color(let entry): return "Color · \(entry.name == nil ? "" : preferences.colorFormat.string(for: entry.color) + " · ")\(when)"
             case .task(let task): return "Task · \(task.status.title) · \(task.priority.title)"
             case .snippet(let snippet): return "Snippet · " + snippet.text.split(whereSeparator: \.isNewline).first.map(String.init).map { String($0.prefix(60)) }.orEmpty
+            case .note(let note): return "Note · \(when)" + (note.summary.isEmpty ? "" : " · " + String(note.summary.prefix(60)))
             case .answer(let answer): return answer.label
             }
         }

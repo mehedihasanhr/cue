@@ -13,6 +13,8 @@ enum URLCommand: Equatable {
     case captureArea, captureWindow, captureFullScreen, captureScrolling, captureText, pickColor
     case newTask(title: String?, notes: String, priority: TaskPriority, project: String?)
     case addSnippet(keyword: String, name: String, text: String)
+    /// A note from `text` (nil: the quick note form).
+    case newNote(text: String?)
     case copy(String)
     case palette, clipboard, panel, clock, settings
 
@@ -36,6 +38,8 @@ enum URLCommand: Equatable {
         case ["snippet", "add"], ["snippet", "new"], ["snippet"]:
             guard let keyword = query["keyword"], !keyword.isEmpty, let text = query["text"], !text.isEmpty else { return nil }
             self = .addSnippet(keyword: keyword, name: query["name"] ?? "", text: text)
+        case ["note", "new"], ["note"], ["note", "add"]:
+            self = .newNote(text: query["text"].flatMap { $0.isEmpty ? nil : $0 })
         case ["clipboard", "copy"], ["copy"]:
             guard let text = query["text"] else { return nil }
             self = .copy(text)

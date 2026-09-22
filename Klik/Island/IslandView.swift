@@ -168,6 +168,7 @@ struct IslandView: View {
     let actions: HistoryActions
     @Environment(PrayerClock.self) private var clock: PrayerClock?
     @Environment(AppPreferences.self) private var preferences
+    @Environment(NoteStore.self) private var notes
 
     /// Opening overshoots a touch; closing settles without a bounce. With Reduce
     /// Motion on, everything is a short ease instead.
@@ -262,6 +263,9 @@ struct IslandView: View {
                         .frame(height: IslandGeometry.formContentHeight)
                 } else if case .fill(let snippet) = prompt.kind {
                     SnippetFillRow(snippet: snippet) { answer in model.onPromptFinished(prompt, answer) }
+                        .frame(height: IslandGeometry.formContentHeight)
+                } else if case .note = prompt.kind {
+                    NoteFormRow(prompt: prompt, store: notes) { answer in model.onPromptFinished(prompt, answer) }
                         .frame(height: IslandGeometry.formContentHeight)
                 } else if prompt.isForm {
                     TaskFormRow(prompt: prompt, store: tasks) { answer in model.onPromptFinished(prompt, answer) }
@@ -456,6 +460,8 @@ struct IslandPrompt: Hashable {
         case snippet(Snippet?, initialText: String, assetID: UUID?)
         /// Fill a snippet's blanks before it is pasted.
         case fill(Snippet)
+        /// A new note, or an edit of one.
+        case note(Note?)
         /// A new group for captures, clipboard entries or colors (with an item to
         /// put in it), or a rename of one.
         case group(GroupKind, assign: GroupAssignment?, editing: ItemGroup?)
@@ -481,7 +487,7 @@ struct IslandPrompt: Hashable {
 
     var isForm: Bool {
         switch kind {
-        case .task, .snippet, .fill: true
+        case .task, .snippet, .fill, .note: true
         default: false
         }
     }
@@ -512,6 +518,7 @@ struct IslandPrompt: Hashable {
         case .group(_, _, let editing): return editing == nil ? "New group" : "Rename group"
         case .snippet(let snippet, _, let asset): return snippet == nil ? (asset == nil ? "New snippet" : "New snippet from this file") : "Edit snippet"
         case .fill(let snippet): return "Fill in \(snippet.title)"
+        case .note(let note): return note == nil ? "New note" : "Edit note"
         case .rename(let detail):
             switch detail {
             case .capture: return "Rename capture"
@@ -528,7 +535,7 @@ struct IslandPrompt: Hashable {
         case .group: "Group name"
         case .task: "Task title"
         case .rename: "Name"
-        case .delete, .snippet, .fill: ""
+        case .delete, .snippet, .fill, .note: ""
         }
     }
 
@@ -539,6 +546,7 @@ struct IslandPrompt: Hashable {
         case .rename: "pencil"
         case .delete: "trash"
         case .snippet, .fill: "text.badge.plus"
+        case .note: "note.text"
         }
     }
 }
