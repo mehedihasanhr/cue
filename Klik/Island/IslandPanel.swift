@@ -409,6 +409,7 @@ struct IslandPanel: View {
             .modifier(IdealWidth { tabRowWidth = $0; reportWidth() })
             }
 
+            // The cards a little further from the tabs than the rows above are from each other.
             ZStack {
                 if searching {
                     searchResults
@@ -486,6 +487,7 @@ struct IslandPanel: View {
                 }
             }
             .frame(height: Self.rowHeight) // the same whether a tab has cards or not
+            .padding(.top, 6)
             .background { keyboardShortcuts }
             .onChange(of: tab) { _, _ in
                 detail = nil
@@ -499,9 +501,9 @@ struct IslandPanel: View {
             // The groups under the cards, a footer to the tab: set off from the cards,
             // close to the edge.
             if let kind = groupKind {
-                groupStrip(kind).padding(.top, 6)
+                groupStrip(kind).padding(.top, 12)
             } else if tab == .all {
-                allStrip.padding(.top, 6)
+                allStrip.padding(.top, 12)
             }
         }
         .padding(.horizontal, Self.horizontalPadding)
@@ -819,7 +821,7 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
         self.card = card
     }
 
-    static var cardSize: CGSize { CGSize(width: 176, height: 140) }
+    static var cardSize: CGSize { CGSize(width: 156, height: 124) }
     static var spacing: CGFloat { 10 }
     static var groupSpacing: CGFloat { 22 }
     static var headerHeight: CGFloat { 24 }
@@ -1105,8 +1107,8 @@ struct HoverButton: View {
     }
 }
 
-/// One tab, its name alone in an outlined capsule: the outline lit when selected,
-/// faint otherwise (a little fill under the pointer), its count as quiet digits.
+/// One tab, its name alone: a brand capsule when selected, an outlined one
+/// otherwise (a little fill under the pointer), its count as quiet digits.
 struct TabPill: View {
     let tab: IslandTab
     let count: Int
@@ -1125,13 +1127,13 @@ struct TabPill: View {
                         .opacity(selected ? 0.55 : 0.5)
                 }
             }
-            .foregroundStyle(.white.opacity(selected || hovering ? 1 : 0.7))
+            .foregroundStyle(.white.opacity(selected || hovering ? 1 : 0.75))
             .fixedSize()
             .padding(.horizontal, 12)
             .frame(height: 28)
-            .background(Color.white.opacity(selected ? 0.1 : (hovering ? 0.05 : 0)), in: Capsule())
-            // An outline: faint on purpose, lit for the selected tab.
-            .overlay(Capsule().strokeBorder(Color.white.opacity(selected ? 0.35 : 0.015)))
+            .background(selected ? Color.brand : Color.white.opacity(hovering ? 0.06 : 0), in: Capsule())
+            // The others are outlines.
+            .overlay(Capsule().strokeBorder(Color.white.opacity(selected ? 0 : 0.14)))
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
