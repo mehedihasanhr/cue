@@ -224,6 +224,8 @@ final class IslandController {
     var windowNumber: Int { window.windowNumber }
     /// For diagnostics: the keyboard goes to the island, as after a click in it.
     func debugMakeKey() { window.makeKey() }
+    /// For diagnostics: the open shape, in screen coordinates.
+    var debugExpandedRect: CGRect { model.shapeRect(for: .expanded) }
 
     /// The island's drawn shape, and the preview pane under it (with the gap
     /// between): what the pointer may rest on without the island closing.

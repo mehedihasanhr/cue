@@ -295,15 +295,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         }
                     }
                 }
+                // KLIK_DEBUG_ISLAND_HOVER=x,y moves the pointer there, measured from the open
+                // island's top-left corner, so a card is hovered.
+                if let spec = ProcessInfo.processInfo.environment["KLIK_DEBUG_ISLAND_HOVER"] {
+                    let parts = spec.split(separator: ",").compactMap { Double($0) }
+                    if parts.count == 2 {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+                            guard let island = self?.island, let screen = NSScreen.main else { return }
+                            let shape = island.debugExpandedRect
+                            // Cocoa (bottom-left) to Quartz (top-left) coordinates.
+                            let point = CGPoint(x: shape.minX + parts[0], y: screen.frame.maxY - (shape.maxY - parts[1]))
+                            for step in 0..<4 {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05 * Double(step)) {
+                                    let jitter = CGPoint(x: point.x + Double(step), y: point.y)
+                                    CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: jitter, mouseButton: .left)?.post(tap: .cghidEventTap)
+                                }
+                            }
+                        }
+                    }
+                }
                 // KLIK_DEBUG_ISLAND_SHOT_DELAY overrides when the picture is taken (seconds after opening).
-                let shotDelay: Double = ProcessInfo.processInfo.environment["KLIK_DEBUG_ISLAND_SHOT_DELAY"].flatMap(Double.init)
-                    ?? (previewKind == nil && ProcessInfo.processInfo.environment["KLIK_DEBUG_ISLAND_KEYS"] == nil ? 1.5 : 4)
+                let wide = previewKind != nil || ProcessInfo.processInfo.environment["KLIK_DEBUG_ISLAND_KEYS"] != nil || ProcessInfo.processInfo.environment["KLIK_DEBUG_ISLAND_HOVER"] != nil
+                let shotDelay: Double = ProcessInfo.processInfo.environment["KLIK_DEBUG_ISLAND_SHOT_DELAY"].flatMap(Double.init) ?? (wide ? 4 : 1.5)
                 DispatchQueue.main.asyncAfter(deadline: .now() + shotDelay) { [weak self] in
                     guard let self, let island = self.island else { return }
                     let id = CGWindowID(island.windowNumber)
                     Task { @MainActor in
                         let service = ScreenCaptureService()
-                        if previewKind != nil || ProcessInfo.processInfo.environment["KLIK_DEBUG_ISLAND_KEYS"] != nil, let screen = NSScreen.main {
+                        if wide, let screen = NSScreen.main {
                             var rect = screen.frame
                             rect.size.height = 1000
                             rect.origin.y = screen.frame.maxY - 1000
