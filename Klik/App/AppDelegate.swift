@@ -502,10 +502,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(makeItem("Quit Klik", #selector(NSApplication.terminate(_:)), keyEquivalent: "q", modifiers: .command))
     }
 
-    /// A menu item showing the shortcut set for the action in Settings, if any.
+    /// A menu item showing the shortcut set for the action in Settings, if any. The
+    /// action runs once the menu is gone: a panel shown while the menu is still
+    /// closing loses key status to that and closes itself at once.
     private func shortcutItem(_ title: String, _ action: Selector, _ id: HotkeyID) -> NSMenuItem {
         let hotkey = shortcuts.hotkey(for: id)
-        return makeItem(title, action, keyEquivalent: hotkey?.menuKeyEquivalent ?? "", modifiers: hotkey?.menuModifierMask ?? [])
+        let item = makeItem(title, #selector(runFromStatusMenu(_:)), keyEquivalent: hotkey?.menuKeyEquivalent ?? "", modifiers: hotkey?.menuModifierMask ?? [])
+        item.representedObject = NSStringFromSelector(action)
+        return item
+    }
+
+    @objc private func runFromStatusMenu(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        let action = NSSelectorFromString(name)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            _ = self?.perform(action, with: sender)
+        }
     }
 
     /// The floating panel at the pointer (the ⌥⇧K shortcut's action, from the menu).
