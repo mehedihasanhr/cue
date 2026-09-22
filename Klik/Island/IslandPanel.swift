@@ -75,8 +75,9 @@ struct IslandPanel: View {
     /// Opens a card in the pane under the island (Settings › Island › Preview opens);
     /// the direction says which way the pane slides to it.
     var onPreviewPane: (IslandDetail, Int) -> Void = { _, _ in }
-    /// The pane is showing something: the next card opens at once, sliding in.
-    var previewOpen = false
+    /// Whether the pane is showing something: then the next card opens at once,
+    /// sliding in. Asked when needed, so the panel does not re-render for it.
+    var isPreviewOpen: () -> Bool = { false }
     /// ← → that reached the window rather than a view (see `IslandWindow`).
     var arrowPress: (delta: Int, tick: Int) = (0, 0)
     @State private var search = ""
@@ -156,8 +157,18 @@ struct IslandPanel: View {
     @State private var detail: IslandDetail?
     /// The card ← → moved to (an `IslandItem` id), outlined in the strip.
     @State private var selectedID: String?
-    /// The pointer resting on a card; the pane opens it after the delay.
-    @State private var hoverTask: Task<Void, Never>?
+    /// The pointer's card and the pending open: a reference, so a hover changes
+    /// nothing the body reads and the cards do not re-render for it.
+    @State private var hover = HoverState()
+
+    @MainActor
+    private final class HoverState {
+        /// The card the pointer is on (its `IslandItem` id).
+        var hoveredID: String?
+        /// The card the pane was last opened from by hovering.
+        var openedID: String?
+        var task: Task<Void, Never>?
+    }
     @AppStorage(IslandTab.storageKey) private var tab: IslandTab = .all
 
     private var searching: Bool { !search.trimmingCharacters(in: .whitespaces).isEmpty }
@@ -438,7 +449,8 @@ struct IslandPanel: View {
                 if searching {
                     searchResults
                 } else if let detail {
-                    IslandDetailBody(detail: detail, library: library, clipboard: clipboard, assets: assets, colors: colors, actions: actions)
+                    IslandDetailBody(detail: detail, library: library, clipboard: clipboard, assets: assets, colors: colors, actions: actions,
+                                     notes: notes, tasks: tasksStore, onEdit: edit)
                         .transition(.opacity)
                 } else {
                 switch tab {
@@ -457,7 +469,7 @@ struct IslandPanel: View {
                     } else {
                         DayStrip(items: everything, date: \.date, dragPayload: dragPayload, card: itemCard)
                             .selecting { $0.id == selectedID }
-                            .onCardHover { hover($0) }
+                            .onCardHover { hover($0, inside: $1) }
                     }
                 case .captures:
                     if filteredCaptures.isEmpty {
@@ -468,7 +480,7 @@ struct IslandPanel: View {
                             library.fileURL(for: item).map { .file($0, preview: library.thumbnail(for: item), reference: .capture(item.id)) }
                         }, card: captureCard)
                             .selecting { IslandItem.capture($0).id == selectedID }
-                            .onCardHover { hover($0.map(IslandItem.capture)) }
+                            .onCardHover { hover(.capture($0), inside: $1) }
                     }
                 case .clipboard:
                     if filteredClipboard.isEmpty {
@@ -482,10 +494,10 @@ struct IslandPanel: View {
                             }
                         }, card: clipboardCard)
                             .selecting { IslandItem.clipboard($0).id == selectedID }
-                            .onCardHover { hover($0.map(IslandItem.clipboard)) }
+                            .onCardHover { hover(.clipboard($0), inside: $1) }
                     }
                 case .tasks:
-                    IslandTasksView(store: tasksStore, onPrompt: onPrompt, onShowTask: onShowTask)
+                    IslandTasksView(store: tasksStore, onPrompt: onPrompt, onShowTask: onShowTask, onHover: { hover(.task($0), inside: $1) })
                 case .snippets:
                     if snippets.items.isEmpty {
                         empty("Type a keyword anywhere and Klik pastes the snippet", symbol: "text.badge.plus",
@@ -501,6 +513,7 @@ struct IslandPanel: View {
                     } else {
                         DayStrip(items: notes.notes, date: \.updatedAt, dragPayload: noteDrag, card: noteCard)
                             .selecting { IslandItem.note($0).id == selectedID }
+                            .onCardHover { hover(.note($0), inside: $1) }
                     }
                 case .colors:
                     if filteredColors.isEmpty {
@@ -511,7 +524,7 @@ struct IslandPanel: View {
                             DragPayload(writer: preferences.colorFormat.string(for: entry.color) as NSString, preview: ColorCard.dragImage(for: entry.color), reference: .color(entry.id))
                         }, card: colorCard)
                             .selecting { IslandItem.color($0).id == selectedID }
-                            .onCardHover { hover($0.map(IslandItem.color)) }
+                            .onCardHover { hover(.color($0), inside: $1) }
                     }
                 case .assets:
                     if filteredAssets.isEmpty {
@@ -521,7 +534,7 @@ struct IslandPanel: View {
                             .file(assets.fileURL(for: item), preview: assets.thumbnail(for: item), reference: .asset(item.id))
                         }, card: assetCard)
                             .selecting { IslandItem.asset($0).id == selectedID }
-                            .onCardHover { hover($0.map(IslandItem.asset)) }
+                            .onCardHover { hover(.asset($0), inside: $1) }
                     }
                 }
                 }
@@ -538,6 +551,10 @@ struct IslandPanel: View {
             .onChange(of: tab) { _, _ in
                 detail = nil
                 selectedID = nil
+                hover.task?.cancel()
+                hover.task = nil
+                hover.hoveredID = nil
+                hover.openedID = nil
             }
             .onChange(of: tabs, initial: true) { _, tabs in
                 // The tab that was showing has been turned off: fall back to All.
@@ -772,28 +789,60 @@ struct IslandPanel: View {
         }
     }
 
-    /// Which way `item` lies from the chosen card: +1 right, -1 left, 0 unknown.
+    /// A note or a task from an open card: its form in the compact island.
+    private func edit(_ detail: IslandDetail) {
+        switch detail {
+        case .note(let note): onPrompt(IslandPrompt(kind: .note(note)))
+        case .task(let task): onPrompt(IslandPrompt(kind: .task(project: task.projectID), editing: task))
+        default: break
+        }
+    }
+
+    /// The card the pane shows or ← → last moved to.
+    private var currentID: String? { selectedID ?? hover.openedID }
+
+    /// Which way `item` lies from the current card: +1 right, -1 left, 0 unknown.
     private func direction(to item: IslandItem) -> Int {
+        guard let currentID, currentID != item.id else { return 0 }
         let items = navigable
-        guard let from = items.firstIndex(where: { $0.id == selectedID }), let to = items.firstIndex(where: { $0.id == item.id }), from != to else { return 0 }
+        guard let from = items.firstIndex(where: { $0.id == currentID }), let to = items.firstIndex(where: { $0.id == item.id }), from != to else { return 0 }
         return to > from ? 1 : -1
     }
 
-    /// The pointer rests on a card (nil: on none): with the pane and hover on, the
+    /// The pointer came onto a card, or left it. With the pane and hover on, the
     /// card opens there after the delay — at once, sliding over, while the pane
-    /// already shows a card.
-    private func hover(_ item: IslandItem?) {
-        hoverTask?.cancel()
-        hoverTask = nil
-        guard let item, let detail = item.detail, preferences.islandPreview == .pane, preferences.islandPreviewOnHover else { return }
-        let delay = previewOpen ? 0 : preferences.islandPreviewHoverDelay
-        let direction = direction(to: item)
-        hoverTask = Task { @MainActor in
-            if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
-            guard !Task.isCancelled else { return }
-            selectedID = item.id
-            onPreviewPane(detail, direction)
+    /// already shows a card. Cards report leaving and entering in either order, so
+    /// a leave only counts for the card the pointer was on.
+    private func hover(_ item: IslandItem, inside: Bool) {
+        if !inside {
+            guard hover.hoveredID == item.id else { return }
+            hover.hoveredID = nil
+            hover.task?.cancel()
+            hover.task = nil
+            return
         }
+        guard hover.hoveredID != item.id else { return }
+        hover.hoveredID = item.id
+        hover.task?.cancel()
+        hover.task = nil
+        guard let detail = item.detail, preferences.islandPreview == .pane, preferences.islandPreviewOnHover else { return }
+        let delay = isPreviewOpen() ? 0 : preferences.islandPreviewHoverDelay
+        if delay <= 0 {
+            openFromHover(item, detail)
+        } else {
+            hover.task = Task { @MainActor in
+                try? await Task.sleep(for: .seconds(delay))
+                guard !Task.isCancelled, hover.hoveredID == item.id else { return }
+                openFromHover(item, detail)
+            }
+        }
+    }
+
+    private func openFromHover(_ item: IslandItem, _ detail: IslandDetail) {
+        let direction = direction(to: item)
+        hover.openedID = item.id
+        if selectedID != nil { selectedID = nil } // the hovered card's own outline marks it
+        onPreviewPane(detail, direction)
     }
 
     /// The cards of the tab, in the order the strip shows them (pinned first).
@@ -815,12 +864,13 @@ struct IslandPanel: View {
     private func moveSelection(_ delta: Int) -> KeyPress.Result {
         let items = navigable
         guard !items.isEmpty else { return .ignored }
-        let current = items.firstIndex { $0.id == selectedID }
+        let current = items.firstIndex { $0.id == currentID }
         let next = current.map { min(max($0 + delta, 0), items.count - 1) } ?? (delta > 0 ? 0 : items.count - 1)
         let item = items[next]
         let direction = direction(to: item)
         selectedID = item.id
-        hoverTask?.cancel()
+        hover.task?.cancel()
+        hover.task = nil
         if let detail = item.detail { open(detail, direction: direction) }
         return .handled
     }
@@ -911,16 +961,15 @@ struct StripSection {
 /// a history of thousands costs the same as one of ten.
 struct DayStrip<Item: Identifiable, Card: View>: View {
     let items: [Item]
-    /// The group an item belongs to; consecutive items with the same group share a header.
-    let section: (Item) -> StripSection
     /// What a card puts on the drag pasteboard, if it can be dragged out. A vertical
     /// drag on a card then drags it into other apps; a horizontal drag scrolls the row.
     var dragPayload: ((Item) -> DragPayload?)? = nil
     @ViewBuilder let card: (Item) -> Card
     /// The card outlined as the one chosen (← → move it), scrolled into view.
     var isSelected: (Item) -> Bool = { _ in false }
-    /// The pointer came to rest on a card (nil: left the cards).
-    var onHover: (Item?) -> Void = { _ in }
+    /// The pointer came onto a card (true) or left it (false). Leaving one card
+    /// and entering the next arrive in either order.
+    var onHover: (Item, Bool) -> Void = { _, _ in }
 
     func selecting(_ isSelected: @escaping (Item) -> Bool) -> DayStrip {
         var copy = self
@@ -928,7 +977,7 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
         return copy
     }
 
-    func onCardHover(_ onHover: @escaping (Item?) -> Void) -> DayStrip {
+    func onCardHover(_ onHover: @escaping (Item, Bool) -> Void) -> DayStrip {
         var copy = self
         copy.onHover = onHover
         return copy
@@ -940,22 +989,29 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
          dragPayload: ((Item) -> DragPayload?)? = nil, @ViewBuilder card: @escaping (Item) -> Card) {
         let calendar = Calendar.current
         self.items = pinned.map { key in items.filter { $0[keyPath: key] } + items.filter { !$0[keyPath: key] } } ?? items
-        self.section = { item in
+        // A day's title is formatted once, not once per card.
+        var titles: [Date: String] = [:]
+        let sections = self.items.map { item -> StripSection in
             if let pinned, item[keyPath: pinned] { return StripSection(id: "pinned", title: "Pinned") }
             let day = calendar.startOfDay(for: item[keyPath: date])
-            return StripSection(id: day, title: Self.title(for: day, calendar: calendar))
+            if let title = titles[day] { return StripSection(id: day, title: title) }
+            let title = Self.title(for: day, calendar: calendar)
+            titles[day] = title
+            return StripSection(id: day, title: title)
         }
         self.dragPayload = dragPayload
         self.card = card
+        self.layout = Self.layout(for: self.items, sections: sections)
     }
 
-    /// Grouped however `section` says (search results by tab, say).
+    /// Grouped however `section` says (search results by tab, say); consecutive
+    /// items with the same section share a header.
     init(items: [Item], section: @escaping (Item) -> StripSection,
          dragPayload: ((Item) -> DragPayload?)? = nil, @ViewBuilder card: @escaping (Item) -> Card) {
         self.items = items
-        self.section = section
         self.dragPayload = dragPayload
         self.card = card
+        self.layout = Self.layout(for: items, sections: items.map(section))
     }
 
     static var cardSize: CGSize { CGSize(width: 156, height: 124) }
@@ -988,12 +1044,14 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
         var width: CGFloat = 0
     }
 
-    private var layout: Layout {
+    /// Worked out once when the strip is made — not again for every scroll or hover.
+    private let layout: Layout
+
+    private static func layout(for items: [Item], sections: [StripSection]) -> Layout {
         var layout = Layout()
         var x: CGFloat = 0
         var current: AnyHashable?
-        for item in items {
-            let section = section(item)
+        for (item, section) in zip(items, sections) {
             if section.id != current {
                 if current != nil { x += Self.groupSpacing - Self.spacing }
                 layout.groups.append(PlacedGroup(id: section.id, title: section.title, x: x, width: 0))
@@ -1037,7 +1095,7 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
                                 .opacity(isSelected(placed.item) ? 1 : 0)
                                 .allowsHitTesting(false)
                         )
-                        .onHover { inside in onHover(inside ? placed.item : nil) }
+                        .onHover { inside in onHover(placed.item, inside) }
                         .offset(x: placed.x - offset, y: Self.headerHeight)
                 }
             }

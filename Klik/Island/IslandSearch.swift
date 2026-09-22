@@ -45,7 +45,9 @@ enum IslandItem: Identifiable {
         case .clipboard(let item): .clipboard(item)
         case .asset(let item): .asset(item)
         case .color(let entry): .color(entry)
-        case .task, .snippet, .note, .answer: nil
+        case .note(let note): .note(note)
+        case .task(let task): .task(task)
+        case .snippet, .answer: nil
         }
     }
 

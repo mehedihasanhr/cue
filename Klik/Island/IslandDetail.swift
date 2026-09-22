@@ -7,6 +7,20 @@ enum IslandDetail: Hashable {
     case clipboard(ClipboardItem)
     case asset(AssetItem)
     case color(ColorEntry)
+    case note(Note)
+    case task(TaskItem)
+
+    /// The item's identity, whatever its state: what tells one preview from the next.
+    var id: String {
+        switch self {
+        case .capture(let item): "capture.\(item.id.uuidString)"
+        case .clipboard(let item): "clipboard.\(item.id.uuidString)"
+        case .asset(let item): "asset.\(item.id.uuidString)"
+        case .color(let entry): "color.\(entry.id.uuidString)"
+        case .note(let note): "note.\(note.id)"
+        case .task(let task): "task.\(task.id.uuidString)"
+        }
+    }
 }
 
 /// The header pills and actions for an open card (shown in the tab row's place).
@@ -78,6 +92,11 @@ struct IslandDetailHeader: View {
             }
             if let name = item.sourceName { pills.append(Pill(symbol: "app", text: name)) }
             return pills
+        case .note(let note):
+            return [Pill(symbol: "note.text", text: "Note"), Pill(symbol: "character", text: "\(note.text.count) characters"),
+                    Pill(symbol: "clock", text: note.updatedAt.formatted(.relative(presentation: .named)))]
+        case .task(let task):
+            return [Pill(symbol: "checklist", text: "Task"), Pill(symbol: task.status.symbol, text: task.status.title), Pill(symbol: task.priority.symbol, text: task.priority.title)]
         }
     }
 
@@ -109,6 +128,10 @@ struct IslandDetailBody: View {
     let assets: AssetStore
     let colors: ColorStore
     let actions: HistoryActions
+    var notes: NoteStore? = nil
+    var tasks: TaskStore? = nil
+    /// Opens a note or a task to edit.
+    var onEdit: (IslandDetail) -> Void = { _ in }
     @Environment(AppPreferences.self) private var preferences
 
     var body: some View {
@@ -116,6 +139,20 @@ struct IslandDetailBody: View {
             switch detail {
             case .color(let entry):
                 colorView(entry.color)
+            case .note(let stale):
+                let note = notes?.notes.first { $0.id == stale.id } ?? stale
+                markdownRow(note.text, imageURL: { notes?.url(for: $0) }, attachmentURL: { notes?.url(for: $0) }) {
+                    detailButton("Copy", symbol: "doc.on.doc") { copyText(note.text, title: note.title) }
+                    detailButton("Edit", symbol: "pencil") { onEdit(.note(note)) }
+                    if let notes { detailButton("Reveal", symbol: "folder") { NSWorkspace.shared.activateFileViewerSelecting([notes.fileURL(for: note)]) } }
+                }
+            case .task(let stale):
+                let task = tasks?.tasks.first { $0.id == stale.id } ?? stale
+                markdownRow(task.text, imageURL: { tasks?.imageURL(for: $0) ?? nil }, attachmentURL: { tasks?.attachmentURL(for: $0) ?? nil }) {
+                    detailButton("Copy", symbol: "doc.on.doc") { copyText(task.text, title: task.title) }
+                    detailButton("Edit", symbol: "pencil") { onEdit(.task(task)) }
+                    if let tasks { detailButton(task.status == .complete ? "Reopen" : "Complete", symbol: task.status == .complete ? "circle" : "checkmark.circle.fill") { tasks.setStatus(task.status == .complete ? .pending : .complete, for: task) } }
+                }
             case .capture(let stale):
                 let item = library.items.first { $0.id == stale.id } ?? stale // live copy, so Pin reflects its state
                 let url = library.fileURL(for: item)
@@ -236,6 +273,30 @@ struct IslandDetailBody: View {
         pasteboard.setString(string, forType: .string)
         pasteboard.setData(Data(), forType: Clipboard.ownMarker)
         FeedbackHUD.show("\(string) copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
+    }
+
+    // MARK: - Notes and tasks
+
+    /// The text rendered, buttons in a column beside it.
+    private func markdownRow(_ markdown: String, imageURL: @escaping (String) -> URL?, attachmentURL: @escaping (String) -> URL?,
+                             @ViewBuilder buttons: () -> some View) -> some View {
+        HStack(alignment: .top, spacing: 16) {
+            ScrollView {
+                MarkdownView(markdown: markdown, imageURL: imageURL, attachmentURL: attachmentURL)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .padding(12)
+            }
+            .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            VStack(alignment: .leading, spacing: 8) { buttons() }
+                .frame(width: 120, alignment: .topLeading)
+        }
+    }
+
+    private func copyText(_ text: String, title: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+        FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: title)
     }
 
     // MARK: - Images

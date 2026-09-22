@@ -108,7 +108,8 @@ final class IslandModel {
     /// Opens a card in the pane under the island (+1: the next item slides in from
     /// the right, -1 from the left, 0: fades); set by the controller.
     var onPreviewPane: (IslandDetail, Int) -> Void = { _, _ in }
-    /// Whether the pane is showing something; set by the controller.
+    /// Whether the pane is showing something; set by the controller. The panel reads
+    /// it as it needs it rather than observing it, so nothing re-renders for it.
     var previewOpen = false
     /// An arrow key that reached the window (the delta, and a count so each press
     /// is seen); set by the controller.
@@ -314,7 +315,7 @@ struct IslandView: View {
                 IslandPanel(library: library, clipboard: clipboard, assets: assets, colors: colors, tasksStore: tasks, snippets: snippets, actions: actions, dropping: model.dropping,
                             width: model.panelWidth, onIdealWidth: { model.setPanelWidth($0) }, onIdealHeight: { model.setPanelHeight($0) },
                             onPrompt: { model.onPrompt($0) }, onShowTask: { model.onShowTask($0) },
-                            onShowClock: { model.onShowClock() }, onPreviewPane: { model.onPreviewPane($0, $1) }, previewOpen: model.previewOpen, arrowPress: model.arrowPress)
+                            onShowClock: { model.onShowClock() }, onPreviewPane: { model.onPreviewPane($0, $1) }, isPreviewOpen: { model.previewOpen }, arrowPress: model.arrowPress)
                     .padding(.horizontal, IslandGeometry.panelHorizontalPadding)
                     .padding(.bottom, IslandGeometry.panelBottomPadding)
             }
@@ -533,6 +534,7 @@ struct IslandPrompt: Hashable {
             case .asset: return "Rename file"
             case .clipboard: return "Name this clipboard entry"
             case .color: return "Name this color"
+            case .note, .task: return "Name"
             }
         }
     }

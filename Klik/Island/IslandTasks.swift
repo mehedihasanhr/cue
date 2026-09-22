@@ -11,6 +11,8 @@ struct IslandTasksView: View {
     var onPrompt: (IslandPrompt) -> Void = { _ in }
     /// Tasks open in the compact island.
     var onShowTask: (TaskItem) -> Void = { _ in }
+    /// The pointer came onto (or left) a task's row; the preview pane follows it.
+    var onHover: (TaskItem, Bool) -> Void = { _, _ in }
 
     private enum Selection: Equatable {
         case projects
@@ -420,7 +422,7 @@ struct IslandTasksView: View {
     }
 
     private func taskRow(_ task: TaskItem, showProject: Bool) -> some View {
-        TaskRow(task: task, store: store, showProject: showProject) {
+        TaskRow(task: task, store: store, showProject: showProject, hover: { onHover(task, $0) }) {
             onShowTask(task)
         } edit: {
             onPrompt(IslandPrompt(kind: .task(project: task.projectID), editing: task))
@@ -434,6 +436,7 @@ struct IslandTasksView: View {
         let task: TaskItem
         let store: TaskStore
         let showProject: Bool
+        var hover: (Bool) -> Void = { _ in }
         let open: () -> Void
         let edit: () -> Void
         let delete: () -> Void
@@ -544,7 +547,7 @@ struct IslandTasksView: View {
             .frame(height: 26)
             .background(hovering ? Color.white.opacity(0.07) : .clear, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .contentShape(Rectangle())
-            .onHover { hovering = $0 }
+            .onHover { hovering = $0; hover($0) }
             .onTapGesture { if !renaming { open() } } // anywhere on the row; the status menu takes precedence
             .contextMenu {
                 ForEach(TaskStatus.allCases, id: \.self) { status in

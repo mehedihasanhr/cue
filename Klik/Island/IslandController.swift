@@ -246,14 +246,14 @@ final class IslandController {
         let pane = previewPane ?? PreviewPaneWindow()
         if previewPane == nil {
             previewPane = pane
-            let root = PreviewPaneRoot(model: previewModel, library: library, clipboard: clipboard, assets: assets, colors: colors, actions: actions,
-                                       onClose: { [weak self] in self?.hidePreview() })
+            let root = PreviewPaneRoot(model: previewModel, library: library, clipboard: clipboard, assets: assets, colors: colors, notes: notes, tasks: tasks,
+                                       actions: actions, onEdit: { [weak self] in self?.edit($0) }, onClose: { [weak self] in self?.hidePreview() })
                 .environment(preferences)
             let host = NSHostingView(rootView: root)
             host.sizingOptions = []
             pane.contentView = host
         }
-        guard previewModel.detail != detail else { return }
+        guard previewModel.detail?.id != detail.id else { return }
         if pane.isVisible, previewModel.detail != nil {
             previewModel.direction = direction
             withAnimation(.easeOut(duration: 0.28)) { previewModel.detail = detail }
@@ -279,7 +279,16 @@ final class IslandController {
         let shape = model.shapeRect(for: .expanded)
         let height = PreviewPaneView.height(for: detail, clipboard: clipboard)
         let rect = CGRect(x: shape.minX, y: shape.minY - PreviewPaneWindow.gap - height, width: shape.width, height: height)
-        pane.setFrame(rect, display: true)
+        if pane.frame != rect { pane.setFrame(rect, display: true) }
+    }
+
+    /// The pane's Edit: a note or a task opens in the compact island's form.
+    private func edit(_ detail: IslandDetail) {
+        switch detail {
+        case .note(let note): prompt(IslandPrompt(kind: .note(note)))
+        case .task(let task): prompt(IslandPrompt(kind: .task(project: task.projectID), editing: task))
+        default: break
+        }
     }
 
     /// Removes the island; the controller is dropped afterwards.
@@ -440,6 +449,7 @@ final class IslandController {
         case .asset(let item): assets.rename(item, to: name)
         case .clipboard(let item): clipboard.rename(item, to: name)
         case .color(let entry): colors.rename(entry, to: name)
+        case .note, .task: break
         }
     }
 

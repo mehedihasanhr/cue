@@ -295,12 +295,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         }
                     }
                 }
-                // KLIK_DEBUG_ISLAND_HOVER=x,y moves the pointer there, measured from the open
-                // island's top-left corner, so a card is hovered.
+                // KLIK_DEBUG_ISLAND_HOVER=x,y[;x,y…] moves the pointer there (a second apart),
+                // measured from the open island's top-left corner, so cards are hovered.
                 if let spec = ProcessInfo.processInfo.environment["KLIK_DEBUG_ISLAND_HOVER"] {
-                    let parts = spec.split(separator: ",").compactMap { Double($0) }
-                    if parts.count == 2 {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+                    let points = spec.split(separator: ";").map { $0.split(separator: ",").compactMap { Double($0) } }.filter { $0.count == 2 }
+                    for (index, parts) in points.enumerated() {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2 + Double(index)) { [weak self] in
                             guard let island = self?.island, let screen = NSScreen.main else { return }
                             let shape = island.debugExpandedRect
                             // Cocoa (bottom-left) to Quartz (top-left) coordinates.

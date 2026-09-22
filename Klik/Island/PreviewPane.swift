@@ -17,7 +17,9 @@ final class PreviewPaneWindow: NSPanel {
         level = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue - 2)
         isOpaque = false
         backgroundColor = .clear
-        hasShadow = true
+        // A window shadow is recomputed from the pixels on every change, which
+        // would make the slide between items stutter; the island has none either.
+        hasShadow = false
         isMovable = false
         isReleasedWhenClosed = false
         hidesOnDeactivate = false
@@ -46,14 +48,18 @@ struct PreviewPaneRoot: View {
     let clipboard: ClipboardHistory
     let assets: AssetStore
     let colors: ColorStore
+    let notes: NoteStore
+    let tasks: TaskStore
     let actions: HistoryActions
+    let onEdit: (IslandDetail) -> Void
     let onClose: () -> Void
 
     var body: some View {
         ZStack {
             if let detail = model.detail {
-                PreviewPaneView(detail: detail, library: library, clipboard: clipboard, assets: assets, colors: colors, actions: actions, onClose: onClose)
-                    .id(detail)
+                PreviewPaneView(detail: detail, library: library, clipboard: clipboard, assets: assets, colors: colors, notes: notes, tasks: tasks, actions: actions,
+                                onEdit: onEdit, onClose: onClose)
+                    .id(detail.id) // the identity, not the state: a pin or a rename does not slide
                     .transition(transition)
             }
         }
@@ -80,7 +86,11 @@ struct PreviewPaneView: View {
     let clipboard: ClipboardHistory
     let assets: AssetStore
     let colors: ColorStore
+    let notes: NoteStore
+    let tasks: TaskStore
     let actions: HistoryActions
+    /// Opens a note or a task to edit.
+    let onEdit: (IslandDetail) -> Void
     let onClose: () -> Void
     @Environment(AppPreferences.self) private var preferences
 
@@ -89,6 +99,7 @@ struct PreviewPaneView: View {
         switch detail {
         case .capture, .asset: 460
         case .color: 400
+        case .note, .task: 360
         case .clipboard(let item):
             switch item.kind {
             case .image, .link: 460
@@ -135,6 +146,14 @@ struct PreviewPaneView: View {
                 round("safari", help: "Open in the browser") { if let url = URL(string: item.text) { NSWorkspace.shared.open(url) } }
             case .clipboard(let item) where item.kind == .image:
                 round("pencil", help: "Edit") { actions.editClipboardImage(item) }
+            case .note(let note):
+                round("pencil", help: "Edit") { onEdit(.note(note)) }
+                round("folder", help: "Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([notes.fileURL(for: note)]) }
+            case .task(let task):
+                round("pencil", help: "Edit") { onEdit(.task(task)) }
+                round(task.status == .complete ? "circle" : "checkmark.circle.fill", help: task.status == .complete ? "Reopen" : "Mark complete") {
+                    tasks.setStatus(task.status == .complete ? .pending : .complete, for: task)
+                }
             default:
                 EmptyView()
             }
@@ -212,7 +231,16 @@ struct PreviewPaneView: View {
         case .clipboard(let item):
             clipboard.copy(item)
             FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: item.contentTitle, image: clipboard.thumbnail(for: item))
+        case .note(let note): copyText(note.text, title: note.title)
+        case .task(let task): copyText(task.text, title: task.title)
         }
+    }
+
+    private func copyText(_ text: String, title: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+        FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: title)
     }
 
     private func copyColor(_ color: PickedColor, as format: ColorFormat) {
@@ -259,7 +287,24 @@ struct PreviewPaneView: View {
         case .clipboard(let stale):
             let item = clipboard.items.first { $0.id == stale.id } ?? stale
             clipboardView(item)
+        case .note(let stale):
+            let note = notes.notes.first { $0.id == stale.id } ?? stale
+            markdown(note.text, imageURL: { notes.url(for: $0) }, attachmentURL: { notes.url(for: $0) })
+        case .task(let stale):
+            let task = tasks.tasks.first { $0.id == stale.id } ?? stale
+            markdown(task.text, imageURL: { tasks.imageURL(for: $0) }, attachmentURL: { tasks.attachmentURL(for: $0) })
+                .opacity(task.status == .complete ? 0.6 : 1)
         }
+    }
+
+    /// A note's or a task's text, rendered.
+    private func markdown(_ text: String, imageURL: @escaping (String) -> URL?, attachmentURL: @escaping (String) -> URL?) -> some View {
+        ScrollView {
+            MarkdownView(markdown: text, imageURL: imageURL, attachmentURL: attachmentURL)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .padding(12)
+        }
+        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     /// A wide band of the color, and every format as a labelled row (click copies).
@@ -322,9 +367,16 @@ struct PreviewPaneView: View {
         let load: @Sendable () -> NSImage?
         @State private var image: NSImage?
 
+        /// Sharp versions already decoded, so coming back to an item costs nothing.
+        private static let decoded: NSCache<NSUUID, NSImage> = {
+            let cache = NSCache<NSUUID, NSImage>()
+            cache.countLimit = 40
+            return cache
+        }()
+
         var body: some View {
             Group {
-                if let image = image ?? placeholder {
+                if let image = image ?? Self.decoded.object(forKey: key as NSUUID) ?? placeholder {
                     Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
                 } else {
                     Color.white.opacity(0.06)
@@ -333,13 +385,17 @@ struct PreviewPaneView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .task(id: key) {
+                if Self.decoded.object(forKey: key as NSUUID) != nil { return }
                 let load = load
-                image = await withCheckedContinuation { continuation in
+                let sharp: NSImage? = await withCheckedContinuation { continuation in
                     DispatchQueue.global(qos: .userInitiated).async {
                         let image = load()
                         Task { @MainActor in continuation.resume(returning: image) }
                     }
                 }
+                guard !Task.isCancelled, let sharp else { return }
+                Self.decoded.setObject(sharp, forKey: key as NSUUID)
+                image = sharp
             }
         }
     }
