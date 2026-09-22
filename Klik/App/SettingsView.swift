@@ -550,6 +550,16 @@ struct CaptureSettingsView: View {
     var body: some View {
         @Bindable var preferences = preferences
         SettingsPane(.capture) {
+            SettingsGroup {
+                SettingsRow("After a capture", subtitle: "Either way it is on the clipboard and in the island.") {
+                    Picker("After a capture", selection: $preferences.afterCapture) {
+                        ForEach(AppPreferences.AfterCapture.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .fixedSize()
+                }
+            }
+
             SettingsGroup("Full screen") {
                 SettingsRow("Include mouse pointer") {
                     Toggle("Include pointer", isOn: $includeCursor).toggleStyle(.switch)

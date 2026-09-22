@@ -30,6 +30,7 @@ final class AppPreferences {
         static let islandPreviewOnHover = "island.previewOnHover"
         static let islandPreviewHoverDelay = "island.previewHoverDelay"
         static let islandOpensOn = "island.opensOn"
+        static let afterCapture = "capture.after"
         static let clipboardEnabled = "clipboard.enabled"
         static let clipboardLimit = "clipboard.limit"
         static let colorPickerEnabled = "color.enabled"
@@ -249,6 +250,23 @@ final class AppPreferences {
         didSet { defaults.set(islandNotchBackground, forKey: Key.islandNotchBackground) }
     }
 
+    enum AfterCapture: String, CaseIterable {
+        case edit, copy
+
+        var title: String {
+            switch self {
+            case .edit: "Open the editor"
+            case .copy: "Copy to the clipboard"
+            }
+        }
+    }
+
+    /// What a finished capture does: opens in the editor (it is on the clipboard
+    /// either way), or is just copied and kept in the library.
+    var afterCapture: AfterCapture {
+        didSet { defaults.set(afterCapture.rawValue, forKey: Key.afterCapture) }
+    }
+
     /// Show each new capture on the island for a moment.
     var islandFlashCaptures: Bool {
         didSet { defaults.set(islandFlashCaptures, forKey: Key.islandFlashCaptures) }
@@ -438,6 +456,7 @@ final class AppPreferences {
         dynamicIslandOnPlainDisplays = defaults.object(forKey: Key.islandPlainDisplays) as? Bool ?? true
         islandOpenMode = IslandOpenMode(rawValue: defaults.string(forKey: Key.islandOpenMode) ?? "") ?? .hover
         islandHoverDelay = defaults.object(forKey: Key.islandHoverDelay) as? Double ?? 0
+        afterCapture = AfterCapture(rawValue: defaults.string(forKey: Key.afterCapture) ?? "") ?? .edit
         islandCloseDelay = defaults.object(forKey: Key.islandCloseDelay) as? Double ?? 0.25
         islandCloseOnLeave = defaults.object(forKey: Key.islandCloseOnLeave) as? Bool ?? true
         islandNotchBackground = defaults.object(forKey: Key.islandNotchBackground) as? Bool ?? false

@@ -1477,7 +1477,7 @@ struct CaptureCard: View {
     @State private var hovering = false
 
     var body: some View {
-        CardChrome(hovering: $hovering, label: accessibilityLabel, onTap: { actions.edit(item) }) {
+        CardChrome(hovering: $hovering, label: accessibilityLabel, onTap: { actions.copy(item) }) {
             Color.clear
                 .overlay {
                     if let thumbnail = library.thumbnail(for: item) {
@@ -1502,11 +1502,11 @@ struct CaptureCard: View {
             CopyAction { actions.copy(item) }
             CardAction(symbol: "pencil", help: "Edit") { actions.edit(item) }
             PinAction(pinned: item.pinned) { library.togglePin(item) }
-            CardAction(symbol: "eye", help: "Preview", perform: onPreview)
             CardAction(symbol: "trash", help: "Remove", tint: .red) { actions.delete(item) }
         } menu: {
             if let clipboard, clipboard.canPaste { Button("Paste", action: paste) }
-            Button("Preview") { actions.preview(item) }
+            Button("Preview", action: onPreview)
+            Button("Open in Viewer") { actions.preview(item) }
             Button("Edit") { actions.edit(item) }
             Button("Copy to Clipboard") { actions.copy(item) }
             Button("Pin to Screen") { actions.pinToScreen(item) }
@@ -1594,7 +1594,6 @@ struct ClipboardCard: View {
             if item.kind == .image {
                 CardAction(symbol: "pencil", help: "Edit", perform: onEdit)
             }
-            CardAction(symbol: "eye", help: "Preview", perform: onPreview)
             CardAction(symbol: "trash", help: "Remove", tint: .red) { clipboard.delete(item) }
         } menu: {
             Button("Copy") { copy() }
@@ -1788,10 +1787,10 @@ struct AssetCard: View {
             }
             CardAction(symbol: "arrow.up.forward.app", help: "Open") { assets.open(item) }
             PinAction(pinned: item.pinned) { assets.togglePin(item) }
-            CardAction(symbol: "eye", help: "Preview", perform: onPreview)
             CardAction(symbol: "trash", help: "Remove", tint: .red) { assets.delete(item) }
         } menu: {
             if let clipboard, clipboard.canPaste { Button("Paste", action: paste) }
+            Button("Preview", action: onPreview)
             Button("Open") { assets.open(item) }
             Button("Copy") { assets.copy(item) }
             Button("Reveal in Finder") { assets.reveal(item) }
@@ -1854,7 +1853,7 @@ struct ColorCard: View {
     @State private var hovering = false
 
     var body: some View {
-        CardChrome(hovering: $hovering, label: "Color \(entry.name ?? preferences.colorFormat.string(for: entry.color))\(entry.pinned ? ", pinned" : "")", onTap: onPreview) {
+        CardChrome(hovering: $hovering, label: "Color \(entry.name ?? preferences.colorFormat.string(for: entry.color))\(entry.pinned ? ", pinned" : "")", onTap: { copy(as: format) }) {
             entry.color.swiftUIColor
                 .overlay(alignment: .topLeading) {
                     if !entry.color.isInSRGBGamut {
@@ -1878,9 +1877,9 @@ struct ColorCard: View {
         } actionRow: {
             CopyAction { copy(as: format) }
             PinAction(pinned: entry.pinned) { colors.togglePin(entry) }
-            CardAction(symbol: "eye", help: "Preview", perform: onPreview)
             CardAction(symbol: "trash", help: "Remove", tint: .red) { colors.delete(entry) }
         } menu: {
+            Button("Preview", action: onPreview)
             Button("Copy \(format.title)") { copy(as: format) }
             Menu("Copy as") {
                 ForEach(ColorFormat.allCases, id: \.self) { other in

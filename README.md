@@ -58,9 +58,10 @@ If a grant ever gets stuck, clear it and re-grant: `tccutil reset ScreenCapture 
    on **Klik** under Privacy & Security › Screen & System Audio Recording.
 3. Back in Klik, click **Relaunch Klik** — macOS applies the grant on the next launch.
 4. Press **⌥⇧3** (full screen), **⌥⇧4** (area) or **⌥⇧5** (scrolling), or hover the
-   notch to open the Dynamic Island and use its capture buttons. Captures open in a
-   preview window at native Retina resolution. The menu bar icon only holds Settings
-   and Quit.
+   notch to open the Dynamic Island and use its capture buttons. A capture lands on
+   the clipboard and in the island, and opens in the editor — or, with Settings ›
+   Capture › **After a capture › Copy to the clipboard**, is just copied. The menu
+   bar icon only holds Settings and Quit.
 
 ### Area capture (⌥⇧4)
 
@@ -152,7 +153,8 @@ and it says so with a sound when the time is up.
 
 ### Preview pane
 
-A card's eye opens it in the cards' place — or, with Settings › Island › **Preview
+A click on a card copies it (a capture's Edit button opens the editor). **Preview**
+on a card's menu opens it in the cards' place — or, with Settings › Island › **Preview
 opens › Below it**, in a pane under the island while the cards stay: an image at
 full width, a color as a band with every format (click one to copy it, the Copy
 button's menu has them too), a link with the page's picture, title and summary,

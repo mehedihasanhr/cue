@@ -1052,7 +1052,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let item = library.add(image)
         Log.app.info("Captured \(item.fileName, privacy: .public) → clipboard + library")
         island?.flash(item)
-        openEditor(for: item, image: image, mode: .edit)
+        switch preferences.afterCapture {
+        case .edit: openEditor(for: item, image: image, mode: .edit)
+        case .copy: FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: item.dimensions, image: library.thumbnail(for: item))
+        }
     }
 
     /// A clipboard image becomes a capture of its own — saved with the others — and
