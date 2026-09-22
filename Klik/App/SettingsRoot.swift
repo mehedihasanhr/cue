@@ -552,6 +552,7 @@ struct SettingsGroup<Content: View>: View {
                 Text(title)
                     .font(SettingsFont.title)
                     .padding(.leading, 12)
+                    .dimmedWhenDisabled()
                     .accessibilityAddTraits(.isHeader)
             }
             VStack(spacing: 0) {
@@ -567,9 +568,24 @@ struct SettingsGroup<Content: View>: View {
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 12)
                     .fixedSize(horizontal: false, vertical: true)
+                    .dimmedWhenDisabled()
             }
         }
     }
+}
+
+/// Faded while disabled, the way a disabled control is — for the words
+/// beside one.
+struct DimmedWhenDisabled: ViewModifier {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func body(content: Content) -> some View {
+        content.opacity(isEnabled ? 1 : 0.4)
+    }
+}
+
+extension View {
+    func dimmedWhenDisabled() -> some View { modifier(DimmedWhenDisabled()) }
 }
 
 /// One row of a card: anything, padded, with a hairline under it.
@@ -614,7 +630,7 @@ struct SettingsRow<Control: View>: View {
         SettingsCell(vertical: subtitle == nil ? 12 : 10) {
             HStack(spacing: 14) {
                 if let symbol {
-                    SymbolTile(symbol: symbol, tint: tint)
+                    SymbolTile(symbol: symbol, tint: tint).dimmedWhenDisabled()
                 }
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
@@ -626,6 +642,7 @@ struct SettingsRow<Control: View>: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
+                .dimmedWhenDisabled()
                 Spacer(minLength: 16)
                 control
                     .labelsHidden()
@@ -700,6 +717,7 @@ struct SettingsPreviewPicker<Value: Hashable, Preview: View>: View {
                         }
                     }
                     .frame(width: 170, alignment: .leading)
+                    .dimmedWhenDisabled()
                     Spacer(minLength: 0)
                     grid(onPick: {})
                 }

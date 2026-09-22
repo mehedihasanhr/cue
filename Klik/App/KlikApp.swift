@@ -6,6 +6,18 @@ import AppKit
 @main
 enum KlikApp {
     static func main() {
+        // Diagnostics: `--env KLIK_DEBUG_DEFAULTS="clock.enabled=false,color.enabled=true"`
+        // sets those defaults before anything reads them.
+        if let spec = ProcessInfo.processInfo.environment["KLIK_DEBUG_DEFAULTS"] {
+            for pair in spec.split(separator: ",") {
+                let parts = pair.split(separator: "=", maxSplits: 1).map(String.init)
+                guard parts.count == 2 else { continue }
+                switch parts[1] {
+                case "true", "false": UserDefaults.standard.set(parts[1] == "true", forKey: parts[0])
+                default: UserDefaults.standard.set(Int(parts[1]) ?? parts[1], forKey: parts[0])
+                }
+            }
+        }
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate

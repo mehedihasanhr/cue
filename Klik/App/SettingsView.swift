@@ -204,16 +204,20 @@ struct IslandSettingsView: View {
 
     var body: some View {
         @Bindable var preferences = preferences
-        SettingsPane(.island, enabled: $preferences.dynamicIslandEnabled) {
+        SettingsPane(.island) {
             SettingsGroup("Dynamic Island") {
+                SettingsRow("Show the Dynamic Island") {
+                    Toggle("Show the island", isOn: $preferences.dynamicIslandEnabled).toggleStyle(.switch)
+                }
                 SettingsRow("Also show a pill on displays without a notch") {
                     Toggle("Pill on plain displays", isOn: $preferences.dynamicIslandOnPlainDisplays).toggleStyle(.switch)
                 }
+                .disabled(!preferences.dynamicIslandEnabled)
                 SettingsRow("Notch background", subtitle: "Black beside the notch while closed.") {
                     Toggle("Notch background", isOn: $preferences.islandNotchBackground).toggleStyle(.switch)
                 }
+                .disabled(!preferences.dynamicIslandEnabled)
             }
-            .disabled(!preferences.dynamicIslandEnabled)
 
             SettingsGroup("Opening and closing") {
                 SettingsRow("Open on") {
@@ -341,7 +345,7 @@ struct ColorSettingsView: View {
 
     var body: some View {
         @Bindable var preferences = preferences
-        SettingsPane(.colors) {
+        SettingsPane(.colors, enabled: $preferences.colorPickerEnabled) {
             SettingsGroup("Color picker") {
                 SettingsRow("Copy picked colors as") {
                     Picker("Color format", selection: $preferences.colorFormat) {
@@ -350,6 +354,7 @@ struct ColorSettingsView: View {
                     .fixedSize()
                 }
             }
+            .disabled(!preferences.colorPickerEnabled)
         }
     }
 }
@@ -553,7 +558,7 @@ struct TimeSettingsView: View {
 
     var body: some View {
         @Bindable var preferences = preferences
-        SettingsPane(.time) {
+        SettingsPane(.time, enabled: $preferences.timeEnabled) {
             SettingsGroup("Time on the island") {
                 SettingsRow("Show the time every") {
                     Picker("Interval", selection: $preferences.timeStatusInterval) {
@@ -567,6 +572,7 @@ struct TimeSettingsView: View {
                     Button("Show on the Island") { clock?.preview() }
                 }
             }
+            .disabled(!preferences.timeEnabled)
 
             SettingsGroup("Prayer times") {
                 SettingsRow("Prayer times", subtitle: "Computed on this Mac from your location.") {
@@ -591,6 +597,7 @@ struct TimeSettingsView: View {
                 }
                 .disabled(!preferences.prayerTimesEnabled)
             }
+            .disabled(!preferences.timeEnabled)
 
             SettingsGroup("Where", footer: preferences.prayerLocationMode == .manual ? "Decimal degrees, e.g. 23.8103, 90.4125." : nil) {
                 SettingsRow("Location") {
@@ -616,9 +623,9 @@ struct TimeSettingsView: View {
                     }
                 }
             }
-            .disabled(!preferences.prayerTimesEnabled)
+            .disabled(!preferences.timeEnabled || !preferences.prayerTimesEnabled)
 
-            if preferences.prayerTimesEnabled, let clock, let today = clock.today {
+            if preferences.timeEnabled, preferences.prayerTimesEnabled, let clock, let today = clock.today {
                 SettingsGroup("Today", footer: "Adjust to match your mosque's timetable.") {
                     ForEach(today.ordered, id: \.prayer) { entry in
                         adjustmentRow(entry.prayer, time: entry.time)
@@ -635,7 +642,7 @@ struct TimeSettingsView: View {
             latitude = preferences.prayerManualPlace.latitude == 0 ? "" : String(preferences.prayerManualPlace.latitude)
             longitude = preferences.prayerManualPlace.longitude == 0 ? "" : String(preferences.prayerManualPlace.longitude)
             // The status this tab configures, on the island, while it is being chosen.
-            clock?.preview()
+            if preferences.timeEnabled { clock?.preview() }
         }
     }
 
@@ -683,16 +690,19 @@ struct ClipboardSettingsView: View {
 
     var body: some View {
         @Bindable var preferences = preferences
-        SettingsPane(.clipboard, enabled: $preferences.clipboardHistoryEnabled) {
+        SettingsPane(.clipboard) {
             SettingsGroup("History", footer: "Concealed content, like passwords, is never recorded.") {
+                SettingsRow("Keep a clipboard history") {
+                    Toggle("Keep history", isOn: $preferences.clipboardHistoryEnabled).toggleStyle(.switch)
+                }
                 SettingsRow("Keep the last") {
                     Picker("Limit", selection: $preferences.clipboardHistoryLimit) {
                         ForEach(AppPreferences.clipboardLimits, id: \.self) { Text("\($0) items").tag($0) }
                     }
                     .fixedSize()
                 }
+                .disabled(!preferences.clipboardHistoryEnabled)
             }
-            .disabled(!preferences.clipboardHistoryEnabled)
 
             SettingsGroup {
                 SettingsRow("\(clipboard.items.count) item\(clipboard.items.count == 1 ? "" : "s") stored") {

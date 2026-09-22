@@ -814,6 +814,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The pixel picker. The picked color is listed under Colors in the island and
     /// copied in the preferred format.
     @objc func pickColor(_ sender: Any?) {
+        guard preferences.colorPickerEnabled else {
+            FeedbackHUD.show("Color picker is off", symbol: "eyedropper")
+            return
+        }
         closeHistory()
         coordinator.pickColor(fromMenu: sender is NSMenuItem)
     }

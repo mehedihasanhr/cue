@@ -16,7 +16,7 @@ final class PrayerClock: NSObject {
     var showStatus: (_ status: IslandStatus, _ quiet: Bool) -> Void = { _, _ in }
 
     /// Prayer times are turned on in Settings (times still need a place).
-    var enabled: Bool { preferences.prayerTimesEnabled }
+    var enabled: Bool { preferences.timeEnabled && preferences.prayerTimesEnabled }
     /// The place the times are for (current or manual), once known.
     private(set) var place: Coordinates?
     /// A word about where the place came from, for Settings.
@@ -75,7 +75,7 @@ final class PrayerClock: NSObject {
             _ = preferences.timeStatusInterval
             _ = preferences.prayerAnnouncements
             _ = preferences.prayerAdjustments
-            return (preferences.prayerTimesEnabled, preferences.prayerLocationMode, preferences.prayerManualPlace)
+            return (preferences.timeEnabled && preferences.prayerTimesEnabled, preferences.prayerLocationMode, preferences.prayerManualPlace)
         } onChange: { [weak self] in
             Task { @MainActor in self?.applyPreferences() }
         }
@@ -120,8 +120,8 @@ final class PrayerClock: NSObject {
     func refresh() {
         eventTimer?.invalidate()
         eventTimer = nil
-        Log.app.info("Island clock: prayer times \(self.preferences.prayerTimesEnabled ? "on" : "off"), place \(self.placeDescription, privacy: .public), every \(self.preferences.timeStatusInterval) min")
-        guard preferences.prayerTimesEnabled, let place else {
+        Log.app.info("Island clock: \(self.preferences.timeEnabled ? "on" : "off"), prayer times \(self.preferences.prayerTimesEnabled ? "on" : "off"), place \(self.placeDescription, privacy: .public), every \(self.preferences.timeStatusInterval) min")
+        guard enabled, let place else {
             today = nil
             tomorrow = nil
             status = nil
@@ -162,7 +162,7 @@ final class PrayerClock: NSObject {
                 }
             }
         }
-        if preferences.timeStatusInterval > 0 {
+        if preferences.timeEnabled, preferences.timeStatusInterval > 0 {
             events.append((Self.nextTick(after: now, everyMinutes: preferences.timeStatusInterval), .time))
         }
         return events.filter { $0.0 > now }.sorted { $0.0 < $1.0 }

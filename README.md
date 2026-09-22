@@ -213,8 +213,9 @@ prints, given two seconds, inside Klik's sandbox).
 
 ### Time & prayer times
 
-Settings › Time. The island shows the time for a moment on the hour (or every 15 / 30
-minutes, 2 or 3 hours — or never); it waits while the island is open. Turn on **Prayer
+Settings › Time (the switch at the top right turns the whole clock off; Snippets and
+Colors have one too). The island shows the time for a moment on the hour (or every
+15 / 30 minutes, 2 or 3 hours — or never); it waits while the island is open. Turn on **Prayer
 times** and the island announces each prayer as it begins and the three periods when
 prayer is not allowed (after sunrise, at the sun's zenith, before sunset); the open
 island shows the current period and what is left of it. Times are computed on the Mac

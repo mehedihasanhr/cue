@@ -29,8 +29,10 @@ final class AppPreferences {
         static let islandOpensOn = "island.opensOn"
         static let clipboardEnabled = "clipboard.enabled"
         static let clipboardLimit = "clipboard.limit"
+        static let colorPickerEnabled = "color.enabled"
         static let colorFormat = "color.format"
         static let panelPosition = "panels.position"
+        static let timeEnabled = "clock.enabled"
         static let timeInterval = "clock.interval"
         static let prayerEnabled = "prayer.enabled"
         static let prayerMethod = "prayer.method"
@@ -62,6 +64,11 @@ final class AppPreferences {
     // MARK: Time & prayer
 
     static let timeIntervals = [0, 15, 30, 60, 120, 180]
+
+    /// The island clock as a whole: the time on the island and prayer times.
+    var timeEnabled: Bool {
+        didSet { defaults.set(timeEnabled, forKey: Key.timeEnabled) }
+    }
 
     /// Minutes between the island showing the time (0: never).
     var timeStatusInterval: Int {
@@ -131,6 +138,10 @@ final class AppPreferences {
     }
 
     // MARK: Color picker
+
+    var colorPickerEnabled: Bool {
+        didSet { defaults.set(colorPickerEnabled, forKey: Key.colorPickerEnabled) }
+    }
 
     /// The format a picked color is copied in (every format is in the card's menu).
     var colorFormat: ColorFormat {
@@ -372,8 +383,10 @@ final class AppPreferences {
         islandOpensOn = IslandTab(rawValue: defaults.string(forKey: Key.islandOpensOn) ?? "")
         clipboardHistoryEnabled = defaults.object(forKey: Key.clipboardEnabled) as? Bool ?? true
         clipboardHistoryLimit = defaults.object(forKey: Key.clipboardLimit) as? Int ?? 200
+        colorPickerEnabled = defaults.object(forKey: Key.colorPickerEnabled) as? Bool ?? true
         colorFormat = ColorFormat(rawValue: defaults.string(forKey: Key.colorFormat) ?? "") ?? .hex
         panelPosition = PanelPosition(rawValue: defaults.string(forKey: Key.panelPosition) ?? "") ?? .pointer
+        timeEnabled = defaults.object(forKey: Key.timeEnabled) as? Bool ?? true
         timeStatusInterval = defaults.object(forKey: Key.timeInterval) as? Int ?? 60
         prayerTimesEnabled = defaults.bool(forKey: Key.prayerEnabled)
         prayerMethod = CalculationMethod(rawValue: defaults.string(forKey: Key.prayerMethod) ?? "") ?? .muslimWorldLeague
