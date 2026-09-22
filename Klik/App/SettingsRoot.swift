@@ -6,14 +6,14 @@ import SwiftUI
 /// The pages of the Settings window, in sidebar order.
 enum SettingsSection: String, CaseIterable, Identifiable {
     case general, appearance, shortcuts, sharing, permissions, about
-    case island, capture, editor, clipboard, snippets, notes, colors, time
+    case island, capture, editor, clipboard, tasks, snippets, notes, colors, time
 
     var id: String { rawValue }
 
     /// The sidebar shows the app-wide pages first, then a group per feature.
     static let groups: [[SettingsSection]] = [
         [.general, .appearance, .shortcuts, .sharing, .permissions, .about],
-        [.island, .capture, .editor, .clipboard, .snippets, .notes, .colors, .time],
+        [.island, .capture, .editor, .clipboard, .tasks, .snippets, .notes, .colors, .time],
     ]
 
     var title: String {
@@ -28,6 +28,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .capture: "Capture"
         case .editor: "Editor"
         case .clipboard: "Clipboard"
+        case .tasks: "Tasks"
         case .snippets: "Snippets"
         case .notes: "Notes"
         case .colors: "Colors"
@@ -48,6 +49,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .capture: "The pointer and the sound after each capture"
         case .editor: "What every new annotation starts as"
         case .clipboard: "What Klik remembers of what you copy"
+        case .tasks: "A server to keep tasks in step with, and webhooks for each change"
         case .snippets: "Text that expands as you type"
         case .notes: "Quick notes, where they live, and where they can be sent"
         case .colors: "The color picker and its formats"
@@ -67,6 +69,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .capture: "camera.fill"
         case .editor: "paintbrush.pointed.fill"
         case .clipboard: "doc.on.clipboard.fill"
+        case .tasks: "checklist"
         case .snippets: "text.badge.checkmark"
         case .notes: "note.text"
         case .colors: "eyedropper.halffull"
@@ -86,6 +89,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .capture: .orange
         case .editor: .purple
         case .clipboard: .teal
+        case .tasks: .green
         case .snippets: .mint
         case .notes: .yellow
         case .colors: .red
@@ -103,6 +107,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .permissions: ["screen recording", "accessibility", "privacy", "access", "grant", "system settings"]
         case .about: ["version", "build", "credits", "stackrover", "copyright", "website"]
         case .island: ["dynamic island", "notch", "pill", "panel", "position", "hover", "click", "delay", "open", "close", "background", "flash", "status", "animation", "tab"]
+        case .tasks: ["task", "todo", "project", "server", "remote", "sync", "api", "post", "webhook", "token", "json", "endpoint"]
         case .snippets: ["snippet", "expand", "keyword", "trigger", "text", "type", "accessibility"]
         case .notes: ["note", "quick note", "markdown", "folder", "icloud", "obsidian", "vault", "apple notes", "notion", "sync"]
         case .colors: ["color", "picker", "format", "hex", "rgb", "hsl", "swift", "css"]
@@ -225,6 +230,7 @@ struct SettingsRootView: View {
         case .capture: CaptureSettingsView()
         case .editor: EditorSettingsView()
         case .clipboard: ClipboardSettingsView()
+        case .tasks: TasksSettingsView()
         case .snippets: SnippetSettingsView()
         case .notes: NotesSettingsView()
         case .colors: ColorSettingsView()

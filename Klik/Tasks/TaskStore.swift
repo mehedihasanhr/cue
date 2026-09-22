@@ -15,6 +15,14 @@ nonisolated struct TaskProject: Identifiable, Codable, Hashable {
         self.parentID = parentID
         createdAt = .now
     }
+
+    /// A project as a server sent it.
+    init(id: UUID, name: String, parentID: UUID?, createdAt: Date) {
+        self.id = id
+        self.name = name
+        self.parentID = parentID
+        self.createdAt = createdAt
+    }
 }
 
 nonisolated enum TaskStatus: String, Codable, CaseIterable {
@@ -139,6 +147,33 @@ nonisolated enum TaskTokens {
 }
 
 /// Something the user asked to delete and must confirm first.
+/// A change to a task, for webhooks.
+nonisolated enum TaskEvent {
+    case created(TaskItem)
+    case updated(TaskItem)
+    case statusChanged(TaskItem)
+    case deleted(TaskItem)
+
+    var task: TaskItem {
+        switch self {
+        case .created(let task), .updated(let task), .statusChanged(let task), .deleted(let task): task
+        }
+    }
+
+    /// The event's name on the wire: `task.created`, `task.updated`, `task.status`, `task.deleted`.
+    var name: String { "task.\(kind)" }
+
+    /// The kind as Settings › Tasks lists it: `created`, `updated`, `status`, `deleted`.
+    var kind: String {
+        switch self {
+        case .created: "created"
+        case .updated: "updated"
+        case .statusChanged: "status"
+        case .deleted: "deleted"
+        }
+    }
+}
+
 nonisolated enum TaskDeletion: Hashable {
     case task(TaskItem)
     case project(TaskProject)
@@ -153,6 +188,8 @@ nonisolated struct TaskItem: Identifiable, Codable, Hashable {
     var status: TaskStatus
     var priority: TaskPriority
     var createdAt: Date
+    /// When it last changed here; what decides between two copies when syncing.
+    var updatedAt: Date
 
     init(text: String, projectID: UUID?, priority: TaskPriority = .medium) {
         id = UUID()
@@ -161,6 +198,18 @@ nonisolated struct TaskItem: Identifiable, Codable, Hashable {
         status = .pending
         self.priority = priority
         createdAt = .now
+        updatedAt = createdAt
+    }
+
+    /// A task as a server sent it.
+    init(id: UUID, text: String, projectID: UUID?, status: TaskStatus, priority: TaskPriority, createdAt: Date, updatedAt: Date) {
+        self.id = id
+        self.text = text
+        self.projectID = projectID
+        self.status = status
+        self.priority = priority
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
     }
 
     /// The first line that says anything, without Markdown — for lists.
@@ -171,7 +220,7 @@ nonisolated struct TaskItem: Identifiable, Codable, Hashable {
     var hasMore: Bool { !summary.isEmpty }
 
     // `title` and `notes` are what older builds wrote (and read): the text is their join.
-    private enum CodingKeys: String, CodingKey { case id, text, title, notes, projectID, status, priority, createdAt }
+    private enum CodingKeys: String, CodingKey { case id, text, title, notes, projectID, status, priority, createdAt, updatedAt }
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -187,6 +236,7 @@ nonisolated struct TaskItem: Identifiable, Codable, Hashable {
         status = try container.decode(TaskStatus.self, forKey: .status)
         priority = try container.decodeIfPresent(TaskPriority.self, forKey: .priority) ?? .medium
         createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? createdAt
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -198,6 +248,7 @@ nonisolated struct TaskItem: Identifiable, Codable, Hashable {
         try container.encode(status, forKey: .status)
         try container.encode(priority, forKey: .priority)
         try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(updatedAt, forKey: .updatedAt)
     }
 }
 
@@ -270,6 +321,14 @@ nonisolated enum TaskText {
 final class TaskStore {
     private(set) var projects: [TaskProject] = []
     private(set) var tasks: [TaskItem] = []   // newest first
+    /// Tasks deleted here and not yet told to the server.
+    private(set) var deletedIDs: [UUID] = []
+    /// A change made here was saved (not one taken from the server).
+    @ObservationIgnored var onChanged: () -> Void = {}
+    /// A task changed here, for webhooks.
+    @ObservationIgnored var onEvent: (TaskEvent) -> Void = { _ in }
+    /// Changes from the server are being applied: they are neither pushed back nor announced.
+    @ObservationIgnored private var applyingRemote = false
     /// Where the Tasks tab should land after the island's prompt finishes.
     enum PendingSelection: Equatable { case all, project(UUID) }
     var pendingSelection: PendingSelection?
@@ -285,6 +344,7 @@ final class TaskStore {
     private struct File: Codable {
         var projects: [TaskProject]
         var tasks: [TaskItem]
+        var deleted: [UUID]?
     }
 
     init() {
@@ -300,19 +360,71 @@ final class TaskStore {
         if let data = try? Data(contentsOf: file.url), let decoded = try? JSONDecoder().decode(File.self, from: data) {
             projects = decoded.projects
             tasks = decoded.tasks
+            deletedIDs = decoded.deleted ?? []
         }
         file.changed = { [weak self] data in self?.load(data) }
     }
 
     /// Keeps the tasks in `folder` (nil: the container), taking what is there.
     func useSyncFolder(_ folder: URL?) {
-        if let data = file.relocate(to: folder, current: try? JSONEncoder().encode(File(projects: projects, tasks: tasks))) { load(data) }
+        if let data = file.relocate(to: folder, current: try? JSONEncoder().encode(File(projects: projects, tasks: tasks, deleted: deletedIDs))) { load(data) }
     }
 
     private func load(_ data: Data) {
         guard let decoded = try? JSONDecoder().decode(File.self, from: data) else { return }
         projects = decoded.projects
         tasks = decoded.tasks
+        deletedIDs = decoded.deleted ?? []
+    }
+
+    // MARK: - Remote changes
+
+    /// Takes what a server sent: tasks it has that are missing here or newer than
+    /// the copy here, projects missing here (or renamed), and deletions. Returns
+    /// how many tasks changed. Nothing taken is pushed back or announced.
+    @discardableResult
+    func applyRemote(tasks remote: [TaskItem], projects remoteProjects: [TaskProject], deleted: [UUID]) -> Int {
+        applyingRemote = true
+        defer { applyingRemote = false }
+        var changed = 0
+        for project in remoteProjects {
+            if let index = projects.firstIndex(where: { $0.id == project.id }) {
+                if projects[index].name != project.name || projects[index].parentID != project.parentID {
+                    projects[index].name = project.name
+                    projects[index].parentID = project.parentID
+                }
+            } else {
+                projects.append(project)
+            }
+        }
+        for task in remote where !deletedIDs.contains(task.id) {
+            if let index = tasks.firstIndex(where: { $0.id == task.id }) {
+                if task.updatedAt > tasks[index].updatedAt {
+                    tasks[index] = task
+                    changed += 1
+                }
+            } else {
+                tasks.insert(task, at: 0)
+                changed += 1
+            }
+        }
+        if !deleted.isEmpty {
+            let before = tasks.count
+            tasks.removeAll { deleted.contains($0.id) }
+            changed += before - tasks.count
+        }
+        tasks.sort { $0.createdAt > $1.createdAt }
+        save()
+        return changed
+    }
+
+    /// The server has been told about these deletions.
+    func clearDeleted(_ ids: [UUID]) {
+        guard !ids.isEmpty else { return }
+        applyingRemote = true
+        defer { applyingRemote = false }
+        deletedIDs.removeAll(where: ids.contains)
+        save()
     }
 
     // MARK: - Projects
@@ -417,6 +529,7 @@ final class TaskStore {
         let task = TaskItem(text: cleaned, projectID: projectID, priority: priority)
         tasks.insert(task, at: 0)
         save()
+        onEvent(.created(task))
         return task
     }
 
@@ -524,7 +637,7 @@ final class TaskStore {
     }
 
     func setStatus(_ status: TaskStatus, for task: TaskItem) {
-        update(task) { $0.status = status }
+        update(task, event: TaskEvent.statusChanged) { $0.status = status }
     }
 
     func setPriority(_ priority: TaskPriority, for task: TaskItem) {
@@ -543,20 +656,26 @@ final class TaskStore {
     }
 
     func delete(_ task: TaskItem) {
-        tasks.removeAll { $0.id == task.id }
+        guard let index = tasks.firstIndex(where: { $0.id == task.id }) else { return }
+        let gone = tasks.remove(at: index)
+        deletedIDs.append(gone.id)
         save()
+        onEvent(.deleted(gone))
     }
 
-    private func update(_ task: TaskItem, _ change: (inout TaskItem) -> Void) {
+    private func update(_ task: TaskItem, event: (TaskItem) -> TaskEvent = TaskEvent.updated, _ change: (inout TaskItem) -> Void) {
         guard let index = tasks.firstIndex(where: { $0.id == task.id }) else { return }
         change(&tasks[index])
+        tasks[index].updatedAt = .now
         save()
+        onEvent(event(tasks[index]))
     }
 
     // MARK: - Persistence
 
     private func save() {
-        guard let data = try? JSONEncoder().encode(File(projects: projects, tasks: tasks)) else { return }
+        guard let data = try? JSONEncoder().encode(File(projects: projects, tasks: tasks, deleted: deletedIDs)) else { return }
         file.write(data)
+        if !applyingRemote { onChanged() }
     }
 }

@@ -53,6 +53,12 @@ final class AppPreferences {
         static let notesAppleNotesFolder = "notes.appleNotesFolder"
         static let notesNotionParent = "notes.notionParent"
         static let notesSendTo = "notes.sendTo"
+        static let tasksServerURL = "tasks.server.url"
+        static let tasksSyncEnabled = "tasks.sync.enabled"
+        static let tasksSyncInterval = "tasks.sync.interval"
+        static let tasksWebhookURL = "tasks.webhook.url"
+        static let tasksWebhookEnabled = "tasks.webhook.enabled"
+        static let tasksWebhookEvents = "tasks.webhook.events"
         static let snippetsEnabled = "snippets.enabled"
         static let snippetPrefix = "snippets.prefix"
     }
@@ -87,6 +93,48 @@ final class AppPreferences {
     var notesSendTo: Set<String> {
         didSet { defaults.set(Array(notesSendTo).sorted(), forKey: Key.notesSendTo) }
     }
+
+    // MARK: Tasks
+
+    /// The URL Klik POSTs its tasks to, and takes the server's changes from.
+    var tasksServerURL: String {
+        didSet { defaults.set(tasksServerURL, forKey: Key.tasksServerURL) }
+    }
+
+    /// Sent as `Authorization: Bearer …`; in the Keychain.
+    var tasksServerToken: String {
+        didSet { Keychain.set(tasksServerToken, for: "tasks.server.token") }
+    }
+
+    var tasksSyncEnabled: Bool {
+        didSet { defaults.set(tasksSyncEnabled, forKey: Key.tasksSyncEnabled) }
+    }
+
+    /// Minutes between syncs besides the one after each change (0: only then).
+    var tasksSyncInterval: Int {
+        didSet { defaults.set(tasksSyncInterval, forKey: Key.tasksSyncInterval) }
+    }
+
+    /// Where each change is POSTed as an event.
+    var tasksWebhookURL: String {
+        didSet { defaults.set(tasksWebhookURL, forKey: Key.tasksWebhookURL) }
+    }
+
+    /// Signs each webhook body (`X-Klik-Signature`); in the Keychain.
+    var tasksWebhookSecret: String {
+        didSet { Keychain.set(tasksWebhookSecret, for: "tasks.webhook.secret") }
+    }
+
+    var tasksWebhookEnabled: Bool {
+        didSet { defaults.set(tasksWebhookEnabled, forKey: Key.tasksWebhookEnabled) }
+    }
+
+    /// Which changes the webhook gets: `created`, `updated`, `status`, `deleted`.
+    var tasksWebhookEvents: Set<String> {
+        didSet { defaults.set(Array(tasksWebhookEvents).sorted(), forKey: Key.tasksWebhookEvents) }
+    }
+
+    static let taskWebhookEventKinds: [(kind: String, title: String)] = [("created", "Created"), ("updated", "Edited"), ("status", "Status changed"), ("deleted", "Deleted")]
 
     // MARK: Snippets
 
@@ -492,6 +540,14 @@ final class AppPreferences {
         notesNotionParent = defaults.string(forKey: Key.notesNotionParent) ?? ""
         notesNotionToken = Keychain.get("notes.notion.token") ?? ""
         notesSendTo = Set(defaults.stringArray(forKey: Key.notesSendTo) ?? [])
+        tasksServerURL = defaults.string(forKey: Key.tasksServerURL) ?? ""
+        tasksServerToken = Keychain.get("tasks.server.token") ?? ""
+        tasksSyncEnabled = defaults.object(forKey: Key.tasksSyncEnabled) as? Bool ?? false
+        tasksSyncInterval = defaults.object(forKey: Key.tasksSyncInterval) as? Int ?? 5
+        tasksWebhookURL = defaults.string(forKey: Key.tasksWebhookURL) ?? ""
+        tasksWebhookSecret = Keychain.get("tasks.webhook.secret") ?? ""
+        tasksWebhookEnabled = defaults.object(forKey: Key.tasksWebhookEnabled) as? Bool ?? false
+        tasksWebhookEvents = Set(defaults.stringArray(forKey: Key.tasksWebhookEvents) ?? ["created", "updated", "status", "deleted"])
         snippetsEnabled = defaults.object(forKey: Key.snippetsEnabled) as? Bool ?? true
         snippetPrefix = defaults.string(forKey: Key.snippetPrefix) ?? ";"
         let stored = defaults.dictionary(forKey: Key.prayerAdjustments) as? [String: Int] ?? [:]

@@ -12,6 +12,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let colors = ColorStore()
     let groups = GroupStore()
     let tasks = TaskStore()
+    /// The remote server and webhooks for tasks (Settings › Tasks).
+    private lazy var taskSync = TaskSync(store: tasks, preferences: preferences)
     let snippets = SnippetStore()
     let notes = NoteStore()
     private var snippetExpander: SnippetExpander?
@@ -51,6 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // catalog, independent of the icon-services cache for this bundle path.
         if let icon = NSImage(named: "AppIcon") { NSApp.applicationIconImage = icon }
         installStatusItem()
+        _ = taskSync // listens for task changes from now on
 
         coordinator.onCaptured = { [weak self] image in self?.handleCapture(image) }
         coordinator.onTextRecognized = { [weak self] text in self?.handleRecognizedText(text) }
@@ -1078,7 +1081,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func showSettings(_ sender: Any?) {
         if settingsWindow == nil {
-            let controller = SettingsWindowController(model: model, shortcuts: shortcuts, library: library, clipboard: clipboard, preferences: preferences, clock: prayerClock, share: share, sync: syncFolder, notes: notes)
+            let controller = SettingsWindowController(model: model, shortcuts: shortcuts, library: library, clipboard: clipboard, preferences: preferences, clock: prayerClock, share: share, sync: syncFolder, notes: notes, taskSync: taskSync)
             controller.onClose = { [weak self] in
                 self?.settingsWindow = nil
                 self?.shortcuts.isRecording = false

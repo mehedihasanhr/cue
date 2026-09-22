@@ -459,6 +459,122 @@ struct NotesSettingsView: View {
     }
 }
 
+// MARK: - Tasks
+
+struct TasksSettingsView: View {
+    @Environment(AppPreferences.self) private var preferences
+    @Environment(TaskSync.self) private var sync: TaskSync?
+    @State private var serverCheck: String?
+    @State private var checking = false
+    @State private var testing = false
+
+    var body: some View {
+        @Bindable var preferences = preferences
+        SettingsPane(.tasks) {
+            SettingsGroup("Remote server", footer: "Klik POSTs every project and task as JSON to this URL and takes what the server answers with. The format is in the README under Tasks sync.") {
+                SettingsRow("Server URL") {
+                    TextField("URL", text: $preferences.tasksServerURL, prompt: Text("https://example.com/klik/sync"))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 300)
+                }
+                SettingsRow("Token", subtitle: "Sent as Authorization: Bearer. Kept in your Keychain.") {
+                    SecureField("Token", text: $preferences.tasksServerToken, prompt: Text("Optional"))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 300)
+                }
+                SettingsRow("Connection", subtitle: serverCheck) {
+                    Button(checking ? "Checking…" : "Check") { checkServer() }
+                        .disabled(checking || sync?.serverURL == nil)
+                }
+            }
+
+            SettingsGroup("Sync", footer: "A sync follows each change here, and runs on the interval; the server's newer copies replace older ones here.") {
+                SettingsRow("Keep tasks in step with the server") {
+                    Toggle("Sync", isOn: $preferences.tasksSyncEnabled).toggleStyle(.switch)
+                }
+                .disabled(sync?.serverURL == nil)
+                SettingsRow("Also every") {
+                    Picker("Interval", selection: $preferences.tasksSyncInterval) {
+                        Text("Only after changes").tag(0)
+                        Text("Minute").tag(1)
+                        Text("5 minutes").tag(5)
+                        Text("15 minutes").tag(15)
+                        Text("Hour").tag(60)
+                    }
+                    .frame(width: 180)
+                }
+                .disabled(!preferences.tasksSyncEnabled)
+                if let sync {
+                    SettingsRow(syncTitle(sync), subtitle: sync.lastError, symbol: sync.lastError == nil ? "arrow.triangle.2.circlepath" : "exclamationmark.triangle.fill",
+                                tint: sync.lastError == nil ? .green : .orange) {
+                        Button(sync.syncing ? "Syncing…" : "Sync Now") { Task { await sync.sync() } }
+                            .disabled(sync.syncing || sync.serverURL == nil)
+                    }
+                }
+            }
+
+            SettingsGroup("Webhook", footer: "Each change POSTs a JSON event — task.created, task.updated, task.status, task.deleted — with the task, an X-Klik-Event header and, with a secret, X-Klik-Signature: sha256=HMAC of the body.") {
+                SettingsRow("Webhook URL") {
+                    TextField("URL", text: $preferences.tasksWebhookURL, prompt: Text("https://example.com/hooks/klik"))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 300)
+                }
+                SettingsRow("Secret", subtitle: "Kept in your Keychain.") {
+                    SecureField("Secret", text: $preferences.tasksWebhookSecret, prompt: Text("Optional"))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 300)
+                }
+                SettingsRow("Send events") {
+                    Toggle("Send", isOn: $preferences.tasksWebhookEnabled).toggleStyle(.switch)
+                }
+                .disabled(sync?.webhookURL == nil)
+                SettingsRow("Events") {
+                    HStack(spacing: 14) {
+                        ForEach(AppPreferences.taskWebhookEventKinds, id: \.kind) { entry in
+                            Toggle(entry.title, isOn: Binding(
+                                get: { preferences.tasksWebhookEvents.contains(entry.kind) },
+                                set: { on in if on { preferences.tasksWebhookEvents.insert(entry.kind) } else { preferences.tasksWebhookEvents.remove(entry.kind) } }
+                            ))
+                            .toggleStyle(.checkbox)
+                        }
+                    }
+                }
+                .disabled(!preferences.tasksWebhookEnabled)
+                if let sync {
+                    SettingsRow("Last event", subtitle: sync.lastWebhook ?? "None sent yet") {
+                        Button(testing ? "Sending…" : "Send Test") { sendTest(sync) }
+                            .disabled(testing || sync.webhookURL == nil)
+                    }
+                }
+            }
+        }
+    }
+
+    private func syncTitle(_ sync: TaskSync) -> String {
+        guard let last = sync.lastSync else { return "Never synced" }
+        let taken = sync.lastTaken == 0 ? "" : " · took \(sync.lastTaken) from the server"
+        return "Last sync \(last.formatted(.relative(presentation: .named)))\(taken)"
+    }
+
+    private func checkServer() {
+        guard let sync else { return }
+        checking = true
+        serverCheck = nil
+        Task { @MainActor in
+            do { serverCheck = try await sync.check() } catch { serverCheck = error.localizedDescription }
+            checking = false
+        }
+    }
+
+    private func sendTest(_ sync: TaskSync) {
+        testing = true
+        Task { @MainActor in
+            do { try await sync.sendTest() } catch { FeedbackHUD.show("Webhook failed", symbol: "exclamationmark.triangle", subtitle: error.localizedDescription) }
+            testing = false
+        }
+    }
+}
+
 // MARK: - Colors
 
 struct ColorSettingsView: View {

@@ -159,6 +159,41 @@ attached. Right-click a task › **Focus** › 15/25/45/60 minutes starts a sess
 island's header shows a ring and the time left (click it to open the task, ■ to stop),
 and it says so with a sound when the time is up.
 
+### Tasks sync and webhooks
+
+Settings › **Tasks** connects the tasks to a server of your own.
+
+**Sync.** Klik POSTs one JSON body to the **Server URL** (with `Authorization:
+Bearer <token>` when a token is set) two seconds after every change, on the interval
+chosen, and on **Sync Now**:
+
+```json
+{ "client": "klik", "version": 1, "sentAt": "2026-09-22T08:00:00Z", "since": "…or null",
+  "projects": [ { "id": "UUID", "name": "Work", "parentID": null, "createdAt": "…" } ],
+  "tasks": [ { "id": "UUID", "title": "Ship it", "text": "Ship it\nWith notes", "status": "pending",
+               "priority": "high", "projectID": "UUID or null", "createdAt": "…", "updatedAt": "…" } ],
+  "deleted": [ "UUIDs deleted here since the last sync" ] }
+```
+
+Any 2xx answer counts as a sync. The body may be empty, or JSON with any of
+`projects`, `tasks` and `deleted` in the same shapes: tasks missing here are added,
+a task whose `updatedAt` is newer than the copy here replaces it (a task with only
+an `id` and `title` is fine; status defaults to `pending`, priority to `medium`),
+projects missing here are added, and the `deleted` ids are removed. Statuses are
+`pending`, `inProcess`, `review`, `complete`; priorities `urgent`, `high`, `medium`,
+`low`. **Check** POSTs `{ "client": "klik", "version": 1, "ping": true }`.
+
+**Webhook.** With **Send events** on, each change POSTs to the **Webhook URL**:
+
+```json
+{ "event": "task.created", "sentAt": "…", "task": { …as above… }, "project": { …or null… } }
+```
+
+with `X-Klik-Event: task.created | task.updated | task.status | task.deleted` and,
+when a **Secret** is set, `X-Klik-Signature: sha256=<hex HMAC-SHA256 of the body>`.
+The event kinds can be ticked on and off; **Send Test** posts a `ping` event.
+Changes taken from the server are not sent back to it or to the webhook.
+
 ### Preview pane
 
 A click on a card copies it (a capture's Edit button opens the editor). **Preview**

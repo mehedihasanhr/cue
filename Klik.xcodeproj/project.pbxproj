@@ -50,6 +50,7 @@
 				Tasks/MarkdownView.swift,
 				Tasks/RichTextEditor.swift,
 				Tasks/TaskStore.swift,
+				Tasks/TaskWire.swift,
 				Support/Log.swift,
 			);
 			target = 4B4C494B000000000000E002 /* KlikTests */;
