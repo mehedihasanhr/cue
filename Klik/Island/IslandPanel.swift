@@ -842,6 +842,8 @@ struct IslandPanel: View {
         hover.task = nil
         hover.closeTask?.cancel()
         hover.closeTask = nil
+        // A link's page is fetched now, so its preview is whole when the pane opens.
+        if case .clipboard(let entry) = item, entry.kind == .link, let url = URL(string: entry.text) { LinkMetadata.prefetch(url) }
         guard let detail = item.detail, preferences.islandPreview == .pane, preferences.islandPreviewOnHover else { return }
         let delay = isPreviewOpen() ? 0 : preferences.islandPreviewHoverDelay
         if delay <= 0 {

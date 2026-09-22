@@ -73,6 +73,8 @@ struct PreviewPaneRoot: View {
         .environment(\.colorScheme, .dark)
     }
 
+    /// Enter from the side the pointer moved towards, leave the other way — the same
+    /// path in both directions, so the pane reads as a strip of cards.
     private var transition: AnyTransition {
         switch model.direction {
         case 1: .asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .move(edge: .leading).combined(with: .opacity))
@@ -464,6 +466,13 @@ private struct LinkPreviewView: View {
     @State private var metadata: LinkMetadata?
     @State private var failed = false
 
+    /// What is already known about the link is shown at once, so the pane slides
+    /// in whole; only a first look at a link waits for the network.
+    init(url: URL) {
+        self.url = url
+        _metadata = State(initialValue: LinkMetadata.cached(url))
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let data = metadata?.imageData, let image = NSImage(data: data) {
@@ -482,11 +491,13 @@ private struct LinkPreviewView: View {
                     }
                     .contentShape(Rectangle())
                     .onTapGesture { NSWorkspace.shared.open(url) }
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
             } else if metadata == nil, !failed {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(.white.opacity(0.06))
                     .frame(height: 120)
                     .overlay { ProgressView().controlSize(.small) }
+                    .transition(.opacity)
             }
             Text(metadata?.title ?? url.host() ?? url.absoluteString)
                 .font(.system(size: 15, weight: .semibold))
@@ -498,8 +509,14 @@ private struct LinkPreviewView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task(id: url) {
-            metadata = await LinkMetadata.fetch(url)
-            failed = metadata == nil
+            guard metadata == nil else { return }
+            let fetched = await LinkMetadata.fetch(url)
+            guard !Task.isCancelled else { return }
+            // Arriving later than the slide: the picture fades and settles in rather than popping.
+            withAnimation(.smooth(duration: 0.28)) {
+                metadata = fetched
+                failed = fetched == nil
+            }
         }
     }
 }
@@ -513,18 +530,35 @@ struct LinkMetadata: Sendable {
     /// A video (YouTube, Vimeo): the picture gets a play badge.
     var isVideo = false
 
-    private static let cache = LinkMetadataCache()
+    /// Links looked up this session. Only a complete answer is kept: a page whose
+    /// picture could not be fetched is asked again next time.
+    @MainActor private static var cache: [URL: LinkMetadata] = [:]
+    @MainActor private static var inFlight: Set<URL> = []
+
+    /// What is known already, without waiting.
+    @MainActor static func cached(_ url: URL) -> LinkMetadata? { cache[url] }
+
+    /// Starts the lookup so it is done by the time the link is previewed (a card is hovered).
+    @MainActor static func prefetch(_ url: URL) {
+        guard cache[url] == nil, !inFlight.contains(url) else { return }
+        Task { _ = await fetch(url) }
+    }
+
     private static let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Klik"
     /// YouTube's page is over a megabyte before its meta tags; enough is read to reach them.
     private static let htmlLimit = 4_000_000
 
     static func fetch(_ url: URL) async -> LinkMetadata? {
-        if let cached = await cache.get(url) { return cached }
+        if let cached = await cached(url) { return cached }
+        await MainActor.run { _ = inFlight.insert(url) }
+        defer { Task { @MainActor in inFlight.remove(url) } }
         var found = await fromOEmbed(url)
         if found == nil { found = await fromHTML(url) }
         guard var metadata = found else { return nil }
         if let pictureURL = metadata.pictureURL { metadata.imageData = await picture(pictureURL) }
-        await cache.set(url, metadata)
+        if metadata.pictureURL == nil || metadata.imageData != nil {
+            await MainActor.run { cache[url] = metadata }
+        }
         return metadata
     }
 
@@ -569,7 +603,7 @@ struct LinkMetadata: Sendable {
     }
 
     private static func get(_ url: URL) async -> Data? {
-        var request = URLRequest(url: url, timeoutInterval: 8)
+        var request = URLRequest(url: url, timeoutInterval: 12)
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("en", forHTTPHeaderField: "Accept-Language")
         guard let (data, response) = try? await URLSession.shared.data(for: request),
@@ -609,8 +643,3 @@ struct LinkMetadata: Sendable {
     }
 }
 
-private actor LinkMetadataCache {
-    private var entries: [URL: LinkMetadata] = [:]
-    func get(_ url: URL) -> LinkMetadata? { entries[url] }
-    func set(_ url: URL, _ metadata: LinkMetadata) { entries[url] = metadata }
-}

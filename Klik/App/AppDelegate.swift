@@ -146,6 +146,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
+        // Diagnostics: `--env KLIK_DEBUG_LINK=<url>` fetches the link's preview metadata and
+        // writes what came back to Pictures/Klik/_link.txt.
+        if let spec = ProcessInfo.processInfo.environment["KLIK_DEBUG_LINK"], let url = URL(string: spec) {
+            Task { @MainActor in
+                let start = Date.now
+                let metadata = await LinkMetadata.fetch(url)
+                let report = """
+                url: \(url.absoluteString)
+                took: \(Int(Date.now.timeIntervalSince(start) * 1000)) ms
+                title: \(metadata?.title ?? "nil")
+                description: \(metadata?.description ?? "nil")
+                image: \(metadata?.imageData?.count ?? 0) bytes, decodes: \(metadata?.imageData.flatMap { NSImage(data: $0) } != nil)
+                video: \(metadata?.isVideo ?? false)
+                """
+                try? report.write(to: CaptureLibrary.defaultFolder().appendingPathComponent("_link.txt"), atomically: true, encoding: .utf8)
+            }
+        }
         // Diagnostics: `--env KLIK_DEBUG_CLIPBOARD_ROUNDTRIP=1` puts the newest clipboard entry
         // back on the pasteboard after 5 s and lists the pasteboard's types before and after
         // in Pictures/Klik/_roundtrip.txt.

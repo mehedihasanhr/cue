@@ -258,8 +258,12 @@ final class IslandController {
         }
         guard previewModel.detail?.id != detail.id else { return }
         if pane.isVisible, previewModel.detail != nil {
+            // The view leaving takes the transition it was last drawn with: a changed
+            // direction is drawn once before the item changes, or it would leave the wrong way.
+            let turned = previewModel.direction != direction
             previewModel.direction = direction
-            withAnimation(.easeOut(duration: 0.28)) { previewModel.detail = detail }
+            let slide = { withAnimation(.smooth(duration: 0.32)) { self.previewModel.detail = detail } }
+            if turned { DispatchQueue.main.async(execute: slide) } else { slide() }
         } else {
             var transaction = Transaction()
             transaction.disablesAnimations = true
