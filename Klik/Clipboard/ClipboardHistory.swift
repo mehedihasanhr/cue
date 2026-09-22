@@ -233,12 +233,17 @@ final class ClipboardHistory {
             pasteboard.writeObjects(pasteboardItems)
         }
         lastChangeCount = pasteboard.changeCount
-        if promote, let index = items.firstIndex(of: item), index > 0 {
-            var moved = items.remove(at: index)
-            moved.createdAt = .now
-            items.insert(moved, at: 0)
-            update(moved)
-        }
+        if promote { self.promote(item) }
+    }
+
+    /// Moves the item to the top like a fresh copy — for a copy that could not
+    /// promote at once, because its card would have jumped under the pointer.
+    func promote(_ item: ClipboardItem) {
+        guard let index = items.firstIndex(of: item), index > 0 else { return }
+        var moved = items.remove(at: index)
+        moved.createdAt = .now
+        items.insert(moved, at: 0)
+        update(moved)
     }
 
     // MARK: - Paste stack

@@ -218,22 +218,26 @@ struct LiquidGlassModifier: ViewModifier {
     let cornerRadius: CGFloat
     /// Dark glass whatever the appearance (for content drawn in white).
     var alwaysDark = false
+    /// How see-through: 0 is the frosted default, 1 nearly clear (the tint and
+    /// grain fade out, the material thins) — for a note pinned over other apps.
+    var clarity: Double = 0
     @Environment(\.colorScheme) private var scheme
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         let dark = alwaysDark || scheme == .dark
-        let tint: Color = dark ? .black.opacity(alwaysDark && scheme == .light ? 0.5 : 0.22) : .white.opacity(0.28)
+        let clarity = min(max(clarity, 0), 1)
+        let tint: Color = dark ? .black.opacity((alwaysDark && scheme == .light ? 0.5 : 0.22) * (1 - clarity)) : .white.opacity(0.28 * (1 - clarity))
         if #available(macOS 26.0, *) {
             GlassEffectContainer {
                 content
-                    .background { GrainOverlay(opacity: dark ? 0.5 : 0.35, smooth: true).clipShape(shape) }
-                    .glassEffect(.regular.tint(tint).interactive(), in: shape)
+                    .background { GrainOverlay(opacity: (dark ? 0.5 : 0.35) * (1 - clarity), smooth: true).clipShape(shape) }
+                    .glassEffect(clarity >= 0.5 ? .clear.tint(tint).interactive() : .regular.tint(tint).interactive(), in: shape)
             }
         } else {
             content
-                .background { GrainOverlay(opacity: 0.4, smooth: true).clipShape(shape) }
-                .background(.regularMaterial, in: shape)
+                .background { GrainOverlay(opacity: 0.4 * (1 - clarity), smooth: true).clipShape(shape) }
+                .background(clarity >= 0.67 ? Material.ultraThinMaterial : clarity >= 0.34 ? Material.thinMaterial : Material.regularMaterial, in: shape)
                 .background(tint, in: shape)
                 .overlay(shape.strokeBorder(.primary.opacity(0.12)))
                 .shadow(color: .black.opacity(0.3), radius: 16, y: 6)
@@ -242,8 +246,9 @@ struct LiquidGlassModifier: ViewModifier {
 }
 
 extension View {
-    /// Tinted Liquid Glass that follows the appearance (or stays dark).
-    func liquidGlass(cornerRadius: CGFloat, alwaysDark: Bool = false) -> some View {
-        modifier(LiquidGlassModifier(cornerRadius: cornerRadius, alwaysDark: alwaysDark))
+    /// Tinted Liquid Glass that follows the appearance (or stays dark); `clarity`
+    /// from 0 (frosted) to 1 (nearly clear).
+    func liquidGlass(cornerRadius: CGFloat, alwaysDark: Bool = false, clarity: Double = 0) -> some View {
+        modifier(LiquidGlassModifier(cornerRadius: cornerRadius, alwaysDark: alwaysDark, clarity: clarity))
     }
 }

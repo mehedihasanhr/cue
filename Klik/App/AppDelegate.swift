@@ -647,10 +647,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         closeHistory()
-        let content = FloatingPanelView(library: library, clipboard: clipboard, assets: assets, colors: colors, tasksStore: tasks, snippets: snippets, actions: historyActions)
+        let content = FloatingPanelView(library: library, clipboard: clipboard, assets: assets, colors: colors, tasksStore: tasks, snippets: snippets, actions: historyActions,
+                                        close: { [weak self] in self?.floatingPanel?.close() })
         .environment(preferences)
         .environment(notes)
-        let panel = FloatingPanelWindow(rootView: content)
+        let panel = FloatingPanelWindow(rootView: content, movableByBackground: false)
         floatingPanel = panel
         panel.show(at: NSEvent.mouseLocation, position: preferences.panelPosition)
     }
@@ -901,8 +902,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             preview: { [weak self] item in self?.closeHistoryThen { $0.openEditor(for: item, mode: .preview) } },
             edit: { [weak self] item in self?.closeHistoryThen { $0.openEditor(for: item, mode: .edit) } },
             copy: { [weak self] item in
-                self?.library.copyToClipboard(item)
-                FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: item.dimensions, image: self?.library.thumbnail(for: item))
+                if self?.library.copyToClipboard(item) == true {
+                    FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: item.dimensions, image: self?.library.thumbnail(for: item))
+                } else {
+                    FeedbackHUD.show("Cannot copy — the file has gone", symbol: "exclamationmark.triangle.fill", duration: .seconds(1.6), subtitle: item.title)
+                }
             },
             palette: { [weak self] item in self?.library.image(for: item).map { PaletteExtractor.dominantColors(in: $0.cgImage) } ?? [] },
             delete: { [weak self] item in self?.deleteCapture(item) },
@@ -1033,7 +1037,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// to the notes folder; Send puts it in Obsidian, Apple Notes or Notion too.
     @objc func quickNote(_ sender: Any?) {
         if let panel = quickTaskPanel, panel.isVisible, isNotePanel {
-            panel.close()
+            // A pinned note is brought back rather than closed.
+            if panel.isPinned { panel.makeKeyAndOrderFront(nil) } else { panel.close() }
             return
         }
         notePanel(IslandPrompt(kind: .note(nil)))
@@ -1066,6 +1071,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let panel = QuickTaskPanel(form: form)
         quickTaskPanel = panel
         isNotePanel = true
+        panel.chrome.clarity = preferences.notesPanelClarity
+        if let size = preferences.notesPanelSize { panel.resize(to: size, animated: false) }
         // Island cards pasted while the note is open land in its text.
         clipboard.openEditor = { [weak self] in
             guard let panel = self?.quickTaskPanel, panel.isVisible else { return nil }

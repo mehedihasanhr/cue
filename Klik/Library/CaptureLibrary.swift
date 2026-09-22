@@ -382,15 +382,25 @@ final class CaptureLibrary {
         return FileManager.default.fileExists(atPath: fallback.path) ? fallback : nil
     }
 
-    func copyToClipboard(_ item: CaptureItem) {
+    /// Puts the capture on the pasteboard. False when its file has gone or cannot be
+    /// read — the caller says so rather than claiming it copied.
+    @discardableResult
+    func copyToClipboard(_ item: CaptureItem) -> Bool {
         if let pending = pendingImages[item.id] {
             Clipboard.copy(pending)
-            return
+            return true
         }
-        guard let url = fileURL(for: item) else { return }
-        withScopedAccess(to: url) {
-            guard let data = try? Data(contentsOf: url) else { return }
+        guard let url = fileURL(for: item) else {
+            Log.app.error("Capture copy: no file for \(item.fileName, privacy: .public)")
+            return false
+        }
+        return withScopedAccess(to: url) {
+            guard let data = try? Data(contentsOf: url) else {
+                Log.app.error("Capture copy: cannot read \(url.lastPathComponent, privacy: .public)")
+                return false
+            }
             Clipboard.copy(pngData: data)
+            return true
         }
     }
 
