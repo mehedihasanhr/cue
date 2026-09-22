@@ -519,28 +519,18 @@ struct SettingsPane<Content: View>: View {
     }
 }
 
-/// The feature's name and a switch, in a pill like the history buttons'.
+/// A small switch, on its own, level with the history pill.
 private struct FeatureSwitch: View {
     let title: String
     @Binding var isOn: Bool
 
     var body: some View {
-        HStack(spacing: 10) {
-            Text(isOn ? "On" : "Off")
-                .font(SettingsFont.sub)
-                .foregroundStyle(.secondary)
-                .frame(width: 20, alignment: .trailing)
-            Toggle(title, isOn: $isOn)
-                .toggleStyle(.switch)
-                .labelsHidden()
-                .controlSize(.small)
-        }
-        .padding(.leading, 10)
-        .padding(.trailing, 8)
-        .frame(height: 30)
-        .background(SettingsPalette.pill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(SettingsPalette.edge))
-        .help(isOn ? "Turn \(title.lowercased()) off" : "Turn \(title.lowercased()) on")
+        Toggle(title, isOn: $isOn)
+            .toggleStyle(.switch)
+            .labelsHidden()
+            .controlSize(.mini)
+            .frame(height: 30)
+            .help(isOn ? "Turn \(title.lowercased()) off" : "Turn \(title.lowercased()) on")
     }
 }
 
