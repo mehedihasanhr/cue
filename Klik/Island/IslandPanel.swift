@@ -78,6 +78,12 @@ struct IslandPanel: View {
     /// Whether the pane is showing something: then the next card opens at once,
     /// sliding in. Asked when needed, so the panel does not re-render for it.
     var isPreviewOpen: () -> Bool = { false }
+    /// Closes the pane: the pointer left the card it was opened from and is not on the pane.
+    var onHidePreview: () -> Void = {}
+    /// Whether the pointer is over the pane (or the gap above it).
+    var isPointerInPreview: () -> Bool = { false }
+    /// Bumped when the pointer leaves the pane (see `IslandModel.previewLeaveTick`).
+    var previewLeaveTick = 0
     /// ← → that reached the window rather than a view (see `IslandWindow`).
     var arrowPress: (delta: Int, tick: Int) = (0, 0)
     @State private var search = ""
@@ -168,7 +174,12 @@ struct IslandPanel: View {
         /// The card the pane was last opened from by hovering.
         var openedID: String?
         var task: Task<Void, Never>?
+        /// The pending close after the pointer left the card and the pane.
+        var closeTask: Task<Void, Never>?
     }
+    /// How long the pointer may be off the card and the pane (crossing the gap
+    /// between them, say) before a hover-opened pane closes.
+    private static let previewCloseGrace: Duration = .milliseconds(250)
     @AppStorage(IslandTab.storageKey) private var tab: IslandTab = .all
 
     private var searching: Bool { !search.trimmingCharacters(in: .whitespaces).isEmpty }
@@ -548,11 +559,14 @@ struct IslandPanel: View {
             .onKeyPress(.leftArrow) { moveSelection(-1) }
             .onKeyPress(.rightArrow) { moveSelection(1) }
             .onChange(of: arrowPress.tick) { _, _ in _ = moveSelection(arrowPress.delta) }
+            .onChange(of: previewLeaveTick) { _, _ in closePreviewUnlessHovered() }
             .onChange(of: tab) { _, _ in
                 detail = nil
                 selectedID = nil
                 hover.task?.cancel()
                 hover.task = nil
+                hover.closeTask?.cancel()
+                hover.closeTask = nil
                 hover.hoveredID = nil
                 hover.openedID = nil
             }
@@ -819,12 +833,15 @@ struct IslandPanel: View {
             hover.hoveredID = nil
             hover.task?.cancel()
             hover.task = nil
+            closePreviewUnlessHovered()
             return
         }
         guard hover.hoveredID != item.id else { return }
         hover.hoveredID = item.id
         hover.task?.cancel()
         hover.task = nil
+        hover.closeTask?.cancel()
+        hover.closeTask = nil
         guard let detail = item.detail, preferences.islandPreview == .pane, preferences.islandPreviewOnHover else { return }
         let delay = isPreviewOpen() ? 0 : preferences.islandPreviewHoverDelay
         if delay <= 0 {
@@ -835,6 +852,21 @@ struct IslandPanel: View {
                 guard !Task.isCancelled, hover.hoveredID == item.id else { return }
                 openFromHover(item, detail)
             }
+        }
+    }
+
+    /// The pointer left a card or the pane: a pane opened by hovering closes after
+    /// the grace unless the pointer is back on a card or over the pane by then. A
+    /// pane opened with ← → stays until ⎋ or the next card.
+    private func closePreviewUnlessHovered() {
+        hover.closeTask?.cancel()
+        hover.closeTask = nil
+        guard hover.openedID != nil, selectedID == nil, isPreviewOpen() else { return }
+        hover.closeTask = Task { @MainActor in
+            try? await Task.sleep(for: Self.previewCloseGrace)
+            guard !Task.isCancelled, hover.hoveredID == nil, selectedID == nil, !isPointerInPreview() else { return }
+            hover.openedID = nil
+            onHidePreview()
         }
     }
 

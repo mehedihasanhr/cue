@@ -57,7 +57,7 @@ final class IslandController {
         content.onDragEntered = { [weak self] in self?.dragEntered() }
         content.onDragExited = { [weak self] in self?.model.dropping = false }
         content.onDrop = { [weak self] urls, image in self?.drop(urls: urls, image: image, into: assets) }
-        let host = NSHostingView(rootView: IslandView(model: model, library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasks, snippets: snippets, actions: actions)
+        let host = FirstMouseHostingView(rootView: IslandView(model: model, library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasks, snippets: snippets, actions: actions)
             .environment(preferences).environment(clock).environment(focus).environment(groups).environment(notes))
         host.sizingOptions = []
         host.autoresizingMask = [.width, .height]
@@ -74,6 +74,8 @@ final class IslandController {
         }
         model.onShowClock = { [weak self] in self?.showClock() }
         model.onPreviewPane = { [weak self] detail, direction in self?.showPreview(detail, direction: direction) }
+        model.onHidePreview = { [weak self] in self?.hidePreview() }
+        model.isPointerInPreview = { [weak self] in self?.pointerInPreview() ?? false }
         window.onArrow = { [weak self] delta in
             guard let self, model.phase == .expanded else { return }
             model.arrowPress = (delta, model.arrowPress.tick + 1)
@@ -247,9 +249,10 @@ final class IslandController {
         if previewPane == nil {
             previewPane = pane
             let root = PreviewPaneRoot(model: previewModel, library: library, clipboard: clipboard, assets: assets, colors: colors, notes: notes, tasks: tasks,
-                                       actions: actions, onEdit: { [weak self] in self?.edit($0) }, onClose: { [weak self] in self?.hidePreview() })
+                                       actions: actions, onEdit: { [weak self] in self?.edit($0) }, onClose: { [weak self] in self?.hidePreview() },
+                                       onLeave: { [weak self] in self?.model.previewLeaveTick += 1 })
                 .environment(preferences)
-            let host = NSHostingView(rootView: root)
+            let host = FirstMouseHostingView(rootView: root)
             host.sizingOptions = []
             pane.contentView = host
         }
@@ -271,6 +274,14 @@ final class IslandController {
         previewModel.detail = nil
         model.previewOpen = false
         previewPane?.orderOut(nil)
+    }
+
+    /// Whether the pointer is over the visible pane, or the gap between it and the island.
+    private func pointerInPreview() -> Bool {
+        guard let pane = previewPane, pane.isVisible else { return false }
+        var frame = pane.frame
+        frame.size.height += PreviewPaneWindow.gap
+        return frame.contains(NSEvent.mouseLocation)
     }
 
     /// Under the island's open shape, as wide as it, with a gap.

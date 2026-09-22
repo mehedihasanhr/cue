@@ -53,6 +53,8 @@ struct PreviewPaneRoot: View {
     let actions: HistoryActions
     let onEdit: (IslandDetail) -> Void
     let onClose: () -> Void
+    /// The pointer left the pane.
+    let onLeave: () -> Void
 
     var body: some View {
         ZStack {
@@ -67,6 +69,7 @@ struct PreviewPaneRoot: View {
         .background(Color(white: 0.03))
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(.white.opacity(0.1)))
+        .onHover { inside in if !inside { onLeave() } }
         .environment(\.colorScheme, .dark)
     }
 

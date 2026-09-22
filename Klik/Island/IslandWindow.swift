@@ -62,6 +62,15 @@ final class IslandWindow: NSPanel {
     }
 }
 
+/// SwiftUI in a window that is not key: a `Button` answers the first click, a tap
+/// gesture does not — AppKit asks the hosting view whether it accepts first mouse,
+/// and the plain one says no, so the click only makes the window key and the card
+/// copies on the second. The island and its pane are clicked while another app is
+/// in front, so their hosting views take every first click.
+final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
 /// The island's content view doubles as a drop target: files and images dragged
 /// onto the notch or the open panel are saved as assets.
 final class IslandDropView: NSView {

@@ -111,6 +111,13 @@ final class IslandModel {
     /// Whether the pane is showing something; set by the controller. The panel reads
     /// it as it needs it rather than observing it, so nothing re-renders for it.
     var previewOpen = false
+    /// Closes the pane (the pointer left the card and the pane); set by the controller.
+    var onHidePreview: () -> Void = {}
+    /// Whether the pointer is over the pane (or the gap above it); set by the controller.
+    var isPointerInPreview: () -> Bool = { false }
+    /// Bumped by the controller when the pointer leaves the pane, so the panel can
+    /// close it unless the pointer went back onto a card.
+    var previewLeaveTick = 0
     /// An arrow key that reached the window (the delta, and a count so each press
     /// is seen); set by the controller.
     var arrowPress: (delta: Int, tick: Int) = (0, 0)
@@ -315,7 +322,8 @@ struct IslandView: View {
                 IslandPanel(library: library, clipboard: clipboard, assets: assets, colors: colors, tasksStore: tasks, snippets: snippets, actions: actions, dropping: model.dropping,
                             width: model.panelWidth, onIdealWidth: { model.setPanelWidth($0) }, onIdealHeight: { model.setPanelHeight($0) },
                             onPrompt: { model.onPrompt($0) }, onShowTask: { model.onShowTask($0) },
-                            onShowClock: { model.onShowClock() }, onPreviewPane: { model.onPreviewPane($0, $1) }, isPreviewOpen: { model.previewOpen }, arrowPress: model.arrowPress)
+                            onShowClock: { model.onShowClock() }, onPreviewPane: { model.onPreviewPane($0, $1) }, isPreviewOpen: { model.previewOpen },
+                            onHidePreview: { model.onHidePreview() }, isPointerInPreview: { model.isPointerInPreview() }, previewLeaveTick: model.previewLeaveTick, arrowPress: model.arrowPress)
                     .padding(.horizontal, IslandGeometry.panelHorizontalPadding)
                     .padding(.bottom, IslandGeometry.panelBottomPadding)
             }
