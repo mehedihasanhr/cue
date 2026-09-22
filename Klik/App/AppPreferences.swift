@@ -16,6 +16,7 @@ final class AppPreferences {
         static let iconMarkMigrated = "menuBar.icon.markMigrated"
         static let iconBookmark = "menuBar.customBookmark"
         static let appearance = "appearance"
+        static let showInDock = "app.showInDock"
         static let islandEnabled = "island.enabled"
         static let islandPlainDisplays = "island.plainDisplays"
         static let islandOpenMode = "island.openMode"
@@ -526,6 +527,25 @@ final class AppPreferences {
         didSet { defaults.set(icon.storageValue, forKey: Key.icon) }
     }
 
+    // MARK: Dock
+
+    /// Klik in the Dock and the app switcher, rather than the menu bar alone. Off,
+    /// it is an agent as before — the panels behave the same either way.
+    var showInDock: Bool {
+        didSet {
+            defaults.set(showInDock, forKey: Key.showInDock)
+            applyDockVisibility()
+        }
+    }
+
+    func applyDockVisibility() {
+        let policy: NSApplication.ActivationPolicy = showInDock ? .regular : .accessory
+        guard NSApp.activationPolicy() != policy else { return }
+        NSApp.setActivationPolicy(policy)
+        // Coming back from an agent, the app needs a nudge to claim its Dock tile.
+        if policy == .regular { NSApp.activate(ignoringOtherApps: false) }
+    }
+
     private(set) var customIconURL: URL?
 
     // MARK: Init
@@ -540,6 +560,7 @@ final class AppPreferences {
         }
         defaults.set(true, forKey: Key.iconMarkMigrated)
         icon = Icon(storageValue: defaults.string(forKey: Key.icon) ?? "mark")
+        showInDock = defaults.object(forKey: Key.showInDock) as? Bool ?? true
         appearance = Appearance(rawValue: defaults.string(forKey: Key.appearance) ?? "") ?? .system
         editorDefaults = EditorDefaults.load(from: defaults)
         dynamicIslandEnabled = defaults.object(forKey: Key.islandEnabled) as? Bool ?? true

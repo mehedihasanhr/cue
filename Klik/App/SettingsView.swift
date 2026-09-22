@@ -51,6 +51,9 @@ struct GeneralSettingsView: View {
                 SettingsRow("Icon") {
                     MenuBarIconPicker()
                 }
+                SettingsRow("Show in Dock", subtitle: "Off, Klik lives in the menu bar alone.") {
+                    Toggle("Show in Dock", isOn: $preferences.showInDock).toggleStyle(.switch)
+                }
             }
 
             SettingsGroup("Storage") {

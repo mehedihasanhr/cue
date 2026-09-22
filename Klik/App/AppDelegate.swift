@@ -49,6 +49,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         MainMenu.install(target: self)
         preferences.applyAppearance()
+        // The bundle launches as an agent; the preference decides whether Klik takes
+        // a Dock tile, so it can be turned off without reinstalling.
+        preferences.applyDockVisibility()
         // Alerts, onboarding and the About pane all draw the brand icon from the asset
         // catalog, independent of the icon-services cache for this bundle path.
         if let icon = NSImage(named: "AppIcon") { NSApp.applicationIconImage = icon }
@@ -1101,6 +1104,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return panel.editor
         }
         panel.show(at: NSEvent.mouseLocation, position: preferences.panelPosition)
+    }
+
+    /// The Dock tile, clicked with nothing open: the panel at the pointer, the way
+    /// the hotkey opens it. With a window already up, AppKit brings it forward.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        guard !hasVisibleWindows else { return true }
+        toggleHistoryAtPointer()
+        return true
     }
 
     @objc func showSettings(_ sender: Any?) {
