@@ -46,7 +46,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .permissions: "What macOS lets Klik see and do"
         case .about: "Screenshots you can annotate, blur and share — built natively for macOS"
         case .island: "How the Dynamic Island opens, closes, looks and moves"
-        case .capture: "The pointer and the sound after each capture"
+        case .capture: "The pointer, the sound, and the language Capture Text reads"
         case .editor: "What every new annotation starts as"
         case .clipboard: "What Klik remembers of what you copy"
         case .tasks: "A server to keep tasks in step with, and webhooks for each change"
@@ -111,7 +111,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .snippets: ["snippet", "expand", "keyword", "trigger", "text", "type", "accessibility"]
         case .notes: ["note", "quick note", "markdown", "folder", "icloud", "obsidian", "vault", "apple notes", "notion", "sync"]
         case .colors: ["color", "picker", "format", "hex", "rgb", "hsl", "swift", "css"]
-        case .capture: ["cursor", "pointer", "mouse", "sound", "shutter", "audio", "full screen"]
+        case .capture: ["cursor", "pointer", "mouse", "sound", "shutter", "audio", "full screen", "ocr", "text", "recognise", "recognize", "language", "bangla", "bengali", "hindi", "devanagari", "arabic", "script", "tesseract", "vision", "pack", "download", "cloud"]
         case .editor: ["annotation", "color", "stroke", "width", "shape", "arrow", "fill", "text", "font", "marker", "highlighter", "blur", "pixelate", "counter", "defaults"]
         case .clipboard: ["history", "copy", "paste", "limit", "items", "clear", "pinned"]
         case .time: ["clock", "hour", "prayer", "salah", "fajr", "dhuhr", "asr", "maghrib", "isha", "location", "latitude", "longitude", "method", "madhab", "announce"]

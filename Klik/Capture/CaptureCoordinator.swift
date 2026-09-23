@@ -6,6 +6,8 @@ final class CaptureCoordinator {
     var onCaptured: ((CapturedImage) -> Void)?
     /// Result of a text capture: the recognised text (possibly empty when none was found).
     var onTextRecognized: ((RecognizedText) -> Void)?
+    /// Klik declined to read it, and can say why. Nothing reaches the clipboard.
+    var onTextUnavailable: ((OCRUnavailable) -> Void)?
     var onPermissionRequired: ((PermissionKind) -> Void)?
     var onError: ((any Error) -> Void)?
     /// `true` while a capture flow runs (selection overlay, scrolling session…).
@@ -14,12 +16,22 @@ final class CaptureCoordinator {
     var onColorPicked: ((PickedColor) -> Void)?
 
     private let service = ScreenCaptureService()
-    private let ocr = OCRService()
     private let shortcuts: ShortcutController
+    private let preferences: AppPreferences?
+    private let engines: OCREngines?
     private var isBusy = false
 
-    init(shortcuts: ShortcutController) {
+    init(shortcuts: ShortcutController, preferences: AppPreferences? = nil, engines: OCREngines? = nil) {
         self.shortcuts = shortcuts
+        self.preferences = preferences
+        self.engines = engines
+    }
+
+    /// Built fresh for each capture, so a language chosen in Settings takes effect on
+    /// the very next press rather than the next launch.
+    private var ocr: OCRService {
+        guard let preferences else { return OCRService() }
+        return OCRService(settings: preferences.ocrSettings, engines: engines?.set ?? .onDevice)
     }
 
     // MARK: - Entry points

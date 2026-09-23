@@ -63,6 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         coordinator.onCaptured = { [weak self] image in self?.handleCapture(image) }
         coordinator.onTextRecognized = { [weak self] text in self?.handleRecognizedText(text) }
+        coordinator.onTextUnavailable = { [weak self] reason in self?.handleTextUnavailable(reason) }
         coordinator.onPermissionRequired = { [weak self] kind in self?.showOnboarding(for: kind) }
         coordinator.onError = { [weak self] error in self?.presentError(error) }
         coordinator.onBusyChanged = { [weak self] busy in self?.island?.setHidden(busy) }
@@ -448,7 +449,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
         // Older captures get their text read in the background, a while after launch.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in self?.library.indexMissingText() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+            guard let self else { return }
+            // The search index is only as good as the language it was read in, so it
+            // is rebuilt when that changes before catching up on anything missing.
+            library.ocr = OCRService(settings: preferences.ocrSettings.forIndexing, engines: ocrEngines.set)
+            library.reindexIfLanguagesChanged(preferences.ocrLanguages)
+            library.indexMissingText()
+        }
         if !PermissionManager.hasScreenCaptureAccess {
             Log.app.notice("Screen Recording not granted; showing onboarding")
             showOnboarding(for: .screenRecording)
@@ -1183,7 +1191,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func showSettings(_ sender: Any?) {
         if settingsWindow == nil {
-            let controller = SettingsWindowController(model: model, shortcuts: shortcuts, library: library, clipboard: clipboard, preferences: preferences, clock: prayerClock, share: share, sync: syncFolder, notes: notes, taskSync: taskSync)
+            let controller = SettingsWindowController(model: model, shortcuts: shortcuts, library: library, clipboard: clipboard, preferences: preferences, clock: prayerClock, share: share, sync: syncFolder, notes: notes, taskSync: taskSync, ocrEngines: ocrEngines)
             controller.onClose = { [weak self] in
                 self?.settingsWindow = nil
                 self?.shortcuts.isRecording = false
@@ -1281,8 +1289,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         preferences.playCaptureSound()
         let code = CodeSnippet.detect(text)
         let found = TextExtract.summary(of: text)
-        FeedbackHUD.show(code.map { "\($0.title) copied" } ?? "Text copied", symbol: "checkmark.circle.fill",
-                         subtitle: found.isEmpty ? nil : "Right-click it on the Clipboard tab to copy just the \(found)")
+        let title = code.map { "\($0.title) copied" } ?? (recognized.engine == .cloud ? "Text copied · \(recognized.engine.title)" : "Text copied")
+        FeedbackHUD.show(title, symbol: recognized.engine == .cloud ? "checkmark.icloud.fill" : "checkmark.circle.fill",
+                         subtitle: subtitle(for: recognized, extracted: found))
+    }
+
+    /// What the HUD says under the title. The script warning comes first: it is the
+    /// one case where Klik copied something it is not sure the reader wanted.
+    private func subtitle(for recognized: RecognizedText, extracted: String) -> String? {
+        if let warning = recognized.scriptWarning {
+            return "\(warning.found.displayName) — if that should be \(warning.possiblyIntended.displayName), pick it in Settings › Capture."
+        }
+        guard !extracted.isEmpty else { return nil }
+        return "Right-click it on the Clipboard tab to copy just the \(extracted)"
+    }
+
+    /// Klik declined to answer. Nothing is written to the clipboard on these paths —
+    /// whatever was there stays there, because pasting the wrong alphabet is the
+    /// failure this whole path exists to prevent.
+    private func handleTextUnavailable(_ reason: OCRUnavailable) {
+        FeedbackHUD.show(reason.errorDescription ?? "Klik couldn't read that",
+                         symbol: reason.symbol, subtitle: reason.recoverySuggestion)
     }
 
     private func deleteCapture(_ item: CaptureItem) {

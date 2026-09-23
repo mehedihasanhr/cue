@@ -7,6 +7,14 @@ import CoreGraphics
 /// Deliberately simple — no column or table detection — but enough that a recipe or
 /// a settings pane comes out as lines rather than one long sentence.
 nonisolated enum TextLayout {
+    /// Which way a line reads. Arabic, Hebrew, Persian and Urdu put the first word on
+    /// the right, so the fragments of a line have to be joined the other way round —
+    /// and leading spaces mean the opposite of what they look like, so indentation is
+    /// left off entirely.
+    nonisolated enum Direction: Sendable {
+        case leftToRight, rightToLeft
+    }
+
     /// Fraction of the shorter box's height two boxes must overlap vertically to be
     /// considered the same line.
     static let sameLineOverlap: CGFloat = 0.5
@@ -16,7 +24,8 @@ nonisolated enum TextLayout {
     /// `keepIndentation`: lines that start to the right of the leftmost one get the
     /// matching number of leading spaces (a character's width estimated from each
     /// line), so code keeps its shape.
-    static func compose(_ items: [RecognizedTextItem], keepIndentation: Bool = false) -> String {
+    static func compose(_ items: [RecognizedTextItem], keepIndentation: Bool = false,
+                        direction: Direction = .leftToRight) -> String {
         let lines = groupIntoLines(items)
         guard !lines.isEmpty else { return "" }
         let leftmost = lines.map(\.bounds.minX).min() ?? 0
@@ -32,8 +41,8 @@ nonisolated enum TextLayout {
                     output.append("")
                 }
             }
-            var text = line.text
-            if keepIndentation {
+            var text = line.text(direction: direction)
+            if keepIndentation, direction == .leftToRight {
                 let characterWidth = line.bounds.width / CGFloat(max(text.count, 1))
                 let indent = characterWidth > 0 ? Int(((line.bounds.minX - leftmost) / characterWidth).rounded()) : 0
                 if indent > 0 { text = String(repeating: " ", count: min(indent, 40)) + text }
@@ -50,10 +59,13 @@ nonisolated enum TextLayout {
         var items: [RecognizedTextItem]
         var bounds: CGRect
 
-        var text: String {
-            items.sorted { $0.boundingBox.minX < $1.boundingBox.minX }
-                .map(\.text)
-                .joined(separator: " ")
+        var text: String { text(direction: .leftToRight) }
+
+        func text(direction: Direction) -> String {
+            let ordered = direction == .rightToLeft
+                ? items.sorted { $0.boundingBox.minX > $1.boundingBox.minX }
+                : items.sorted { $0.boundingBox.minX < $1.boundingBox.minX }
+            return ordered.map(\.text).joined(separator: " ")
         }
     }
 

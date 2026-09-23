@@ -148,21 +148,60 @@ final class CaptureLibrary {
 
     private var textIndexURL: URL { indexURL.deletingLastPathComponent().appendingPathComponent("capture-text.json") }
 
+    /// How the index reads captures. The app sets this at launch and whenever the
+    /// language preference changes; it never uses the cloud and never triggers a
+    /// download — see `OCRSettings.forIndexing`.
+    @ObservationIgnored var ocr = OCRService()
+
+    /// The index, stamped with the language it was built for. Before this stamp
+    /// existed the file was a bare dictionary, which still decodes — as an index
+    /// built in automatic mode, which is what it was.
+    private struct TextIndexFile: Codable {
+        var languages: [String] = []
+        var text: [UUID: String] = [:]
+    }
+
+    /// The tags `recognizedText` was produced with, so a change can invalidate it.
+    @ObservationIgnored private var indexedLanguages: [String] = []
+
     private func loadTextIndex() {
-        guard let data = try? Data(contentsOf: textIndexURL), let decoded = try? JSONDecoder().decode([UUID: String].self, from: data) else { return }
-        recognizedText = decoded
+        guard let data = try? Data(contentsOf: textIndexURL) else { return }
+        if let file = try? JSONDecoder().decode(TextIndexFile.self, from: data) {
+            recognizedText = file.text
+            indexedLanguages = file.languages
+        } else if let legacy = try? JSONDecoder().decode([UUID: String].self, from: data) {
+            recognizedText = legacy
+            indexedLanguages = []
+        }
     }
 
     private func saveTextIndex() {
-        guard let data = try? JSONEncoder().encode(recognizedText) else { return }
+        guard let data = try? JSONEncoder().encode(TextIndexFile(languages: indexedLanguages, text: recognizedText)) else { return }
         let url = textIndexURL
         storage.async { try? data.write(to: url, options: .atomic) }
     }
 
+    /// Throws the index away when the language changed, then rebuilds it.
+    ///
+    /// Worth the work: a Bangla reader's whole index was written by a recogniser that
+    /// had no Bangla model, so every word of it is the wrong alphabet and no search
+    /// will ever match. Only the primary language counts — adding English alongside,
+    /// or setting up the cloud, does not justify re-reading the library.
+    func reindexIfLanguagesChanged(_ tags: [String]) {
+        let primary = Array(tags.prefix(1))
+        guard primary != indexedLanguages else { return }
+        Log.ocr.info("Rebuilding the capture text index for \(primary.first ?? "automatic", privacy: .public)")
+        indexedLanguages = primary
+        recognizedText.removeAll()
+        saveTextIndex()
+        indexMissingText()
+    }
+
     /// Reads the text off one capture in the background and remembers it.
     private func indexText(of item: CaptureItem, image: CGImage) {
+        let service = ocr
         Task(priority: .utility) { [weak self] in
-            let recognized = try? await OCRService().recognize(image)
+            let recognized = try? await service.recognize(image)
             await MainActor.run {
                 guard let self, self.items.contains(where: { $0.id == item.id }) else { return }
                 self.recognizedText[item.id] = recognized?.text ?? ""
@@ -177,11 +216,12 @@ final class CaptureLibrary {
         let missing = items.filter { recognizedText[$0.id] == nil }
         guard !missing.isEmpty else { return }
         indexing = true
+        let service = ocr
         Task(priority: .utility) { [weak self] in
             for item in missing {
                 guard let self else { return }
                 guard let image = await MainActor.run(body: { self.image(for: item)?.cgImage }) else { continue }
-                let recognized = try? await OCRService().recognize(image)
+                let recognized = try? await service.recognize(image)
                 await MainActor.run {
                     self.recognizedText[item.id] = recognized?.text ?? ""
                 }

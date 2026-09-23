@@ -31,6 +31,63 @@ final class OCRServiceTests: XCTestCase {
         XCTAssertTrue(result.text.contains("Pizza Margherita\n\n1 kg tipo 00 flour"), "Got:\n\(result.text)")
     }
 
+    // MARK: - Languages and the script check
+
+    private func service(reading tags: [String], checksScript: Bool = true) -> OCRService {
+        var settings = OCRSettings()
+        settings.selection = .languages(tags.map(OCRLanguage.init))
+        settings.checksScript = checksScript
+        return OCRService(settings: settings)
+    }
+
+    /// Naming the language explicitly still reads it — proof that setting
+    /// `recognitionLanguages` did not break the ordinary path.
+    func testNamingTheLanguageStillReadsIt() async throws {
+        let lines = ["Pizza Margherita", "1 kg tipo 00 flour"]
+        let result = try await service(reading: ["en-US"]).recognize(Self.render(lines: lines, lineSpacing: 12))
+        XCTAssertEqual(result.engine, .vision)
+        XCTAssertEqual(result.language, OCRLanguage("en-US"))
+        for line in lines {
+            XCTAssertTrue(result.text.contains(line), "Missing “\(line)” in:\n\(result.text)")
+        }
+    }
+
+    /// Asking for one alphabet and getting another is refused, not copied. This is the
+    /// guard that would have caught the reported bug had Vision ever been asked for
+    /// Bangla — and since it cannot be, it now catches the general case instead.
+    func testAnswerInAnotherAlphabetIsRefused() async throws {
+        let image = Self.render(lines: ["Pizza Margherita", "1 kg tipo 00 flour"], lineSpacing: 12)
+        do {
+            let result = try await service(reading: ["ru-RU"]).recognize(image)
+            XCTFail("expected a refusal, got: \(result.text)")
+        } catch OCRError.unavailable(.wrongScript(let expected, let found)) {
+            XCTAssertEqual(expected, .cyrillic)
+            XCTAssertEqual(found, .latin)
+        }
+    }
+
+    func testTurningTheCheckOffLetsItThrough() async throws {
+        let image = Self.render(lines: ["Pizza Margherita", "1 kg tipo 00 flour"], lineSpacing: 12)
+        let result = try await service(reading: ["ru-RU"], checksScript: false).recognize(image)
+        XCTAssertFalse(result.isEmpty)
+    }
+
+    /// A capture with nothing but numbers in it has no alphabet, and must not be
+    /// refused for failing to have one.
+    func testAPageOfNumbersIsNotRefused() async throws {
+        let image = Self.render(lines: ["1024", "2048", "4096"], lineSpacing: 12)
+        let result = try await service(reading: ["ru-RU"]).recognize(image)
+        XCTAssertFalse(result.isEmpty, "got nothing back at all")
+    }
+
+    /// The default path reports who read it, so the HUD can say so.
+    func testAutomaticStillReportsVisionAndNoLanguage() async throws {
+        let result = try await service.recognize(Self.render(lines: ["Hello Klik"], lineSpacing: 12))
+        XCTAssertEqual(result.engine, .vision)
+        XCTAssertNil(result.language)
+        XCTAssertNil(result.scriptWarning)
+    }
+
     func testBlankImageYieldsNoText() async throws {
         let image = Self.render(lines: [], lineSpacing: 0)
         let result = try await service.recognize(image)

@@ -136,6 +136,29 @@ ones catch up shortly after launch — so "search everything" finds the screensh
 held the error message. "Capture text" keeps code's indentation, and right-clicking a
 text entry on the Clipboard tab offers **Extract** › URLs / e-mail addresses / numbers.
 
+### Languages Capture Text reads
+
+By default macOS picks the language itself, which is right for the 33 it ships models
+for. It has none for Bangla, Tamil, Telugu, Hebrew, Greek and a good many others — and,
+left to guess, it answers in the nearest script it does know. Bangla put to it comes
+back as Devanagari, at full confidence.
+
+So **Settings › Capture › Capture text** lets you name the language. The list says who
+will read each one: macOS where it can, otherwise a Tesseract language pack that Klik
+downloads once (a few megabytes) and keeps in Application Support. Nothing is bundled
+and nothing is fetched until you choose a language that needs it.
+
+Two things follow from naming a language. Klik will not hand your screenshot to a
+recogniser that has no model for it, and if the text comes back in a different alphabet
+from the one you asked for, it says so and copies nothing rather than putting the wrong
+script on your clipboard. Turn that check off in the same place if you would rather have
+the text whatever it says.
+
+**Cloud engine** — off, and stays off unless you turn it on and enter your own key
+(Google Cloud Vision, or any endpoint that speaks the OpenAI or Anthropic vision shape).
+With it on, the area you select is uploaded, and only that: not the library, not the
+file name, not the window title. The key is kept in your keychain and is never logged.
+
 ### Palette from a capture
 
 Right-click a capture › **Palette**: keep its six dominant colors in the Colors tab, or
