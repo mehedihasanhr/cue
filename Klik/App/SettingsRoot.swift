@@ -791,7 +791,7 @@ struct AppIconTile: View {
     var body: some View {
         // Drawn rather than shipped flat, so it can blink where it is big enough to
         // be looked at; the signpost-sized tiles keep still.
-        BlinkingAppIcon(side: size, blinks: interactive)
+        AppIconView(side: size)
             // The icon has its own rounded shape; a little larger so it lines up
             // with the symbol tiles' edges.
             .scaleEffect(1.12 * lift)

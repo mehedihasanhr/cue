@@ -31,7 +31,7 @@ struct OnboardingView: View {
     var body: some View {
         VStack(spacing: 20) {
             ZStack(alignment: .bottomTrailing) {
-                BlinkingAppIcon(side: 84)
+                AppIconView(side: 84)
                 Image(systemName: hasAccess ? "checkmark.circle.fill" : icon)
                     .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(.white, hasAccess ? Color.green : Color.accentColor)

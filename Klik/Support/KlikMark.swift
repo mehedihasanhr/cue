@@ -1,9 +1,9 @@
 import AppKit
 import SwiftUI
 
-/// Klik's mark, as paths rather than a picture, so its eyes can close: the body is
-/// drawn with the eyes punched out of it (even-odd), and a blink is the eyes losing
-/// their height. The flat SVG in the asset catalog stays the source of truth — this
+/// Klik's mark, as paths rather than a picture: the body is drawn with the eyes
+/// punched out of it (even-odd), so the fill has to be even-odd wherever this is
+/// used. The flat SVG in the asset catalog stays the source of truth — this
 /// file is generated from it — and is still what a static NSImage uses. The path
 /// data is parsed by `SVGPath` in Icon.swift, the same parser the icon set uses.
 nonisolated enum KlikMark {
@@ -42,49 +42,8 @@ nonisolated enum KlikMark {
     nonisolated(unsafe) private static let body = SVGPath.path(bodyData)
     nonisolated(unsafe) private static let eyes = [SVGPath.path(leftEyeData), SVGPath.path(rightEyeData)]
 
-    /// One eye, fitted to `box` exactly, `open` from 0 to 1. The chrome face is a
-    /// different drawing from the flat mark — its holes sit a little differently — so
-    /// the icon places each eye in the hole it measured rather than trusting the mark.
-    static func eye(_ index: Int, fitting box: CGRect, open: CGFloat) -> CGPath {
-        guard eyes.indices.contains(index) else { return CGMutablePath() }
-        let eye = eyes[index]
-        let source = eye.boundingBox
-        guard source.width > 0, source.height > 0 else { return eye }
-        let fit = CGAffineTransform(translationX: box.minX, y: box.minY)
-            .scaledBy(x: box.width / source.width, y: box.height / source.height)
-            .translatedBy(x: -source.minX, y: -source.minY)
-        let lidded = lid(for: eye, open: open).concatenating(fit)
-        let path = CGMutablePath()
-        path.addPath(eye, transform: lidded)
-        return path
-    }
-
-    /// Just the eyes, in `rect` (the mark's own box), `open` from 0 to 1 — for the
-    /// app icon, where the face is a picture and only the holes are drawn.
-    static func eyes(in rect: CGRect, open: CGFloat) -> CGPath {
-        let scale = min(rect.width / size.width, rect.height / size.height)
-        let drawn = CGSize(width: size.width * scale, height: size.height * scale)
-        let fit = CGAffineTransform(translationX: rect.midX - drawn.width / 2, y: rect.midY - drawn.height / 2)
-            .scaledBy(x: scale, y: scale)
-        let combined = CGMutablePath()
-        for eye in eyes {
-            combined.addPath(eye, transform: lid(for: eye, open: open).concatenating(fit))
-        }
-        return combined
-    }
-
-    /// An eye closes towards its own middle, the way a lid comes down. The lid is
-    /// applied in the eye's own coordinates, so both eyes close by the same fraction
-    /// of their own height however they are placed.
-    private static func lid(for eye: CGPath, open: CGFloat) -> CGAffineTransform {
-        let centre = eye.boundingBox.midY
-        return CGAffineTransform(translationX: 0, y: centre)
-            .scaledBy(x: 1, y: max(min(max(open, 0), 1), 0.001))
-            .translatedBy(x: 0, y: -centre)
-    }
-
-    /// The mark in `rect`, with the eyes `open` from 0 (shut) to 1.
-    static func path(in rect: CGRect, eyesOpen open: CGFloat) -> CGPath {
+    /// The mark in `rect`.
+    static func path(in rect: CGRect) -> CGPath {
         let scale = min(rect.width / size.width, rect.height / size.height)
         let drawn = CGSize(width: size.width * scale, height: size.height * scale)
         let fit = CGAffineTransform(translationX: rect.midX - drawn.width / 2, y: rect.midY - drawn.height / 2)
@@ -92,22 +51,15 @@ nonisolated enum KlikMark {
         let combined = CGMutablePath()
         combined.addPath(body, transform: fit)
         for eye in eyes {
-            combined.addPath(eye, transform: lid(for: eye, open: open).concatenating(fit))
+            combined.addPath(eye, transform: fit)
         }
         return combined
     }
 }
 
-/// The mark as a shape: `eyesOpen` animates, so a blink is an animation like any other.
+/// The mark as a shape.
 nonisolated struct KlikMarkShape: Shape {
-    var eyesOpen: CGFloat = 1
-
-    var animatableData: CGFloat {
-        get { eyesOpen }
-        set { eyesOpen = newValue }
-    }
-
     func path(in rect: CGRect) -> Path {
-        Path(KlikMark.path(in: rect, eyesOpen: eyesOpen))
+        Path(KlikMark.path(in: rect))
     }
 }

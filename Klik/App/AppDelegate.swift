@@ -21,11 +21,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var snippetFrontField: FrontField?
     private var prayerClock: PrayerClock?
     let preferences = AppPreferences()
-    private lazy var coordinator = CaptureCoordinator(shortcuts: shortcuts)
+    /// The recognisers Capture Text can use, and the language packs behind them.
+    private lazy var ocrEngines = OCREngines(preferences: preferences)
+    private lazy var coordinator = CaptureCoordinator(shortcuts: shortcuts, preferences: preferences, engines: ocrEngines)
 
     private var statusItem: NSStatusItem?
     /// Blinks the mark in the menu bar, when the mark is what is shown there.
-    private var blinker: StatusItemBlinker?
     private var statusMenu: NSMenu?
     private var floatingPanel: FloatingPanelWindow?
     private var island: IslandController?
@@ -54,7 +55,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // The bundle launches as an agent; the preference decides whether Klik takes
         // a Dock tile, so it can be turned off without reinstalling.
         preferences.applyDockVisibility()
-        AppIconBlinker.shared.start()
         // Alerts, onboarding and the About pane all draw the brand icon from the asset
         // catalog, independent of the icon-services cache for this bundle path.
         if let icon = NSImage(named: "AppIcon") { NSApp.applicationIconImage = icon }
@@ -587,15 +587,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         toggleHistoryAtPointer()
     }
 
-    /// The mark blinks at what it just took — or, when the menu bar is showing a
-    /// glyph instead, that glyph gives once the way a shutter does.
+    /// The menu bar glyph gives once, the way a shutter does, at what Klik just took.
     private func pulseStatusItem() {
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
-        AppIconBlinker.shared.blink()
-        if let blinker {
-            blinker.blink()
-            return
-        }
         guard let button = statusItem?.button else { return }
         button.wantsLayer = true
         guard let layer = button.layer else { return }
@@ -613,12 +607,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Keeps the status item image in sync with the Settings choice.
     private func applyMenuBarIcon() {
         withObservationTracking {
-            blinker?.stop()
-            blinker = nil
-            // The mark is drawn from its paths so it can blink; every other choice is
-            // a still image.
-            if preferences.icon == .mark, let button = statusItem?.button {
-                blinker = StatusItemBlinker(button: button, height: 17)
+            // The mark is drawn from its paths; every other choice is a still image.
+            if preferences.icon == .mark {
+                statusItem?.button?.image = KlikMarkImage.template(height: 17)
             } else {
                 let image = preferences.menuBarImage()
                     ?? NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "Klik")
