@@ -1,0 +1,16 @@
+// Vendored Tesseract + Leptonica, built by Vendor/build-tesseract.sh and committed
+// under Vendor/tesseract. Both targets inherit this: KlikTests compiles the app's
+// sources directly and has no TEST_HOST, so it links the libraries itself.
+//
+// Signing.xcconfig is git-ignored, so the include is optional — a fresh clone still
+// builds, unsigned.
+#include? "Signing.xcconfig"
+
+SWIFT_INCLUDE_PATHS = $(inherited) $(SRCROOT)/Vendor/CTesseract
+HEADER_SEARCH_PATHS = $(inherited) $(SRCROOT)/Vendor/tesseract/include
+LIBRARY_SEARCH_PATHS = $(inherited) $(SRCROOT)/Vendor/tesseract/lib
+
+// -lc++ because the app has no C++ sources of its own, so Xcode never links the C++
+// runtime Tesseract needs. -framework Accelerate because configure puts it in
+// AM_LDFLAGS, which a static archive does not record.
+OTHER_LDFLAGS = $(inherited) -ltesseract -lleptonica -lc++ -framework Accelerate

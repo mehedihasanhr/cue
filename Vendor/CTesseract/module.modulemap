@@ -1,0 +1,7 @@
+// Discovered through SWIFT_INCLUDE_PATHS in Config/Vendor.xcconfig. Only the two
+// files that recognise text import this; a bridging header would have put the C
+// API in front of every Swift file in the app.
+module CTesseract {
+    header "include/CTesseract.h"
+    export *
+}

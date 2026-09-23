@@ -1,0 +1,8 @@
+tesseract 5.5.3
+leptonica 1.87.0
+archs     arm64 x86_64
+sdk       /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk
+built     2026-09-23T06:04:23Z
+
+1a89439af09baadd8afc1ede22f5ac4b743ea696e5c30a9e3d1bb97df2e42150  /Users/stackrover/Workspaces/offices/stackrover/klik/Vendor/tesseract/lib/libleptonica.a
+a893d3c5242dc171e5660563834c25454b23d15ca450b14395827af1f54bb3a2  /Users/stackrover/Workspaces/offices/stackrover/klik/Vendor/tesseract/lib/libtesseract.a
