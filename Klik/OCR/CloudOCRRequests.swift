@@ -168,4 +168,26 @@ nonisolated enum CloudOCRRequests {
     static var userAgent: String {
         "Klik/\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0")"
     }
+
+    /// What the service says the request cost.
+    ///
+    /// Best-effort by design: the two wire shapes name the fields differently, and
+    /// Google Cloud Vision bills per image rather than per token and reports none.
+    /// It exists so the cost of a capture is visible at all — this is the one path
+    /// in Klik that spends the reader's money.
+    struct Usage: Sendable, Equatable {
+        var input: Int
+        var output: Int
+    }
+
+    static func usage(_ data: Data) -> Usage? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let usage = root["usage"] as? [String: Any],
+              // NSNumber, because JSON integers bridge to Int or Double by how they
+              // were written and `as? Int` alone misses half of them.
+              let input = (usage["input_tokens"] ?? usage["prompt_tokens"]) as? NSNumber,
+              let output = (usage["output_tokens"] ?? usage["completion_tokens"]) as? NSNumber
+        else { return nil }
+        return Usage(input: input.intValue, output: output.intValue)
+    }
 }

@@ -1,3 +1,4 @@
+import os
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -40,6 +41,11 @@ nonisolated struct CloudOCREngine: OCREngine {
                 throw OCRUnavailable.cloudFailed("\(http.statusCode): \(detail)")
             }
             data = body
+            // What it cost, so that is answerable without a Console trip. Counts
+            // only — never the text, never the key, never the body.
+            if let usage = CloudOCRRequests.usage(data) {
+                Log.ocr.info("\(configuration.provider.rawValue, privacy: .public) read \(usage.input) in / \(usage.output) out tokens")
+            }
         } catch let error as OCRUnavailable {
             throw error
         } catch {

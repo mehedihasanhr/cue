@@ -133,4 +133,19 @@ final class CloudOCRRequestsTests: XCTestCase {
     func testAnEmptyModelAnswerIsNoText() throws {
         XCTAssertTrue(try CloudOCRRequests.parseModel(Data(#"{"choices":[{"message":{"content":"  "}}]}"#.utf8)).isEmpty)
     }
+
+    // MARK: - Usage
+
+    func testUsageIsReadFromEitherWireShape() {
+        let openAI = #"{"usage":{"prompt_tokens":1200,"completion_tokens":340}}"#
+        XCTAssertEqual(CloudOCRRequests.usage(Data(openAI.utf8)), CloudOCRRequests.Usage(input: 1200, output: 340))
+        let anthropic = #"{"usage":{"input_tokens":1200,"output_tokens":340}}"#
+        XCTAssertEqual(CloudOCRRequests.usage(Data(anthropic.utf8)), CloudOCRRequests.Usage(input: 1200, output: 340))
+    }
+
+    /// Google Cloud Vision bills per image and reports no tokens; that is not an error.
+    func testAnAnswerWithNoUsageIsNil() {
+        XCTAssertNil(CloudOCRRequests.usage(Data(#"{"responses":[{}]}"#.utf8)))
+        XCTAssertNil(CloudOCRRequests.usage(Data("not json".utf8)))
+    }
 }
