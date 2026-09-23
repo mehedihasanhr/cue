@@ -1205,9 +1205,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Log.app.info("Captured \(item.fileName, privacy: .public) → clipboard + library")
         pulseStatusItem()
         island?.flash(item)
+        // The editor opens on the Space the capture came from, a full-screen app's too.
         switch preferences.afterCapture {
-        case .edit: openEditor(for: item, image: image, mode: .edit)
-        case .copy: FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: item.dimensions, image: library.thumbnail(for: item))
+        case .edit:
+            openEditor(for: item, image: image, mode: .edit)
+        case .copy:
+            FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: item.dimensions, image: library.thumbnail(for: item))
         }
     }
 

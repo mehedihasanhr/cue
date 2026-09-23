@@ -106,7 +106,9 @@ final class ScrollingControlPanel {
 
     init(status: ScrollingStatus, onCancel: @escaping () -> Void, onDone: @escaping () -> Void) {
         panel = Self.makePanel()
-        let host = NSHostingView(rootView: ScrollingControlBar(status: status, onCancel: onCancel, onDone: onDone))
+        // First-mouse hosting: the bar is clicked while the app being scrolled stays
+        // in front, so Klik is not the active app.
+        let host = FirstMouseHostingView(rootView: ScrollingControlBar(status: status, onCancel: onCancel, onDone: onDone))
         panel.contentView = host
         panel.setContentSize(host.fittingSize)
     }

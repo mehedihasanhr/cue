@@ -146,8 +146,14 @@ final class ScreenCaptureService {
     /// recordings show it; this filter is what keeps it out of Klik's own shots.
     private static func filterLeavingKlikOut(display: SCDisplay, in content: SCShareableContent) -> SCContentFilter {
         let pid = ProcessInfo.processInfo.processIdentifier
-        let ownApps = content.applications.filter { $0.processID == pid }
-        let ownWindows = content.windows.filter { $0.owningApplication?.processID == pid }
+        let bundleID = Bundle.main.bundleIdentifier
+        // By process ID, and by bundle identifier as well: ScreenCaptureKit does not
+        // always list the calling app, and then the process ID matches nothing.
+        func isOwn(_ app: SCRunningApplication) -> Bool {
+            app.processID == pid || (bundleID != nil && app.bundleIdentifier == bundleID)
+        }
+        let ownApps = content.applications.filter(isOwn)
+        let ownWindows = content.windows.filter { $0.owningApplication.map(isOwn) ?? false }
         Log.capture.info("Capture filter excludes \(ownApps.count) app(s) / \(ownWindows.count) own window(s)")
         return ownApps.isEmpty
             ? SCContentFilter(display: display, excludingWindows: ownWindows)

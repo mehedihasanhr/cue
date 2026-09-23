@@ -32,6 +32,15 @@ final class CaptureSession: SelectionViewDelegate {
     private var continuation: CheckedContinuation<RegionSelection?, Never>?
     private var activeView: SelectionView?
     private var previousApp: NSRunningApplication?
+    private let shortcuts: ShortcutController?
+    /// ⎋ and ↩ for as long as the overlay is up. The overlay takes the keyboard
+    /// without Klik becoming the active app, and these carry the two keys that end
+    /// the capture even if something else holds the keyboard.
+    private var temporaryKeys: [ShortcutController.TemporaryShortcut] = []
+
+    init(shortcuts: ShortcutController? = nil) {
+        self.shortcuts = shortcuts
+    }
 
     func run(mode: CaptureMode, using service: ScreenCaptureService) async throws(CaptureError) -> RegionSelection? {
         let frozen = try await service.captureAllDisplays()
@@ -57,11 +66,20 @@ final class CaptureSession: SelectionViewDelegate {
         for controller in controllers {
             controller.present(makeKey: controller === initial)
         }
+        // No `NSApp.activate` here: activating Klik brings its other windows forward
+        // and macOS follows them to their desktop, which is what slid the user away
+        // from the window they were capturing.
         if let window = initial.window {
-            NSApp.activateForOverlay(keyWindow: window)
+            window.makeKeyAndOrderFront(nil)
             window.makeFirstResponder(initial.selectionView)
         }
         activeView = initial.selectionView
+        if let shortcuts {
+            temporaryKeys = [
+                shortcuts.registerTemporary(.escape, id: .cancelCapture) { [weak self] in self?.finish(with: nil) },
+                shortcuts.registerTemporary(.enter, id: .confirmCapture) { [weak self] in self?.confirmActive() },
+            ]
+        }
         Log.capture.info("Selection overlay shown on \(self.controllers.count) screen(s)")
 
         return await withCheckedContinuation { continuation in
@@ -69,16 +87,24 @@ final class CaptureSession: SelectionViewDelegate {
         }
     }
 
+    /// ↩ from the temporary shortcut: the same as pressing it in the overlay.
+    private func confirmActive() {
+        activeView?.confirmFromShortcut()
+    }
+
     private func finish(with result: RegionSelection?) {
         guard let continuation else { return }
         self.continuation = nil
+        temporaryKeys.removeAll()
         for controller in controllers {
             controller.close()
         }
         controllers.removeAll()
         NSCursor.arrow.set()
-        // Hand focus back so a scrolling capture scrolls the app the user was in.
-        previousApp?.activate(from: .current, options: [])
+        // Hand focus back so a scrolling capture scrolls the app the user was in —
+        // but only if Klik took focus at all. Activating another app while Klik never
+        // became active is itself a reason for macOS to change Space.
+        if NSApp.isActive { previousApp?.activate(from: .current, options: []) }
         continuation.resume(returning: result)
     }
 

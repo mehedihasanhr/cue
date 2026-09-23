@@ -63,8 +63,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         if let section { navigation.go(section) }
         showWindow(nil)
         guard let window else { return }
-        window.orderFrontRegardless()
-        NSApp.activateForOverlay(keyWindow: window)
+        NSApp.present(window)
         // The search field would take focus as the first field; the page reads better without a caret in it.
         window.makeFirstResponder(nil)
     }
