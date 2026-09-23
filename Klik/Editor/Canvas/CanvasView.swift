@@ -528,7 +528,8 @@ final class CanvasScrollView: NSScrollView {
     }
 
     func apply(_ command: ZoomCommand) {
-        let centre = CGPoint(x: canvas.frame.midX, y: canvas.frame.midY)
+        // Zoom about what is on screen, so a scrolled-to corner stays in view.
+        let centre = CGPoint(x: contentView.bounds.midX, y: contentView.bounds.midY)
         switch command {
         case .fit: zoomToFit()
         case .actualSize: setMagnification(1, centeredAt: centre)
@@ -561,19 +562,16 @@ struct CanvasRepresentable: NSViewRepresentable {
     func makeNSView(context: Context) -> CanvasScrollView {
         let scrollView = CanvasScrollView(canvas: CanvasView(model: model))
         scrollView.onMagnificationChange = { model.zoom = scrollView.magnification }
+        model.zoomHandler = { [weak model, weak scrollView] command in
+            guard let model, let scrollView else { return }
+            scrollView.apply(command)
+            model.zoom = scrollView.magnification
+        }
         NotificationCenter.default.addObserver(forName: NSScrollView.didEndLiveMagnifyNotification, object: scrollView, queue: .main) { _ in
             MainActor.assumeIsolated { model.zoom = scrollView.magnification }
         }
         return scrollView
     }
 
-    func updateNSView(_ scrollView: CanvasScrollView, context: Context) {
-        if let command = model.zoomCommand {
-            scrollView.apply(command)
-            DispatchQueue.main.async {
-                model.zoom = scrollView.magnification
-                model.zoomCommand = nil
-            }
-        }
-    }
+    func updateNSView(_ scrollView: CanvasScrollView, context: Context) {}
 }
