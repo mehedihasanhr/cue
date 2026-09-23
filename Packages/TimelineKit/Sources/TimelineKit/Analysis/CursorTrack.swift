@@ -1,0 +1,120 @@
+import CoreGraphics
+import CoreMedia
+import Foundation
+import RecordKit
+
+/// The recorded pointer, ready to be drawn.
+///
+/// Sampled positions are jittery — a hand on a trackpad is not a smooth curve, and at
+/// 120 Hz every tremor is in the file. Smoothing them is what makes a recording look
+/// deliberate, and it can only be done here, after the fact, because the recorder was
+/// careful not to burn the pointer into the picture.
+public struct CursorTrack: Sendable {
+    public let samples: [CursorSample]
+    public let clicks: [Double]
+
+    public init(samples: [CursorSample], input: [InputSample] = []) {
+        self.samples = samples.sorted { $0.t < $1.t }
+        clicks = input.compactMap { sample in
+            if case .mouseDown(let t, _, _, _) = sample { return t }
+            return nil
+        }.sorted()
+    }
+
+    public var isEmpty: Bool { samples.isEmpty }
+
+    /// Where the pointer was at a moment in the recording, interpolated between samples.
+    ///
+    /// Interpolated rather than nearest-neighbour because the renderer asks at the frame
+    /// rate and the samples are on their own clock; snapping to the nearest sample makes
+    /// the pointer stutter at exactly the rate the two disagree.
+    public func position(at time: Double) -> CGPoint? {
+        guard !samples.isEmpty else { return nil }
+        if time <= samples[0].t { return samples[0].point }
+        if time >= samples[samples.count - 1].t { return samples[samples.count - 1].point }
+
+        var low = 0
+        var high = samples.count - 1
+        while high - low > 1 {
+            let middle = (low + high) / 2
+            if samples[middle].t <= time { low = middle } else { high = middle }
+        }
+        let a = samples[low]
+        let b = samples[high]
+        let span = b.t - a.t
+        guard span > 0 else { return a.point }
+        let progress = (time - a.t) / span
+        return CGPoint(x: a.x + (b.x - a.x) * progress,
+                       y: a.y + (b.y - a.y) * progress)
+    }
+
+    public func shape(at time: Double) -> CursorShape {
+        guard !samples.isEmpty else { return .arrow }
+        var low = 0
+        var high = samples.count - 1
+        while high - low > 1 {
+            let middle = (low + high) / 2
+            if samples[middle].t <= time { low = middle } else { high = middle }
+        }
+        return samples[low].shape
+    }
+
+    /// A smoothed copy of the track.
+    ///
+    /// An exponential filter, applied forwards and then backwards: one pass alone lags
+    /// behind the real pointer, which reads as the cursor trailing the click it is about
+    /// to make. Two passes in opposite directions cancel the lag out.
+    public func smoothed(_ amount: Double) -> CursorTrack {
+        let amount = min(1, max(0, amount))
+        guard amount > 0, samples.count > 2 else { return self }
+
+        // 0 → no smoothing, 1 → very heavy. Mapped so the middle of the slider is a
+        // noticeable but still-responsive amount.
+        let alpha = 1 - pow(amount, 0.35) * 0.92
+        var forward = samples
+        for index in 1..<forward.count {
+            forward[index].x = forward[index].x * alpha + forward[index - 1].x * (1 - alpha)
+            forward[index].y = forward[index].y * alpha + forward[index - 1].y * (1 - alpha)
+        }
+        for index in stride(from: forward.count - 2, through: 0, by: -1) {
+            forward[index].x = forward[index].x * alpha + forward[index + 1].x * (1 - alpha)
+            forward[index].y = forward[index].y * alpha + forward[index + 1].y * (1 - alpha)
+        }
+        return CursorTrack(samples: forward, clicks: clicks)
+    }
+
+    private init(samples: [CursorSample], clicks: [Double]) {
+        self.samples = samples
+        self.clicks = clicks
+    }
+
+    /// How much the pointer should swell for a click at this moment, 1 being not at all.
+    ///
+    /// A quick squash and release: the pointer dips in, springs past its size and
+    /// settles. It is the cheapest possible way to make a click legible in a silent
+    /// video, which is what most of these recordings are.
+    public func clickScale(at time: Double, duration: Double = 0.28, depth: Double = 0.25) -> Double {
+        guard let click = clicks.last(where: { $0 <= time && time - $0 < duration }) else { return 1 }
+        let progress = (time - click) / duration
+        // One dip, one overshoot, settling at 1.
+        return 1 - depth * sin(progress * .pi * 2) * (1 - progress)
+    }
+
+    /// How fast the pointer was moving, and which way.
+    ///
+    /// Direction as well as magnitude, because motion blur has to be smeared *along* the
+    /// travel: a blur in the wrong direction looks like a rendering fault rather than
+    /// like movement.
+    public func velocity(at time: Double, window: Double = 1 / 30) -> CGVector {
+        guard window > 0,
+              let now = position(at: time),
+              let before = position(at: time - window) else { return .zero }
+        return CGVector(dx: (now.x - before.x) / window, dy: (now.y - before.y) / window)
+    }
+
+    /// Whether the pointer moved far enough recently to be worth motion blur.
+    public func speed(at time: Double, window: Double = 1 / 30) -> Double {
+        let v = velocity(at: time, window: window)
+        return hypot(v.dx, v.dy)
+    }
+}

@@ -1,3 +1,4 @@
+import BackgroundKit
 import Foundation
 
 /// A picked color as exact sRGB components (not clamped: a Display P3 color

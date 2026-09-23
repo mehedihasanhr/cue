@@ -15,5 +15,9 @@ Config/local/
 *.xcresult
 dist/
 
+# Swift package build output (Packages/*/.build), from `swift build` / `swift test`
+Packages/*/.build/
+Packages/*/.swiftpm/
+
 # Scratch from Vendor/build-tesseract.sh; the built libraries under Vendor/tesseract are committed.
 Vendor/.build/

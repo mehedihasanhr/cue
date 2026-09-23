@@ -1,3 +1,4 @@
+import BackgroundKit
 import SwiftUI
 
 /// UserDefaults keys for user preferences read outside SwiftUI.
@@ -1559,6 +1560,6 @@ struct AboutSettingsView: View {
 #Preview("Settings") {
     SettingsRootView(buttons: WindowButtons(close: {}, minimize: {}, zoom: {}))
         .environment(SettingsNavigation()).environment(AppModel()).environment(CaptureLibrary()).environment(AppPreferences())
-        .environment(ShortcutController()).environment(ClipboardHistory())
+        .environment(ShortcutController()).environment(ClipboardHistory()).environment(AddOnRegistry()).environment(StudioPreferences())
         .frame(width: 920, height: 640)
 }

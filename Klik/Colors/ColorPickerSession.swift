@@ -1,5 +1,6 @@
 import os
 import AppKit
+import BackgroundKit
 
 /// A pixel-exact color picker: every display is frozen, covered by an overlay, and a
 /// square loupe *is* the pointer — centred on it, the cursor hidden — showing the

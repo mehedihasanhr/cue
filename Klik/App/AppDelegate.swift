@@ -1,6 +1,8 @@
+import AddOnKit
 import Carbon.HIToolbox
 import os
 import AppKit
+import BackgroundKit
 import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -23,6 +25,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let preferences = AppPreferences()
     /// The recognisers Capture Text can use, and the language packs behind them.
     private lazy var ocrEngines = OCREngines(preferences: preferences)
+    /// What optional features are installed. Cheap to hold: it knows where add-ons
+    /// are and nothing about what they do.
+    private lazy var studioPreferences = StudioPreferences()
+    private lazy var addOns = AddOnRegistry(preferences: studioPreferences)
+    /// The recording add-on, if it is installed. The host asks it to record and
+    /// takes the result; none of the recording code is in Klik.
+    private lazy var recorder = RecordingAddOnClient(registry: addOns, preferences: studioPreferences)
     private lazy var coordinator = CaptureCoordinator(shortcuts: shortcuts, preferences: preferences, engines: ocrEngines)
 
     private var statusItem: NSStatusItem?
@@ -1073,6 +1082,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         coordinator.captureArea(fromMenu: sender is NSMenuItem)
     }
 
+    /// Record the screen — or, with no add-on installed, offer to install one.
+    ///
+    /// The command is always present so the feature is discoverable; what it does
+    /// depends on what is installed, which is what `commandTitle` says out loud.
+    @objc func recordScreen(_ sender: Any?) {
+        guard recorder.canRecord else {
+            showSettings(sender)
+            settingsWindow?.present(.addOns)
+            return
+        }
+        Task { [recorder] in
+            do {
+                try await recorder.record(target: .ask)
+            } catch {
+                Log.addOns.error("Recording request failed: \(error.localizedDescription, privacy: .public)")
+                NSAlert(error: error).runModal()
+            }
+        }
+    }
+
     @objc func captureScrolling(_ sender: Any?) {
         coordinator.captureScrolling(fromMenu: sender is NSMenuItem)
     }
@@ -1189,9 +1218,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return true
     }
 
+    /// Open Klik Studio — or the Add-ons page, when it is not installed yet.
+    @objc func openStudio(_ sender: Any?) {
+        do {
+            try recorder.launch()
+        } catch {
+            showSettings(sender)
+            settingsWindow?.present(.addOns)
+        }
+    }
+
     @objc func showSettings(_ sender: Any?) {
         if settingsWindow == nil {
-            let controller = SettingsWindowController(model: model, shortcuts: shortcuts, library: library, clipboard: clipboard, preferences: preferences, clock: prayerClock, share: share, sync: syncFolder, notes: notes, taskSync: taskSync, ocrEngines: ocrEngines)
+            let controller = SettingsWindowController(model: model, shortcuts: shortcuts, library: library, clipboard: clipboard, preferences: preferences, addOns: addOns, studio: studioPreferences, clock: prayerClock, share: share, sync: syncFolder, notes: notes, taskSync: taskSync, ocrEngines: ocrEngines)
             controller.onClose = { [weak self] in
                 self?.settingsWindow = nil
                 self?.shortcuts.isRecording = false
@@ -1268,7 +1307,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Decoding the wallpaper thumbnails costs seconds of CPU, so it waits for the
         // first editor rather than running at every login; it's done long before the
         // Background tool is reached, and a no-op once cached.
-        Task(priority: .utility) { await WallpaperStore.shared.prepareThumbnails() }
+        Task(priority: .utility) { await WallpaperCatalog.shared.prepareThumbnails() }
         let controller = EditorWindowController(item: item, image: image, library: library, preferences: preferences, mode: mode)
         controller.onClose = { [weak self] in self?.editorWindows[item.id] = nil }
         controller.onDelete = { [weak self] item in self?.library.delete(item) }

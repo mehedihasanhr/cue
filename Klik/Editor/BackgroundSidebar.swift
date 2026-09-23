@@ -1,3 +1,4 @@
+import BackgroundKit
 import SwiftUI
 
 /// Left sidebar for the Background tool: gradients, wallpapers, blurred wallpapers and
@@ -40,7 +41,7 @@ struct BackgroundSidebar: View {
         }
         .frame(width: Self.width)
         .background(Color(nsColor: .windowBackgroundColor))
-        .task { await WallpaperStore.shared.prepareThumbnails() }
+        .task { await WallpaperCatalog.shared.prepareThumbnails() }
     }
 
     // MARK: Sections
@@ -66,7 +67,7 @@ struct BackgroundSidebar: View {
     private var wallpapers: some View {
         section("Wallpapers") {
             LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
-                ForEach(WallpaperStore.shared.customWallpapers + WallpaperStore.shared.systemWallpapers, id: \.self) { wallpaper in
+                ForEach(WallpaperCatalog.shared.customWallpapers + WallpaperCatalog.shared.systemWallpapers, id: \.self) { wallpaper in
                     tile(selected: fill == .image(wallpaper) && model.background.imageBlur < 1, help: wallpaper.title) {
                         wallpaperImage(wallpaper)
                     } action: {
@@ -74,9 +75,9 @@ struct BackgroundSidebar: View {
                     }
                 }
                 Button {
-                    if let wallpaper = WallpaperStore.shared.chooseCustomWallpaper() {
+                    if let wallpaper = WallpaperCatalog.shared.chooseCustomWallpaper() {
                         select(wallpaper, blur: 0)
-                        Task { await WallpaperStore.shared.prepareThumbnails() }
+                        Task { await WallpaperCatalog.shared.prepareThumbnails() }
                     }
                 } label: {
                     Image(systemName: "plus")
@@ -94,7 +95,7 @@ struct BackgroundSidebar: View {
     private var blurred: some View {
         section("Blurred") {
             LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
-                ForEach(WallpaperStore.shared.systemWallpapers.prefix(5), id: \.self) { wallpaper in
+                ForEach(WallpaperCatalog.shared.systemWallpapers.prefix(5), id: \.self) { wallpaper in
                     tile(selected: fill == .image(wallpaper) && model.background.imageBlur >= 1, help: "\(wallpaper.title), blurred") {
                         wallpaperImage(wallpaper).blur(radius: 4)
                     } action: {
@@ -135,7 +136,7 @@ struct BackgroundSidebar: View {
 
     private func select(_ wallpaper: Wallpaper, blur: CGFloat) {
         Task {
-            await WallpaperStore.shared.prepare(wallpaper)
+            await WallpaperCatalog.shared.prepare(wallpaper)
             var style = model.background
             style.imageBlur = blur
             style.fill = .image(wallpaper)
@@ -249,7 +250,7 @@ struct BackgroundSidebar: View {
 
     private func wallpaperImage(_ wallpaper: Wallpaper) -> some View {
         Group {
-            if let thumbnail = WallpaperStore.shared.thumbnail(for: wallpaper) {
+            if let thumbnail = WallpaperCatalog.shared.thumbnail(for: wallpaper) {
                 Image(nsImage: thumbnail).resizable().scaledToFill()
             } else {
                 Color.gray

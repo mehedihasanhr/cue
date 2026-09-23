@@ -6,6 +6,13 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		4B4C494B000000000000A034 /* AddOnKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B4C494B000000000000A032 /* AddOnKit */; };
+		4B4C494B000000000000A036 /* AddOnKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B4C494B000000000000A037 /* AddOnKit */; };
+		4B4C494B000000000000A038 /* BackgroundKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B4C494B000000000000A03A /* BackgroundKit */; };
+		4B4C494B000000000000A039 /* BackgroundKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B4C494B000000000000A03B /* BackgroundKit */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		4B4C494B000000000000A001 /* Klik.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Klik.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4B4C494B000000000000A002 /* Klik.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Klik.entitlements; sourceTree = "<group>"; };
@@ -51,7 +58,6 @@
 				Support/CapturedImage.swift,
 				Support/Clipboard.swift,
 				Support/ImageEncoding.swift,
-				Support/LRUCache.swift,
 				Support/PanelPosition.swift,
 				Prayer/PrayerCalculator.swift,
 				Snippets/SnippetStore.swift,
@@ -66,6 +72,13 @@
 				Tasks/TaskStore.swift,
 				Tasks/TaskWire.swift,
 				Support/Log.swift,
+				AddOns/SemanticVersion.swift,
+				AddOns/AddOnCatalog.swift,
+				AddOns/AddOnDownloader.swift,
+				AddOns/AddOnLocator.swift,
+				AddOns/AddOnRegistry.swift,
+				AddOns/RecordingAddOnClient.swift,
+				AddOns/StudioPreferences.swift,
 			);
 			target = 4B4C494B000000000000E002 /* KlikTests */;
 		};
@@ -92,6 +105,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4B4C494B000000000000A034 /* AddOnKit in Frameworks */,
+				4B4C494B000000000000A038 /* BackgroundKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -99,6 +114,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4B4C494B000000000000A036 /* AddOnKit in Frameworks */,
+				4B4C494B000000000000A039 /* BackgroundKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -154,6 +171,8 @@
 			);
 			name = Klik;
 			packageProductDependencies = (
+				4B4C494B000000000000A032 /* AddOnKit */,
+				4B4C494B000000000000A03A /* BackgroundKit */,
 			);
 			productName = Klik;
 			productReference = 4B4C494B000000000000A001 /* Klik.app */;
@@ -176,6 +195,8 @@
 			);
 			name = KlikTests;
 			packageProductDependencies = (
+				4B4C494B000000000000A037 /* AddOnKit */,
+				4B4C494B000000000000A03B /* BackgroundKit */,
 			);
 			productName = KlikTests;
 			productReference = 4B4C494B000000000000A011 /* KlikTests.xctest */;
@@ -216,6 +237,10 @@
 			);
 			mainGroup = 4B4C494B000000000000D001;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				4B4C494B000000000000A031 /* XCLocalSwiftPackageReference "Packages/AddOnKit" */,
+				4B4C494B000000000000A03C /* XCLocalSwiftPackageReference "Packages/BackgroundKit" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 4B4C494B000000000000D003 /* Products */;
 			projectDirPath = "";
@@ -260,6 +285,36 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		4B4C494B000000000000A031 /* XCLocalSwiftPackageReference "Packages/AddOnKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/AddOnKit;
+		};
+		4B4C494B000000000000A03C /* XCLocalSwiftPackageReference "Packages/BackgroundKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/BackgroundKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		4B4C494B000000000000A032 /* AddOnKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AddOnKit;
+		};
+		4B4C494B000000000000A037 /* AddOnKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AddOnKit;
+		};
+		4B4C494B000000000000A03A /* BackgroundKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BackgroundKit;
+		};
+		4B4C494B000000000000A03B /* BackgroundKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BackgroundKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCBuildConfiguration section */
 		4B4C494B000000000000F101 /* Debug */ = {
@@ -409,6 +464,7 @@
 				CODE_SIGN_ENTITLEMENTS = Config/Klik.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 14;
+				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -439,6 +495,7 @@
 				CODE_SIGN_ENTITLEMENTS = Config/Klik.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 14;
+				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;

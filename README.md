@@ -368,12 +368,107 @@ Klik/
 ├── Preview/      Temporary capture viewer (replaced by the editor in Step 3)
 ├── Support/      CapturedImage, Log, WindowHosting, Icon (the island's Hugeicons stroke icons,
 │                 by SF Symbol name; HugeIconGlyphs is generated from @hugeicons/core-free-icons, MIT)
+├── AddOns/       AddOnCatalog, AddOnRegistry, AddOnInstaller/Downloader, AddOnLocator,
+│                 RecordingAddOnClient, AddOnSettingsView — finding and installing add-ons
 └── Resources/    Assets.xcassets
-Config/           Klik.entitlements, Signing.xcconfig (local)
+KlikStudio/       Klik Studio.app — the recording add-on: its own .xcodeproj, its own app
+Packages/AddOnKit/  The contract both apps compile: RecordingRequest, capabilities, request files
+Packages/RecordKit/ Capture, linked only by the add-on: ScreenCaptureKit + AVAssetWriter,
+                  frame pacing, cursor telemetry, the .klikrec package
+Packages/TimelineKit/ The edit: clips, regions, undo, auto-zoom, project.json
+Packages/RenderKit/ SceneDescriptor + SceneRenderer (Core Image on Metal) — one renderer
+                  for both the preview and the export
+Config/           Shared by both projects: Klik.entitlements, KlikStudio.entitlements,
+                  StudioInfo.plist, Studio.xcconfig, Signing.xcconfig (local, git-ignored)
 ```
 
-The Xcode project uses a file-system-synchronized group, so new files under `Klik/` are
-picked up automatically — no project edits needed.
+The Xcode project uses file-system-synchronized groups, so new files under `Klik/` and
+`KlikStudio/` are picked up automatically — no project edits needed.
+
+## Add-ons
+
+Heavy features do not ship inside Klik. Screen recording lives in **Klik Studio**, a
+separate signed app the user installs from Settings › Add-ons, so an install that only
+takes screenshots downloads, launches and holds none of it.
+
+- The host links `Packages/AddOnKit` and nothing else: the request and capability types,
+  no AVFoundation, no Metal, no Speech.
+- `AddOnRegistry` finds an installed add-on through LaunchServices, then checks its code
+  signature carries Klik's own team identifier — a bundle identifier is a naming
+  convention, not a credential.
+- Installing downloads a notarised image or package, verifies its length and SHA-256, and
+  hands it to macOS. A sandboxed app cannot create a non-quarantined executable or clear
+  the quarantine flag, so Klik does not try to install an app itself.
+- Capabilities are asked for before they are offered, so an older add-on simply shows
+  fewer commands.
+
+**Settings › Add-ons** carries the whole lifecycle: Install / Update, Open, Show in
+Finder, and — under Advanced — **Choose a Klik Studio build**, which points Klik at a
+copy anywhere on disk (an Xcode build, or one kept outside Applications) and is how the
+pair is developed before anything is published. That copy is signature-checked like any
+other.
+
+The same page holds what Klik *asks for* when you record: countdown, system audio,
+microphone, where recordings are saved, and whether the editor opens when a recording
+stops. They travel in the `RecordingRequest`, so the add-on needs no settings of its own
+for any of it. A save folder Klik picked is a grant Klik holds — the add-on cannot
+inherit it, so it tries the folder, falls back to its own library, and says so.
+
+**Capture** and **Open Klik Studio** in the Capture menu both work whatever is
+installed: with no add-on they open this page instead of failing.
+
+Klik Studio is its **own Xcode project**, built and released on its own schedule. Klik
+never builds it and never bundles it — it finds it, checks its signature, and launches
+it.
+
+```sh
+# The add-on, from its own project
+xcodebuild -project KlikStudio/KlikStudio.xcodeproj -scheme KlikStudio -configuration Debug build
+
+# The packages, on their own
+cd Packages/AddOnKit && swift test
+cd Packages/RecordKit && swift test
+cd Packages/TimelineKit && swift test
+cd Packages/RenderKit && swift test
+```
+
+### Recording
+
+`RecordKit` records the screen the way every serious tool in this space does: a clean
+video plus **metadata sidecars**, with nothing baked in.
+
+- One `SCStream` for the display, window or area, writing through `AVAssetWriter` in
+  HEVC where the hardware has an encoder. Frames are delivered on the writer's own
+  queue, so a frame goes from the system into the encoder without a hop or a copy.
+- The screen only produces frames when it changes, so `FramePacer` repeats the last
+  frame at the times the encoder expected one — a still screen would otherwise drift
+  away from the audio, which never stops.
+- The cursor is **not** drawn into the video. Its position, shape and clicks are sampled
+  into `telemetry/cursor.jsonl` and `input.jsonl` as they happen, which is what makes
+  auto-zoom, cursor smoothing and click effects possible afterwards.
+- A recording is a `.klikrec` package: `manifest.json`, `media/`, `telemetry/`.
+- The disk is watched while recording, because ScreenCaptureKit stops silently when a
+  volume fills and an `AVAssetWriter` fails at the end — long after the take.
+
+### Editing
+
+The edit is a value. `Timeline` is a struct of structs, so undo is a stored copy rather
+than a pile of inverse operations, "is this dirty?" is `==`, and no part of the editor
+can change the document behind another part's back.
+
+- A `Clip` stores its in-point **in the recording**, never its position on the timeline.
+  Position is what came before it added up, so the sequence is contiguous by
+  construction and reordering cannot invent a gap.
+- Speed is a property of a clip, not a region: one source of truth for how long the edit
+  runs.
+- `SceneBuilder` turns `(Timeline, time)` into a `SceneDescriptor` — a pure function —
+  and `SceneRenderer` turns that into pixels. The preview and the exporter call the same
+  two, so "does the export match the preview?" is a unit test, not a bug report.
+- Auto-zoom reads the recorded clicks: people click where they want you to look. A
+  cluster of clicks close in time and space becomes a zoom; clicks spread across the
+  screen are panning, and suggest nothing.
+- Zooms do not stack. The strongest one at a moment wins, and the camera is clamped so a
+  zoomed frame never shows its own edge.
 
 ## Roadmap
 
@@ -384,3 +479,4 @@ picked up automatically — no project edits needed.
 5. Export (clipboard, save, drag-out, floating thumbnail)
 6. ✅ Scrolling capture
 7. Polish (✅ custom shortcuts, ✅ preferences window; save locations, dark mode, localization)
+8. Recording, as the Klik Studio add-on (✅ plumbing, ✅ capture + telemetry, ✅ editor: timeline, zooms, renderer; export next)

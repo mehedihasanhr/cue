@@ -1,0 +1,6 @@
+// Klik Studio — the recording add-on.
+//
+// Deliberately not Vendor.xcconfig: the add-on links no Tesseract and no Leptonica.
+// It shares only the signing identity, so the host's team check recognises it.
+
+#include? "Signing.xcconfig"

@@ -23,6 +23,8 @@ enum MainMenu {
             ("Capture Full Screen", #selector(AppDelegate.captureFullScreen(_:))),
             ("Capture Area", #selector(AppDelegate.captureArea(_:))),
             ("Capture Window", #selector(AppDelegate.captureWindow(_:))),
+            ("Record Screen…", #selector(AppDelegate.recordScreen(_:))),
+            ("Open Klik Studio", #selector(AppDelegate.openStudio(_:))),
             ("Scrolling Capture", #selector(AppDelegate.captureScrolling(_:))),
             ("Capture Text", #selector(AppDelegate.captureText(_:))),
             ("Pick Color", #selector(AppDelegate.pickColor(_:))),

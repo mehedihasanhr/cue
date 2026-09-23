@@ -1,0 +1,382 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		4B53545544000000000A031 /* AddOnKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B53545544000000000A021 /* AddOnKit */; };
+		4B53545544000000000A032 /* RecordKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B53545544000000000A022 /* RecordKit */; };
+		4B53545544000000000A033 /* TimelineKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B53545544000000000A023 /* TimelineKit */; };
+		4B53545544000000000A034 /* RenderKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B53545544000000000A024 /* RenderKit */; };
+		4B53545544000000000A035 /* BackgroundKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B53545544000000000A025 /* BackgroundKit */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		4B53545544000000000A001 /* Klik Studio.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Klik Studio.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		4B53545544000000000A002 /* Studio.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Studio.xcconfig; path = ../Config/Studio.xcconfig; sourceTree = "<group>"; };
+		4B53545544000000000A003 /* KlikStudio.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; name = KlikStudio.entitlements; path = ../Config/KlikStudio.entitlements; sourceTree = "<group>"; };
+		4B53545544000000000A004 /* StudioInfo.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = StudioInfo.plist; path = ../Config/StudioInfo.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		4B53545544000000000B001 /* App */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = App;
+			sourceTree = "<group>";
+		};
+		4B53545544000000000B002 /* Bridge */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Bridge;
+			sourceTree = "<group>";
+		};
+		4B53545544000000000B003 /* Editor */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Editor;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		4B53545544000000000C002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4B53545544000000000A031 /* AddOnKit in Frameworks */,
+				4B53545544000000000A032 /* RecordKit in Frameworks */,
+				4B53545544000000000A033 /* TimelineKit in Frameworks */,
+				4B53545544000000000A034 /* RenderKit in Frameworks */,
+				4B53545544000000000A035 /* BackgroundKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		4B53545544000000000D001 = {
+			isa = PBXGroup;
+			children = (
+				4B53545544000000000B001 /* App */,
+				4B53545544000000000B002 /* Bridge */,
+				4B53545544000000000B003 /* Editor */,
+				4B53545544000000000D002 /* Config */,
+				4B53545544000000000D003 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		4B53545544000000000D002 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				4B53545544000000000A002 /* Studio.xcconfig */,
+				4B53545544000000000A003 /* KlikStudio.entitlements */,
+				4B53545544000000000A004 /* StudioInfo.plist */,
+			);
+			name = Config;
+			sourceTree = "<group>";
+		};
+		4B53545544000000000D003 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				4B53545544000000000A001 /* Klik Studio.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		4B53545544000000000E001 /* KlikStudio */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4B53545544000000000F002 /* Build configuration list for PBXNativeTarget "KlikStudio" */;
+			buildPhases = (
+				4B53545544000000000C001 /* Sources */,
+				4B53545544000000000C002 /* Frameworks */,
+				4B53545544000000000C003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				4B53545544000000000B001 /* App */,
+				4B53545544000000000B002 /* Bridge */,
+				4B53545544000000000B003 /* Editor */,
+			);
+			name = KlikStudio;
+			packageProductDependencies = (
+				4B53545544000000000A021 /* AddOnKit */,
+				4B53545544000000000A022 /* RecordKit */,
+				4B53545544000000000A023 /* TimelineKit */,
+				4B53545544000000000A024 /* RenderKit */,
+				4B53545544000000000A025 /* BackgroundKit */,
+			);
+			productName = "Klik Studio";
+			productReference = 4B53545544000000000A001 /* Klik Studio.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		4B53545544000000000E000 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					4B53545544000000000E001 = {
+						CreatedOnToolsVersion = 26.0;
+					};
+				};
+			};
+			buildConfigurationList = 4B53545544000000000F001 /* Build configuration list for PBXProject "KlikStudio" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 4B53545544000000000D001;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				4B53545544000000000A011 /* XCLocalSwiftPackageReference "../Packages/AddOnKit" */,
+				4B53545544000000000A012 /* XCLocalSwiftPackageReference "../Packages/RecordKit" */,
+				4B53545544000000000A013 /* XCLocalSwiftPackageReference "../Packages/TimelineKit" */,
+				4B53545544000000000A014 /* XCLocalSwiftPackageReference "../Packages/RenderKit" */,
+				4B53545544000000000A015 /* XCLocalSwiftPackageReference "../Packages/BackgroundKit" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 4B53545544000000000D003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				4B53545544000000000E001 /* KlikStudio */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		4B53545544000000000C003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		4B53545544000000000C001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		4B53545544000000000A011 /* XCLocalSwiftPackageReference "../Packages/AddOnKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/AddOnKit;
+		};
+		4B53545544000000000A012 /* XCLocalSwiftPackageReference "../Packages/RecordKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/RecordKit;
+		};
+		4B53545544000000000A013 /* XCLocalSwiftPackageReference "../Packages/TimelineKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/TimelineKit;
+		};
+		4B53545544000000000A014 /* XCLocalSwiftPackageReference "../Packages/RenderKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/RenderKit;
+		};
+		4B53545544000000000A015 /* XCLocalSwiftPackageReference "../Packages/BackgroundKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/BackgroundKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		4B53545544000000000A021 /* AddOnKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AddOnKit;
+		};
+		4B53545544000000000A022 /* RecordKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RecordKit;
+		};
+		4B53545544000000000A023 /* TimelineKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = TimelineKit;
+		};
+		4B53545544000000000A024 /* RenderKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RenderKit;
+		};
+		4B53545544000000000A025 /* BackgroundKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BackgroundKit;
+		};
+/* End XCSwiftPackageProductDependency section */
+
+/* Begin XCBuildConfiguration section */
+		4B53545544000000000F101 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = (
+					"DEBUG",
+					"$(inherited)",
+				);
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		4B53545544000000000F102 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEPLOYMENT_POSTPROCESSING = YES;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				STRIP_INSTALLED_PRODUCT = YES;
+				STRIP_STYLE = all;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		4B53545544000000000F201 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 4B53545544000000000A002 /* Studio.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = ../Config/KlikStudio.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_DEBUG_DYLIB = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ../Config/StudioInfo.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Klik Studio records your camera when you add a webcam overlay.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Klik Studio records your microphone when you narrate a recording.";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.stackrover.klik.studio;
+				PRODUCT_NAME = "Klik Studio";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Debug;
+		};
+		4B53545544000000000F202 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 4B53545544000000000A002 /* Studio.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = ../Config/KlikStudio.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_DEBUG_DYLIB = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ../Config/StudioInfo.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Klik Studio records your camera when you add a webcam overlay.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Klik Studio records your microphone when you narrate a recording.";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.stackrover.klik.studio;
+				PRODUCT_NAME = "Klik Studio";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		4B53545544000000000F001 /* Build configuration list for PBXProject "KlikStudio" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4B53545544000000000F101 /* Debug */,
+				4B53545544000000000F102 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4B53545544000000000F002 /* Build configuration list for PBXNativeTarget "KlikStudio" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4B53545544000000000F201 /* Debug */,
+				4B53545544000000000F202 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 4B53545544000000000E000 /* Project object */;
+}
