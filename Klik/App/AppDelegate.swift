@@ -1089,7 +1089,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func recordScreen(_ sender: Any?) {
         guard recorder.canRecord else {
             showSettings(sender)
-            settingsWindow?.present(.addOns)
+            settingsWindow?.present(.studio)
             return
         }
         Task { [recorder] in
@@ -1218,13 +1218,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return true
     }
 
-    /// Open Klik Studio — or the Add-ons page, when it is not installed yet.
+    /// Open Klik Studio — or its Settings page, when it is not installed yet.
     @objc func openStudio(_ sender: Any?) {
         do {
             try recorder.launch()
         } catch {
             showSettings(sender)
-            settingsWindow?.present(.addOns)
+            settingsWindow?.present(.studio)
         }
     }
 

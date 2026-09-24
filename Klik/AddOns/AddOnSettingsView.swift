@@ -4,12 +4,13 @@ import SwiftUI
 
 /// The Add-ons page: what Klik can do that it does not carry.
 ///
-/// One row per add-on, saying plainly what it is, what it costs to download and what
-/// state it is in — then, once the recorder is installed, the settings Klik sends it
-/// when you press Record.
+/// One row per add-on, saying plainly what it is, what it costs to download and what state
+/// it is in. Nothing else: an add-on's own settings belong on its own page — the recorder's
+/// live under Studio — or this page becomes the settings of whatever happens to be
+/// installed rather than a list of what can be.
 struct AddOnSettingsView: View {
     @Environment(AddOnRegistry.self) private var registry
-    @Environment(StudioPreferences.self) private var studio
+    @Environment(SettingsNavigation.self) private var navigation
 
     var body: some View {
         SettingsPane(.addOns) {
@@ -19,11 +20,17 @@ struct AddOnSettingsView: View {
                 }
             }
 
+            // The list says what each add-on *is*; its own page is where it is set up. Only
+            // the recorder has one so far, and only worth offering once it can be used.
             if registry.availability(of: AddOnCatalog.studio).isUsable {
-                recordingSettings
+                SettingsGroup {
+                    SettingsRow("Klik Studio settings",
+                                subtitle: "Recording, where takes are saved, and the build Klik uses",
+                                symbol: AddOnCatalog.studio.symbol, tint: .red) {
+                        Button("Open Studio") { navigation.go(.studio) }
+                    }
+                }
             }
-
-            developerSettings
         }
         .task { await registry.refresh() }
     }
@@ -34,71 +41,10 @@ struct AddOnSettingsView: View {
         }
         return "Add-ons are separate apps. Klik stays small because they aren't part of it, and removing one is removing an app."
     }
-
-    // MARK: - What Klik asks for
-
-    @ViewBuilder
-    private var recordingSettings: some View {
-        @Bindable var studio = studio
-
-        SettingsGroup("Recording", footer: "Klik hands these to Klik Studio each time you record.") {
-            SettingsRow("Countdown", subtitle: "Seconds before the first frame", symbol: "timer", tint: .orange) {
-                Picker("Countdown", selection: $studio.countdownSeconds) {
-                    Text("None").tag(0)
-                    ForEach([3, 5, 10], id: \.self) { Text("\($0)s").tag($0) }
-                }
-                .fixedSize()
-            }
-            SettingsRow("System audio", subtitle: "What the Mac is playing", symbol: "speaker.wave.2.fill", tint: .blue) {
-                Toggle("System audio", isOn: $studio.recordsSystemAudio)
-            }
-            SettingsRow("Microphone", subtitle: "Asks for permission the first time", symbol: "mic.fill", tint: .red) {
-                Toggle("Microphone", isOn: $studio.recordsMicrophone)
-            }
-            SettingsRow("Open the editor when a recording stops", symbol: "slider.horizontal.below.rectangle", tint: .purple) {
-                Toggle("Open editor", isOn: $studio.opensEditorAfterRecording)
-            }
-            SettingsRow("Save recordings to",
-                        subtitle: studio.recordingsFolder?.path(percentEncoded: false) ?? "Klik Studio's own library, in Movies",
-                        symbol: "folder.fill", tint: .teal) {
-                HStack(spacing: 8) {
-                    if studio.recordingsFolder != nil {
-                        Button("Reset") { studio.clearRecordingsFolder() }
-                    }
-                    Button("Choose…") { studio.chooseRecordingsFolder() }
-                }
-            }
-        }
-    }
-
-    // MARK: - Pointing Klik at a build
-
-    @ViewBuilder
-    private var developerSettings: some View {
-        SettingsGroup("Advanced",
-                      footer: "Use this to run a build of Klik Studio from Xcode, or a copy kept outside Applications. It is signature-checked like any other.") {
-            SettingsRow("Klik Studio build",
-                        subtitle: studio.localBuildURL?.path(percentEncoded: false) ?? "Wherever it is installed",
-                        symbol: "hammer.fill", tint: .gray) {
-                HStack(spacing: 8) {
-                    if studio.localBuildURL != nil {
-                        Button("Forget") {
-                            studio.clearLocalBuild()
-                            registry.localBuildChanged()
-                        }
-                    }
-                    Button("Choose…") {
-                        studio.chooseLocalBuild()
-                        registry.localBuildChanged()
-                    }
-                }
-            }
-        }
-    }
 }
 
 /// One add-on, with the actions its current state allows.
-private struct AddOnRow: View {
+struct AddOnRow: View {
     let addOn: AddOn
     @Environment(AddOnRegistry.self) private var registry
 
