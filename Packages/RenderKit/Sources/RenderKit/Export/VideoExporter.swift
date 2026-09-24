@@ -23,7 +23,9 @@ public actor VideoExporter {
     private let packageURL: URL?
     private let settings: ExportSettings
 
-    private var isCancelled = false
+    /// Shared with the GIF path and readable without `await`, so one `cancel()` stops
+    /// whichever loop is running. See `ExportCancellation`.
+    private let cancellation = ExportCancellation()
 
     private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "export")
 
@@ -42,7 +44,7 @@ public actor VideoExporter {
     }
 
     /// Stops at the next frame boundary and leaves nothing behind.
-    public func cancel() { isCancelled = true }
+    nonisolated public func cancel() { cancellation.cancel() }
 
     /// Writes the file, reporting progress as it goes.
     ///
@@ -51,14 +53,16 @@ public actor VideoExporter {
     public func export(to destination: URL,
                        onProgress: @Sendable @escaping (ExportProgress) -> Void = { _ in }) async throws(ExportError) {
         guard timeline.duration.seconds > 0 else { throw ExportError.emptyTimeline }
-        isCancelled = false
+        // Not reset here: one exporter writes one file, and a job cancelled while it was
+        // still queued must stay cancelled when its turn comes round.
 
         if settings.format == .gif {
             try await GIFExporter(timeline: timeline,
                                   builder: builder,
                                   cursor: cursor,
                                   videoURL: videoURL,
-                                  settings: settings).export(to: destination, onProgress: onProgress)
+                                  settings: settings,
+                                  cancellation: cancellation).export(to: destination, onProgress: onProgress)
             return
         }
         try await writeMovie(to: destination, onProgress: onProgress)
@@ -139,7 +143,7 @@ public actor VideoExporter {
 
         do {
             for index in 0..<totalFrames {
-                if isCancelled { throw ExportError.cancelled }
+                if cancellation.shouldStop { throw ExportError.cancelled }
 
                 let time = CMTime(value: CMTimeValue(index), timescale: CMTimeScale(frameRate))
                 let scene = builder.descriptor(for: timeline, at: time, cursor: cursor)
@@ -206,7 +210,7 @@ public actor VideoExporter {
                         adaptor: AVAssetWriterInputPixelBufferAdaptor,
                         input: AVAssetWriterInput) async throws(ExportError) {
         while !input.isReadyForMoreMediaData {
-            if isCancelled { throw ExportError.cancelled }
+            if cancellation.shouldStop { throw ExportError.cancelled }
             try? await Task.sleep(for: .milliseconds(5))
         }
         guard let pool = adaptor.pixelBufferPool else {

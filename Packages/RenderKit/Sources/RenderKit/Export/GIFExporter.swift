@@ -21,6 +21,9 @@ struct GIFExporter {
     let cursor: CursorTrack?
     let videoURL: URL
     let settings: ExportSettings
+    /// The same flag `VideoExporter.cancel()` sets. A GIF used to stop only because the
+    /// task around it had been cancelled as well, which made Cancel a coincidence.
+    let cancellation: ExportCancellation
 
     /// A sane ceiling on a format that stores every frame whole. 1,280 across is already
     /// a very large GIF; beyond that it is a video with the wrong extension.
@@ -76,7 +79,14 @@ struct GIFExporter {
         var lastReport = Date.distantPast
 
         for index in 0..<totalFrames {
-            if Task.isCancelled { throw ExportError.cancelled }
+            if cancellation.shouldStop {
+                // Nothing half-written left where the user asked for a file. Image I/O
+                // only commits on `finalize`, but it has already created the file, and an
+                // unfinalised GIF on the desktop is worse than no GIF at all.
+                reader.cancel()
+                try? FileManager.default.removeItem(at: destination)
+                throw ExportError.cancelled
+            }
 
             let time = CMTime(value: CMTimeValue(index), timescale: CMTimeScale(frameRate))
             let scene = builder.descriptor(for: timeline, at: time, cursor: cursor)
@@ -90,6 +100,8 @@ struct GIFExporter {
                                                              from: CGRect(origin: .zero, size: outputSize),
                                                              format: .RGBA8,
                                                              colorSpace: renderer.colorSpace) else {
+                reader.cancel()
+                try? FileManager.default.removeItem(at: destination)
                 throw ExportError.writerFailed("A frame couldn't be drawn.")
             }
             CGImageDestinationAddImage(output, frame, frameProperties)
