@@ -69,6 +69,18 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
                 edge(region, leading: false).offset(x: left + width - edgeWidth)
             }
             .contextMenu {
+                // Acting on the region under the pointer rather than on `model.selection`,
+                // which is why these take a `Selection` — a right-click should not change
+                // what the inspector is showing on its way to copying something.
+                Button("Cut") { model.cutRegion(selection(region.id)) }
+                Button("Copy") { model.copyRegion(selection(region.id)) }
+                Button("Duplicate") { model.duplicateRegion(selection(region.id)) }
+                // Pasting is about the playhead, not about this region, but it belongs here
+                // for the same reason it belongs in a Finder window's menu: it is where the
+                // hand already is after a copy.
+                Button("Paste") { model.pasteAtPlayhead() }
+                    .disabled(!model.canPasteRegion)
+                Divider()
                 Button("Delete", role: .destructive) { model.deleteSelection(region.id) }
             }
             .help("\(title) · \(Timecode.length(region.duration))")
