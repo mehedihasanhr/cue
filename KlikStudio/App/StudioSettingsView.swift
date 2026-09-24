@@ -141,6 +141,17 @@ private struct AfterwardsSettings: View {
             .disabled(!settings.suggestsZoomsOnOpen)
 
             Section {
+                Picker("Count in", selection: $settings.voiceoverCountInSeconds) {
+                    Text("Off").tag(0)
+                    ForEach([3, 5, 10], id: \.self) { Text("\($0) seconds").tag($0) }
+                }
+            } header: {
+                Text("Voiceover")
+            } footer: {
+                Text("Time to draw breath before the timeline starts rolling. The microphone is the one chosen under Recording, and the editor's own sound is silenced while a take is recorded so it doesn't end up inside it.")
+            }
+
+            Section {
                 LabeledContent("Recordings folder") {
                     HStack(spacing: 8) {
                         Text(settings.library.path(percentEncoded: false))

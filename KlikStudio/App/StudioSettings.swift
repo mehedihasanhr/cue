@@ -43,6 +43,7 @@ final class StudioSettings {
         static let clickEffect = "editor.clickEffect"
         static let previewVolume = "editor.previewVolume"
         static let previewMuted = "editor.previewMuted"
+        static let voiceoverCountIn = "editor.voiceoverCountIn"
     }
 
     // MARK: - Recording
@@ -102,6 +103,15 @@ final class StudioSettings {
     var previewVolume: Double { didSet { defaults.set(previewVolume, forKey: Key.previewVolume) } }
     var previewIsMuted: Bool { didSet { defaults.set(previewIsMuted, forKey: Key.previewMuted) } }
 
+    /// How long the editor counts in before it starts recording a voiceover.
+    ///
+    /// Its own preference rather than `countdownSeconds`, which is the recorder's: that
+    /// countdown is time to get out of the way of the screen and is often turned off
+    /// entirely, whereas this one is time to draw breath and is wanted even by somebody
+    /// who records the screen with no countdown at all. Sharing one number would mean
+    /// each setting quietly changing the other feature.
+    var voiceoverCountInSeconds: Int { didSet { defaults.set(voiceoverCountInSeconds, forKey: Key.voiceoverCountIn) } }
+
     /// Where recordings are kept. A folder the user picked is held as a bookmark,
     /// because a sandboxed app that stores a path stores something it cannot open.
     private(set) var library: URL
@@ -137,6 +147,7 @@ final class StudioSettings {
         clickEffect = defaults.object(forKey: Key.clickEffect) as? Bool ?? true
         previewVolume = defaults.object(forKey: Key.previewVolume) as? Double ?? 1
         previewIsMuted = defaults.bool(forKey: Key.previewMuted)
+        voiceoverCountInSeconds = defaults.object(forKey: Key.voiceoverCountIn) as? Int ?? 3
 
         library = (defaults.data(forKey: Key.libraryBookmark)).flatMap(Self.resolve) ?? Self.defaultLibrary
     }

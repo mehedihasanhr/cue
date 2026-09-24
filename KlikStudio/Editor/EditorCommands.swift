@@ -54,6 +54,14 @@ struct EditorCommands: SwiftUI.Commands {
             Button("Add Sound…") { editor?.addSound() }
                 .keyboardShortcut("a", modifiers: [.command, .shift])
                 .disabled(editor == nil)
+            // ⇧⌘V, beside Add Sound…: the two are the same idea — sound laid over the
+            // recording — and one of them is a file you already have while the other is
+            // one you are about to make. ⌘V belongs to paste and every other letter in
+            // this menu is taken.
+            Button(editor?.isRecordingVoiceover == true
+                   ? "Stop Recording Voiceover" : "Record Voiceover…") { editor?.toggleVoiceover() }
+                .keyboardShortcut("v", modifiers: [.command, .shift])
+                .disabled(editor == nil)
             Button(editor?.timeline.sound.isMuted == true
                    ? "Unmute the Recording" : "Mute the Recording") { editor?.toggleRecordedSound() }
                 .disabled(editor == nil)

@@ -20,6 +20,7 @@ struct AudioInspector: View {
             if let audio = model.audio, audio.hasSound {
                 level(audio)
             }
+            voiceover
             addSound
             if !model.timeline.audio.isEmpty {
                 added
@@ -55,6 +56,93 @@ struct AudioInspector: View {
         }
         .font(.system(size: 12))
         .inspectorSection("Exported Sound", systemImage: "waveform.badge.mic")
+    }
+
+    // MARK: - Narration
+
+    /// Recording a voiceover: one control that starts and stops, and the take's state
+    /// while it runs.
+    ///
+    /// The same button does both, because arming and stopping are the two halves of one
+    /// action and a second button would be one you could press at the wrong time. What it
+    /// says changes with the state rather than what it does, which is also how the menu
+    /// item reads.
+    @ViewBuilder
+    private var voiceover: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            // No recorder and an idle one are the same thing to look at: nothing is being
+            // recorded, and there is a button to start.
+            switch model.voiceover?.state ?? .idle {
+            case .idle:
+                Button {
+                    model.startVoiceover()
+                } label: {
+                    Label("Record Voiceover…", systemImage: "mic")
+                }
+                .controlSize(.small)
+                .help("Talk over the edit. It plays from the playhead, and what you say lands there")
+                Text("The timeline plays from the playhead while you talk, and the take lands where it started. The editor's own sound is silenced so it doesn't end up in the recording.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+            case .countingIn(let remaining):
+                HStack(spacing: 10) {
+                    Text("\(remaining)")
+                        .font(.system(size: 22, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .contentTransition(.numericText(countsDown: true))
+                    Text("Get ready…")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    stop
+                }
+
+            case .opening:
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Opening the microphone…").foregroundStyle(.secondary)
+                    Spacer()
+                    stop
+                }
+
+            case .recording(let since):
+                HStack(spacing: 8) {
+                    Image(systemName: "record.circle.fill")
+                        .foregroundStyle(.red)
+                        .symbolEffect(.pulse)
+                    // Driven by the clock rather than by a stored `elapsed`, so a take
+                    // that runs for minutes does not mean a redraw of the panel every
+                    // half second for the sake of one label.
+                    TimelineView(.periodic(from: .now, by: 0.5)) { context in
+                        Text(Self.elapsed(from: since, to: context.date))
+                            .monospacedDigit()
+                    }
+                    Spacer()
+                    stop
+                }
+
+            case .finishing:
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Saving the take…").foregroundStyle(.secondary)
+                }
+            }
+        }
+        .font(.system(size: 12))
+        .inspectorSection("Voiceover", systemImage: "mic.badge.plus")
+    }
+
+    private var stop: some View {
+        Button("Stop") { model.stopVoiceover() }
+            .controlSize(.small)
+            .help("Stop recording and put the take on the sound lane")
+    }
+
+    /// Minutes and seconds, which is as much as anyone needs of a take in progress.
+    private static func elapsed(from start: Date, to now: Date) -> String {
+        let seconds = max(0, Int(now.timeIntervalSince(start)))
+        return String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 
     // MARK: - Bringing sound in
