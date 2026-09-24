@@ -115,8 +115,14 @@ public enum Commands {
     /// same bargain the background import makes, and the same sweep cleans up after it.
     public struct AddAudio: TimelineCommand {
         public let region: AudioRegion
-        public var name: String { "Add Sound" }
-        public init(_ region: AudioRegion) { self.region = region }
+        /// What the undo entry says. Defaulted, because laying a sound down is what this
+        /// command is; named, because a voiceover the user recorded here is not something
+        /// they would recognise under "Undo Add Sound".
+        public let name: String
+        public init(_ region: AudioRegion, name: String = "Add Sound") {
+            self.region = region
+            self.name = name
+        }
         public func apply(to timeline: inout Timeline) -> Bool {
             timeline.audio.append(region)
             return true
