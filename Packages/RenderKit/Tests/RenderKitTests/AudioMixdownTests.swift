@@ -182,4 +182,68 @@ struct AudioMixdownTests {
         #expect(result.isEmpty)
         #expect(result.audioMix == nil)
     }
+
+    // MARK: - Narration laid over the edit
+
+    /// A project package with one take in its `Audio` folder, which is where a voiceover
+    /// is copied to and where the mixdown looks for it.
+    private func package(holdingTakeOf seconds: Double) throws -> URL {
+        let package = FileManager.default.temporaryDirectory
+            .appendingPathComponent("package-\(UUID().uuidString)", isDirectory: true)
+        let folder = package.appendingPathComponent("Audio", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let take = try tone(seconds: seconds)
+        try FileManager.default.moveItem(at: take, to: folder.appendingPathComponent("voice.m4a"))
+        return package
+    }
+
+    /// Where a voiceover ends up, measured rather than assumed.
+    ///
+    /// This is the seam a punch-in can lie at: the region says it begins two seconds in,
+    /// the editor draws it two seconds in, the document saves it two seconds in — and if
+    /// the mixdown laid it at zero, everything would look right and sound wrong. The
+    /// recording's own sound is muted so the only track in the composition is the take.
+    @Test func aVoiceoverLandsWhereItWasPunchedIn() async throws {
+        let recording = try tone()
+        let package = try package(holdingTakeOf: 1)
+        defer {
+            try? FileManager.default.removeItem(at: recording)
+            try? FileManager.default.removeItem(at: package)
+        }
+
+        var timeline = Timeline(sourceDuration: time(4))
+        timeline.sound.isMuted = true
+        timeline.audio = [AudioRegion(start: time(2), duration: time(1), path: "Audio/voice.m4a")]
+
+        let result = await AudioMixdown.build(timeline: timeline, videoURL: recording, packageURL: package)
+        let track = try #require(result.composition.tracks(withMediaType: .audio).first)
+        let segments = try await track.load(.segments)
+        let filled = try #require(segments.first { !$0.isEmpty }, "the take reached no part of the composition")
+        #expect(abs(filled.timeMapping.target.start.seconds - 2) < 0.05)
+        #expect(abs(filled.timeMapping.target.duration.seconds - 1) < 0.1)
+    }
+
+    /// A take that outran the edit is cut at the edit's end, and the edit does not grow to
+    /// hold the rest. The arithmetic for that lives in `TimelineKit`; this is the other
+    /// half of the same promise, in the asset that is actually played and written.
+    @Test func aTakeTrimmedAtTheEndDoesNotLengthenTheSound() async throws {
+        let recording = try tone()
+        let package = try package(holdingTakeOf: 4)
+        defer {
+            try? FileManager.default.removeItem(at: recording)
+            try? FileManager.default.removeItem(at: package)
+        }
+
+        var timeline = Timeline(sourceDuration: time(4))
+        let placement = try #require(timeline.voiceoverPlacement(punchedInAt: time(3), recorded: time(4)))
+        #expect(placement.wasTrimmed)
+        timeline.audio = [AudioRegion(start: placement.start, duration: placement.duration,
+                                      path: "Audio/voice.m4a")]
+
+        let result = await AudioMixdown.build(timeline: timeline, videoURL: recording, packageURL: package)
+        for track in result.composition.tracks(withMediaType: .audio) {
+            let range = try await track.load(.timeRange)
+            #expect(range.end.seconds <= 4.1, "the sound runs past the end of the edit")
+        }
+    }
 }
