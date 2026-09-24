@@ -45,7 +45,11 @@ public enum CopiedRegion: Equatable, Sendable {
         case .cursorRegion(let id):
             guard let region = timeline.cursorRegions.first(where: { $0.id == id }) else { return nil }
             self = .cursor(region)
-        case .none, .clip, .range, .headTrim, .tailTrim, .sound:
+        // A run of the recording's own sound is footage, not a region, whatever lane it
+        // is drawn on — pasting one would mean a second copy of the same take playing over
+        // itself, which is a feature, not a side effect of Copy. Listed with the clip for
+        // exactly the reason the note above gives.
+        case .none, .clip, .range, .headTrim, .tailTrim, .sound, .soundRun:
             return nil
         }
     }

@@ -72,5 +72,16 @@ struct EditorView: View {
         } message: {
             Text(model.errorMessage ?? "")
         }
+        // Here rather than on the sound lane because two places ask to re-attach — the
+        // lane's context menu and the Edit menu — and a dialogue attached to the lane
+        // would not appear for a recording whose lane is hidden for having no sound.
+        .confirmationDialog("Re-attach the recording's sound?",
+                            isPresented: .init(get: { model.soundReattachWarning != nil },
+                                               set: { if !$0 { model.cancelSoundReattach() } })) {
+            Button("Re-attach", role: .destructive) { model.attachSound() }
+            Button("Cancel", role: .cancel) { model.cancelSoundReattach() }
+        } message: {
+            Text(model.soundReattachWarning ?? "")
+        }
     }
 }

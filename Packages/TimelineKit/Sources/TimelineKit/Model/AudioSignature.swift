@@ -21,6 +21,15 @@ extension Timeline {
             public let speed: Double
         }
 
+        /// One run of a *detached* sound lane: the recording's own sound, laid where the
+        /// lane says rather than where the picture says.
+        public struct Run: Equatable, Sendable {
+            public let start: CMTime
+            public let duration: CMTime
+            public let sourceStart: CMTime
+            public let speed: Double
+        }
+
         /// A sound from outside the recording.
         public struct Sound: Equatable, Sendable {
             public let path: String
@@ -30,7 +39,15 @@ extension Timeline {
             public let gain: Double
         }
 
+        /// Empty once the lane is detached, and that emptiness is doing work: the
+        /// picture's cuts then say nothing about the sound, so moving one must *not* send
+        /// the editor off to decode the recording again.
         public let cuts: [Cut]
+        /// `nil` while the sound follows the picture. Present or absent is itself audible —
+        /// detaching changes which branch of the mixdown runs — so the two states can never
+        /// compare equal, which is what keeps the preview from going on playing the old
+        /// edit after a detach.
+        public let runs: [Run]?
         public let sounds: [Sound]
         /// What the recording's own sound is doing. Muting it removes tracks from the
         /// mix rather than merely turning them down, so it has to be built again.
@@ -44,8 +61,14 @@ extension Timeline {
     /// decode the recording again.
     public var audioSignature: AudioSignature {
         AudioSignature(
-            cuts: clips.map {
+            cuts: detachedSound == nil ? clips.map {
                 .init(sourceStart: $0.sourceStart, sourceDuration: $0.sourceDuration, speed: $0.speed)
+            } : [],
+            runs: detachedSound.map { runs in
+                runs.map {
+                    .init(start: $0.start, duration: $0.duration,
+                          sourceStart: $0.sourceStart, speed: $0.speed)
+                }
             },
             sounds: audio.map {
                 .init(path: $0.path, start: $0.start, duration: $0.duration,

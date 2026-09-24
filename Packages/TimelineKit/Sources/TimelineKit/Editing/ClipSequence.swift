@@ -208,6 +208,7 @@ public enum ClipSequence {
         timeline.annotations = adjust(timeline.annotations)
         timeline.captions = adjust(timeline.captions)
         timeline.audio = adjust(timeline.audio)
+        if let runs = timeline.detachedSound { timeline.detachedSound = adjust(runs) }
         timeline.cursorRegions = adjust(timeline.cursorRegions)
     }
 
@@ -234,6 +235,7 @@ public enum ClipSequence {
         timeline.annotations = adjust(timeline.annotations)
         timeline.captions = adjust(timeline.captions)
         timeline.audio = adjust(timeline.audio)
+        if let runs = timeline.detachedSound { timeline.detachedSound = adjust(runs) }
         timeline.cursorRegions = adjust(timeline.cursorRegions)
     }
 
@@ -257,6 +259,7 @@ public enum ClipSequence {
         timeline.annotations = adjust(timeline.annotations)
         timeline.captions = adjust(timeline.captions)
         timeline.audio = adjust(timeline.audio)
+        if let runs = timeline.detachedSound { timeline.detachedSound = adjust(runs) }
         timeline.cursorRegions = adjust(timeline.cursorRegions)
     }
 
@@ -278,6 +281,43 @@ public enum ClipSequence {
         timeline.annotations = clamp(timeline.annotations)
         timeline.captions = clamp(timeline.captions)
         timeline.audio = clamp(timeline.audio)
+        if let runs = timeline.detachedSound { timeline.detachedSound = clamp(runs) }
         timeline.cursorRegions = clamp(timeline.cursorRegions)
+    }
+
+    // MARK: - The sound lane
+
+    /// Cuts the recording's sound loose from the picture.
+    ///
+    /// Deliberately not a no-op that merely flips a flag: the runs it writes are the sound
+    /// exactly as the clips were already laying it down, one run per clip, at the same
+    /// speeds. So the instant after detaching, the mixdown builds the same composition
+    /// from the other branch of one `if` — which is the only way a user can trust the
+    /// menu item enough to use it in the middle of a cut.
+    ///
+    /// One run per clip rather than one coalesced run per contiguous stretch of source,
+    /// even though coalescing would be equally audible. The lane has to keep showing the
+    /// cuts it was detached at, because those cuts are the handles: "let them keep talking
+    /// over this cut" is dragging *this* run's right edge, and a lane with the cuts
+    /// smoothed away has nowhere to start.
+    @discardableResult
+    public static func detachSound(_ timeline: inout Timeline) -> Bool {
+        guard timeline.detachedSound == nil else { return false }
+        timeline.detachedSound = timeline.soundRunsFollowingClips
+        return true
+    }
+
+    /// Puts the sound back in step with the picture.
+    ///
+    /// Forgetting the runs rather than reconciling them, and that is the honest operation:
+    /// "in step with the clips" is a thing `clips` already says completely, so the way to
+    /// mean it is to stop keeping a second answer. Whether that throws away work is
+    /// `Timeline.detachedSoundIsInStepWithClips`, which the caller asks *before* getting
+    /// here so it can say what is about to be lost.
+    @discardableResult
+    public static func attachSound(_ timeline: inout Timeline) -> Bool {
+        guard timeline.detachedSound != nil else { return false }
+        timeline.detachedSound = nil
+        return true
     }
 }

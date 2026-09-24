@@ -26,6 +26,9 @@ public enum Selection: Equatable, Sendable {
     /// The recording's own sound, which is one lane rather than one of many regions —
     /// there is exactly one of it, so it needs no identity to be picked out.
     case sound
+    /// One run of the recording's sound, once the lane has been detached. Identified,
+    /// unlike `.sound`, because a detached lane has as many of these as it has cuts.
+    case soundRun(UUID)
     /// A stretch of the timeline rather than an object on it.
     case range(CMTimeRange)
     /// The footage trimmed off the front of the first clip.
@@ -40,7 +43,7 @@ public enum Selection: Equatable, Sendable {
     public var regionID: UUID? {
         switch self {
         case .zoom(let id), .blur(let id), .annotation(let id), .caption(let id), .audio(let id),
-             .cursorRegion(let id):
+             .cursorRegion(let id), .soundRun(let id):
             id
         case .none, .clip, .range, .headTrim, .tailTrim, .sound:
             nil
@@ -85,6 +88,10 @@ public enum Selection: Equatable, Sendable {
         case .sound:
             // Always valid: every recording has the setting, even one with no sound in it.
             return true
+        case .soundRun(let id):
+            // Not valid on an attached lane at all, which is the point: re-attaching has
+            // to drop a selection that no longer points at anything drawable.
+            return timeline.detachedSound?.contains { $0.id == id } ?? false
         case .headTrim:
             return (timeline.clips.first?.sourceStart ?? .zero) > .zero
         case .tailTrim:
@@ -114,6 +121,8 @@ public enum Selection: Equatable, Sendable {
             return timeline.audio.first { $0.id == id }?.range
         case .cursorRegion(let id):
             return timeline.cursorRegions.first { $0.id == id }?.range
+        case .soundRun(let id):
+            return timeline.detachedSound?.first { $0.id == id }?.range
         case .none, .headTrim, .tailTrim, .sound:
             return nil
         }
