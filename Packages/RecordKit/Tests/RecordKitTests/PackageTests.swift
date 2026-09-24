@@ -1,5 +1,6 @@
 import AddOnKit
 import CoreGraphics
+import AppKit
 import Foundation
 import Testing
 @testable import RecordKit
@@ -149,12 +150,50 @@ struct PackageTests {
         let samples: [InputSample] = [
             .mouseDown(t: 1.5, button: 0, x: 10, y: 20),
             .scroll(t: 2, dx: 0, dy: -12),
-            .key(t: 2.5, characters: "a", modifiers: 0),
+            .key(t: 2.5, modifiers: 0),
         ]
         let data = try JSONEncoder().encode(samples)
         let decoded = try JSONDecoder().decode([InputSample].self, from: data)
         #expect(decoded == samples)
         #expect(decoded.map(\.t) == [1.5, 2, 2.5])
+    }
+
+    /// A recording may say *when* someone typed. It may never say what they typed.
+    ///
+    /// Asserted on the bytes rather than on the type, because the type is exactly the
+    /// thing that could quietly regain a text field one day. If this fails, a `.klikrec`
+    /// has started carrying its author's keystrokes next to the video.
+    @Test func aKeystrokeNeverCarriesItsText() throws {
+        let data = try JSONEncoder().encode([InputSample.key(t: 2.5, modifiers: 1 << 17)])
+        let json = try #require(String(data: data, encoding: .utf8))
+
+        #expect(!json.lowercased().contains("character"))
+        #expect(!json.lowercased().contains("keycode"))
+        #expect(json.contains("2.5"), "the timing is the part worth keeping")
+    }
+
+    /// Recordings made before the text was dropped must still open.
+    ///
+    /// The old line carries a `characters` field this build has no case for. Decoding
+    /// ignores it — which is the whole reason the field could be removed rather than
+    /// deprecated — and the take opens with its typing rhythm intact.
+    @Test func aRecordingFromBeforeTheTextWasDroppedStillOpens() throws {
+        let old = Data(#"[{"key":{"t":2.5,"characters":"hunter2","modifiers":0}}]"#.utf8)
+        let decoded = try JSONDecoder().decode([InputSample].self, from: old)
+
+        #expect(decoded == [.key(t: 2.5, modifiers: 0)])
+    }
+
+    /// Typing and operating the app are different things, and only one of them should
+    /// pull the camera to a text field.
+    @Test func modifiersSeparateTypingFromShortcuts() {
+        let command = Int(NSEvent.ModifierFlags.command.rawValue)
+        let shift = Int(NSEvent.ModifierFlags.shift.rawValue)
+
+        #expect(InputSample.key(t: 1, modifiers: 0).isTyping)
+        #expect(InputSample.key(t: 1, modifiers: shift).isTyping, "shift is still typing")
+        #expect(!InputSample.key(t: 1, modifiers: command).isTyping, "⌘S is operating the app")
+        #expect(!InputSample.scroll(t: 1, dx: 0, dy: 1).isTyping)
     }
 
     // MARK: - Targets and mapping

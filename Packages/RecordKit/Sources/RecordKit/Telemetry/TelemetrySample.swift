@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 
@@ -41,13 +42,34 @@ public enum InputSample: Codable, Equatable, Sendable {
     case mouseDown(t: Double, button: Int, x: Double, y: Double)
     case mouseUp(t: Double, button: Int, x: Double, y: Double)
     case scroll(t: Double, dx: Double, dy: Double)
-    case key(t: Double, characters: String, modifiers: Int)
+    /// A key went down — when, and which modifiers were held. **Never which key.**
+    ///
+    /// This case used to carry `characters: String`, the text the keystroke produced.
+    /// Nothing ever wrote it, but the shape of the data is a promise about what a
+    /// recording may contain, and that one said a `.klikrec` could hold everything its
+    /// author typed — passwords, messages, anything on screen or off it — in plain text
+    /// beside the video, in a package people share.
+    ///
+    /// Everything downstream wants the *rhythm* of typing, not its content: auto-zoom
+    /// asks when keys were pressed and how close together. Modifiers are kept because
+    /// they separate typing from shortcuts, and a modifier flag says nothing about what
+    /// was written.
+    case key(t: Double, modifiers: Int)
 
     public var t: Double {
         switch self {
         case .mouseDown(let t, _, _, _), .mouseUp(let t, _, _, _),
-             .scroll(let t, _, _), .key(let t, _, _): t
+             .scroll(let t, _, _), .key(let t, _): t
         }
+    }
+
+    /// Whether this was a keystroke with no modifier but shift held — typing, as opposed
+    /// to a shortcut like ⌘S, which is someone operating the app rather than writing in it.
+    public var isTyping: Bool {
+        guard case .key(_, let modifiers) = self else { return false }
+        let operating = NSEvent.ModifierFlags(rawValue: UInt(modifiers))
+            .intersection([.command, .control, .option, .function])
+        return operating.isEmpty
     }
 }
 

@@ -285,7 +285,7 @@ public struct ZoomSuggester: Sendable {
     /// Stretches of continuous typing, as start and end times.
     private func typingRuns(input: [InputSample]) -> [(start: Double, end: Double)] {
         let keys = input.compactMap { sample -> Double? in
-            if case .key(let t, _, _) = sample { return t }
+            if case .key(let t, _) = sample { return t }
             return nil
         }.sorted()
         guard !keys.isEmpty else { return [] }

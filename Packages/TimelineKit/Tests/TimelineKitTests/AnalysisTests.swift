@@ -148,7 +148,7 @@ struct AnalysisTests {
         let suggester = ZoomSuggester(frameSize: frame)
         let field = focus(.field, at: 10, CGRect(x: 300, y: 200, width: 400, height: 24))
         let keys: [InputSample] = stride(from: 10.5, through: 18, by: 0.3).map {
-            .key(t: $0, characters: "a", modifiers: 0)
+            .key(t: $0, modifiers: 0)
         }
         let quiet = try! #require(suggester.suggestions(cursor: [], input: [], focus: [field], duration: time(60)).first)
         let typed = try! #require(suggester.suggestions(cursor: [], input: keys, focus: [field], duration: time(60)).first)

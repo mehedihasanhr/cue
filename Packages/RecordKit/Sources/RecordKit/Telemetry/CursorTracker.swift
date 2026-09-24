@@ -31,6 +31,8 @@ public struct CursorMapper: Sendable {
 /// is polled more slowly on the main actor and read back under a lock — a pointer that
 /// changes shape 20 times a second is already an unusual second.
 public final class CursorTracker: @unchecked Sendable {
+    private static let log = Logger(subsystem: "com.stackrover.klik.recordkit", category: "cursor")
+
     private let queue: DispatchQueue
     private let cursorWriter: JSONLWriter
     private let inputWriter: JSONLWriter?
@@ -38,23 +40,35 @@ public final class CursorTracker: @unchecked Sendable {
     private let mapper: CursorMapper
     private let sampleRate: Int
 
+    private let capturesKeystrokes: Bool
+
     private var positionTimer: DispatchSourceTimer?
     private var shapeTimer: Timer?
     private var clickMonitor: Any?
+    private var keyMonitor: Any?
     private let shape = OSAllocatedUnfairLock(initialState: CursorShape.arrow)
+
+    /// Whether the keystroke *rhythm* was actually recorded.
+    ///
+    /// Read after `start()`. False when it was not asked for, and false when it was but
+    /// macOS has not granted Accessibility — the two are different to the user and the
+    /// second is worth saying out loud, because the setting is on and the data is absent.
+    public private(set) var isRecordingKeystrokes = false
 
     public init(cursorWriter: JSONLWriter,
                 inputWriter: JSONLWriter?,
                 queue: DispatchQueue,
                 clock: RecordingClock,
                 mapper: CursorMapper,
-                sampleRate: Int) {
+                sampleRate: Int,
+                capturesKeystrokes: Bool = false) {
         self.cursorWriter = cursorWriter
         self.inputWriter = inputWriter
         self.queue = queue
         self.clock = clock
         self.mapper = mapper
         self.sampleRate = max(1, sampleRate)
+        self.capturesKeystrokes = capturesKeystrokes
     }
 
     public func start() {
@@ -96,6 +110,8 @@ public final class CursorTracker: @unchecked Sendable {
             self?.record(event)
         }
 
+        startKeyboardWatcher()
+
         let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 // `currentSystem` is nil when the pointer is over another app's window
@@ -109,10 +125,36 @@ public final class CursorTracker: @unchecked Sendable {
         shapeTimer = timer
     }
 
+    /// Watches the *rhythm* of typing, and nothing else.
+    ///
+    /// A global key monitor is the one thing here that needs Accessibility, which is why
+    /// it is opt-in and why this asks rather than assumes: without the grant the monitor
+    /// is installed happily and then delivers nothing at all, which would look like a
+    /// user who never typed rather than a permission that was never given.
+    ///
+    /// Nothing is read off the event but its time and its modifier flags. `characters`
+    /// is never touched — not stored, not inspected, not logged. The samples it writes
+    /// cannot reconstruct what was typed, by construction rather than by filtering.
+    @MainActor
+    private func startKeyboardWatcher() {
+        guard capturesKeystrokes else { return }
+        guard AXIsProcessTrusted() else {
+            Self.log.notice("Keystroke timing was asked for, but Accessibility is not granted — recording without it")
+            return
+        }
+        keyMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+            self?.record(event)
+        }
+        isRecordingKeystrokes = keyMonitor != nil
+    }
+
     @MainActor
     private func stopMainThreadWatchers() {
         if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
         clickMonitor = nil
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        keyMonitor = nil
+        isRecordingKeystrokes = false
         shapeTimer?.invalidate()
         shapeTimer = nil
     }
@@ -130,6 +172,10 @@ public final class CursorTracker: @unchecked Sendable {
             .mouseUp(t: t, button: event.buttonNumber, x: Double(location.x), y: Double(location.y))
         case .scrollWheel:
             .scroll(t: t, dx: Double(event.scrollingDeltaX), dy: Double(event.scrollingDeltaY))
+        case .keyDown:
+            // The time and the modifiers. Deliberately not `event.characters`, and not
+            // `keyCode` either — a key code is the letter by another name.
+            .key(t: t, modifiers: Int(event.modifierFlags.rawValue))
         default:
             nil
         }

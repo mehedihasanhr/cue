@@ -195,7 +195,8 @@ public final class RecordingSession {
                                queue: queue,
                                clock: clock,
                                mapper: mapper,
-                               sampleRate: configuration.cursorSampleRate)
+                               sampleRate: configuration.cursorSampleRate,
+                               capturesKeystrokes: configuration.capturesKeystrokes)
         if let focusWriter {
             focus = FocusTracker(writer: focusWriter,
                                  queue: queue,
