@@ -507,6 +507,45 @@ final class EditorModel {
         timeline.annotations.filter { $0.contains(playhead) }
     }
 
+    // MARK: - The pointer over time
+
+    /// Hides the pointer over the selected stretch, or over a few seconds at the playhead.
+    ///
+    /// Two behaviours in one item on purpose: "hide the pointer *here*" is the same wish
+    /// whether the user has marked a range first or has only parked the playhead, and a
+    /// menu item that is disabled until a range exists teaches nobody how to make one. A
+    /// selected range wins when there is one, because saying where is more specific than
+    /// not saying.
+    @discardableResult
+    func hidePointerOverSelection() -> UUID? {
+        let span = selection.range(in: timeline) ?? {
+            let range = drawnRange
+            return CMTimeRange(start: range.start, duration: range.duration)
+        }()
+        guard span.duration >= Clip.minimumDuration else {
+            errorMessage = "There is no room at the playhead to hide the pointer over."
+            return nil
+        }
+        let region = CursorRegion(start: span.start, duration: span.duration)
+        apply(Commands.AddCursorRegion(region))
+        guard timeline.cursorRegions.contains(where: { $0.id == region.id }) else { return nil }
+        select(.cursorRegion(region.id))
+        return region.id
+    }
+
+    /// Changes what one cursor region does. Undoable like every other edit.
+    func restyleCursorRegion(_ id: UUID,
+                             _ name: String,
+                             _ change: @escaping @Sendable (inout CursorRegion) -> Void) {
+        apply(Commands.RestyleCursorRegion(id: id, name: name, change))
+    }
+
+    /// The cursor region under the playhead, for the inspector to offer when nothing is
+    /// selected — the pointer panel is where someone looking for this will already be.
+    var cursorRegionAtPlayhead: CursorRegion? {
+        timeline.cursorRegions.first { $0.contains(playhead) }
+    }
+
     /// Reads the recorded clicks and focus events and proposes zooms.
     ///
     /// `quietly` is for the automatic pass when a project opens: a recording with no
