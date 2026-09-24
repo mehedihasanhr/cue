@@ -161,6 +161,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        // Silenced here rather than left to deallocation: a window that is closing has
+        // stopped being something you are listening to, and the sound should go with the
+        // picture rather than a moment after it.
+        session.model?.silence()
         windows.closed(self)
     }
 }

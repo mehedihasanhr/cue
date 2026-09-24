@@ -130,6 +130,13 @@ struct TransportBar: View {
         .fixedSize()
         .help("Push in on part of the picture")
 
+        // Only for a recording that has sound. A silent take gets no speaker button,
+        // rather than one that does nothing when pressed.
+        if let audio = model.audio, audio.hasSound {
+            Divider().frame(height: 16)
+            level(audio)
+        }
+
         Divider().frame(height: 16)
 
         Button { model.viewport.fit(model.duration) } label: {
@@ -142,6 +149,29 @@ struct TransportBar: View {
             .controlSize(.small)
             .frame(width: 92)
             .help("How much of the edit the timeline shows")
+    }
+
+    /// How loud the preview is. Not a document setting — it changes what this Mac plays
+    /// while you work and nothing about the exported file — so it is not undoable and it
+    /// does not make the project dirty.
+    @ViewBuilder
+    private func level(_ audio: PreviewAudio) -> some View {
+        @Bindable var audio = audio
+
+        Button { audio.isMuted.toggle() } label: {
+            Image(systemName: audio.isMuted || audio.volume == 0
+                  ? "speaker.slash.fill"
+                  : audio.volume < 0.4 ? "speaker.wave.1.fill" : "speaker.wave.2.fill")
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .studioButton()
+        .help(audio.isMuted ? "Turn the sound on" : "Silence the preview")
+
+        Slider(value: $audio.volume, in: 0...1)
+            .controlSize(.small)
+            .frame(width: 72)
+            .disabled(audio.isMuted)
+            .help("How loud the preview is")
     }
 
     /// Bound over the logarithm, so the slider's travel feels even instead of spending

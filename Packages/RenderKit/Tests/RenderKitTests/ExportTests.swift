@@ -149,7 +149,7 @@ struct ExportTests {
     // MARK: - A recording to work on
 
     /// A handful of frames of flat colour, which is all any of this needs to be real.
-    private static func writeSilentVideo(to url: URL, size: CGSize, frames: Int, frameRate: Int) async throws {
+    static func writeSilentVideo(to url: URL, size: CGSize, frames: Int, frameRate: Int) async throws {
         let writer = try AVAssetWriter(url: url, fileType: .mov)
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264,

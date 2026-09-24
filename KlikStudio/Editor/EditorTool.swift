@@ -71,12 +71,10 @@ enum EditorTool: String, CaseIterable, Identifiable, Hashable {
     /// sets this precedent: visibly coming beats quietly missing.
     var unavailableReason: String? {
         switch self {
-        case .frame, .crop, .cursor, .blur, .annotate, .captions:
+        case .frame, .crop, .cursor, .blur, .annotate, .captions, .audio:
             nil
         case .camera:
             "The camera bubble arrives with the webcam recorder."
-        case .audio:
-            "Audio arrives with real playback."
         }
     }
 

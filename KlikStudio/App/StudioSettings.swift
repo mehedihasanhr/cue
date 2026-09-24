@@ -41,6 +41,8 @@ final class StudioSettings {
         static let cursorScale = "editor.cursorScale"
         static let cursorSmoothing = "editor.cursorSmoothing"
         static let clickEffect = "editor.clickEffect"
+        static let previewVolume = "editor.previewVolume"
+        static let previewMuted = "editor.previewMuted"
     }
 
     // MARK: - Recording
@@ -92,6 +94,14 @@ final class StudioSettings {
     var cursorSmoothing: Double { didSet { defaults.set(cursorSmoothing, forKey: Key.cursorSmoothing) } }
     var clickEffect: Bool { didSet { defaults.set(clickEffect, forKey: Key.clickEffect) } }
 
+    /// How loud the editor's preview is, and whether it is silenced.
+    ///
+    /// A preview setting, not a document one: it changes what this Mac plays while you
+    /// work and nothing about the exported file, so it must not travel in the project or
+    /// land on the undo stack.
+    var previewVolume: Double { didSet { defaults.set(previewVolume, forKey: Key.previewVolume) } }
+    var previewIsMuted: Bool { didSet { defaults.set(previewIsMuted, forKey: Key.previewMuted) } }
+
     /// Where recordings are kept. A folder the user picked is held as a bookmark,
     /// because a sandboxed app that stores a path stores something it cannot open.
     private(set) var library: URL
@@ -125,6 +135,8 @@ final class StudioSettings {
         cursorScale = defaults.object(forKey: Key.cursorScale) as? Double ?? 1.4
         cursorSmoothing = defaults.object(forKey: Key.cursorSmoothing) as? Double ?? 0.6
         clickEffect = defaults.object(forKey: Key.clickEffect) as? Bool ?? true
+        previewVolume = defaults.object(forKey: Key.previewVolume) as? Double ?? 1
+        previewIsMuted = defaults.bool(forKey: Key.previewMuted)
 
         library = (defaults.data(forKey: Key.libraryBookmark)).flatMap(Self.resolve) ?? Self.defaultLibrary
     }

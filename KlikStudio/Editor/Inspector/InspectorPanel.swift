@@ -29,7 +29,9 @@ struct InspectorPanel: View {
                     CursorInspector(model: model)
                 case .captions:
                     CaptionInspector(model: model)
-                case .camera, .audio:
+                case .audio:
+                    AudioInspector(model: model)
+                case .camera:
                     unavailable(model.tool)
                 }
             }

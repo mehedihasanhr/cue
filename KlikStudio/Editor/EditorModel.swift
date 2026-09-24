@@ -43,6 +43,8 @@ final class EditorModel {
 
     let viewport = TimelineViewport()
     let waveform: WaveformStore
+    /// The edit, out loud — and, while it plays, the clock the playhead follows.
+    private(set) var audio: PreviewAudio?
 
     private let renderer = SceneRenderer()
     private var builder: SceneBuilder
@@ -92,6 +94,12 @@ final class EditorModel {
     var videoSize: CGSize { builder.videoSize }
     var packageURL: URL { document.package.url }
 
+    /// Whether the recording captured a given track. Read from the manifest rather than
+    /// the asset, which is the reason the manifest lists them.
+    func hasTrack(_ kind: RecordingManifest.Track.Kind) -> Bool {
+        document.manifest.track(kind) != nil
+    }
+
     /// The finished frame's size, which is what a crop changes and what the inspector
     /// reports so a heavy crop is not a silent loss of resolution.
     var outputSize: CGSize { builder.outputSize(for: timeline.style) }
@@ -118,6 +126,11 @@ final class EditorModel {
             }
             refresh()
             waveform.load(videoURL: url)
+            // Built here rather than in `init`, for the same reason the frame source is:
+            // it needs the recording, and the window should be up before either is read.
+            let audio = PreviewAudio(videoURL: url, packageURL: document.package.url, settings: settings)
+            audio.prepare(for: timeline)
+            self.audio = audio
         } catch {
             errorMessage = error.localizedDescription
             Self.log.error("Couldn't open \(url.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)")
@@ -128,6 +141,7 @@ final class EditorModel {
 
     func scrub(to time: CMTime) {
         playhead = max(.zero, min(time, duration))
+        audio?.follow(playhead)
         viewport.reveal(playhead, duration: duration)
         refresh()
     }
@@ -161,13 +175,19 @@ final class EditorModel {
         isPlaying = true
         lastTick = .now
         viewport.followsPlayhead = true
+        audio?.play(from: playhead, timeline: timeline)
         Task { await frames?.setQuality(.preview(previewPixelSize)) }
 
         ticker = PlaybackTicker { [weak self] in
             guard let self, let last = self.lastTick else { return }
             let now = Date.now
             self.lastTick = now
-            let next = self.playhead + CMTime(seconds: now.timeIntervalSince(last), preferredTimescale: 600)
+            // The sound is the clock when there is sound. A wall-clock playhead drifts
+            // against the audio over a long take — slowly, and then unmistakably, because
+            // one of them is being resampled by a real audio device and the other is not.
+            // The picture may drop a frame; the sound may not, so the picture follows it.
+            let next = self.audio?.clock
+                ?? self.playhead + CMTime(seconds: now.timeIntervalSince(last), preferredTimescale: 600)
             if next >= self.duration {
                 self.playhead = self.duration
                 self.stop()
@@ -181,6 +201,7 @@ final class EditorModel {
 
     private func stop() {
         isPlaying = false
+        audio?.pause()
         ticker?.stop()
         ticker = nil
         lastTick = nil
@@ -327,11 +348,13 @@ final class EditorModel {
     func apply(_ command: some TimelineCommand) {
         guard document.apply(command) else { return }
         refresh()
+        audio?.prepare(for: timeline)
     }
 
     func change(_ name: String, _ mutate: (inout Timeline) -> Void) {
         document.change(name, mutate)
         refresh()
+        audio?.prepare(for: timeline)
     }
 
     func splitAtPlayhead() {
@@ -514,11 +537,13 @@ final class EditorModel {
     func undo() {
         document.undo()
         refresh()
+        audio?.prepare(for: timeline)
     }
 
     func redo() {
         document.redo()
         refresh()
+        audio?.prepare(for: timeline)
     }
 
     func save() {
@@ -548,6 +573,13 @@ final class EditorModel {
     }
 
     func dismissError() { errorMessage = nil }
+
+    /// Stops playing, and lets go of the sound. For a window on its way out.
+    func silence() {
+        if isPlaying { stop() }
+        audio?.cancel()
+        waveform.cancel()
+    }
 }
 
 /// A display-link tick, wrapped so the model needs no AppKit view of its own.
