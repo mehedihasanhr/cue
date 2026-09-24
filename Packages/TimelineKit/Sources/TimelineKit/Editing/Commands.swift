@@ -475,6 +475,14 @@ public enum Commands {
         }
 
         public func apply(to timeline: inout Timeline) -> Bool {
+            // A locked zoom does not move. Checked here rather than in the timeline view
+            // because this is the one door every drag and every resize comes through — the
+            // lane, the keyboard, a nudge command somebody adds later — and a lock enforced
+            // in a view is a lock the next caller forgets. Refusing by returning false is
+            // the right shape for it as well: nothing lands on the undo stack, so a drag on
+            // a locked zoom costs the user no undo to get back out of.
+            if timeline.zooms.contains(where: { $0.id == id && $0.isLocked }) { return false }
+
             // The end of the timeline is read once, before anything is mutated: passing
             // `&timeline.zooms` while the closure still reads `timeline` is two accesses
             // to the same value at once, which Swift refuses for good reason.
@@ -532,6 +540,117 @@ public enum Commands {
             let before = timeline
             change(&timeline)
             return timeline != before
+        }
+    }
+
+    // MARK: - The second pass over a take
+
+    /// Changing what one zoom does, by id.
+    ///
+    /// By id rather than by index, for the reason `RestyleCursorRegion` is: the zoom lane is
+    /// kept sorted by start, so a split, a merge or a drag past a neighbour renumbers the
+    /// array under an inspector that is still open on one of them. The zoom inspector's
+    /// sliders predate that and still work by index, which is only safe because a slider
+    /// cannot move a region; several of the things added here can.
+    ///
+    /// Deliberately does *not* refuse a locked zoom. The lock exists to stop a drag and a
+    /// suggestion run, both of which happen to a zoom rather than being aimed at it — while
+    /// this only ever runs from a control somebody pointed at, beside the padlock they
+    /// pointed at first.
+    public struct RestyleZoom: TimelineCommand {
+        public let id: UUID
+        public let change: @Sendable (inout ZoomRegion) -> Void
+        public let name: String
+
+        public init(id: UUID, name: String, _ change: @escaping @Sendable (inout ZoomRegion) -> Void) {
+            self.id = id
+            self.name = name
+            self.change = change
+        }
+
+        public func apply(to timeline: inout Timeline) -> Bool {
+            guard let index = timeline.zooms.firstIndex(where: { $0.id == id }) else { return false }
+            let before = timeline.zooms[index]
+            change(&timeline.zooms[index])
+            guard timeline.zooms[index] != before else { return false }
+            // A change may have moved the region — aiming one cannot, but a caller that sets
+            // a start could — and the lane's order is an invariant rather than a convention.
+            timeline.zooms.sort { $0.start < $1.start }
+            return true
+        }
+    }
+
+    /// One zoom cut in two at a time, so the halves can be aimed apart.
+    ///
+    /// The arithmetic is `ZoomLane.split`, including why the two halves have no ramp where
+    /// they meet. This only finds the region and keeps the lane in order.
+    ///
+    /// Allowed on a locked zoom: splitting is something the user aims at one region from a
+    /// menu, and the lock is there for the accidents.
+    public struct SplitZoom: TimelineCommand {
+        public let id: UUID
+        public let time: CMTime
+        public var name: String { "Split Zoom" }
+
+        public init(id: UUID, at time: CMTime) {
+            self.id = id
+            self.time = time
+        }
+
+        public func apply(to timeline: inout Timeline) -> Bool {
+            guard let index = timeline.zooms.firstIndex(where: { $0.id == id }),
+                  let (first, second) = ZoomLane.split(timeline.zooms[index], at: time) else { return false }
+            timeline.zooms[index] = first
+            timeline.zooms.insert(second, at: index + 1)
+            return true
+        }
+    }
+
+    /// Two zooms as one, keeping the earlier one's identity.
+    ///
+    /// The earlier id survives so a selection or an open inspector lands on a region that is
+    /// still there; `ZoomLane.merge` says what the result keeps, and why it is exactly the
+    /// inverse of a split.
+    public struct MergeZooms: TimelineCommand {
+        public let first: UUID
+        public let second: UUID
+        public var name: String { "Merge Zooms" }
+
+        public init(_ first: UUID, _ second: UUID) {
+            self.first = first
+            self.second = second
+        }
+
+        public func apply(to timeline: inout Timeline) -> Bool {
+            guard let a = timeline.zooms.first(where: { $0.id == first }),
+                  let b = timeline.zooms.first(where: { $0.id == second }),
+                  let merged = ZoomLane.merge(a, b) else { return false }
+            timeline.zooms.removeAll { $0.id == first || $0.id == second }
+            timeline.zooms.append(merged)
+            timeline.zooms.sort { $0.start < $1.start }
+            return true
+        }
+    }
+
+    /// The result of an auto-zoom run, reconciled with what is already on the lane.
+    ///
+    /// Not `AddZooms`, which appends: a *re-run* has to leave the user's zooms alone and
+    /// replace the previous run's rather than doubling it. `ZoomLane.reconciled` is the rule,
+    /// and it is worth reading before changing this — the failure it prevents is silent.
+    ///
+    /// `AddZooms` stays: it is still the right command for anything that genuinely means
+    /// "add these zooms to the lane".
+    public struct SuggestZooms: TimelineCommand {
+        public let regions: [ZoomRegion]
+        public var name: String { "Auto-Zoom" }
+
+        public init(_ regions: [ZoomRegion]) { self.regions = regions }
+
+        public func apply(to timeline: inout Timeline) -> Bool {
+            let settled = ZoomLane.reconciled(regions, with: timeline.zooms, duration: timeline.duration)
+            guard settled != timeline.zooms else { return false }
+            timeline.zooms = settled
+            return true
         }
     }
 }

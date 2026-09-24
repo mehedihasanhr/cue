@@ -118,6 +118,12 @@ struct TimelineStrip: View {
                           selection: Selection.zoom) { zoom in
             HStack(spacing: 6) {
                 Text("\(zoom.scale, format: .number.precision(.fractionLength(0...1)))×")
+                // A padlock rather than a different tint: the chip already carries selection
+                // in its tint, and a lock is the reason a drag is about to appear to fail —
+                // which is exactly the moment somebody looks at the chip to find out why.
+                if zoom.isLocked {
+                    Image(systemName: "lock.fill").font(.system(size: 9, weight: .semibold))
+                }
                 if zoom.followsCursor {
                     Label("Auto", systemImage: "cursorarrow")
                         .labelStyle(.titleAndIcon)

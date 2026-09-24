@@ -39,6 +39,8 @@ struct PreviewPane: View {
                     CropOverlay(model: model, stage: stage(in: proxy.size))
                 case .blur, .annotate:
                     RegionCanvas(model: model, stage: stage(in: proxy.size))
+                case .zoom:
+                    ZoomAimOverlay(model: model, stage: stage(in: proxy.size))
                 default:
                     EmptyView()
                 }

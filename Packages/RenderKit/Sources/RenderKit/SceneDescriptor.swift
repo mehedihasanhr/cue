@@ -69,9 +69,19 @@ public struct SceneDescriptor: Equatable, Sendable {
     ///
     /// Zooming scales the video about a point and keeps that point where it was, which is
     /// what makes a zoom feel like a camera rather than a resize.
+    ///
+    /// The anchor's y is flipped, and that flip is a fix rather than a flourish: `zoomCenter`
+    /// is normalised to the picture from its *top*, like every other normalised point in the
+    /// model — a blur's rect (`SceneRenderer.applyBlur`), an annotation's, the cursor's
+    /// position, the crop, and the pointer positions the camera clamps itself against — while
+    /// this rect lives in Core Image's bottom-left output space. Without the flip a zoom aimed
+    /// at the top of the frame showed the bottom of it, which also meant a zoom following the
+    /// pointer framed the mirror image of where the pointer was. Every other reader of this
+    /// rect already flips (`CanvasGeometry.videoInOutput`, the cursor layer), so this was the
+    /// one place the two conventions met and nobody converted.
     public var transformedVideoFrame: CGRect {
         let anchor = CGPoint(x: videoFrame.minX + videoFrame.width * zoomCenter.x,
-                             y: videoFrame.minY + videoFrame.height * zoomCenter.y)
+                             y: videoFrame.minY + videoFrame.height * (1 - zoomCenter.y))
         let size = CGSize(width: videoFrame.width * zoom, height: videoFrame.height * zoom)
         return CGRect(x: anchor.x - (anchor.x - videoFrame.minX) * zoom,
                       y: anchor.y - (anchor.y - videoFrame.minY) * zoom,

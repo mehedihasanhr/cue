@@ -630,4 +630,90 @@ struct SceneTests {
         // Cached by rounded size, so an animating scale does not redraw every frame.
         #expect(CursorArtwork.image(.arrow, size: 20.4)?.extent == small.extent)
     }
+    // MARK: - Which way up a zoom points
+
+    /// The recording, top half red and bottom half blue as the viewer sees it.
+    ///
+    /// Built in Core Image's bottom-left space, so the red is the high half of the extent.
+    private func topRedSource() -> CIImage {
+        let top = CIImage(color: CIColor(red: 1, green: 0, blue: 0))
+            .cropped(to: CGRect(x: 0, y: videoSize.height / 2,
+                                width: videoSize.width, height: videoSize.height / 2))
+        let bottom = CIImage(color: CIColor(red: 0, green: 0, blue: 1))
+            .cropped(to: CGRect(x: 0, y: 0, width: videoSize.width, height: videoSize.height / 2))
+        return top.composited(over: bottom)
+    }
+
+    /// A zoom points where the model says it points, and the model measures from the top.
+    ///
+    /// Pixels rather than rectangles, because the fault this catches was a rectangle that
+    /// looked right: `zoomCenter` is normalised from the top of the picture like every other
+    /// point in the model — a crop, a blur, an annotation, the pointer — while the frame it
+    /// anchors lives in Core Image's bottom-left space, and the conversion was missing. A
+    /// zoom aimed at the top of the shot showed the bottom of it.
+    @Test(arguments: [(0.0, "red", true), (1.0, "blue", false)])
+    func aZoomShowsTheHalfOfThePictureItIsAimedAt(_ centre: Double, _ expected: String, _ isRed: Bool) throws {
+        var timeline = timeline()
+        timeline.style.padding = 0
+        timeline.style.cornerRadius = 0
+        timeline.style.shadowOpacity = 0
+        timeline.cursor.isVisible = false
+        timeline.zooms = [ZoomRegion(start: .zero, duration: time(10), scale: 4,
+                                     center: CGPoint(x: 0.5, y: centre), easing: .linear,
+                                     transition: .zero, followsCursor: false)]
+
+        let scene = builder().descriptor(for: timeline, at: time(5))
+        let image = try #require(SceneRenderer().cgImage(for: scene, source: topRedSource()))
+        let middle = try #require(pixel(image, x: image.width / 2, y: image.height / 2))
+
+        #expect((middle.r > 200 && middle.b < 60) == isRed,
+                "aimed at \(centre) the frame should be \(expected), got \(middle)")
+    }
+
+    // MARK: - A split zoom, as the renderer sees it
+
+    /// The renderer is the only place this matters, and it resolves overlaps by taking the
+    /// deepest zoom — so a split that holds up in the model has to be checked here too.
+    @Test func splittingAZoomChangesNoFrame() throws {
+        var whole = timeline()
+        whole.cursor.isVisible = false
+        let region = ZoomRegion(start: time(4), duration: time(12), scale: 2.5,
+                                center: CGPoint(x: 0.4, y: 0.6), transition: time(0.6),
+                                followsCursor: false)
+        whole.zooms = [region]
+
+        var cut = whole
+        let (first, second) = try #require(ZoomLane.split(region, at: time(10)))
+        cut.zooms = [first, second]
+
+        let builder = builder()
+        for step in 0...900 {
+            let at = time(3 + Double(step) / 50)
+            let before = builder.descriptor(for: whole, at: at)
+            let after = builder.descriptor(for: cut, at: at)
+            #expect(abs(before.zoom - after.zoom) < 1e-9, "the camera moved at \(at.seconds)s")
+            #expect(before.zoomCenter == after.zoomCenter)
+            #expect(before.transformedVideoFrame == after.transformedVideoFrame)
+        }
+    }
+
+    @Test func aimingOneHalfOfASplitLeavesTheOtherHalfWhereItWas() throws {
+        var timeline = timeline()
+        timeline.cursor.isVisible = false
+        let region = ZoomRegion(start: time(4), duration: time(12), scale: 2.5,
+                                transition: time(0.6), followsCursor: false)
+        let halves = try #require(ZoomLane.split(region, at: time(10)))
+        let first = halves.0
+        var second = halves.1
+        second.center = CGPoint(x: 0.8, y: 0.2)
+        timeline.zooms = [first, second]
+
+        let builder = builder()
+        // Half a second either side of the seam: the aim changes, the depth does not.
+        let before = builder.descriptor(for: timeline, at: time(9.5))
+        let after = builder.descriptor(for: timeline, at: time(10.5))
+        #expect(abs(before.zoom - after.zoom) < 1e-9, "still fully in across the cut")
+        #expect(before.zoomCenter != after.zoomCenter, "and now aimed somewhere else")
+    }
+
 }

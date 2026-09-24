@@ -12,6 +12,10 @@ enum EditorTool: String, CaseIterable, Identifiable, Hashable {
     case blur
     case annotate
     case cursor
+    /// Aiming a zoom on the picture. Reached from the zoom inspector rather than from the
+    /// rail: it is a tool for a region that is already selected, and a rail button for it
+    /// would be one that does nothing most of the time.
+    case zoom
     case camera
     case captions
     case audio
@@ -25,6 +29,7 @@ enum EditorTool: String, CaseIterable, Identifiable, Hashable {
         case .blur: "Blur"
         case .annotate: "Annotate"
         case .cursor: "Pointer"
+        case .zoom: "Aim"
         case .camera: "Camera"
         case .captions: "Captions"
         case .audio: "Audio"
@@ -42,6 +47,7 @@ enum EditorTool: String, CaseIterable, Identifiable, Hashable {
         case .blur: "drop.halffull"
         case .annotate: "character.textbox"
         case .cursor: "cursorarrow.rays"
+        case .zoom: "dot.scope"
         case .camera: "camera.viewfinder"
         case .captions: "captions.bubble"
         case .audio: "waveform"
@@ -55,7 +61,7 @@ enum EditorTool: String, CaseIterable, Identifiable, Hashable {
     /// and annotation work *on* the composed frame, so they draw over it as it is.
     var isCanvasTool: Bool {
         switch self {
-        case .crop, .blur, .annotate: true
+        case .crop, .blur, .annotate, .zoom: true
         default: false
         }
     }
@@ -71,7 +77,7 @@ enum EditorTool: String, CaseIterable, Identifiable, Hashable {
     /// sets this precedent: visibly coming beats quietly missing.
     var unavailableReason: String? {
         switch self {
-        case .frame, .crop, .cursor, .blur, .annotate, .captions, .audio:
+        case .frame, .crop, .cursor, .blur, .annotate, .captions, .audio, .zoom:
             nil
         case .camera:
             "The camera bubble arrives with the webcam recorder."
@@ -88,6 +94,9 @@ enum EditorTool: String, CaseIterable, Identifiable, Hashable {
         case .blur: "3"
         case .annotate: "4"
         case .cursor: "5"
+        // Off the end of the rail's numbers, because it is not on the rail — and it is not
+        // reachable by ⌘9 either, since the shortcut is only wired up by the rail buttons.
+        case .zoom: "9"
         case .camera: "6"
         case .captions: "7"
         case .audio: "8"

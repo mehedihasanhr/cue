@@ -172,8 +172,64 @@ struct SelectionInspector: View {
                 LabeledContent("Suggested by", value: source.title)
                     .foregroundStyle(.secondary)
             }
+
+            Divider()
+            zoomVerbs(zoom)
         }
         .inspectorSection("Zoom", systemImage: "plus.magnifyingglass")
+    }
+
+    /// The four things people do to a zoom on the second pass over a take.
+    ///
+    /// Together in one block under a divider, rather than scattered among the sliders,
+    /// because they are a different kind of thing: the sliders change how this zoom looks,
+    /// these change how many zooms there are and which ones may be touched. They are also in
+    /// the Edit menu — this is the copy somebody finds while already looking at the zoom.
+    ///
+    /// Each one says why it is off when it is off, in the help text rather than in a dialog.
+    /// A disabled button with no explanation is the single most common way an editor makes
+    /// someone feel they have done something wrong.
+    @ViewBuilder
+    private func zoomVerbs(_ zoom: ZoomRegion) -> some View {
+        Toggle("Lock it", isOn: Binding(
+            get: { zoom.isLocked },
+            set: { _ in model.toggleZoomLock() }
+        ))
+        .help("A locked zoom cannot be dragged or resized on the timeline, and the next auto-zoom run leaves it alone. You can still change it here, and still delete it.")
+
+        // One ramp at one end and nothing at the other: this is half of a split, and saying
+        // so is what stops the Ramp slider above looking broken.
+        if zoom.ramps.in != zoom.ramps.out {
+            Label(zoom.ramps.in == .zero
+                  ? "Cut from the zoom before it — no ramp at its start."
+                  : "Cut from the zoom after it — no ramp at its end.",
+                  systemImage: "scissors")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+
+        HStack(spacing: 6) {
+            Button("Split at Playhead") { model.splitZoomAtPlayhead() }
+                .disabled(!model.canSplitZoom)
+                .help(model.canSplitZoom
+                      ? "Cut this zoom in two at the playhead, so the halves can be aimed apart. The picture does not move at the cut."
+                      : "Move the playhead further inside this zoom — a split too near either end would leave a chip too small to grab.")
+            Button("Merge with Next") { model.mergeZoomWithNext() }
+                .disabled(model.zoomToMergeInto == nil)
+                .help(model.zoomToMergeInto == nil
+                      ? "There is no zoom after this one to merge it with."
+                      : "Join this zoom and the one after it into a single push-in, keeping the ramp at each outer end.")
+        }
+        .controlSize(.small)
+
+        HStack(spacing: 6) {
+            Button("Aim on the Picture") { model.aimSelectedZoom() }
+                .help("Click the preview to say what this zoom should be pointed at.")
+            Button("Reset") { model.resetZoom() }
+                .help("Scale, ramp and easing back to what a new zoom has. Where it is and what it points at are left alone.")
+        }
+        .controlSize(.small)
     }
 
     // MARK: - Blur
