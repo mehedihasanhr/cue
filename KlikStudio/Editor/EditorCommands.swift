@@ -35,6 +35,28 @@ struct EditorCommands: SwiftUI.Commands {
         }
 
         CommandGroup(after: .pasteboard) {
+            // Named for what they act on, and placed *after* the system's Cut/Copy/Paste
+            // rather than replacing them — both deliberate, and for the same reason.
+            //
+            // The editor has real text fields in it: a caption's words, an annotation's
+            // label. ⌘C in one of those must copy text, and replacing the pasteboard group
+            // would have taken that away. Sitting after it means AppKit offers the
+            // responder chain the shortcut first, so a focused text field wins; with no
+            // text responder the system's items are disabled and ours are reached instead.
+            // The qualified names are what keeps one Edit menu from listing "Copy" twice.
+            Button("Cut Region") { editor?.cutSelection() }
+                .keyboardShortcut("x")
+                .disabled(editor?.canCopySelection != true)
+            Button("Copy Region") { editor?.copySelection() }
+                .keyboardShortcut("c")
+                .disabled(editor?.canCopySelection != true)
+            Button("Paste Region") { editor?.pasteAtPlayhead() }
+                .keyboardShortcut("v")
+                .disabled(editor?.canPasteRegion != true)
+            Button("Duplicate") { editor?.duplicateSelection() }
+                .keyboardShortcut("d")
+                .disabled(editor?.canCopySelection != true)
+            Divider()
             Button("Delete") { editor?.deleteSelection() }
                 .keyboardShortcut(.delete, modifiers: [])
                 .disabled(editor?.canDeleteSelection != true)

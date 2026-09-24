@@ -347,6 +347,88 @@ final class EditorModel {
         select(.range(CMTimeRange(start: .zero, duration: duration)))
     }
 
+    // MARK: - Clipboard
+
+    /// What Copy would put on the pasteboard, or `nil` if there is nothing to put there.
+    ///
+    /// Computed from the selection each time rather than cached: the selection can stop
+    /// being valid without anything having deleted it (see `validateSelection`), and a
+    /// stale copy of a region that no longer exists is exactly the thing this must not
+    /// hand out.
+    private var copyable: CopiedRegion? { CopiedRegion(selection, in: timeline) }
+
+    /// Whether Cut, Copy and Duplicate would do anything.
+    ///
+    /// One answer for all three because they all need the same thing: a region. A clip, a
+    /// range and the trim handles are footage rather than regions, and pasting footage is
+    /// a different operation — the note on `CopiedRegion.placed(at:in:)` says why.
+    var canCopySelection: Bool { copyable != nil }
+
+    /// Whether Paste would do anything.
+    var canPasteRegion: Bool { RegionPasteboard.shared.hasRegion }
+
+    func copySelection() { copyRegion(selection) }
+
+    func cutSelection() { cutRegion(selection) }
+
+    func duplicateSelection() { duplicateRegion(selection) }
+
+    /// Copies whatever a selection points at, whether or not it is the current one.
+    ///
+    /// The `(_ selection:)` forms exist for the timeline's context menu, which acts on the
+    /// region the pointer is over. Making it select that region first would mean a
+    /// right-click quietly changed what the inspector is showing, which is not what a
+    /// context menu is for.
+    func copyRegion(_ selection: Selection) {
+        guard let region = CopiedRegion(selection, in: timeline) else { return }
+        RegionPasteboard.shared.write(region)
+    }
+
+    func cutRegion(_ selection: Selection) {
+        guard let region = CopiedRegion(selection, in: timeline) else { return }
+        // Written before the delete, so a failed encode leaves the region where it is
+        // rather than removing something the user can no longer paste back.
+        RegionPasteboard.shared.write(region)
+        apply(Commands.DeleteRegion(id: region.id))
+        if self.selection == selection { self.selection = .none }
+    }
+
+    /// A copy of the pasteboard's region, at the playhead.
+    ///
+    /// The playhead rather than where the original was, because the playhead is where the
+    /// user is looking and pasting on top of the original would make ⌘C ⌘V look like it
+    /// did nothing. Length, scale, easing and everything else are kept; only the identity
+    /// and the position are new.
+    func pasteAtPlayhead() {
+        guard let copied = RegionPasteboard.shared.read() else { return }
+        // A sound's path is relative to its own project package, so one copied out of
+        // another take names a file this project does not have. Refused rather than
+        // pasted, because a silent region that cannot be made to play is worse than a
+        // paste that explains itself. Bringing the file across is `SoundImport`'s job and
+        // a larger change than a paste.
+        if let path = copied.audioPath,
+           !FileManager.default.fileExists(atPath: packageURL.appendingPathComponent(path).path) {
+            errorMessage = "That sound belongs to another recording. Add it to this one with Add Sound…"
+            return
+        }
+        guard let placed = copied.placed(at: playhead, in: timeline) else { return }
+        apply(Commands.InsertRegion(placed, name: "Paste \(placed.title)"))
+        select(placed.selection)
+    }
+
+    /// A copy of a region, immediately after it.
+    ///
+    /// After rather than on top of, so the duplicate is visible and draggable the moment
+    /// it appears. Near the end of the edit there is no room for that, and `placed` pulls
+    /// it back inside — which leaves it overlapping the original, but on screen and
+    /// selected rather than somewhere the timeline cannot show.
+    func duplicateRegion(_ selection: Selection) {
+        guard let region = CopiedRegion(selection, in: timeline),
+              let placed = region.placed(at: region.end, in: timeline) else { return }
+        apply(Commands.InsertRegion(placed, name: "Duplicate \(placed.title)"))
+        select(placed.selection)
+    }
+
     // MARK: - Editing
 
     func apply(_ command: some TimelineCommand) {

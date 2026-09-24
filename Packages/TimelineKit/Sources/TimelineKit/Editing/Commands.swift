@@ -129,6 +129,52 @@ public enum Commands {
         }
     }
 
+    /// Putting a region back on the timeline: a paste, or a duplicate.
+    ///
+    /// One command for both and for every kind, because the difference between them is
+    /// entirely in the words on the undo stack and in the start time the caller worked
+    /// out — the edit itself is the same append into the same lane. `name` is therefore
+    /// passed in rather than derived: "Paste Zoom" and "Duplicate Zoom" are the same
+    /// insertion, and the undo menu is the only place that has to tell them apart.
+    ///
+    /// The region arrives already placed — fresh `id`, start and duration clamped by
+    /// `CopiedRegion.placed(at:in:)` — so this only has to refuse what it cannot hold.
+    /// Doing the clamping here instead would mean the command knew the id of the region it
+    /// created and nobody else did, and the paste could not leave its own copy selected.
+    public struct InsertRegion: TimelineCommand {
+        public let region: CopiedRegion
+        public let name: String
+
+        public init(_ region: CopiedRegion, name: String) {
+            self.region = region
+            self.name = name
+        }
+
+        public func apply(to timeline: inout Timeline) -> Bool {
+            guard region.duration >= Clip.minimumDuration, region.start < timeline.duration else { return false }
+            switch region {
+            case .zoom(let r):
+                timeline.zooms.append(r)
+                // Sorted for the same reason `AddZoom` sorts: the renderer sums zooms in
+                // order, and a lane drawn out of order is a lane that flickers.
+                timeline.zooms.sort { $0.start < $1.start }
+            case .blur(let r):
+                timeline.blurs.append(r)
+            case .annotation(let r):
+                timeline.annotations.append(r)
+            case .caption(let r):
+                timeline.captions.append(r)
+                // `SetCaptions` keeps this invariant too: `captionAtPlayhead` takes the
+                // last cue that contains the playhead, which is only the right one in a
+                // sorted list.
+                timeline.captions.sort { $0.start < $1.start }
+            case .audio(let r):
+                timeline.audio.append(r)
+            }
+            return true
+        }
+    }
+
     public struct AddAnnotation: TimelineCommand {
         public let item: AnnotationItem
         public var name: String { "Add Annotation" }
