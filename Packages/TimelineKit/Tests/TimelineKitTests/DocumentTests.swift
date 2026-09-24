@@ -224,4 +224,57 @@ struct DocumentTests {
     @Test func snappingCanBeTurnedOff() {
         #expect(Snapping.disabled.snap(time(10.001), to: [time(10)]) == time(10.001))
     }
+    // MARK: - The zoom verbs on the undo stack
+
+    /// Split, aim, reset, merge: four edits, four entries, and the take is back where it
+    /// started after four undos.
+    ///
+    /// Worth a document test rather than a timeline one because the thing that goes wrong
+    /// here is not the arithmetic: a "reset" written as several commands would cost the user
+    /// three ⌘Z to undo one button, and a verb that returns true when it changed nothing
+    /// would leave an entry that undoes to the same picture.
+    @Test func eachZoomVerbIsExactlyOneUndoStep() throws {
+        let (document, folder) = try makeDocument()
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        document.apply(Commands.AddZoom(ZoomRegion(start: time(2), duration: time(10),
+                                                   scale: 4, easing: .linear,
+                                                   transition: time(1.5))))
+        let id = try #require(document.timeline.zooms.first?.id)
+        let laid = document.timeline
+
+        #expect(document.apply(Commands.SplitZoom(id: id, at: time(7))))
+        #expect(document.timeline.zooms.count == 2)
+        let secondID = try #require(document.timeline.zooms.last?.id)
+
+        #expect(document.apply(Commands.RestyleZoom(id: secondID, name: "Aim Zoom") {
+            $0.center = CGPoint(x: 0.2, y: 0.8)
+            $0.followsCursor = false
+        }))
+        #expect(document.apply(Commands.RestyleZoom(id: secondID, name: "Reset Zoom") {
+            $0 = ZoomLane.reset($0)
+        }))
+        #expect(document.timeline.zooms.last?.scale == ZoomRegion.defaultScale)
+        #expect(document.apply(Commands.MergeZooms(id, secondID)))
+        #expect(document.timeline.zooms.count == 1)
+
+        for _ in 0..<4 { document.undo() }
+        #expect(document.timeline == laid, "four verbs, four undos, and the zoom is as it was laid")
+    }
+
+    @Test func aVerbThatChangesNothingLeavesNothingToUndo() throws {
+        let (document, folder) = try makeDocument()
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        document.apply(Commands.AddZoom(ZoomRegion(start: time(2), duration: time(4))))
+        let id = try #require(document.timeline.zooms.first?.id)
+        let name = document.undoName
+
+        // Too close to the end to cut, nothing to merge with, and a lock already unset.
+        #expect(!document.apply(Commands.SplitZoom(id: id, at: time(2.01))))
+        #expect(!document.apply(Commands.MergeZooms(id, id)))
+        #expect(!document.apply(Commands.RestyleZoom(id: id, name: "Unlock Zoom") { $0.isLocked = false }))
+        #expect(document.undoName == name, "none of them reached the stack")
+    }
+
 }
