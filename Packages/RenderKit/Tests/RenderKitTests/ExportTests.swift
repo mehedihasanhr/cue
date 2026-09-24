@@ -242,6 +242,48 @@ struct ExportTests {
         #expect(actual > 0)
     }
 
+    /// A GIF has a ceiling of its own on top of whatever the user asked for, and an
+    /// estimate that ignored it would promise a size the writer then refuses to produce.
+    @Test func aGIFsPredictedSizeRespectsTheFormatsOwnCeiling() {
+        var settings = ExportSettings(format: .gif, frameRate: 30)
+        settings.maximumDimension = nil
+        let estimate = settings.estimate(projectSize: CGSize(width: 2_560, height: 1_440), duration: 1)
+        let ceiling = Double(GIFExporter.maximumDimension)
+        #expect(Double(estimate.size.width) == ceiling)
+        #expect(estimate.size.height == 720, "and the shape is kept")
+    }
+
+    /// Predicted against written, for the path that is not AVFoundation.
+    @Test func thePredictedGIFSizeIsTheSizeThatGetsWritten() async throws {
+        let folder = try Self.scratch()
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let source = folder.appendingPathComponent("source.mov")
+        let sourceSize = CGSize(width: 640, height: 360)
+        try await Self.writeSilentVideo(to: source, size: sourceSize, frames: 30, frameRate: 30)
+
+        var timeline = Timeline(sourceDuration: time(1))
+        timeline.style.padding = 0
+        let builder = SceneBuilder(videoSize: sourceSize)
+        let settings = ExportPreset.gif.settings
+        let estimate = settings.estimate(projectSize: builder.outputSize(for: timeline.style),
+                                         duration: timeline.duration.seconds)
+
+        let destination = folder.appendingPathComponent("out.gif")
+        try await VideoExporter(timeline: timeline,
+                                builder: builder,
+                                cursor: nil,
+                                videoURL: source,
+                                packageURL: nil,
+                                settings: settings).export(to: destination)
+
+        let image = try #require(CGImageSourceCreateWithURL(destination as CFURL, nil))
+        #expect(CGImageSourceGetCount(image) == estimate.frameCount)
+        let properties = try #require(CGImageSourceCopyPropertiesAtIndex(image, 0, nil) as? [CFString: Any])
+        #expect(properties[kCGImagePropertyPixelWidth] as? Int == Int(estimate.size.width))
+        #expect(properties[kCGImagePropertyPixelHeight] as? Int == Int(estimate.size.height))
+    }
+
     // MARK: - Stopping
 
     /// A cancel that leaves a truncated file where the user asked for an export is worse

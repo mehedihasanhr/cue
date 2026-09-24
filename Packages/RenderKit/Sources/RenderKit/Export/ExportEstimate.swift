@@ -51,7 +51,15 @@ public extension ExportSettings {
     /// which is what the preview is drawn at — so the dimensions here are the dimensions
     /// the file gets, not an approximation of them.
     func estimate(projectSize: CGSize, duration: Double) -> ExportEstimate {
-        let output = outputSize(fitting: projectSize)
+        // The GIF writer imposes a ceiling of its own on top of whatever cap the user
+        // chose, so an estimate that ignored it would promise a 2560-wide GIF and deliver
+        // a 1280-wide one. Asked of the same constant the writer uses.
+        var capped = self
+        if format == .gif {
+            capped.maximumDimension = min(maximumDimension ?? .greatestFiniteMagnitude,
+                                          GIFExporter.maximumDimension)
+        }
+        let output = capped.outputSize(fitting: projectSize)
         let rate = effectiveFrameRate
         let seconds = max(0, duration)
         let pixels = Int(output.width * output.height)
