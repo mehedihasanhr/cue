@@ -15,6 +15,9 @@ import TimelineKit
 /// is the room they need.
 struct EditorToolbar: View {
     let model: EditorModel
+    /// The app's export queue, for the pill beside the Export button. Handed in rather
+    /// than read from the environment so this bar can still be built in a preview.
+    let exports: ExportJobs
     let export: () -> Void
 
     /// The width of the three system buttons plus the breathing room either side of them.
@@ -100,6 +103,10 @@ struct EditorToolbar: View {
             .keyboardShortcut("s")
 
         Divider().frame(height: 18).padding(.horizontal, 2)
+
+        // Where a running export lives: in the chrome, not in a modal sheet. Nothing at
+        // all when nothing is exporting.
+        ExportStatusPill(jobs: exports)
 
         Button(action: export) {
             HStack(spacing: 5) {

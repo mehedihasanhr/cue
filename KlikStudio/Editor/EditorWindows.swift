@@ -27,6 +27,15 @@ final class EditorWindows {
     /// than making a second editor for one file.
     private var controllers: [URL: EditorWindowController] = [:]
 
+    /// Every export the app has going, owned here rather than by a window.
+    ///
+    /// This is the object that decides that an export outlives its editor. It used to live
+    /// in `EditorView`'s `@State`, behind a modal sheet: closing the window left a task
+    /// writing to a file with no way to watch it or stop it, and a stray ⌘W during a
+    /// ten-minute encode was simply a lost ten minutes. Windows come and go; this does not,
+    /// so a job filed here finishes whatever happens to the editor that asked for it.
+    let exports = ExportJobs()
+
     @ObservationIgnored private var settings: StudioSettings?
 
     /// Told whenever an editor opens or closes. The bar listens, because "is an editor on
@@ -37,6 +46,14 @@ final class EditorWindows {
 
     func configure(settings: StudioSettings) {
         self.settings = settings
+        // An export that lands while an editor is open announces itself in that window's
+        // toolbar. One that lands after the last editor has closed has nowhere to do that,
+        // so it shows itself the only way left: the file, selected in the Finder. Same
+        // rule a download finishing has followed on this platform for twenty years.
+        exports.onFinish = { [weak self] job in
+            guard let self, self.isEmpty else { return }
+            job.reveal()
+        }
     }
 
     /// Opens a recording for editing, or brings its window forward if it is already open.
@@ -54,6 +71,7 @@ final class EditorWindows {
 
         let controller = EditorWindowController(session: EditorSession(packageURL: url),
                                                 settings: settings,
+                                                exports: exports,
                                                 windows: self)
         controllers[key] = controller
         // Offset from the last one so a second take does not land exactly on the first.
@@ -112,7 +130,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     let session: EditorSession
     private let windows: EditorWindows
 
-    init(session: EditorSession, settings: StudioSettings, windows: EditorWindows) {
+    init(session: EditorSession, settings: StudioSettings, exports: ExportJobs, windows: EditorWindows) {
         self.session = session
         self.windows = windows
 
@@ -134,7 +152,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         // `WindowGroup`'s worst habit and it is not worth inheriting in AppKit.
         window.isRestorable = false
 
-        let hosting = NSHostingController(rootView: EditorView(session: session).environment(settings))
+        let hosting = NSHostingController(rootView: EditorView(session: session)
+            .environment(settings)
+            .environment(exports))
         // The window decides its own size, not the view.
         //
         // A hosting controller reports its SwiftUI content's ideal size as a preferred
@@ -165,6 +185,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         // stopped being something you are listening to, and the sound should go with the
         // picture rather than a moment after it.
         session.model?.silence()
+        // Nothing here touches the exports, and that is the point. `silence()` stops the
+        // things that only make sense while you are looking at the window — playback, the
+        // preview's audio, a waveform being drawn. An export is not one of those: it is
+        // work the user asked for, it holds everything it needs by value, and it belongs
+        // to `EditorWindows` precisely so that closing this window cannot end it.
         windows.closed(self)
     }
 }
