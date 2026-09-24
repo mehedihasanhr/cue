@@ -47,27 +47,6 @@ public struct SceneBuilder: Sendable {
                             packageURL: packageURL)
     }
 
-    /// How far back the camera looks when it follows the pointer.
-    ///
-    /// Long enough that the camera ignores fidgeting and short enough that it still
-    /// arrives where the work is. Under about a third of a second it reads as glued to
-    /// the mouse; much over a second and it is visibly chasing.
-    static let cameraWindow: Double = 0.7
-
-    /// How much of the zoomed frame the pointer is allowed to reach, from the middle out.
-    ///
-    /// The camera follows an average of where the pointer has been, so it lags the pointer
-    /// — which is the point, and what stops a zoom riding every twitch of a hand. But a
-    /// camera that lags far enough loses its subject: flick the pointer across the screen
-    /// and the average is still looking at where it started, while the cursor doing the
-    /// work is outside the frame entirely.
-    ///
-    /// So the lag is bounded rather than removed. At 0.85 the pointer may reach 85% of the
-    /// way from the centre of the zoomed frame to its edge, leaving a margin so you can
-    /// still see what it is pointing at. Below that the constraint does nothing at all and
-    /// the camera is as calm as it ever was.
-    static let pointerSafeArea: Double = 0.85
-
     /// How big the picture is once the crop has been taken off it.
     public func croppedVideoSize(for style: FrameStyle) -> CGSize {
         guard let crop = style.crop else { return videoSize }
@@ -159,13 +138,17 @@ public struct SceneBuilder: Sendable {
         }
         guard let best else { return (1, CGPoint(x: 0.5, y: 0.5)) }
 
+        // Read once, and clamped: a project is a file, and a file can ask for a safe area
+        // of 40 or a negative window.
+        let camera = timeline.camera.sanitised
+
         var center = best.region.center
-        if best.region.followsCursor, let track, !track.isEmpty,
+        if best.region.followsCursor, camera.follow > 0, let track, !track.isEmpty,
            let sourceTime = timeline.sourceTime(at: time),
            // Averaged over a window, not the pointer's exact position: at 2× every
            // twitch of a hand is 2× on screen, and a camera welded to the mouse is what
            // makes a zoom unwatchable.
-           let point = track.averagePosition(at: sourceTime.seconds, window: Self.cameraWindow),
+           let point = track.averagePosition(at: sourceTime.seconds, window: camera.steadiness),
            // A pointer outside the crop is not in this picture, so the camera holds the
            // centre the region was given rather than aiming at somewhere off-frame.
            let followed = normalised(point, crop: crop) {
@@ -174,7 +157,7 @@ public struct SceneBuilder: Sendable {
             // would drag the centre across the frame as the margin opens up — a slide
             // nobody asked for and the worst-looking part of the old behaviour.
             let span = max(0.0001, best.region.scale - 1)
-            let progress = min(1, max(0, (best.scale - 1) / span))
+            let progress = min(1, max(0, (best.scale - 1) / span)) * camera.follow
             center = CGPoint(x: center.x + (followed.x - center.x) * progress,
                              y: center.y + (followed.y - center.y) * progress)
         }
@@ -185,13 +168,13 @@ public struct SceneBuilder: Sendable {
         // resting hand still gets the calm averaged camera. It binds only when the pointer
         // is about to leave, and then only by as much as it has to.
         let half = 0.5 / best.scale
-        if best.region.followsCursor, timeline.cursor.isVisible, let track, !track.isEmpty,
+        if best.region.followsCursor, camera.follow > 0, timeline.cursor.isVisible, let track, !track.isEmpty,
            let sourceTime = timeline.sourceTime(at: time),
            // The pointer as it is *drawn* — the same smoothed track and the same
            // normalisation `cursorLayer` uses, so the two cannot disagree about where it
            // is and the frame cannot be right about a cursor that is somewhere else.
            let live = track.position(at: sourceTime.seconds).flatMap({ normalised($0, crop: crop) }) {
-            let reach = half * Self.pointerSafeArea
+            let reach = half * camera.safeArea
             center.x = min(max(center.x, live.x - reach), live.x + reach)
             center.y = min(max(center.y, live.y - reach), live.y + reach)
         }

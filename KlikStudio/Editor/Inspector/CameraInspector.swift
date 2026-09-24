@@ -1,0 +1,43 @@
+import SwiftUI
+import TimelineKit
+
+/// How the zoomed camera moves while it follows the pointer.
+///
+/// One set of values for the whole recording rather than one per zoom: a take where each
+/// zoom drifts to its own rhythm reads as a fault, and nobody tuning this wants to tune it
+/// eight times. It lives beside the selected zoom anyway, because that is where somebody
+/// notices the movement is wrong.
+///
+/// The three are deliberately separate, because they fail in different directions and the
+/// fix for one is not the fix for another: a camera that jitters wants more *steadiness*,
+/// one that lurches at the pointer wants less *follow*, and one that loses the pointer
+/// off the edge of the frame wants a tighter *safe area*.
+struct CameraInspector: View {
+    let model: EditorModel
+    /// Whether the zoom being looked at follows the pointer at all. When it does not,
+    /// none of this does anything, and saying so beats three sliders that move nothing.
+    let isFollowing: Bool
+
+    private var style: StyleBinding { StyleBinding(model: model) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            InspectorSlider(model: model, "Steadiness", systemImage: "hand.raised",
+                            value: style.binding(\.camera.steadiness, "Steadiness"), range: 0...2)
+            InspectorSlider(model: model, "Follow", systemImage: "scope",
+                            value: style.binding(\.camera.follow, "Follow Strength"), range: 0...1)
+            InspectorSlider(model: model, "Stray", systemImage: "arrow.left.and.right",
+                            value: style.binding(\.camera.safeArea, "Safe Area"), range: 0.05...1)
+
+            Text(isFollowing
+                 ? "Steadiness smooths the pointer before the camera follows it. Stray is how far the pointer may wander from the middle before the frame has to move — the pointer never leaves the frame."
+                 : "This zoom is not following the pointer, so these have nothing to move.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.system(size: 12))
+        .opacity(isFollowing ? 1 : 0.5)
+        .inspectorSection("Camera Motion", systemImage: "dot.viewfinder")
+    }
+}

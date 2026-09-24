@@ -263,6 +263,102 @@ struct SceneTests {
         }
     }
 
+    // MARK: - Camera settings
+
+    /// A follow strength of zero is a zoom that holds still.
+    ///
+    /// Right for pushing in on something that does not move — a menu, a diagram — where
+    /// following the pointer is the camera drifting off the subject.
+    @Test func aFollowStrengthOfZeroHoldsTheCentreItWasGiven() {
+        var timeline = timeline()
+        timeline.cursor.smoothing = 0
+        timeline.camera.follow = 0
+        timeline.zooms = [ZoomRegion(start: .zero, duration: time(10), scale: 2,
+                                     center: CGPoint(x: 0.5, y: 0.5),
+                                     transition: time(0.2), followsCursor: true)]
+        // The pointer sits hard over to one side the whole time.
+        let track = CursorTrack(samples: [CursorSample(t: 0, x: 760, y: 250, shape: .arrow),
+                                          CursorSample(t: 10, x: 760, y: 250, shape: .arrow)])
+
+        let scene = builder().descriptor(for: timeline, at: time(5), cursor: track)
+        #expect(abs(scene.zoomCenter.x - 0.5) < 0.001, "it followed the pointer anyway")
+    }
+
+    /// A tighter safe area keeps the pointer further inside the frame.
+    ///
+    /// This is the dead zone made visible: the same flick, framed two ways, and the only
+    /// difference is how far the pointer is allowed to stray before the camera reacts.
+    @Test(arguments: [0.4, 0.85]) func theSafeAreaBoundsHowFarThePointerStrays(_ safeArea: Double) {
+        var timeline = timeline()
+        timeline.cursor.smoothing = 0
+        timeline.camera.safeArea = safeArea
+        timeline.zooms = [ZoomRegion(start: .zero, duration: time(10), scale: 2.5,
+                                     transition: time(0.5), followsCursor: true)]
+
+        var samples: [CursorSample] = []
+        for step in 0...400 {
+            let t = Double(step) / 40
+            let x: Double = switch t {
+            case ..<2: 80
+            case ..<2.3: 80 + 640 * ((t - 2) / 0.3)
+            default: 720
+            }
+            samples.append(CursorSample(t: t, x: x, y: 250, shape: .arrow))
+        }
+        let track = CursorTrack(samples: samples)
+        let builder = builder()
+
+        var worst = 0.0
+        var worstAnywhere = 0.0
+        for step in 0...80 {
+            let scene = builder.descriptor(for: timeline, at: time(1 + Double(step) / 20), cursor: track)
+            guard let cursor = scene.cursor else { continue }
+            // How far out the pointer got, as a fraction of centre-to-edge.
+            let half = 0.5 / scene.zoom
+            let reach = abs(cursor.position.x - scene.zoomCenter.x) / half
+            worstAnywhere = max(worstAnywhere, reach)
+
+            // Frames where the camera is pinned against the edge of the picture are not
+            // evidence either way: there the safe area asks the camera to travel past the
+            // picture, the picture wins, and the pointer sits further out than asked as a
+            // result. That is the intended order — showing empty canvas would be worse —
+            // so the setting is judged only where the camera was free to obey it.
+            let pinned = min(abs(scene.zoomCenter.x - half), abs(scene.zoomCenter.x - (1 - half))) < 0.001
+            if !pinned { worst = max(worst, reach) }
+        }
+
+        // Never past what was asked for where the camera was free, and — since the flick
+        // is far faster than the camera — actually pushed out to it, so the setting is
+        // doing the work rather than the pointer happening to stay near the middle.
+        #expect(worst <= safeArea + 0.02, "the pointer reached \(worst) of the way out")
+        #expect(worst > safeArea - 0.2, "the setting never bound; the test proves nothing")
+        // And wherever it was, it stayed in shot.
+        #expect(worstAnywhere <= 1.0001, "the pointer left the frame entirely")
+    }
+
+    /// Steadiness is how long the camera's memory is, so a longer one arrives later.
+    @Test func aSteadierCameraLagsFurtherBehindAFlick() {
+        func centre(steadiness: Double) -> Double {
+            var timeline = timeline()
+            timeline.cursor.smoothing = 0
+            timeline.camera.steadiness = steadiness
+            // A gentle zoom, so the safe area is wide and only the averaging is on trial.
+            timeline.zooms = [ZoomRegion(start: .zero, duration: time(10), scale: 1.2,
+                                         transition: time(0.2), followsCursor: true)]
+            var samples: [CursorSample] = []
+            for step in 0...400 {
+                let t = Double(step) / 40
+                samples.append(CursorSample(t: t, x: t < 2 ? 80 : 720, y: 250, shape: .arrow))
+            }
+            return builder().descriptor(for: timeline,
+                                        at: time(2.4),
+                                        cursor: CursorTrack(samples: samples)).zoomCenter.x
+        }
+
+        #expect(centre(steadiness: 0.2) > centre(steadiness: 2),
+                "a shorter memory should have caught up more of the flick")
+    }
+
     // MARK: - Layers
 
     @Test func onlyWhatIsOnScreenNowIsDescribed() {

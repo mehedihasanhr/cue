@@ -16,6 +16,9 @@ struct SelectionInspector: View {
             case .zoom(let id):
                 if let index = model.timeline.zooms.firstIndex(where: { $0.id == id }) {
                     zoom(index: index)
+                    // How the camera moves, next to the zoom whose movement you are watching.
+                    CameraInspector(model: model,
+                                    isFollowing: model.timeline.zooms[index].followsCursor)
                 }
             case .blur(let id):
                 if let index = model.timeline.blurs.firstIndex(where: { $0.id == id }) {

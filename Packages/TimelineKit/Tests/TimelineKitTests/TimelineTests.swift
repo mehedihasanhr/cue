@@ -261,4 +261,48 @@ struct TimelineTests {
         #expect(timeline.zooms.count == 1)
         #expect(!Commands.DeleteRegion(id: UUID()).apply(to: &timeline))
     }
+
+    // MARK: - Camera
+
+    /// A project from before the camera was adjustable frames exactly as it did.
+    ///
+    /// The defaults are the constants they replaced, so this is not just "it decodes" —
+    /// it is "nothing anyone has already edited moves by a pixel".
+    @Test func aProjectWithNoCameraSettingsGetsTheOldBehaviour() throws {
+        var written = Timeline(sourceDuration: CMTime(seconds: 10, preferredTimescale: 600))
+        written.camera = CameraStyle()
+        let data = try JSONEncoder().encode(written)
+
+        // Strip the key back out, the way a file written by the previous build has it.
+        var object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        object.removeValue(forKey: "camera")
+        let older = try JSONSerialization.data(withJSONObject: object)
+
+        let read = try JSONDecoder().decode(Timeline.self, from: older)
+        #expect(read.camera == CameraStyle())
+        #expect(read.camera.steadiness == 0.7)
+        #expect(read.camera.follow == 1)
+        #expect(read.camera.safeArea == 0.85)
+    }
+
+    @Test func cameraSettingsSurviveARoundTrip() throws {
+        var written = Timeline(sourceDuration: CMTime(seconds: 10, preferredTimescale: 600))
+        written.camera = CameraStyle(steadiness: 1.4, follow: 0.5, safeArea: 0.6)
+        let read = try JSONDecoder().decode(Timeline.self, from: JSONEncoder().encode(written))
+        #expect(read.camera == written.camera)
+    }
+
+    /// A project is a file, and a file can say anything.
+    @Test func nonsenseCameraSettingsAreClampedRatherThanObeyed() {
+        let absurd = CameraStyle(steadiness: -3, follow: 12, safeArea: 40).sanitised
+        #expect(absurd.steadiness == 0)
+        #expect(absurd.follow == 1)
+        #expect(absurd.safeArea == 1)
+
+        let tiny = CameraStyle(steadiness: 99, follow: -1, safeArea: 0).sanitised
+        #expect(tiny.steadiness == 5)
+        #expect(tiny.follow == 0)
+        #expect(tiny.safeArea == 0.05, "a zero safe area would pin the camera to the pointer")
+    }
+
 }

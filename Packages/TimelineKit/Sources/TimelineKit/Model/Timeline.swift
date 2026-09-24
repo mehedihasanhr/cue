@@ -25,6 +25,7 @@ public struct Timeline: Equatable, Codable, Sendable {
     public var audio: [AudioRegion]
     public var style: FrameStyle
     public var cursor: CursorStyle
+    public var camera: CameraStyle
     public var webcam: WebcamSettings
     public var captionStyle: CaptionStyle
 
@@ -38,6 +39,7 @@ public struct Timeline: Equatable, Codable, Sendable {
                 audio: [AudioRegion] = [],
                 style: FrameStyle = FrameStyle(),
                 cursor: CursorStyle = CursorStyle(),
+                camera: CameraStyle = CameraStyle(),
                 webcam: WebcamSettings = WebcamSettings(),
                 captionStyle: CaptionStyle = CaptionStyle()) {
         self.formatVersion = formatVersion
@@ -50,6 +52,7 @@ public struct Timeline: Equatable, Codable, Sendable {
         self.audio = audio
         self.style = style
         self.cursor = cursor
+        self.camera = camera
         self.webcam = webcam
         self.captionStyle = captionStyle
     }
@@ -82,6 +85,7 @@ public struct Timeline: Equatable, Codable, Sendable {
         audio = value(.audio, default: [])
         style = value(.style, default: FrameStyle())
         cursor = value(.cursor, default: CursorStyle())
+        camera = value(.camera, default: CameraStyle())
         webcam = value(.webcam, default: WebcamSettings())
         captionStyle = value(.captionStyle, default: CaptionStyle())
     }
@@ -90,7 +94,7 @@ public struct Timeline: Equatable, Codable, Sendable {
     /// renaming a property is a compile error rather than a silently unreadable project.
     enum CodingKeys: String, CodingKey {
         case formatVersion, sourceDuration, clips, zooms, blurs
-        case annotations, captions, audio, style, cursor, webcam, captionStyle
+        case annotations, captions, audio, style, cursor, camera, webcam, captionStyle
     }
 
     /// How long the edit plays for.

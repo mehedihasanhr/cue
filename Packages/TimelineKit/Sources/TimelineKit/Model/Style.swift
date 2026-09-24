@@ -189,6 +189,60 @@ public struct CursorStyle: Codable, Equatable, Sendable {
     }
 }
 
+/// How the camera behaves while a zoom is following the pointer.
+///
+/// Three numbers that used to be constants inside the renderer. They are here, on the
+/// document, rather than in app preferences because they change what the exported video
+/// looks like: two people opening the same project must see the same framing, and
+/// changing one has to be undoable like any other edit.
+///
+/// The defaults are exactly the constants they replace, so a project made before this
+/// existed renders frame-for-frame as it did.
+public struct CameraStyle: Codable, Equatable, Sendable {
+    /// How far back the camera looks when averaging where the pointer has been, in
+    /// seconds.
+    ///
+    /// The camera follows an average rather than the pointer itself, because at 2× every
+    /// twitch of a hand is 2× on screen. Under about a third of a second it reads as
+    /// glued to the mouse; much over a second and it is visibly chasing.
+    public var steadiness: Double
+
+    /// How much of the way to the pointer the camera travels, 0 to 1.
+    ///
+    /// 0 holds the centre the zoom was given and ignores the pointer entirely — right for
+    /// a zoom on something that does not move. 1 follows as closely as the averaging
+    /// allows.
+    public var follow: Double
+
+    /// How far the pointer may travel from the middle of the zoomed frame before it drags
+    /// the camera with it, as a fraction of the distance from centre to edge.
+    ///
+    /// This is the dead zone: inside it the camera does not react at all, which is what
+    /// keeps a resting hand from moving the picture. At 1 the pointer may reach the very
+    /// edge of frame before anything happens, which means it is half out of shot by the
+    /// time the camera responds; lower values keep it further in.
+    public var safeArea: Double
+
+    public init(steadiness: Double = 0.7,
+                follow: Double = 1,
+                safeArea: Double = 0.85) {
+        self.steadiness = steadiness
+        self.follow = follow
+        self.safeArea = safeArea
+    }
+
+    /// The same values, clamped to what the renderer can act on.
+    ///
+    /// A project is a file, and a file can say `safeArea: 40`. Clamping when it is read
+    /// rather than when it is written means a hand-edited or newer project frames sanely
+    /// instead of showing a camera that has flown off the picture.
+    public var sanitised: CameraStyle {
+        CameraStyle(steadiness: min(max(steadiness, 0), 5),
+                    follow: min(max(follow, 0), 1),
+                    safeArea: min(max(safeArea, 0.05), 1))
+    }
+}
+
 /// The camera bubble, when there is one.
 public struct WebcamSettings: Codable, Equatable, Sendable {
     public enum Corner: String, Codable, Sendable, CaseIterable {
