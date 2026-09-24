@@ -47,10 +47,11 @@ final class StudioService: StudioRecording {
     /// Where finished recordings go, as Settings has it.
     var library: URL { settings.library }
 
-    var isRecording: Bool {
-        if case .recording = session.state { return true }
-        return false
-    }
+    /// Whether a take is under way, as the host asks it.
+    ///
+    /// `isTaking` rather than a match on `.recording`: a take on hold is still a take, and
+    /// a host told "nothing is recording" would offer to start a second one.
+    var isRecording: Bool { session.state.isTaking }
 
     /// What this build can actually do.
     ///
@@ -140,25 +141,47 @@ final class StudioService: StudioRecording {
     }
 
     /// Stops the recording and records where it landed.
+    ///
+    /// The guard is `isTaking`, which is the property the bar's Stop button is enabled by:
+    /// it used to be `case .recording`, so stopping a paused take fell through here in
+    /// silence and the only thing left that worked was Discard.
+    ///
+    /// The request is no longer part of the guard either. Reporting back to Klik is
+    /// bookkeeping; ending the take and opening it is the thing the user asked for, and a
+    /// missing request must not be able to cost them a recording. Without one, the app's
+    /// own preference decides whether the editor comes up, because that is what a take
+    /// nobody asked for by name is: this app's own.
     func stop() {
-        guard case .recording = session.state, let request = lastRequest else { return }
+        guard session.state.isTaking else { return }
+        let request = lastRequest
         Task {
             switch await session.stop() {
             case .success(let url):
-                finish(request, outcome: .finished, project: url)
-                if request.opensEditorWhenFinished { openEditor?(url) }
+                if let request { finish(request, outcome: .finished, project: url) }
+                if request?.opensEditorWhenFinished ?? settings.opensEditorAfterRecording {
+                    openEditor?(url)
+                }
             case .failure(let error):
-                finish(request, outcome: .failed, message: error.localizedDescription)
+                if let request { finish(request, outcome: .failed, message: error.localizedDescription) }
             }
         }
     }
 
+    /// Throws the take away — a cancelled countdown, or one the user does not want kept.
+    ///
+    /// Same reasoning as `stop()`: discarding is what was asked for, and the report is a
+    /// consequence of it rather than a precondition for it.
     func cancel() {
-        guard let request = lastRequest else { return }
+        let request = lastRequest
         Task {
             await session.cancel()
-            finish(request, outcome: .cancelled)
+            if let request { finish(request, outcome: .cancelled) }
         }
+    }
+
+    /// Puts a reported failure away, so the bar can go back to offering a take.
+    func dismissFailure() {
+        session.acknowledgeFailure()
     }
 
     private func finish(_ request: RecordingRequest,

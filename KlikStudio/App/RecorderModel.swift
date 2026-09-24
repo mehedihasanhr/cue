@@ -265,7 +265,17 @@ final class RecorderModel {
     /// Opens System Settings at the pane the user needs, because "grant permission" with
     /// no way to get there is not help.
     func openScreenRecordingSettings() {
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") else { return }
+        open(privacyPane: "Privacy_ScreenCapture")
+    }
+
+    /// The other pane a recording can be refused by. A microphone denial pointed at the
+    /// screen-recording list would send the user to a switch that is already on.
+    func openMicrophoneSettings() {
+        open(privacyPane: "Privacy_Microphone")
+    }
+
+    private func open(privacyPane pane: String) {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") else { return }
         NSWorkspace.shared.open(url)
     }
 
