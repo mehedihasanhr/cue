@@ -32,6 +32,10 @@ struct SelectionInspector: View {
                 // The whole panel, because selecting the lane is how most people will
                 // arrive at these settings.
                 AudioInspector(model: model)
+            case .soundRun(let id):
+                if let run = model.timeline.detachedSound?.first(where: { $0.id == id }) {
+                    soundRun(run)
+                }
             case .audio(let id):
                 if let index = model.timeline.audio.firstIndex(where: { $0.id == id }) {
                     sound(index: index)
@@ -50,6 +54,32 @@ struct SelectionInspector: View {
                 .controlSize(.small)
         }
         .font(.system(size: 12))
+    }
+
+    // MARK: - A run of the detached sound
+
+    /// Both clocks at once, which is the only way to read a detached run.
+    ///
+    /// "Where it plays" and "which second of the recording it is" are the same number on an
+    /// attached lane and different numbers the instant anything is dragged — and the gap
+    /// between them *is* the edit. A panel showing only one of them would leave the user
+    /// guessing at which, so it shows both and says which is which.
+    private func soundRun(_ run: SoundRun) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            LabeledContent("Plays at", value: Timecode.short(run.start))
+            LabeledContent("Length", value: Timecode.length(run.duration))
+            LabeledContent("From", value: Timecode.short(run.sourceStart))
+            LabeledContent("To", value: Timecode.short(run.sourceEnd))
+            if run.speed != 1 {
+                LabeledContent("Speed", value: TimelineClipRow.speedLabel(run.speed))
+            }
+            Text("This is the recording's own sound, detached from the picture. Drag it to slide it, or its edges to trim — the picture does not move.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Re-attach Audio") { model.requestSoundReattach() }
+                .controlSize(.small)
+        }
     }
 
     // MARK: - Clip
