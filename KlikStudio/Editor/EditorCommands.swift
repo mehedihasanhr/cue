@@ -72,6 +72,28 @@ struct EditorCommands: SwiftUI.Commands {
                 .disabled(editor == nil)
             Button("Auto-Zoom from Clicks and Focus") { editor?.suggestZooms() }
                 .disabled(editor == nil)
+            // The second-pass verbs. They act on the selected zoom, or — with nothing
+            // selected — on the one under the playhead, which is why they are enabled by
+            // `activeZoom` rather than by the selection: somebody scrubbing to the moment a
+            // push-in should become two has their hands on the playhead.
+            //
+            // ⌥⌘B beside Split at Playhead's ⌘B, because it is the same cut aimed at a
+            // different lane. Merge and the rest take no key: they are not things done often
+            // enough to be worth a shortcut somebody has to remember, and they are all in the
+            // zoom inspector where the hand already is.
+            Button("Split Zoom at Playhead") { editor?.splitZoomAtPlayhead() }
+                .keyboardShortcut("b", modifiers: [.command, .option])
+                .disabled(editor?.canSplitZoom != true)
+            Button("Merge Zoom with Next") { editor?.mergeZoomWithNext() }
+                .disabled(editor?.zoomToMergeInto == nil)
+            Button(editor?.activeZoom?.isLocked == true ? "Unlock Zoom" : "Lock Zoom") {
+                editor?.toggleZoomLock()
+            }
+            .disabled(editor?.activeZoom == nil)
+            Button("Aim Zoom on the Picture") { editor?.aimSelectedZoom() }
+                .disabled(editor?.activeZoom == nil)
+            Button("Reset Zoom") { editor?.resetZoom() }
+                .disabled(editor?.activeZoom == nil)
             // Acts on the selected range when there is one and on a few seconds at the
             // playhead when there is not, which is why it is not disabled without a
             // selection — see `EditorModel.hidePointerOverSelection`.

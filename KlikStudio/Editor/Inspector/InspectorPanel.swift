@@ -18,7 +18,7 @@ struct InspectorPanel: View {
                     } else {
                         SelectionInspector(model: model)
                     }
-                case .blur, .annotate:
+                case .blur, .annotate, .zoom:
                     // What is selected, or — with nothing drawn yet — how to draw one.
                     if model.selection.isEmpty {
                         canvasHint(model.tool)
@@ -50,14 +50,25 @@ struct InspectorPanel: View {
         VStack(alignment: .leading, spacing: 10) {
             Label(tool.title, systemImage: tool.symbol)
                 .font(.system(size: 13, weight: .semibold))
-            Text(tool == .blur
-                 ? "Drag over anything on the picture to hide it — a password, a name, a face. It stays on the thing it covers when the camera moves."
-                 : "Drag on the picture to place a label, an arrow or a box. It stays where you put it in the finished frame.")
+            Text(hint(for: tool))
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func hint(for tool: EditorTool) -> String {
+        switch tool {
+        case .blur:
+            "Drag over anything on the picture to hide it — a password, a name, a face. It stays on the thing it covers when the camera moves."
+        case .zoom:
+            // Reachable only from a selected zoom, so this is the state where the selection
+            // was deleted or undone out from under the tool.
+            "Pick a zoom on the timeline, then click the picture to say what it should be pointed at."
+        default:
+            "Drag on the picture to place a label, an arrow or a box. It stays where you put it in the finished frame."
+        }
     }
 
     private func unavailable(_ tool: EditorTool) -> some View {

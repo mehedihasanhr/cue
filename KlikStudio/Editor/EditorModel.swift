@@ -455,6 +455,108 @@ final class EditorModel {
         select(.zoom(region.id))
     }
 
+    // MARK: - Zooms, on the second pass
+
+    /// The zoom the verbs act on: the selected one, or — with nothing selected — the one
+    /// under the playhead.
+    ///
+    /// Falling back to the playhead is not a convenience, it is what makes the menu items
+    /// usable: somebody scrubbing to the moment a push-in should become two has their hands
+    /// on the playhead, not on the lane, and making them click the chip first to say
+    /// something the playhead already says would be a step for the computer's benefit.
+    /// The last match wins where two overlap, which is the topmost chip on the lane.
+    var activeZoom: ZoomRegion? {
+        if case .zoom(let id) = selection, let zoom = timeline.zooms.first(where: { $0.id == id }) {
+            return zoom
+        }
+        return timeline.zooms.last { $0.contains(playhead) }
+    }
+
+    /// The zoom this one would be merged with: the next one along the lane.
+    ///
+    /// The next rather than the nearest, because the lane is sorted by start and "merge with
+    /// the one after this" is a sentence the user can predict the outcome of. `nil` for the
+    /// last zoom on the lane, which is what disables the menu item.
+    var zoomToMergeInto: ZoomRegion? {
+        guard let zoom = activeZoom,
+              let index = timeline.zooms.firstIndex(where: { $0.id == zoom.id }),
+              index + 1 < timeline.zooms.count else { return nil }
+        return timeline.zooms[index + 1]
+    }
+
+    /// Whether the playhead is somewhere the active zoom can actually be cut.
+    ///
+    /// Asked before the command so the menu item can be grey rather than inert: a split
+    /// within a few frames of either end would leave a chip too small to see or grab, and
+    /// `ZoomLane.split` refuses it.
+    var canSplitZoom: Bool {
+        guard let zoom = activeZoom else { return false }
+        return ZoomLane.split(zoom, at: playhead) != nil
+    }
+
+    /// One long push-in becomes two, cut at the playhead.
+    ///
+    /// The second half is left selected: the playhead is sitting at its start, so it is the
+    /// part the user is looking at and the one they cut in order to aim somewhere else.
+    func splitZoomAtPlayhead() {
+        guard let zoom = activeZoom else { return }
+        let before = Set(timeline.zooms.map(\.id))
+        apply(Commands.SplitZoom(id: zoom.id, at: playhead))
+        if let fresh = timeline.zooms.first(where: { !before.contains($0.id) }) {
+            select(.zoom(fresh.id))
+        }
+    }
+
+    func mergeZoomWithNext() {
+        guard let zoom = activeZoom, let next = zoomToMergeInto else { return }
+        apply(Commands.MergeZooms(zoom.id, next.id))
+        // The earlier id survives a merge, so the selection lands on a region that is still
+        // there — which is the reason `MergeZooms` keeps it rather than minting a new one.
+        select(.zoom(zoom.id))
+    }
+
+    func toggleZoomLock() {
+        guard let zoom = activeZoom else { return }
+        let locking = !zoom.isLocked
+        apply(Commands.RestyleZoom(id: zoom.id, name: locking ? "Lock Zoom" : "Unlock Zoom") {
+            $0.isLocked = locking
+        })
+    }
+
+    /// Scale, ramp and easing back to what a new zoom has; where it is and what it points at
+    /// left alone. `ZoomLane.reset` says why.
+    func resetZoom() {
+        guard let zoom = activeZoom else { return }
+        apply(Commands.RestyleZoom(id: zoom.id, name: "Reset Zoom") { $0 = ZoomLane.reset($0) })
+    }
+
+    /// Point a zoom at somewhere on the picture.
+    ///
+    /// `center` is normalised to the *recording*, like a blur's rect — the overlay converts
+    /// for us, because it is the only place that knows where the picture landed on screen.
+    /// Clamped here rather than there, so a point that came from a drag off the edge of the
+    /// window cannot be stored.
+    ///
+    /// Following the pointer is turned off in the same step, and that is the one thing here
+    /// that changes a setting the user did not touch. It is the honest reading of the
+    /// gesture: a zoom that follows the cursor works out its own centre every frame, so
+    /// placing a crosshair on a following zoom would be an edit with no effect on any frame.
+    /// One undo puts both back.
+    func aimZoom(_ id: UUID, at point: CGPoint) {
+        let clamped = CGPoint(x: min(1, max(0, point.x)), y: min(1, max(0, point.y)))
+        apply(Commands.RestyleZoom(id: id, name: "Aim Zoom") {
+            $0.center = clamped
+            $0.followsCursor = false
+        })
+    }
+
+    /// Turn the aiming overlay on for a zoom, having selected it.
+    func aimSelectedZoom() {
+        guard let zoom = activeZoom else { return }
+        select(.zoom(zoom.id))
+        tool = .zoom
+    }
+
     func setSpeed(_ speed: Double, of clipID: UUID) {
         guard let index = timeline.clips.firstIndex(where: { $0.id == clipID }) else { return }
         apply(Commands.SetSpeed(CMTimeRange(start: timeline.start(ofClipAt: index),
@@ -805,7 +907,17 @@ final class EditorModel {
             if !quietly { errorMessage = "Nothing in this recording looked like a moment to zoom into." }
             return
         }
-        apply(Commands.AddZooms(regions))
+        // `SuggestZooms`, not `AddZooms`: this button gets pressed more than once over a
+        // take, and appending would double the last run's work and leave it fighting with
+        // whatever the user has placed since. See `ZoomLane.reconciled`.
+        let before = timeline.zooms
+        apply(Commands.SuggestZooms(regions))
+        // A run that proposed things and changed nothing is the ordinary outcome of pressing
+        // the button twice, or of having already covered those moments by hand — and silence
+        // there reads as a broken button rather than as agreement.
+        if timeline.zooms == before, !quietly {
+            errorMessage = "Auto-zoom came up with the same zooms you already have."
+        }
     }
 
     /// An exporter for this project, set up the way the editor is showing it.
