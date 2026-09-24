@@ -393,7 +393,14 @@ extension RecorderBar {
             // keep and nothing to lose — and this is the only moment where changing your
             // mind costs the user nothing at all.
             pill("Cancel") { studio.cancel() }
+                // Escape as well as the button, because that is what Escape means over a
+                // screen that is about to be recorded — but gated on the state rather than
+                // on the layout. Every layer of the stack stays mounted so the bar can
+                // measure it, and `allowsHitTesting(false)` hides a button from the mouse
+                // without hiding its shortcut from the keyboard: ungated, Escape would reach
+                // this while a take was running and discard it.
                 .keyboardShortcut(.cancelAction)
+                .disabled(!studio.session.state.isStarting)
                 .help("Don\u{2019}t record after all")
         }
         .padding(.horizontal, 6)
