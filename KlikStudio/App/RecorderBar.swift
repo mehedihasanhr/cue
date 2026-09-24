@@ -6,10 +6,15 @@ import SwiftUI
 /// The floating recorder bar.
 ///
 /// What the app *is* when it opens: one strip over whatever you are about to record. It
-/// has two shapes — the full set of choices before a take, and, once recording, nothing
-/// but the timer and the two things you might do next. A bar that keeps offering
+/// has four shapes, and each one shows only what applies to it. A bar that keeps offering
 /// "Window / Area / Device" while it is recording is offering decisions that no longer
 /// apply, and taking up the screen it is recording to do it.
+///
+/// Two of the four are new, and they are new because the session had states the bar drew
+/// nothing for. Pressing Record left the setup layout on screen with Record already dead
+/// and the target overlay gone — three silent seconds in which nothing said a recording
+/// was coming or offered to call it off. And a take that failed said nothing at all: the
+/// bar went back to offering another one as though the first had never happened.
 struct RecorderBar: View {
     @Environment(StudioService.self) private var studio
     @Environment(StudioSettings.self) private var settings
@@ -21,35 +26,44 @@ struct RecorderBar: View {
     /// now, so choosing a mode and starting a take are two halves of one gesture.
     let showTargets: (RecorderModel.Mode) -> Void
     @Namespace private var modeChip
-    @State private var setupWidth: CGFloat?
-    @State private var recordingWidth: CGFloat?
+    /// What each shape measured itself at, so the bar can animate an explicit width
+    /// between them. One entry per shape rather than a property each, because the shapes
+    /// are a closed set and the widths are all the same kind of thing.
+    @State private var widths: [Shape: CGFloat] = [:]
 
-    /// The bar has two shapes, and it should travel between them rather than cut.
+    /// The four things the bar can be. Every state of the session maps onto exactly one of
+    /// them — `SessionStateTests` holds that to be true, because a state with no shape is
+    /// precisely the bug this replaced: it draws the wrong layout and says nothing.
+    private enum Shape: Hashable {
+        /// Before a take: what to record, and with what.
+        case setup
+        /// Getting ready and counting down. Nothing is written yet.
+        case starting
+        /// Recording, held, or finishing.
+        case take
+        /// It went wrong, and the reason has to be readable.
+        case failure
+    }
+
+    /// The bar travels between its shapes rather than cutting between them.
     ///
-    /// An `if`/`else` inside the `HStack` made the two shapes *neighbours* for the length
-    /// of the transition: the outgoing wide layout and the incoming narrow one sat side by
-    /// side, so the bar visibly slid left rather than closing in. Both layouts live here
-    /// permanently instead — the unused one transparent and untouchable — which lets the
-    /// bar know both of its widths and animate an explicit one between them. A `ZStack`
-    /// centres what it holds, so the wide shape now contracts from both edges onto the
-    /// small one.
+    /// An `if`/`else` inside the `HStack` made two shapes *neighbours* for the length of the
+    /// transition: the outgoing wide layout and the incoming narrow one sat side by side, so
+    /// the bar visibly slid left rather than closing in. The layouts live here permanently
+    /// instead — the unused ones transparent and untouchable — which lets the bar know each
+    /// of its widths and animate an explicit one between them. A `ZStack` centres what it
+    /// holds, so a wide shape contracts from both edges onto a small one.
     var body: some View {
         ZStack {
-            setupControls
-                .padding(.horizontal, 10)
-                .fixedSize()
-                .background(BarSizeReporter { setupWidth = $0.width })
-                .opacity(isRecording ? 0 : 1)
-                .allowsHitTesting(!isRecording)
-                .accessibilityHidden(isRecording)
-
-            recordingControls
-                .padding(.horizontal, 10)
-                .fixedSize()
-                .background(BarSizeReporter { recordingWidth = $0.width })
-                .opacity(isRecording ? 1 : 0)
-                .allowsHitTesting(isRecording)
-                .accessibilityHidden(!isRecording)
+            layer(.setup) { setupControls }
+            layer(.take) { recordingControls }
+            layer(.starting) { startingControls }
+            // Mounted with a stand-in when nothing has failed, for the same reason the
+            // hidden timer below exists: an unmeasured layer has no width, so the bar would
+            // spend the frame a failure arrives at its own ideal width — the widest thing in
+            // the stack — and then animate down from it. The message block is a fixed width
+            // by design, so the stand-in measures within a few points of the real thing.
+            layer(.failure) { failureControls(studio.session.state.failure ?? .targetDisappeared) }
         }
         .frame(width: barWidth, height: StudioPalette.barHeight)
         .background {
@@ -60,22 +74,45 @@ struct RecorderBar: View {
         .studioGlass(cornerRadius: StudioPalette.barRadius)
         .clipShape(RoundedRectangle(cornerRadius: StudioPalette.barRadius, style: .continuous))
         .shadow(color: .black.opacity(0.4), radius: 26, y: 12)
-        .animation(StudioMotion.shape, value: isRecording)
+        .animation(StudioMotion.shape, value: shape)
         // Also covers the quieter change: the display's name arriving from
         // ScreenCaptureKit widens the setup bar a second after it opens.
         .animation(StudioMotion.shape, value: barWidth)
     }
 
-    /// Nil until the two halves have measured themselves, so the very first frame is the
-    /// bar's own ideal width rather than nothing at all.
-    private var barWidth: CGFloat? {
-        isRecording ? recordingWidth : setupWidth
+    /// One layer of the stack: laid out and measured whether or not it is the one showing,
+    /// transparent and untouchable when it is not.
+    @ViewBuilder
+    private func layer<Content: View>(_ layerShape: Shape, @ViewBuilder content: () -> Content) -> some View {
+        let showing = shape == layerShape
+        content()
+            .padding(.horizontal, 10)
+            .fixedSize()
+            .background(BarSizeReporter { widths[layerShape] = $0.width })
+            .opacity(showing ? 1 : 0)
+            .allowsHitTesting(showing)
+            .accessibilityHidden(!showing)
     }
 
-    private var isRecording: Bool {
+    /// Nil until that shape has measured itself, so the very first frame is the bar's own
+    /// ideal width rather than nothing at all.
+    private var barWidth: CGFloat? {
+        widths[shape]
+    }
+
+    /// Written as an exhaustive switch on purpose. The old version asked "is this
+    /// recording?" and let `default` answer for everything else, which is how `.preparing`,
+    /// `.countdown` and `.failed` all ended up drawing the setup bar. A switch with no
+    /// `default` makes a new state a build error here rather than a wrong layout.
+    private var shape: Shape {
         switch studio.session.state {
-        case .recording, .paused, .finishing: true
-        default: false
+        case .preparing, .countdown: .starting
+        case .recording, .paused, .finishing: .take
+        case .failed: .failure
+        // `.finished` deliberately has no shape of its own. The take is written and the
+        // editor is already coming up over the bar; what the bar owes the user at that
+        // point is to be ready for the next one.
+        case .idle, .finished: .setup
         }
     }
 
@@ -212,6 +249,7 @@ struct RecorderBar: View {
     private var recordingControls: some View {
         HStack(spacing: 10) {
             timer
+            diskWarning
             separator
             Button { studio.togglePause() } label: {
                 Image(systemName: studio.session.isPaused ? "play.fill" : "pause.fill")
@@ -223,6 +261,7 @@ struct RecorderBar: View {
                     .background(.white.opacity(0.12), in: Circle())
             }
             .buttonStyle(BarButtonStyle())
+            .disabled(!studio.session.state.isTaking)
             .help(studio.session.isPaused ? "Resume" : "Pause")
 
             Button { studio.stop() } label: {
@@ -233,6 +272,10 @@ struct RecorderBar: View {
                     .background(.red, in: Circle())
             }
             .buttonStyle(BarButtonStyle())
+            // The same property the bridge's `stop()` guards on, which is the whole point of
+            // it having a name. These two used to disagree about `.paused`: the button was
+            // live, the guard refused, and the take went to the bin.
+            .disabled(!studio.session.state.isTaking)
             .help("Stop and keep this recording")
 
             Button { studio.cancel() } label: {
@@ -243,9 +286,36 @@ struct RecorderBar: View {
                     .background(.white.opacity(0.08), in: Circle())
             }
             .buttonStyle(BarButtonStyle())
+            // The same predicate again, and for a sharper reason than the other two: this
+            // layout also covers `.finishing`, where the manifest is being written and the
+            // file closed. Discarding the package out from under that is a race, and it was
+            // reachable before — nothing here was ever disabled. Abandoning a *countdown*
+            // is a different button, on the layout that owns that state.
+            .disabled(!studio.session.state.isTaking)
             .help("Discard this recording")
         }
         .padding(.horizontal, 6)
+        .animation(StudioMotion.state, value: studio.session.diskWarning)
+    }
+
+    /// The disk running out, said while there is still time to do something about it.
+    ///
+    /// The session has published this from the beginning and nothing has ever drawn it, so
+    /// the first the user heard about a full disk was the recording stopping by itself. It
+    /// sits next to the timer because that is where the eye already is during a take.
+    @ViewBuilder
+    private var diskWarning: some View {
+        if let warning = studio.session.diskWarning {
+            HStack(spacing: 6) {
+                Image(systemName: "externaldrive.badge.exclamationmark")
+                    .font(.system(size: 12))
+                Text(warning)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(.orange)
+            .transition(.opacity)
+        }
     }
 
     @ViewBuilder
@@ -286,6 +356,174 @@ struct RecorderBar: View {
                 .frame(minWidth: 48, alignment: .leading)
         }
         .padding(.leading, 8)
+    }
+}
+
+// MARK: - Getting ready
+
+extension RecorderBar {
+    /// What is about to happen, how long there is left, and a way out.
+    ///
+    /// The three seconds between pressing Record and the first frame used to show the setup
+    /// bar with a dead Record button on it. The countdown exists so that everything
+    /// expensive — permission, content, the writer, the encoder — happens while the user is
+    /// getting out of the way; a bar that does not say so is a bar that looks broken for as
+    /// long as it takes.
+    fileprivate var startingControls: some View {
+        HStack(spacing: 12) {
+            startingDial
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(startingHeadline)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                Text(startingDetail)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(StudioPalette.offered)
+            }
+            .lineLimit(1)
+            // A slot, not a fit: "Starts in 3 seconds" and "Starts in 1 second" are
+            // different widths, and the bar must not step sideways once a second while it
+            // counts.
+            .frame(width: 210, alignment: .leading)
+
+            separator
+
+            // Cancel rather than Stop. Nothing has been written yet, so there is nothing to
+            // keep and nothing to lose — and this is the only moment where changing your
+            // mind costs the user nothing at all.
+            pill("Cancel") { studio.cancel() }
+                // Escape as well as the button, because that is what Escape means over a
+                // screen that is about to be recorded — but gated on the state rather than
+                // on the layout. Every layer of the stack stays mounted so the bar can
+                // measure it, and `allowsHitTesting(false)` hides a button from the mouse
+                // without hiding its shortcut from the keyboard: ungated, Escape would reach
+                // this while a take was running and discard it.
+                .keyboardShortcut(.cancelAction)
+                .disabled(!studio.session.state.isStarting)
+                .help("Don\u{2019}t record after all")
+        }
+        .padding(.horizontal, 6)
+    }
+
+    /// The number, or a spinner for the moment before there is a number.
+    ///
+    /// `.preparing` can last anything from nothing to a second — it is asking
+    /// ScreenCaptureKit for the screen and building an encoder — and a bar that shows
+    /// nothing at all through it is the same silence the countdown was added to break.
+    private var startingDial: some View {
+        ZStack {
+            Circle().stroke(.white.opacity(0.14), lineWidth: 2)
+            if let remaining = studio.session.state.countdownRemaining {
+                Text("\(remaining)")
+                    .font(.system(size: 19, design: .monospaced).weight(.medium))
+                    .foregroundStyle(.white)
+                    .contentTransition(.numericText(countsDown: true))
+                    .animation(StudioMotion.state, value: remaining)
+            } else {
+                ProgressView().controlSize(.small)
+            }
+        }
+        .frame(width: 38, height: 38)
+        .padding(.leading, 6)
+    }
+
+    private var startingHeadline: String {
+        guard studio.session.state.countdownRemaining != nil else { return "Getting ready\u{2026}" }
+        let target = model.targetLabel.isEmpty ? "the screen" : model.targetLabel
+        return "Recording \(target)"
+    }
+
+    private var startingDetail: String {
+        guard let remaining = studio.session.state.countdownRemaining else {
+            return "Setting up the screen and the encoder."
+        }
+        return remaining == 1 ? "Starts in 1 second" : "Starts in \(remaining) seconds"
+    }
+}
+
+// MARK: - When it goes wrong
+
+extension RecorderBar {
+    /// What failed, in the system's own words, and somewhere to go about it.
+    ///
+    /// `.failed` was drawn by nothing, so a recording that could not start — no screen
+    /// permission, a window that closed, a full disk — put the bar back to offering another
+    /// take with no explanation at all. `RecordingError` has always carried one case per
+    /// thing a user can act on, and a recovery suggestion for the ones with an obvious next
+    /// step; none of it had ever reached a screen.
+    fileprivate func failureControls(_ error: RecordingError) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 17))
+                .foregroundStyle(.orange)
+                .padding(.leading, 6)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(error.errorDescription ?? "The recording stopped.")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                Text(error.recoverySuggestion ?? Self.fallbackSuggestion)
+                    .font(.system(size: 11))
+                    .foregroundStyle(StudioPalette.offered)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            // Fixed, because the bar is a strip over someone's screen: a writer error
+            // quoting AVFoundation verbatim would otherwise stretch it past the edge of
+            // the display.
+            .frame(width: 290, alignment: .leading)
+
+            separator
+
+            // The pane the user actually needs. Screen and microphone are two different
+            // lists in System Settings, and sending someone to the wrong one means sending
+            // them to a switch that is already on.
+            switch error {
+            case .permissionDenied:
+                pill("Open Settings") { model.openScreenRecordingSettings() }
+            case .microphoneDenied:
+                pill("Open Settings") { model.openMicrophoneSettings() }
+            default:
+                // Somewhere to go even when there is nothing to fix. An interruption
+                // finishes the file rather than discarding it, so for a good half of these
+                // there is a take in the library to go and look at.
+                pill("Recordings\u{2026}") { showLibrary() }
+            }
+
+            Button { studio.dismissFailure() } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.75))
+                    .frame(width: 30, height: 30)
+                    .background(.white.opacity(0.08), in: Circle())
+            }
+            .buttonStyle(BarButtonStyle())
+            .help("Dismiss")
+            .padding(.trailing, 2)
+        }
+        .padding(.horizontal, 6)
+    }
+
+    /// For the cases with no suggestion of their own — a window that closed, a device that
+    /// went away. It says what became of the file, which is the question anyone asks first.
+    private static var fallbackSuggestion: String {
+        "Nothing was written. Choose what to record and try again."
+    }
+
+    /// The bar's one text button. Quiet enough to sit on glass over someone's screen, and
+    /// the same shape wherever it appears.
+    fileprivate func pill(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12.5, weight: .medium))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .frame(height: 34)
+                .background(.white.opacity(0.14), in: Capsule())
+        }
+        .buttonStyle(BarButtonStyle(pressedScale: 0.96))
     }
 }
 

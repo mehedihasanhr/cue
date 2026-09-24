@@ -30,6 +30,69 @@ public final class RecordingSession {
             case .preparing, .countdown, .recording, .paused, .finishing: true
             }
         }
+
+        /// A take is under way: something has been written, or is being written right now.
+        ///
+        /// The one answer to "may this be stopped, and does stopping keep the file?", and
+        /// the reason it exists at all. Stop used to be decided twice — once by the bar,
+        /// which counted `.paused` as recording, and once by the bridge's `stop()`, which
+        /// matched `.recording` alone. The two disagreed for exactly one state, and in that
+        /// state the button was live and the guard silently refused: pause, then stop, and
+        /// the take was gone. A single predicate that both the button's enablement and the
+        /// guard read cannot disagree with itself, which is a stronger guarantee than
+        /// adding a second `case .paused` to the guard and hoping the next reader copies it.
+        ///
+        /// `.paused` counts because pausing holds the file open rather than closing it:
+        /// `stop()` resumes first and then finishes, so the recorded stretch survives.
+        /// `.finishing` does not — the stop already happened.
+        public var isTaking: Bool {
+            switch self {
+            case .recording, .paused: true
+            case .idle, .preparing, .countdown, .finishing, .finished, .failed: false
+            }
+        }
+
+        /// Getting ready: permission, content, the writer, the encoder, and the countdown
+        /// that hides all of it. Nothing is written yet, so there is nothing here to lose
+        /// by cancelling — which is why this is a different question from `isTaking`.
+        public var isStarting: Bool {
+            switch self {
+            case .preparing, .countdown: true
+            case .idle, .recording, .paused, .finishing, .finished, .failed: false
+            }
+        }
+
+        /// Seconds left before the first frame, or `nil` when nothing is counting down.
+        public var countdownRemaining: Int? {
+            if case .countdown(let remaining) = self { remaining } else { nil }
+        }
+
+        /// What went wrong, for a UI that has to say it. A failure the user cannot read is
+        /// the same as no failure at all.
+        public var failure: RecordingError? {
+            if case .failed(let error) = self { error } else { nil }
+        }
+
+        /// The hold, as a state change rather than as a side effect.
+        ///
+        /// `nil` when there is nothing to hold. Pulled out of `pause()` so that the pause
+        /// and resume arithmetic — the half of stopping-while-paused that decides whether
+        /// the take can still be finished — is provable in a test, which the capture path
+        /// around it never can be: it needs a screen, a permission grant and an encoder.
+        func held(at now: Date) -> Self? {
+            guard case .recording(let started) = self else { return nil }
+            return .paused(startedAt: started, at: now)
+        }
+
+        /// Letting go of the hold. `nil` when nothing is being held.
+        ///
+        /// The start time moves forward by the length of the hold, so the elapsed time a UI
+        /// shows counts recorded seconds rather than wall-clock ones — the paused stretch is
+        /// absent from the file, so it must be absent from the clock too.
+        func released(at now: Date) -> Self? {
+            guard case .paused(let started, let pausedAt) = self else { return nil }
+            return .recording(startedAt: started.addingTimeInterval(now.timeIntervalSince(pausedAt)))
+        }
     }
 
     public private(set) var state: State = .idle
@@ -88,10 +151,25 @@ public final class RecordingSession {
             return
         }
 
+        // Cancelled while getting ready. `cancel()` ran before any of the above existed,
+        // so the writer and the stream that arrived after it are still here and still
+        // holding a file — they have to go the same way, or the app keeps an encoder open
+        // that nothing can reach. Worth guarding now that the bar offers a Cancel during
+        // the countdown: before, nothing could interrupt this window.
+        guard case .preparing = state else {
+            await discard()
+            return
+        }
+
         for remaining in stride(from: countdown, to: 0, by: -1) {
             state = .countdown(remaining: remaining)
             try? await Task.sleep(for: .seconds(1))
-            if case .failed = state { return }
+            // "Is this still my countdown?" rather than a list of the states that mean
+            // stop: a state added later would not be on such a list, and the cost of
+            // missing one here is a bar that counts down, reports itself as recording and
+            // writes nothing. A cancel has already discarded the package by this point,
+            // so returning is the whole of the work.
+            guard state.countdownRemaining == remaining else { return }
         }
 
         do {
@@ -215,22 +293,20 @@ public final class RecordingSession {
     /// writer stops accepting buffers and remembers how long the hold lasted, so the
     /// paused stretch is absent from the file rather than frozen in it.
     public func pause() {
-        guard case .recording(let started) = state, let writer else { return }
+        guard let held = state.held(at: .now), let writer else { return }
         queue.async { writer.setPaused(true) }
         cursor?.stop()
         focus?.stop()
-        state = .paused(startedAt: started, at: .now)
+        state = held
         Self.log.notice("Paused")
     }
 
     public func resume() {
-        guard case .paused(let started, let pausedAt) = state, let writer else { return }
+        guard let released = state.released(at: .now), let writer else { return }
         queue.async { writer.setPaused(false) }
         cursor?.start()
         focus?.start()
-        // The start time is moved forward by the pause, so the elapsed time a UI shows
-        // counts recorded seconds rather than wall-clock ones.
-        state = .recording(startedAt: started.addingTimeInterval(Date.now.timeIntervalSince(pausedAt)))
+        state = released
         Self.log.notice("Resumed")
     }
 
@@ -241,7 +317,12 @@ public final class RecordingSession {
 
     @discardableResult
     public func stop() async -> Result<URL, RecordingError> {
-        if case .paused = state { resume() }
+        // A paused take is stopped by letting it go first: the file is still open, so
+        // finishing it keeps every recorded second. This is the behaviour the bar promises
+        // and `isTaking` is what both of them ask, so neither can be stricter than the
+        // other.
+        guard state.isTaking else { return .failure(.notRecording) }
+        resume()
         guard case .recording = state, let writer, let package, let configuration else {
             return .failure(.notRecording)
         }
@@ -270,11 +351,30 @@ public final class RecordingSession {
     /// want kept.
     public func cancel() async {
         guard state.isBusy else { return }
+        await discard()
+        state = .idle
+    }
+
+    /// Tears the apparatus down and throws the file away, whatever state we are in.
+    ///
+    /// Split out of `cancel()` so `start()` can undo a half-built recording whose state
+    /// has already been reset out from under it — `cancel()`'s own guard would refuse that
+    /// case, which is the one that leaks an encoder.
+    private func discard() async {
         await teardown()
         writer?.cancel()
         package?.discard()
-        state = .idle
         reset()
+    }
+
+    /// Puts a reported failure away.
+    ///
+    /// `.failed` is terminal, and a bar that draws it — which it now does — needs a way
+    /// back to offering a take. Nothing else changes: the apparatus was already torn down
+    /// by whoever failed, so this only clears what is on screen.
+    public func acknowledgeFailure() {
+        guard case .failed = state else { return }
+        state = .idle
     }
 
     /// Something stopped on its own. What is recorded so far is worth keeping, so this
@@ -283,7 +383,11 @@ public final class RecordingSession {
         guard state.isBusy else { return }
         Self.log.error("Interrupted: \(error.localizedDescription ?? "unknown", privacy: .public)")
         Task {
-            if case .recording = state {
+            // The same predicate as the bar's Stop button, for the same reason: a take
+            // interrupted while it was paused is still a take with seconds in it, and
+            // matching `.recording` alone here threw those away — the opposite of what the
+            // comment above promises.
+            if state.isTaking {
                 _ = await stop()
             } else {
                 await cancel()
