@@ -201,6 +201,10 @@ final class EditorModel {
 
     private func stop() {
         isPlaying = false
+        // Playback stopping ends a take, whether the playhead ran into the end of the edit
+        // or somebody pressed space: narration is recorded against the picture, and going
+        // on recording while the picture stands still would be recording against nothing.
+        voiceover?.stop()
         audio?.pause()
         ticker?.stop()
         ticker = nil
@@ -479,6 +483,146 @@ final class EditorModel {
         }
     }
 
+    // MARK: - Voiceover
+
+    /// The take being recorded, or `nil` when none is. Read by the inspector so the panel
+    /// can count in and offer Stop.
+    private(set) var voiceover: VoiceoverRecorder?
+
+    /// The timeline time the current take punched in at.
+    ///
+    /// Read once, at the instant the file opened, and never recomputed: by the time the
+    /// take stops the playhead has moved on by however long it lasted, so asking then
+    /// would place every voiceover at its own end.
+    private var voiceoverPunchIn: CMTime?
+
+    var isRecordingVoiceover: Bool { voiceover?.state.isBusy == true }
+
+    func toggleVoiceover() {
+        isRecordingVoiceover ? stopVoiceover() : startVoiceover()
+    }
+
+    /// Records narration against the edit, starting at the playhead.
+    ///
+    /// The permission comes first and on its own: a dialog that appears *during* a
+    /// count-in would eat the count-in, and a refusal has to be something the editor says
+    /// out loud rather than a take that turns out to be silence.
+    func startVoiceover() {
+        guard voiceover == nil else { return }
+        guard duration - playhead >= Clip.minimumDuration else {
+            errorMessage = "There is no room at the playhead for a voiceover. Move it back and try again."
+            return
+        }
+
+        Task {
+            do {
+                try await VoiceoverRecorder.requestAccess()
+            } catch let denial as RecordingError {
+                // Said in full, because the two halves are different facts: what is
+                // missing, and where to go and grant it.
+                errorMessage = [denial.errorDescription, denial.recoverySuggestion]
+                    .compactMap { $0 }
+                    .joined(separator: " ")
+                return
+            } catch {
+                report(error)
+                return
+            }
+            guard voiceover == nil, isRecordingVoiceover == false else { return }
+            arm()
+        }
+    }
+
+    private func arm() {
+        // A take starts from a stationary playhead: the count-in is time to draw breath,
+        // and the picture running through it would leave the first words over the wrong
+        // few seconds.
+        if isPlaying { stop() }
+
+        let recorder = VoiceoverRecorder(
+            deviceID: settings?.microphoneID,
+            countIn: settings?.voiceoverCountInSeconds ?? 3,
+            onPunchIn: { [weak self] in self?.voiceoverDidPunchIn() },
+            onFinish: { [weak self] result in self?.voiceoverDidFinish(result) }
+        )
+        voiceover = recorder
+        // Before anything is written, not when the file opens: the speakers have to be
+        // quiet for the whole of the take, including the moment it begins.
+        audio?.silenceForCapture()
+
+        do {
+            try recorder.arm()
+        } catch {
+            voiceover = nil
+            audio?.stopSilencingForCapture()
+            report(error)
+        }
+    }
+
+    /// The file is open. This is the take's zero, and the moment the edit starts playing.
+    private func voiceoverDidPunchIn() {
+        voiceoverPunchIn = playhead
+        if !isPlaying { play() }
+    }
+
+    func stopVoiceover() {
+        voiceover?.stop()
+    }
+
+    private func voiceoverDidFinish(_ result: Result<URL, Error>) {
+        let punchIn = voiceoverPunchIn ?? playhead
+        voiceoverPunchIn = nil
+        voiceover = nil
+        audio?.stopSilencingForCapture()
+        if isPlaying { stop() }
+
+        switch result {
+        case .success(let url):
+            Task { await adoptVoiceover(url, punchedInAt: punchIn) }
+        case .failure(let error):
+            // A cancelled take is something the user did, not something that went wrong.
+            guard (error as? RecordingError) != .cancelled else { return }
+            report(error)
+        }
+    }
+
+    /// Brings a finished take into the project.
+    ///
+    /// The same road an imported sound takes — copied into the package's `Audio` folder,
+    /// laid down as an `AudioRegion` through one command — because a voiceover is an
+    /// imported sound that happened to be recorded here, and two ways of getting sound
+    /// into a package would be two things to keep working.
+    ///
+    /// A re-take adds another region beside the last one rather than over it: the file has
+    /// its own name and the region its own identity, so the previous take stays on the lane
+    /// to be listened to, muted or deleted. Nothing is thrown away on the user's behalf.
+    private func adoptVoiceover(_ url: URL, punchedInAt punchIn: CMTime) async {
+        // The take was written somewhere temporary; once it has been copied in — or
+        // failed to be — the original has no reason to exist.
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        do {
+            let sound = try await SoundImport.copy(url, into: packageURL)
+            guard let placement = timeline.voiceoverPlacement(punchedInAt: punchIn,
+                                                              recorded: sound.duration) else {
+                // Nothing will refer to the copy, so it does not stay in the package.
+                try? FileManager.default.removeItem(at: packageURL.appendingPathComponent(sound.path))
+                errorMessage = "That take was too short to put on the timeline."
+                return
+            }
+            let region = AudioRegion(start: placement.start,
+                                     duration: placement.duration,
+                                     path: sound.path)
+            apply(Commands.AddAudio(region, name: "Record Voiceover"))
+            select(.audio(region.id))
+            if placement.wasTrimmed {
+                errorMessage = "The voiceover ran past the end of the video, so the region stops there. The whole take is in the file — drag the region's edge if you want more of it."
+            }
+        } catch {
+            report(error)
+        }
+    }
+
     /// Mutes or unmutes the recording's own sound.
     func toggleRecordedSound() {
         let muted = timeline.sound.isMuted
@@ -623,6 +767,10 @@ final class EditorModel {
 
     /// Stops playing, and lets go of the sound. For a window on its way out.
     func silence() {
+        // Cancelled rather than stopped: a window on its way out has nowhere to put a
+        // take, and adding a region to a document that is closing would be worse than
+        // losing the few seconds it holds.
+        voiceover?.cancel()
         if isPlaying { stop() }
         audio?.cancel()
         waveform.cancel()
