@@ -208,7 +208,7 @@ final class EditorModel {
     func refresh() {
         renderTask?.cancel()
         validateSelection()
-        let scene = builder.descriptor(for: renderedTimeline, at: playhead, cursor: document.cursorTrack)
+        let scene = builder.descriptor(for: renderedTimeline, at: playhead, cursor: smoothedCursor)
         self.scene = scene
         let frames = frames
 
@@ -222,6 +222,23 @@ final class EditorModel {
             await frames?.prefetch(around: scene.sourceTime, forward: isPlaying)
         }
     }
+
+    /// The recorded pointer, smoothed, computed only when it has to be.
+    ///
+    /// Smoothing filters every sample in the recording twice — 150,000 of them in a long
+    /// take. It used to happen inside the builder, which meant redoing it on every
+    /// preview frame and every exported frame; scrubbing a long recording spent most of
+    /// its time re-filtering a track that had not changed. Cached against the setting it
+    /// was made with, so moving the slider still takes effect immediately.
+    private var smoothedCursor: CursorTrack {
+        let amount = timeline.cursor.smoothing
+        if let cache = cursorCache, cache.amount == amount { return cache.track }
+        let track = document.cursorTrack.smoothed(amount)
+        cursorCache = (amount, track)
+        return track
+    }
+
+    @ObservationIgnored private var cursorCache: (amount: Double, track: CursorTrack)?
 
     private func refreshIfIdle() {
         guard renderTask == nil else { return }

@@ -1,4 +1,5 @@
 import AppKit
+import BackgroundKit
 import CoreMedia
 import RenderKit
 import SwiftUI
@@ -22,6 +23,9 @@ struct RegionCanvas: View {
 
     @State private var draft: CGRect?
     @State private var gestureOrigin: CGRect?
+    /// The annotation being typed into, if any.
+    @State private var editingID: UUID?
+    @FocusState private var isTyping: Bool
 
     private var geometry: CanvasGeometry {
         CanvasGeometry(stage: stage, scene: model.scene)
@@ -93,8 +97,16 @@ struct RegionCanvas: View {
                 .frame(width: rect.width, height: rect.height)
                 .offset(x: rect.minX, y: rect.minY)
                 .contentShape(Rectangle())
+                // Double-click to type has to come first: registered after the single
+                // tap, SwiftUI hands the first click to selection and the second never
+                // arrives as a pair.
+                .onTapGesture(count: 2) { if case .annotation = kind { beginEditing(id) } }
                 .onTapGesture { select(id: id, kind: kind) }
                 .gesture(moveDrag(id: id, kind: kind))
+
+            if case .annotation(let item) = kind, editingID == id {
+                editor(for: item, in: rect)
+            }
 
             if isSelected {
                 ForEach(Corner.allCases) { corner in
@@ -118,7 +130,7 @@ struct RegionCanvas: View {
                 .strokeBorder(isSelected ? Color.accentColor : .white.opacity(0.35),
                               lineWidth: isSelected ? 2 : 1)
                 .overlay(alignment: .topLeading) {
-                    if case .text(let string) = item.kind, string.isEmpty {
+                    if case .text(let string) = item.kind, string.isEmpty, editingID != item.id {
                         Text("Double-click to type")
                             .font(.system(size: 10))
                             .foregroundStyle(.white.opacity(0.7))
@@ -126,6 +138,55 @@ struct RegionCanvas: View {
                     }
                 }
         }
+    }
+
+    /// Typing straight onto the picture.
+    ///
+    /// The alternative — draw a box, then go and find the inspector to say what it says —
+    /// is how a label ends up empty in an export. A new text annotation opens this
+    /// immediately, so drawing one and typing into it is a single motion.
+    private func editor(for item: AnnotationItem, in rect: CGRect) -> some View {
+        TextField("", text: text(of: item.id), axis: .vertical)
+            .textFieldStyle(.plain)
+            .multilineTextAlignment(.leading)
+            .font(.system(size: max(9, rect.height * 0.5), weight: .semibold))
+            .foregroundStyle(Color(item.color.rgba.nsColor))
+            .padding(4)
+            .background(.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+            .frame(width: rect.width, height: rect.height, alignment: .topLeading)
+            .offset(x: rect.minX, y: rect.minY)
+            .focused($isTyping)
+            .onSubmit { endEditing() }
+            .onExitCommand { endEditing() }
+            .onAppear { isTyping = true }
+    }
+
+    private func text(of id: UUID) -> Binding<String> {
+        Binding {
+            guard let item = model.timeline.annotations.first(where: { $0.id == id }),
+                  case .text(let string) = item.kind else { return "" }
+            return string
+        } set: { string in
+            model.restyleAnnotation(id, "Annotation Text") { $0.kind = .text(string) }
+        }
+    }
+
+    private func beginEditing(_ id: UUID) {
+        model.select(.annotation(id))
+        editingID = id
+    }
+
+    /// Leaves typing, and takes an empty label away with it.
+    ///
+    /// A blank text annotation draws nothing at all, so leaving one behind would be an
+    /// invisible object on the timeline that the user cannot see to delete.
+    private func endEditing() {
+        defer { editingID = nil; isTyping = false }
+        guard let editingID,
+              let item = model.timeline.annotations.first(where: { $0.id == editingID }),
+              case .text(let string) = item.kind,
+              string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        model.deleteSelection(editingID)
     }
 
     private func select(id: UUID, kind: Kind) {
@@ -179,7 +240,9 @@ struct RegionCanvas: View {
                 if isBlurring {
                     model.addBlur(rect: geometry.blur(view: drawn))
                 } else {
-                    model.addAnnotation(.text(""), rect: geometry.annotation(view: drawn))
+                    // Straight into typing: a label drawn and then abandoned because the
+                    // caret was somewhere else is an empty box in the export.
+                    beginEditing(model.addAnnotation(.text(""), rect: geometry.annotation(view: drawn)))
                 }
             }
     }

@@ -226,3 +226,71 @@ struct CaptionTests {
         #expect(timeline.captionStyle == CaptionStyle())
     }
 }
+
+/// Where the camera looks when it follows the pointer.
+struct CameraTrackTests {
+    /// A hand jittering in place must not move the camera.
+    ///
+    /// Averaged over the recorded samples rather than probed at a fixed rate: probing
+    /// aliases against the jitter and produces an "average" that swings as widely as the
+    /// pointer does, which is the bug this replaced.
+    @Test func averagingIgnoresJitterWhateverItsRate() {
+        for period in [2.0, 3.0, 5.0, 7.0] {
+            let samples = (0...400).map { step in
+                CursorSample(t: Double(step) / 100,
+                             x: 500 + 60 * sin(2 * .pi * Double(step) / period),
+                             y: 300,
+                             shape: .arrow)
+            }
+            let track = CursorTrack(samples: samples)
+
+            // How far each travels over the same stretch. Comparing travel rather than
+            // distance from a nominal centre, because "the average" of an uneven wobble
+            // is not the middle of its range — the property that matters is that the
+            // camera moves much less than the hand does.
+            var cameraTravel = 0.0
+            var pointerTravel = 0.0
+            var lastCamera: Double?
+            var lastPointer: Double?
+            for step in 0...60 {
+                let at = 2 + Double(step) / 60
+                let camera = try! #require(track.averagePosition(at: at, window: 0.7)).x
+                let pointer = try! #require(track.position(at: at)).x
+                if let lastCamera { cameraTravel += abs(camera - lastCamera) }
+                if let lastPointer { pointerTravel += abs(pointer - lastPointer) }
+                lastCamera = camera
+                lastPointer = pointer
+            }
+
+            #expect(cameraTravel < pointerTravel / 4,
+                    "jitter every \(period) samples leaked into the camera: \(cameraTravel) vs \(pointerTravel)")
+        }
+    }
+
+    /// Steady travel still has to be followed, or the camera never arrives.
+    @Test func averagingStillFollowsRealMovement() {
+        let samples = (0...400).map {
+            CursorSample(t: Double($0) / 100, x: Double($0) * 2, y: 0, shape: .arrow)
+        }
+        let track = CursorTrack(samples: samples)
+        let early = try! #require(track.averagePosition(at: 1, window: 0.7))
+        let later = try! #require(track.averagePosition(at: 3, window: 0.7))
+
+        #expect(later.x > early.x + 300, "the camera has to keep up with the work")
+        // Behind the pointer, because it is averaging what just happened — that lag is
+        // the whole point.
+        let now = try! #require(track.position(at: 3))
+        #expect(later.x < now.x)
+    }
+
+    @Test func aSparseTrackFallsBackToInterpolating() {
+        let track = CursorTrack(samples: [CursorSample(t: 0, x: 0, y: 0, shape: .arrow),
+                                          CursorSample(t: 10, x: 1_000, y: 0, shape: .arrow)])
+        let averaged = try! #require(track.averagePosition(at: 5, window: 0.7))
+        #expect(abs(averaged.x - 500) < 1, "two samples ten seconds apart is not a still hand")
+    }
+
+    @Test func anEmptyTrackAveragesToNothing() {
+        #expect(CursorTrack(samples: []).averagePosition(at: 1, window: 0.7) == nil)
+    }
+}

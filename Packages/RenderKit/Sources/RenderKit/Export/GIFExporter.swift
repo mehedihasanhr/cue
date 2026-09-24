@@ -70,6 +70,8 @@ struct GIFExporter {
         ] as CFDictionary
 
         let renderer = SceneRenderer()
+        // Smoothed once, not per frame, for the reason in `VideoExporter`.
+        let cursor = cursor?.smoothed(timeline.cursor.smoothing)
         let started = Date.now
         var lastReport = Date.distantPast
 

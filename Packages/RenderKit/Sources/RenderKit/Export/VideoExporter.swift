@@ -130,6 +130,9 @@ public actor VideoExporter {
         audioReader?.startReading()
 
         let renderer = SceneRenderer()
+        // Smoothed once, not per frame: the filter runs over every sample in the
+        // recording, and an export asks for thousands of frames.
+        let cursor = cursor?.smoothed(timeline.cursor.smoothing)
         let started = Date.now
         var framesWritten = 0
         var lastReport = Date.distantPast

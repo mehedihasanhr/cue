@@ -124,6 +124,145 @@ struct SceneTests {
         #expect(abs(scene.zoomCenter.y - 0.5) < 0.01)
     }
 
+    /// The camera must not be welded to the pointer.
+    ///
+    /// At 2× every twitch of a hand is 2× on screen. A camera that copies the mouse
+    /// exactly is the single thing that makes a zoom unwatchable, so it has to move
+    /// markedly less than the pointer it is following.
+    @Test func theCameraDoesNotCopyEveryTwitchOfThePointer() {
+        var timeline = timeline()
+        timeline.cursor.smoothing = 0
+        timeline.zooms = [ZoomRegion(start: .zero, duration: time(10), scale: 2,
+                                     transition: time(1), followsCursor: true)]
+
+        // A hand resting near the middle, jittering either side of it.
+        var samples: [CursorSample] = []
+        for step in 0...200 {
+            let t = Double(step) / 20
+            let jitter = step.isMultiple(of: 2) ? 60.0 : -60.0
+            samples.append(CursorSample(t: t, x: 400 + jitter, y: 250, shape: .arrow))
+        }
+        let track = CursorTrack(samples: samples)
+        let builder = builder()
+
+        // How far the camera travels across a second in the middle of the zoom.
+        var travelled = 0.0
+        var previous: Double?
+        for step in 0...30 {
+            let at = 5 + Double(step) / 30
+            let centre = builder.descriptor(for: timeline, at: time(at), cursor: track).zoomCenter.x
+            if let previous { travelled += abs(centre - previous) }
+            previous = centre
+        }
+
+        // The pointer itself swings 120 points — 0.15 of the 800-point-wide frame — on
+        // every one of those samples. The camera must be far calmer than that.
+        #expect(travelled < 0.15, "the camera rode the jitter: travelled \(travelled)")
+    }
+
+    /// Starting a zoom must not snap the camera onto the pointer.
+    ///
+    /// The centre is blended in as the zoom arrives; cutting to the pointer at the first
+    /// frame lurches, and the edge-clamp then drags the centre across the frame as the
+    /// margin opens up.
+    @Test func theCameraArrivesRatherThanLurching() {
+        var timeline = timeline()
+        timeline.cursor.smoothing = 0
+        timeline.zooms = [ZoomRegion(start: .zero, duration: time(10), scale: 2,
+                                     center: CGPoint(x: 0.5, y: 0.5),
+                                     transition: time(2), followsCursor: true)]
+        // The pointer sits well off to one side the whole time.
+        let track = CursorTrack(samples: [CursorSample(t: 0, x: 700, y: 250, shape: .arrow),
+                                          CursorSample(t: 10, x: 700, y: 250, shape: .arrow)])
+        let builder = builder()
+
+        let early = builder.descriptor(for: timeline, at: time(0.1), cursor: track).zoomCenter.x
+        let settled = builder.descriptor(for: timeline, at: time(5), cursor: track).zoomCenter.x
+
+        #expect(abs(early - 0.5) < 0.1, "it starts from the centre it was given, not from the pointer")
+        #expect(settled > early, "and travels towards the pointer as the zoom arrives")
+    }
+
+    /// The pointer must stay inside the frame the zoom is showing.
+    ///
+    /// The camera follows an average of where the pointer has been, so it necessarily
+    /// lags the pointer itself — and the cursor is drawn where it actually is. At 2× and
+    /// above, that gap is magnified until the pointer slides out of the zoomed frame
+    /// altogether and the viewer is watching the wrong part of the screen while the
+    /// cursor does the work somewhere off-screen.
+    ///
+    /// Following has to lag. Losing the subject is a different thing.
+    @Test func theZoomNeverLosesThePointer() {
+        var timeline = timeline()
+        timeline.cursor.smoothing = 0
+        timeline.zooms = [ZoomRegion(start: .zero, duration: time(10), scale: 2.5,
+                                     transition: time(0.5), followsCursor: true)]
+
+        // Still, then a flick, then still again — the shape of almost every real pointer
+        // move. 640 points in a third of a second is an unremarkable speed for reaching
+        // across to a toolbar; the average the camera follows cannot keep up with it.
+        var samples: [CursorSample] = []
+        for step in 0...400 {
+            let t = Double(step) / 40
+            let x: Double = switch t {
+            case ..<2: 80
+            case ..<2.3: 80 + 640 * ((t - 2) / 0.3)
+            default: 720
+            }
+            samples.append(CursorSample(t: t, x: x, y: 250, shape: .arrow))
+        }
+        let track = CursorTrack(samples: samples)
+        let builder = builder()
+
+        var worst = 0.0
+        var worstAt = 0.0
+        for step in 0...80 {
+            let at = 1 + Double(step) / 20
+            let scene = builder.descriptor(for: timeline, at: time(at), cursor: track)
+            guard let cursor = scene.cursor else { continue }
+            // What the zoomed frame actually shows, in the same unit space the cursor
+            // and the camera centre are both expressed in.
+            let half = 0.5 / scene.zoom
+            let overshoot = max(abs(cursor.position.x - scene.zoomCenter.x) - half,
+                                abs(cursor.position.y - scene.zoomCenter.y) - half)
+            if overshoot > worst { worst = overshoot; worstAt = at }
+        }
+
+        #expect(worst <= 0, "the pointer left the zoomed frame by \(worst) of it at \(worstAt)s")
+    }
+
+    /// A pointer in the corner is kept in shot without the frame leaving the picture.
+    ///
+    /// The two rules pull against each other there: keeping the pointer in frame wants the
+    /// camera past the edge, and the picture bound says it cannot go. The picture wins —
+    /// otherwise a zoom in the corner shows empty canvas, which is the one thing the
+    /// background modes are allowed to decide and the camera is not.
+    @Test func aPointerInTheCornerIsHeldWithoutShowingEmptyCanvas() {
+        var timeline = timeline()
+        timeline.cursor.smoothing = 0
+        timeline.zooms = [ZoomRegion(start: .zero, duration: time(10), scale: 2,
+                                     transition: time(0.2), followsCursor: true)]
+        // Hard into the top-left corner of the 800 × 500 recorded frame.
+        let track = CursorTrack(samples: [CursorSample(t: 0, x: 4, y: 3, shape: .arrow),
+                                          CursorSample(t: 10, x: 4, y: 3, shape: .arrow)])
+
+        let scene = builder().descriptor(for: timeline, at: time(5), cursor: track)
+        let half = 0.5 / scene.zoom
+
+        // The frame stays on the picture...
+        #expect(scene.zoomCenter.x >= half - 0.0001)
+        #expect(scene.zoomCenter.y >= half - 0.0001)
+        #expect(scene.zoomCenter.x <= 1 - half + 0.0001)
+        #expect(scene.zoomCenter.y <= 1 - half + 0.0001)
+
+        // ...and the pointer is still inside it.
+        let cursor = try? #require(scene.cursor)
+        if let cursor {
+            #expect(abs(cursor.position.x - scene.zoomCenter.x) <= half)
+            #expect(abs(cursor.position.y - scene.zoomCenter.y) <= half)
+        }
+    }
+
     // MARK: - Layers
 
     @Test func onlyWhatIsOnScreenNowIsDescribed() {

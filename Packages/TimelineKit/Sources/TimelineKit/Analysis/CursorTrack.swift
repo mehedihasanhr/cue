@@ -100,6 +100,54 @@ public struct CursorTrack: Sendable {
         return 1 - depth * sin(progress * .pi * 2) * (1 - progress)
     }
 
+    /// Where the pointer has been lately, averaged — the camera's idea of where to look.
+    ///
+    /// Following the pointer exactly is what makes a zoom unwatchable: at 2× every
+    /// twitch of a hand is 2× on screen, and the viewer is riding the mouse rather than
+    /// watching the work. A camera operator lags the subject and smooths out the
+    /// fidgeting, and this is the cheapest honest way to do that.
+    ///
+    /// Averaged over a window rather than simulated with a spring, deliberately:
+    /// scrubbing to a moment must give exactly the same frame as playing to it, and a
+    /// stateful simulation gives a different answer depending on how you arrived. The
+    /// same rule `Easing.spring` is evaluated under.
+    /// - Parameter window: how far back to look, in seconds.
+    public func averagePosition(at time: Double, window: Double) -> CGPoint? {
+        guard window > 0, !samples.isEmpty else { return position(at: time) }
+        let from = time - window
+
+        // Every recorded sample in the window, not a fixed number of probes across it.
+        // Probing at a fixed rate aliases: a hand jittering at 10 Hz sampled 12 times a
+        // window lands on the same phase repeatedly and the "average" swings as widely
+        // as the pointer does. Averaging what was actually recorded cannot alias.
+        var low = 0
+        var high = samples.count - 1
+        while low < high {
+            let middle = (low + high) / 2
+            if samples[middle].t < from { low = middle + 1 } else { high = middle }
+        }
+
+        var total = CGPoint.zero
+        var weightTotal = 0.0
+        var index = low
+        while index < samples.count, samples[index].t <= time {
+            let sample = samples[index]
+            // Weighted towards now: the far end of the window steers, the near end
+            // decides, so the camera leads rather than trailing a long way behind.
+            let age = time - sample.t
+            let weight = max(0.05, 1 - age / (window * 1.6))
+            total.x += sample.x * weight
+            total.y += sample.y * weight
+            weightTotal += weight
+            index += 1
+        }
+
+        // Fewer than two samples in the window means a sparse track, not a still hand:
+        // interpolating is a better answer than the one sample that happened to land.
+        guard weightTotal > 0, index - low > 1 else { return position(at: time) }
+        return CGPoint(x: total.x / weightTotal, y: total.y / weightTotal)
+    }
+
     /// How fast the pointer was moving, and which way.
     ///
     /// Direction as well as magnitude, because motion blur has to be smeared *along* the
