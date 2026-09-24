@@ -32,6 +32,9 @@ extension Timeline {
 
         public let cuts: [Cut]
         public let sounds: [Sound]
+        /// What the recording's own sound is doing. Muting it removes tracks from the
+        /// mix rather than merely turning them down, so it has to be built again.
+        public let recorded: SoundStyle
     }
 
     /// What the sound of this edit depends on.
@@ -47,7 +50,8 @@ extension Timeline {
             sounds: audio.map {
                 .init(path: $0.path, start: $0.start, duration: $0.duration,
                       sourceStart: $0.sourceStart, gain: $0.gain)
-            }
+            },
+            recorded: sound
         )
     }
 }

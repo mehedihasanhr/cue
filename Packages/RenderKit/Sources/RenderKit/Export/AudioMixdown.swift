@@ -36,8 +36,8 @@ public enum AudioMixdown {
                              videoURL: URL,
                              packageURL: URL?) async -> Result {
         let composition = AVMutableComposition()
-        await appendRecordedAudio(of: timeline, from: videoURL, into: composition)
-        let parameters = await appendAudioRegions(of: timeline, packageURL: packageURL, into: composition)
+        var parameters = await appendRecordedAudio(of: timeline, from: videoURL, into: composition)
+        parameters += await appendAudioRegions(of: timeline, packageURL: packageURL, into: composition)
 
         var mix: AVAudioMix?
         if !parameters.isEmpty {
@@ -50,13 +50,22 @@ public enum AudioMixdown {
         return Result(composition: composition.copy() as! AVComposition, audioMix: mix)
     }
 
-    /// The recording's own sound, cut the way the picture is cut.
+    /// The recording's own sound, cut the way the picture is cut, at the level the edit
+    /// asks for.
+    ///
+    /// Silenced means *absent*, not turned down to nothing: a muted recording should cost
+    /// neither the decoding nor the space, and an export of a silent edit should have no
+    /// audio track rather than an empty one.
     private static func appendRecordedAudio(of timeline: Timeline,
                                             from videoURL: URL,
-                                            into composition: AVMutableComposition) async {
-        let asset = AVURLAsset(url: videoURL)
-        guard let sources = try? await asset.loadTracks(withMediaType: .audio), !sources.isEmpty else { return }
+                                            into composition: AVMutableComposition) async -> [AVAudioMixInputParameters] {
+        let sound = timeline.sound
+        guard sound.isAudible else { return [] }
 
+        let asset = AVURLAsset(url: videoURL)
+        guard let sources = try? await asset.loadTracks(withMediaType: .audio), !sources.isEmpty else { return [] }
+
+        var parameters: [AVAudioMixInputParameters] = []
         for source in sources {
             guard let track = composition.addMutableTrack(withMediaType: .audio,
                                                           preferredTrackID: kCMPersistentTrackID_Invalid) else { continue }
@@ -80,7 +89,13 @@ public enum AudioMixdown {
                 }
                 playhead = playhead + clip.duration
             }
+
+            guard sound.level != 1 else { continue }
+            let input = AVMutableAudioMixInputParameters(track: track)
+            input.setVolume(Float(sound.level), at: .zero)
+            parameters.append(input)
         }
+        return parameters
     }
 
     /// Music, voiceover, anything dropped on top. Each gets its own track so one can be

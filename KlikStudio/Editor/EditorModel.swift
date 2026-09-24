@@ -311,7 +311,7 @@ final class EditorModel {
     /// Whether Delete would do anything, so the menu item can be honest about it.
     var canDeleteSelection: Bool {
         switch selection {
-        case .none, .headTrim, .tailTrim: false
+        case .none, .headTrim, .tailTrim, .sound: false
         case .clip: timeline.clips.count > 1
         case .range(let range): range.duration > .zero
         default: true
@@ -438,6 +438,40 @@ final class EditorModel {
 
     /// Hides something: a password, a name, a face.
     @discardableResult
+    // MARK: - Sound
+
+    /// Brings a sound into the project and lays it at the playhead.
+    ///
+    /// Trimmed to what is left of the edit, so a four-minute track dropped near the end
+    /// does not silently make the video four minutes longer — it plays to the end and
+    /// stops, and the region can be dragged or resized from there like any other.
+    func addSound() {
+        guard let url = SoundImport.choose() else { return }
+        Task {
+            do {
+                let sound = try await SoundImport.copy(url, into: packageURL)
+                let room = duration - playhead
+                guard room > Clip.minimumDuration else {
+                    errorMessage = "There is no room at the playhead for a sound."
+                    return
+                }
+                let region = AudioRegion(start: playhead,
+                                         duration: min(sound.duration, room),
+                                         path: sound.path)
+                apply(Commands.AddAudio(region))
+                select(.audio(region.id))
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    /// Mutes or unmutes the recording's own sound.
+    func toggleRecordedSound() {
+        let muted = timeline.sound.isMuted
+        apply(Commands.Restyle(muted ? "Unmute" : "Mute") { $0.sound.isMuted = !muted })
+    }
+
     func addBlur(rect: CGRect) -> UUID {
         let range = drawnRange
         let region = BlurRegion(start: range.start, duration: range.duration, rect: rect)

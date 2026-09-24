@@ -37,19 +37,6 @@ struct TimelineClipRow: View {
 
         return RoundedRectangle(cornerRadius: 6, style: .continuous)
             .fill(Color.orange.opacity(isSelected(clip) ? 0.5 : 0.32))
-            .overlay {
-                if let peaks = model.waveform.peaks {
-                    TimelineWaveform(model: model, peaks: peaks, height: height)
-                        .mask {
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .frame(width: width)
-                                .offset(x: left)
-                        }
-                        .offset(x: -left)
-                        .frame(width: width, alignment: .leading)
-                        .clipped()
-                }
-            }
             .overlay { badge(clip, width: width) }
             .overlay { sourceTimes(clip, width: width) }
             .overlay {

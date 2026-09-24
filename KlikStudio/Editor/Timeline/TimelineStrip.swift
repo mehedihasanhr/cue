@@ -17,16 +17,22 @@ struct TimelineStrip: View {
 
     private static let rulerHeight: CGFloat = 20
     private static let clipHeight: CGFloat = 54
+    /// Shorter than the clips and taller than a region lane: the sound is a thing you
+    /// read rather than a chip you read the label off, and a waveform squeezed into 28
+    /// points is a smear.
+    private static let soundHeight: CGFloat = 38
     private static let regionHeight: CGFloat = 28
     private static let spacing: CGFloat = 6
     private static let padding: CGFloat = 10
 
     /// Tall enough for the rows this edit actually has.
-    static func height(for timeline: Timeline) -> CGFloat {
+    static func height(for timeline: Timeline, hasSound: Bool = true) -> CGFloat {
         var rows = 1.0                                   // zooms, always shown
         if !timeline.blurs.isEmpty { rows += 1 }
         if !timeline.annotations.isEmpty { rows += 1 }
+        if !timeline.audio.isEmpty { rows += 1 }
         return padding * 2 + rulerHeight + clipHeight
+            + (hasSound ? soundHeight + spacing : 0)
             + (regionHeight + spacing) * rows + spacing
     }
 
@@ -35,7 +41,9 @@ struct TimelineStrip: View {
             VStack(alignment: .leading, spacing: Self.spacing) {
                 TimelineRuler(model: model, height: Self.rulerHeight)
                 TimelineClipRow(model: model, height: Self.clipHeight)
+                soundRow
                 zoomRow
+                addedSoundRow
                 blurRow
                 annotationRow
             }
@@ -66,6 +74,33 @@ struct TimelineStrip: View {
     }
 
     // MARK: - Rows
+
+    /// The recording's own sound. Hidden for a take that has none, like the other lanes
+    /// that only appear when there is something in them.
+    @ViewBuilder
+    private var soundRow: some View {
+        if model.waveform.state != .unavailable {
+            TimelineSoundRow(model: model, height: Self.soundHeight)
+        }
+    }
+
+    /// Music and voiceover: sound that is free to sit where it likes, so it gets the
+    /// ordinary region lane with its dragging and resizing.
+    @ViewBuilder
+    private var addedSoundRow: some View {
+        if !model.timeline.audio.isEmpty {
+            TimelineRegionRow(model: model,
+                              regions: model.timeline.audio,
+                              tint: .green,
+                              title: "Sound",
+                              symbol: "music.note",
+                              height: Self.regionHeight,
+                              selection: Selection.audio) { region in
+                Text((region.path as NSString).lastPathComponent)
+                    .font(.system(size: 10, weight: .semibold))
+            }
+        }
+    }
 
     private var zoomRow: some View {
         TimelineRegionRow(model: model,

@@ -52,7 +52,8 @@ struct EditorView: View {
                     TransportBar(model: model)
                     Divider()
                     TimelineStrip(model: model)
-                        .frame(height: TimelineStrip.height(for: model.timeline))
+                        .frame(height: TimelineStrip.height(for: model.timeline,
+                                                           hasSound: model.waveform.state != .unavailable))
                 }
             }
         }

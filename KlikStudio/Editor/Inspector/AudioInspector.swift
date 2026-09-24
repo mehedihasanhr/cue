@@ -14,13 +14,59 @@ struct AudioInspector: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             tracks
+            if model.waveform.state != .unavailable {
+                recorded
+            }
             if let audio = model.audio, audio.hasSound {
                 level(audio)
             }
+            addSound
             if !model.timeline.audio.isEmpty {
                 added
             }
         }
+    }
+
+    // MARK: - The recording's own sound
+
+    /// What the finished video does with the sound that was recorded.
+    ///
+    /// Sits above the preview level and says "exported" where that one says "preview",
+    /// because these two controls look alike and mean opposite things: one changes the
+    /// file, the other changes only what this Mac plays while you work.
+    @ViewBuilder
+    private var recorded: some View {
+        let style = StyleBinding(model: model)
+
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle("Keep the recording's sound", isOn: Binding(
+                get: { !model.timeline.sound.isMuted },
+                set: { keep in
+                    model.apply(Commands.Restyle(keep ? "Unmute" : "Mute") { $0.sound.isMuted = !keep })
+                }
+            ))
+            InspectorSlider(model: model, "Level", systemImage: "speaker.wave.2",
+                            value: style.binding(\.sound.gain, "Level"), range: 0...2)
+                .disabled(model.timeline.sound.isMuted)
+            Text("Goes into the exported video. Turn it down to sit under music, or off to keep only a voiceover.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.system(size: 12))
+        .inspectorSection("Exported Sound", systemImage: "waveform.badge.mic")
+    }
+
+    // MARK: - Bringing sound in
+
+    private var addSound: some View {
+        Button {
+            model.addSound()
+        } label: {
+            Label("Add Sound…", systemImage: "plus")
+        }
+        .controlSize(.small)
+        .help("Lay music, a voiceover or an effect over the recording, starting at the playhead")
     }
 
     // MARK: - What the recording holds

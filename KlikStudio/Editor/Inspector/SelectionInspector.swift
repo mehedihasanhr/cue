@@ -26,6 +26,14 @@ struct SelectionInspector: View {
                 }
             case .annotation(let id):
                 AnnotationInspector(model: model, id: id)
+            case .sound:
+                // The whole panel, because selecting the lane is how most people will
+                // arrive at these settings.
+                AudioInspector(model: model)
+            case .audio(let id):
+                if let index = model.timeline.audio.firstIndex(where: { $0.id == id }) {
+                    sound(index: index)
+                }
             case .range(let range):
                 self.range(range)
             default:
@@ -60,6 +68,40 @@ struct SelectionInspector: View {
             }
         }
         .inspectorSection("Clip", systemImage: "film")
+    }
+
+    // MARK: - An added sound
+
+    private func sound(index: Int) -> some View {
+        let region = model.timeline.audio[index]
+        return VStack(alignment: .leading, spacing: 10) {
+            Text((region.path as NSString).lastPathComponent)
+                .font(.system(size: 12, weight: .medium))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(region.path)
+
+            InspectorSlider(model: model, "Level", systemImage: "speaker.wave.2",
+                            value: Binding(
+                                get: { model.timeline.audio.indices.contains(index)
+                                       ? model.timeline.audio[index].gain : 1 },
+                                set: { gain in
+                                    change("Level") { timeline in
+                                        guard timeline.audio.indices.contains(index) else { return }
+                                        timeline.audio[index].gain = gain
+                                    }
+                                }
+                            ),
+                            range: 0...2)
+
+            LabeledContent("Starts", value: Timecode.short(region.start))
+            LabeledContent("Lasts", value: Timecode.length(region.duration))
+            Text("Drag it along the timeline to move it, or take an edge to trim it.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .inspectorSection("Sound", systemImage: "music.note")
     }
 
     // MARK: - Zoom

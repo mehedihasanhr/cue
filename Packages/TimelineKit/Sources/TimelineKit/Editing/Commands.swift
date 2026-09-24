@@ -108,6 +108,21 @@ public enum Commands {
         }
     }
 
+    /// A sound brought in from outside the recording: music, a voiceover.
+    ///
+    /// The file it names has already been copied into the project by the time this runs,
+    /// so undoing leaves an unused file behind rather than breaking a redo. That is the
+    /// same bargain the background import makes, and the same sweep cleans up after it.
+    public struct AddAudio: TimelineCommand {
+        public let region: AudioRegion
+        public var name: String { "Add Sound" }
+        public init(_ region: AudioRegion) { self.region = region }
+        public func apply(to timeline: inout Timeline) -> Bool {
+            timeline.audio.append(region)
+            return true
+        }
+    }
+
     public struct AddAnnotation: TimelineCommand {
         public let item: AnnotationItem
         public var name: String { "Add Annotation" }

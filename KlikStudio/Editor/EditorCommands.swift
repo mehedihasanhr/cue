@@ -50,6 +50,13 @@ struct EditorCommands: SwiftUI.Commands {
                 .disabled(editor == nil)
             Button("Auto-Zoom from Clicks and Focus") { editor?.suggestZooms() }
                 .disabled(editor == nil)
+            Divider()
+            Button("Add Sound…") { editor?.addSound() }
+                .keyboardShortcut("a", modifiers: [.command, .shift])
+                .disabled(editor == nil)
+            Button(editor?.timeline.sound.isMuted == true
+                   ? "Unmute the Recording" : "Mute the Recording") { editor?.toggleRecordedSound() }
+                .disabled(editor == nil)
         }
 
         CommandMenu("Playback") {

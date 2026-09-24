@@ -243,6 +243,35 @@ public struct CameraStyle: Codable, Equatable, Sendable {
     }
 }
 
+/// What the recording's own sound does in the finished video.
+///
+/// A document setting rather than a preference, because it changes the exported file:
+/// silencing the screen so a voiceover can be heard, or dropping it under music, is an
+/// edit, and it is undoable like any other.
+///
+/// Note what this is *not*: the editor's preview level lives in preferences, because
+/// turning the volume down to work at night must not quietly ship a silent video. These
+/// two are easy to confuse and so are deliberately kept apart — this one travels in the
+/// project, that one stays on the Mac.
+public struct SoundStyle: Codable, Equatable, Sendable {
+    /// Whether the recording's own sound is heard at all.
+    public var isMuted: Bool
+
+    /// How loud it is, 0 to 2. 1 is as recorded.
+    public var gain: Double
+
+    public init(isMuted: Bool = false, gain: Double = 1) {
+        self.isMuted = isMuted
+        self.gain = gain
+    }
+
+    /// What is actually heard: muted counts as silent whatever the gain says, so one
+    /// reading answers the question rather than two that can disagree.
+    public var level: Double { isMuted ? 0 : min(max(gain, 0), 2) }
+
+    public var isAudible: Bool { level > 0 }
+}
+
 /// The camera bubble, when there is one.
 public struct WebcamSettings: Codable, Equatable, Sendable {
     public enum Corner: String, Codable, Sendable, CaseIterable {

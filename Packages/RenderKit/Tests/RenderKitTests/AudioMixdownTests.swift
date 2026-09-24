@@ -102,6 +102,46 @@ struct AudioMixdownTests {
         #expect(abs(try await duration(of: result) - 4) < 0.1)
     }
 
+    // MARK: - The recording's own level
+
+    /// Muting must reach the exported file, not just the preview. A mute that only
+    /// silenced playback would be the worst kind of bug: invisible until somebody
+    /// published the video.
+    @Test func mutingTheRecordingLeavesNoSoundInTheExport() async throws {
+        let url = try tone()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        var timeline = Timeline(sourceDuration: time(4))
+        timeline.sound.isMuted = true
+
+        let result = await AudioMixdown.build(timeline: timeline, videoURL: url, packageURL: nil)
+        #expect(result.isEmpty, "a muted recording should have no audio track at all")
+    }
+
+    @Test func turningTheRecordingDownIsCarriedByTheMix() async throws {
+        let url = try tone()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        var timeline = Timeline(sourceDuration: time(4))
+        timeline.sound.gain = 0.5
+
+        let result = await AudioMixdown.build(timeline: timeline, videoURL: url, packageURL: nil)
+        #expect(!result.isEmpty)
+        let mix = try #require(result.audioMix, "a level other than 1 needs a mix to carry it")
+        #expect(mix.inputParameters.count == 1)
+    }
+
+    /// The ordinary case must not pay for the feature: sound left as recorded needs no
+    /// mix at all, and asking AVFoundation for one would be work for nothing.
+    @Test func soundLeftAloneNeedsNoMix() async throws {
+        let url = try tone()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let result = await AudioMixdown.build(timeline: Timeline(sourceDuration: time(4)),
+                                              videoURL: url, packageURL: nil)
+        #expect(result.audioMix == nil)
+    }
+
     /// The premise the editor's playhead now rests on: this asset can be handed to an
     /// `AVPlayer`, and the time it reports back is timeline time, moving forward.
     ///

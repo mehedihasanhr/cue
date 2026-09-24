@@ -21,6 +21,9 @@ public enum Selection: Equatable, Sendable {
     case annotation(UUID)
     case caption(UUID)
     case audio(UUID)
+    /// The recording's own sound, which is one lane rather than one of many regions —
+    /// there is exactly one of it, so it needs no identity to be picked out.
+    case sound
     /// A stretch of the timeline rather than an object on it.
     case range(CMTimeRange)
     /// The footage trimmed off the front of the first clip.
@@ -36,7 +39,7 @@ public enum Selection: Equatable, Sendable {
         switch self {
         case .zoom(let id), .blur(let id), .annotation(let id), .caption(let id), .audio(let id):
             id
-        case .none, .clip, .range, .headTrim, .tailTrim:
+        case .none, .clip, .range, .headTrim, .tailTrim, .sound:
             nil
         }
     }
@@ -74,6 +77,9 @@ public enum Selection: Equatable, Sendable {
             return timeline.audio.contains { $0.id == id }
         case .range(let range):
             return range.duration > .zero && range.start < timeline.duration
+        case .sound:
+            // Always valid: every recording has the setting, even one with no sound in it.
+            return true
         case .headTrim:
             return (timeline.clips.first?.sourceStart ?? .zero) > .zero
         case .tailTrim:
@@ -101,7 +107,7 @@ public enum Selection: Equatable, Sendable {
             return timeline.captions.first { $0.id == id }?.range
         case .audio(let id):
             return timeline.audio.first { $0.id == id }?.range
-        case .none, .headTrim, .tailTrim:
+        case .none, .headTrim, .tailTrim, .sound:
             return nil
         }
     }

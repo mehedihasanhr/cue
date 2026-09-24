@@ -75,6 +75,45 @@ struct AudioSignatureTests {
         #expect(timeline.audioSignature != before)
     }
 
+    @Test func mutingTheRecordingChangesTheSound() {
+        var timeline = timeline()
+        let before = timeline.audioSignature
+        timeline.sound.isMuted = true
+        #expect(timeline.audioSignature != before)
+    }
+
+    @Test func theRecordingsLevelChangesTheSound() {
+        var timeline = timeline()
+        let before = timeline.audioSignature
+        timeline.sound.gain = 0.4
+        #expect(timeline.audioSignature != before)
+    }
+
+    /// Muted is silent whatever the gain says, so the two cannot be made to disagree.
+    @Test func aMutedRecordingIsSilentAtAnyLevel() {
+        var sound = SoundStyle(isMuted: true, gain: 2)
+        #expect(!sound.isAudible)
+        #expect(sound.level == 0)
+        sound.isMuted = false
+        #expect(sound.isAudible)
+        #expect(sound.level == 2)
+    }
+
+    /// A project written before any of this existed opens with its sound as recorded,
+    /// rather than silent.
+    @Test func aProjectWithNoSoundSettingKeepsItsSound() throws {
+        var timeline = timeline()
+        timeline.sound = SoundStyle(isMuted: true, gain: 0.5)
+        let data = try JSONEncoder().encode(timeline)
+        var json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        json.removeValue(forKey: "sound")
+
+        let older = try JSONSerialization.data(withJSONObject: json)
+        let decoded = try JSONDecoder().decode(Timeline.self, from: older)
+        #expect(decoded.sound == SoundStyle())
+        #expect(decoded.sound.isAudible)
+    }
+
     /// Two timelines cut the same way sound the same, whatever order the edits arrived
     /// in and whatever identities the clips ended up with.
     @Test func theSameCutsSoundTheSameRegardlessOfIdentity() {

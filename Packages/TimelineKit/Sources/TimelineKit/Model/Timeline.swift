@@ -26,6 +26,8 @@ public struct Timeline: Equatable, Codable, Sendable {
     public var style: FrameStyle
     public var cursor: CursorStyle
     public var camera: CameraStyle
+    /// What the recording's own sound does. See `SoundStyle`.
+    public var sound: SoundStyle
     public var webcam: WebcamSettings
     public var captionStyle: CaptionStyle
 
@@ -40,6 +42,7 @@ public struct Timeline: Equatable, Codable, Sendable {
                 style: FrameStyle = FrameStyle(),
                 cursor: CursorStyle = CursorStyle(),
                 camera: CameraStyle = CameraStyle(),
+                sound: SoundStyle = SoundStyle(),
                 webcam: WebcamSettings = WebcamSettings(),
                 captionStyle: CaptionStyle = CaptionStyle()) {
         self.formatVersion = formatVersion
@@ -53,6 +56,7 @@ public struct Timeline: Equatable, Codable, Sendable {
         self.style = style
         self.cursor = cursor
         self.camera = camera
+        self.sound = sound
         self.webcam = webcam
         self.captionStyle = captionStyle
     }
@@ -86,6 +90,7 @@ public struct Timeline: Equatable, Codable, Sendable {
         style = value(.style, default: FrameStyle())
         cursor = value(.cursor, default: CursorStyle())
         camera = value(.camera, default: CameraStyle())
+        sound = value(.sound, default: SoundStyle())
         webcam = value(.webcam, default: WebcamSettings())
         captionStyle = value(.captionStyle, default: CaptionStyle())
     }
@@ -94,7 +99,7 @@ public struct Timeline: Equatable, Codable, Sendable {
     /// renaming a property is a compile error rather than a silently unreadable project.
     enum CodingKeys: String, CodingKey {
         case formatVersion, sourceDuration, clips, zooms, blurs
-        case annotations, captions, audio, style, cursor, camera, webcam, captionStyle
+        case annotations, captions, audio, style, cursor, camera, sound, webcam, captionStyle
     }
 
     /// How long the edit plays for.
