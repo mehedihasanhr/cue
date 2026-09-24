@@ -43,6 +43,9 @@ final class EditorModel {
 
     let viewport = TimelineViewport()
     let waveform: WaveformStore
+    /// The waveforms of the sounds brought in from outside the recording. See
+    /// `RegionWaveformStore` for why these are not the one above.
+    let regionWaveforms: RegionWaveformStore
     /// The edit, out loud — and, while it plays, the clock the playhead follows.
     private(set) var audio: PreviewAudio?
 
@@ -68,6 +71,7 @@ final class EditorModel {
                                backgrounds: StudioBackgroundResolver(),
                                packageURL: package.url)
         waveform = WaveformStore(package: package, manifest: document.manifest)
+        regionWaveforms = RegionWaveformStore(package: package)
 
         if let settings {
             // A project opened for the first time starts as the user's defaults say —
@@ -233,6 +237,10 @@ final class EditorModel {
     func refresh() {
         renderTask?.cancel()
         validateSelection()
+        // Here rather than at each place a sound is added, because there are four of them
+        // — an import, a voiceover, a paste, an undo — and the list of sounds the edit
+        // names is the only thing any of them has in common. Cheap on the ordinary path.
+        regionWaveforms.reconcile(paths: timeline.audio.map(\.path))
         let scene = builder.descriptor(for: renderedTimeline, at: playhead, cursor: smoothedCursor)
         self.scene = scene
         let frames = frames
@@ -711,6 +719,67 @@ final class EditorModel {
         apply(Commands.Restyle(muted ? "Unmute" : "Mute") { $0.sound.isMuted = !muted })
     }
 
+    // MARK: - Detaching the recording's own sound
+
+    var isSoundDetached: Bool { timeline.isSoundDetached }
+
+    /// What re-attaching is about to throw away, or `nil` when nothing is pending.
+    ///
+    /// Lives here rather than in the lane's view because two places ask for a re-attach —
+    /// the lane's context menu and the Edit menu — and a dialogue owned by one of them
+    /// would not appear for the other. The view watches this and presents it; the model
+    /// never presents anything itself.
+    private(set) var soundReattachWarning: String?
+
+    /// Cuts the recording's sound loose from the picture, and selects its first run so
+    /// the inspector explains what just happened instead of leaving the lane looking
+    /// merely redrawn.
+    func detachSound() {
+        guard !isSoundDetached else { return }
+        apply(Commands.DetachSound())
+        if let first = timeline.detachedSound?.first { select(.soundRun(first.id)) }
+    }
+
+    /// Asks to put the sound back in step, warning first when that costs an edit.
+    ///
+    /// Silent when the lane has not been touched, because then re-attaching is a no-op you
+    /// can hear nothing of and a dialogue would be a question with one sensible answer.
+    func requestSoundReattach() {
+        guard isSoundDetached else { return }
+        guard !timeline.detachedSoundIsInStepWithClips else {
+            attachSound()
+            return
+        }
+        soundReattachWarning = Self.reattachWarning(for: timeline)
+    }
+
+    func cancelSoundReattach() { soundReattachWarning = nil }
+
+    func attachSound() {
+        soundReattachWarning = nil
+        guard isSoundDetached else { return }
+        apply(Commands.AttachSound())
+    }
+
+    /// Says what will go, in the units the user worked in.
+    ///
+    /// Counting runs rather than saying "your edits will be lost": the lane is a row of
+    /// runs and the user can see how many they moved, so a number they can check against
+    /// the screen is the difference between a warning and a scare.
+    private static func reattachWarning(for timeline: Timeline) -> String {
+        let runs = timeline.detachedSound ?? []
+        let expected = timeline.soundRunsFollowingClips
+        let moved = runs.count == expected.count
+            ? zip(runs, expected).count { $0.start != $1.start || $0.duration != $1.duration
+                                          || $0.sourceStart != $1.sourceStart || $0.speed != $1.speed }
+            : max(runs.count, expected.count)
+        let what = moved == 1 ? "one run of sound" : "\(moved) runs of sound"
+        return """
+            Re-attaching cuts the recording's sound where the picture is cut again, \
+            which undoes \(what) you moved or trimmed. The picture is not touched.
+            """
+    }
+
     func addBlur(rect: CGRect) -> UUID {
         let range = drawnRange
         let region = BlurRegion(start: range.start, duration: range.duration, rect: rect)
@@ -895,6 +964,7 @@ final class EditorModel {
         if isPlaying { stop() }
         audio?.cancel()
         waveform.cancel()
+        regionWaveforms.cancel()
     }
 }
 

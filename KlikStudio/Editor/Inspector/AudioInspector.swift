@@ -53,9 +53,46 @@ struct AudioInspector: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            Divider()
+            detachment
         }
         .font(.system(size: 12))
         .inspectorSection("Exported Sound", systemImage: "waveform.badge.mic")
+    }
+
+    /// Cutting the sound loose from the picture, and putting it back.
+    ///
+    /// In the panel as well as in the lane's context menu and the Edit menu, because it is
+    /// the sort of thing you go looking for rather than happen upon: nothing on the timeline
+    /// suggests the sound *could* be moved on its own until somebody tells you, and the
+    /// panel about the recording's sound is where you would look.
+    @ViewBuilder
+    private var detachment: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if model.isSoundDetached {
+                Button {
+                    model.requestSoundReattach()
+                } label: {
+                    Label("Re-attach Audio", systemImage: "link")
+                }
+                .controlSize(.small)
+                Text("The sound is on its own. Drag its runs to slide them, or their edges to trim — the picture stays where it is. Re-attaching cuts it at the picture's cuts again.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Button {
+                    model.detachSound()
+                } label: {
+                    Label("Detach Audio", systemImage: "link.badge.plus")
+                }
+                .controlSize(.small)
+                Text("Cut the sound loose from the picture, so you can keep talking over a cut, trim a cough out, or slide narration onto an action. Nothing changes until you move something.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
     // MARK: - Narration

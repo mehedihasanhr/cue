@@ -97,7 +97,11 @@ struct TimelineStrip: View {
                               title: "Sound",
                               symbol: "music.note",
                               height: Self.regionHeight,
-                              selection: Selection.audio) { region in
+                              selection: Selection.audio,
+                              waveform: { region in
+                                  model.regionWaveforms.peaks(forPath: region.path)
+                                      .map { ($0, [TimelineWaveform.Span(region)]) }
+                              }) { region in
                 Text((region.path as NSString).lastPathComponent)
                     .font(.system(size: 10, weight: .semibold))
             }

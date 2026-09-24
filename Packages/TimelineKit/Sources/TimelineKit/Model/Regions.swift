@@ -241,6 +241,83 @@ public struct AudioRegion: TimelineRegion {
     }
 }
 
+/// One run of the recording's *own* sound, on a lane that no longer follows the picture.
+///
+/// The recording's sound is normally cut wherever the picture is cut, because it is one
+/// take — that is what `Timeline.detachedSound == nil` means, and it is the right default.
+/// But the three edits people reach for next are all edits to the sound *alone*: let
+/// someone keep talking over a cut, take a cough out without losing the frame, slide
+/// narration a few frames to land on an action. None of those can be spelled as a
+/// property of a `Clip`, because a `Clip` has no timeline position of its own — the
+/// sequence is contiguous by construction, which is exactly the invariant that makes the
+/// picture trustworthy and exactly the one a detached sound has to break.
+///
+/// So a detached lane is a list of *regions* rather than a clip sequence: each run says
+/// where it sits on the timeline, how long it lasts there, and which second of the
+/// recording it starts at. Gaps are legal (that is silence, deliberately placed), order
+/// is not load-bearing, and overlaps are possible — two runs over one moment simply means
+/// two tracks in the mix, which is what any editor does with overlapping audio.
+///
+/// Conforming to `TimelineRegion` is the whole design: dragging, resizing, snapping,
+/// deleting, shifting with a ripple and clamping to the edit are already written once for
+/// every lane, and a run gets all of it by being the same shape as an `AudioRegion`.
+public struct SoundRun: TimelineRegion {
+    public let id: UUID
+    public var start: CMTime
+    public var duration: CMTime
+    /// The in-point in the recording. Trimming a run changes how much source it consumes
+    /// and never re-derives this from the timeline, for the reason `Clip.sourceStart`
+    /// gives: that is how an edit stays attached to the footage it was made against.
+    public var sourceStart: CMTime
+    /// Source seconds per timeline second, carried over from the clip this run was
+    /// detached from so a sped-up edit sounds identical the instant it is detached.
+    public var speed: Double
+
+    public init(id: UUID = UUID(),
+                start: CMTime,
+                duration: CMTime,
+                sourceStart: CMTime,
+                speed: Double = 1) {
+        self.id = id
+        self.start = start
+        self.duration = duration
+        self.sourceStart = sourceStart
+        self.speed = max(Clip.minimumSpeed, min(speed, Clip.maximumSpeed))
+    }
+
+    /// Decoded field by field for the reason `Timeline.init(from:)` gives: a run missing
+    /// its speed is a run at normal speed, not a project that will not open.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        func value<T: Decodable>(_ key: CodingKeys, default fallback: @autoclosure () -> T) -> T {
+            ((try? container.decodeIfPresent(T.self, forKey: key)) ?? nil) ?? fallback()
+        }
+        id = value(.id, default: UUID())
+        start = value(.start, default: .zero)
+        duration = value(.duration, default: .zero)
+        sourceStart = value(.sourceStart, default: .zero)
+        speed = value(.speed, default: 1)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, start, duration, sourceStart, speed
+    }
+
+    /// How much of the recording this run consumes — derived, never stored, so it cannot
+    /// disagree with how long the run occupies. The same bargain `Clip.duration` makes,
+    /// read the other way round.
+    public var sourceDuration: CMTime {
+        CMTimeMultiplyByFloat64(duration, multiplier: speed)
+    }
+
+    public var sourceEnd: CMTime { sourceStart + sourceDuration }
+
+    /// Where a timeline offset inside this run lands in the recording.
+    public func sourceTime(atOffset offset: CMTime) -> CMTime {
+        sourceStart + CMTimeMultiplyByFloat64(offset, multiplier: speed)
+    }
+}
+
 /// A stretch where the pointer behaves differently from the rest of the recording.
 ///
 /// `CursorStyle` is one setting for the whole take, and that is the right shape for

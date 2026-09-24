@@ -1,4 +1,5 @@
 import Foundation
+import RecordKit
 import Testing
 @testable import TimelineKit
 
@@ -116,6 +117,43 @@ struct WaveformTests {
         // Every prefix but the whole thing must come back nil, and none may trap.
         for length in stride(from: 0, to: data.count, by: 37) {
             #expect(WaveformPeaks.Cache.decode(data.prefix(length), sourceSize: size, sourceModified: modified) == nil)
+        }
+    }
+
+    // MARK: - One cache file per sound
+
+    /// The recording stopped being the only sound in a project the moment music and
+    /// voiceovers got waveforms of their own, so the cache needed a name per sound rather
+    /// than one file called `peaks.bin`.
+    @Test func eachSoundGetsACacheFileOfItsOwn() {
+        let package = RecordingPackage(url: URL(fileURLWithPath: "/tmp/nowhere.klik"))
+        let recording = WaveformBuilder.cacheURL(in: package)
+        let music = WaveformBuilder.cacheURL(in: package, key: WaveformBuilder.key(forPath: "Audio/music.m4a"))
+        let voice = WaveformBuilder.cacheURL(in: package, key: WaveformBuilder.key(forPath: "Audio/voice.m4a"))
+
+        #expect(recording.lastPathComponent == "peaks.bin", "the recording keeps the name it always had")
+        #expect(music != recording)
+        #expect(music != voice)
+    }
+
+    /// Two regions naming the same file share one waveform, which is what should happen
+    /// when the same music is laid down twice — and a key derived by substituting the
+    /// awkward characters out of a path would not guarantee it.
+    @Test func theSameFileHasTheSameKeyWhereverItIsNamed() {
+        #expect(WaveformBuilder.key(forPath: "Audio/music.m4a")
+                == WaveformBuilder.key(forPath: "Audio/music.m4a"))
+        #expect(WaveformBuilder.key(forPath: "Audio/a b/music.m4a")
+                != WaveformBuilder.key(forPath: "Audio/a-b/music.m4a"))
+    }
+
+    /// A key has to be usable as a filename whatever the path was, since that is the only
+    /// thing it is for.
+    @Test func aKeyIsSomethingAFileCanBeCalled() {
+        for path in ["Audio/music.m4a", "a/b/c/d e f.wav", "../odd/../name.aiff", ""] {
+            let key = WaveformBuilder.key(forPath: path)
+            #expect(!key.isEmpty)
+            #expect(!key.contains("/"))
+            #expect(!key.contains("."))
         }
     }
 }

@@ -95,6 +95,16 @@ struct EditorCommands: SwiftUI.Commands {
             Button(editor?.timeline.sound.isMuted == true
                    ? "Unmute the Recording" : "Mute the Recording") { editor?.toggleRecordedSound() }
                 .disabled(editor == nil)
+            // One item that flips rather than two that can be pressed at the wrong time,
+            // which is how Mute above reads too. No shortcut: every letter in this menu is
+            // taken, and detaching is a decision made once per edit rather than a key you
+            // reach for. Re-attaching asks first when it would throw an edit away — see
+            // `EditorModel.requestSoundReattach`.
+            Button(editor?.isSoundDetached == true ? "Re-attach Audio" : "Detach Audio") {
+                guard let editor else { return }
+                editor.isSoundDetached ? editor.requestSoundReattach() : editor.detachSound()
+            }
+            .disabled(editor == nil)
         }
 
         CommandMenu("Playback") {

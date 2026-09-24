@@ -342,22 +342,120 @@ public enum Commands {
         }
     }
 
+    // MARK: - The recording's own sound, on a lane of its own
+
+    /// Cuts the recording's sound loose from the picture.
+    ///
+    /// An explicit, undoable act rather than something that happens the first time
+    /// somebody drags the lane, because it changes what the lane *means*: before it, the
+    /// sound is the picture's sound and the cuts are shared; after it, the two are separate
+    /// edits that can disagree. A user has to be able to say "no, put that back", and
+    /// Undo is how they say it.
+    public struct DetachSound: TimelineCommand {
+        public var name: String { "Detach Audio" }
+        public init() {}
+        public func apply(to timeline: inout Timeline) -> Bool {
+            ClipSequence.detachSound(&timeline)
+        }
+    }
+
+    /// Puts the recording's sound back in step with the picture.
+    ///
+    /// Destructive when the lane has been edited, which is why the caller asks
+    /// `Timeline.detachedSoundIsInStepWithClips` first and says what is about to go. The
+    /// command itself does not warn: one whose result depended on a dialogue would be one
+    /// the undo stack cannot predict.
+    public struct AttachSound: TimelineCommand {
+        public var name: String { "Re-attach Audio" }
+        public init() {}
+        public func apply(to timeline: inout Timeline) -> Bool {
+            ClipSequence.attachSound(&timeline)
+        }
+    }
+
+    /// Dragging or trimming one run of the detached sound.
+    ///
+    /// Not `MoveRegion`, and the difference is the whole reason this exists. Moving a
+    /// region means "put it somewhere else"; a run of the recording has a second thing
+    /// attached to every edge — which second of the *recording* plays there. Dragging the
+    /// body should slide the sound in time and go on playing the same words, so
+    /// `sourceStart` is left alone. Dragging the left edge should trim, which means the
+    /// words that survive have to stay exactly where they were: the in-point must advance
+    /// by as much source as the edge crossed. Handing both to `MoveRegion` would make every
+    /// head trim quietly re-cut the take, and the symptom — the sound sliding a few frames
+    /// whenever you shortened it — is precisely what detaching was for.
+    public struct MoveSoundRun: TimelineCommand {
+        public let id: UUID
+        public let start: CMTime
+        public let duration: CMTime?
+        /// Whether the recording should stay put underneath while the run's front edge
+        /// moves. True for a head trim, false for a drag of the whole run.
+        public let trimsHead: Bool
+        public var name: String { duration == nil ? "Move Sound" : "Trim Sound" }
+
+        public init(id: UUID, start: CMTime, duration: CMTime? = nil, trimsHead: Bool = false) {
+            self.id = id
+            self.start = start
+            self.duration = duration
+            self.trimsHead = trimsHead
+        }
+
+        public func apply(to timeline: inout Timeline) -> Bool {
+            // Read before the array is taken out, for the reason `MoveRegion` reads it
+            // early: two accesses to one value at once is what Swift refuses.
+            let end = timeline.duration
+            guard var runs = timeline.detachedSound,
+                  let index = runs.firstIndex(where: { $0.id == id }) else { return false }
+
+            let before = runs[index]
+            var run = before
+            let settled = max(.zero, min(start, end - Clip.minimumDuration))
+            if trimsHead {
+                // Negative when the edge moved left, which reveals source trimmed off
+                // earlier — clamped at the head of the recording, because there is nothing
+                // before second zero to reveal.
+                let crossed = CMTimeMultiplyByFloat64(settled - run.start, multiplier: run.speed)
+                run.sourceStart = max(.zero, run.sourceStart + crossed)
+            }
+            run.start = settled
+            if let duration {
+                run.duration = max(Clip.minimumDuration, min(duration, end - run.start))
+            } else if run.end > end {
+                run.start = end - run.duration
+            }
+            guard run != before else { return false }
+            runs[index] = run
+            timeline.detachedSound = runs
+            return true
+        }
+    }
+
     /// Deleting anything with an id, without a command per kind.
     public struct DeleteRegion: TimelineCommand {
         public let id: UUID
         public var name: String { "Delete" }
         public init(id: UUID) { self.id = id }
         public func apply(to timeline: inout Timeline) -> Bool {
-            let before = (timeline.zooms.count, timeline.blurs.count, timeline.annotations.count,
-                          timeline.captions.count, timeline.audio.count, timeline.cursorRegions.count)
+            // An array rather than a tuple: the lanes outgrew the six a tuple will compare,
+            // and counting them in a list that can be read down the page is clearer than
+            // spelling the comparison out by hand.
+            func counts(_ timeline: Timeline) -> [Int] {
+                [timeline.zooms.count, timeline.blurs.count, timeline.annotations.count,
+                 timeline.captions.count, timeline.audio.count, timeline.cursorRegions.count,
+                 timeline.detachedSound?.count ?? 0]
+            }
+
+            let before = counts(timeline)
             timeline.zooms.removeAll { $0.id == id }
             timeline.blurs.removeAll { $0.id == id }
             timeline.annotations.removeAll { $0.id == id }
             timeline.captions.removeAll { $0.id == id }
             timeline.audio.removeAll { $0.id == id }
+            // Only when detached: an attached lane has no runs to delete, and silencing the
+            // recording's sound is `SoundStyle.isMuted`'s job rather than this one's.
+            timeline.detachedSound?.removeAll { $0.id == id }
             timeline.cursorRegions.removeAll { $0.id == id }
-            return before != (timeline.zooms.count, timeline.blurs.count, timeline.annotations.count,
-                              timeline.captions.count, timeline.audio.count, timeline.cursorRegions.count)
+            return before != counts(timeline)
         }
     }
 

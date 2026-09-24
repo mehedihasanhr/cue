@@ -183,6 +183,188 @@ struct AudioMixdownTests {
         #expect(result.audioMix == nil)
     }
 
+    // MARK: - The sound lane, cut loose from the picture
+
+    /// Every filled stretch of a composition, as (where it plays, how long, which second
+    /// of the source it came from) — which is the whole of what a listener can hear.
+    ///
+    /// Comparing these rather than a duration is what makes the promise below checkable:
+    /// "detaching is inaudible" is a claim about *where every word lands*, and two
+    /// compositions of the same length can still differ in all of it.
+    private func layout(of result: AudioMixdown.Result) async throws -> [(at: Double, length: Double, from: Double)] {
+        var laid: [(at: Double, length: Double, from: Double)] = []
+        for track in result.composition.tracks(withMediaType: .audio) {
+            for segment in try await track.load(.segments) where !segment.isEmpty {
+                laid.append((segment.timeMapping.target.start.seconds,
+                             segment.timeMapping.target.duration.seconds,
+                             segment.timeMapping.source.start.seconds))
+            }
+        }
+        return laid.sorted { $0.at < $1.at }
+    }
+
+    private func same(_ one: [(at: Double, length: Double, from: Double)],
+                      _ two: [(at: Double, length: Double, from: Double)]) -> Bool {
+        guard one.count == two.count else { return false }
+        return zip(one, two).allSatisfy {
+            abs($0.at - $1.at) < 0.05 && abs($0.length - $1.length) < 0.05 && abs($0.from - $1.from) < 0.05
+        }
+    }
+
+    /// The promise the whole feature rests on: the instant after detaching, nothing has
+    /// changed. If this fails, nobody can afford to press the menu item in the middle of a
+    /// cut — and the failure would be inaudible until they played it back.
+    @Test func detachingChangesNothingYouCanHear() async throws {
+        let url = try tone()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        var attached = Timeline(sourceDuration: time(4))
+        ClipSequence.split(&attached, at: time(1))
+        ClipSequence.split(&attached, at: time(3))
+        attached.clips[1].speed = 2
+
+        var detached = attached
+        #expect(ClipSequence.detachSound(&detached))
+
+        let one = await AudioMixdown.build(timeline: attached, videoURL: url, packageURL: nil)
+        let two = await AudioMixdown.build(timeline: detached, videoURL: url, packageURL: nil)
+
+        #expect(two.composition.tracks(withMediaType: .audio).count
+                == one.composition.tracks(withMediaType: .audio).count)
+        #expect(abs(two.composition.duration.seconds - one.composition.duration.seconds) < 0.05)
+        let before = try await layout(of: one)
+        let after = try await layout(of: two)
+        #expect(!before.isEmpty, "the fixture, not the mixdown")
+        #expect(same(before, after), "detaching moved the sound: \(before) became \(after)")
+    }
+
+    /// The narration case: a run slid later has to play later, with silence where it was.
+    /// Measured in the asset rather than in the model, because the model has been right
+    /// about this since the first test and the composition is where it would be lost.
+    @Test func aRunSlidLaterPlaysLater() async throws {
+        let url = try tone()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        var timeline = Timeline(sourceDuration: time(4))
+        ClipSequence.detachSound(&timeline)
+        timeline.detachedSound = [SoundRun(start: time(1), duration: time(2), sourceStart: .zero)]
+
+        let result = await AudioMixdown.build(timeline: timeline, videoURL: url, packageURL: nil)
+        let laid = try await layout(of: result)
+        #expect(laid.count == 1)
+        let run = try #require(laid.first)
+        #expect(abs(run.at - 1) < 0.05, "the run did not start where it said it would")
+        #expect(abs(run.length - 2) < 0.1)
+        #expect(abs(run.from) < 0.05, "sliding the run re-cut the take")
+    }
+
+    /// Lifting a stretch out of the sound alone: the edit stays four seconds long, and the
+    /// sound is the length of what is left rather than the length of the picture.
+    @Test func aTrimmedLaneIsAsLongAsWhatSurvivedIt() async throws {
+        let url = try tone()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        var timeline = Timeline(sourceDuration: time(4))
+        ClipSequence.detachSound(&timeline)
+        timeline.detachedSound = [SoundRun(start: .zero, duration: time(1), sourceStart: .zero),
+                                  SoundRun(start: time(3), duration: time(1), sourceStart: time(3))]
+
+        let result = await AudioMixdown.build(timeline: timeline, videoURL: url, packageURL: nil)
+        #expect(abs(timeline.duration.seconds - 4) < 0.01, "the picture is untouched")
+        let laid = try await layout(of: result)
+        #expect(laid.count == 2)
+        #expect(abs(laid[0].at) < 0.05)
+        #expect(abs(laid[1].at - 3) < 0.05)
+        #expect(abs(laid[1].from - 3) < 0.05)
+        // The two seconds in between are silence and belong to nobody: the point of the
+        // whole feature is that the picture there is still on screen.
+        #expect(laid.allSatisfy { $0.at + $0.length <= 4.1 })
+    }
+
+    /// Keeping talking over a cut means two runs covering one moment, which one track
+    /// cannot express — so the mixdown opens a second. Without this the later run would
+    /// overwrite the earlier one and the overlap would simply be missing.
+    @Test func twoRunsOverOneMomentEachGetATrack() async throws {
+        let url = try tone()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        var timeline = Timeline(sourceDuration: time(4))
+        ClipSequence.detachSound(&timeline)
+        timeline.detachedSound = [SoundRun(start: .zero, duration: time(2), sourceStart: .zero),
+                                  SoundRun(start: time(1), duration: time(2), sourceStart: time(2))]
+
+        let result = await AudioMixdown.build(timeline: timeline, videoURL: url, packageURL: nil)
+        #expect(result.composition.tracks(withMediaType: .audio).count == 2)
+        let laid = try await layout(of: result)
+        #expect(laid.count == 2)
+        #expect(abs(laid[0].at) < 0.05)
+        #expect(abs(laid[1].at - 1) < 0.05)
+        #expect(abs(laid[1].from - 2) < 0.05)
+    }
+
+    /// A speed carried over from the clip it was detached from still plays in the time the
+    /// run occupies, which is what `scaleTimeRange` is doing on both branches.
+    @Test func aSpedUpRunStillFitsTheTimeItOccupies() async throws {
+        let url = try tone()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        var timeline = Timeline(sourceDuration: time(4))
+        ClipSequence.detachSound(&timeline)
+        timeline.detachedSound = [SoundRun(start: .zero, duration: time(2), sourceStart: .zero, speed: 2)]
+
+        let result = await AudioMixdown.build(timeline: timeline, videoURL: url, packageURL: nil)
+        let laid = try await layout(of: result)
+        let run = try #require(laid.first)
+        #expect(abs(run.length - 2) < 0.1, "four seconds of source did not fit into two")
+    }
+
+    /// Muting is still absence rather than silence, whichever state the lane is in: a
+    /// muted detached lane must cost neither the decoding nor a track in the file.
+    @Test func aMutedRecordingIsStillAbsentWhenDetached() async throws {
+        let url = try tone()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        var timeline = Timeline(sourceDuration: time(4))
+        ClipSequence.detachSound(&timeline)
+        timeline.sound.isMuted = true
+
+        let result = await AudioMixdown.build(timeline: timeline, videoURL: url, packageURL: nil)
+        #expect(result.isEmpty)
+    }
+
+    /// A lane whose runs have all been deleted is silence somebody chose, and an export of
+    /// it has no audio track rather than an empty one — the same bargain muting makes.
+    @Test func aLaneWithNoRunsLeftHasNothingToPlay() async throws {
+        let url = try tone()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        var timeline = Timeline(sourceDuration: time(4))
+        ClipSequence.detachSound(&timeline)
+        timeline.detachedSound = []
+
+        let result = await AudioMixdown.build(timeline: timeline, videoURL: url, packageURL: nil)
+        #expect(try await layout(of: result).isEmpty)
+    }
+
+    /// Re-attaching gets the picture's sound back exactly, which is the other half of
+    /// `detachingChangesNothingYouCanHear` and the reason re-attaching can be a discard
+    /// rather than a reconciliation.
+    @Test func reAttachingRestoresTheSoundThePictureCuts() async throws {
+        let url = try tone()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        var timeline = Timeline(sourceDuration: time(4))
+        ClipSequence.split(&timeline, at: time(2))
+        let attached = await AudioMixdown.build(timeline: timeline, videoURL: url, packageURL: nil)
+
+        ClipSequence.detachSound(&timeline)
+        timeline.detachedSound?[0].start = time(1)
+        ClipSequence.attachSound(&timeline)
+        let again = await AudioMixdown.build(timeline: timeline, videoURL: url, packageURL: nil)
+
+        #expect(same(try await layout(of: attached), try await layout(of: again)))
+    }
+
     // MARK: - Narration laid over the edit
 
     /// A project package with one take in its `Audio` folder, which is where a voiceover
