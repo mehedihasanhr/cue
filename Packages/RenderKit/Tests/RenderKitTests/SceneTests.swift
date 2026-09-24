@@ -483,6 +483,146 @@ struct SceneTests {
         #expect(corner.b > 200, "the frame is still there under a 3× zoom")
     }
 
+    // MARK: - The pointer over time
+
+    /// A track that walks steadily to the right, so a change to the drawn pointer is
+    /// visible as a difference from where the recorded hand actually was.
+    private func walkingTrack() -> CursorTrack {
+        CursorTrack(samples: stride(from: 0.0, through: 10.0, by: 0.05).map { t in
+            CursorSample(t: t, x: 200 + t * 30, y: 250, shape: .arrow)
+        })
+    }
+
+    /// The guard on "a project made before cursor regions existed renders as it did".
+    ///
+    /// Written as the old arithmetic spelled out again rather than as a comparison against
+    /// another descriptor: with no region in force the pointer must be the track's own
+    /// position and the track's own velocity, and saying so here means any future
+    /// short-cut through the new code path fails a test rather than quietly moving a
+    /// pointer in everybody's finished video.
+    @Test func withNoCursorRegionsThePointerIsDrawnFromTheTrackAlone() throws {
+        var timeline = timeline()
+        timeline.cursor.smoothing = 0
+        timeline.cursor.motionBlur = true
+        timeline.cursor.clickEffect = false
+        let track = walkingTrack()
+        #expect(timeline.cursorRegions.isEmpty)
+
+        for at in stride(from: 0.5, through: 9.5, by: 0.5) {
+            let scene = builder().descriptor(for: timeline, at: time(at), cursor: track)
+            let cursor = try #require(scene.cursor)
+            let point = try #require(track.position(at: at))
+            #expect(abs(cursor.position.x - point.x * 2 / videoSize.width) < 1e-9)
+            #expect(abs(cursor.position.y - point.y * 2 / videoSize.height) < 1e-9)
+            #expect(cursor.opacity == 1)
+            let velocity = track.velocity(at: at)
+            #expect(abs(cursor.velocity.dx - velocity.dx) < 1e-6)
+            #expect(abs(cursor.velocity.dy - velocity.dy) < 1e-6)
+        }
+    }
+
+    @Test func insideAHidingRegionThePointerIsNotDrawn() {
+        var timeline = timeline()
+        timeline.cursorRegions = [CursorRegion(start: time(2), duration: time(4))]
+        let track = walkingTrack()
+
+        #expect(builder().descriptor(for: timeline, at: time(4), cursor: track).cursor == nil)
+        // And nothing changes outside it, which is the whole promise of a region.
+        #expect(builder().descriptor(for: timeline, at: time(1), cursor: track).cursor != nil)
+        #expect(builder().descriptor(for: timeline, at: time(7), cursor: track).cursor != nil)
+    }
+
+    /// The boundary, which is the part that can look like a fault.
+    ///
+    /// A pointer that disappears between two frames reads as a dropped frame, so the
+    /// region fades it over its ramp: at the very edge it is fully drawn, a third of the
+    /// way in it is part-way gone, and it never gets brighter on the way in.
+    @Test func aHidingRegionFadesThePointerRatherThanBlinkingItOut() throws {
+        var timeline = timeline()
+        timeline.cursorRegions = [CursorRegion(start: time(2), duration: time(4),
+                                               transition: time(1))]
+        let track = walkingTrack()
+
+        func opacity(_ at: Double) -> Double {
+            builder().descriptor(for: timeline, at: time(at), cursor: track).cursor?.opacity ?? 0
+        }
+
+        #expect(abs(opacity(1.99) - 1) < 1e-6, "outside the region the pointer is untouched")
+        let ramp = [opacity(2.1), opacity(2.3), opacity(2.5), opacity(2.7)]
+        for value in ramp { #expect(value > 0 && value < 1, "a part-faded pointer, not a switch") }
+        #expect(ramp == ramp.sorted(by: >), "the fade only ever goes one way on the way in")
+        #expect(opacity(4) == 0, "fully hidden in the middle")
+        // And symmetrical: the pointer comes back the way it left.
+        #expect(abs(opacity(5.7) - opacity(2.3)) < 1e-6)
+    }
+
+    /// A held pointer settles where the region began and stays there.
+    @Test func aHeldPointerComesToRestWhereTheRegionBegan() throws {
+        var timeline = timeline()
+        timeline.cursorRegions = [CursorRegion(start: time(2), duration: time(6),
+                                               isHidden: false, isHeld: true,
+                                               transition: time(0.5))]
+        let track = walkingTrack()
+        let anchor = try #require(track.position(at: 2))
+
+        let held = try #require(builder().descriptor(for: timeline, at: time(5), cursor: track).cursor)
+        #expect(abs(held.position.x - anchor.x * 2 / videoSize.width) < 1e-6,
+                "the pointer is where the hand was when the stretch began")
+        // Still, so motion blur has nothing to smear even though the hand kept moving.
+        #expect(abs(held.velocity.dx) < 1)
+
+        // Part-way through the ramp it is between the two, not at either end.
+        let arriving = try #require(builder().descriptor(for: timeline, at: time(2.25), cursor: track).cursor)
+        let live = try #require(track.position(at: 2.25))
+        let x = arriving.position.x * videoSize.width / 2
+        #expect(x > anchor.x && x < live.x, "eased, not frozen on a frame")
+    }
+
+    /// Extra calm moves the drawn pointer off the recorded one, towards where it has been.
+    @Test func extraCalmDrawsThePointerBehindTheRecordedHand() throws {
+        var timeline = timeline()
+        let track = walkingTrack()
+        let plain = try #require(builder().descriptor(for: timeline, at: time(5), cursor: track).cursor)
+
+        timeline.cursorRegions = [CursorRegion(start: time(2), duration: time(6),
+                                               isHidden: false, smoothing: 1,
+                                               transition: time(0.5))]
+        let calmed = try #require(builder().descriptor(for: timeline, at: time(5), cursor: track).cursor)
+
+        #expect(calmed.position.x < plain.position.x, "averaging lags, which is what takes the snap out")
+        #expect(plain.position.x - calmed.position.x < 0.05, "and lags by a little, not by a third of the frame")
+    }
+
+    /// A pointer nobody can see has no claim on the framing.
+    ///
+    /// Only the safe-area clamp is released, not the following: the clamp exists purely so
+    /// the *drawn* pointer stays in shot, and there is nothing drawn to keep in shot. What
+    /// `followsCursor` does is the user's own decision about the zoom and is left alone.
+    /// A barely-following camera isolates the two — the follow leaves the centre near the
+    /// middle, so anything further out is the clamp's doing.
+    @Test func aHiddenPointerStopsDraggingTheCamera() throws {
+        var timeline = timeline()
+        timeline.cursor.smoothing = 0
+        timeline.camera.follow = 0.1
+        timeline.zooms = [ZoomRegion(start: .zero, duration: time(10), scale: 2,
+                                     center: CGPoint(x: 0.5, y: 0.5),
+                                     transition: time(0.5), followsCursor: true)]
+        // Far enough right that at 2× the frame would lose it.
+        let track = CursorTrack(samples: [CursorSample(t: 0, x: 780, y: 250, shape: .arrow),
+                                          CursorSample(t: 10, x: 780, y: 250, shape: .arrow)])
+
+        let pulled = builder().descriptor(for: timeline, at: time(5), cursor: track).zoomCenter.x
+        #expect(pulled > 0.7, "the clamp is dragging the frame over to keep the pointer in shot")
+
+        timeline.cursorRegions = [CursorRegion(start: time(2), duration: time(6), transition: time(0.5))]
+        let released = builder().descriptor(for: timeline, at: time(5), cursor: track).zoomCenter.x
+        #expect(released < 0.6, "with the pointer gone the frame settles back to where it was aimed")
+
+        // And it lets go over the ramp rather than on one frame: part-way in, part-way back.
+        let arriving = builder().descriptor(for: timeline, at: time(2.25), cursor: track).zoomCenter.x
+        #expect(arriving > released && arriving < pulled)
+    }
+
     @Test func theCursorIsDrawnAtTheSizeItWasAskedFor() throws {
         let small = try #require(CursorArtwork.image(.arrow, size: 20))
         let large = try #require(CursorArtwork.image(.arrow, size: 60))
