@@ -6,41 +6,23 @@ import TimelineKit
 ///
 /// Shortcuts used to live as `.keyboardShortcut` on buttons, where nothing lists them
 /// and nothing says what they will do — and where ⌘Z simply did not exist, because there
-/// was no button to hang it on. Real menu items fix all of that, and `@FocusedValue` is
-/// what lets a menu act on whichever editor window is in front.
-struct EditorModelKey: FocusedValueKey {
-    typealias Value = EditorModel
-}
-
-extension FocusedValues {
-    var editor: EditorModel? {
-        get { self[EditorModelKey.self] }
-        set { self[EditorModelKey.self] = newValue }
-    }
-
-    /// Opens the front editor's export sheet.
-    ///
-    /// An action rather than the sheet's own binding: whether the sheet is up is the
-    /// window's business, and the menu only needs to be able to ask for it.
-    var exportAction: (() -> Void)? {
-        get { self[ExportActionKey.self] }
-        set { self[ExportActionKey.self] = newValue }
-    }
-}
-
-struct ExportActionKey: FocusedValueKey {
-    typealias Value = () -> Void
-}
-
+/// was no button to hang it on. Real menu items fix all of that.
+///
+/// Which editor they act on comes from `EditorWindows` rather than from `@FocusedValue`.
+/// The focused-value route reads the front *scene*, and the editor is no longer a scene —
+/// it is an `NSWindow` this app owns, which knows when it becomes main and says so. That
+/// is a fact rather than an inference, and it is the same object the recorder bar asks
+/// whether any editor is open.
 struct EditorCommands: SwiftUI.Commands {
-    @FocusedValue(\.editor) private var editor
-    @FocusedValue(\.exportAction) private var exportAction
+    let windows: EditorWindows
+
+    private var editor: EditorModel? { windows.front?.model }
 
     var body: some SwiftUI.Commands {
         CommandGroup(after: .saveItem) {
-            Button("Export…") { exportAction?() }
+            Button("Export…") { windows.front?.isExporting = true }
                 .keyboardShortcut("e")
-                .disabled(exportAction == nil)
+                .disabled(editor == nil)
         }
 
         CommandGroup(replacing: .undoRedo) {

@@ -11,7 +11,6 @@ import SwiftUI
 @main
 struct StudioApp: App {
     @NSApplicationDelegateAdaptor(StudioAppDelegate.self) private var delegate
-    @Environment(\.openWindow) private var openWindow
     @State private var settings: StudioSettings
     @State private var studio: StudioService
 
@@ -22,90 +21,107 @@ struct StudioApp: App {
         let studio = StudioService(settings: settings)
         _settings = State(initialValue: settings)
         _studio = State(initialValue: studio)
+        // Handed to the delegate here, so the bar can be built from
+        // `applicationDidFinishLaunching` rather than from a window that may never open.
+        StudioAppDelegate.handOff = (settings, studio)
     }
 
     var body: some Scene {
-        // The library, not the recorder: what the app opens with is the floating bar,
-        // and this is where you come back to find what you recorded.
-        Window("Recordings", id: "library") {
-            LibraryWindow(model: delegate.bar?.model)
-                .environment(studio)
+        // Neither the recorder bar, the library nor the editor is a scene: they are
+        // `NSWindow`s this app owns, for the reasons written on `EditorWindows` and
+        // `LibraryWindowController`. What is left for SwiftUI is the Settings window, which
+        // it handles well, and the menu bar.
+        Settings {
+            StudioSettingsView()
                 .environment(settings)
-                .onOpenURL { studio.open($0) }
-                .task { delegate.configure(settings: settings, studio: studio) }
+                .environment(studio)
         }
-        .windowResizability(.contentMinSize)
-        .defaultSize(width: 520, height: 620)
         .commands {
             // A recorder has nothing to make with ⌘N; the bar is the whole app.
             CommandGroup(replacing: .newItem) {}
             CommandGroup(after: .windowList) {
                 Button("Recorder Bar") { delegate.bar?.toggle() }
                     .keyboardShortcut("0", modifiers: [.command, .shift])
+                Button("Recordings") { delegate.showLibrary() }
+                    .keyboardShortcut("l")
             }
         }
-        // Stopping a take opens it for editing, and this is the only place that can
-        // reliably hear about it. It used to be watched from inside the library window —
-        // which the app closes at launch, because the app is the bar — so recording from
-        // the bar with Recordings shut set `pendingEditorURL` and nothing ever read it.
-        // A scene outlives its window; the view inside it does not.
-        .onChange(of: studio.pendingEditorURL) { _, url in
-            guard let url else { return }
-            openWindow(id: "editor", value: url)
-            studio.editorWindowOpened()
-        }
-
-        // One window per recording, keyed by its package, so two takes can be open at
-        // once and reopening the same one brings its window forward instead of making a
-        // second editor for the same file.
-        WindowGroup("Editor", id: "editor", for: URL.self) { $url in
-            if let url {
-                EditorView(packageURL: url)
-                    .environment(settings)
-                    .frame(minWidth: 960, minHeight: 680)
-            }
-        }
-        .windowResizability(.contentMinSize)
-        .defaultSize(width: 1_280, height: 860)
         // Real menu items rather than shortcuts hidden on buttons: nothing lists those,
-        // nothing says what they do, and ⌘Z had nowhere to live at all.
-        .commands { EditorCommands() }
-
-        Settings {
-            StudioSettingsView()
-                .environment(settings)
-                .environment(studio)
-        }
+        // nothing says what they do, and ⌘Z had nowhere to live at all. Attached to this
+        // scene because `.commands` builds the app's one menu bar wherever it is written,
+        // and the editor is no longer a scene to hang it on.
+        .commands { EditorCommands(windows: delegate.editors) }
     }
 }
 
-/// Everything the app needs AppKit for: the floating bar, and closing the window macOS
-/// insists on opening at launch.
+/// Everything the app needs AppKit for — which, now that the bar, the library and the
+/// editors are all `NSWindow`s it owns, is nearly all of the app's window management.
 @MainActor
 final class StudioAppDelegate: NSObject, NSApplicationDelegate {
     private(set) var bar: RecorderBarPanel?
     /// Kept so AppKit-level callbacks — opening a document, in particular — can reach
     /// the service without going through a scene that may not exist yet.
     private(set) var studio: StudioService?
+    /// Held for the windows that are built on demand — the library, and any editor.
+    private var settings: StudioSettings?
 
     /// Recordings that arrived before there was anything to hand them to.
     private var pendingOpens: [URL] = []
 
+    /// The editor windows, and which one the menu bar acts on.
+    let editors = EditorWindows()
+
+    /// The two objects `StudioApp.init()` makes, parked where a delegate can reach them.
+    ///
+    /// The bar used to be built from the library window's `task`, on the reasoning that the
+    /// window opens at launch and so the task always runs. It does not always run. SwiftUI
+    /// decides for itself what to open at launch, and when it chose to bring back an editor
+    /// instead, the library was never built, the task never fired, and the app came up with
+    /// no recorder bar at all — the one thing it is. Launching is the application's event,
+    /// not a view's, so it is handled where the application reports it.
+    static var handOff: (settings: StudioSettings, studio: StudioService)?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        guard let handOff = Self.handOff else { return }
+        configure(settings: handOff.settings, studio: handOff.studio)
+    }
+
     func configure(settings: StudioSettings, studio: StudioService) {
-        self.studio = studio
-        for url in pendingOpens { studio.open(url) }
-        pendingOpens.removeAll()
         guard bar == nil else { return }
+        self.studio = studio
+        self.settings = settings
+
+        editors.configure(settings: settings)
+        // "Is an editor on screen?" is the whole of the bar's visibility rule, and now it
+        // is a fact the app owns rather than a guess about what SwiftUI has opened.
+        editors.onChange = { [weak self] in self?.syncBar() }
+        // Set before anything is drained below, so a recording that launched the app has
+        // somewhere to go the moment it is read.
+        studio.openEditor = { [weak self] url in self?.editors.open(url) }
+
         let panel = RecorderBarPanel(settings: settings, studio: studio)
-        panel.showLibrary = { Self.openWindow(id: "library") }
+        panel.showLibrary = { [weak self] in self?.showLibrary() }
         panel.openSettings = { Self.openSettings() }
         bar = panel
-        panel.show()
 
-        // The library window opens because a `Window` scene always does; the app is the
-        // bar, so it goes away until it is asked for. Closing it here rather than
-        // suppressing the scene keeps ⇧⌘0 and the menu item working on macOS 14.
-        Self.closeWindow(id: "library")
+        // Anything that arrived before there was something to hand it to — a recording
+        // double-clicked with the app shut, or a request from Klik.
+        for url in pendingOpens { studio.open(url) }
+        pendingOpens.removeAll()
+
+        // Last, because only now is what is on screen what was actually asked for. A
+        // recording opened from the Finder has its editor by this point and the bar should
+        // not come up in front of it; a recording *request* has no editor and the bar is
+        // how that take gets stopped, so it does.
+        syncBar()
+    }
+
+    /// The bar is on screen exactly when no editor is.
+    ///
+    /// One rule in one place, rather than a hide here and a show there: every earlier
+    /// version of this had two call sites that disagreed with each other at launch.
+    private func syncBar() {
+        editors.isEmpty ? bar?.show() : bar?.hide()
     }
 
     /// Recordings opened from Finder, or from anywhere else in the system.
@@ -130,6 +146,11 @@ final class StudioAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
+        // Not while an editor is open, even one that has not been ordered onto a screen
+        // yet: for that moment every window in the app answers "not visible", and the
+        // activation that opened the editor would put the bar straight back in front of it.
+        guard editors.isEmpty else { return }
+
         // Clicking the Dock icon with everything closed should bring the recorder back.
         if bar?.isVisible == false, NSApp.windows.allSatisfy({ !$0.isVisible }) {
             bar?.show()
@@ -145,25 +166,35 @@ final class StudioAppDelegate: NSObject, NSApplicationDelegate {
         (NSApp.delegate as? StudioAppDelegate)?.bar?.show()
     }
 
-    // MARK: - Reaching SwiftUI's scenes from AppKit
+    /// Recordings stays shut unless somebody asked for it.
+    ///
+    /// A `Window` scene opens itself at launch, and — now that the editors are AppKit
+    /// windows and SwiftUI can see none of its own on screen — opens itself again every
+    /// time the app is activated. The app is the bar; Recordings is somewhere you go. So
+    /// rather than dismissing the launch one and hoping, each appearance has to be
+    /// accounted for: an appearance that answers a request is kept, and the request is
+    /// spent. Any other is a window nobody asked for, and it goes.
+    /// Made the first time somebody asks for it, and kept so it remembers where it was.
+    private var library: LibraryWindowController?
 
-    private static func window(id: String) -> NSWindow? {
-        NSApp.windows.first { $0.identifier?.rawValue.contains(id) == true }
-    }
-
-    static func closeWindow(id: String) {
-        window(id: id)?.close()
-    }
-
-    static func openWindow(id: String) {
-        if let window = window(id: id) {
-            window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-        } else {
-            // SwiftUI recreates a closed `Window` scene when its command is invoked.
-            NSApp.sendAction(Selector(("showWindow:")), to: nil, from: nil)
+    /// Shows Recordings because somebody asked — the bar's menu, or the Window menu.
+    func showLibrary() {
+        guard let studio, let settings else { return }
+        if library == nil {
+            library = LibraryWindowController(model: bar?.model, studio: studio, settings: settings)
         }
+        library?.present()
     }
+
+    /// Opens a recording for editing, from anywhere in the app.
+    ///
+    /// Static for the same reason `showBar()` is: the library window is a SwiftUI scene
+    /// with no route to the delegate.
+    static func openEditor(_ url: URL) {
+        (NSApp.delegate as? StudioAppDelegate)?.editors.open(url)
+    }
+
+    // MARK: - Reaching SwiftUI's Settings window from AppKit
 
     static func openSettings() {
         NSApp.activate(ignoringOtherApps: true)

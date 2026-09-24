@@ -30,9 +30,13 @@ final class StudioService: StudioRecording {
 
     private(set) var lastRequest: RecordingRequest?
     private(set) var lastResult: RecordingResult?
-    /// Set when a finished recording should be opened for editing. The window scene
-    /// watches this, because opening a window is SwiftUI's job, not a service's.
-    private(set) var pendingEditorURL: URL?
+    /// Called when a recording should be opened for editing.
+    ///
+    /// A call rather than a URL parked in a property for a scene to notice. The scene that
+    /// used to notice is closed at launch, so a take that had just stopped — and a
+    /// recording double-clicked in the Finder — frequently opened nothing at all. The app
+    /// delegate owns the editor windows and sets this.
+    @ObservationIgnored var openEditor: ((URL) -> Void)?
     /// Said out loud when Klik asked for a folder this app cannot write to.
     private(set) var destinationNote: String?
 
@@ -142,7 +146,7 @@ final class StudioService: StudioRecording {
             switch await session.stop() {
             case .success(let url):
                 finish(request, outcome: .finished, project: url)
-                if request.opensEditorWhenFinished { pendingEditorURL = url }
+                if request.opensEditorWhenFinished { openEditor?(url) }
             case .failure(let error):
                 finish(request, outcome: .failed, message: error.localizedDescription)
             }
@@ -199,7 +203,7 @@ final class StudioService: StudioRecording {
                 StudioLog.bridge.error("Ignoring \(url.lastPathComponent, privacy: .public), which is not a recording")
                 return
             }
-            pendingEditorURL = url
+            openEditor?(url)
             return
         }
         guard let file = RequestFile.file(from: url) else {
@@ -208,8 +212,6 @@ final class StudioService: StudioRecording {
         }
         acceptRequest(at: file)
     }
-
-    func editorWindowOpened() { pendingEditorURL = nil }
 
     // MARK: - Helpers
 

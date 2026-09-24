@@ -42,6 +42,16 @@ final class RecorderBarPanel {
     var isVisible: Bool { panel?.isVisible ?? false }
 
     func show() {
+        defer {
+            // Every time, not only the first: a bar that comes back after an edit was
+            // listing the windows that were open before it, and offering recents that are
+            // one recording out of date.
+            Task {
+                await model.refreshSources()
+                model.refreshRecents()
+            }
+        }
+
         if let panel {
             panel.orderFrontRegardless()
             return
@@ -90,11 +100,6 @@ final class RecorderBarPanel {
         self.panel = panel
         position(panel)
         panel.orderFrontRegardless()
-
-        Task {
-            await model.refreshSources()
-            model.refreshRecents()
-        }
     }
 
     func hide() {

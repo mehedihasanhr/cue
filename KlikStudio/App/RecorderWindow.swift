@@ -11,7 +11,6 @@ import SwiftUI
 struct LibraryWindow: View {
     @Environment(StudioService.self) private var studio
     @Environment(StudioSettings.self) private var settings
-    @Environment(\.openWindow) private var openWindow
     let model: RecorderModel?
 
     var body: some View {
@@ -48,7 +47,7 @@ struct LibraryWindow: View {
             LazyVStack(spacing: 2) {
                 ForEach(model.recents) { recording in
                     RecordingRow(recording: recording) {
-                        openWindow(id: "editor", value: recording.url)
+                        StudioAppDelegate.openEditor(recording.url)
                     }
                 }
             }
