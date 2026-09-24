@@ -129,6 +129,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         // Still set: it is the name the Window menu and Mission Control read.
         window.title = session.packageURL.deletingPathExtension().lastPathComponent
         window.isReleasedWhenClosed = false
+        // Nor an editor: a recording is something you open, and one restored at launch is
+        // a window in front of the recorder that nobody asked for. This was the SwiftUI
+        // `WindowGroup`'s worst habit and it is not worth inheriting in AppKit.
+        window.isRestorable = false
 
         let hosting = NSHostingController(rootView: EditorView(session: session).environment(settings))
         // The window decides its own size, not the view.

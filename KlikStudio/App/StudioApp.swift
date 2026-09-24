@@ -81,7 +81,18 @@ final class StudioAppDelegate: NSObject, NSApplicationDelegate {
     /// not a view's, so it is handled where the application reports it.
     static var handOff: (settings: StudioSettings, studio: StudioService)?
 
+    /// The one delegate, for the statics below.
+    ///
+    /// `NSApp.delegate as? StudioAppDelegate` is the obvious way to write this, and it
+    /// does not work: `@NSApplicationDelegateAdaptor` does not put this object there, so
+    /// the cast fails and every static below becomes a method that silently does nothing
+    /// — which is exactly what clicking a recording in Recordings did. AppKit hands this
+    /// object its own launch notification, so that is where the reference is taken from:
+    /// a fact, rather than an assumption about what SwiftUI installed.
+    private(set) static weak var shared: StudioAppDelegate?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Self.shared = self
         guard let handOff = Self.handOff else { return }
         configure(settings: handOff.settings, studio: handOff.studio)
     }
@@ -163,7 +174,7 @@ final class StudioAppDelegate: NSObject, NSApplicationDelegate {
     /// delegate; the delegate is a singleton in practice, so this is the honest version
     /// of what the view already assumes.
     static func showBar() {
-        (NSApp.delegate as? StudioAppDelegate)?.bar?.show()
+        shared?.bar?.show()
     }
 
     /// Recordings stays shut unless somebody asked for it.
@@ -191,7 +202,7 @@ final class StudioAppDelegate: NSObject, NSApplicationDelegate {
     /// Static for the same reason `showBar()` is: the library window is a SwiftUI scene
     /// with no route to the delegate.
     static func openEditor(_ url: URL) {
-        (NSApp.delegate as? StudioAppDelegate)?.editors.open(url)
+        shared?.editors.open(url)
     }
 
     // MARK: - Reaching SwiftUI's Settings window from AppKit

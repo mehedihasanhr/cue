@@ -21,6 +21,13 @@ final class LibraryWindowController: NSWindowController {
         window.title = "Recordings"
         window.isReleasedWhenClosed = false
         window.contentMinSize = CGSize(width: 440, height: 420)
+        // macOS must not bring this back by itself.
+        //
+        // An AppKit window is restorable by default, so having taken Recordings out of
+        // SwiftUI — which reopened it on every activation — it promptly started reopening
+        // itself at launch instead, from saved window state. The app is the bar; this is
+        // somewhere you go. It appears when it is asked for, and at no other time.
+        window.isRestorable = false
 
         let hosting = NSHostingController(rootView: LibraryWindow(model: model)
             .environment(studio)
