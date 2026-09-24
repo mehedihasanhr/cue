@@ -151,6 +151,55 @@ struct CaptionShapingTests {
         #expect(cues == cues.sorted { $0.start < $1.start })
     }
 
+    // MARK: - What a real recogniser actually hands over
+
+    /// Recorded from `SpeechTranscriber` on macOS 27 — the timed runs it produced for
+    /// "Hello there, everyone. This is a screen recording of Klik Studio. Open the panel,
+    /// then press record, and the captions will follow along." Kept verbatim, leading
+    /// spaces and misheard "Click" included, because the point of a fixture is to be what
+    /// happened rather than what one would like to have happened.
+    private let transcribed: [TranscribedWord] = [
+        .init(text: "Hello", start: 0.00, duration: 0.24),
+        .init(text: " there,", start: 0.24, duration: 0.48),
+        .init(text: " everyone.", start: 0.72, duration: 0.36),
+        .init(text: " This", start: 1.32, duration: 0.30),
+        .init(text: " is", start: 1.62, duration: 0.12),
+        .init(text: " a", start: 1.74, duration: 0.18),
+        .init(text: " screen", start: 1.92, duration: 0.12),
+        .init(text: " recording", start: 2.04, duration: 0.42),
+        .init(text: " of", start: 2.46, duration: 0.36),
+        .init(text: " Click", start: 2.82, duration: 0.30),
+        .init(text: " Studio.", start: 3.12, duration: 0.72),
+        .init(text: " Open", start: 3.90, duration: 0.30),
+        .init(text: " the", start: 4.20, duration: 0.24),
+        .init(text: " panel,", start: 4.44, duration: 0.48),
+        .init(text: " then", start: 4.92, duration: 0.24),
+        .init(text: " press", start: 5.16, duration: 0.30),
+        .init(text: " record,", start: 5.46, duration: 0.66),
+        .init(text: " and", start: 6.12, duration: 0.30),
+        .init(text: " the", start: 6.42, duration: 0.18),
+        .init(text: " captions", start: 6.60, duration: 0.42),
+        .init(text: " will", start: 7.02, duration: 0.24),
+        .init(text: " follow", start: 7.26, duration: 0.18),
+        .init(text: " along.", start: 7.44, duration: 0.54),
+    ]
+
+    @Test func `real transcriber output reads as sentences, not as a paragraph`() {
+        let cues = CaptionShaper.cues(from: transcribed, on: Timeline(sourceDuration: time(30)))
+        #expect(cues.map(\.text) == [
+            "Hello there, everyone.",
+            "This is a screen recording of Click Studio.",
+            "Open the panel, then press record,",
+            "and the captions will follow along.",
+        ])
+    }
+
+    @Test func `real transcriber output keeps every cue readable in a glance`() {
+        let cues = CaptionShaper.cues(from: transcribed, on: Timeline(sourceDuration: time(30)))
+        #expect(cues.allSatisfy { $0.duration <= CaptionShaper.Shape.default.maximumDuration })
+        #expect(cues.allSatisfy { $0.text.split(separator: " ").count > 1 })
+    }
+
     @Test func `the transcriber's own spacing does not reach the caption`() {
         // A modern transcriber hands back runs with their leading space attached; an older
         // one hands back bare words. Both must read the same on screen.

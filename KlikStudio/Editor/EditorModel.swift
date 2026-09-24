@@ -384,6 +384,10 @@ final class EditorModel {
 
     /// Whether a transcript is being made right now, so the inspector can say so.
     private(set) var isGeneratingCaptions = false
+    /// How far along it is, when the recogniser can honestly say — `nil` when it cannot,
+    /// which is the whole of the older recogniser's run and the whole of a model download.
+    /// The inspector spins on `nil` and fills on a number; neither of them invents one.
+    private(set) var captionProgress: Double?
 
     /// Listens to the recording and writes down what was said.
     ///
@@ -393,11 +397,20 @@ final class EditorModel {
     func generateCaptions() {
         guard !isGeneratingCaptions, let videoURL = document.videoURL else { return }
         isGeneratingCaptions = true
+        captionProgress = nil
 
         Task {
-            defer { isGeneratingCaptions = false }
+            defer {
+                isGeneratingCaptions = false
+                captionProgress = nil
+            }
             do {
-                let cues = try await CaptionGenerator.cues(for: videoURL, timeline: timeline)
+                let cues = try await CaptionGenerator.cues(for: videoURL, timeline: timeline) { [weak self] done in
+                    Task { @MainActor in
+                        guard let self, self.isGeneratingCaptions else { return }
+                        self.captionProgress = done
+                    }
+                }
                 apply(Commands.SetCaptions(cues))
             } catch let failure as CaptionGenerator.Failure {
                 errorMessage = failure.message

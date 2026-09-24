@@ -2,7 +2,6 @@ import AVFoundation
 import CoreMedia
 import Foundation
 import os
-import Speech
 import TimelineKit
 
 /// Turns the recorded speech into lines of text on the timeline.
@@ -15,11 +14,24 @@ import TimelineKit
 ///
 /// Times come back in the *recording's* clock and are mapped onto the edit before they
 /// become cues, so captions still line up after a trim, a reorder or a speed change.
-enum CaptionGenerator {
+///
+/// There are two recognisers behind this, because macOS grew a much better one after the
+/// app's deployment target was set. `SpeechAnalyzer` is built for exactly this job —
+/// long-form, from a file, on device, with real word timings — and it arrived in macOS 26;
+/// `SFSpeechRecognizer` is what every Mac running macOS 14 has. So this is not a
+/// replacement but an upgrade with a floor under it, and the version check lives here, in
+/// `engine`, and nowhere else. That is the point of the seam: `EditorModel` asks for cues
+/// and gets cues, and neither it nor the inspector has any idea which recogniser produced
+/// them. Both engines hand back `TranscribedWord`s and both are shaped into cues by the
+/// same `CaptionShaper`, which is what makes "the cues are the contract" true rather than
+/// aspirational.
+nonisolated enum CaptionGenerator {
     enum Failure: Error, Equatable {
         case notAuthorised
         case noRecogniser(String)
         case unavailableOffline(String)
+        case modelNotInstalled(String)
+        case noAudio
         case noSpeechFound
         case failed(String)
 
@@ -31,6 +43,10 @@ enum CaptionGenerator {
                 "macOS has no speech recogniser for \(language)."
             case .unavailableOffline(let language):
                 "The \(language) speech model isn't on this Mac yet. Add the language in System Settings › General › Language & Region, then try again."
+            case .modelNotInstalled(let language):
+                "The \(language) speech model isn't installed yet, and downloading it didn't work. Check your connection, or add the language in System Settings › General › Language & Region, then try again."
+            case .noAudio:
+                "This recording has no sound, so there is nothing to write down."
             case .noSpeechFound:
                 "No speech was found in this recording."
             case .failed(let detail):
@@ -39,157 +55,68 @@ enum CaptionGenerator {
         }
     }
 
-    /// How long a single caption may run before it is broken in two.
+    /// How far along, when the engine can honestly say — and `nil` when it cannot.
     ///
-    /// Short: a subtitle is read in a glance, and a ten-second line means the viewer is
-    /// reading the beginning of a sentence while hearing the end of it.
-    private static let maximumCueDuration: Double = 3.5
-    /// A pause longer than this ends the line, whatever its length — it is where the
-    /// speaker themselves stopped.
-    private static let sentenceGap: Double = 0.55
-    private static let maximumWordsPerCue = 12
-
-    /// One recognised word, as plain data.
-    ///
-    /// `SFTranscriptionSegment` is a class and is not `Sendable`, so it must not leave
-    /// the recogniser's callback — the three numbers that matter are copied out there
-    /// and everything downstream works on values.
-    struct Word: Sendable, Equatable {
-        var text: String
-        var start: Double
-        var duration: Double
-
-        var end: Double { start + duration }
-    }
-
-    private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "captions")
-
-    /// Asks the system, once, whether we may listen to the recording at all.
-    static func authorise() async -> Bool {
-        switch SFSpeechRecognizer.authorizationStatus() {
-        case .authorized: return true
-        case .denied, .restricted: return false
-        case .notDetermined:
-            return await withCheckedContinuation { continuation in
-                SFSpeechRecognizer.requestAuthorization { status in
-                    continuation.resume(returning: status == .authorized)
-                }
-            }
-        @unknown default: return false
-        }
-    }
+    /// Same shape as `WaveformStore`'s: a plain closure the caller hops to the main actor
+    /// itself. `nil` rather than a made-up number is the whole point: the older recogniser
+    /// reports nothing at all until it is finished, and a bar creeping along on a guess is
+    /// a lie told sixty times a second.
+    typealias ProgressHandler = @Sendable (Double?) -> Void
 
     /// Recognises the speech in a recording and returns it as cues on `timeline`.
     static func cues(for videoURL: URL,
                      timeline: Timeline,
-                     locale: Locale = .current) async throws(Failure) -> [CaptionCue] {
-        guard await authorise() else { throw Failure.notAuthorised }
+                     locale: Locale = .current,
+                     progress: @escaping ProgressHandler = { _ in }) async throws(Failure) -> [CaptionCue] {
+        // Asked before any recogniser is started, because "there is no sound in this
+        // recording" is a true and useful thing to say, and both engines would otherwise
+        // spend a while finding no speech in silence and then blame the speech.
+        guard try await hasAudio(videoURL) else { throw Failure.noAudio }
 
-        let language = locale.localizedString(forIdentifier: locale.identifier) ?? locale.identifier
-        guard let recogniser = SFSpeechRecognizer(locale: locale) else {
-            throw Failure.noRecogniser(language)
-        }
-        guard recogniser.isAvailable else { throw Failure.failed("The recogniser isn't available right now.") }
-        guard recogniser.supportsOnDeviceRecognition else {
-            throw Failure.unavailableOffline(language)
-        }
-
-        let request = SFSpeechURLRecognitionRequest(url: videoURL)
-        request.requiresOnDeviceRecognition = true
-        request.shouldReportPartialResults = false
-        request.addsPunctuation = true
-        request.taskHint = .dictation
-
-        let words: [Word]
-        do {
-            words = try await recognise(request, with: recogniser)
-        } catch let failure as Failure {
-            throw failure
-        } catch {
-            throw Failure.failed(error.localizedDescription)
-        }
+        let words = try await engine.words(in: videoURL, locale: locale, progress: progress)
         guard !words.isEmpty else { throw Failure.noSpeechFound }
 
-        let cues = group(words, on: timeline)
+        let cues = CaptionShaper.cues(from: words, on: timeline)
         guard !cues.isEmpty else { throw Failure.noSpeechFound }
-        Self.log.notice("Recognised \(words.count) words as \(cues.count) captions")
+        log.notice("Recognised \(words.count) words as \(cues.count) captions")
         return cues
     }
 
-    /// The callback API, awaited once.
+    /// The one version check in the feature.
     ///
-    /// `shouldReportPartialResults` is off, so exactly one final result arrives — but
-    /// the continuation is guarded anyway: a recogniser that calls back twice would
-    /// otherwise crash the app rather than produce a bad caption.
-    private static func recognise(_ request: SFSpeechURLRecognitionRequest,
-                                  with recogniser: SFSpeechRecognizer) async throws -> [Word] {
-        let resumed = OSAllocatedUnfairLock(initialState: false)
-        return try await withCheckedThrowingContinuation { continuation in
-            recogniser.recognitionTask(with: request) { result, error in
-                let alreadyResumed = resumed.withLock { done -> Bool in
-                    if done { return true }
-                    if error != nil || result?.isFinal == true { done = true; return false }
-                    return true
-                }
-                guard !alreadyResumed else { return }
-
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    // Copied to values here, inside the callback, so nothing the
-                    // recogniser owns crosses back to the caller.
-                    let words = (result?.bestTranscription.segments ?? []).map {
-                        Word(text: $0.substring, start: $0.timestamp, duration: $0.duration)
-                    }
-                    continuation.resume(returning: words)
-                }
-            }
+    /// `isUsable` is asked as well as the OS version because a Mac can be new enough for
+    /// the API and still not have the speech models it needs — in which case the older
+    /// recogniser, which the system has always had, is a better answer than a failure.
+    private static var engine: any CaptionTranscription {
+        if #available(macOS 26, *), ModernCaptionTranscription.isUsable {
+            ModernCaptionTranscription()
+        } else {
+            LegacyCaptionTranscription()
         }
     }
 
-    /// Words into lines.
-    ///
-    /// Broken at the speaker's own pauses first, and only then at a length limit: a
-    /// caption that ends where the sentence does reads as writing, one that ends after
-    /// exactly twelve words reads as a machine.
-    static func group(_ recognised: [Word], on timeline: Timeline) -> [CaptionCue] {
-        var cues: [CaptionCue] = []
-        var words: [String] = []
-        var start: Double?
-        var end: Double = 0
-
-        func flush() {
-            defer { words.removeAll(); start = nil }
-            guard let start, !words.isEmpty else { return }
-            // Source times onto the edit. A word spoken in footage that was cut has
-            // nowhere to go, and is dropped rather than shown at the wrong moment.
-            guard let from = timeline.timelineTime(atSource: CMTime(seconds: start, preferredTimescale: 600)),
-                  let to = timeline.timelineTime(atSource: CMTime(seconds: end, preferredTimescale: 600)),
-                  to > from else { return }
-            cues.append(CaptionCue(start: from, duration: to - from, text: words.joined(separator: " ")))
+    /// Whether there is anything to listen to.
+    private static func hasAudio(_ videoURL: URL) async throws(Failure) -> Bool {
+        do {
+            let asset = AVURLAsset(url: videoURL)
+            return try await !asset.loadTracks(withMediaType: .audio).isEmpty
+        } catch {
+            throw Failure.failed(error.localizedDescription)
         }
-
-        for word in recognised {
-            if let first = start {
-                let gap = word.start - end
-                if gap > sentenceGap
-                    || word.end - first > maximumCueDuration
-                    || words.count >= maximumWordsPerCue {
-                    flush()
-                }
-            }
-            if start == nil { start = word.start }
-            words.append(word.text)
-            end = word.end
-        }
-        flush()
-
-        // Overlaps would put two lines on screen at once; the renderer shows only the
-        // later one, so trimming here is what keeps what is drawn and what is stored the
-        // same thing.
-        for index in cues.indices.dropLast() where cues[index].end > cues[index + 1].start {
-            cues[index].duration = cues[index + 1].start - cues[index].start
-        }
-        return cues.filter { $0.duration.seconds > 0.1 }
     }
+
+    static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "captions")
+}
+
+/// One recogniser, reduced to the only question worth asking it.
+///
+/// Deliberately about words and not about cues: shaping words into readable lines is a
+/// judgement that should not differ between a new Mac and an old one, so it sits on the
+/// other side of this seam, in `CaptionShaper`, and an engine cannot get it wrong. What an
+/// engine *does* own is everything that genuinely differs — which permission to ask for,
+/// which model to install, and how to describe its own failures.
+protocol CaptionTranscription: Sendable {
+    func words(in videoURL: URL,
+               locale: Locale,
+               progress: @escaping CaptionGenerator.ProgressHandler) async throws(CaptionGenerator.Failure) -> [TranscribedWord]
 }
