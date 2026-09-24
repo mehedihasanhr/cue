@@ -19,6 +19,7 @@ public enum CopiedRegion: Equatable, Sendable {
     case annotation(AnnotationItem)
     case caption(CaptionCue)
     case audio(AudioRegion)
+    case cursor(CursorRegion)
 
     /// Reads whatever the selection points at, if it points at something copyable.
     ///
@@ -41,6 +42,9 @@ public enum CopiedRegion: Equatable, Sendable {
         case .audio(let id):
             guard let region = timeline.audio.first(where: { $0.id == id }) else { return nil }
             self = .audio(region)
+        case .cursorRegion(let id):
+            guard let region = timeline.cursorRegions.first(where: { $0.id == id }) else { return nil }
+            self = .cursor(region)
         case .none, .clip, .range, .headTrim, .tailTrim, .sound:
             return nil
         }
@@ -55,6 +59,7 @@ public enum CopiedRegion: Equatable, Sendable {
         case .annotation(let r): r.id
         case .caption(let r): r.id
         case .audio(let r): r.id
+        case .cursor(let r): r.id
         }
     }
 
@@ -65,6 +70,7 @@ public enum CopiedRegion: Equatable, Sendable {
         case .annotation(let r): r.start
         case .caption(let r): r.start
         case .audio(let r): r.start
+        case .cursor(let r): r.start
         }
     }
 
@@ -75,6 +81,7 @@ public enum CopiedRegion: Equatable, Sendable {
         case .annotation(let r): r.duration
         case .caption(let r): r.duration
         case .audio(let r): r.duration
+        case .cursor(let r): r.duration
         }
     }
 
@@ -91,6 +98,7 @@ public enum CopiedRegion: Equatable, Sendable {
         case .blur: "Blur"
         case .annotation: "Annotation"
         case .caption: "Caption"
+        case .cursor: "Pointer"
         case .audio: "Sound"
         }
     }
@@ -104,6 +112,7 @@ public enum CopiedRegion: Equatable, Sendable {
         case .annotation(let r): .annotation(r.id)
         case .caption(let r): .caption(r.id)
         case .audio(let r): .audio(r.id)
+        case .cursor(let r): .cursorRegion(r.id)
         }
     }
 
@@ -165,6 +174,10 @@ public enum CopiedRegion: Equatable, Sendable {
         case .audio(let r):
             return .audio(AudioRegion(start: start, duration: duration, path: r.path,
                                       gain: r.gain, sourceStart: r.sourceStart))
+        case .cursor(let r):
+            return .cursor(CursorRegion(start: start, duration: duration, isHidden: r.isHidden,
+                                        smoothing: r.smoothing, isHeld: r.isHeld,
+                                        transition: r.transition))
         }
     }
 
@@ -198,6 +211,8 @@ public enum CopiedRegion: Equatable, Sendable {
             return r.text
         case .audio(let r):
             return "Klik sound · \((r.path as NSString).lastPathComponent) · \(length)"
+        case .cursor(let r):
+            return "Klik pointer · \(r.isHidden ? "hidden" : (r.isHeld ? "held" : "calmed")) · \(length)"
         }
     }
 }
@@ -217,7 +232,7 @@ extension CopiedRegion: Codable {
     /// Spelled out, and *not* the case names, so renaming a case in Swift does not quietly
     /// make every copy made by an older build unreadable.
     private enum Kind: String, Codable {
-        case zoom, blur, annotation, caption, audio
+        case zoom, blur, annotation, caption, audio, cursor
     }
 
     private var kind: Kind {
@@ -227,6 +242,7 @@ extension CopiedRegion: Codable {
         case .annotation: .annotation
         case .caption: .caption
         case .audio: .audio
+        case .cursor: .cursor
         }
     }
 
@@ -240,6 +256,7 @@ extension CopiedRegion: Codable {
         case .annotation(let r): try container.encode(r, forKey: .region)
         case .caption(let r): try container.encode(r, forKey: .region)
         case .audio(let r): try container.encode(r, forKey: .region)
+        case .cursor(let r): try container.encode(r, forKey: .region)
         }
     }
 
@@ -255,6 +272,7 @@ extension CopiedRegion: Codable {
         case .annotation: self = .annotation(try container.decode(AnnotationItem.self, forKey: .region))
         case .caption: self = .caption(try container.decode(CaptionCue.self, forKey: .region))
         case .audio: self = .audio(try container.decode(AudioRegion.self, forKey: .region))
+        case .cursor: self = .cursor(try container.decode(CursorRegion.self, forKey: .region))
         }
     }
 

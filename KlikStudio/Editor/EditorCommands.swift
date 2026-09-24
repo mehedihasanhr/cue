@@ -72,6 +72,14 @@ struct EditorCommands: SwiftUI.Commands {
                 .disabled(editor == nil)
             Button("Auto-Zoom from Clicks and Focus") { editor?.suggestZooms() }
                 .disabled(editor == nil)
+            // Acts on the selected range when there is one and on a few seconds at the
+            // playhead when there is not, which is why it is not disabled without a
+            // selection — see `EditorModel.hidePointerOverSelection`.
+            // No shortcut: ⌘⇧H is the note editor's Heading elsewhere in this app, and a
+            // key that means two things depending on which window is front is worse than
+            // one that means nothing.
+            Button("Hide Pointer over Selection") { editor?.hidePointerOverSelection() }
+                .disabled(editor == nil)
             Divider()
             Button("Add Sound…") { editor?.addSound() }
                 .keyboardShortcut("a", modifiers: [.command, .shift])

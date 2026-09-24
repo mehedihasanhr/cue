@@ -23,6 +23,12 @@ public struct Timeline: Equatable, Codable, Sendable {
     public var annotations: [AnnotationItem]
     public var captions: [CaptionCue]
     public var audio: [AudioRegion]
+    /// Stretches where the pointer does something other than what `cursor` says.
+    ///
+    /// An override on top of the global style, never a replacement for it: empty means
+    /// "the pointer is drawn as `cursor` describes, everywhere", which is what every
+    /// project written before this field existed decodes to.
+    public var cursorRegions: [CursorRegion]
     public var style: FrameStyle
     public var cursor: CursorStyle
     public var camera: CameraStyle
@@ -39,6 +45,7 @@ public struct Timeline: Equatable, Codable, Sendable {
                 annotations: [AnnotationItem] = [],
                 captions: [CaptionCue] = [],
                 audio: [AudioRegion] = [],
+                cursorRegions: [CursorRegion] = [],
                 style: FrameStyle = FrameStyle(),
                 cursor: CursorStyle = CursorStyle(),
                 camera: CameraStyle = CameraStyle(),
@@ -53,6 +60,7 @@ public struct Timeline: Equatable, Codable, Sendable {
         self.annotations = annotations
         self.captions = captions
         self.audio = audio
+        self.cursorRegions = cursorRegions
         self.style = style
         self.cursor = cursor
         self.camera = camera
@@ -87,6 +95,10 @@ public struct Timeline: Equatable, Codable, Sendable {
         annotations = value(.annotations, default: [])
         captions = value(.captions, default: [])
         audio = value(.audio, default: [])
+        // Absent in every project written before cursor regions existed, and empty is
+        // exactly "the pointer behaves as the global style says" — so an old project opens
+        // and renders frame for frame as it did.
+        cursorRegions = value(.cursorRegions, default: [])
         style = value(.style, default: FrameStyle())
         cursor = value(.cursor, default: CursorStyle())
         camera = value(.camera, default: CameraStyle())
@@ -99,7 +111,8 @@ public struct Timeline: Equatable, Codable, Sendable {
     /// renaming a property is a compile error rather than a silently unreadable project.
     enum CodingKeys: String, CodingKey {
         case formatVersion, sourceDuration, clips, zooms, blurs
-        case annotations, captions, audio, style, cursor, camera, sound, webcam, captionStyle
+        case annotations, captions, audio, cursorRegions
+        case style, cursor, camera, sound, webcam, captionStyle
     }
 
     /// How long the edit plays for.
@@ -169,6 +182,33 @@ public struct Timeline: Equatable, Codable, Sendable {
         return nil
     }
 
+    /// What the cursor regions ask of the pointer at one moment.
+    ///
+    /// On the model rather than in the renderer because it is a question about the edit,
+    /// not about pixels, and because it has to be answerable without a renderer to test it
+    /// with. The early return is not just tidiness: this runs on every frame of the
+    /// preview and every frame of an export, and a project with no cursor regions — every
+    /// project written before they existed — must pay nothing at all for them.
+    public func cursorOverride(at time: CMTime) -> CursorOverride {
+        guard !cursorRegions.isEmpty else { return .none }
+
+        var override = CursorOverride.none
+        for region in cursorRegions {
+            let region = region.sanitised
+            let presence = region.presence(at: time)
+            guard presence > 0 else { continue }
+            if region.isHidden { override.hiding = max(override.hiding, presence) }
+            override.smoothingWindow = max(override.smoothingWindow, region.smoothingWindow(at: time))
+            // The hold that has arrived furthest wins its anchor, because blending two
+            // frozen positions would put the pointer somewhere it never was.
+            if region.isHeld, presence > override.holding {
+                override.holding = presence
+                override.heldSince = region.start
+            }
+        }
+        return override
+    }
+
     /// Every edge a drag can snap to: clip cuts, region edges, the start and the end.
     public var boundaries: [CMTime] {
         var times: [CMTime] = [.zero, duration]
@@ -182,6 +222,7 @@ public struct Timeline: Equatable, Codable, Sendable {
         for item in annotations { times.append(item.start); times.append(item.end) }
         for cue in captions { times.append(cue.start); times.append(cue.end) }
         for region in audio { times.append(region.start); times.append(region.end) }
+        for region in cursorRegions { times.append(region.start); times.append(region.end) }
         return times
     }
 }

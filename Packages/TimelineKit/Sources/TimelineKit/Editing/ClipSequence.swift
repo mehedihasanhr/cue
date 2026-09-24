@@ -208,6 +208,7 @@ public enum ClipSequence {
         timeline.annotations = adjust(timeline.annotations)
         timeline.captions = adjust(timeline.captions)
         timeline.audio = adjust(timeline.audio)
+        timeline.cursorRegions = adjust(timeline.cursorRegions)
     }
 
     /// Moves everything from `time` onwards by `delta`.
@@ -233,6 +234,7 @@ public enum ClipSequence {
         timeline.annotations = adjust(timeline.annotations)
         timeline.captions = adjust(timeline.captions)
         timeline.audio = adjust(timeline.audio)
+        timeline.cursorRegions = adjust(timeline.cursorRegions)
     }
 
     /// Stretches or squeezes everything inside `range` about `anchor`.
@@ -255,6 +257,7 @@ public enum ClipSequence {
         timeline.annotations = adjust(timeline.annotations)
         timeline.captions = adjust(timeline.captions)
         timeline.audio = adjust(timeline.audio)
+        timeline.cursorRegions = adjust(timeline.cursorRegions)
     }
 
     /// Keeps every region inside the timeline it belongs to.
@@ -275,5 +278,6 @@ public enum ClipSequence {
         timeline.annotations = clamp(timeline.annotations)
         timeline.captions = clamp(timeline.captions)
         timeline.audio = clamp(timeline.audio)
+        timeline.cursorRegions = clamp(timeline.cursorRegions)
     }
 }

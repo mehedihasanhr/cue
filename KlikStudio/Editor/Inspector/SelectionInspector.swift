@@ -26,6 +26,8 @@ struct SelectionInspector: View {
                 }
             case .annotation(let id):
                 AnnotationInspector(model: model, id: id)
+            case .cursorRegion(let id):
+                CursorRegionInspector(model: model, id: id)
             case .sound:
                 // The whole panel, because selecting the lane is how most people will
                 // arrive at these settings.
