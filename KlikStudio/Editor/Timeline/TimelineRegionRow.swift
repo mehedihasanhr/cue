@@ -16,6 +16,15 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
     let height: CGFloat
     /// How this kind of region is selected, so the row does not have to know.
     let selection: (UUID) -> Selection
+    /// What to draw *inside* the chip, for a lane whose contents have a shape worth
+    /// reading rather than only a label worth naming.
+    ///
+    /// Defaulted to nothing, so the four lanes that are labels stay exactly as they were.
+    /// Only the sound lane fills it in: what you want off a piece of music is where the
+    /// words are and where the quiet bit is, so you can line the picture up with them, and
+    /// no filename says that. The peaks and the mapping arrive together because a waveform
+    /// is meaningless without the spans that say which second each point stands for.
+    var waveform: (Region) -> (peaks: WaveformPeaks, spans: [TimelineWaveform.Span])? = { _ in nil }
     @ViewBuilder let badge: (Region) -> Badge
 
     @State private var dragOrigin: (start: CMTime, duration: CMTime)?
@@ -46,6 +55,7 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
 
         return RoundedRectangle(cornerRadius: 5, style: .continuous)
             .fill(tint.opacity(isSelected(region) ? 0.85 : 0.5))
+            .overlay { shape(of: region, width: width, left: left) }
             .overlay {
                 RoundedRectangle(cornerRadius: 5, style: .continuous)
                     .strokeBorder(.white.opacity(isSelected(region) ? 0.9 : 0), lineWidth: 1.5)
@@ -84,6 +94,27 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
                 Button("Delete", role: .destructive) { model.deleteSelection(region.id) }
             }
             .help("\(title) · \(Timecode.length(region.duration))")
+    }
+
+    /// The waveform, drawn across the row and then masked down to this chip.
+    ///
+    /// Masked rather than drawn to fit, for the reason `TimelineSoundRow` does the same: the
+    /// peaks are indexed by source time, so the drawing needs the lane's coordinates and the
+    /// chip only decides what survives.
+    @ViewBuilder
+    private func shape(of region: Region, width: CGFloat, left: CGFloat) -> some View {
+        if let drawn = waveform(region) {
+            TimelineWaveform(viewport: viewport, spans: drawn.spans, peaks: drawn.peaks,
+                             height: height, opacity: 0.38)
+                .mask {
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .frame(width: width)
+                        .offset(x: left)
+                }
+                .offset(x: -left)
+                .frame(width: width, alignment: .leading)
+                .clipped()
+        }
     }
 
     // MARK: - Gestures

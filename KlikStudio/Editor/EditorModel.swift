@@ -43,6 +43,9 @@ final class EditorModel {
 
     let viewport = TimelineViewport()
     let waveform: WaveformStore
+    /// The waveforms of the sounds brought in from outside the recording. See
+    /// `RegionWaveformStore` for why these are not the one above.
+    let regionWaveforms: RegionWaveformStore
     /// The edit, out loud — and, while it plays, the clock the playhead follows.
     private(set) var audio: PreviewAudio?
 
@@ -68,6 +71,7 @@ final class EditorModel {
                                backgrounds: StudioBackgroundResolver(),
                                packageURL: package.url)
         waveform = WaveformStore(package: package, manifest: document.manifest)
+        regionWaveforms = RegionWaveformStore(package: package)
 
         if let settings {
             // A project opened for the first time starts as the user's defaults say —
@@ -233,6 +237,10 @@ final class EditorModel {
     func refresh() {
         renderTask?.cancel()
         validateSelection()
+        // Here rather than at each place a sound is added, because there are four of them
+        // — an import, a voiceover, a paste, an undo — and the list of sounds the edit
+        // names is the only thing any of them has in common. Cheap on the ordinary path.
+        regionWaveforms.reconcile(paths: timeline.audio.map(\.path))
         let scene = builder.descriptor(for: renderedTimeline, at: playhead, cursor: smoothedCursor)
         self.scene = scene
         let frames = frames
@@ -956,6 +964,7 @@ final class EditorModel {
         if isPlaying { stop() }
         audio?.cancel()
         waveform.cancel()
+        regionWaveforms.cancel()
     }
 }
 
