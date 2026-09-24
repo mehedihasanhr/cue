@@ -123,6 +123,47 @@ public enum Commands {
         }
     }
 
+    /// A stretch where the pointer behaves differently: hidden, calmed, or held still.
+    ///
+    /// Refuses a region that would sit off the end of the edit or be too short to grab
+    /// again, the same two conditions `AddZoom` refuses on — a chip nobody can see or
+    /// reach is worse than no chip.
+    public struct AddCursorRegion: TimelineCommand {
+        public let region: CursorRegion
+        public var name: String { region.isHidden ? "Hide Pointer" : "Pointer" }
+        public init(_ region: CursorRegion) { self.region = region }
+        public func apply(to timeline: inout Timeline) -> Bool {
+            guard region.duration >= Clip.minimumDuration, region.start < timeline.duration else { return false }
+            timeline.cursorRegions.append(region)
+            timeline.cursorRegions.sort { $0.start < $1.start }
+            return true
+        }
+    }
+
+    /// Changing what a cursor region does to the pointer.
+    ///
+    /// By id rather than by index, unlike the zoom and blur inspectors: `AddCursorRegion`
+    /// keeps the lane sorted by start, so dragging a region past its neighbour renumbers
+    /// the array under an inspector that is still open on it.
+    public struct RestyleCursorRegion: TimelineCommand {
+        public let id: UUID
+        public let change: @Sendable (inout CursorRegion) -> Void
+        public let name: String
+
+        public init(id: UUID, name: String, _ change: @escaping @Sendable (inout CursorRegion) -> Void) {
+            self.id = id
+            self.name = name
+            self.change = change
+        }
+
+        public func apply(to timeline: inout Timeline) -> Bool {
+            guard let index = timeline.cursorRegions.firstIndex(where: { $0.id == id }) else { return false }
+            let before = timeline.cursorRegions[index]
+            change(&timeline.cursorRegions[index])
+            return timeline.cursorRegions[index] != before
+        }
+    }
+
     public struct AddAnnotation: TimelineCommand {
         public let item: AnnotationItem
         public var name: String { "Add Annotation" }
@@ -249,15 +290,16 @@ public enum Commands {
         public var name: String { "Delete" }
         public init(id: UUID) { self.id = id }
         public func apply(to timeline: inout Timeline) -> Bool {
-            let before = (timeline.zooms.count, timeline.blurs.count,
-                          timeline.annotations.count, timeline.captions.count, timeline.audio.count)
+            let before = (timeline.zooms.count, timeline.blurs.count, timeline.annotations.count,
+                          timeline.captions.count, timeline.audio.count, timeline.cursorRegions.count)
             timeline.zooms.removeAll { $0.id == id }
             timeline.blurs.removeAll { $0.id == id }
             timeline.annotations.removeAll { $0.id == id }
             timeline.captions.removeAll { $0.id == id }
             timeline.audio.removeAll { $0.id == id }
-            return before != (timeline.zooms.count, timeline.blurs.count,
-                              timeline.annotations.count, timeline.captions.count, timeline.audio.count)
+            timeline.cursorRegions.removeAll { $0.id == id }
+            return before != (timeline.zooms.count, timeline.blurs.count, timeline.annotations.count,
+                              timeline.captions.count, timeline.audio.count, timeline.cursorRegions.count)
         }
     }
 
@@ -297,7 +339,7 @@ public enum Commands {
             }
 
             return move(&timeline.zooms) || move(&timeline.blurs) || move(&timeline.annotations)
-                || move(&timeline.captions) || move(&timeline.audio)
+                || move(&timeline.captions) || move(&timeline.audio) || move(&timeline.cursorRegions)
         }
     }
 

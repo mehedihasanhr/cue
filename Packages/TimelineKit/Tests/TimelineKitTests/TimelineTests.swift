@@ -305,4 +305,139 @@ struct TimelineTests {
         #expect(tiny.safeArea == 0.05, "a zero safe area would pin the camera to the pointer")
     }
 
+    // MARK: - The pointer over time
+
+    @Test func aProjectWithNoCursorRegionsAsksNothingOfThePointer() {
+        let timeline = timeline()
+        #expect(timeline.cursorRegions.isEmpty)
+        #expect(timeline.cursorOverride(at: time(10)) == .none)
+        #expect(timeline.cursorOverride(at: time(10)).isNothing)
+    }
+
+    /// The backward-compatibility promise, at the level it actually lives at.
+    ///
+    /// A project written before cursor regions existed has no `cursorRegions` key at all,
+    /// and one written before a *field* existed has the region but not the field. Both have
+    /// to read as today's behaviour: no regions, and a region that hides the pointer and
+    /// does nothing else — which is what the menu item makes.
+    @Test func aCursorRegionDecodesAnAbsentFieldAsTodaysBehaviour() throws {
+        let decoder = JSONDecoder()
+
+        let withoutTheLane = """
+        {"sourceDuration": {"value": 6000, "timescale": 600, "flags": 1, "epoch": 0}}
+        """
+        let bare = try decoder.decode(Timeline.self, from: Data(withoutTheLane.utf8))
+        #expect(bare.cursorRegions.isEmpty)
+        #expect(bare.cursorOverride(at: time(1)) == .none)
+
+        let withoutTheFields = """
+        {"id": "\(UUID().uuidString)",
+         "start": {"value": 600, "timescale": 600, "flags": 1, "epoch": 0},
+         "duration": {"value": 1200, "timescale": 600, "flags": 1, "epoch": 0}}
+        """
+        let region = try decoder.decode(CursorRegion.self, from: Data(withoutTheFields.utf8))
+        #expect(region.isHidden)
+        #expect(region.smoothing == 0)
+        #expect(region.isHeld == false)
+        #expect(region.start == time(1))
+        #expect(region.duration == time(2))
+        #expect(region == CursorRegion(id: region.id, start: time(1), duration: time(2)),
+                "the absent fields are exactly the ones the initialiser defaults to")
+    }
+
+    @Test func aCursorRegionRoundTripsThroughAFile() throws {
+        var written = timeline()
+        written.cursorRegions = [CursorRegion(start: time(3), duration: time(5),
+                                              isHidden: false, smoothing: 0.4, isHeld: true,
+                                              transition: time(0.25))]
+        let read = try JSONDecoder().decode(Timeline.self, from: JSONEncoder().encode(written))
+        #expect(read.cursorRegions == written.cursorRegions)
+    }
+
+    /// A project is a file, and a file can say `smoothing: 40`.
+    @Test func nonsensePointerSettingsAreClampedRatherThanObeyed() {
+        let absurd = CursorRegion(start: time(1), duration: time(2),
+                                  smoothing: 12, transition: time(30)).sanitised
+        #expect(absurd.smoothing == 1)
+        #expect(absurd.transition == time(1), "a ramp longer than half the region would never arrive")
+
+        let negative = CursorRegion(start: time(1), duration: time(2),
+                                    smoothing: -5, transition: time(-1)).sanitised
+        #expect(negative.smoothing == 0)
+        #expect(negative.transition == .zero)
+    }
+
+    /// The boundary: 0 outside, ramping in, 1 in the middle, and symmetrical.
+    @Test func aCursorRegionArrivesOverItsRampRatherThanOnOneFrame() {
+        let region = CursorRegion(start: time(2), duration: time(4), transition: time(1))
+        #expect(region.presence(at: time(1.99)) == 0)
+        #expect(region.presence(at: time(6)) == 0, "the end belongs to what comes after it")
+        #expect(region.presence(at: time(4)) == 1)
+        let quarter = region.presence(at: time(2.25))
+        #expect(quarter > 0 && quarter < 1)
+        #expect(abs(region.presence(at: time(5.75)) - quarter) < 1e-9, "it leaves the way it came")
+        // A ramp longer than the region is halved rather than truncated, so the middle is
+        // still fully there.
+        #expect(CursorRegion(start: .zero, duration: time(1), transition: time(9))
+            .sanitised.presence(at: time(0.5)) == 1)
+    }
+
+    /// Overlapping stretches resolve to the strongest of each effect, not to a winner.
+    ///
+    /// Picking one region would switch answers on a single frame exactly where both are
+    /// weakest — the pointer would flash back into shot between two overlapping hides.
+    @Test func overlappingPointerStretchesTakeTheStrongestOfEach() {
+        var timeline = timeline()
+        timeline.cursorRegions = [
+            CursorRegion(start: time(0), duration: time(8), transition: time(2)),
+            CursorRegion(start: time(4), duration: time(6), isHidden: false,
+                         smoothing: 1, isHeld: true, transition: time(2)),
+        ]
+        // Deep inside the first and one second into the second: fully hidden by the first,
+        // and already part-way into the second's calm and hold.
+        let override = timeline.cursorOverride(at: time(5))
+        #expect(override.hiding == 1)
+        #expect(override.smoothingWindow > 0 && override.smoothingWindow < CursorRegion.maximumSmoothingWindow)
+        #expect(override.holding > 0 && override.holding < 1)
+        #expect(override.heldSince == time(4), "held from where the holding stretch began")
+
+        // And where only the first covers, the second asks for nothing.
+        let early = timeline.cursorOverride(at: time(3))
+        #expect(early.hiding == 1)
+        #expect(early.smoothingWindow == 0)
+        #expect(early.holding == 0)
+    }
+
+    @Test func deletingAStretchTakesThePointerRegionsOverItAlong() {
+        var timeline = timeline()
+        timeline.cursorRegions = [CursorRegion(start: time(10), duration: time(4)),
+                                  CursorRegion(start: time(30), duration: time(4))]
+        ClipSequence.delete(&timeline, range: CMTimeRange(start: time(8), end: time(16)))
+
+        #expect(timeline.cursorRegions.count == 1, "the one over the deleted stretch went with it")
+        #expect(timeline.cursorRegions.first?.start == time(22), "and the later one moved back by 8")
+    }
+
+    @Test func aPointerRegionIsOnTheListOfEdgesADragSnapsTo() {
+        var timeline = timeline()
+        timeline.cursorRegions = [CursorRegion(start: time(12), duration: time(3))]
+        #expect(timeline.boundaries.contains(time(12)))
+        #expect(timeline.boundaries.contains(time(15)))
+    }
+
+    @Test func addingAndDeletingAPointerRegionAreBothOneEdit() {
+        var timeline = timeline()
+        let region = CursorRegion(start: time(5), duration: time(3))
+        #expect(Commands.AddCursorRegion(region).apply(to: &timeline))
+        #expect(timeline.cursorRegions.count == 1)
+        #expect(Commands.AddCursorRegion(CursorRegion(start: time(90), duration: time(3)))
+            .apply(to: &timeline) == false, "past the end of the edit is no place for one")
+
+        #expect(Commands.RestyleCursorRegion(id: region.id, name: "Hold") { $0.isHeld = true }
+            .apply(to: &timeline))
+        #expect(timeline.cursorRegions.first?.isHeld == true)
+
+        #expect(Commands.DeleteRegion(id: region.id).apply(to: &timeline))
+        #expect(timeline.cursorRegions.isEmpty)
+    }
 }
