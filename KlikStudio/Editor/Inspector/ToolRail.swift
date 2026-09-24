@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The strip of tools between the picture and the inspector.
+/// The strip of tools down the left edge of the editor.
 ///
 /// Selecting one decides what the inspector shows, and — for a canvas tool like crop —
 /// what the preview is drawing. The selection lives on `EditorModel` rather than here,

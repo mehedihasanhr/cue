@@ -48,7 +48,10 @@ final class TimelineViewport {
 
     func setWidth(_ width: Double, duration: CMTime) {
         let width = max(1, width)
-        guard width != self.width else { return }
+        // A tolerance, not an exact compare: the strip's height is recomputed from the
+        // timeline, so adding a row relays it out by a fraction of a point, and clamping
+        // on that would nudge the scroll offset for no reason anyone asked for.
+        guard abs(width - self.width) > 0.5 else { return }
         self.width = width
         clamp(duration: duration)
     }

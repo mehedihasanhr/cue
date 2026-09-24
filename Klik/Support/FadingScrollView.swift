@@ -9,14 +9,26 @@ struct FadingScrollView<Content: View>: View {
     var depth: CGFloat = 28
     @ViewBuilder let content: () -> Content
 
-    @State private var offset: CGFloat = 0
-    @State private var contentHeight: CGFloat = 0
-    @State private var viewport: CGFloat = 0
+    @State private var edges = Edges()
     @Namespace private var space
 
-    /// A couple of points of slack, so a fade never flickers at rest.
-    private var more: (above: Bool, below: Bool) {
-        (offset > 2, contentHeight - offset - viewport > 2)
+    /// Which edges have more content behind them.
+    ///
+    /// A couple of points of slack, so a fade never flickers at rest. The slack lives
+    /// here, in the value being observed, rather than downstream of it: measuring the
+    /// scroll offset into state and deciding afterwards meant every pixel of scrolling
+    /// wrote state, re-laid out the reader that produced it, and measured again — which
+    /// SwiftUI reports as an action updating several times in one frame.
+    private struct Edges: Equatable {
+        var above = false
+        var below = false
+
+        init() {}
+
+        init(content frame: CGRect, viewport height: CGFloat) {
+            above = -frame.minY > 2
+            below = frame.height + frame.minY - height > 2
+        }
     }
 
     var body: some View {
@@ -25,27 +37,25 @@ struct FadingScrollView<Content: View>: View {
                 content()
                     .background {
                         GeometryReader { inner in
-                            let frame = inner.frame(in: .named(space))
+                            let next = Edges(content: inner.frame(in: .named(space)),
+                                             viewport: outer.size.height)
                             Color.clear
-                                .onAppear { offset = -frame.minY; contentHeight = frame.height }
-                                .onChange(of: frame.minY) { _, minY in offset = -minY }
-                                .onChange(of: frame.height) { _, height in contentHeight = height }
+                                .onChange(of: next, initial: true) { _, edges in
+                                    self.edges = edges
+                                }
                         }
                     }
             }
             .coordinateSpace(name: space)
-            .onAppear { viewport = outer.size.height }
-            .onChange(of: outer.size.height) { _, height in viewport = height }
             .mask {
-                let more = more
                 LinearGradient(stops: [
                     .init(color: .clear, location: 0),
-                    .init(color: .black, location: fraction(more.above ? depth : 0, in: outer.size.height)),
-                    .init(color: .black, location: 1 - fraction(more.below ? depth : 0, in: outer.size.height)),
+                    .init(color: .black, location: fraction(edges.above ? depth : 0, in: outer.size.height)),
+                    .init(color: .black, location: 1 - fraction(edges.below ? depth : 0, in: outer.size.height)),
                     .init(color: .clear, location: 1),
                 ], startPoint: .top, endPoint: .bottom)
-                .animation(IslandView.reduceMotion ? nil : .easeOut(duration: 0.18), value: more.above)
-                .animation(IslandView.reduceMotion ? nil : .easeOut(duration: 0.18), value: more.below)
+                .animation(IslandView.reduceMotion ? nil : .easeOut(duration: 0.18), value: edges.above)
+                .animation(IslandView.reduceMotion ? nil : .easeOut(duration: 0.18), value: edges.below)
             }
         }
     }

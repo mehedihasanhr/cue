@@ -68,11 +68,22 @@ struct BarButtonStyle: ButtonStyle {
 struct BarSizeReporter: View {
     let report: (CGSize) -> Void
 
+    /// The last size handed on. Reporting is rounded and de-duplicated here, because the
+    /// panel rounds the same way before comparing against its own frame: left unrounded,
+    /// a sub-point remeasure clears the panel's guard, resizes the window, and is
+    /// measured again.
+    @State private var reported: CGSize?
+
     var body: some View {
         GeometryReader { proxy in
+            let size = CGSize(width: proxy.size.width.rounded(.up),
+                              height: proxy.size.height.rounded(.up))
             Color.clear
-                .onAppear { report(proxy.size) }
-                .onChange(of: proxy.size) { _, size in report(size) }
+                .onChange(of: size, initial: true) { _, size in
+                    guard size != reported else { return }
+                    reported = size
+                    report(size)
+                }
         }
     }
 }

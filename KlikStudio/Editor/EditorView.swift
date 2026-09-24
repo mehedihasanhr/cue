@@ -41,6 +41,10 @@ struct EditorView: View {
             EditorToolbar(model: model) { session.isExporting = true }
 
             HStack(spacing: 0) {
+                // Full height, beside the whole editor rather than inside it, so the rail
+                // does not shrink when the timeline grows a row.
+                ToolRail(model: model)
+                Divider()
                 VStack(spacing: 0) {
                     PreviewPane(model: model)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -50,10 +54,6 @@ struct EditorView: View {
                     TimelineStrip(model: model)
                         .frame(height: TimelineStrip.height(for: model.timeline))
                 }
-                Divider()
-                // Full height, beside the whole editor rather than inside it, so the rail
-                // does not shrink when the timeline grows a row.
-                ToolRail(model: model)
             }
         }
         // The bar runs to the very top of the window, under where the title bar was.
