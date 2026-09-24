@@ -160,6 +160,10 @@ public enum CopiedRegion: Equatable, Sendable {
         // the reason the one place that needs a new identity has to say so five times.
         switch self {
         case .zoom(let r):
+            // Two fields are deliberately left behind. A seam ramp only means anything next
+            // to the region it was cut from, and a copy landing somewhere else with no ramp
+            // at one end would snap in; and a copy arrives unlocked, because the first thing
+            // anybody does with a duplicate is drag it.
             return .zoom(ZoomRegion(start: start, duration: duration, scale: r.scale,
                                     center: r.center, easing: r.easing, transition: r.transition,
                                     followsCursor: r.followsCursor, source: r.source))
