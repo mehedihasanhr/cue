@@ -297,12 +297,50 @@ public struct CameraStyle: Codable, Equatable, Sendable {
     /// if a zoom feels either glued to the mouse or slow to keep up.
     public var safeArea: Double
 
+    /// Whether a zoom magnifies the framed picture as a whole, or only what is inside it.
+    ///
+    /// Off — the original behaviour — the recording's rounded rectangle stays exactly where
+    /// the padding put it and the content magnifies *inside* it, like pushing in on a
+    /// screen. The background, the padding, the corners and the shadow never move, so the
+    /// styling is visible throughout.
+    ///
+    /// On, the frame itself grows and travels: the picture behaves like a camera moving
+    /// towards the scene, so at 2× the recording is twice the size and the padding around
+    /// it closes up. That is what most people mean by zooming in, and it is what makes a
+    /// zoom actually fill the finished video — but it does push the framing off the edges,
+    /// which is the whole point and also the reason it is not the default.
+    ///
+    /// Off by default so every project made before this renders exactly as it did.
+    public var zoomsWholeFrame: Bool
+
     public init(steadiness: Double = 0.7,
                 follow: Double = 1,
-                safeArea: Double = 0.85) {
+                safeArea: Double = 0.85,
+                zoomsWholeFrame: Bool = false) {
         self.steadiness = steadiness
         self.follow = follow
         self.safeArea = safeArea
+        self.zoomsWholeFrame = zoomsWholeFrame
+    }
+
+    /// Decoded field by field, for the reason `CursorStyle` is: the synthesised decoder
+    /// wants every key, so adding one would make every project written before it fail to
+    /// decode its camera — and `Timeline`'s lenient decoder would then hand back a
+    /// *default* `CameraStyle`, quietly resetting somebody's steadiness and follow because
+    /// a new switch appeared beside them.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        func value<T: Decodable>(_ key: CodingKeys, default fallback: @autoclosure () -> T) -> T {
+            ((try? container.decodeIfPresent(T.self, forKey: key)) ?? nil) ?? fallback()
+        }
+        steadiness = value(.steadiness, default: 0.7)
+        follow = value(.follow, default: 1)
+        safeArea = value(.safeArea, default: 0.85)
+        zoomsWholeFrame = value(.zoomsWholeFrame, default: false)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case steadiness, follow, safeArea, zoomsWholeFrame
     }
 
     /// The same values, clamped to what the renderer can act on.
@@ -313,7 +351,8 @@ public struct CameraStyle: Codable, Equatable, Sendable {
     public var sanitised: CameraStyle {
         CameraStyle(steadiness: min(max(steadiness, 0), 5),
                     follow: min(max(follow, 0), 1),
-                    safeArea: min(max(safeArea, 0.05), 1))
+                    safeArea: min(max(safeArea, 0.05), 1),
+                    zoomsWholeFrame: zoomsWholeFrame)
     }
 }
 

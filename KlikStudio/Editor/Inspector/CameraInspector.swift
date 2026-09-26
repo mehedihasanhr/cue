@@ -22,12 +22,15 @@ struct CameraInspector: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-            InspectorSlider(model: model, "Steadiness", systemImage: "hand.raised",
-                            value: style.binding(\.camera.steadiness, "Steadiness"), range: 0...2)
-            InspectorSlider(model: model, "Follow", systemImage: "scope",
-                            value: style.binding(\.camera.follow, "Follow Strength"), range: 0...1)
-            InspectorSlider(model: model, "Stray", systemImage: "arrow.left.and.right",
-                            value: style.binding(\.camera.safeArea, "Safe Area"), range: 0.05...1)
+            Group {
+                InspectorSlider(model: model, "Steadiness", systemImage: "hand.raised",
+                                value: style.binding(\.camera.steadiness, "Steadiness"), range: 0...2)
+                InspectorSlider(model: model, "Follow", systemImage: "scope",
+                                value: style.binding(\.camera.follow, "Follow Strength"), range: 0...1)
+                InspectorSlider(model: model, "Stray", systemImage: "arrow.left.and.right",
+                                value: style.binding(\.camera.safeArea, "Safe Area"), range: 0.05...1)
+            }
+            .opacity(isFollowing ? 1 : 0.5)
 
             Text(isFollowing
                  ? "Steadiness smooths the pointer before the camera follows it. Stray is how far the pointer may wander from the middle before the frame has to move — the pointer never leaves the frame."
@@ -35,9 +38,22 @@ struct CameraInspector: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+                .opacity(isFollowing ? 1 : 0.5)
+
+            Divider()
+
+            // Not about following, so it sits below the rule and outside the dimming that
+            // the three sliders above take when a zoom holds its aim. It applies to every
+            // zoom in the project.
+            Toggle("Zoom the whole picture", isOn: style.binding(\.camera.zoomsWholeFrame, "Zoom Scope"))
+            Text(model.timeline.camera.zoomsWholeFrame
+                 ? "The picture grows and moves as a whole, so the padding around it closes up as the camera pushes in."
+                 : "The picture stays where the padding put it and magnifies inside its own frame, so the background and corners never move.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .font(.system(size: 12))
-        .opacity(isFollowing ? 1 : 0.5)
         .inspectorSection("Camera Motion", systemImage: "dot.viewfinder")
     }
 }

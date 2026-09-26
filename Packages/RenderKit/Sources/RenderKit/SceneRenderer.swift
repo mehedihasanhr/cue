@@ -90,7 +90,7 @@ public final class SceneRenderer: @unchecked Sendable {
         // click near the edge of a zoomed recording does not spill onto the padding.
         for click in scene.clicks {
             if let layer = clickImage(click, in: scene) {
-                image = layer.cropped(to: scene.videoFrame).composited(over: image)
+                image = layer.cropped(to: scene.visibleVideoFrame).composited(over: image)
             }
         }
         if let cursor = scene.cursor, let layer = cursorImage(cursor, in: scene) {
@@ -98,7 +98,7 @@ public final class SceneRenderer: @unchecked Sendable {
             // positioned against the *zoomed* frame, which is larger than the hole it
             // shows through, so without this a pointer near the edge of the recording
             // is drawn floating on the padding beside the picture.
-            image = layer.cropped(to: scene.videoFrame).composited(over: image)
+            image = layer.cropped(to: scene.visibleVideoFrame).composited(over: image)
         }
         return image.cropped(to: output)
     }
@@ -272,9 +272,12 @@ public final class SceneRenderer: @unchecked Sendable {
         if scene.cornerRadius > 0 {
             image = rounded(image, radius: scene.cornerRadius * (target.width / scene.videoFrame.width))
         }
-        // Cropped to where the video is meant to be: a zoomed-in frame must not spill
-        // over the padding that frames it.
-        return image.cropped(to: scene.videoFrame)
+        // Cropped to where the video is allowed to be. Ordinarily that is the hole the
+        // padding left, so a zoomed-in picture magnifies inside it and never spills over
+        // the frame around it. When the whole frame zooms it is that hole grown and moved,
+        // which is what lets the picture push out past the padding — see
+        // `SceneDescriptor.visibleVideoFrame`.
+        return image.cropped(to: scene.visibleVideoFrame)
     }
 
     private func applyBlur(_ blur: BlurLayer, to image: CIImage) -> CIImage {
@@ -322,7 +325,7 @@ public final class SceneRenderer: @unchecked Sendable {
 
     /// The soft dark shape under the video that lifts it off the background.
     private func shadow(under video: CIImage, scene: SceneDescriptor) -> CIImage {
-        let rect = scene.transformedVideoFrame.intersection(scene.videoFrame)
+        let rect = scene.transformedVideoFrame.intersection(scene.visibleVideoFrame)
         guard !rect.isNull, rect.width > 1 else { return CIImage.empty() }
 
         let filter = CIFilter.roundedRectangleGenerator()

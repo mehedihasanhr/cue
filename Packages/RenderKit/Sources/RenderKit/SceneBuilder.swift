@@ -120,6 +120,7 @@ public struct SceneBuilder: Sendable {
                                shadowOpacity: style.shadowOpacity,
                                zoom: camera.zoom,
                                zoomCenter: camera.center,
+                               zoomsWholeFrame: timeline.camera.zoomsWholeFrame,
                                blurs: blurLayers(timeline, at: time),
                                cursor: cursorLayer(timeline, at: time, sourceTime: sourceTime, track: track, crop: crop),
                                clicks: clickLayers(timeline, sourceTime: sourceTime, track: track, crop: crop),

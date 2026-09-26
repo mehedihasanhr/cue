@@ -53,6 +53,7 @@ public struct SceneDescriptor: Equatable, Sendable {
                 shadowOpacity: Double = 0,
                 zoom: Double = 1,
                 zoomCenter: CGPoint = CGPoint(x: 0.5, y: 0.5),
+                zoomsWholeFrame: Bool = false,
                 blurs: [BlurLayer] = [],
                 cursor: CursorLayer? = nil,
                 clicks: [ClickLayer] = [],
@@ -70,6 +71,7 @@ public struct SceneDescriptor: Equatable, Sendable {
         self.shadowOpacity = shadowOpacity
         self.zoom = zoom
         self.zoomCenter = zoomCenter
+        self.zoomsWholeFrame = zoomsWholeFrame
         self.blurs = blurs
         self.cursor = cursor
         self.clicks = clicks
@@ -94,6 +96,23 @@ public struct SceneDescriptor: Equatable, Sendable {
     /// pointer framed the mirror image of where the pointer was. Every other reader of this
     /// rect already flips (`CanvasGeometry.videoInOutput`, the cursor layer), so this was the
     /// one place the two conventions met and nobody converted.
+    /// Whether the zoom magnifies the framed picture as a whole rather than only its
+    /// contents. See `CameraStyle.zoomsWholeFrame`.
+    public var zoomsWholeFrame: Bool = false
+
+    /// The rectangle the picture is actually allowed to occupy.
+    ///
+    /// The one question every clip in the renderer is really asking. Ordinarily it is the
+    /// hole the padding left, and a zoomed picture is magnified *inside* that hole. When
+    /// the whole frame zooms it is the hole itself, grown and moved — held to the output,
+    /// because nothing is drawn off the edge of the video being written.
+    public var visibleVideoFrame: CGRect {
+        guard zoomsWholeFrame else { return videoFrame }
+        let bounds = CGRect(origin: .zero, size: outputSize)
+        let grown = transformedVideoFrame.intersection(bounds)
+        return grown.isNull ? videoFrame : grown
+    }
+
     public var transformedVideoFrame: CGRect {
         let anchor = CGPoint(x: videoFrame.minX + videoFrame.width * zoomCenter.x,
                              y: videoFrame.minY + videoFrame.height * (1 - zoomCenter.y))
