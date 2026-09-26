@@ -49,9 +49,24 @@ extension Timeline {
         /// edit after a detach.
         public let runs: [Run]?
         public let sounds: [Sound]
+        /// One of the recording's own sources, as the mixdown will open it.
+        ///
+        /// The level is the *resolved* one — this source's own, under the master — so a
+        /// change to either is a change here. The path is what tells two sources apart:
+        /// a mix built from the microphone's file is not the mix built from the screen's,
+        /// however identical the numbers beside it look.
+        public struct Source: Equatable, Sendable {
+            public let path: String
+            public let level: Double
+        }
+
         /// What the recording's own sound is doing. Muting it removes tracks from the
         /// mix rather than merely turning them down, so it has to be built again.
         public let recorded: SoundStyle
+        /// The sources, in order. Empty for a recording whose sound lives in its video
+        /// file, which is a different mix from one with no audible sources — hence the
+        /// paths, which are never empty when there is something to hear.
+        public let sources: [Source]
     }
 
     /// What the sound of this edit depends on.
@@ -74,7 +89,8 @@ extension Timeline {
                 .init(path: $0.path, start: $0.start, duration: $0.duration,
                       sourceStart: $0.sourceStart, gain: $0.gain)
             },
-            recorded: sound
+            recorded: sound,
+            sources: soundTracks.map { .init(path: $0.path, level: level(of: $0)) }
         )
     }
 }

@@ -13,8 +13,12 @@ struct AudioInspector: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenSections) {
-            tracks
-            if model.waveform.state != .unavailable {
+            if model.timeline.hasSeparateSound {
+                sources
+            } else {
+                tracks
+            }
+            if model.timeline.hasSeparateSound || model.waveform.state != .unavailable {
                 recorded
             }
             if let audio = model.audio, audio.hasSound {
@@ -197,7 +201,70 @@ struct AudioInspector: View {
 
     // MARK: - What the recording holds
 
+    /// A row per source the recording captured, each with its own mute and its own level.
+    ///
+    /// This is the panel the feature exists for. Before it there was one level for
+    /// "the recording", so turning the browser's music down took the voiceover with it and
+    /// the only way out was to mute everything and import the voice again as a file. Each
+    /// of these is a separate file on disk, so muting one costs nothing and changes
+    /// nothing else.
     @ViewBuilder
+    private var sources: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            ForEach(model.timeline.soundTracks) { track in
+                source(track)
+            }
+            if model.timeline.soundTracks.contains(where: { $0.style.isMuted }) {
+                Button("Unmute All") { model.unmuteAllSound() }
+                    .controlSize(.small)
+            }
+        }
+        .font(.system(size: 12))
+        .inspectorSection("Sources", systemImage: "waveform")
+    }
+
+    private func source(_ track: SoundTrack) -> some View {
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
+            HStack(spacing: 7) {
+                Image(systemName: track.style.isMuted ? "speaker.slash.fill" : track.symbol)
+                    .font(.system(size: 11))
+                    .foregroundStyle(track.style.isMuted ? .secondary : Color.accentColor)
+                    .frame(width: 14)
+                // Editable, because "Microphone 2" is what the system calls a device and
+                // "Guest" is what the person editing calls it. Committing on return or on
+                // losing focus, like every other name field on the Mac.
+                TextField("Name", text: Binding(
+                    get: { track.name },
+                    set: { model.renameSound(track.id, to: $0) }
+                ))
+                .textFieldStyle(.plain)
+                .lineLimit(1)
+                Spacer(minLength: 6)
+                if model.timeline.soundTracks.count > 1 {
+                    Button("Solo") { model.soloSound(track.id) }
+                        .controlSize(.mini)
+                        .help("Leave only this one audible")
+                }
+                Toggle("", isOn: Binding(
+                    get: { !track.style.isMuted },
+                    set: { _ in model.toggleSoundMute(track.id) }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .help(track.style.isMuted ? "Bring \(track.name) back" : "Leave \(track.name) out")
+            }
+            InspectorSlider(model: model, "Level", systemImage: "speaker.wave.2",
+                            value: Binding(
+                                get: { track.style.gain },
+                                set: { model.setSoundGain(track.id, to: $0) }
+                            ),
+                            range: 0...2,
+                            format: { "\(Int(($0 * 100).rounded()))%" })
+                .disabled(track.style.isMuted)
+        }
+    }
+
     private var tracks: some View {
         VStack(alignment: .leading, spacing: 10) {
             row("Screen audio", systemImage: "speaker.wave.2",

@@ -109,7 +109,15 @@ public final class RecordingSession {
     private var configuration: RecordingConfiguration?
     private var writer: SessionWriter?
     private var screen: ScreenRecorder?
-    private var microphone: MicrophoneRecorder?
+    /// One per microphone this take was asked for, in the order they were asked for.
+    private var microphones: [MicrophoneRecorder] = []
+    /// Every sound this take is writing, each into its own file.
+    ///
+    /// The screen's own sound is one of these too, rather than a special case beside them:
+    /// it is captured differently but it is edited identically, and every part of this
+    /// class that touches sound — pausing it, finishing it, naming it in the manifest —
+    /// wants to say the same thing to all of them.
+    private var audioLanes: [AudioLane] = []
     /// The camera, and the file it writes.
     ///
     /// Both `nil` unless this take asked for a camera. They are the whole of the apparatus
@@ -132,6 +140,16 @@ public final class RecordingSession {
     private var displayScale: Double = 2
 
     private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "session")
+
+    /// One audio source being written, and what the manifest will say about it.
+    private struct AudioLane {
+        let kind: RecordingManifest.Track.Kind
+        /// Relative to the package, because that is what the manifest carries.
+        let path: String
+        let name: String?
+        let deviceID: String?
+        let writer: AudioTrackWriter
+    }
 
     public init() {}
 
@@ -184,15 +202,16 @@ public final class RecordingSession {
         }
 
         do {
-            try await screen?.start(systemAudio: configuration.systemAudio)
-        } catch let error as RecordingError {
+            try await screen?.start()
+        } catch {
+            // `start()` throws `RecordingError` and nothing else, so there is one arm here
+            // rather than the two this used to have: the second was unreachable, and an
+            // unreachable arm is a place a future reader looks for behaviour that is not
+            // there.
             fail(error)
             return
-        } catch {
-            fail(.contentUnavailable(error.localizedDescription))
-            return
         }
-        microphone?.start()
+        for microphone in microphones { microphone.start() }
         // After the screen, deliberately. The camera's writer takes its time zero from the
         // clock the screen's first frame starts, so a camera that opened first would simply
         // drop frames until the screen caught up — starting it here wastes none.
@@ -226,35 +245,75 @@ public final class RecordingSession {
         clock = RecordingClock()
         // Resolved now rather than when the request was made: a microphone unplugged in
         // between has to fail here, where the user is still watching a countdown.
-        let microphoneDevice = try configuration.microphoneID.map { id throws(RecordingError) -> AVCaptureDevice in
+        let microphoneDevices = try configuration.microphoneIDs.map { id throws(RecordingError) -> AVCaptureDevice in
             guard let device = AVCaptureDevice(uniqueID: id) else { throw RecordingError.deviceLost(id) }
             return device
         }
+        // No audio at all in `screen.mov` any more. Each source is its own file beside it,
+        // for the reason `AudioTrackWriter` gives: tracks inside one file cannot be told
+        // apart afterwards with any certainty, and telling them apart is the whole feature.
         let writer = try SessionWriter(url: package.mediaFolder.appendingPathComponent("screen.mov"),
                                        pixelSize: pixelSize,
                                        codec: configuration.codec.resolved,
                                        bitrate: configuration.quality.bitrate(forPixels: Int(pixelSize.width * pixelSize.height)),
                                        frameRate: configuration.frameRate,
-                                       systemAudio: configuration.systemAudio,
-                                       microphone: microphoneDevice != nil,
+                                       systemAudio: false,
+                                       microphone: false,
                                        clock: clock,
                                        queue: queue)
         self.writer = writer
 
+        var lanes: [AudioLane] = []
+        var systemAudioWriter: AudioTrackWriter?
+        if configuration.systemAudio {
+            let lane = try audioLane(kind: .systemAudio,
+                                     file: "system-audio.m4a",
+                                     name: "System Audio",
+                                     deviceID: nil,
+                                     package: package)
+            systemAudioWriter = lane.writer
+            lanes.append(lane)
+        }
+
         screen = ScreenRecorder(filter: filter,
                                 configuration: streamConfiguration,
-                                writer: writer) { [weak self] error in
+                                writer: writer,
+                                audio: systemAudioWriter) { [weak self] error in
             Task { @MainActor in self?.interrupted(by: error) }
         }
 
-        if let microphoneDevice {
-            microphone = try MicrophoneRecorder(device: microphoneDevice, writer: writer) { [weak self] error in
+        for (index, device) in microphoneDevices.enumerated() {
+            let lane = try audioLane(kind: .microphone,
+                                     file: "microphone-\(index + 1).m4a",
+                                     name: device.localizedName,
+                                     deviceID: device.uniqueID,
+                                     package: package)
+            lanes.append(lane)
+            microphones.append(try MicrophoneRecorder(device: device, writer: lane.writer) { [weak self] error in
                 Task { @MainActor in self?.interrupted(by: error) }
-            }
+            })
         }
+        audioLanes = lanes
 
         try await prepareWebcam(configuration, package: package, clock: clock)
         startTelemetry(for: configuration, filter: filter, package: package)
+    }
+
+    /// A file for one sound, and the manifest entry that will point at it.
+    private func audioLane(kind: RecordingManifest.Track.Kind,
+                           file: String,
+                           name: String?,
+                           deviceID: String?,
+                           package: RecordingPackage) throws(RecordingError) -> AudioLane {
+        let url = package.mediaFolder.appendingPathComponent(file)
+        return AudioLane(kind: kind,
+                         path: "media/\(file)",
+                         name: name,
+                         deviceID: deviceID,
+                         // Every sound in the package takes its time zero from the clock the
+                         // screen's first frame starts, which is what keeps two microphones
+                         // and the screen on one timeline.
+                         writer: try AudioTrackWriter(url: url, clock: clock, queue: queue))
     }
 
     /// The camera, when this take asked for one — and nothing at all when it did not.
@@ -372,9 +431,11 @@ public final class RecordingSession {
         // the held stretch out of the screen's file and leave it in the camera's, which is
         // the two drifting apart by however long the pause lasted.
         let webcamWriter = webcamWriter
+        let audioWriters = audioLanes.map(\.writer)
         queue.async {
             writer.setPaused(true)
             webcamWriter?.setPaused(true)
+            for audio in audioWriters { audio.setPaused(true) }
         }
         cursor?.stop()
         focus?.stop()
@@ -385,9 +446,11 @@ public final class RecordingSession {
     public func resume() {
         guard let released = state.released(at: .now), let writer else { return }
         let webcamWriter = webcamWriter
+        let audioWriters = audioLanes.map(\.writer)
         queue.async {
             writer.setPaused(false)
             webcamWriter?.setPaused(false)
+            for audio in audioWriters { audio.setPaused(false) }
         }
         cursor?.start()
         focus?.start()
@@ -439,6 +502,22 @@ public final class RecordingSession {
                     webcamWriter.cancel()
                 }
             }
+            // Each sound's own file, closed before the picture's. A sound file that will
+            // not finish costs that one lane and nothing else — the same bargain the camera
+            // gets — so a failure here is logged and the take goes on.
+            for lane in audioLanes {
+                do {
+                    guard try await lane.writer.finish() else { continue }
+                    recordedAudio.append(.init(kind: lane.kind,
+                                               path: lane.path,
+                                               name: lane.name,
+                                               deviceID: lane.deviceID))
+                } catch {
+                    Self.log.error("\(lane.path, privacy: .public) wouldn't finish; keeping the take without it.")
+                    lane.writer.cancel()
+                }
+            }
+
             let duration = try await writer.finish()
             let manifest = manifest(for: configuration, package: package,
                                     duration: duration.seconds, webcam: hasWebcam)
@@ -474,6 +553,7 @@ public final class RecordingSession {
         await teardown()
         writer?.cancel()
         webcamWriter?.cancel()
+        for lane in audioLanes { lane.writer.cancel() }
         package?.discard()
         reset()
     }
@@ -512,7 +592,7 @@ public final class RecordingSession {
         diskTimer = nil
         cursor?.stop()
         focus?.stop()
-        microphone?.stop()
+        for microphone in microphones { microphone.stop() }
         // Before the screen, and unconditionally. A camera session left running is a camera
         // light left on, so it is the first thing let go of on every path out of a take.
         webcam?.stop()
@@ -527,6 +607,15 @@ public final class RecordingSession {
         }
     }
 
+    /// The audio files that ended up with sound in them, as the manifest will name them.
+    ///
+    /// Filled in by `stop()` when the files are closed rather than in `prepare` when they
+    /// are opened, for the same reason `focusTrackWritten` exists: a microphone that was
+    /// asked for and delivered nothing — muted in hardware, claimed by another app, a
+    /// headset that never woke — must not be named in the manifest, or the editor shows a
+    /// lane for a sound that is not there.
+    private var recordedAudio: [RecordingManifest.Track] = []
+
     /// Whether the focus track ended up with anything in it. An empty sidecar is
     /// deleted on close, so the manifest must not point at it.
     private var focusTrackWritten = false
@@ -534,7 +623,9 @@ public final class RecordingSession {
     private func reset() {
         writer = nil
         screen = nil
-        microphone = nil
+        microphones = []
+        audioLanes = []
+        recordedAudio = []
         webcam = nil
         webcamWriter = nil
         webcamPixelSize = nil
@@ -567,14 +658,11 @@ public final class RecordingSession {
                   frameRate: configuration.frameRate,
                   codec: configuration.codec.resolved.rawValue),
         ]
-        // The screen file carries the audio tracks; naming them here saves the editor
-        // from opening the asset to find out whether there is any.
-        if configuration.systemAudio {
-            tracks.append(.init(kind: .systemAudio, path: "media/screen.mov"))
-        }
-        if configuration.microphoneID != nil {
-            tracks.append(.init(kind: .microphone, path: "media/screen.mov"))
-        }
+        // Each sound in its own file, named only if something was actually written to it.
+        // Built from what the writers reported rather than from the configuration, so the
+        // manifest describes the recording that happened rather than the one that was asked
+        // for.
+        tracks += recordedAudio
         // Its own file, unlike the two audio tracks: everything that reads a recording asks
         // for the first video track of the file it is pointed at, so a second video track
         // inside `screen.mov` would make "the recording" mean whichever one AVFoundation

@@ -34,13 +34,17 @@ public enum AudioMixdown {
     /// Builds the edited audio for a timeline.
     ///
     /// - Parameters:
-    ///   - videoURL: the recording, whose audio tracks carry the screen and microphone.
-    ///   - packageURL: the project, for `AudioRegion` files stored inside it.
+    ///   - videoURL: the recording. Its audio tracks carry the screen and microphone on a
+    ///     recording made before the sources were captured separately; on a newer one it
+    ///     has no audio at all and every source is a file in the package.
+    ///   - packageURL: the project — for `AudioRegion` files stored inside it, and for the
+    ///     recording's own sources.
     public static func build(timeline: Timeline,
                              videoURL: URL,
                              packageURL: URL?) async -> Result {
         let composition = AVMutableComposition()
-        var parameters = await appendRecordedAudio(of: timeline, from: videoURL, into: composition)
+        var parameters = await appendRecordedAudio(of: timeline, from: videoURL,
+                                                   packageURL: packageURL, into: composition)
         parameters += await appendAudioRegions(of: timeline, packageURL: packageURL, into: composition)
 
         var mix: AVAudioMix?
@@ -57,35 +61,62 @@ public enum AudioMixdown {
     /// The recording's own sound, cut the way the picture is cut, at the level the edit
     /// asks for.
     ///
-    /// Silenced means *absent*, not turned down to nothing: a muted recording should cost
+    /// Two shapes of recording arrive here and both have to sound right. A recording made
+    /// since the sources were separated carries a file per source — the screen, each
+    /// microphone — and each is laid down at its own level under the master, which is the
+    /// whole point: turning the screen down must not touch the voice. A recording made
+    /// before that has its sound inside the video file, where the tracks cannot be told
+    /// apart, so all of them are laid down together at the master level, exactly as they
+    /// always were.
+    ///
+    /// Silenced means *absent*, not turned down to nothing: a muted source should cost
     /// neither the decoding nor the space, and an export of a silent edit should have no
-    /// audio track rather than an empty one.
+    /// audio track rather than an empty one. That applies per source now, so a muted
+    /// microphone costs nothing while the screen goes on playing.
     private static func appendRecordedAudio(of timeline: Timeline,
                                             from videoURL: URL,
+                                            packageURL: URL?,
                                             into composition: AVMutableComposition) async -> [AVAudioMixInputParameters] {
-        let sound = timeline.sound
-        guard sound.isAudible else { return [] }
+        guard timeline.sound.isAudible else { return [] }
 
-        let asset = AVURLAsset(url: videoURL)
-        guard let sources = try? await asset.loadTracks(withMediaType: .audio), !sources.isEmpty else { return [] }
+        guard timeline.hasSeparateSound else {
+            let asset = AVURLAsset(url: videoURL)
+            guard let sources = try? await asset.loadTracks(withMediaType: .audio) else { return [] }
+            return sources.flatMap { lay($0, of: timeline, at: timeline.sound.level, into: composition) }
+        }
 
         var parameters: [AVAudioMixInputParameters] = []
-        for source in sources {
-            // The two states of the lane, and the only place in the app that has to know
-            // there are two. Everything downstream — the player, the exporter, the
-            // playhead that follows the player's clock — sees one composition either way.
-            let laid = timeline.detachedSound.map { runs in
-                appendDetached(runs, of: source, into: composition)
-            } ?? [appendFollowingClips(timeline.clips, of: source, into: composition)].compactMap { $0 }
-
-            guard sound.level != 1 else { continue }
-            for track in laid {
-                let input = AVMutableAudioMixInputParameters(track: track)
-                input.setVolume(Float(sound.level), at: .zero)
-                parameters.append(input)
-            }
+        for track in timeline.soundTracks {
+            let level = timeline.level(of: track)
+            guard level > 0, let packageURL else { continue }
+            let asset = AVURLAsset(url: packageURL.appendingPathComponent(track.path))
+            // One audio track per file, by construction — the recorder wrote it that way so
+            // that this line could be a `.first` rather than a guess about ordering.
+            guard let source = try? await asset.loadTracks(withMediaType: .audio).first else { continue }
+            parameters += lay(source, of: timeline, at: level, into: composition)
         }
         return parameters
+    }
+
+    /// One source of sound, laid across the edit at one level.
+    ///
+    /// The two states of the lane, and the only place in the app that has to know there
+    /// are two. Everything downstream — the player, the exporter, the playhead that
+    /// follows the player's clock — sees one composition either way.
+    private static func lay(_ source: AVAssetTrack,
+                            of timeline: Timeline,
+                            at level: Double,
+                            into composition: AVMutableComposition) -> [AVAudioMixInputParameters] {
+        let laid = timeline.detachedSound.map { runs in
+            appendDetached(runs, of: source, into: composition)
+        } ?? [appendFollowingClips(timeline.clips, of: source, into: composition)].compactMap { $0 }
+
+        guard level != 1 else { return [] }
+        return laid.map { track in
+            let input = AVMutableAudioMixInputParameters(track: track)
+            input.setVolume(Float(level), at: .zero)
+            return input
+        }
     }
 
     /// The sound cut exactly where the picture is cut: one contiguous track, clip by clip.

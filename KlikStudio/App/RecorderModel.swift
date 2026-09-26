@@ -183,8 +183,13 @@ final class RecorderModel {
 
     var microphoneLabel: String {
         guard settings.recordsMicrophone else { return "No microphone" }
-        if settings.microphoneID.isEmpty { return "Microphone" }
-        return microphones.first { $0.uniqueID == settings.microphoneID }?.localizedName ?? "Microphone"
+        let chosen = settings.microphoneIDs
+        if chosen.isEmpty { return "Microphone" }
+        // Named while there is one to name, counted once there are several: three device
+        // names run off the end of the chip, and "3 microphones" is the fact that matters
+        // there — that this take will arrive with three lanes in it.
+        if chosen.count > 1 { return "\(chosen.count) microphones" }
+        return microphones.first { $0.uniqueID == chosen[0] }?.localizedName ?? "Microphone"
     }
 
     /// Picks a mode, and with it the obvious target for that mode.
@@ -376,9 +381,10 @@ final class RecorderModel {
             windows = []
             Self.log.error("Couldn't read shareable content: \(error.localizedDescription ?? "unknown", privacy: .public)")
         }
-        microphones = AVCaptureDevice.DiscoverySession(deviceTypes: [.microphone, .external],
-                                                      mediaType: .audio,
-                                                      position: .unspecified).devices
+        // The recorder's own list, not a second query that happens to agree with it today:
+        // a device offered here that `RecordingSession` cannot resolve when the take starts
+        // is a microphone the user ticked and did not get.
+        microphones = MicrophoneRecorder.devices
         // Discovering a camera is not opening one: this reads the system's list and no
         // indicator lights. The list is refreshed alongside the windows because both change
         // for the same reasons — a lid closed, a cable plugged in.

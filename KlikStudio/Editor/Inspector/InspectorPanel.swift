@@ -185,6 +185,7 @@ private extension Selection {
         case .caption: ("Caption", "captions.bubble")
         case .audio: ("Sound", "music.note")
         case .sound: ("Recorded Sound", "waveform")
+        case .soundTrack: ("Sound Source", "waveform.badge.mic")
         // Both lanes arrived after this heading did, and a panel that names what it is
         // showing must name these too — a nil here is a header that says "Pointer" while
         // the panel below it is about one stretch of pointer.

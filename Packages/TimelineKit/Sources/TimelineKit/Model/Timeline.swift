@@ -45,8 +45,19 @@ public struct Timeline: Equatable, Codable, Sendable {
     public var style: FrameStyle
     public var cursor: CursorStyle
     public var camera: CameraStyle
-    /// What the recording's own sound does. See `SoundStyle`.
+    /// What the recording's own sound does, as a whole. See `SoundStyle`.
+    ///
+    /// The master, once `soundTracks` is non-empty: each source has its own level under
+    /// this one. Muting here silences the take whatever the individual lanes say, which is
+    /// what "mute the recording" has always meant and must go on meaning.
     public var sound: SoundStyle
+    /// The recording's sound, source by source — the screen, each microphone.
+    ///
+    /// Empty for every project recorded before the sources were captured separately, and
+    /// that emptiness is the compatibility story rather than a missing feature: those
+    /// recordings have their sound inside the video file, `sound` governs all of it, and
+    /// they play and export exactly as they did. See `SoundTrack`.
+    public var soundTracks: [SoundTrack]
     public var webcam: WebcamSettings
     public var captionStyle: CaptionStyle
 
@@ -64,6 +75,7 @@ public struct Timeline: Equatable, Codable, Sendable {
                 cursor: CursorStyle = CursorStyle(),
                 camera: CameraStyle = CameraStyle(),
                 sound: SoundStyle = SoundStyle(),
+                soundTracks: [SoundTrack] = [],
                 webcam: WebcamSettings = WebcamSettings(),
                 captionStyle: CaptionStyle = CaptionStyle()) {
         self.formatVersion = formatVersion
@@ -80,6 +92,7 @@ public struct Timeline: Equatable, Codable, Sendable {
         self.cursor = cursor
         self.camera = camera
         self.sound = sound
+        self.soundTracks = soundTracks
         self.webcam = webcam
         self.captionStyle = captionStyle
     }
@@ -122,6 +135,9 @@ public struct Timeline: Equatable, Codable, Sendable {
         cursor = value(.cursor, default: CursorStyle())
         camera = value(.camera, default: CameraStyle())
         sound = value(.sound, default: SoundStyle())
+        // Absent in every project written before the recorder separated the sources, and
+        // absent is empty: the sound is inside the recording's file and `sound` governs it.
+        soundTracks = value(.soundTracks, default: [])
         webcam = value(.webcam, default: WebcamSettings())
         captionStyle = value(.captionStyle, default: CaptionStyle())
     }
@@ -131,7 +147,7 @@ public struct Timeline: Equatable, Codable, Sendable {
     enum CodingKeys: String, CodingKey {
         case formatVersion, sourceDuration, clips, zooms, blurs
         case annotations, captions, audio, detachedSound, cursorRegions
-        case style, cursor, camera, sound, webcam, captionStyle
+        case style, cursor, camera, sound, soundTracks, webcam, captionStyle
     }
 
     /// How long the edit plays for.

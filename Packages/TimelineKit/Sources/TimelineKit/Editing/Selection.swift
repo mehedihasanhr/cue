@@ -25,7 +25,14 @@ public enum Selection: Equatable, Sendable {
     case cursorRegion(UUID)
     /// The recording's own sound, which is one lane rather than one of many regions —
     /// there is exactly one of it, so it needs no identity to be picked out.
+    ///
+    /// The master, on a recording whose sources were captured separately: `.soundTrack`
+    /// is one of them. On an older recording it is the whole of the sound, which is why
+    /// it did not need an identity and still does not.
     case sound
+    /// One of the recording's sources — the screen, a microphone — on a recording whose
+    /// sources were captured to separate files.
+    case soundTrack(UUID)
     /// One run of the recording's sound, once the lane has been detached. Identified,
     /// unlike `.sound`, because a detached lane has as many of these as it has cuts.
     case soundRun(UUID)
@@ -45,7 +52,9 @@ public enum Selection: Equatable, Sendable {
         case .zoom(let id), .blur(let id), .annotation(let id), .caption(let id), .audio(let id),
              .cursorRegion(let id), .soundRun(let id):
             id
-        case .none, .clip, .range, .headTrim, .tailTrim, .sound:
+        // A sound source is not a region either: it has no position of its own, only a
+        // level, so handing its id to a region command would quietly do nothing.
+        case .none, .clip, .range, .headTrim, .tailTrim, .sound, .soundTrack:
             nil
         }
     }
@@ -88,6 +97,8 @@ public enum Selection: Equatable, Sendable {
         case .sound:
             // Always valid: every recording has the setting, even one with no sound in it.
             return true
+        case .soundTrack(let id):
+            return timeline.soundTracks.contains { $0.id == id }
         case .soundRun(let id):
             // Not valid on an attached lane at all, which is the point: re-attaching has
             // to drop a selection that no longer points at anything drawable.
@@ -123,7 +134,7 @@ public enum Selection: Equatable, Sendable {
             return timeline.cursorRegions.first { $0.id == id }?.range
         case .soundRun(let id):
             return timeline.detachedSound?.first { $0.id == id }?.range
-        case .none, .headTrim, .tailTrim, .sound:
+        case .none, .headTrim, .tailTrim, .sound, .soundTrack:
             return nil
         }
     }

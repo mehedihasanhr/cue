@@ -235,6 +235,68 @@ public enum Commands {
     /// By id rather than by index, unlike the zoom and blur inspectors: `AddCursorRegion`
     /// keeps the lane sorted by start, so dragging a region past its neighbour renumbers
     /// the array under an inspector that is still open on it.
+    /// Changes one of the recording's sound sources — its level, its mute, its name.
+    ///
+    /// An edit like any other, and undoable like any other: muting the microphone changes
+    /// the file that gets exported, so it belongs on the same stack as a cut. See
+    /// `SoundStyle`'s note on why the *preview's* volume is not this and must never become
+    /// it.
+    public struct RestyleSoundTrack: TimelineCommand {
+        public let id: UUID
+        public let change: @Sendable (inout SoundTrack) -> Void
+        public let name: String
+
+        public init(id: UUID, name: String, _ change: @escaping @Sendable (inout SoundTrack) -> Void) {
+            self.id = id
+            self.name = name
+            self.change = change
+        }
+
+        public func apply(to timeline: inout Timeline) -> Bool {
+            guard let index = timeline.soundTracks.firstIndex(where: { $0.id == id }) else { return false }
+            let before = timeline.soundTracks[index]
+            change(&timeline.soundTracks[index])
+            return timeline.soundTracks[index] != before
+        }
+    }
+
+    /// Leaves one source audible and silences the rest.
+    ///
+    /// Solo is a real edit here rather than a piece of editor state, and deliberately: an
+    /// editor that remembers a solo separately from the document has two ideas of what the
+    /// video sounds like, and the one that ships is whichever the exporter happened to
+    /// read. Spelled as "mute the others" it is one undoable change, it survives closing
+    /// the project, and there is nothing to get out of step.
+    public struct SoloSoundTrack: TimelineCommand {
+        public let id: UUID
+        public var name: String { "Solo" }
+        public init(id: UUID) { self.id = id }
+
+        public func apply(to timeline: inout Timeline) -> Bool {
+            guard timeline.soundTracks.contains(where: { $0.id == id }) else { return false }
+            let before = timeline.soundTracks
+            for index in timeline.soundTracks.indices {
+                timeline.soundTracks[index].style.isMuted = timeline.soundTracks[index].id != id
+            }
+            return timeline.soundTracks != before
+        }
+    }
+
+    /// Unmutes every source. What undoes a solo without needing to remember what was
+    /// muted before it.
+    public struct UnmuteAllSoundTracks: TimelineCommand {
+        public var name: String { "Unmute All" }
+        public init() {}
+
+        public func apply(to timeline: inout Timeline) -> Bool {
+            let before = timeline.soundTracks
+            for index in timeline.soundTracks.indices {
+                timeline.soundTracks[index].style.isMuted = false
+            }
+            return timeline.soundTracks != before
+        }
+    }
+
     public struct RestyleCursorRegion: TimelineCommand {
         public let id: UUID
         public let change: @Sendable (inout CursorRegion) -> Void

@@ -65,13 +65,23 @@ private struct RecordingSettings: View {
             Section("Audio") {
                 Toggle("Record system audio", isOn: $settings.recordsSystemAudio)
                 Toggle("Record microphone", isOn: $settings.recordsMicrophone)
-                Picker("Input", selection: $settings.microphoneID) {
-                    Text("System default").tag("")
-                    ForEach(microphones, id: \.uniqueID) { device in
-                        Text(device.localizedName).tag(device.uniqueID)
-                    }
+                // One row per microphone, ticked or not, rather than one picker: a take
+                // records every microphone that is ticked, each to its own file, and each
+                // arrives in the editor as a lane with its own level. Nothing ticked is the
+                // system's default input, which is what somebody who turned the microphone
+                // on and never came here expects.
+                ForEach(microphones, id: \.uniqueID) { device in
+                    Toggle(device.localizedName, isOn: Binding(
+                        get: { settings.microphoneIDs.contains(device.uniqueID) },
+                        set: { settings.setMicrophone(device.uniqueID, isOn: $0) }
+                    ))
+                    .disabled(!settings.recordsMicrophone)
                 }
-                .disabled(!settings.recordsMicrophone)
+                if settings.recordsMicrophone, settings.microphoneIDs.count > 1 {
+                    Text("Each microphone is recorded to its own track, so you can set their levels separately when you edit.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section {

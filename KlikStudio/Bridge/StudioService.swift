@@ -111,7 +111,7 @@ final class StudioService: StudioRecording {
                                                    name: Self.name(for: Date.now),
                                                    destination: writableDestination(for: request))
         configuration.systemAudio = configuration.systemAudio && request.systemAudio
-        if !request.microphone { configuration.microphoneID = nil }
+        if !request.microphone { configuration.microphoneIDs = [] }
         // The same rule, and it matters most here: a request can switch the camera off but
         // never on. `settings.configuration` only set a `webcamID` if this app's own camera
         // toggle is on, and no other app gets to decide that a face is being filmed. There
@@ -121,7 +121,9 @@ final class StudioService: StudioRecording {
         Task {
             if request.microphone, settings.recordsMicrophone, !MicrophoneRecorder.isAuthorized {
                 _ = await MicrophoneRecorder.requestAccess()
-                configuration.microphoneID = MicrophoneRecorder.isAuthorized ? MicrophoneRecorder.defaultDevice?.uniqueID : nil
+                configuration.microphoneIDs = MicrophoneRecorder.isAuthorized
+                    ? [MicrophoneRecorder.defaultDevice?.uniqueID].compactMap { $0 }
+                    : []
             }
             await session.start(configuration, countdown: max(0, request.countdownSeconds))
             if case .failed(let error) = session.state {

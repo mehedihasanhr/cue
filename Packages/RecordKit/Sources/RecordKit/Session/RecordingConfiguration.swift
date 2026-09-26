@@ -51,13 +51,21 @@ public struct RecordingConfiguration: Sendable {
     /// Turning it on bakes the system cursor into the pixels instead.
     public var capturesCursorInVideo: Bool
     public var systemAudio: Bool
-    /// The microphone's `uniqueID`, not the device: a configuration is a value that
+    /// The microphones' `uniqueID`s, not the devices: a configuration is a value that
     /// crosses threads and outlives the moment, and a device that was unplugged in
     /// between should fail when the recording starts, not silently record nothing.
-    public var microphoneID: String?
+    ///
+    /// A list rather than one, because a recording routinely has more than one voice in
+    /// it — a built-in microphone and an interview guest's headset, a podcast pair on two
+    /// USB mics — and mixing those together at capture time throws away the edit that
+    /// matters most afterwards, which is turning one of them down. Each is written to its
+    /// own file and arrives in the editor as its own lane, in this order.
+    ///
+    /// Empty is "no microphone", which is the state in which no microphone is ever opened.
+    public var microphoneIDs: [String]
     /// The camera's `uniqueID`, or `nil` for a take with no camera in it.
     ///
-    /// Modelled exactly like `microphoneID`, and for the same two reasons: a configuration
+    /// Modelled exactly like `microphoneIDs`, and for the same two reasons: a configuration
     /// is a value that crosses threads and outlives the moment it was made, and a camera
     /// unplugged in between should fail when the recording starts rather than silently
     /// record nothing. There is a third reason here, and it is the important one — **`nil`
@@ -89,7 +97,7 @@ public struct RecordingConfiguration: Sendable {
                 frameRate: Int = 60,
                 capturesCursorInVideo: Bool = false,
                 systemAudio: Bool = true,
-                microphoneID: String? = nil,
+                microphoneIDs: [String] = [],
                 webcamID: String? = nil,
                 codec: VideoCodec = .automatic,
                 quality: CaptureQuality = .better,
@@ -103,7 +111,7 @@ public struct RecordingConfiguration: Sendable {
         self.frameRate = frameRate
         self.capturesCursorInVideo = capturesCursorInVideo
         self.systemAudio = systemAudio
-        self.microphoneID = microphoneID
+        self.microphoneIDs = microphoneIDs
         self.webcamID = webcamID
         self.codec = codec
         self.quality = quality

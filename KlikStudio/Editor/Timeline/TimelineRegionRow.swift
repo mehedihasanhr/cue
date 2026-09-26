@@ -28,9 +28,17 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
     @ViewBuilder let badge: (Region) -> Badge
 
     @State private var dragOrigin: (start: CMTime, duration: CMTime)?
+    /// Which grip the pointer is over, as "<region id>-<side>".
+    ///
+    /// One piece of state for the whole lane rather than one per chip: only one grip can
+    /// be under the pointer at a time, so a single value cannot get out of step with
+    /// itself the way a dictionary of booleans can.
+    @State private var hoveredGrip: String?
 
     private var viewport: TimelineViewport { model.viewport }
     private let edgeWidth: CGFloat = 8
+    /// Below this the two grips would touch, so the chip is left plain.
+    private let minimumGripWidth: CGFloat = 26
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -75,8 +83,8 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
             .onTapGesture { model.select(selection(region.id)) }
             .gesture(move(region))
             .overlay {
-                edge(region, leading: true).offset(x: left)
-                edge(region, leading: false).offset(x: left + width - edgeWidth)
+                edge(region, leading: true, width: width).offset(x: left)
+                edge(region, leading: false, width: width).offset(x: left + width - edgeWidth)
             }
             .contextMenu {
                 // Acting on the region under the pointer rather than on `model.selection`,
@@ -119,12 +127,35 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
 
     // MARK: - Gestures
 
-    private func edge(_ region: Region, leading: Bool) -> some View {
-        Rectangle()
+    /// A grabbable end of a chip: the hit area, and the line that says it is there.
+    ///
+    /// The hit area was always here; the line was not, and an invisible handle is a
+    /// feature only the person who wrote it knows about. So the ends are drawn — two
+    /// vertical bars, the same vocabulary as the trim handles on a clip — and they are
+    /// drawn *always* rather than on hover, because a control you have to find by
+    /// sweeping the pointer across the chip is barely better than no control.
+    ///
+    /// Hidden below `minimumGripWidth`: on a chip a few points wide the two bars would
+    /// meet in the middle and read as a filled block rather than as two ends, and the
+    /// drag still works because the hit areas do not depend on the drawing.
+    private func edge(_ region: Region, leading: Bool, width: CGFloat) -> some View {
+        let key = "\(region.id)-\(leading)"
+        let isHovered = hoveredGrip == key
+        return Rectangle()
             .fill(.clear)
             .frame(width: edgeWidth, height: height)
+            .overlay {
+                if width >= minimumGripWidth {
+                    Capsule()
+                        .fill(.white.opacity(isHovered ? 1 : (isSelected(region) ? 0.9 : 0.55)))
+                        .frame(width: isHovered ? 3 : 2, height: max(8, height - 10))
+                        .shadow(color: .black.opacity(0.35), radius: 1, y: 0.5)
+                        .animation(StudioMotion.state, value: isHovered)
+                }
+            }
             .contentShape(Rectangle())
             .onHover { inside in
+                hoveredGrip = inside ? key : (hoveredGrip == key ? nil : hoveredGrip)
                 if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
             }
             .gesture(resize(region, leading: leading))

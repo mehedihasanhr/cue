@@ -52,7 +52,10 @@ public enum CopiedRegion: Equatable, Sendable {
         // that footage *is* copyable, and deliberately: `CopiedFootage` copies picture and
         // sound together, and a sound run on its own would paste sound that no picture in
         // the edit accounts for. Listed with the clip for exactly that reason.
-        case .none, .clip, .range, .headTrim, .tailTrim, .sound, .soundRun:
+        // A sound source is not copyable either, and for a plainer reason than the run
+        // above: it has no position and no contents, only a level. There is nothing to put
+        // down somewhere else.
+        case .none, .clip, .range, .headTrim, .tailTrim, .sound, .soundTrack, .soundRun:
             return nil
         }
     }

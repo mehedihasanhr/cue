@@ -315,7 +315,10 @@ final class EditorModel {
         // Here rather than at each place a sound is added, because there are four of them
         // — an import, a voiceover, a paste, an undo — and the list of sounds the edit
         // names is the only thing any of them has in common. Cheap on the ordinary path.
-        regionWaveforms.reconcile(paths: timeline.audio.map(\.path))
+        // The recording's own sources are in here too, and not as an afterthought: each
+        // lane draws its own file's peaks, and this store is already the thing that reads a
+        // waveform per path and caches it in the package.
+        regionWaveforms.reconcile(paths: timeline.audio.map(\.path) + timeline.soundTracks.map(\.path))
         let scene = builder.descriptor(for: renderedTimeline, at: playhead, cursor: smoothedCursor)
         // Kept at full size whatever the preview draws at: this is the description of the
         // frame the export would write, and the overlays map their handles through its
@@ -932,8 +935,24 @@ final class EditorModel {
     /// Replaces whatever captions were there, as one undoable step: a transcript is a
     /// single thing the user asked for, and taking it back should not be two hundred
     /// presses of ⌘Z.
+    /// The file to listen to.
+    ///
+    /// A microphone on its own file transcribes far better than a recording's whole
+    /// soundtrack does, because it is a voice rather than a voice over the top of whatever
+    /// the browser was playing. On a recording made before the sources were separated there
+    /// is only the video file, which is where the sound is — and if the lane a project
+    /// names has gone missing from the package, that is where this falls back to as well,
+    /// rather than failing with "no audio".
+    private var speechURL: URL? {
+        if let track = timeline.soundTrackForSpeech {
+            let url = packageURL.appendingPathComponent(track.path)
+            if FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) { return url }
+        }
+        return document.videoURL
+    }
+
     func generateCaptions() {
-        guard !isGeneratingCaptions, let videoURL = document.videoURL else { return }
+        guard !isGeneratingCaptions, let videoURL = speechURL else { return }
         isGeneratingCaptions = true
         captionProgress = nil
 
@@ -1161,6 +1180,43 @@ final class EditorModel {
     func toggleRecordedSound() {
         let muted = timeline.sound.isMuted
         apply(Commands.Restyle(muted ? "Unmute" : "Mute") { $0.sound.isMuted = !muted })
+    }
+
+    // MARK: - The recording's sources
+
+    /// The lanes, in the order they are drawn. Empty for a recording made before the
+    /// sources were captured separately, which is what keeps its single lane single.
+    var soundTracks: [SoundTrack] { timeline.soundTracks }
+
+    func toggleSoundMute(_ id: UUID) {
+        guard let track = timeline.soundTrack(id) else { return }
+        let muted = track.style.isMuted
+        apply(Commands.RestyleSoundTrack(id: id, name: muted ? "Unmute \(track.name)" : "Mute \(track.name)") {
+            $0.style.isMuted = !muted
+        })
+    }
+
+    func setSoundGain(_ id: UUID, to gain: Double) {
+        apply(Commands.RestyleSoundTrack(id: id, name: "Level") { $0.style.gain = gain })
+    }
+
+    func renameSound(_ id: UUID, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        // An empty name would leave a lane with nothing on it and no way to tell it from
+        // its neighbour, so the source's own word for itself is the floor.
+        guard let track = timeline.soundTrack(id) else { return }
+        let resolved = trimmed.isEmpty ? track.source.defaultName : trimmed
+        guard resolved != track.name else { return }
+        apply(Commands.RestyleSoundTrack(id: id, name: "Rename Source") { $0.name = resolved })
+    }
+
+    func soloSound(_ id: UUID) {
+        apply(Commands.SoloSoundTrack(id: id))
+        select(.soundTrack(id))
+    }
+
+    func unmuteAllSound() {
+        apply(Commands.UnmuteAllSoundTracks())
     }
 
     // MARK: - Detaching the recording's own sound

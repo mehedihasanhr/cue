@@ -50,6 +50,13 @@ final class WaveformStore {
             state = .unavailable
             return
         }
+        // A recording whose sources were captured separately has no sound in its video file
+        // at all: each lane reads its own, through `RegionWaveformStore`. Decoding the whole
+        // picture to discover that would be a minute of work to find nothing.
+        guard manifest.audioTracks.contains(where: { $0.path == manifest.track(.screen)?.path }) else {
+            state = .unavailable
+            return
+        }
         if let cached = WaveformBuilder.cached(in: package, source: videoURL) {
             state = .ready(cached)
             return

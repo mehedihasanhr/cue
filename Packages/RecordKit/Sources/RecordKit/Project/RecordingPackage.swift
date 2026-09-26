@@ -21,13 +21,34 @@ public struct RecordingManifest: Codable, Equatable, Sendable {
         public var pixelSize: CGSize?
         public var frameRate: Int?
         public var codec: String?
+        /// What to call this track in the editor: the device's name for a microphone,
+        /// nothing for the screen.
+        ///
+        /// Stored rather than looked up when the project is opened, and that is the point:
+        /// the headset this was recorded on may not be plugged in next week, and a lane
+        /// labelled "Microphone 2" tells you nothing about which of the two voices it is.
+        public var name: String?
+        /// The capture device's `uniqueID`, for a track that came from one.
+        ///
+        /// Not used to find the device again — the recording is finished, there is nothing
+        /// to re-open — but to tell two microphones apart when they share a name, which
+        /// two of the same model do.
+        public var deviceID: String?
 
-        public init(kind: Kind, path: String, pixelSize: CGSize? = nil, frameRate: Int? = nil, codec: String? = nil) {
+        public init(kind: Kind,
+                    path: String,
+                    pixelSize: CGSize? = nil,
+                    frameRate: Int? = nil,
+                    codec: String? = nil,
+                    name: String? = nil,
+                    deviceID: String? = nil) {
             self.kind = kind
             self.path = path
             self.pixelSize = pixelSize
             self.frameRate = frameRate
             self.codec = codec
+            self.name = name
+            self.deviceID = deviceID
         }
     }
 
@@ -82,6 +103,23 @@ public struct RecordingManifest: Codable, Equatable, Sendable {
     }
 
     public func track(_ kind: Track.Kind) -> Track? { tracks.first { $0.kind == kind } }
+
+    /// Every track of a kind, in the order they were recorded.
+    ///
+    /// `track(_:)` answers for the kinds there can only be one of — the screen, the
+    /// camera. A recording can hold several microphones, so asking for "the" microphone
+    /// would quietly drop all but the first.
+    public func tracks(_ kind: Track.Kind) -> [Track] { tracks.filter { $0.kind == kind } }
+
+    /// The sound this recording captured, screen first, then the microphones in the order
+    /// they were chosen.
+    ///
+    /// Screen first because that is how a mixing desk is read and because it is the one
+    /// that is always there; the microphones keep their own order so the lane a user set a
+    /// level on yesterday is in the same place today.
+    public var audioTracks: [Track] {
+        tracks.filter { $0.kind == .systemAudio } + tracks.filter { $0.kind == .microphone }
+    }
 }
 
 /// A `.klikrec` package on disk.

@@ -28,9 +28,12 @@ struct SelectionInspector: View {
                 AnnotationInspector(model: model, id: id)
             case .cursorRegion(let id):
                 CursorRegionInspector(model: model, id: id)
-            case .sound:
+            case .sound, .soundTrack:
                 // The whole panel, because selecting the lane is how most people will
-                // arrive at these settings.
+                // arrive at these settings — and because the Sources section it opens with
+                // is a row per lane, so the one that was clicked is already in front of you
+                // with its neighbours for comparison, which is how a level actually gets
+                // set.
                 AudioInspector(model: model)
             case .soundRun(let id):
                 if let run = model.timeline.detachedSound?.first(where: { $0.id == id }) {

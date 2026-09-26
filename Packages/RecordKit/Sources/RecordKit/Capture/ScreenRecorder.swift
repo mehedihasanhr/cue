@@ -13,6 +13,10 @@ import ScreenCaptureKit
 /// straight into the encoder without a hop, a copy or a `Sendable` wrapper.
 public final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     private let writer: SessionWriter
+    /// Where the screen's *own* sound goes — a file of its own, beside the picture rather
+    /// than inside it. `nil` when this take is not capturing system audio, and that `nil`
+    /// is what stops the stream ever being asked for an audio output.
+    private let audio: AudioTrackWriter?
     private let filter: SCContentFilter
     private let configuration: SCStreamConfiguration
     /// Built in `start()` rather than in `init`: `SCStream` takes its delegate at
@@ -27,15 +31,21 @@ public final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @
     public init(filter: SCContentFilter,
                 configuration: SCStreamConfiguration,
                 writer: SessionWriter,
+                audio: AudioTrackWriter? = nil,
                 onStop: @escaping @Sendable (RecordingError) -> Void) {
         self.writer = writer
+        self.audio = audio
         self.filter = filter
         self.configuration = configuration
         self.onStop = onStop
         super.init()
     }
 
-    public func start(systemAudio: Bool) async throws(RecordingError) {
+    /// Starts the stream. System audio is captured when this recorder was given somewhere
+    /// to put it — one condition rather than two, so a stream cannot be subscribed to audio
+    /// that has no file waiting for it.
+    public func start() async throws(RecordingError) {
+        let systemAudio = audio != nil
         let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
         self.stream = stream
         do {
@@ -67,7 +77,7 @@ public final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @
             guard buffer.screenFrameStatus == .complete else { return }
             writer.append(video: buffer)
         case .audio:
-            writer.append(systemAudio: buffer)
+            audio?.append(buffer)
         default:
             break
         }

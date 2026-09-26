@@ -23,6 +23,7 @@ final class StudioSettings {
         static let microphone = "recording.microphone"
         static let camera = "recording.camera"
         static let microphoneID = "recording.microphoneID"
+        static let microphoneIDs = "recording.microphoneIDs"
         static let cameraID = "recording.cameraID"
         static let capturesClicks = "recording.clicks"
         static let capturesFocus = "recording.focus"
@@ -63,11 +64,34 @@ final class StudioSettings {
     /// user who does want it every time gets it — but nothing else ever sets it, and it is
     /// the only thing that puts a `webcamID` on a configuration.
     var recordsCamera: Bool { didSet { defaults.set(recordsCamera, forKey: Key.camera) } }
-    /// Empty means "whatever the system calls the default input".
-    var microphoneID: String { didSet { defaults.set(microphoneID, forKey: Key.microphoneID) } }
+    /// Which microphones a take records, by `uniqueID`, in the order they will appear as
+    /// lanes in the editor.
+    ///
+    /// A list rather than one, because a recording routinely has more than one voice in it
+    /// — a built-in microphone and a guest's headset — and each is written to its own file
+    /// so that turning one down in the editor leaves the other alone.
+    ///
+    /// Empty means "whatever the system calls the default input", which is what the single
+    /// setting this replaced meant when it was empty, and is why an upgrade needs no
+    /// migration beyond reading the old key once.
+    var microphoneIDs: [String] { didSet { defaults.set(microphoneIDs, forKey: Key.microphoneIDs) } }
+
+    /// The first microphone, for the places that can only use one — the voiceover
+    /// recorder, and the bar's label when it names the input.
+    var microphoneID: String { microphoneIDs.first ?? "" }
+
+    /// Adds or removes one microphone, keeping the order the user chose them in.
+    func setMicrophone(_ id: String, isOn: Bool) {
+        if isOn {
+            guard !microphoneIDs.contains(id) else { return }
+            microphoneIDs.append(id)
+        } else {
+            microphoneIDs.removeAll { $0 == id }
+        }
+    }
     /// Which camera, by `uniqueID`. Empty means the system's default one.
     ///
-    /// Remembered the way `microphoneID` is, for the same reason: somebody with a good
+    /// Remembered the way `microphoneIDs` is, for the same reason: somebody with a good
     /// external camera and a laptop lid should not have to pick it before every take. And
     /// held as an ID rather than as a device, so a camera unplugged since the last take
     /// fails when the recording starts rather than recording nothing.
@@ -137,7 +161,10 @@ final class StudioSettings {
         recordsSystemAudio = defaults.object(forKey: Key.systemAudio) as? Bool ?? true
         recordsMicrophone = defaults.bool(forKey: Key.microphone)
         recordsCamera = defaults.bool(forKey: Key.camera)
-        microphoneID = defaults.string(forKey: Key.microphoneID) ?? ""
+        // The old single-microphone key is read when the new one is absent, so somebody
+        // who picked a headset last month still has it selected after the upgrade.
+        microphoneIDs = defaults.object(forKey: Key.microphoneIDs) as? [String]
+            ?? [defaults.string(forKey: Key.microphoneID)].compactMap { $0 }.filter { !$0.isEmpty }
         cameraID = defaults.string(forKey: Key.cameraID) ?? ""
         recordsClicks = defaults.object(forKey: Key.capturesClicks) as? Bool ?? true
         recordsFocus = defaults.object(forKey: Key.capturesFocus) as? Bool ?? true
@@ -227,7 +254,13 @@ final class StudioSettings {
         configuration.capturesClicks = recordsClicks
         configuration.capturesFocus = recordsFocus
         configuration.capturesCursorInVideo = burnsCursorIntoVideo
-        configuration.microphoneID = recordsMicrophone ? (microphoneID.isEmpty ? MicrophoneRecorder.defaultDevice?.uniqueID : microphoneID) : nil
+        // Nothing chosen means the system's default input, which is what somebody who
+        // turned the microphone on and never opened the menu expects to be recorded.
+        configuration.microphoneIDs = recordsMicrophone
+            ? (microphoneIDs.isEmpty
+               ? [MicrophoneRecorder.defaultDevice?.uniqueID].compactMap { $0 }
+               : microphoneIDs)
+            : []
         // The one place a camera is ever asked for. `recordsCamera` off leaves this `nil`,
         // and `nil` is the state in which `RecordingSession` never builds a camera session
         // at all — so "the toggle is off" and "the camera is not opened" are the same fact

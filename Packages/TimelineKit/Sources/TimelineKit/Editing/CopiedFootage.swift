@@ -118,7 +118,7 @@ public struct CopiedFootage: Equatable, Sendable {
             guard let range = selection.range(in: timeline) else { return nil }
             self.init(range, in: timeline)
         case .none, .zoom, .blur, .annotation, .caption, .audio, .cursorRegion,
-             .sound, .soundRun, .headTrim, .tailTrim:
+             .sound, .soundTrack, .soundRun, .headTrim, .tailTrim:
             return nil
         }
     }

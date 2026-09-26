@@ -26,14 +26,21 @@ struct TimelineStrip: View {
     private static let padding: CGFloat = 10
 
     /// Tall enough for the rows this edit actually has.
+    ///
+    /// - Parameter hasSound: whether the recording's sound can be drawn at all. Only
+    ///   consulted for a recording with no separate sources — with sources there is a lane
+    ///   per source and each knows whether it has anything to draw.
     static func height(for timeline: Timeline, hasSound: Bool = true) -> CGFloat {
         var rows = 1.0                                   // zooms, always shown
         if !timeline.blurs.isEmpty { rows += 1 }
         if !timeline.annotations.isEmpty { rows += 1 }
         if !timeline.audio.isEmpty { rows += 1 }
         if !timeline.cursorRegions.isEmpty { rows += 1 }
+        let soundRows = timeline.hasSeparateSound
+            ? Double(timeline.soundTracks.count)
+            : (hasSound ? 1 : 0)
         return padding * 2 + rulerHeight + clipHeight
-            + (hasSound ? soundHeight + spacing : 0)
+            + (soundHeight + spacing) * soundRows
             + (regionHeight + spacing) * rows + spacing
     }
 
@@ -79,11 +86,19 @@ struct TimelineStrip: View {
 
     // MARK: - Rows
 
-    /// The recording's own sound. Hidden for a take that has none, like the other lanes
-    /// that only appear when there is something in them.
+    /// The recording's own sound — a lane per source, on a recording that captured them
+    /// separately, and one lane for the whole take on one that did not.
+    ///
+    /// The screen first, then the microphones in the order they were chosen, which is the
+    /// order the manifest lists them in. Stable across sessions, so the lane somebody set a
+    /// level on yesterday is where they left it.
     @ViewBuilder
     private var soundRow: some View {
-        if model.waveform.state != .unavailable {
+        if model.timeline.hasSeparateSound {
+            ForEach(model.timeline.soundTracks) { track in
+                TimelineSoundRow(model: model, height: Self.soundHeight, track: track)
+            }
+        } else if model.waveform.state != .unavailable {
             TimelineSoundRow(model: model, height: Self.soundHeight)
         }
     }

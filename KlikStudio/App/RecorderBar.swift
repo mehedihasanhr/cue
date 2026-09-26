@@ -239,11 +239,18 @@ struct RecorderBar: View {
         Toggle("Record microphone", isOn: $settings.recordsMicrophone)
         if !model.microphones.isEmpty {
             Divider()
-            Picker("Input", selection: $settings.microphoneID) {
-                Text("System default").tag("")
-                ForEach(model.microphones, id: \.uniqueID) { Text($0.localizedName).tag($0.uniqueID) }
+            // Toggles rather than a picker: a take can record several microphones, each to
+            // its own file and its own lane in the editor, so "which one" is the wrong
+            // question. Nothing ticked means the system's default input.
+            Section("Inputs") {
+                ForEach(model.microphones, id: \.uniqueID) { device in
+                    Toggle(device.localizedName, isOn: Binding(
+                        get: { settings.microphoneIDs.contains(device.uniqueID) },
+                        set: { settings.setMicrophone(device.uniqueID, isOn: $0) }
+                    ))
+                }
             }
-            .pickerStyle(.inline)
+            .disabled(!settings.recordsMicrophone)
         }
     }
 

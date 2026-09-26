@@ -132,6 +132,10 @@ public final class EditorDocument {
         // "undo everything" lands on a document that is valid rather than on whatever
         // was in the file.
         ClipSequence.clampRegions(&timeline)
+        // The sources this recording captured — the screen, each microphone — as lanes the
+        // edit can set a level on. A no-op for a project that already names them and for a
+        // recording made before they were captured separately.
+        timeline.adoptSoundTracks(from: manifest)
 
         self.package = package
         self.manifest = manifest

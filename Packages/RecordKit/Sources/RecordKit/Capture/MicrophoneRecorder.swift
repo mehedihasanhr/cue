@@ -2,23 +2,30 @@ import AVFoundation
 import Foundation
 import os
 
-/// The microphone, into the writer.
+/// One microphone, into a file of its own.
 ///
 /// `AVCaptureSession` rather than `AVAudioEngine`: capture hands over `CMSampleBuffer`s
 /// on a queue of our choosing, which is the writer's, so microphone audio reaches the
 /// encoder the same way screen audio does — no format conversion, no second clock, and
 /// nothing non-`Sendable` crossing a boundary.
+///
+/// One of these per microphone, each with its own `AudioTrackWriter`. They share the
+/// recording's queue and its clock, so two microphones and the screen line up to the
+/// sample; what they do not share is a file, which is what lets the editor set a level on
+/// one voice without touching the other.
 public final class MicrophoneRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, @unchecked Sendable {
     private let session = AVCaptureSession()
     private let output = AVCaptureAudioDataOutput()
-    private let writer: SessionWriter
-    private let deviceName: String
+    private let writer: AudioTrackWriter
+    /// What the editor calls this microphone. Read here, while the device is in hand,
+    /// because by the time a project is opened the device may be long unplugged.
+    public let deviceName: String
     private let onLoss: @Sendable (RecordingError) -> Void
 
     private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "microphone")
 
     public init(device: AVCaptureDevice,
-                writer: SessionWriter,
+                writer: AudioTrackWriter,
                 onLoss: @escaping @Sendable (RecordingError) -> Void) throws(RecordingError) {
         self.writer = writer
         self.onLoss = onLoss
@@ -56,6 +63,17 @@ public final class MicrophoneRecorder: NSObject, AVCaptureAudioDataOutputSampleB
         AVCaptureDevice.default(for: .audio)
     }
 
+    /// Every microphone the Mac can currently see, in the order the system lists them.
+    ///
+    /// Here rather than in the app because the recorder is what has to resolve these
+    /// `uniqueID`s again when a take starts, and a list built from a different query than
+    /// the one that resolves it is a list with devices on it that cannot be recorded.
+    public static var devices: [AVCaptureDevice] {
+        AVCaptureDevice.DiscoverySession(deviceTypes: [.microphone, .external],
+                                         mediaType: .audio,
+                                         position: .unspecified).devices
+    }
+
     public func start() {
         // `startRunning` blocks while the device warms up, which is long enough to drop
         // frames if it happens on the queue the encoder runs on.
@@ -71,7 +89,7 @@ public final class MicrophoneRecorder: NSObject, AVCaptureAudioDataOutputSampleB
     public func captureOutput(_ output: AVCaptureOutput,
                               didOutput buffer: CMSampleBuffer,
                               from connection: AVCaptureConnection) {
-        writer.append(microphone: buffer)
+        writer.append(buffer)
     }
 
     @objc private func sessionFailed(_ notification: Notification) {
