@@ -35,9 +35,29 @@ final class WindowPickerController {
     /// Puts an overlay on every screen and calls back exactly once.
     func begin(candidates: [RecorderModel.Source], _ completion: @escaping (Outcome) -> Void) {
         finish = completion
-        // Only what can actually be pointed at. A window on another Space is in the list
-        // and not on the glass, which is why the list has to stay reachable.
-        let pointable = candidates.filter { $0.isOnScreen && !$0.frame.isEmpty }
+        // Only what can actually be pointed at.
+        //
+        // Deliberately *not* filtered on `isOnScreen`: that flag is the window server's
+        // opinion, it is false for anything on another Space, and — the reason this is a
+        // filter on geometry instead — it has been observed false for windows that are
+        // plainly visible. A window with a real frame that lands on a real screen can be
+        // pointed at; one that cannot be is simply never under the pointer, which costs
+        // nothing. Getting this wrong the other way costs everything: a dim screen that
+        // highlights nothing and does nothing when clicked.
+        let screens = NSScreen.screens.map(\.frame)
+        let pointable = candidates.filter { source in
+            guard source.frame.width > 1, source.frame.height > 1 else { return false }
+            guard let primary = NSScreen.screens.first else { return true }
+            let onGlass = DisplayGeometry.appKit(source.frame, primaryMaxY: primary.frame.maxY)
+            return screens.contains { $0.intersects(onGlass) }
+        }
+
+        // Nothing to point at — every window is on another Space, or the list arrived
+        // empty. The list is the honest answer rather than an overlay that does nothing.
+        guard !pointable.isEmpty else {
+            completion(.wantsList)
+            return
+        }
 
         for screen in NSScreen.screens {
             let window = NSWindow(contentRect: screen.frame,
@@ -67,9 +87,13 @@ final class WindowPickerController {
         }
 
         NSApp.activate(ignoringOtherApps: true)
-        // The first responder has to be the view the pointer is over, or the keys below
-        // reach nothing.
-        windows.first?.makeFirstResponder(windows.first?.contentView)
+        // Key, and first responder, on the screen the pointer is actually on — otherwise
+        // esc and L are typed into an overlay on a display nobody is looking at, and the
+        // picker appears to ignore the keyboard.
+        let pointer = NSEvent.mouseLocation
+        let underPointer = windows.first { NSMouseInRect(pointer, $0.frame, false) } ?? windows.first
+        underPointer?.makeKeyAndOrderFront(nil)
+        underPointer?.makeFirstResponder(underPointer?.contentView)
     }
 
     private func close(with outcome: Outcome) {

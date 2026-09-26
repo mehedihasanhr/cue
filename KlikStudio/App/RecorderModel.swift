@@ -233,6 +233,25 @@ final class RecorderModel {
     /// and only then does the confirmation overlay come up. Cancelling falls back to
     /// whatever was armed before rather than leaving the bar pointing at nothing.
     func pickWindow() {
+        // The list can be empty or stale at this moment — the bar refreshes it in the
+        // background when it opens, and a quick hand can reach Window before that lands.
+        // Picking against nothing would put a dim screen up that highlights nothing and
+        // does nothing when clicked, which reads as the feature being broken.
+        guard !windows.isEmpty else {
+            Task { [weak self] in
+                await self?.refreshSources()
+                guard let self, !windows.isEmpty else {
+                    self?.onWindowListWanted()
+                    return
+                }
+                beginWindowPicker()
+            }
+            return
+        }
+        beginWindowPicker()
+    }
+
+    private func beginWindowPicker() {
         let controller = WindowPickerController()
         windowPicker = controller
         controller.begin(candidates: windows) { [weak self] outcome in
