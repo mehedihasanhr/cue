@@ -516,6 +516,15 @@ final class EditorModel {
         drag.begin(items, grip: grip, in: timeline)
     }
 
+    /// Whether the pointer is in the middle of something — a drag on the timeline, a trim,
+    /// a slider, a handle on the picture.
+    ///
+    /// Read by the lanes to stop reacting to hover while a gesture runs. A chip sliding
+    /// under a stationary pointer fires hover on and off continuously, and each one flipped
+    /// a handle through a fade and pushed or popped a cursor: from the outside that is the
+    /// chip flashing as it moves.
+    var isGesturing: Bool { drag.isActive || document.isInteracting }
+
     /// The offset the gesture has reached, snapped unless ⌃ is held.
     ///
     /// Snapped on the item the pointer took hold of and then applied to every item in the

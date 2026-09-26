@@ -192,6 +192,10 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
             .frame(width: bar, height: height)
             .contentShape(Rectangle())
             .onHover { inside in
+                // Ignored while a gesture runs: a chip sliding under a stationary pointer
+                // fires hover on and off all the way along, and each one costs a fade and a
+                // cursor push. See `EditorModel.isGesturing`.
+                guard !model.isGesturing else { return }
                 hoveredGrip = inside ? key : (hoveredGrip == key ? nil : hoveredGrip)
                 if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
             }

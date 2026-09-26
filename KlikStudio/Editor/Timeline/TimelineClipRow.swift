@@ -173,6 +173,8 @@ struct TimelineClipRow: View {
             .frame(width: bar, height: height)
             .contentShape(Rectangle())
             .onHover { inside in
+                // See `TimelineRegionRow.edge` — hover is noise while a trim is running.
+                guard !model.isGesturing else { return }
                 hoveredHandle = inside ? key : (hoveredHandle == key ? nil : hoveredHandle)
                 if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
             }

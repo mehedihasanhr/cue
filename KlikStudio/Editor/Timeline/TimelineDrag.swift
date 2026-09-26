@@ -44,6 +44,12 @@ final class TimelineDrag {
     }
 
     private(set) var grip: Grip?
+    /// Not observed, on purpose. Every chip on every lane asks whether it is part of the
+    /// drag, and if that question tracked an observable property then every chip on every
+    /// lane would be redrawn on every frame of a gesture that moves three of them. `grip`
+    /// is the observed part, and it changes twice — once at each end of the drag — which
+    /// is exactly how often a chip that is not being dragged needs to hear anything.
+    @ObservationIgnored private var members: Set<UUID> = []
     private(set) var items: [Item] = []
     /// How far the pointer has travelled, in edit time, after snapping.
     private(set) var offset: CMTime = .zero
@@ -71,6 +77,7 @@ final class TimelineDrag {
     func begin(_ items: [Item], grip: Grip, in timeline: Timeline) {
         guard !items.isEmpty else { return }
         self.items = items
+        members = Set(items.map(\.id))
         self.grip = grip
         base = timeline
         preview = timeline
@@ -88,8 +95,11 @@ final class TimelineDrag {
     /// Where an item is *right now*, or `nil` when it is not part of this drag — which is
     /// what tells a row to draw the item from the document instead.
     func geometry(of id: UUID) -> (start: CMTime, duration: CMTime)? {
-        guard isActive, items.contains(where: { $0.id == id }),
-              let range = preview?.range(ofRegion: id) else { return nil }
+        // `grip` first, and observed: this is the read that tells a chip a drag has started
+        // or finished. `members` second, and not observed: it is what stops a chip that is
+        // not in the drag from going on to read `preview` and being redrawn with it.
+        guard grip != nil, members.contains(id), let range = preview?.range(ofRegion: id)
+        else { return nil }
         return (range.start, range.duration)
     }
 
@@ -105,6 +115,7 @@ final class TimelineDrag {
 
     func cancel() {
         items = []
+        members = []
         grip = nil
         offset = .zero
         base = nil
