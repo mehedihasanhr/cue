@@ -33,11 +33,6 @@ final class RecorderBarPanel {
         // Dragging out an area puts up its own overlay; this one waits until that is
         // finished rather than appearing underneath it.
         model.onAreaPicked = { [weak self] in self?.targets.show() }
-        // Both pickers take the screen first and raise the confirmation afterwards; the
-        // list is the fallback for a window that cannot be pointed at.
-        model.onWindowPickerWillBegin = { [weak self] in self?.targets.hide() }
-        model.onWindowPicked = { [weak self] in self?.targets.show() }
-        model.onWindowListWanted = { [weak self] in self?.targets.show() }
         targets.start = { [weak self] in
             self?.model.record()
             self?.targets.hide()
@@ -69,9 +64,11 @@ final class RecorderBarPanel {
                               showTargets: { [weak self] mode in
                                   // Area raises its own drag overlay first; this one
                                   // follows from `onAreaPicked` once a rectangle exists.
-                                  // Area and window both raise their own picker first;
-                                  // this overlay follows from their callbacks.
-                                  guard mode.isAvailable, mode != .area, mode != .window else { return }
+                                  // Area raises its own drag overlay first; this one
+                                  // follows from `onAreaPicked` once a rectangle exists.
+                                  // Window shows this overlay directly, as a grid of
+                                  // pictures of the windows.
+                                  guard mode.isAvailable, mode != .area else { return }
                                   self?.targets.show()
                               })
             .environment(studio)

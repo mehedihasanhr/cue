@@ -113,16 +113,6 @@ final class RecorderModel {
     /// Called once an area has been dragged out, so the target overlay can come up after
     /// the area picker rather than underneath it.
     var onAreaPicked: () -> Void = {}
-    /// Called once a window has been pointed at, for the same reason: the confirmation
-    /// overlay follows the choice rather than standing in front of it.
-    var onWindowPicked: () -> Void = {}
-    /// Called just before the pointer picker takes the screen, so the confirmation
-    /// overlay can get out of its way. Without it both are up at once: the overlay is
-    /// still showing whatever the last mode chose, and the picker draws over it.
-    var onWindowPickerWillBegin: () -> Void = {}
-    /// Called when the pointer picker is waved off in favour of the searchable list —
-    /// a window on another Space cannot be pointed at.
-    var onWindowListWanted: () -> Void = {}
 
     var windowSearch = ""
 
@@ -130,7 +120,6 @@ final class RecorderModel {
     private let settings: StudioSettings
     private let studio: StudioService
     private var areaPicker: AreaSelectionController?
-    private var windowPicker: WindowPickerController?
     private var thumbnailTask: Task<Void, Never>?
     /// A picture of each window, by id, filled in after the list itself.
     private(set) var thumbnails: [CGWindowID: CGImage] = [:]
@@ -205,11 +194,13 @@ final class RecorderModel {
         case .display:
             select(displays.first { $0.target.displayID == Self.displayUnderPointer() } ?? displays.first)
         case .window:
-            // Pointed at rather than named. The list is still there behind the picker's
-            // `L`, because a window on another Space is not on any glass to point at.
+            // Straight to the list. Pointing at the window itself was the obvious idea and
+            // it was the wrong one: the dim-and-highlight put a frame on screen that the
+            // user had not asked for and could not explain, and the thing it most often
+            // highlighted was whatever system window happened to span the display. A grid
+            // of pictures of the windows answers "which one" without taking the screen.
             target = nil
             targetLabel = ""
-            pickWindow()
         case .area:
             pickArea()
         case .device:
@@ -231,49 +222,6 @@ final class RecorderModel {
         case .display: mode = .display
         case .window: mode = .window
         case .area: mode = .area
-        }
-    }
-
-    /// Points at a window on the screen, then keeps it as the target.
-    ///
-    /// The same shape as `pickArea`: the picker owns the screen until a choice is made,
-    /// and only then does the confirmation overlay come up. Cancelling falls back to
-    /// whatever was armed before rather than leaving the bar pointing at nothing.
-    func pickWindow() {
-        // The list can be empty or stale at this moment — the bar refreshes it in the
-        // background when it opens, and a quick hand can reach Window before that lands.
-        // Picking against nothing would put a dim screen up that highlights nothing and
-        // does nothing when clicked, which reads as the feature being broken.
-        guard !windows.isEmpty else {
-            Task { [weak self] in
-                await self?.refreshSources()
-                guard let self, !windows.isEmpty else {
-                    self?.onWindowListWanted()
-                    return
-                }
-                beginWindowPicker()
-            }
-            return
-        }
-        beginWindowPicker()
-    }
-
-    private func beginWindowPicker() {
-        onWindowPickerWillBegin()
-        let controller = WindowPickerController()
-        windowPicker = controller
-        controller.begin(candidates: windows) { [weak self] outcome in
-            guard let self else { return }
-            windowPicker = nil
-            switch outcome {
-            case .picked(let source):
-                select(source)
-                onWindowPicked()
-            case .wantsList:
-                onWindowListWanted()
-            case .cancelled:
-                if target == nil { choose(.display) }
-            }
         }
     }
 
