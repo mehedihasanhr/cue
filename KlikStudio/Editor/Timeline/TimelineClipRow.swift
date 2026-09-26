@@ -103,6 +103,19 @@ struct TimelineClipRow: View {
             }
         }
         Divider()
+        // The clipboard verbs, aimed at the clip under the pointer rather than at the
+        // selection — the same choice `TimelineRegionRow`'s menu makes, and for the reason
+        // given on `EditorModel.copyRegion(_:)`: a right-click must not quietly change what
+        // the inspector is showing. Paste is the exception and takes no clip at all, because
+        // pasting footage inserts it at the playhead; offering it here is only a shortcut to
+        // the menu bar's item, in the place where the hand already is.
+        Button("Cut") { model.cutRegion(.clip(clip.id)) }
+            .disabled(model.timeline.clips.count < 2)
+        Button("Copy") { model.copyRegion(.clip(clip.id)) }
+        Button("Duplicate") { model.duplicateRegion(.clip(clip.id)) }
+        Button("Paste at Playhead") { model.pasteAtPlayhead() }
+            .disabled(!model.canPasteRegion)
+        Divider()
         Button("Delete", role: .destructive) {
             model.select(.clip(clip.id))
             model.deleteSelection()

@@ -367,13 +367,15 @@ final class EditorModel {
 
     /// Whether Cut, Copy and Duplicate would do anything.
     ///
-    /// One answer for all three because they all need the same thing: a region. A clip, a
-    /// range and the trim handles are footage rather than regions, and pasting footage is
-    /// a different operation — the note on `CopiedRegion.placed(at:in:)` says why.
-    var canCopySelection: Bool { copyable != nil }
+    /// One answer for all three because they all need the same thing: something to copy.
+    /// Either half of the clipboard will do — a region, or the footage under a selected clip
+    /// or range — and which one it is only matters once the verb runs.
+    var canCopySelection: Bool { copyable != nil || copyableFootage != nil }
 
     /// Whether Paste would do anything.
-    var canPasteRegion: Bool { RegionPasteboard.shared.hasRegion }
+    var canPasteRegion: Bool {
+        RegionPasteboard.shared.hasRegion || RegionPasteboard.shared.hasFootage
+    }
 
     func copySelection() { copyRegion(selection) }
 
@@ -388,12 +390,18 @@ final class EditorModel {
     /// right-click quietly changed what the inspector is showing, which is not what a
     /// context menu is for.
     func copyRegion(_ selection: Selection) {
-        guard let region = CopiedRegion(selection, in: timeline) else { return }
+        guard let region = CopiedRegion(selection, in: timeline) else {
+            copyFootage(selection)
+            return
+        }
         RegionPasteboard.shared.write(region)
     }
 
     func cutRegion(_ selection: Selection) {
-        guard let region = CopiedRegion(selection, in: timeline) else { return }
+        guard let region = CopiedRegion(selection, in: timeline) else {
+            cutFootage(selection)
+            return
+        }
         // Written before the delete, so a failed encode leaves the region where it is
         // rather than removing something the user can no longer paste back.
         RegionPasteboard.shared.write(region)
@@ -408,7 +416,12 @@ final class EditorModel {
     /// did nothing. Length, scale, easing and everything else are kept; only the identity
     /// and the position are new.
     func pasteAtPlayhead() {
-        guard let copied = RegionPasteboard.shared.read() else { return }
+        // Footage first, because the two payloads never share a pasteboard — a copy of
+        // either clears it — so finding footage means footage is what was copied.
+        guard let copied = RegionPasteboard.shared.read() else {
+            pasteFootageAtPlayhead()
+            return
+        }
         // A sound's path is relative to its own project package, so one copied out of
         // another take names a file this project does not have. Refused rather than
         // pasted, because a silent region that cannot be made to play is worse than a
@@ -431,10 +444,109 @@ final class EditorModel {
     /// it back inside — which leaves it overlapping the original, but on screen and
     /// selected rather than somewhere the timeline cannot show.
     func duplicateRegion(_ selection: Selection) {
-        guard let region = CopiedRegion(selection, in: timeline),
-              let placed = region.placed(at: region.end, in: timeline) else { return }
+        guard let region = CopiedRegion(selection, in: timeline) else {
+            duplicateFootage(selection)
+            return
+        }
+        guard let placed = region.placed(at: region.end, in: timeline) else { return }
         apply(Commands.InsertRegion(placed, name: "Duplicate \(placed.title)"))
         select(placed.selection)
+    }
+
+    // MARK: - Clipboard: footage
+
+    /// The footage half of the clipboard, kept in one block below the region half rather
+    /// than interleaved with it.
+    ///
+    /// Every verb above asks `CopiedRegion` first and falls through to here, which works
+    /// because the two initialisers divide every `Selection` between them: a zoom is never
+    /// footage and a clip is never a region. So "did the region half refuse?" is a complete
+    /// test for "is this footage?", and neither half has to enumerate the other's cases.
+
+    /// What Copy would put on the pasteboard when the selection is footage.
+    ///
+    /// Computed each time for the reason `copyable` is: a selection can stop being valid
+    /// without anything having deleted it, and a stale stretch of an edit is exactly what
+    /// this must not hand out.
+    private var copyableFootage: CopiedFootage? { CopiedFootage(selection, in: timeline) }
+
+    func copyFootage(_ selection: Selection) {
+        guard let footage = CopiedFootage(selection, in: timeline) else { return }
+        RegionPasteboard.shared.write(footage)
+    }
+
+    /// Cut footage: copy it, then ripple-delete the stretch it came from.
+    ///
+    /// Two commands' worth of meaning and one edit, which is why it goes through
+    /// `Commands.DeleteRange` rather than `DeleteRegion` — closing the gap is the whole
+    /// difference between cutting footage and cutting a region, and it is the operation
+    /// pasting is the inverse of.
+    ///
+    /// Written to the pasteboard before the delete, the same order `cutRegion` uses and for
+    /// the same reason: a failed encode must leave the footage where it is rather than
+    /// removing something the user can no longer paste back.
+    func cutFootage(_ selection: Selection) {
+        guard let footage = CopiedFootage(selection, in: timeline),
+              let range = selection.range(in: timeline) else { return }
+        RegionPasteboard.shared.write(footage)
+        apply(Commands.DeleteRange(range))
+        if self.selection == selection { self.selection = .none }
+    }
+
+    /// A copy of the pasteboard's footage, inserted at the playhead.
+    ///
+    /// The playhead rather than where it came from, for the reason a region paste uses it:
+    /// it is where the user is looking. Unlike a region paste this makes the edit *longer*,
+    /// and everything after the playhead moves along with the footage it was placed against
+    /// — `ClipSequence.insert` is that arithmetic, and the comment there is the argument for
+    /// what travels and what is stretched.
+    ///
+    /// Sounds whose files this project has not got are dropped rather than refusing the
+    /// whole paste, which is the one place this differs from pasting a lone sound region. A
+    /// lone sound region *is* the paste, so failing it explains itself; a music cue attached
+    /// to ten seconds of picture is not what the user asked for, and throwing away their
+    /// footage over it would be the clipboard deciding what they meant.
+    func pasteFootageAtPlayhead() {
+        guard let copied = RegionPasteboard.shared.readFootage() else { return }
+        let package = packageURL
+        let settled = copied.withoutSounds { path in
+            !FileManager.default.fileExists(atPath: package.appendingPathComponent(path).path)
+        }
+        let dropped = copied.audio.count - settled.audio.count
+        let placed = settled.freshened()
+        guard applyFootage(placed, at: playhead, name: "Paste \(placed.title)") else { return }
+        if dropped > 0 {
+            errorMessage = dropped == 1
+                ? "One sound belonged to another recording and was left out. Add it with Add Sound…"
+                : "\(dropped) sounds belonged to another recording and were left out. Add them with Add Sound…"
+        }
+    }
+
+    /// A copy of the selected footage, immediately after it.
+    ///
+    /// After rather than on top of, which for footage is not a choice about visibility the
+    /// way it is for a region — there is nowhere else to put it. Inserting at the selection's
+    /// end is what makes ⌘D on a clip mean "play this twice".
+    func duplicateFootage(_ selection: Selection) {
+        guard let footage = CopiedFootage(selection, in: timeline),
+              let range = selection.range(in: timeline) else { return }
+        let placed = footage.freshened()
+        _ = applyFootage(placed, at: range.end, name: "Duplicate \(placed.title)")
+    }
+
+    /// The one door both of them go through, so the selection lands the same way either way.
+    ///
+    /// Selects the first clip that arrived rather than the range it occupies: the clips are
+    /// the things that exist afterwards and can be dragged, trimmed and deleted, and a
+    /// `.range` selection would have to be recomputed from the insertion point — arithmetic
+    /// the command has already done and would only get to disagree with.
+    @discardableResult
+    private func applyFootage(_ footage: CopiedFootage, at time: CMTime, name: String) -> Bool {
+        let before = timeline
+        apply(Commands.InsertFootage(footage, at: time, name: name))
+        guard timeline != before else { return false }
+        if let first = footage.clips.first { select(.clip(first.id)) }
+        return true
     }
 
     // MARK: - Editing

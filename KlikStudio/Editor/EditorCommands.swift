@@ -44,13 +44,18 @@ struct EditorCommands: SwiftUI.Commands {
             // responder chain the shortcut first, so a focused text field wins; with no
             // text responder the system's items are disabled and ours are reached instead.
             // The qualified names are what keeps one Edit menu from listing "Copy" twice.
-            Button("Cut Region") { editor?.cutSelection() }
+            // "Selection" rather than "Region": these verbs now take footage as well, and a
+            // menu item that names one of the two things it does is one the user has to
+            // discover the rest of by accident. Still qualified rather than a bare "Copy",
+            // for the responder-chain reason above — one Edit menu must not list "Copy"
+            // twice.
+            Button("Cut Selection") { editor?.cutSelection() }
                 .keyboardShortcut("x")
                 .disabled(editor?.canCopySelection != true)
-            Button("Copy Region") { editor?.copySelection() }
+            Button("Copy Selection") { editor?.copySelection() }
                 .keyboardShortcut("c")
                 .disabled(editor?.canCopySelection != true)
-            Button("Paste Region") { editor?.pasteAtPlayhead() }
+            Button("Paste at Playhead") { editor?.pasteAtPlayhead() }
                 .keyboardShortcut("v")
                 .disabled(editor?.canPasteRegion != true)
             Button("Duplicate") { editor?.duplicateSelection() }

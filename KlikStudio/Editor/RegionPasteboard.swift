@@ -27,12 +27,26 @@ final class RegionPasteboard {
     /// payload is still decoded defensively.
     static let type = NSPasteboard.PasteboardType("com.stackrover.klik.studio.region")
 
+    /// Footage, under a type of its own.
+    ///
+    /// A second UTI rather than a second `kind` inside the first one's payload, and the
+    /// reason is what `canReadItem` can answer: whether Paste is live has to be decidable
+    /// from the *types* on the pasteboard, without reading and decoding a payload that may
+    /// be a whole stretch of an edit. Two types means the menu can be right about which
+    /// paste it is offering while touching nothing but a list of names.
+    static let footageType = NSPasteboard.PasteboardType("com.stackrover.klik.studio.footage")
+
     /// Whether Paste would do anything, for the menu item to be honest about.
     ///
     /// Stored and observed rather than computed, because a computed property that read
     /// `NSPasteboard` would give SwiftUI nothing to invalidate on: the menu would show
     /// whatever was true the last time something else happened to change.
     private(set) var hasRegion = false
+
+    /// The same question about footage. Separate rather than folded into `hasRegion`,
+    /// because the two pastes are different edits and a caller may care which it is about
+    /// to do — pasting footage changes how long the edit is.
+    private(set) var hasFootage = false
 
     @ObservationIgnored private var lastChangeCount = NSPasteboard.general.changeCount - 1
     @ObservationIgnored private var observer: (any NSObjectProtocol)?
@@ -65,6 +79,7 @@ final class RegionPasteboard {
         // `canReadItem` rather than reading and decoding: this runs on activation, and
         // whether the menu item is live is a question about types, not about contents.
         hasRegion = pasteboard.canReadItem(withDataConformingToTypes: [Self.type.rawValue])
+        hasFootage = pasteboard.canReadItem(withDataConformingToTypes: [Self.footageType.rawValue])
     }
 
     // MARK: - Writing
@@ -87,6 +102,27 @@ final class RegionPasteboard {
         refresh()
     }
 
+    /// Footage, written the same way and clearing the same pasteboard.
+    ///
+    /// Clearing matters more here than it looks: one pasteboard holds one thing, so copying
+    /// footage has to make the region that was on it stop being pasteable. Leaving both
+    /// there would give two live Paste items whose order decided what happened, which is
+    /// exactly the sort of "almost working" the type's own note warns about.
+    func write(_ footage: CopiedFootage) {
+        guard let data = footage.encoded() else {
+            Self.log.error("Footage could not be encoded for the clipboard")
+            return
+        }
+        let item = NSPasteboardItem()
+        item.setData(data, forType: Self.footageType)
+        item.setString(footage.summary, forType: .string)
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.writeObjects([item])
+        refresh()
+    }
+
     // MARK: - Reading
 
     /// The region on the pasteboard, if there is one this build understands.
@@ -101,5 +137,19 @@ final class RegionPasteboard {
             return nil
         }
         return region
+    }
+
+    /// The footage on the pasteboard, if there is any this build understands.
+    ///
+    /// Same shape and same bargain as `read()`: a payload from a newer build, or damaged
+    /// bytes, is indistinguishable from an empty pasteboard to every caller, and worth one
+    /// line in the log so that "⌘V did nothing" can be told apart from a bug in the paste.
+    func readFootage() -> CopiedFootage? {
+        guard let data = NSPasteboard.general.data(forType: Self.footageType) else { return nil }
+        guard let footage = CopiedFootage.decoded(from: data) else {
+            Self.log.notice("Something was on the clipboard under our footage type that this build could not read")
+            return nil
+        }
+        return footage
     }
 }
