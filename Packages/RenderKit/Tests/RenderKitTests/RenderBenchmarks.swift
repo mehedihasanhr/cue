@@ -155,6 +155,42 @@ struct RenderBenchmarks {
         }
     }
 
+    /// The same frame described smaller, which is what the preview does while it moves.
+    ///
+    /// The comparison the preview's fidelity switch rests on. A 4K project composites eight
+    /// megapixels to fill a pane a few hundred points across; the rows below are the cost of
+    /// that frame at full size and at the fractions of it a real pane asks for. The `graph
+    /// build` rows are here too because they are the part the main actor pays synchronously
+    /// — if describing the smaller frame cost *more* to set up, the saving on the GPU would
+    /// be beside the point.
+    @Test func drawingAFrameAtPreviewScale() {
+        let timeline = RenderWorkload.timeline()
+        let track = RenderWorkload.cursorTrack()
+        let renderer = SceneRenderer()
+        let size = CGSize(width: 3_840, height: 2_160)
+        let builder = SceneBuilder(videoSize: size, displayScale: 2)
+        let source = RenderWorkload.source(size)
+        let scenes = (0..<60).map {
+            builder.descriptor(for: timeline, at: RenderWorkload.time(Double($0) * 0.9), cursor: track)
+        }
+
+        // 1 is the frame at rest, which must stay exactly what the export writes; the rest
+        // are a 4K project in a pane roughly 1000, 700 and 500 points wide on a 2× display.
+        for factor in [1.0, 0.5, 0.35, 0.25] {
+            let scaled = scenes.map { $0.scaled(by: factor) }
+            let label = String(format: "%.2f× (%d×%d)", factor,
+                               Int(scaled[0].outputSize.width), Int(scaled[0].outputSize.height))
+            RenderWorkload.report("preview graph build, 4K scene at \(label)",
+                                  microseconds: RenderWorkload.median(count: 120) {
+                _ = renderer.image(for: scaled[$0 % scaled.count], source: source)
+            })
+            RenderWorkload.report("preview cgImage, 4K scene at \(label)",
+                                  microseconds: RenderWorkload.median(count: 40) {
+                _ = renderer.cgImage(for: scaled[$0 % scaled.count], source: source)
+            })
+        }
+    }
+
     /// The per-frame artwork, drawn through Core Graphics rather than Core Image.
     ///
     /// Separated out because these are `CGContext`s created per call, which is the one
@@ -267,6 +303,108 @@ struct RenderBenchmarks {
         }
         hits.sort()
         RenderWorkload.report("FrameSource seek, cached", microseconds: hits[hits.count / 2])
+    }
+
+    /// What a relaxed seek tolerance actually buys — asked directly of the generator.
+    ///
+    /// The one measurement that decides whether the preview may show a *different frame*
+    /// while it plays. `FrameSource.Quality.preview` already sets a tolerance of 1/120 s,
+    /// which at 30 fps is narrower than a single frame, so it can never let the generator
+    /// hand back something it has already decoded. The rows below widen it to one frame, two
+    /// frames, half a second and "anything you like", against the same file, so the question
+    /// can be answered with a number instead of an argument. If a whole group of pictures'
+    /// worth of slack does not move the median, then the cost is the decode itself and no
+    /// amount of tolerance is going to touch it.
+    ///
+    /// Deliberately not routed through `FrameSource`: adding a tolerance knob to production
+    /// code in order to find out whether production code should have one is how a feature
+    /// gets shipped by accident.
+    @Test func seekingWithARelaxedTolerance() async throws {
+        let folder = try Self.scratch()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let movie = folder.appendingPathComponent("tolerance.mov")
+        try await ExportTests.writeSilentVideo(to: movie,
+                                              size: CGSize(width: 1_920, height: 1_080),
+                                              frames: 120, frameRate: 30)
+
+        let cases: [(String, CMTime)] = [
+            ("zero (what scrubbing uses)", .zero),
+            ("1/120 s (what playback uses today)", CMTime(value: 1, timescale: 120)),
+            ("one frame at 30 fps", CMTime(value: 1, timescale: 30)),
+            ("two frames at 30 fps", CMTime(value: 2, timescale: 30)),
+            ("half a second", CMTime(value: 1, timescale: 2)),
+            ("positiveInfinity", .positiveInfinity),
+        ]
+        for (label, tolerance) in cases {
+            // A fresh generator per case: a generator that has already decoded around a
+            // time is not seeking cold any more, and the whole question here is cold cost.
+            let generator = AVAssetImageGenerator(asset: AVURLAsset(url: movie))
+            generator.appliesPreferredTrackTransform = true
+            generator.requestedTimeToleranceBefore = tolerance
+            generator.requestedTimeToleranceAfter = tolerance
+            generator.maximumSize = CGSize(width: 1_280, height: 720)
+
+            let clock = ContinuousClock()
+            var samples: [Double] = []
+            for index in 0..<24 {
+                let at = CMTime(seconds: 0.1 + Double(index) * 0.13, preferredTimescale: 600)
+                let elapsed = await clock.measure {
+                    _ = await withCheckedContinuation { (continuation: CheckedContinuation<CGImage?, Never>) in
+                        generator.generateCGImageAsynchronously(for: at) { image, _, _ in
+                            continuation.resume(returning: image)
+                        }
+                    }
+                }
+                samples.append(Double(elapsed.components.attoseconds) / 1e12)
+            }
+            samples.sort()
+            RenderWorkload.report("seek, tolerance \(label)", microseconds: samples[samples.count / 2])
+        }
+    }
+
+    /// A burst of scrub events, with and without coalescing.
+    ///
+    /// `EditorModel.refresh` used to cancel its render task and start another on every
+    /// playhead change. Cancelling a `Task` cannot stop a decode that is already inside
+    /// `AVAssetImageGenerator`, and the frame source is an actor, so a fast drag queued one
+    /// full decode per event and the frame the pointer is actually over came back last. This
+    /// measures the only number that matters to a drag: how long until the picture under the
+    /// pointer is on screen.
+    ///
+    /// "backlog" asks for all twenty times at once, as the old code did. "coalesced" asks for
+    /// the first, then — holding only the latest request — asks for the twentieth, which is
+    /// what the pending-render latch in `refresh` now does.
+    @Test func scrubbingABurstOfEvents() async throws {
+        let folder = try Self.scratch()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let movie = folder.appendingPathComponent("burst.mov")
+        try await ExportTests.writeSilentVideo(to: movie,
+                                              size: CGSize(width: 1_920, height: 1_080),
+                                              frames: 120, frameRate: 30)
+        let source = try await FrameSource(url: movie)
+        // Times 40 ms apart and far enough from each other to miss the 20 ms cache buckets:
+        // a drag over new ground, which is the expensive case.
+        let burst = (0..<20).map { CMTime(seconds: 0.2 + Double($0) * 0.04, preferredTimescale: 600) }
+        let clock = ContinuousClock()
+
+        await source.clearCache()
+        let backlog = await clock.measure {
+            await withTaskGroup(of: Void.self) { group in
+                for at in burst { group.addTask { _ = await source.frame(at: at) } }
+            }
+        }
+        RenderWorkload.report("scrub burst of 20, backlog (every event decoded)",
+                              microseconds: Double(backlog.components.attoseconds) / 1e12
+                                  + Double(backlog.components.seconds) * 1e6)
+
+        await source.clearCache()
+        let coalesced = await clock.measure {
+            _ = await source.frame(at: burst[0])
+            _ = await source.frame(at: burst[burst.count - 1])
+        }
+        RenderWorkload.report("scrub burst of 20, coalesced (first and latest only)",
+                              microseconds: Double(coalesced.components.attoseconds) / 1e12
+                                  + Double(coalesced.components.seconds) * 1e6)
     }
 
     // MARK: - Export
