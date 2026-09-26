@@ -45,6 +45,21 @@ struct PreviewPane: View {
                     EmptyView()
                 }
             }
+            // How big the picture is allowed to be, told to the thing that renders it.
+            //
+            // While playing, the model composites at the pane's size rather than at the
+            // project's: a 4K frame filling a pane this size is seven eighths of its pixels
+            // thrown away by the window server. Reported from here because this is the only
+            // place that knows the answer, and reported as the *stage* rather than the whole
+            // pane so the inset and the aspect fit are already accounted for.
+            //
+            // `onChange` rather than `onGeometryChange`, which wants macOS 15 and this app
+            // ships to 14 — and there is no need for it here, since the enclosing
+            // `GeometryReader` has already measured the pane. `initial: true` so the first
+            // playback after a window opens is not rendered against a pane size of zero.
+            .onChange(of: stage(in: proxy.size).size, initial: true) { _, size in
+                model.previewPaneResized(to: size)
+            }
         }
     }
 
