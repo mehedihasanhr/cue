@@ -386,13 +386,16 @@ public enum Commands {
         }
 
         public func apply(to timeline: inout Timeline) -> Bool {
-            let clamped = Self.clamped(rect)
             if let index = timeline.blurs.firstIndex(where: { $0.id == id }) {
+                // A blur is normalised to the *recording*, and a blur that is not over the
+                // recording hides nothing — so it stays inside it.
+                let clamped = Self.clamped(rect)
                 guard timeline.blurs[index].rect != clamped else { return false }
                 timeline.blurs[index].rect = clamped
                 return true
             }
             if let index = timeline.annotations.firstIndex(where: { $0.id == id }) {
+                let clamped = Self.placed(rect)
                 guard timeline.annotations[index].rect != clamped else { return false }
                 timeline.annotations[index].rect = clamped
                 return true
@@ -405,6 +408,31 @@ public enum Commands {
         /// A rectangle dragged to nothing is not a small rectangle, it is one the user
         /// has lost — there is no handle left to pull it back out by.
         public static let minimumSide: CGFloat = 0.02
+
+        /// How much of an annotation has to stay in the frame, as a fraction of it.
+        ///
+        /// The looser half of the same promise `minimumSide` makes. A label should go
+        /// anywhere in the frame, including hanging off an edge — running a title half out
+        /// of shot is an ordinary thing to want, and being shoved back inside the moment you
+        /// let go is not. What is not ordinary is losing it: something entirely outside the
+        /// frame is invisible, unclickable, and still in the export.
+        ///
+        /// So the rule is not "inside the frame", it is "always something left to take hold
+        /// of". This much of it stays on screen, and everything else is allowed out.
+        public static let minimumVisible: CGFloat = 0.05
+
+        /// Where an annotation may sit: anywhere, as long as a sliver of it is reachable.
+        /// See `minimumVisible`.
+        static func placed(_ rect: CGRect) -> CGRect {
+            var rect = rect.standardized
+            rect.size.width = min(1, max(minimumSide, rect.width))
+            rect.size.height = min(1, max(minimumSide, rect.height))
+            // The left edge may go as far as `minimumVisible - width`, which is the point at
+            // which exactly that much of the right-hand end is still showing.
+            rect.origin.x = min(1 - minimumVisible, max(minimumVisible - rect.width, rect.minX))
+            rect.origin.y = min(1 - minimumVisible, max(minimumVisible - rect.height, rect.minY))
+            return rect
+        }
 
         static func clamped(_ rect: CGRect) -> CGRect {
             var rect = rect.standardized
