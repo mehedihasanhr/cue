@@ -2,6 +2,7 @@ import CoreGraphics
 import CoreImage
 import CoreMedia
 import Foundation
+import RecordKit
 import Testing
 import TimelineKit
 @testable import RenderKit
@@ -14,9 +15,9 @@ import TimelineKit
 /// zoomed content still only occupies the same part of the finished video.
 ///
 /// The other reading is a camera moving towards the scene: the framed picture itself grows
-/// and travels, and the padding closes up. That is what most people mean by zooming in.
-/// Both are here; the first is the default, because it is what every project made before
-/// the choice existed renders as.
+/// and travels, corners and shadow with it, and the padding closes up. That is what most
+/// people mean by zooming in, so it is the default; the first stays available for when the
+/// frame itself is the design.
 struct ZoomScopeTests {
     private func time(_ seconds: Double) -> CMTime {
         CMTime(seconds: seconds, preferredTimescale: 600)
@@ -109,6 +110,31 @@ struct ZoomScopeTests {
         #expect(bounds.contains(scene.visibleVideoFrame))
     }
 
+    /// A gentle zoom does not swallow the padding, and what padding is left is still
+    /// background rather than pointer.
+    ///
+    /// The clipping the held reading needs (`CropTests.thePointerIsNeverDrawnOutsideThePicture`)
+    /// is needed here too, against a rectangle that moves: the pointer is placed against the
+    /// grown frame, so at the edge of the recording it lands beside the picture unless it is
+    /// held to the same rect the picture is.
+    @Test func thePointerStaysInsideTheGrownFrame() throws {
+        var edit = timeline(wholeFrame: true)
+        edit.style.cornerRadius = 0
+        edit.zooms[0].scale = 1.1
+        edit.cursor.isVisible = true
+        edit.cursor.smoothing = 0
+        edit.cursor.scale = 3
+
+        // The middle of the recording's right-hand edge: as far out as the pointer goes.
+        let track = CursorTrack(samples: [CursorSample(t: 0, x: videoSize.width, y: videoSize.height / 2, shape: .arrow)])
+        let scene = builder().descriptor(for: edit, at: time(5), cursor: track)
+        let image = try #require(SceneRenderer().cgImage(for: scene, source: red()))
+
+        #expect(scene.visibleVideoFrame.maxX < scene.outputSize.width - 4, "there is padding left to check")
+        let sample = try #require(pixel(image, x: image.width - 3, y: image.height / 2))
+        #expect(sample.b > 150 && sample.r < 100, "the padding is background, never pointer")
+    }
+
     /// With no zoom in force the two readings are the same picture, so turning the switch
     /// on cannot change a frame that is not zoomed.
     @Test func withoutAZoomTheSwitchChangesNothing() throws {
@@ -126,18 +152,29 @@ struct ZoomScopeTests {
         }
     }
 
-    /// The setting travels with the project, and a project written before it existed reads
-    /// as the behaviour it was rendered with.
-    @Test func theChoiceIsSavedAndOlderProjectsKeepTheirs() throws {
-        var edit = timeline(wholeFrame: true)
+    /// The setting travels with the project, including when it is turned off — and adding
+    /// it did not disturb the settings it was added beside.
+    @Test func theChoiceIsSavedAndTheNeighboursSurvivedIt() throws {
+        var edit = timeline(wholeFrame: false)
         edit.camera.steadiness = 0.4
         let read = try JSONDecoder().decode(Timeline.self, from: JSONEncoder().encode(edit))
-        #expect(read.camera.zoomsWholeFrame)
+        #expect(!read.camera.zoomsWholeFrame, "off is a choice and has to come back off")
         #expect(read.camera.steadiness == 0.4, "and the neighbours survived the new key")
 
+        // A project written before the key existed decodes as the whole frame zooming,
+        // which is what a project made today does. The point of the lenient decoder is
+        // that the *other* three come back as they were saved rather than as defaults.
         let old = #"{"steadiness":0.9,"follow":0.5,"safeArea":0.7}"#
         let camera = try JSONDecoder().decode(CameraStyle.self, from: Data(old.utf8))
-        #expect(!camera.zoomsWholeFrame)
+        #expect(camera.zoomsWholeFrame)
         #expect(camera.steadiness == 0.9, "the old settings were not reset by the new one")
+        #expect(camera.safeArea == 0.7)
+    }
+
+    /// The default is the one the picture is expected to do, so a camera nobody has
+    /// configured zooms the frame.
+    @Test func aCameraNobodyTouchedZoomsTheWholeFrame() {
+        #expect(CameraStyle().zoomsWholeFrame)
+        #expect(Timeline(sourceDuration: .zero).camera.zoomsWholeFrame)
     }
 }

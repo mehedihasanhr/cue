@@ -47,8 +47,8 @@ struct CameraInspector: View {
             // zoom in the project.
             Toggle("Zoom the whole picture", isOn: style.binding(\.camera.zoomsWholeFrame, "Zoom Scope"))
             Text(model.timeline.camera.zoomsWholeFrame
-                 ? "The picture grows and moves as a whole, so the padding around it closes up as the camera pushes in."
-                 : "The picture stays where the padding put it and magnifies inside its own frame, so the background and corners never move.")
+                 ? "The frame grows and travels with the zoom — corners, shadow and all — and the padding closes up as the camera pushes in. The background stays put."
+                 : "The frame stays where the padding put it and only its contents magnify, so the padding, corners and shadow never move.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

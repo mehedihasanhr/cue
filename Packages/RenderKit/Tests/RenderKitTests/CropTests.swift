@@ -189,6 +189,9 @@ struct CropTests {
         // shows through — so a pointer at the edge of the recording used to be composited
         // onto the padding beside it.
         var timeline = timeline(crop: nil)
+        // The held-frame reading, so there is still padding to check at 4×. The same
+        // clipping in the other reading is `ZoomScopeTests`.
+        timeline.camera.zoomsWholeFrame = false
         timeline.style.padding = 0.2
         timeline.style.cornerRadius = 0
         timeline.style.shadowOpacity = 0

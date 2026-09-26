@@ -484,8 +484,13 @@ struct SceneTests {
         #expect(a == b)
     }
 
+    /// The held-frame reading of a zoom, which is `camera.zoomsWholeFrame == false`: the
+    /// content magnifies inside the frame the padding left, and the padding stays padding
+    /// however far the zoom goes. Pinned rather than defaulted, because the default is now
+    /// the other reading — see `ZoomScopeTests`.
     @Test func aZoomedFrameNeverSpillsOverThePadding() throws {
         var timeline = timeline()
+        timeline.camera.zoomsWholeFrame = false
         timeline.style.background = .color(ColorValue(r: 0, g: 0, b: 1))
         timeline.style.padding = 0.12
         timeline.style.shadowOpacity = 0

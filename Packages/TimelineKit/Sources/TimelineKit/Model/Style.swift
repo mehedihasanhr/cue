@@ -299,24 +299,24 @@ public struct CameraStyle: Codable, Equatable, Sendable {
 
     /// Whether a zoom magnifies the framed picture as a whole, or only what is inside it.
     ///
-    /// Off — the original behaviour — the recording's rounded rectangle stays exactly where
-    /// the padding put it and the content magnifies *inside* it, like pushing in on a
-    /// screen. The background, the padding, the corners and the shadow never move, so the
-    /// styling is visible throughout.
+    /// On — the default — the framed recording grows and travels: the picture behaves like
+    /// a camera moving towards the scene, so at 2× the recording is twice the size, its
+    /// rounded corners and shadow travel with it, and the padding around it closes up. The
+    /// *background* never moves, because the background is the stage rather than part of
+    /// the shot. That is what a zoom means in every screen-recording tool worth copying,
+    /// and it is what makes a zoom actually fill the finished video.
     ///
-    /// On, the frame itself grows and travels: the picture behaves like a camera moving
-    /// towards the scene, so at 2× the recording is twice the size and the padding around
-    /// it closes up. That is what most people mean by zooming in, and it is what makes a
-    /// zoom actually fill the finished video — but it does push the framing off the edges,
-    /// which is the whole point and also the reason it is not the default.
-    ///
-    /// Off by default so every project made before this renders exactly as it did.
+    /// Off, the recording's rounded rectangle stays exactly where the padding put it and
+    /// the content magnifies *inside* it, like pushing in on a screen behind a window. The
+    /// padding, the corners and the shadow never move, so the styling stays visible
+    /// throughout — worth having when the frame itself is the design, and wrong the rest
+    /// of the time, which is why it is no longer what you get by default.
     public var zoomsWholeFrame: Bool
 
     public init(steadiness: Double = 0.7,
                 follow: Double = 1,
                 safeArea: Double = 0.85,
-                zoomsWholeFrame: Bool = false) {
+                zoomsWholeFrame: Bool = true) {
         self.steadiness = steadiness
         self.follow = follow
         self.safeArea = safeArea
@@ -336,7 +336,11 @@ public struct CameraStyle: Codable, Equatable, Sendable {
         steadiness = value(.steadiness, default: 0.7)
         follow = value(.follow, default: 1)
         safeArea = value(.safeArea, default: 0.85)
-        zoomsWholeFrame = value(.zoomsWholeFrame, default: false)
+        // A project written before this key existed gets the new answer rather than the
+        // old one. The alternative — remembering `false` for anything without the key —
+        // would mean an old project and a new one with identical settings rendered
+        // differently, with nothing on screen to say why.
+        zoomsWholeFrame = value(.zoomsWholeFrame, default: true)
     }
 
     enum CodingKeys: String, CodingKey {
