@@ -121,6 +121,12 @@ public struct ZoomSuggester: Sendable {
         self.tuning = tuning
     }
 
+    /// What was recorded, as a rectangle in the same points the sidecars hold. Everything
+    /// outside it happened, but was not filmed.
+    private var recorded: CGRect {
+        CGRect(origin: .zero, size: frameSize)
+    }
+
     /// Zoom regions for a recording, in order, none overlapping.
     public func suggestions(cursor: [CursorSample],
                             input: [InputSample],
@@ -153,7 +159,18 @@ public struct ZoomSuggester: Sendable {
     private func clickRegions(input: [InputSample], duration: CMTime) -> [ZoomRegion] {
         let clicks: [(t: Double, point: CGPoint)] = input.compactMap { sample in
             guard case .mouseDown(let t, _, let x, let y) = sample else { return nil }
-            return (t, CGPoint(x: x, y: y))
+            let point = CGPoint(x: x, y: y)
+            // Only what happened inside the recording.
+            //
+            // The pointer is watched wherever it goes, because it has to be: a recording of
+            // one window still needs the pointer's path to draw it, and a click on the menu
+            // bar or on a window beside the one being recorded is part of what the person
+            // did. It is not part of what the *viewer* will see. Turning it into a zoom
+            // aimed a hundred points off the left edge — which the framing clamp then pulls
+            // to the edge, because it has to point somewhere — produces a shot of a corner
+            // nothing happened in.
+            guard recorded.contains(point) else { return nil }
+            return (t, point)
         }
         guard !clicks.isEmpty else { return [] }
 
@@ -236,7 +253,13 @@ public struct ZoomSuggester: Sendable {
         var regions: [ZoomRegion] = []
 
         for (index, event) in events.enumerated() {
-            guard let scale = scale(toFit: event.rect) else { continue }
+            // The part of it that is in the recording, for the same reason clicks are
+            // filtered. A window recording watches the frontmost window, which is not
+            // always the window being recorded: focus landing in another app reports a
+            // rectangle somewhere else entirely, and aiming at it frames nothing.
+            let visible = event.rect.intersection(recorded)
+            guard !visible.isNull, visible.width > 1, visible.height > 1,
+                  let scale = scale(toFit: visible) else { continue }
 
             let start = max(0, event.t - tuning.focusLeadIn)
             guard start < duration.seconds else { continue }
@@ -260,8 +283,8 @@ public struct ZoomSuggester: Sendable {
             // this is somewhere focus passed through rather than somewhere it went.
             guard length >= tuning.minimumFocusDwell else { continue }
 
-            let centre = CGPoint(x: event.center.x / frameSize.width,
-                                 y: event.center.y / frameSize.height)
+            let centre = CGPoint(x: visible.midX / frameSize.width,
+                                 y: visible.midY / frameSize.height)
             let source: ZoomRegion.Source = switch event.kind {
             case .field: typedUntil != nil ? .typing : .field
             case .window: .window
