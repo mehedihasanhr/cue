@@ -13,6 +13,29 @@ import os
 ///
 /// Every method must be called on `queue`; each one asserts it.
 public final class SessionWriter: @unchecked Sendable {
+    /// Where this file's time zero comes from.
+    ///
+    /// A recording is one moment in time written into more than one file — the screen into
+    /// `screen.mov`, the camera into `webcam.mov` — and the two have to agree about when it
+    /// began, or a cut three seconds into the edit shows the screen at 3.0s and the face at
+    /// 3.2s. They cannot agree by each using its own first frame: the camera's capture
+    /// session warms up on its own schedule, so its first frame lands hundreds of
+    /// milliseconds away from the screen's.
+    ///
+    /// So the screen's writer defines the moment and the camera's writer adopts it. There
+    /// is already a shared `RecordingClock` for precisely this — every cursor sample is
+    /// stamped against it — and `.first` is what starts it. Nothing about the single-file
+    /// case changes: `.first` is the default and is what the screen has always done.
+    public enum Origin: Sendable {
+        /// The first frame written here is time zero, and writing it starts the
+        /// recording's clock for everybody else.
+        case first
+        /// Time zero is wherever the recording's clock was already started, by whoever
+        /// holds `.first`. Frames that arrive before that moment are dropped — they belong
+        /// to the warm-up, not to the take.
+        case sharedClock
+    }
+
     public let queue: DispatchQueue
     public let videoURL: URL
 
@@ -24,6 +47,7 @@ public final class SessionWriter: @unchecked Sendable {
     private let pacer: FramePacer
     private let gapFiller = AudioGapFiller()
     private let clock: RecordingClock
+    private let origin: Origin
 
     private var lastVideoTime: CMTime?
     private var lastVideoBuffer: CMSampleBuffer?
@@ -47,9 +71,11 @@ public final class SessionWriter: @unchecked Sendable {
                 systemAudio hasSystemAudio: Bool,
                 microphone hasMicrophone: Bool,
                 clock: RecordingClock,
+                origin: Origin = .first,
                 queue: DispatchQueue) throws(RecordingError) {
         self.queue = queue
         self.clock = clock
+        self.origin = origin
         videoURL = url
         pacer = FramePacer(frameRate: frameRate)
 
@@ -133,9 +159,22 @@ public final class SessionWriter: @unchecked Sendable {
         guard let time = presentationTime(of: buffer) else { return }
 
         if firstTime == nil {
-            firstTime = time
-            writer.startSession(atSourceTime: time)
-            clock.start()
+            switch origin {
+            case .first:
+                firstTime = time
+                writer.startSession(atSourceTime: time)
+                clock.start()
+            case .sharedClock:
+                // Dropped rather than kept: a frame from before the recording's first
+                // moment — the clock not started yet, or this camera frame stamped earlier
+                // than the screen's first — belongs to the warm-up, and appending it would
+                // be a sample before the session's own start time. Waiting means the
+                // camera's file begins at the first frame that is genuinely inside the
+                // take, which is the only reading under which the two files line up.
+                guard let start = clock.startTime, time >= start else { return }
+                firstTime = start
+                writer.startSession(atSourceTime: start)
+            }
         }
 
         // The screen only produces frames when it changes, so a still screen leaves a

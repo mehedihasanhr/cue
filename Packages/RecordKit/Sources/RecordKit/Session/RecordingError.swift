@@ -9,6 +9,11 @@ import Foundation
 public enum RecordingError: Error, LocalizedError, Equatable, Sendable {
     case permissionDenied
     case microphoneDenied
+    /// The camera was asked for and refused. Its own case rather than a shared
+    /// `.microphoneDenied`, for the reason the whole enum exists: microphone and camera are
+    /// two separate lists in System Settings, and sending somebody to the wrong one sends
+    /// them to a switch that is already on.
+    case cameraDenied
     case contentUnavailable(String)
     case targetDisappeared
     case lowDiskSpace(bytesAvailable: Int64)
@@ -24,6 +29,8 @@ public enum RecordingError: Error, LocalizedError, Equatable, Sendable {
             "Klik Studio doesn't have Screen Recording permission."
         case .microphoneDenied:
             "Klik Studio doesn't have Microphone permission."
+        case .cameraDenied:
+            "Klik Studio doesn't have Camera permission."
         case .contentUnavailable(let reason):
             "Klik Studio couldn't see what's on screen (\(reason))."
         case .targetDisappeared:
@@ -49,6 +56,8 @@ public enum RecordingError: Error, LocalizedError, Equatable, Sendable {
             "Turn on Klik Studio in System Settings › Privacy & Security › Screen & System Audio Recording, then try again."
         case .microphoneDenied:
             "Turn on Klik Studio in System Settings › Privacy & Security › Microphone, then try again."
+        case .cameraDenied:
+            "Turn on Klik Studio in System Settings › Privacy & Security › Camera, or turn the camera off in the bar and record without it."
         case .lowDiskSpace:
             "The part that was recorded has been kept."
         default:

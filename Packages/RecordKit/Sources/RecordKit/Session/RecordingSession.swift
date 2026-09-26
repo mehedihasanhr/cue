@@ -110,6 +110,17 @@ public final class RecordingSession {
     private var writer: SessionWriter?
     private var screen: ScreenRecorder?
     private var microphone: MicrophoneRecorder?
+    /// The camera, and the file it writes.
+    ///
+    /// Both `nil` unless this take asked for a camera. They are the whole of the apparatus
+    /// that can light the camera's indicator, so they are built in `prepare`, started with
+    /// everything else at the end of the countdown, and torn down by `teardown()` — which
+    /// runs on every path out of a take, including the ones nobody plans for.
+    private var webcam: WebcamRecorder?
+    private var webcamWriter: SessionWriter?
+    /// What the camera's file holds, for the manifest. `nil` when there is no camera.
+    private var webcamPixelSize: CGSize?
+    private var webcamFrameRate: Int?
     private var cursor: CursorTracker?
     private var focus: FocusTracker?
     private var cursorWriter: JSONLWriter?
@@ -182,6 +193,10 @@ public final class RecordingSession {
             return
         }
         microphone?.start()
+        // After the screen, deliberately. The camera's writer takes its time zero from the
+        // clock the screen's first frame starts, so a camera that opened first would simply
+        // drop frames until the screen caught up — starting it here wastes none.
+        webcam?.start()
         cursor?.start()
         focus?.start()
         watchDisk()
@@ -238,7 +253,66 @@ public final class RecordingSession {
             }
         }
 
+        try await prepareWebcam(configuration, package: package, clock: clock)
         startTelemetry(for: configuration, filter: filter, package: package)
+    }
+
+    /// The camera, when this take asked for one — and nothing at all when it did not.
+    ///
+    /// `configuration.webcamID == nil` returns before touching AVFoundation, before asking
+    /// about permission, and before creating a file. That early return is the privacy
+    /// guarantee in one line: no camera is opened, and no camera indicator lights, for a
+    /// take that did not ask for a camera.
+    ///
+    /// Permission is asked *here*, during `preparing`, rather than at the end of the
+    /// countdown: the user is still looking at the bar, a dialog is expected, and a refusal
+    /// becomes `.cameraDenied` — which the bar already knows how to draw, with a button to
+    /// the right pane of System Settings. Refusing at the end of the countdown would mean a
+    /// dialog over a screen that is about to be recorded.
+    ///
+    /// A camera that cannot be prepared fails the whole take rather than quietly recording
+    /// the screen alone. Somebody who turned the camera on is making a video with their
+    /// face in it, and handing them one without it — twenty minutes later, on export — is
+    /// worse than saying so now, while they can turn the camera off and go again.
+    private func prepareWebcam(_ configuration: RecordingConfiguration,
+                               package: RecordingPackage,
+                               clock: RecordingClock) async throws {
+        guard let webcamID = configuration.webcamID else { return }
+
+        if !WebcamRecorder.isAuthorized {
+            // `.denied` is not worth a second dialog the system will refuse to show; it
+            // needs System Settings, which is what the error says.
+            guard !WebcamRecorder.isDenied, await WebcamRecorder.requestAccess() else {
+                throw RecordingError.cameraDenied
+            }
+        }
+        guard let device = AVCaptureDevice(uniqueID: webcamID) else {
+            throw RecordingError.deviceLost(webcamID)
+        }
+
+        let pixelSize = WebcamRecorder.pixelSize(of: device)
+        // Capped at 30. Almost no camera delivers more, and a 60 fps encoder fed 30 real
+        // frames has the writer's pacer duplicate every one of them — twice the bytes for
+        // the same picture. The bubble is a small part of the frame; it does not need them.
+        let frameRate = min(configuration.frameRate, 30)
+        let writer = try SessionWriter(url: package.mediaFolder.appendingPathComponent("webcam.mov"),
+                                       pixelSize: pixelSize,
+                                       codec: configuration.codec.resolved,
+                                       bitrate: configuration.quality.bitrate(forPixels: Int(pixelSize.width * pixelSize.height)),
+                                       frameRate: frameRate,
+                                       systemAudio: false,
+                                       microphone: false,
+                                       clock: clock,
+                                       // The screen says when the recording began; this
+                                       // file adopts that moment. See `SessionWriter.Origin`.
+                                       origin: .sharedClock,
+                                       queue: queue)
+        webcamWriter = writer
+        webcamPixelSize = pixelSize
+        webcamFrameRate = frameRate
+        webcam = try WebcamRecorder(device: device, writer: writer) { [weak self] error in
+            Task { @MainActor in self?.interrupted(by: error) }
+        }
     }
 
     private func startTelemetry(for configuration: RecordingConfiguration,
@@ -294,7 +368,14 @@ public final class RecordingSession {
     /// paused stretch is absent from the file rather than frozen in it.
     public func pause() {
         guard let held = state.held(at: .now), let writer else { return }
-        queue.async { writer.setPaused(true) }
+        // Both writers, in one hop onto the queue. Pausing one and not the other would take
+        // the held stretch out of the screen's file and leave it in the camera's, which is
+        // the two drifting apart by however long the pause lasted.
+        let webcamWriter = webcamWriter
+        queue.async {
+            writer.setPaused(true)
+            webcamWriter?.setPaused(true)
+        }
         cursor?.stop()
         focus?.stop()
         state = held
@@ -303,7 +384,11 @@ public final class RecordingSession {
 
     public func resume() {
         guard let released = state.released(at: .now), let writer else { return }
-        queue.async { writer.setPaused(false) }
+        let webcamWriter = webcamWriter
+        queue.async {
+            writer.setPaused(false)
+            webcamWriter?.setPaused(false)
+        }
         cursor?.start()
         focus?.start()
         state = released
@@ -330,8 +415,23 @@ public final class RecordingSession {
         await teardown()
 
         do {
+            // The camera's file is closed first, and its failure is not the take's failure.
+            // The screen is the recording; a camera file that would not finish costs a
+            // bubble, and throwing the screen away over it would be absurd. `hasWebcam`
+            // then keeps the manifest honest about what is actually on disk.
+            var hasWebcam = false
+            if let webcamWriter {
+                do {
+                    _ = try await webcamWriter.finish()
+                    hasWebcam = true
+                } catch {
+                    Self.log.error("The camera's file wouldn't finish; keeping the screen without it.")
+                    webcamWriter.cancel()
+                }
+            }
             let duration = try await writer.finish()
-            let manifest = manifest(for: configuration, package: package, duration: duration.seconds)
+            let manifest = manifest(for: configuration, package: package,
+                                    duration: duration.seconds, webcam: hasWebcam)
             try package.write(manifest)
             state = .finished(package.url)
             Self.log.notice("Finished \(package.url.lastPathComponent, privacy: .public) (\(duration.seconds, format: .fixed(precision: 1))s)")
@@ -363,6 +463,7 @@ public final class RecordingSession {
     private func discard() async {
         await teardown()
         writer?.cancel()
+        webcamWriter?.cancel()
         package?.discard()
         reset()
     }
@@ -402,6 +503,9 @@ public final class RecordingSession {
         cursor?.stop()
         focus?.stop()
         microphone?.stop()
+        // Before the screen, and unconditionally. A camera session left running is a camera
+        // light left on, so it is the first thing let go of on every path out of a take.
+        webcam?.stop()
         await screen?.stop()
         // The result comes back out of the closure rather than being assigned inside
         // it: `queue.sync` runs its body on the capture queue, and this object is on the
@@ -421,6 +525,10 @@ public final class RecordingSession {
         writer = nil
         screen = nil
         microphone = nil
+        webcam = nil
+        webcamWriter = nil
+        webcamPixelSize = nil
+        webcamFrameRate = nil
         cursor = nil
         focus = nil
         focusTrackWritten = false
@@ -440,7 +548,8 @@ public final class RecordingSession {
 
     private func manifest(for configuration: RecordingConfiguration,
                           package: RecordingPackage,
-                          duration: Double) -> RecordingManifest {
+                          duration: Double,
+                          webcam hasWebcam: Bool = false) -> RecordingManifest {
         var tracks: [RecordingManifest.Track] = [
             .init(kind: .screen,
                   path: "media/screen.mov",
@@ -455,6 +564,18 @@ public final class RecordingSession {
         }
         if configuration.microphoneID != nil {
             tracks.append(.init(kind: .microphone, path: "media/screen.mov"))
+        }
+        // Its own file, unlike the two audio tracks: everything that reads a recording asks
+        // for the first video track of the file it is pointed at, so a second video track
+        // inside `screen.mov` would make "the recording" mean whichever one AVFoundation
+        // happened to list first. Named only when the file was actually finished — a
+        // manifest that points at media which is not there reads as a corrupt recording.
+        if hasWebcam {
+            tracks.append(.init(kind: .webcam,
+                                path: "media/webcam.mov",
+                                pixelSize: webcamPixelSize,
+                                frameRate: webcamFrameRate,
+                                codec: configuration.codec.resolved.rawValue))
         }
 
         var sourceRect: CGRect?
