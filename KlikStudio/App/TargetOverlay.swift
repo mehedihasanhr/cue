@@ -47,9 +47,15 @@ final class TargetOverlayController {
                                        backing: .buffered,
                                        defer: false,
                                        screen: screen)
-            // Under the bar, over everything else: the bar stays usable — you can change
-            // your mind about the microphone without dismissing this first.
-            window.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue - 1)
+            // Above a full-screen app, and under the bar.
+            //
+            // `floating - 1` was under the bar and under anything full-screen, so this
+            // never appeared on the Space somebody was actually working on — only on a
+            // plain desktop. The area picker has always used `.screenSaver` for exactly
+            // this reason and has always worked over full-screen apps; the difference was
+            // never deliberate. The bar sits one above, so it stays usable: you can still
+            // change your mind about the microphone without dismissing this first.
+            window.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue)
             window.backgroundColor = .clear
             window.isOpaque = false
             window.hasShadow = false

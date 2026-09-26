@@ -88,7 +88,10 @@ final class RecorderBarPanel {
         // A step above `.floating`, so the target overlay can sit over every other app
         // and still leave the bar on top of itself — you can change the microphone
         // without dismissing the overlay to get at it.
-        panel.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
+        // One above the target overlay, which is at `.screenSaver` so it can appear over
+        // a full-screen app. The bar has to stay above it — choosing a window and then
+        // changing the microphone is one continuous thought.
+        panel.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = false        // the SwiftUI bar draws its own, shaped to its corners
