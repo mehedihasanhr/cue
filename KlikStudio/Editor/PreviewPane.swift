@@ -53,7 +53,9 @@ struct PreviewPane: View {
                     // webcam panel is settings. What it needs here is a handle on the picture.
                     WebcamBubbleOverlay(model: model, stage: stage(in: proxy.size))
                 default:
-                    EmptyView()
+                    // Not a tool: whenever a zoom is selected, the picture says where it
+                    // is pointed. See `ZoomFrameIndicator`.
+                    ZoomFrameIndicator(model: model, stage: stage(in: proxy.size))
                 }
             }
             // How big the picture is allowed to be, told to the thing that renders it.
