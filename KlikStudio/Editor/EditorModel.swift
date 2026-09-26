@@ -39,7 +39,13 @@ final class EditorModel {
         }
     }
 
-    private(set) var selection: Selection = .none
+    /// Everything picked out on the timeline, oldest first.
+    ///
+    /// A list rather than one thing, because a drag with three chips selected is one
+    /// gesture and has to stay one: moving them apart because they were dragged one at a
+    /// time is the bug this exists to prevent. Ordinary clicking still leaves exactly one
+    /// in here, so every reader that wants "the selection" keeps working.
+    private(set) var selected: [Selection] = []
 
     let viewport = TimelineViewport()
     let waveform: WaveformStore
@@ -318,7 +324,11 @@ final class EditorModel {
         // The recording's own sources are in here too, and not as an afterthought: each
         // lane draws its own file's peaks, and this store is already the thing that reads a
         // waveform per path and caches it in the package.
-        regionWaveforms.reconcile(paths: timeline.audio.map(\.path) + timeline.soundTracks.map(\.path))
+        // Skipped mid-gesture: dragging a chip cannot add or remove a sound, and building
+        // the list to find that out is two array allocations and a `Set` per frame.
+        if !document.isInteracting {
+            regionWaveforms.reconcile(paths: timeline.audio.map(\.path) + timeline.soundTracks.map(\.path))
+        }
         let scene = builder.descriptor(for: renderedTimeline, at: playhead, cursor: smoothedCursor)
         // Kept at full size whatever the preview draws at: this is the description of the
         // frame the export would write, and the overlays map their handles through its
@@ -419,12 +429,49 @@ final class EditorModel {
 
     // MARK: - Selection
 
-    func select(_ selection: Selection) {
-        guard self.selection != selection else { return }
-        self.selection = selection
+    /// What the inspector is about: the thing most recently picked.
+    ///
+    /// The *last* rather than the first, because that is the one the user just clicked, and
+    /// a panel that jumps back to the first thing they selected five clicks ago would be a
+    /// panel about a decision they have moved on from.
+    var selection: Selection { selected.last ?? .none }
+
+    /// Whether this is one of the things picked out — which is not the same question as
+    /// `selection == x` once more than one thing can be.
+    func isSelected(_ selection: Selection) -> Bool {
+        selected.contains(selection)
     }
 
-    func clearSelection() { selection = .none }
+    var hasMultipleSelected: Bool { selected.count > 1 }
+
+    /// Picks something out, or — holding ⌘ — adds it to what is already picked.
+    ///
+    /// Toggling rather than only adding, so ⌘-clicking something twice puts it back the way
+    /// it was. That is what every list on this platform does, and a timeline that only ever
+    /// grew a selection would need a second gesture to undo a misclick.
+    func select(_ selection: Selection, extending: Bool = false) {
+        guard extending else {
+            guard selected != [selection] else { return }
+            selected = [selection]
+            return
+        }
+        if let index = selected.firstIndex(of: selection) {
+            selected.remove(at: index)
+        } else {
+            selected.append(selection)
+        }
+    }
+
+    /// Everything picked out that can be dragged as one: regions and runs, never a clip.
+    ///
+    /// A clip has no position of its own — the sequence is contiguous by construction — so
+    /// it cannot be slid, and silently dragging the regions while the clips stayed put
+    /// would be a group drag that only half happened.
+    var draggableSelection: [Selection] {
+        selected.filter { $0.regionID != nil }
+    }
+
+    func clearSelection() { selected = [] }
 
     /// Drops a selection that an edit has invalidated.
     ///
@@ -432,12 +479,89 @@ final class EditorModel {
     /// shortened past `Clip.minimumDuration` — a selection can stop being valid without
     /// anything having deleted it.
     private func validateSelection() {
-        if !selection.isValid(in: timeline) { selection = .none }
+        selected.removeAll { !$0.isValid(in: timeline) }
+    }
+
+    // MARK: - Dragging
+
+    /// The drag in progress, if any. See `TimelineDrag` for why it is not the document.
+    let drag = TimelineDrag()
+    /// What the finished drag will be called on the undo stack.
+    @ObservationIgnored private var dragName = "Move"
+
+    /// Takes hold of everything selected, anchored on the thing under the pointer.
+    ///
+    /// A drag on something that was not selected selects it first and drops everything
+    /// else, which is what every list on this platform does: you cannot drag one thing out
+    /// of a selection it is not part of. A drag on something that *is* selected carries the
+    /// whole selection, which is the point of being able to pick several.
+    func beginDrag(anchor: Selection, grip: TimelineDrag.Grip) {
+        if !isSelected(anchor) { select(anchor) }
+        // The one under the pointer goes first, because that is the one snapping steers by
+        // — and steering a group by whichever chip happened to be selected first would snap
+        // an edge the user cannot see to a cut they were not aiming at.
+        let picks = [anchor] + draggableSelection.filter { $0 != anchor }
+        let items: [TimelineDrag.Item] = picks.compactMap { pick in
+            guard let id = pick.regionID, let range = pick.range(in: timeline) else { return nil }
+            var isRun = false
+            if case .soundRun = pick { isRun = true }
+            return TimelineDrag.Item(id: id, start: range.start,
+                                     duration: range.duration, isSoundRun: isRun)
+        }
+        guard !items.isEmpty else { return }
+        dragName = switch grip {
+        case .body: items.count > 1 ? "Move \(items.count) Items" : "Move"
+        case .head, .tail: items.count > 1 ? "Resize \(items.count) Items" : "Resize"
+        }
+        drag.begin(items, grip: grip, in: timeline)
+    }
+
+    /// The offset the gesture has reached, snapped unless ⌃ is held.
+    ///
+    /// Snapped on the item the pointer took hold of and then applied to every item in the
+    /// drag, so a group keeps its shape: snapping each item to its own nearest edge would
+    /// pull a group apart the first time two of them were near different cuts.
+    ///
+    /// ⌃ rather than ⌘ for free positioning, because ⌘ is now how a selection is extended
+    /// and one modifier cannot mean two things in one gesture.
+    func dragOffset(_ raw: CMTime, pointsPerSecond: Double) {
+        guard let grip = drag.grip, let anchor = drag.items.first else { return }
+        guard !NSEvent.modifierFlags.contains(.control) else {
+            drag.update(offset: raw)
+            return
+        }
+        let snapping = Snapping(pointsPerSecond: pointsPerSecond)
+        // The edge the pointer is actually steering. Snapping the other one would stick the
+        // chip to a cut it is moving away from.
+        let held = switch grip {
+        case .body, .head: anchor.start
+        case .tail: anchor.end
+        }
+        let dragged = held + raw
+        let targets = timeline.boundaries.filter { $0 != anchor.start && $0 != anchor.end }
+        drag.update(offset: snapping.snap(dragged, to: targets) - held)
+    }
+
+    /// Lets go, and tells the document where everything landed — once.
+    func endDrag() {
+        let moves = drag.end()
+        guard !moves.isEmpty else { return }
+        apply(Commands.MoveMany(moves, name: dragName))
+    }
+
+    /// Where a region sits right now: mid-drag that is the gesture's answer, otherwise the
+    /// document's.
+    ///
+    /// Every lane draws through this, which is what keeps a dragged chip and an undragged
+    /// one from being positioned by two different rules.
+    func liveRange(of id: UUID, start: CMTime, duration: CMTime) -> (start: CMTime, duration: CMTime) {
+        drag.geometry(of: id) ?? (start, duration)
     }
 
     /// Whether Delete would do anything, so the menu item can be honest about it.
     var canDeleteSelection: Bool {
-        switch selection {
+        if hasMultipleSelected { return selected.contains { $0.regionID != nil } }
+        return switch selection {
         case .none, .headTrim, .tailTrim, .sound: false
         case .clip: timeline.clips.count > 1
         case .range(let range): range.duration > .zero
@@ -446,6 +570,16 @@ final class EditorModel {
     }
 
     func deleteSelection() {
+        // Several at once is one edit and one undo entry, like the group drag above it.
+        if hasMultipleSelected {
+            let ids = selected.compactMap(\.regionID)
+            guard !ids.isEmpty else { return }
+            document.beginInteraction("Delete")
+            for id in ids { apply(Commands.DeleteRegion(id: id)) }
+            finishInteraction()
+            clearSelection()
+            return
+        }
         switch selection {
         case .clip(let id):
             // The last clip cannot go: `ClipSequence.delete` refuses to empty a timeline,
@@ -462,7 +596,7 @@ final class EditorModel {
             guard let id = selection.regionID else { return }
             apply(Commands.DeleteRegion(id: id))
         }
-        selection = .none
+        clearSelection()
     }
 
     func selectAll() {
@@ -521,7 +655,7 @@ final class EditorModel {
         // rather than removing something the user can no longer paste back.
         RegionPasteboard.shared.write(region)
         apply(Commands.DeleteRegion(id: region.id))
-        if self.selection == selection { self.selection = .none }
+        selected.removeAll { $0 == selection }
     }
 
     /// A copy of the pasteboard's region, at the playhead.
@@ -605,7 +739,7 @@ final class EditorModel {
               let range = selection.range(in: timeline) else { return }
         RegionPasteboard.shared.write(footage)
         apply(Commands.DeleteRange(range))
-        if self.selection == selection { self.selection = .none }
+        selected.removeAll { $0 == selection }
     }
 
     /// A copy of the pasteboard's footage, inserted at the playhead.
@@ -668,6 +802,21 @@ final class EditorModel {
 
     func apply(_ command: some TimelineCommand) {
         guard document.apply(command) else { return }
+        refresh()
+        // Rebuilding the player's composition means opening the recording's audio and
+        // laying every cut down again. Mid-gesture the answer cannot change until the user
+        // lets go, and computing the signature to discover that allocates an array per
+        // lane, per frame. Once, at the end — see `finishInteraction`.
+        if !document.isInteracting { audio?.prepare(for: timeline) }
+    }
+
+    /// Ends a gesture and does the work that was deferred while it ran.
+    ///
+    /// Every drag goes through here rather than calling `document.endInteraction()`
+    /// directly, so there is one place that knows what a gesture put off.
+    func finishInteraction() {
+        guard document.isInteracting else { return }
+        document.endInteraction()
         refresh()
         audio?.prepare(for: timeline)
     }

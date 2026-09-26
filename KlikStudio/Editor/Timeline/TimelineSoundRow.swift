@@ -44,9 +44,6 @@ struct TimelineSoundRow: View {
     /// The source this lane is showing, or `nil` for a recording whose sound is one thing.
     var track: SoundTrack? = nil
 
-    /// Where a run was when the current drag began, so every frame of the gesture is
-    /// measured from one fixed origin rather than from the value the last frame wrote.
-    @State private var dragOrigin: (start: CMTime, duration: CMTime)?
 
     private var viewport: TimelineViewport { model.viewport }
     private var isMuted: Bool {
@@ -183,9 +180,12 @@ struct TimelineSoundRow: View {
     // MARK: - Detached: the sound with a life of its own
 
     private func body(for run: SoundRun) -> some View {
-        let left = viewport.x(for: run.start)
-        let width = max(6, run.duration.seconds * viewport.pointsPerSecond)
-        let selected = model.selection == .soundRun(run.id)
+        // The gesture's answer while one is running, the document's otherwise — see
+        // `TimelineRegionRow.body(for:)`.
+        let live = model.liveRange(of: run.id, start: run.start, duration: run.duration)
+        let left = viewport.x(for: live.start)
+        let width = max(6, live.duration.seconds * viewport.pointsPerSecond)
+        let selected = model.isSelected(.soundRun(run.id))
 
         return RoundedRectangle(cornerRadius: radius, style: .continuous)
             .fill(tint.opacity(selected ? 0.46 : 0.3))
@@ -210,49 +210,35 @@ struct TimelineSoundRow: View {
             .overlay(alignment: .trailing) { edge(run, leading: false, width: width) }
             .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
             .contentShape(Rectangle())
-            .onTapGesture { model.select(.soundRun(run.id)) }
+            .onTapGesture {
+                model.select(.soundRun(run.id),
+                             extending: NSEvent.modifierFlags.contains(.command))
+            }
             .gesture(move(run))
             .contextMenu {
                 Button("Delete", role: .destructive) { model.deleteSelection(run.id) }
                 Divider()
                 laneMenu
             }
-            .help("Sound · \(Timecode.length(run.duration))")
+            .help("Sound · \(Timecode.length(live.duration))")
             // Placed rather than offset — see `TimelineRegionRow.body(for:)`.
             .position(x: left + width / 2, y: height / 2)
     }
 
     // MARK: - Gestures
 
-    /// Dragging the body slides the run in time and keeps playing the same words, which is
-    /// what "line the narration up with the click" means.
-    private func move(_ run: SoundRun) -> some Gesture {
-        DragGesture(minimumDistance: 2)
-            .onChanged { value in
-                let origin = begin(run, name: "Move Sound")
-                let proposed = origin.start + CMTime(seconds: value.translation.width / viewport.pointsPerSecond,
-                                                     preferredTimescale: 600)
-                let start = snapping().snapRegion(start: max(.zero, proposed),
-                                                  duration: origin.duration,
-                                                  to: others(of: run))
-                model.apply(Commands.MoveSoundRun(id: run.id, start: max(.zero, start)))
-            }
-            .onEnded { _ in end() }
-    }
-
     /// A grabbable end of a run, drawn the way a region's is — see `TimelineRegionRow.edge`.
     private func edge(_ run: SoundRun, leading: Bool, width: CGFloat) -> some View {
         let key = "\(run.id)-\(leading)"
         let isHovered = hoveredGrip == key
         let bar = max(2, min(edgeWidth, width / 3))
+        let shown = model.isSelected(.soundRun(run.id)) ? (isHovered ? 1.0 : 0.8) : (isHovered ? 0.8 : 0)
         return UnevenRoundedRectangle(topLeadingRadius: leading ? radius : 0,
                                       bottomLeadingRadius: leading ? radius : 0,
                                       bottomTrailingRadius: leading ? 0 : radius,
                                       topTrailingRadius: leading ? 0 : radius,
                                       style: .continuous)
-            // Shown on the run that is selected, and on whichever end the pointer is over
-            // — see `TimelineRegionRow.edge`. Invisible is still grabbable.
-            .fill(tint.opacity(model.selection == .soundRun(run.id) ? (isHovered ? 1 : 0.8) : (isHovered ? 0.8 : 0)))
+            .fill(tint.opacity(shown))
             .frame(width: bar, height: height)
             .contentShape(Rectangle())
             .onHover { inside in
@@ -263,60 +249,32 @@ struct TimelineSoundRow: View {
             .animation(StudioMotion.state, value: isHovered)
     }
 
-    /// Dragging an edge trims: the sound that survives stays exactly where it was, and the
-    /// run simply covers less of the timeline. `MoveSoundRun.trimsHead` is what keeps the
-    /// leading edge from re-cutting the take — see its note.
+    /// Dragging the body slides everything selected and keeps it playing the same words,
+    /// which is what "line the narration up with the click" means.
+    ///
+    /// Nothing is applied while the pointer moves — see `TimelineDrag`.
+    private func move(_ run: SoundRun) -> some Gesture {
+        drag(run, grip: .body)
+    }
+
+    /// Dragging an end trims: the sound that survives stays exactly where it was, and the
+    /// run covers less of the timeline. The head is the interesting one — see
+    /// `Commands.MoveSoundRun.trimsHead`.
     private func trim(_ run: SoundRun, leading: Bool) -> some Gesture {
+        drag(run, grip: leading ? .head : .tail)
+    }
+
+    private func drag(_ run: SoundRun, grip: TimelineDrag.Grip) -> some Gesture {
         DragGesture(minimumDistance: 2)
             .onChanged { value in
-                let origin = begin(run, name: "Trim Sound")
-                let delta = CMTime(seconds: value.translation.width / viewport.pointsPerSecond,
-                                   preferredTimescale: 600)
-                let edges = others(of: run)
-                if leading {
-                    let proposed = snapping().snap(max(.zero, origin.start + delta), to: edges)
-                    let limit = origin.start + origin.duration - Clip.minimumDuration
-                    let start = min(proposed, limit)
-                    model.apply(Commands.MoveSoundRun(id: run.id,
-                                                      start: start,
-                                                      duration: origin.start + origin.duration - start,
-                                                      trimsHead: true))
-                } else {
-                    let proposed = snapping().snap(origin.start + origin.duration + delta, to: edges)
-                    model.apply(Commands.MoveSoundRun(id: run.id,
-                                                      start: origin.start,
-                                                      duration: max(Clip.minimumDuration, proposed - origin.start)))
+                if !model.drag.isActive {
+                    model.beginDrag(anchor: .soundRun(run.id), grip: grip)
                 }
+                model.dragOffset(CMTime(seconds: value.translation.width / viewport.pointsPerSecond,
+                                        preferredTimescale: 600),
+                                 pointsPerSecond: viewport.pointsPerSecond)
             }
-            .onEnded { _ in end() }
-    }
-
-    private func begin(_ run: SoundRun, name: String) -> (start: CMTime, duration: CMTime) {
-        if let dragOrigin { return dragOrigin }
-        let origin = (run.start, run.duration)
-        dragOrigin = origin
-        model.select(.soundRun(run.id))
-        model.document.beginInteraction(name)
-        return origin
-    }
-
-    private func end() {
-        dragOrigin = nil
-        model.document.endInteraction()
-    }
-
-    /// Hold ⌘ to place something exactly where you put it.
-    private func snapping() -> Snapping {
-        NSEvent.modifierFlags.contains(.command)
-            ? .disabled
-            : Snapping(pointsPerSecond: viewport.pointsPerSecond)
-    }
-
-    /// Everything worth snapping to except this run's own edges, which would only make it
-    /// stick to where it already is. The clip cuts are in there, which is what makes
-    /// "back in line with the picture" a thing a drag can find again.
-    private func others(of run: SoundRun) -> [CMTime] {
-        model.timeline.boundaries.filter { $0 != run.start && $0 != run.end }
+            .onEnded { _ in model.endDrag() }
     }
 
     // MARK: - Chrome

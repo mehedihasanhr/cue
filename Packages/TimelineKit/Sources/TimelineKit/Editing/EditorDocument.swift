@@ -192,7 +192,13 @@ public final class EditorDocument {
         timeline = draft
     }
 
-    private var isInteracting = false
+    /// Whether a gesture is in flight.
+    ///
+    /// Read by the editor as well as by `apply`: work that only matters once the gesture is
+    /// over — rebuilding the player's composition, reconciling the waveform stores — is
+    /// skipped while this is true and done once at the end. Sixty times a second is sixty
+    /// times too many for work whose answer cannot change until the user lets go.
+    public private(set) var isInteracting = false
 
     public func beginInteraction(_ name: String) {
         guard !isInteracting else { return }

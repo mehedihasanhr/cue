@@ -211,7 +211,7 @@ struct ZoomAimOverlay: View {
         guard isDragging else { return }
         origin = nil
         isDragging = false
-        model.document.endInteraction()
+        model.finishInteraction()
     }
 
     /// What this tool is for, and — when it is — why the picture is not obeying it.

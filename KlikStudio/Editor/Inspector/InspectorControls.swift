@@ -424,7 +424,7 @@ struct InspectorSlider: View {
                 if editing {
                     model.document.beginInteraction(title)
                 } else {
-                    model.document.endInteraction()
+                    model.finishInteraction()
                 }
             }
         }
@@ -482,16 +482,20 @@ final class InteractionCoalescer {
     private var closing: Task<Void, Never>?
     private var isOpen = false
 
-    func touch(_ name: String, on document: EditorDocument, wait: Duration = .milliseconds(400)) {
+    /// Takes the model rather than the document, because closing an interaction is not
+    /// only a bookkeeping change any more: work deferred for the duration of a gesture is
+    /// done on the way out, and a close that went straight to the document would leave the
+    /// player holding a mix of the edit as it was before the colour was picked.
+    func touch(_ name: String, model: EditorModel, wait: Duration = .milliseconds(400)) {
         if !isOpen {
-            document.beginInteraction(name)
+            model.document.beginInteraction(name)
             isOpen = true
         }
         closing?.cancel()
         closing = Task { [weak self] in
             try? await Task.sleep(for: wait)
             guard !Task.isCancelled else { return }
-            document.endInteraction()
+            model.finishInteraction()
             self?.isOpen = false
         }
     }

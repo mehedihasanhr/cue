@@ -188,7 +188,7 @@ struct CropOverlay: View {
     private func end() {
         origin = nil
         isDragging = false
-        model.document.endInteraction()
+        model.finishInteraction()
     }
 
     // MARK: - Geometry

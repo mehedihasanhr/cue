@@ -29,7 +29,7 @@ struct TimelineClipRow: View {
         .frame(height: height)
     }
 
-    private func isSelected(_ clip: Clip) -> Bool { model.selection == .clip(clip.id) }
+    private func isSelected(_ clip: Clip) -> Bool { model.isSelected(.clip(clip.id)) }
 
     // MARK: - A clip
 
@@ -51,7 +51,13 @@ struct TimelineClipRow: View {
             .overlay(alignment: .trailing) { handle(clip, at: index, leading: false, width: width) }
             .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
             .contentShape(Rectangle())
-            .onTapGesture { model.select(.clip(clip.id)) }
+            // ⌘ adds to the selection, for deleting or re-speeding several pieces of a
+            // split at once. A clip cannot be *dragged* with the group — the sequence is
+            // contiguous by construction, so a clip has no position of its own to slide.
+            .onTapGesture {
+                model.select(.clip(clip.id),
+                             extending: NSEvent.modifierFlags.contains(.command))
+            }
             .contextMenu { menu(clip, at: index) }
             // Placed, not drawn-offset. See `TimelineRegionRow.body(for:)` for what the
             // offset this replaces did to hit testing — here it meant that after a split
@@ -207,7 +213,7 @@ struct TimelineClipRow: View {
             }
             .onEnded { _ in
                 trimOrigin = nil
-                model.document.endInteraction()
+                model.finishInteraction()
             }
     }
 

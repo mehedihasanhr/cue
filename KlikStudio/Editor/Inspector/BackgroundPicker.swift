@@ -143,7 +143,7 @@ struct BackgroundPicker: View {
             return .black
         } set: { colour in
             let value = RGBA(NSColor(colour)).colorValue
-            coalescer.touch("Background", on: model.document)
+            coalescer.touch("Background", model: model)
             model.apply(Commands.Restyle("Background") { $0.style.background = .color(value) })
         }
     }

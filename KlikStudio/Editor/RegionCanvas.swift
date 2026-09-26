@@ -305,7 +305,7 @@ struct RegionCanvas: View {
 
     private func end() {
         gestureOrigin = nil
-        model.document.endInteraction()
+        model.finishInteraction()
     }
 }
 

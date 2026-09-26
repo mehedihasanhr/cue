@@ -27,7 +27,6 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
     var waveform: (Region) -> (peaks: WaveformPeaks, spans: [TimelineWaveform.Span])? = { _ in nil }
     @ViewBuilder let badge: (Region) -> Badge
 
-    @State private var dragOrigin: (start: CMTime, duration: CMTime)?
     /// Which grip the pointer is over, as "<region id>-<side>".
     ///
     /// One piece of state for the whole lane rather than one per chip: only one grip can
@@ -53,12 +52,16 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
     }
 
     private func isSelected(_ region: Region) -> Bool {
-        model.selection == selection(region.id)
+        model.isSelected(selection(region.id))
     }
 
     private func body(for region: Region) -> some View {
-        let left = viewport.x(for: region.start)
-        let width = max(6, region.duration.seconds * viewport.pointsPerSecond)
+        // Mid-drag this is the gesture's answer; otherwise the document's. One rule for
+        // both, so a chip being dragged and a chip standing still cannot be placed by two
+        // different pieces of arithmetic.
+        let live = model.liveRange(of: region.id, start: region.start, duration: region.duration)
+        let left = viewport.x(for: live.start)
+        let width = max(6, live.duration.seconds * viewport.pointsPerSecond)
 
         return RoundedRectangle(cornerRadius: radius, style: .continuous)
             .fill(tint.opacity(isSelected(region) ? 0.85 : 0.5))
@@ -75,7 +78,12 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
             // inside it. See `label(_:width:)`.
             .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
             .contentShape(Rectangle())
-            .onTapGesture { model.select(selection(region.id)) }
+            // ⌘ adds to the selection instead of replacing it, which is what lets a drag
+            // afterwards carry several chips at once.
+            .onTapGesture {
+                model.select(selection(region.id),
+                             extending: NSEvent.modifierFlags.contains(.command))
+            }
             .gesture(move(region))
             .contextMenu {
                 // Acting on the region under the pointer rather than on `model.selection`,
@@ -92,7 +100,7 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
                 Divider()
                 Button("Delete", role: .destructive) { model.deleteSelection(region.id) }
             }
-            .help("\(title) · \(Timecode.length(region.duration))")
+            .help("\(title) · \(Timecode.length(live.duration))")
             // Laid out at its place on the timeline, rather than drawn there.
             //
             // This used to be `.offset(x: left)`, and an offset is a *drawing* — the view's
@@ -191,68 +199,32 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
             .animation(StudioMotion.state, value: isHovered)
     }
 
+    /// Dragging the body slides everything selected, keeping every length.
+    ///
+    /// No command is applied while the pointer moves. The gesture lives in `TimelineDrag`,
+    /// the chips draw from it, and the document hears one command when the mouse comes up —
+    /// see that type for what applying a command per mouse-move was costing.
     private func move(_ region: Region) -> some Gesture {
-        DragGesture(minimumDistance: 2)
-            .onChanged { value in
-                let origin = begin(region, name: "Move \(title)")
-                let proposed = origin.start + CMTime(seconds: value.translation.width / viewport.pointsPerSecond,
-                                                     preferredTimescale: 600)
-                let start = snapping().snapRegion(start: max(.zero, proposed),
-                                                  duration: origin.duration,
-                                                  to: others(of: region))
-                model.apply(Commands.MoveRegion(id: region.id, start: max(.zero, start)))
-            }
-            .onEnded { _ in end() }
+        drag(region, grip: .body)
     }
 
+    /// Dragging an end resizes everything selected by the same amount, from the same end.
     private func resize(_ region: Region, leading: Bool) -> some Gesture {
+        drag(region, grip: leading ? .head : .tail)
+    }
+
+    private func drag(_ region: Region, grip: TimelineDrag.Grip) -> some Gesture {
         DragGesture(minimumDistance: 2)
             .onChanged { value in
-                let origin = begin(region, name: "Resize \(title)")
-                let delta = CMTime(seconds: value.translation.width / viewport.pointsPerSecond,
-                                   preferredTimescale: 600)
-                let edges = others(of: region)
-                if leading {
-                    let proposed = snapping().snap(max(.zero, origin.start + delta), to: edges)
-                    let limit = origin.start + origin.duration - Clip.minimumDuration
-                    let start = min(proposed, limit)
-                    model.apply(Commands.MoveRegion(id: region.id,
-                                                    start: start,
-                                                    duration: origin.start + origin.duration - start))
-                } else {
-                    let proposed = snapping().snap(origin.start + origin.duration + delta, to: edges)
-                    model.apply(Commands.MoveRegion(id: region.id,
-                                                    start: origin.start,
-                                                    duration: max(Clip.minimumDuration, proposed - origin.start)))
+                if !model.drag.isActive {
+                    model.beginDrag(anchor: selection(region.id), grip: grip)
                 }
+                // Measured from where the gesture started every frame, never from where the
+                // last frame left it, so a slow drag accumulates no drift.
+                model.dragOffset(CMTime(seconds: value.translation.width / viewport.pointsPerSecond,
+                                        preferredTimescale: 600),
+                                 pointsPerSecond: viewport.pointsPerSecond)
             }
-            .onEnded { _ in end() }
-    }
-
-    private func begin(_ region: Region, name: String) -> (start: CMTime, duration: CMTime) {
-        if let dragOrigin { return dragOrigin }
-        let origin = (region.start, region.duration)
-        dragOrigin = origin
-        model.select(selection(region.id))
-        model.document.beginInteraction(name)
-        return origin
-    }
-
-    private func end() {
-        dragOrigin = nil
-        model.document.endInteraction()
-    }
-
-    /// Hold ⌘ to place something exactly where you put it.
-    private func snapping() -> Snapping {
-        NSEvent.modifierFlags.contains(.command)
-            ? .disabled
-            : Snapping(pointsPerSecond: viewport.pointsPerSecond)
-    }
-
-    /// Everything worth snapping to except this region's own edges, which would only
-    /// make it stick to where it already is.
-    private func others(of region: Region) -> [CMTime] {
-        model.timeline.boundaries.filter { $0 != region.start && $0 != region.end }
+            .onEnded { _ in model.endDrag() }
     }
 }

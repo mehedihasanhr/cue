@@ -557,6 +557,71 @@ public enum Commands {
     ///
     /// One command for both, because a drag that also hits a boundary is a resize, and
     /// two commands would put two entries on the undo stack for one gesture.
+    /// Several things moved or resized at once, as one edit.
+    ///
+    /// A drag that has more than one thing selected is still *one* thing the user did, so
+    /// it has to be one entry on the undo stack. Applying `MoveRegion` in a loop would push
+    /// as many entries as there were items selected, and undoing a group drag would take
+    /// five presses of ⌘Z to get back to where it started.
+    ///
+    /// Each item is moved by the same command that moves it on its own, so a group drag and
+    /// a single drag cannot disagree about clamping, about a locked zoom refusing, or about
+    /// what a head trim does to the sound underneath. That is the whole reason this holds a
+    /// list of moves rather than a delta: the delta is the view's idea of the gesture, and
+    /// the model should only ever hear about where things ended up.
+    public struct MoveMany: TimelineCommand {
+        public struct Move: Sendable, Equatable {
+            public let id: UUID
+            public let start: CMTime
+            /// `nil` for a move, a length for a resize.
+            public let duration: CMTime?
+            /// Whether this is a run of the recording's own sound rather than a region on
+            /// one of the other lanes. They clamp differently and a head trim means
+            /// something different to each, so the two cannot share one path.
+            public let isSoundRun: Bool
+            /// Only meaningful for a sound run: whether the recording stays put underneath
+            /// while the front edge moves.
+            public let trimsHead: Bool
+
+            public init(id: UUID,
+                        start: CMTime,
+                        duration: CMTime? = nil,
+                        isSoundRun: Bool = false,
+                        trimsHead: Bool = false) {
+                self.id = id
+                self.start = start
+                self.duration = duration
+                self.isSoundRun = isSoundRun
+                self.trimsHead = trimsHead
+            }
+        }
+
+        public let moves: [Move]
+        public let name: String
+
+        public init(_ moves: [Move], name: String) {
+            self.moves = moves
+            self.name = name
+        }
+
+        /// True if *anything* moved. A group containing one locked zoom still counts as a
+        /// change, because the others moved; a group of nothing but locked zooms does not,
+        /// and so costs no undo entry.
+        public func apply(to timeline: inout Timeline) -> Bool {
+            var changed = false
+            for move in moves {
+                let applied = move.isSoundRun
+                    ? MoveSoundRun(id: move.id, start: move.start,
+                                   duration: move.duration, trimsHead: move.trimsHead)
+                        .apply(to: &timeline)
+                    : MoveRegion(id: move.id, start: move.start, duration: move.duration)
+                        .apply(to: &timeline)
+                changed = changed || applied
+            }
+            return changed
+        }
+    }
+
     public struct MoveRegion: TimelineCommand {
         public let id: UUID
         public let start: CMTime

@@ -115,7 +115,7 @@ struct WebcamBubbleOverlay: View {
             .onEnded { _ in
                 isDragging = false
                 grabbedCentre = nil
-                model.document.endInteraction()
+                model.finishInteraction()
             }
     }
 }
