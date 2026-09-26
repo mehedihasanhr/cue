@@ -141,7 +141,9 @@ struct ZoomAimOverlay: View {
 
     /// Dragging the box moves what the zoom looks at, at the magnification it already has.
     private func move(from zoom: ZoomRegion) -> some Gesture {
-        DragGesture(minimumDistance: 1)
+        // The window's coordinates: the box moves as it is dragged, so its own local space
+        // would move under the gesture driving it. See `TimelineRegionRow.drag(_:grip:)`.
+        DragGesture(minimumDistance: 1, coordinateSpace: .global)
             .onChanged { value in
                 let start = begin(zoom, name: "Move Zoom")
                 let delta = normalisedDelta(value.translation)
@@ -154,7 +156,7 @@ struct ZoomAimOverlay: View {
 
     /// Dragging a corner changes how much is in shot, holding the opposite corner still.
     private func resize(_ corner: Corner, from zoom: ZoomRegion) -> some Gesture {
-        DragGesture(minimumDistance: 1)
+        DragGesture(minimumDistance: 1, coordinateSpace: .global)
             .onChanged { value in
                 let start = begin(zoom, name: "Frame Zoom")
                 let delta = normalisedDelta(value.translation)

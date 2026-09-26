@@ -218,7 +218,15 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
     }
 
     private func drag(_ region: Region, grip: TimelineDrag.Grip) -> some Gesture {
-        DragGesture(minimumDistance: 2)
+        // Measured in the window's coordinates, never the chip's.
+        //
+        // `DragGesture`'s default space is `.local` — the dragged view's own — and this
+        // view *moves while it is being dragged*, which makes that space move with it. Every
+        // point the chip travels to the right takes the pointer's local x the same distance
+        // to the left, so the translation shrinks, so the chip comes back, so the
+        // translation grows again. That oscillation is the chip appearing at its old and new
+        // positions on alternate frames. A space that does not move cannot feed back.
+        DragGesture(minimumDistance: 2, coordinateSpace: .global)
             .onChanged { value in
                 if !model.drag.isActive {
                     model.beginDrag(anchor: selection(region.id), grip: grip)

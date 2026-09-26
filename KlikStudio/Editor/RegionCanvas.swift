@@ -33,6 +33,13 @@ struct RegionCanvas: View {
 
     private var isBlurring: Bool { model.tool == .blur }
 
+    /// A space that does not move with the things being dragged in it.
+    ///
+    /// A box is offset by the rect it is editing and a corner handle is positioned by it,
+    /// so a gesture measured in either one's local space is measured against an origin the
+    /// gesture is moving — which oscillates.
+    private static let space = "canvas"
+
     var body: some View {
         ZStack(alignment: .topLeading) {
             // A transparent catcher under everything, so a drag that starts on empty
@@ -65,6 +72,7 @@ struct RegionCanvas: View {
 
             hint
         }
+        .coordinateSpace(.named(Self.space))
         .onExitCommand { model.tool = .frame }
     }
 
@@ -226,7 +234,7 @@ struct RegionCanvas: View {
 
     /// Dragging on empty picture makes a new region.
     private var createDrag: some Gesture {
-        DragGesture(minimumDistance: 4)
+        DragGesture(minimumDistance: 4, coordinateSpace: .named(Self.space))
             .onChanged { value in
                 draft = CGRect(x: min(value.startLocation.x, value.location.x),
                                y: min(value.startLocation.y, value.location.y),
@@ -248,7 +256,7 @@ struct RegionCanvas: View {
     }
 
     private func moveDrag(id: UUID, kind: Kind) -> some Gesture {
-        DragGesture(minimumDistance: 2)
+        DragGesture(minimumDistance: 2, coordinateSpace: .named(Self.space))
             .onChanged { value in
                 let start = begin(id: id, kind: kind)
                 var moved = start
@@ -260,7 +268,7 @@ struct RegionCanvas: View {
     }
 
     private func resizeDrag(_ corner: Corner, id: UUID, kind: Kind) -> some Gesture {
-        DragGesture(minimumDistance: 1)
+        DragGesture(minimumDistance: 1, coordinateSpace: .named(Self.space))
             .onChanged { value in
                 let start = begin(id: id, kind: kind)
                 var rect = start

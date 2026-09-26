@@ -183,7 +183,10 @@ struct TimelineClipRow: View {
     }
 
     private func trim(_ clip: Clip, at index: Int, leading: Bool) -> some Gesture {
-        DragGesture(minimumDistance: 2)
+        // The window's coordinates, not the clip's — see `TimelineRegionRow.drag(_:grip:)`.
+        // A trim moves the clip's own edge, so its local space moves under the gesture that
+        // is driving it.
+        DragGesture(minimumDistance: 2, coordinateSpace: .global)
             .onChanged { value in
                 let origin = beginTrim(clip)
                 // Points on the timeline are source seconds divided by speed, so a drag

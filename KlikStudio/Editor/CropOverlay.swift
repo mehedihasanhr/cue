@@ -20,6 +20,8 @@ struct CropOverlay: View {
         model.timeline.style.crop?.rect ?? CropRect.full.rect
     }
 
+    private static let space = "crop"
+
     /// The crop in view coordinates.
     private var box: CGRect {
         CGRect(x: stage.minX + crop.minX * stage.width,
@@ -37,6 +39,11 @@ struct CropOverlay: View {
                 self.handle(handle)
             }
         }
+        // A space that does not move with anything in it. The handles below are positioned
+        // by the crop they are editing, so a gesture on one of them measured in its own
+        // local space would be measuring against an origin the gesture itself is moving.
+        // `bodyDrag` is on this stack, which stays put, and reads the same space.
+        .coordinateSpace(.named(Self.space))
         .contentShape(Rectangle())
         .gesture(bodyDrag)
         .onTapGesture {
@@ -142,7 +149,7 @@ struct CropOverlay: View {
     }
 
     private func drag(_ handle: Handle) -> some Gesture {
-        DragGesture(minimumDistance: 1)
+        DragGesture(minimumDistance: 1, coordinateSpace: .named(Self.space))
             .onChanged { value in
                 let start = begin()
                 let point = normalised(value.location)
@@ -162,7 +169,7 @@ struct CropOverlay: View {
     }
 
     private var bodyDrag: some Gesture {
-        DragGesture(minimumDistance: 2)
+        DragGesture(minimumDistance: 2, coordinateSpace: .named(Self.space))
             .onChanged { value in
                 let start = begin()
                 let from = normalised(value.startLocation)

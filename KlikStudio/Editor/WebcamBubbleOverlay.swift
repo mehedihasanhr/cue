@@ -96,7 +96,9 @@ struct WebcamBubbleOverlay: View {
     }
 
     private var drag: some Gesture {
-        DragGesture(minimumDistance: 2)
+        // The window's coordinates: this gesture moves the very view it is attached to, so
+        // its own local space would move under it. See `TimelineRegionRow.drag(_:grip:)`.
+        DragGesture(minimumDistance: 2, coordinateSpace: .global)
             .onChanged { value in
                 if !isDragging {
                     isDragging = true
