@@ -164,12 +164,8 @@ public struct ZoomSuggester: Sendable {
             defer { cluster.removeAll() }
             guard let first = cluster.first, let last = cluster.last else { return }
 
-            // Work spread across the screen is panning, not a moment: zooming into its
-            // average would centre on nothing in particular.
             let xs = cluster.map(\.point.x)
             let ys = cluster.map(\.point.y)
-            let spread = max((xs.max() ?? 0) - (xs.min() ?? 0), (ys.max() ?? 0) - (ys.min() ?? 0))
-            guard spread <= tuning.spreadLimit else { return }
 
             let start = max(0, first.t - tuning.leadIn)
             let end = min(duration.seconds, last.t + tuning.holdAfter)
@@ -187,8 +183,29 @@ public struct ZoomSuggester: Sendable {
                                       source: .click))
         }
 
+        /// Whether a click belongs with what is already in the cluster.
+        ///
+        /// Time **and** place, and that pairing is the fix for a real hole. Clustering by
+        /// time alone gathered a click on the left of the screen and one on the right two
+        /// seconds later into a single moment, and the spread test then threw that whole
+        /// cluster away — so two perfectly good clicks produced no zoom at all, and the
+        /// wider apart they were the more certain it was that neither would be seen.
+        ///
+        /// Work spread across the screen is not "no moment", it is *several*. So a click
+        /// that would stretch the cluster past the spread limit starts a new one instead of
+        /// poisoning the old one, and the spread guard that used to drop clusters is now an
+        /// invariant that cannot fire.
+        func belongs(_ click: (t: Double, point: CGPoint)) -> Bool {
+            guard let previous = cluster.last else { return true }
+            guard click.t - previous.t <= tuning.clusterGap else { return false }
+            let xs = cluster.map(\.point.x) + [click.point.x]
+            let ys = cluster.map(\.point.y) + [click.point.y]
+            let spread = max((xs.max() ?? 0) - (xs.min() ?? 0), (ys.max() ?? 0) - (ys.min() ?? 0))
+            return spread <= tuning.spreadLimit
+        }
+
         for click in clicks.sorted(by: { $0.t < $1.t }) {
-            if let previous = cluster.last, click.t - previous.t > tuning.clusterGap { flush() }
+            if !belongs(click) { flush() }
             cluster.append(click)
         }
         flush()
@@ -328,10 +345,53 @@ public struct ZoomSuggester: Sendable {
     /// and the window around it is a point on neither. Two of equal specificity — two
     /// click clusters, say — are averaged, because then the midpoint really is the
     /// middle of the work.
+    /// Whether two regions are about places far enough apart that averaging them would
+    /// point at neither. Measured against the same spread a single cluster is allowed.
+    private func apart(_ a: ZoomRegion, _ b: ZoomRegion) -> Bool {
+        guard (a.source ?? .manual).specificity == (b.source ?? .manual).specificity else { return false }
+        guard frameSize.width > 0, frameSize.height > 0 else { return false }
+        let dx = abs(a.center.x - b.center.x) * frameSize.width
+        let dy = abs(a.center.y - b.center.y) * frameSize.height
+        return max(dx, dy) > tuning.spreadLimit
+    }
+
+    /// The earlier region, ending where the later one begins — or `nil` when that would
+    /// leave too little of it to be worth going to.
+    ///
+    /// "Worth going to" is a zoom long enough to arrive: its two ramps, and no less. A
+    /// region shorter than that spends the whole of itself moving and never reaches the
+    /// thing it was pointed at, so the camera would visit a place it never actually
+    /// showed. That is the difference between two moments and a flail — clicks half a
+    /// second apart at opposite corners cannot be split into anything watchable, and a
+    /// camera that visits three places in a second is worse than one that visits none.
+    /// Below the floor they merge instead.
+    private var shortestWorthGoingTo: Double { ZoomRegion.defaultTransition.seconds * 2 + 0.25 }
+
+    private func abutted(_ region: ZoomRegion, before next: ZoomRegion) -> ZoomRegion? {
+        var trimmed = region
+        trimmed.duration = next.start - region.start
+        guard trimmed.duration.seconds >= shortestWorthGoingTo else { return nil }
+        return trimmed
+    }
+
     private func merged(_ regions: [ZoomRegion], duration: CMTime) -> [ZoomRegion] {
         var result: [ZoomRegion] = []
         for region in regions.sorted(by: { $0.start < $1.start }) {
             guard var last = result.last, region.start < last.end else {
+                result.append(region)
+                continue
+            }
+
+            // Two moments in two different places stay two moments.
+            //
+            // Overlapping regions of equal standing used to be merged and their centres
+            // averaged, which is right for two clicks on the same button and wrong for two
+            // clicks at opposite ends of the screen: the average is a point nobody clicked,
+            // so the camera frames neither of them. Where the two are further apart than a
+            // single moment is allowed to be, the earlier one gives way at the later one's
+            // start instead — both survive, each pointed at what it was about.
+            if apart(last, region), let trimmed = abutted(last, before: region) {
+                result[result.count - 1] = trimmed
                 result.append(region)
                 continue
             }
@@ -347,8 +407,19 @@ public struct ZoomSuggester: Sendable {
                 last.followsCursor = region.followsCursor
                 last.source = region.source
             } else if theirs == mine {
-                last.center = CGPoint(x: (last.center.x + region.center.x) / 2,
-                                      y: (last.center.y + region.center.y) / 2)
+                // Averaged when the two are about the same place, which is what makes a
+                // cluster a cluster. Where they are far apart — the flail that could not be
+                // split because the pieces would have been too short — the *later* one
+                // wins: the midpoint of two corners is a point nobody clicked, and where
+                // somebody ended up is a better guess than where nobody went.
+                if apart(last, region) {
+                    last.center = region.center
+                    last.scale = region.scale
+                    last.followsCursor = region.followsCursor
+                } else {
+                    last.center = CGPoint(x: (last.center.x + region.center.x) / 2,
+                                          y: (last.center.y + region.center.y) / 2)
+                }
             }
             result[result.count - 1] = last
         }

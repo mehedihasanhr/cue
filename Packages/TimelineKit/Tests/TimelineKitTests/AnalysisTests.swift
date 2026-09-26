@@ -41,13 +41,27 @@ struct AnalysisTests {
         #expect(regions[0].end < regions[1].start, "suggestions never overlap")
     }
 
-    /// Clicking all over the screen is working across it, not a moment to be close to.
-    @Test func clicksSpreadAcrossTheScreenSuggestNothing() {
+    /// Clicking all over the screen in a second is a flail, not three moments — but it is
+    /// not nothing either.
+    ///
+    /// It used to suggest nothing at all: the clicks were gathered by time, the gathering
+    /// turned out to be spread across the screen, and the whole thing was discarded. That
+    /// rule is why perfectly ordinary clicks went missing, because anything that *grew* too
+    /// wide was thrown away rather than divided.
+    ///
+    /// Divided, these would each be half a second long, and a camera visiting three places
+    /// in a second is worse than one that visits none. So they stay one moment — and it is
+    /// aimed at the last of them, because the midpoint of two opposite corners is a point
+    /// nobody clicked and where somebody ended up is a better guess than where nobody went.
+    @Test func clicksAllOverTheScreenAreOneMomentAimedAtTheLast() {
         let suggester = ZoomSuggester(frameSize: frame)
         let regions = suggester.suggestions(cursor: [],
                                             input: clicks([(10, 10, 10), (10.5, 990, 990), (11, 20, 950)]),
                                             duration: time(60))
-        #expect(regions.isEmpty)
+        #expect(regions.count == 1, "one moment, not three")
+        let region = try? #require(regions.first)
+        #expect((region?.center.x ?? 1) < 0.2, "pointed where the clicking ended")
+        #expect((region?.center.y ?? 0) > 0.8)
     }
 
     @Test func aRecordingWithNoClicksSuggestsNothing() {
