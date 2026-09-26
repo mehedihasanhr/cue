@@ -207,10 +207,11 @@ struct TimelineSoundRow: View {
             .contentShape(Rectangle())
             .onTapGesture { model.select(.soundRun(run.id)) }
             .gesture(move(run))
-            .overlay {
-                edge(run, leading: true, width: width).offset(x: left)
-                edge(run, leading: false, width: width).offset(x: left + width - edgeWidth)
-            }
+            // Aligned to the run's own ends, no offsets — see `TimelineRegionRow` for what
+            // the offsets that used to be here were doing and why they were a chip's width
+            // out.
+            .overlay(alignment: .leading) { edge(run, leading: true, width: width) }
+            .overlay(alignment: .trailing) { edge(run, leading: false, width: width) }
             .contextMenu {
                 Button("Delete", role: .destructive) { model.deleteSelection(run.id) }
                 Divider()

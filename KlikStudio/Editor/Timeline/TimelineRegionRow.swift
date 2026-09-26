@@ -82,10 +82,20 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
             .contentShape(Rectangle())
             .onTapGesture { model.select(selection(region.id)) }
             .gesture(move(region))
-            .overlay {
-                edge(region, leading: true, width: width).offset(x: left)
-                edge(region, leading: false, width: width).offset(x: left + width - edgeWidth)
-            }
+            // Aligned to the chip's own ends, with no offset of any kind.
+            //
+            // These used to carry `.offset(x: left)` and `.offset(x: left + width - edgeWidth)`,
+            // which were the right numbers for an overlay on the *lane* — and this overlay is
+            // on the chip, which has already been sized and moved to `left`. So the ends were
+            // placed in the chip's coordinates using the lane's, landing a whole chip's width
+            // away and, at the middle of the timeline, off the chip entirely. An overlay with
+            // no alignment centres its content, so the leading end sat in the middle of the
+            // label and the trailing one out past the right edge.
+            //
+            // The hit areas were in those same wrong places all along; nobody could see them,
+            // so resizing by an edge simply did not work where the pointer said it should.
+            .overlay(alignment: .leading) { edge(region, leading: true, width: width) }
+            .overlay(alignment: .trailing) { edge(region, leading: false, width: width) }
             .contextMenu {
                 // Acting on the region under the pointer rather than on `model.selection`,
                 // which is why these take a `Selection` — a right-click should not change
