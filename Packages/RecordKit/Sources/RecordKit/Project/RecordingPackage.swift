@@ -59,12 +59,21 @@ public struct RecordingManifest: Codable, Equatable, Sendable {
         /// What had focus while the recording ran. Absent from recordings made before
         /// the track existed, which is why every field here is optional.
         public var focus: String?
+        /// An index of what each pointer actually looked like — see `CursorArtworkWriter`.
+        /// Absent from every recording made before the artwork was kept, and from any take
+        /// where saving it was turned off.
+        public var cursorArtwork: String?
 
-        public init(cursor: String? = nil, input: String? = nil, windowBounds: String? = nil, focus: String? = nil) {
+        public init(cursor: String? = nil,
+                    input: String? = nil,
+                    windowBounds: String? = nil,
+                    focus: String? = nil,
+                    cursorArtwork: String? = nil) {
             self.cursor = cursor
             self.input = input
             self.windowBounds = windowBounds
             self.focus = focus
+            self.cursorArtwork = cursorArtwork
         }
     }
 

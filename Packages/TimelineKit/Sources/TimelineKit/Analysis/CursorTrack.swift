@@ -102,7 +102,42 @@ public struct CursorTrack: Sendable {
             forward[index].x = forward[index].x * alpha + forward[index + 1].x * (1 - alpha)
             forward[index].y = forward[index].y * alpha + forward[index + 1].y * (1 - alpha)
         }
+        anchorToClicks(&forward)
         return CursorTrack(samples: forward, clicks: clicks)
+    }
+
+    /// How long either side of a click the pointer is held to where it really was.
+    ///
+    /// Long enough to cover the approach and the release, short enough that the rest of the
+    /// move is still smoothed.
+    public static let clickAnchorWindow = 0.14
+
+    /// Pulls the smoothed path back onto the recorded one around every click.
+    ///
+    /// Smoothing is what makes a recorded pointer look deliberate instead of shaky, and it
+    /// is a filter: it rounds corners. Arriving somewhere and stopping is a corner, so the
+    /// smoothed path cuts it — the drawn pointer comes to rest a little short of where the
+    /// hand actually went. Anywhere else that is invisible and desirable. At a click it is
+    /// the one thing that must not happen: the viewer is being shown *what was clicked*, and
+    /// a pointer resting an inch above the tab it just pressed says the recording is wrong.
+    ///
+    /// So the filter yields around a click and the raw sample wins, easing back out over
+    /// `clickAnchorWindow` so nothing snaps. Cosine rather than linear for the same reason:
+    /// a corner taken out of the path must not be replaced by two new ones.
+    private func anchorToClicks(_ smoothed: inout [CursorSample]) {
+        guard !clicks.isEmpty else { return }
+        let window = Self.clickAnchorWindow
+        for index in smoothed.indices {
+            let t = smoothed[index].t
+            guard let nearest = clicks.min(by: { abs($0.t - t) < abs($1.t - t) }) else { continue }
+            let distance = abs(t - nearest.t)
+            guard distance < window else { continue }
+            // 1 at the click, 0 at the edge of the window, with no kink at either end.
+            let weight = (cos(.pi * distance / window) + 1) / 2
+            let raw = samples[index]
+            smoothed[index].x += (raw.x - smoothed[index].x) * weight
+            smoothed[index].y += (raw.y - smoothed[index].y) * weight
+        }
     }
 
     /// The clicks worth drawing a mark for at this moment, each with how far through its

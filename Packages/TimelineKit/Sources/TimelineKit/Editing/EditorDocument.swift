@@ -261,6 +261,18 @@ public final class EditorDocument {
 
     @ObservationIgnored private var cachedCursorTrack: CursorTrack?
 
+    /// What each pointer in this recording actually looked like — see
+    /// `CursorArtworkIndex`. Empty for a recording that did not keep it, which is every
+    /// recording made before it could.
+    public var cursorArtwork: CursorArtworkIndex {
+        if let cachedCursorArtwork { return cachedCursorArtwork }
+        let index = CursorArtworkIndex.read(manifest, in: package.url)
+        cachedCursorArtwork = index
+        return index
+    }
+
+    @ObservationIgnored private var cachedCursorArtwork: CursorArtworkIndex?
+
     /// The recorded clicks, scrolls and keys, with their positions.
     ///
     /// Kept separate from `cursorTrack` because the two are read for different things:

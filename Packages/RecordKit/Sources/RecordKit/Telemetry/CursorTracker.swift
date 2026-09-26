@@ -93,6 +93,9 @@ public final class CursorTracker: @unchecked Sendable {
     private let sampleRate: Int
 
     private let capturesKeystrokes: Bool
+    /// Saves what each pointer actually looked like. `nil` when this take is not keeping
+    /// the real artwork.
+    private let artwork: CursorArtworkWriter?
 
     private var positionTimer: DispatchSourceTimer?
     private var shapeTimer: Timer?
@@ -113,7 +116,9 @@ public final class CursorTracker: @unchecked Sendable {
                 clock: RecordingClock,
                 mapper: CursorMapper,
                 sampleRate: Int,
-                capturesKeystrokes: Bool = false) {
+                capturesKeystrokes: Bool = false,
+                artwork: CursorArtworkWriter? = nil) {
+        self.artwork = artwork
         self.cursorWriter = cursorWriter
         self.inputWriter = inputWriter
         self.queue = queue
@@ -176,6 +181,10 @@ public final class CursorTracker: @unchecked Sendable {
                 guard let cursor = NSCursor.currentSystem else { return }
                 let current = CursorShape(cursor)
                 self.shape.withLock { $0 = current }
+                // The first time each shape appears, and never again — see
+                // `CursorArtworkWriter`. This is the only moment the real pointer can be
+                // read: afterwards there is a recording and no cursor.
+                self.artwork?.capture(current, from: cursor)
             }
         }
         RunLoop.main.add(timer, forMode: .common)

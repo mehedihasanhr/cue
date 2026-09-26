@@ -130,6 +130,7 @@ public final class RecordingSession {
     private var webcamPixelSize: CGSize?
     private var webcamFrameRate: Int?
     private var cursor: CursorTracker?
+    private var cursorArtwork: CursorArtworkWriter?
     private var focus: FocusTracker?
     private var cursorWriter: JSONLWriter?
     private var inputWriter: JSONLWriter?
@@ -405,13 +406,23 @@ public final class RecordingSession {
         if case .window(let id) = configuration.target { followedWindow = id }
         let mapper = CursorMapper(origin: content.origin(of: configuration.target, in: shareable),
                                   following: followedWindow)
+        // Only when the pointer is being recorded as data. A take that burns the system
+        // cursor into the video already has the real artwork in the pixels, and saving it
+        // twice would be saving it for nobody.
+        let artwork = configuration.capturesCursorArtwork && !configuration.capturesCursorInVideo
+            ? CursorArtworkWriter(folder: package.telemetryFolder.appendingPathComponent("cursors",
+                                                                                         isDirectory: true),
+                                  relativeFolder: "telemetry/cursors")
+            : nil
+        cursorArtwork = artwork
         cursor = CursorTracker(cursorWriter: cursorWriter,
                                inputWriter: inputWriter,
                                queue: queue,
                                clock: clock,
                                mapper: mapper,
                                sampleRate: configuration.cursorSampleRate,
-                               capturesKeystrokes: configuration.capturesKeystrokes)
+                               capturesKeystrokes: configuration.capturesKeystrokes,
+                               artwork: artwork)
         if let focusWriter {
             focus = FocusTracker(writer: focusWriter,
                                  queue: queue,
@@ -604,6 +615,12 @@ public final class RecordingSession {
         // The result comes back out of the closure rather than being assigned inside
         // it: `queue.sync` runs its body on the capture queue, and this object is on the
         // main actor.
+        // Written at the end rather than as each shape appears: it is an index of what was
+        // collected, and what was collected is not known until collecting stops.
+        cursorArtworkPath = cursorArtwork?.writeIndex(
+            to: package?.telemetryFolder.appendingPathComponent("cursors.json")
+                ?? URL(fileURLWithPath: "/dev/null"),
+            relativePath: "telemetry/cursors.json")
         focusTrackWritten = queue.sync { [focusWriter, cursorWriter, inputWriter] in
             _ = cursorWriter?.close()
             _ = inputWriter?.close()
@@ -620,6 +637,9 @@ public final class RecordingSession {
     /// lane for a sound that is not there.
     private var recordedAudio: [RecordingManifest.Track] = []
 
+    /// Where the index of the real pointer artwork went, or `nil` when none was kept.
+    private var cursorArtworkPath: String?
+
     /// Whether the focus track ended up with anything in it. An empty sidecar is
     /// deleted on close, so the manifest must not point at it.
     private var focusTrackWritten = false
@@ -635,6 +655,8 @@ public final class RecordingSession {
         webcamPixelSize = nil
         webcamFrameRate = nil
         cursor = nil
+        cursorArtwork = nil
+        cursorArtworkPath = nil
         focus = nil
         focusTrackWritten = false
         package = nil
@@ -691,7 +713,8 @@ public final class RecordingSession {
                                  tracks: tracks,
                                  telemetry: .init(cursor: "telemetry/cursor.jsonl",
                                                   input: configuration.capturesClicks ? "telemetry/input.jsonl" : nil,
-                                                  focus: focusTrackWritten ? "telemetry/focus.jsonl" : nil))
+                                                  focus: focusTrackWritten ? "telemetry/focus.jsonl" : nil,
+                                                  cursorArtwork: cursorArtworkPath))
     }
 
     // MARK: - Disk

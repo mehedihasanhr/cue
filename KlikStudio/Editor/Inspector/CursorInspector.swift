@@ -23,6 +23,13 @@ struct CursorInspector: View {
                 InspectorSlider(model: model, "Smoothing", systemImage: "scribble",
                                 value: style.binding(\.cursor.smoothing, "Smoothing"), range: 0...1)
 
+                // Only offered when the recording actually kept one. A switch that says
+                // "use the real pointer" on a recording that has no picture of one is a
+                // switch that does nothing, and the user would have no way to tell.
+                if model.hasRecordedPointer {
+                    Toggle("Use the pointer from the recording",
+                           isOn: style.binding(\.cursor.usesRecordedArtwork, "Recorded Pointer"))
+                }
                 Toggle("Motion blur", isOn: style.binding(\.cursor.motionBlur, "Motion Blur"))
                 Toggle("Keep size while zoomed",
                        isOn: style.binding(\.cursor.sizeIsIndependentOfZoom, "Pointer Zoom"))

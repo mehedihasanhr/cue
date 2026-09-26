@@ -80,7 +80,8 @@ final class EditorModel {
         builder = SceneBuilder(videoSize: track?.pixelSize ?? CGSize(width: 1_920, height: 1_080),
                                displayScale: document.manifest.displayScale,
                                backgrounds: StudioBackgroundResolver(),
-                               packageURL: package.url)
+                               packageURL: package.url,
+                               cursorArtwork: document.cursorArtwork)
         waveform = WaveformStore(package: package, manifest: document.manifest)
         regionWaveforms = RegionWaveformStore(package: package)
 
@@ -121,6 +122,12 @@ final class EditorModel {
     var videoSize: CGSize { builder.videoSize }
     var packageURL: URL { document.package.url }
 
+    /// Whether this recording kept a picture of the pointer it actually had.
+    ///
+    /// Read from the package rather than assumed from the version: a recording made with
+    /// the setting off has none, and neither does one made before it existed.
+    var hasRecordedPointer: Bool { !document.cursorArtwork.isEmpty }
+
     /// Whether the recording captured a given track. Read from the manifest rather than
     /// the asset, which is the reason the manifest lists them.
     func hasTrack(_ kind: RecordingManifest.Track.Kind) -> Bool {
@@ -146,7 +153,8 @@ final class EditorModel {
             builder = SceneBuilder(videoSize: source.naturalSize,
                                    displayScale: document.manifest.displayScale,
                                    backgrounds: StudioBackgroundResolver(),
-                                   packageURL: document.package.url)
+                                   packageURL: document.package.url,
+                                   cursorArtwork: document.cursorArtwork)
             if autoZoomOnOpen {
                 autoZoomOnOpen = false
                 suggestZooms(quietly: true)
@@ -1029,18 +1037,28 @@ final class EditorModel {
     /// user framed is never cropped tighter than they drew it.
     func setZoomArea(_ id: UUID, to rect: CGRect, name: String = "Frame Zoom") {
         guard rect.width > 0 else { return }
-        let scale = min(ZoomRegion.maximumScale, max(1, 1 / rect.width))
-        // Re-derived from the clamped scale rather than from the rectangle: if the drag
-        // asked for more than the renderer will give, the centre has to be the centre of
-        // what will actually be shown, or the picture drifts away from the box.
+        let area = Self.honouredZoomArea(rect)
+        apply(Commands.RestyleZoom(id: id, name: name) {
+            $0.scale = 1 / area.width
+            $0.center = CGPoint(x: area.midX, y: area.midY)
+            $0.followsCursor = false
+        })
+    }
+
+    /// The rectangle a drawn one will actually become: square, no wider than the whole
+    /// recording, no tighter than the renderer allows, and wholly inside the picture.
+    ///
+    /// The centre is re-derived from the clamped scale rather than taken from the
+    /// rectangle: if the drag asked for more than the renderer will give, the centre has
+    /// to be the centre of what will actually be shown, or the picture drifts away from
+    /// the box. Overlays draw through this so what is under the pointer mid-drag is the
+    /// framing that will be stored, not the one that was asked for.
+    static func honouredZoomArea(_ rect: CGRect) -> CGRect {
+        let scale = min(ZoomRegion.maximumScale, max(1, 1 / max(rect.width, 1e-6)))
         let half = 0.5 / scale
         let centre = CGPoint(x: min(1 - half, max(half, rect.midX)),
                              y: min(1 - half, max(half, rect.midY)))
-        apply(Commands.RestyleZoom(id: id, name: name) {
-            $0.scale = scale
-            $0.center = centre
-            $0.followsCursor = false
-        })
+        return CGRect(x: centre.x - half, y: centre.y - half, width: half * 2, height: half * 2)
     }
 
     /// What a zoom currently frames, as a rectangle of the recording — the inverse of

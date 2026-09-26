@@ -186,6 +186,15 @@ public struct CursorStyle: Codable, Equatable, Sendable {
     public var clickColor: ColorValue
     /// How big the ring grows, as a fraction of the shorter side of the finished frame.
     public var clickSize: Double
+    /// Draw the pointer the recording actually had, rather than Klik's drawing of it.
+    ///
+    /// On when the recording kept one — which is the right default, because the drawn
+    /// pointer is an approximation of a *stock* Apple pointer and plenty of people do not
+    /// use one: a larger size, a different fill or outline, an accessibility pointer. A
+    /// recording of somebody's screen should show the pointer they were looking at.
+    ///
+    /// Off falls back to the drawing, as does any recording that kept no artwork.
+    public var usesRecordedArtwork: Bool
 
     public init(isVisible: Bool = true,
                 scale: Double = 1.4,
@@ -195,7 +204,8 @@ public struct CursorStyle: Codable, Equatable, Sendable {
                 sizeIsIndependentOfZoom: Bool = true,
                 clickHighlight: Bool = true,
                 clickColor: ColorValue = .white,
-                clickSize: Double = 0.07) {
+                clickSize: Double = 0.07,
+                usesRecordedArtwork: Bool = true) {
         self.isVisible = isVisible
         self.scale = scale
         self.smoothing = smoothing
@@ -205,6 +215,7 @@ public struct CursorStyle: Codable, Equatable, Sendable {
         self.clickHighlight = clickHighlight
         self.clickColor = clickColor
         self.clickSize = clickSize
+        self.usesRecordedArtwork = usesRecordedArtwork
     }
 
     /// Decoded field by field, for the reason `Timeline.init(from:)` gives — and here it
@@ -227,11 +238,12 @@ public struct CursorStyle: Codable, Equatable, Sendable {
         clickHighlight = value(.clickHighlight, default: true)
         clickColor = value(.clickColor, default: ColorValue.white)
         clickSize = value(.clickSize, default: 0.07)
+        usesRecordedArtwork = value(.usesRecordedArtwork, default: true)
     }
 
     enum CodingKeys: String, CodingKey {
         case isVisible, scale, smoothing, clickEffect, motionBlur, sizeIsIndependentOfZoom
-        case clickHighlight, clickColor, clickSize
+        case clickHighlight, clickColor, clickSize, usesRecordedArtwork
     }
 }
 

@@ -209,19 +209,48 @@ public struct CursorLayer: Equatable, Sendable {
     /// The inverse of `CursorStyle.sizeIsIndependentOfZoom`, which is on by default —
     /// so this is off by default, and the pointer keeps its size through a zoom.
     public var sizeFollowsZoom: Bool
+    /// The pointer as it really looked, when the recording kept a picture of it.
+    ///
+    /// `nil` falls back to `shape` and the drawn artwork, which is what every recording
+    /// made before the real pointer was saved has — and what a project gets when the
+    /// person turns the real one off.
+    public var artwork: RecordedCursor?
 
     public init(position: CGPoint,
                 shape: CursorShapeKind,
                 scale: Double,
                 opacity: Double = 1,
                 velocity: CGVector = .zero,
-                sizeFollowsZoom: Bool = false) {
+                sizeFollowsZoom: Bool = false,
+                artwork: RecordedCursor? = nil) {
         self.position = position
         self.shape = shape
         self.scale = scale
         self.opacity = opacity
         self.velocity = velocity
         self.sizeFollowsZoom = sizeFollowsZoom
+        self.artwork = artwork
+    }
+}
+
+/// A picture of the pointer, taken while it was on screen.
+///
+/// A file rather than the image itself, because a `SceneDescriptor` is a value that
+/// crosses to the exporter and back, is compared for equality every frame, and is scaled
+/// for the preview. A URL and two numbers do all of that cheaply; a `CIImage` does none of
+/// it. The renderer opens and caches it.
+public struct RecordedCursor: Equatable, Sendable {
+    public var url: URL
+    /// Which point of the image is the pointer's point, as a fraction of it, measured from
+    /// the top-left the way the system reports a hotspot.
+    public var hotspot: CGPoint
+    /// Height over width, so the renderer can size it without opening it.
+    public var aspect: Double
+
+    public init(url: URL, hotspot: CGPoint, aspect: Double) {
+        self.url = url
+        self.hotspot = hotspot
+        self.aspect = aspect
     }
 }
 

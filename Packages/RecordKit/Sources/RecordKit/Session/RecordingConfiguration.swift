@@ -90,6 +90,13 @@ public struct RecordingConfiguration: Sendable {
     /// a recording already holds. Only the text-field half needs Accessibility, and it
     /// is left out rather than prompted for when the grant is missing.
     public var capturesFocus: Bool
+    /// Keep a picture of what the pointer actually looked like, one per shape.
+    ///
+    /// On by default and cheap: a handful of small PNGs per recording, written the first
+    /// time each shape appears. What it buys is an editor that can draw the person's *own*
+    /// pointer — the size they set, the outline they chose, the accessibility pointer they
+    /// rely on — rather than an approximation of the stock one. See `CursorArtworkWriter`.
+    public var capturesCursorArtwork: Bool
 
     public init(target: CaptureTarget,
                 destination: URL,
@@ -104,7 +111,8 @@ public struct RecordingConfiguration: Sendable {
                 cursorSampleRate: Int = 120,
                 capturesClicks: Bool = true,
                 capturesKeystrokes: Bool = false,
-                capturesFocus: Bool = true) {
+                capturesFocus: Bool = true,
+                capturesCursorArtwork: Bool = true) {
         self.target = target
         self.destination = destination
         self.name = name
@@ -119,6 +127,7 @@ public struct RecordingConfiguration: Sendable {
         self.capturesClicks = capturesClicks
         self.capturesKeystrokes = capturesKeystrokes
         self.capturesFocus = capturesFocus
+        self.capturesCursorArtwork = capturesCursorArtwork
     }
 
     /// The stream configuration for a filter, in pixels.

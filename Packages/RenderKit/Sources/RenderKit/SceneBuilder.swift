@@ -22,15 +22,20 @@ public struct SceneBuilder: Sendable {
     public let backgrounds: any BackgroundResolving
     /// The project, for backgrounds stored relative to it.
     public let packageURL: URL?
+    /// What each pointer in this recording actually looked like. Empty for a recording
+    /// that did not keep it, which is every recording made before it could.
+    public let cursorArtwork: CursorArtworkIndex
 
     public init(videoSize: CGSize,
                 displayScale: Double = 2,
                 backgrounds: any BackgroundResolving = DefaultBackgroundResolver(),
-                packageURL: URL? = nil) {
+                packageURL: URL? = nil,
+                cursorArtwork: CursorArtworkIndex = CursorArtworkIndex()) {
         self.videoSize = videoSize
         self.displayScale = max(0.1, displayScale)
         self.backgrounds = backgrounds
         self.packageURL = packageURL
+        self.cursorArtwork = cursorArtwork
     }
 
     /// The same builder, measured against a different source size.
@@ -44,7 +49,8 @@ public struct SceneBuilder: Sendable {
         return SceneBuilder(videoSize: videoSize,
                             displayScale: displayScale,
                             backgrounds: backgrounds,
-                            packageURL: packageURL)
+                            packageURL: packageURL,
+                            cursorArtwork: cursorArtwork)
     }
 
     /// How big the picture is once the crop has been taken off it.
@@ -439,12 +445,21 @@ public struct SceneBuilder: Sendable {
         let velocity = timeline.cursor.motionBlur
             ? pointerVelocity(timeline, at: time, sourceTime: sourceTime, track: track)
             : .zero
+        let shape = track.shape(at: sourceTime.seconds)
         return CursorLayer(position: position,
-                           shape: CursorShapeKind(track.shape(at: sourceTime.seconds)),
+                           shape: CursorShapeKind(shape),
                            scale: scale,
                            opacity: opacity,
                            velocity: velocity,
-                           sizeFollowsZoom: !timeline.cursor.sizeIsIndependentOfZoom)
+                           sizeFollowsZoom: !timeline.cursor.sizeIsIndependentOfZoom,
+                           // The real thing when the recording kept one and the project
+                           // wants it. `nil` is the drawn pointer, which is what every
+                           // recording made before this had.
+                           artwork: timeline.cursor.usesRecordedArtwork
+                               ? cursorArtwork.artwork(for: shape).map {
+                                   RecordedCursor(url: $0.url, hotspot: $0.hotspot, aspect: $0.aspect)
+                                 }
+                               : nil)
     }
 
     /// How fast the pointer is moving *as drawn*.

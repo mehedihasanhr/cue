@@ -256,3 +256,20 @@ enum AnnotationArtwork {
         return context.makeImage()
     }
 }
+
+/// The pointer pictures a recording kept, opened once each.
+///
+/// Separate from `CursorArtwork`'s cache because the two are keyed on different things:
+/// that one caches a *drawing* at a size, this caches a *file*. The size is applied as a
+/// transform afterwards, so one read serves every size the preview and the exporter ask
+/// for — and there are only ever a handful of files in a recording.
+enum RecordedCursorArtwork {
+    private static let cache = ArtworkCache<URL, CIImage>(capacity: 12)
+
+    static func image(_ artwork: RecordedCursor) -> CIImage? {
+        cache.value(for: artwork.url) { CIImage(contentsOf: artwork.url) }
+    }
+
+    /// Empties it, so a test can read one cold.
+    static func clearCache() { cache.removeAll() }
+}

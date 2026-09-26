@@ -422,14 +422,41 @@ public final class SceneRenderer: @unchecked Sendable {
         // with what it is pointing at.
         let zoomFactor = cursor.sizeFollowsZoom ? scene.zoom : 1
         let size = min(scene.outputSize.width, scene.outputSize.height) * 0.035 * cursor.scale * zoomFactor
-        guard size > 1, var image = CursorArtwork.image(cursor.shape, size: size) else { return nil }
-
-        image = motionBlurred(image, velocity: cursor.velocity, size: size)
+        guard size > 1 else { return nil }
 
         let point = CGPoint(x: video.minX + cursor.position.x * video.width,
                             y: video.maxY - cursor.position.y * video.height)
-        // The hotspot is the pointer's tip, which is its top-left in Core Image's
-        // bottom-left space.
+
+        // The pointer as it really looked, when the recording kept one — the person's own
+        // size, outline and colour, and their accessibility pointer if they use one. Scaled
+        // to the same on-screen size as the drawn pointer would have been, so turning it on
+        // changes what the pointer *is*, not how big it is.
+        if let artwork = cursor.artwork, let picture = RecordedCursorArtwork.image(artwork) {
+            let extent = picture.extent
+            guard extent.width > 1, extent.height > 1 else { return nil }
+            let drawn = CGSize(width: size, height: size * artwork.aspect)
+            var image = picture.transformed(by: CGAffineTransform(scaleX: drawn.width / extent.width,
+                                                                  y: drawn.height / extent.height))
+            image = motionBlurred(image, velocity: cursor.velocity, size: size)
+            // Placed by its own hotspot rather than by a corner. A pointer's point is not
+            // its top-left — an I-beam's is halfway down the middle, a crosshair's is dead
+            // centre — and assuming otherwise puts every pointer but the arrow somewhere it
+            // never was. `hotspot` is measured from the top-left, and Core Image's origin is
+            // the bottom-left, so the vertical one is taken from the far side.
+            let origin = CGPoint(x: point.x - artwork.hotspot.x * drawn.width,
+                                 y: point.y - (1 - artwork.hotspot.y) * drawn.height)
+            return image
+                .transformed(by: CGAffineTransform(translationX: origin.x - image.extent.minX,
+                                                   y: origin.y - image.extent.minY))
+                .applyingFilter("CIColorMatrix", parameters: [
+                    "inputAVector": CIVector(x: 0, y: 0, z: 0, w: cursor.opacity),
+                ])
+        }
+
+        guard var image = CursorArtwork.image(cursor.shape, size: size) else { return nil }
+        image = motionBlurred(image, velocity: cursor.velocity, size: size)
+        // The drawn shapes all have their point at the top-left of the artwork, which is
+        // its *bottom*-left in Core Image's flipped space.
         return image
             .transformed(by: CGAffineTransform(translationX: point.x, y: point.y - image.extent.height))
             .applyingFilter("CIColorMatrix", parameters: [
