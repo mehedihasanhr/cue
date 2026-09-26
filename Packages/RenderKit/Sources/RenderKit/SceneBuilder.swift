@@ -194,13 +194,34 @@ public struct SceneBuilder: Sendable {
             //
             // Both clamps, not one. The averaged one is the calmer of the two and leads on
             // the way back, so the camera does not snap home the instant a fast pointer
-            // turns around; this one is the guarantee, and binds whenever the pointer is
-            // further out than its own average.
-            if let live = pointerPoint(timeline, at: time, sourceTime: sourceTime,
-                                       track: track, override: override)
-                .flatMap({ normalised($0, crop: crop) }) {
+            // turns around; this one keeps the comfortable framing honest.
+            if let live = drawnPointer(timeline, at: time, sourceTime: sourceTime,
+                                       track: track, override: override, crop: crop) {
                 center = nudged(center, toKeep: live, within: half * camera.safeArea, by: claim)
             }
+        }
+
+        // And underneath all of it, for every zoom: a pointer that is being drawn may not
+        // be drawn outside the shot.
+        //
+        // Not gated on `followsCursor`, and that is the point. Aiming a zoom by hand turns
+        // following off — you chose a shot, so the camera holds it — and focus and typing
+        // zooms never follow, because a camera drifting after the mouse while somebody
+        // types is seasickness. All correct, and all of it left the pointer free to walk
+        // out of the shot, where it is clipped away and simply vanishes from the video. A
+        // cursor that disappears mid-zoom is a rendering fault whatever the zoom's
+        // settings say.
+        //
+        // At the very edge rather than at `safeArea`, so it binds only when the pointer
+        // would genuinely be lost, and then by the least it can. For a zoom that already
+        // follows, the comfortable clamp above has settled things long before this one has
+        // anything to say.
+        if camera.follow > 0, timeline.cursor.isVisible, override.hiding < 1,
+           let track, !track.isEmpty,
+           let sourceTime = timeline.sourceTime(at: time),
+           let live = drawnPointer(timeline, at: time, sourceTime: sourceTime,
+                                   track: track, override: override, crop: crop) {
+            center = nudged(center, toKeep: live, within: half * 0.98, by: 1 - override.hiding)
         }
 
         // Keep the camera inside the picture: at 2× the centre can only travel between
@@ -209,6 +230,21 @@ public struct SceneBuilder: Sendable {
         // the frame sliding off the picture to centre on it.
         return (best.scale, CGPoint(x: min(1 - half, max(half, center.x)),
                                     y: min(1 - half, max(half, center.y))))
+    }
+
+    /// The pointer as it is actually drawn, as a fraction of the cropped frame.
+    ///
+    /// The same point `cursorLayer` uses — held and smoothed the same way — so the framing
+    /// cannot be right about a cursor that is somewhere else. `nil` when the pointer is
+    /// outside the crop, which is when there is nothing drawn to keep in shot.
+    private func drawnPointer(_ timeline: Timeline,
+                              at time: CMTime,
+                              sourceTime: CMTime,
+                              track: CursorTrack,
+                              override: CursorOverride,
+                              crop: CGRect) -> CGPoint? {
+        pointerPoint(timeline, at: time, sourceTime: sourceTime, track: track, override: override)
+            .flatMap { normalised($0, crop: crop) }
     }
 
     /// Moves a camera centre only as far as it must to keep a point within `reach` of it.

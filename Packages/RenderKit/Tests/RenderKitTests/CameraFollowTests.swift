@@ -101,20 +101,32 @@ struct CameraFollowTests {
         #expect(centre(edit, away, at: 6).x > 0.6, "and dragged across by the time it is out there")
     }
 
+    /// How far out of the *shot* the pointer got, as a fraction of centre-to-edge. 1 is
+    /// the very edge of what the camera is showing; past that it is clipped away and
+    /// simply vanishes from the video.
+    private func worstReach(_ timeline: Timeline, _ track: CursorTrack,
+                            from: Double, to: Double) -> Double {
+        var worst = 0.0
+        for at in stride(from: from, through: to, by: 0.05) {
+            let scene = builder().descriptor(for: timeline, at: time(at), cursor: track)
+            guard let cursor = scene.cursor else { continue }
+            let half = 0.5 / scene.zoom
+            worst = max(worst, max(abs(cursor.position.x - scene.zoomCenter.x),
+                                   abs(cursor.position.y - scene.zoomCenter.y)) / half)
+        }
+        return worst
+    }
+
     /// The guarantee that makes the dead zone safe: whatever it allows, the pointer stays
-    /// in the picture.
-    @Test func thePointerNeverLeavesTheFrame() {
+    /// inside the shot — not merely inside the recording. A cursor outside the shot is
+    /// clipped away, so from the viewer's side it has disappeared.
+    @Test func thePointerNeverLeavesTheShot() {
         let edit = timeline()
         let roaming = track([
             (0, middle), (2, CGPoint(x: 40, y: 40)), (4, CGPoint(x: 760, y: 460)),
             (6, CGPoint(x: 40, y: 460)), (8, CGPoint(x: 760, y: 40)),
         ])
-        for at in stride(from: 2.0, through: 8.5, by: 0.05) {
-            let scene = builder().descriptor(for: edit, at: time(at), cursor: roaming)
-            guard let cursor = scene.cursor else { continue }
-            #expect(cursor.position.x >= -0.001 && cursor.position.x <= 1.001, "off frame at \(at)")
-            #expect(cursor.position.y >= -0.001 && cursor.position.y <= 1.001, "off frame at \(at)")
-        }
+        #expect(worstReach(edit, roaming, from: 2.0, to: 8.5) <= 1.0001)
     }
 
     /// A pointer that wanders out and comes back leaves the camera where the zoom was
@@ -136,10 +148,31 @@ struct CameraFollowTests {
         }
     }
 
-    @Test func aZoomThatDoesNotFollowHoldsItsAim() {
+    /// A zoom that does not follow holds its aim — while the pointer is in the shot.
+    ///
+    /// Aiming a zoom by hand turns following off, and focus and typing zooms never follow,
+    /// because a camera drifting after the mouse while somebody types is seasickness. All
+    /// of that is right, and all of it used to leave the pointer free to walk out of the
+    /// shot and vanish. So the aim is held until the pointer would be lost, and then the
+    /// camera gives way by the least it can.
+    @Test func aZoomThatDoesNotFollowHoldsItsAimUntilThePointerWouldBeLost() {
         let edit = timeline(follows: false)
+        let inside = track([(0, middle), (6, CGPoint(x: middle.x + 60, y: middle.y + 30))])
+        #expect(abs(centre(edit, inside, at: 6) - 0.5) < 0.001, "held, while the pointer is in shot")
+
         let away = track([(0, middle), (6, CGPoint(x: 760, y: 460))])
-        #expect(abs(centre(edit, away, at: 6) - 0.5) < 0.001)
+        #expect(worstReach(edit, away, from: 2.0, to: 8.5) <= 1.0001, "and the pointer is never lost")
+        #expect(centre(edit, away, at: 6).x > 0.55, "which it could only manage by giving way")
+    }
+
+    /// And it gives way by the *least* it can: a following zoom keeps the pointer well
+    /// inside the shot, a holding one lets it right out to the edge before moving at all.
+    @Test func aHoldingZoomGivesWayLaterThanAFollowingOne() {
+        let roam = track([(0, middle), (3, CGPoint(x: 700, y: 400)), (6, CGPoint(x: 120, y: 90))])
+        let following = worstReach(timeline(follows: true), roam, from: 2.0, to: 8.5)
+        let holding = worstReach(timeline(follows: false), roam, from: 2.0, to: 8.5)
+        #expect(holding > following, "holding: \(holding), following: \(following)")
+        #expect(following <= 0.87, "a following camera keeps it comfortably inside")
     }
 
     /// A tighter dead zone lets the pointer drag the camera sooner.
