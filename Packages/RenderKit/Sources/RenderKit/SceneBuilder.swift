@@ -150,56 +150,57 @@ public struct SceneBuilder: Sendable {
         // of 40 or a negative window.
         let camera = timeline.camera.sanitised
 
+        // Where this zoom was aimed, and where the camera stays unless the pointer makes
+        // it move.
         var center = best.region.center
-        if best.region.followsCursor, camera.follow > 0, let track, !track.isEmpty,
-           let sourceTime = timeline.sourceTime(at: time),
-           // Averaged over a window, not the pointer's exact position: at 2× every
-           // twitch of a hand is 2× on screen, and a camera welded to the mouse is what
-           // makes a zoom unwatchable.
-           let point = track.averagePosition(at: sourceTime.seconds, window: camera.steadiness),
-           // A pointer outside the crop is not in this picture, so the camera holds the
-           // centre the region was given rather than aiming at somewhere off-frame.
-           let followed = normalised(point, crop: crop) {
-            // Blended in as the zoom arrives. Cutting straight to the pointer would make
-            // the camera lurch at the exact moment the zoom starts, and the clamp below
-            // would drag the centre across the frame as the margin opens up — a slide
-            // nobody asked for and the worst-looking part of the old behaviour.
-            let span = max(0.0001, best.region.scale - 1)
-            let progress = min(1, max(0, (best.scale - 1) / span)) * camera.follow
-            center = CGPoint(x: center.x + (followed.x - center.x) * progress,
-                             y: center.y + (followed.y - center.y) * progress)
-        }
-        // The frame may lag the pointer, but it may not lose it.
-        //
-        // Applied after the blend and before the picture clamp, and only as a limit: while
-        // the pointer is anywhere near the middle of the frame this changes nothing, so a
-        // resting hand still gets the calm averaged camera. It binds only when the pointer
-        // is about to leave, and then only by as much as it has to.
         let half = 0.5 / best.scale
         let override = timeline.cursorOverride(at: time)
+
+        // Following the pointer is a *dead zone*, not a leash.
+        //
+        // It used to be a leash: the centre was blended straight onto the pointer's
+        // averaged position, so the picture slid continuously for every movement of the
+        // hand — including all the movement that happens *inside* the shot, which is most
+        // of it. Clicking three things inside one zoomed area produced three slides to
+        // frame things that were already framed, and the limit below, which exists exactly
+        // to stop that, never got a chance to bind because the centre was already sitting
+        // on the pointer.
+        //
+        // So the camera holds the shot it was given and moves only when the pointer would
+        // otherwise leave it, and then only by as much as it has to. Work inside the shot
+        // costs no movement at all; walking out of it brings the camera along.
+        //
         // A pointer nobody can see has no claim on the framing: keeping a hidden cursor in
         // shot would drag the camera for something the viewer is not being shown, which is
-        // the opposite of why the pointer was hidden. Faded in with the region rather than
+        // the opposite of why the pointer was hidden. Faded with the region rather than
         // switched off at its edge, so the camera does not lurch as the pointer goes.
         if best.region.followsCursor, camera.follow > 0, timeline.cursor.isVisible,
            override.hiding < 1, let track, !track.isEmpty,
-           let sourceTime = timeline.sourceTime(at: time),
-           // The pointer as it is *drawn* — the same point `cursorLayer` uses, held and
-           // smoothed the same way, so the two cannot disagree about where it is and the
-           // frame cannot be right about a cursor that is somewhere else.
-           let live = pointerPoint(timeline, at: time, sourceTime: sourceTime,
-                                   track: track, override: override)
-               .flatMap({ normalised($0, crop: crop) }) {
-            let reach = half * camera.safeArea
-            let kept = CGPoint(x: min(max(center.x, live.x - reach), live.x + reach),
-                               y: min(max(center.y, live.y - reach), live.y + reach))
-            // Released as the pointer fades, not the moment it is gone: the clamp can be
-            // holding the frame several per cent off the averaged centre, and dropping it on
-            // one frame would snap the picture across. `hiding` is 0 outside a hiding region,
-            // so with no cursor regions this is `kept` exactly.
-            let claim = 1 - override.hiding
-            center = CGPoint(x: center.x + (kept.x - center.x) * claim,
-                             y: center.y + (kept.y - center.y) * claim)
+           let sourceTime = timeline.sourceTime(at: time) {
+            let claim = (1 - override.hiding) * camera.follow
+
+            // The dead zone itself, measured on the *averaged* pointer: a twitch of the
+            // hand at the boundary would otherwise nudge the picture, and `steadiness` is
+            // the dial that says how much of a twitch to ignore.
+            if let averaged = track.averagePosition(at: sourceTime.seconds, window: camera.steadiness)
+                .flatMap({ normalised($0, crop: crop) }) {
+                center = nudged(center, toKeep: averaged, within: half * camera.safeArea, by: claim)
+            }
+
+            // And the same limit on the pointer as it is actually *drawn*, which is what
+            // makes `safeArea` mean what it says: measured on `pointerPoint` — the same
+            // point `cursorLayer` uses, held and smoothed the same way — so the frame
+            // cannot be right about a cursor that is somewhere else.
+            //
+            // Both clamps, not one. The averaged one is the calmer of the two and leads on
+            // the way back, so the camera does not snap home the instant a fast pointer
+            // turns around; this one is the guarantee, and binds whenever the pointer is
+            // further out than its own average.
+            if let live = pointerPoint(timeline, at: time, sourceTime: sourceTime,
+                                       track: track, override: override)
+                .flatMap({ normalised($0, crop: crop) }) {
+                center = nudged(center, toKeep: live, within: half * camera.safeArea, by: claim)
+            }
         }
 
         // Keep the camera inside the picture: at 2× the centre can only travel between
@@ -208,6 +209,26 @@ public struct SceneBuilder: Sendable {
         // the frame sliding off the picture to centre on it.
         return (best.scale, CGPoint(x: min(1 - half, max(half, center.x)),
                                     y: min(1 - half, max(half, center.y))))
+    }
+
+    /// Moves a camera centre only as far as it must to keep a point within `reach` of it.
+    ///
+    /// The whole of the dead zone, in four comparisons: inside the box, the answer is the
+    /// centre it was given and nothing moves; outside, the centre travels exactly to the
+    /// boundary and no further. `claim` scales how much of that movement is taken, which
+    /// is what lets following fade out with a hidden pointer and what `CameraStyle.follow`
+    /// turns down.
+    ///
+    /// Pure, and applied to the zoom's *stored* centre on every frame rather than to the
+    /// last frame's answer — so there is no accumulated state, no drift, and a pointer that
+    /// wanders out and comes back leaves the camera where the zoom was aimed rather than
+    /// wherever the wandering happened to end.
+    private func nudged(_ center: CGPoint, toKeep point: CGPoint,
+                        within reach: Double, by claim: Double) -> CGPoint {
+        let kept = CGPoint(x: min(max(center.x, point.x - reach), point.x + reach),
+                           y: min(max(center.y, point.y - reach), point.y + reach))
+        return CGPoint(x: center.x + (kept.x - center.x) * claim,
+                       y: center.y + (kept.y - center.y) * claim)
     }
 
     static let unitRect = CGRect(x: 0, y: 0, width: 1, height: 1)

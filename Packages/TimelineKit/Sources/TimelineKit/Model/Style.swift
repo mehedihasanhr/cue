@@ -260,25 +260,41 @@ public struct CameraStyle: Codable, Equatable, Sendable {
     /// How far back the camera looks when averaging where the pointer has been, in
     /// seconds.
     ///
-    /// The camera follows an average rather than the pointer itself, because at 2× every
-    /// twitch of a hand is 2× on screen. Under about a third of a second it reads as
-    /// glued to the mouse; much over a second and it is visibly chasing.
+    /// The dead zone is measured against this average rather than against the pointer
+    /// itself, because at 2× every twitch of a hand is 2× on screen and a boundary tested
+    /// on the raw position would nudge the picture for a tremor. It also decides how long
+    /// the camera keeps framing where the pointer *was* after it turns around: a long
+    /// memory holds the old shot a moment longer, a short one is already home.
+    ///
+    /// Its effect is small while the dead zone is wide, and that is not a fault — with a
+    /// wide zone nothing the pointer does inside the shot reaches the camera at all.
     public var steadiness: Double
 
     /// How much of the way to the pointer the camera travels, 0 to 1.
     ///
-    /// 0 holds the centre the zoom was given and ignores the pointer entirely — right for
-    /// a zoom on something that does not move. 1 follows as closely as the averaging
-    /// allows.
+    /// How much the pointer may drag the camera off the shot the zoom was aimed at.
+    ///
+    /// 0 holds that shot and ignores the pointer entirely — right for a zoom on something
+    /// that does not move. 1 lets the pointer take the camera with it as far as it has to
+    /// go to stay in frame.
+    ///
+    /// Not a leash. Following is a *dead zone*: the camera holds its shot and moves only
+    /// when the pointer would otherwise leave it. Work done inside the shot — three clicks
+    /// on three things that are all already in frame — costs no camera movement at all.
+    /// This dial scales how much of the movement is taken when the pointer does leave.
     public var follow: Double
 
     /// How far the pointer may travel from the middle of the zoomed frame before it drags
     /// the camera with it, as a fraction of the distance from centre to edge.
     ///
     /// This is the dead zone: inside it the camera does not react at all, which is what
-    /// keeps a resting hand from moving the picture. At 1 the pointer may reach the very
-    /// edge of frame before anything happens, which means it is half out of shot by the
-    /// time the camera responds; lower values keep it further in.
+    /// keeps a resting hand — and a hand working inside the shot — from moving the picture.
+    /// At 1 the pointer may reach the very edge of frame before anything happens, which
+    /// means it is half out of shot by the time the camera responds; lower values keep it
+    /// further in.
+    ///
+    /// This is the setting that decides *when* the camera moves, and the one to reach for
+    /// if a zoom feels either glued to the mouse or slow to keep up.
     public var safeArea: Double
 
     public init(steadiness: Double = 0.7,

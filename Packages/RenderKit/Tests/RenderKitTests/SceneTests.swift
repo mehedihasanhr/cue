@@ -336,27 +336,43 @@ struct SceneTests {
         #expect(worstAnywhere <= 1.0001, "the pointer left the frame entirely")
     }
 
-    /// Steadiness is how long the camera's memory is, so a longer one arrives later.
-    @Test func aSteadierCameraLagsFurtherBehindAFlick() {
+    /// Steadiness is how long the camera's memory is, so a steadier one holds the framing
+    /// it already had for longer.
+    ///
+    /// Measured on the way *back*, which is where it now shows. The camera holds its shot
+    /// until the pointer would leave it, so on the way out both cameras are moved by the
+    /// same thing — the pointer being outside — and neither memory has anything to say.
+    /// Coming back, the steadier one still remembers where the pointer was and keeps the
+    /// picture out there a moment longer.
+    ///
+    /// The pointer returns to just right of centre rather than all the way across: a
+    /// return to the far side puts the camera under the guarantee that keeps the drawn
+    /// pointer in shot, and that binds identically whatever the memory is.
+    @Test func aSteadierCameraHoldsTheOldFramingLonger() {
         func centre(steadiness: Double) -> Double {
             var timeline = timeline()
             timeline.cursor.smoothing = 0
             timeline.camera.steadiness = steadiness
-            // A gentle zoom, so the safe area is wide and only the averaging is on trial.
-            timeline.zooms = [ZoomRegion(start: .zero, duration: time(10), scale: 1.2,
+            // A close zoom, so the dead zone is narrow and the averaging is what decides.
+            // Wide open, nothing the pointer does inside the shot reaches the camera at
+            // all — which is the whole point of the dead zone, and leaves no room for a
+            // memory to be measured.
+            timeline.zooms = [ZoomRegion(start: .zero, duration: time(10), scale: 3,
                                          transition: time(0.2), followsCursor: true)]
             var samples: [CursorSample] = []
             for step in 0...400 {
                 let t = Double(step) / 40
-                samples.append(CursorSample(t: t, x: t < 2 ? 80 : 720, y: 250, shape: .arrow))
+                samples.append(CursorSample(t: t, x: t < 2 ? 720 : 440, y: 250, shape: .arrow))
             }
             return builder().descriptor(for: timeline,
-                                        at: time(2.4),
+                                        at: time(2.1),
                                         cursor: CursorTrack(samples: samples)).zoomCenter.x
         }
 
-        #expect(centre(steadiness: 0.2) > centre(steadiness: 2),
-                "a shorter memory should have caught up more of the flick")
+        #expect(centre(steadiness: 2) > centre(steadiness: 0.2) + 0.1,
+                "a longer memory should still be framing where the pointer was")
+        #expect(abs(centre(steadiness: 0.05) - 0.5) < 0.01,
+                "and a camera with almost no memory is already home")
     }
 
     // MARK: - Layers
@@ -595,15 +611,13 @@ struct SceneTests {
 
     /// A pointer nobody can see has no claim on the framing.
     ///
-    /// Only the safe-area clamp is released, not the following: the clamp exists purely so
-    /// the *drawn* pointer stays in shot, and there is nothing drawn to keep in shot. What
-    /// `followsCursor` does is the user's own decision about the zoom and is left alone.
-    /// A barely-following camera isolates the two — the follow leaves the centre near the
-    /// middle, so anything further out is the clamp's doing.
+    /// Following *is* the clamp now — the camera holds the shot it was aimed at and moves
+    /// only to keep the pointer inside it — so a pointer nobody can see stops moving it,
+    /// and the frame settles back onto what the zoom was aimed at. What `followsCursor`
+    /// says is the user's own decision about the zoom and is left alone.
     @Test func aHiddenPointerStopsDraggingTheCamera() throws {
         var timeline = timeline()
         timeline.cursor.smoothing = 0
-        timeline.camera.follow = 0.1
         timeline.zooms = [ZoomRegion(start: .zero, duration: time(10), scale: 2,
                                      center: CGPoint(x: 0.5, y: 0.5),
                                      transition: time(0.5), followsCursor: true)]
