@@ -118,6 +118,7 @@ public struct SceneBuilder: Sendable {
                                cursor: cursorLayer(timeline, at: time, sourceTime: sourceTime, track: track, crop: crop),
                                annotations: annotationLayers(timeline, at: time),
                                caption: captionLayer(timeline, at: time),
+                               webcam: webcamLayer(timeline, output: output, zoom: camera.zoom),
                                sourceTime: sourceTime,
                                sourceCrop: crop)
     }
@@ -240,6 +241,76 @@ public struct SceneBuilder: Sendable {
                                    fontSize: item.fontSize,
                                    opacity: max(0, min(1, opacity)))
         }
+    }
+
+    // MARK: - The camera bubble
+
+    /// How far the bubble sits in from the edge it is parked against, as a fraction of the
+    /// shorter output side.
+    ///
+    /// A constant rather than a setting, and deliberately so: the one thing anybody wants
+    /// to change about where the bubble sits is *which* corner, and after that they want it
+    /// somewhere specific — which is what `.custom` is for. A margin slider would be a
+    /// third way of saying the same thing, with two of them able to disagree. Measured
+    /// against the shorter side like the padding, so the inset reads the same at 1080p, at
+    /// 4K and in a 9:16 reframe.
+    private static let webcamMargin = 0.035
+
+    /// The bubble for this frame, or `nil` when there isn't one.
+    ///
+    /// `nil` whenever the webcam is off, which is every project written before this
+    /// existed: `WebcamSettings.isEnabled` defaults to `false` and decodes to `false`, so
+    /// an old recording describes — and renders — exactly the frame it always did.
+    ///
+    /// Everything read out of the settings is clamped on the way through. A project is a
+    /// file, and a file can ask for a bubble of size 40, a roundness of −3 or a position
+    /// off the side of the frame; none of those should be able to produce a render nobody
+    /// can explain.
+    private func webcamLayer(_ timeline: Timeline, output: CGSize, zoom: Double) -> WebcamLayer? {
+        let webcam = timeline.webcam
+        guard webcam.isEnabled, output.width > 0, output.height > 0 else { return nil }
+
+        let shorter = min(output.width, output.height)
+        // Grown a little while the camera is in, so the bubble keeps its weight in a frame
+        // whose contents have just got bigger instead of appearing to shrink away from
+        // them. Gently, and capped: the bubble tracking a 4× zoom one-for-one would end up
+        // most of the picture, which is the opposite of the intent.
+        let reaction = webcam.reactsToZoom ? 1 + min(0.3, max(0, zoom - 1) * 0.12) : 1
+        let side = shorter * min(max(webcam.size, 0.05), 0.6) * reaction
+        let margin = shorter * Self.webcamMargin
+
+        // Normalised to the output, so the rect can be clamped and reasoned about in the
+        // same space the layer stores it in.
+        let width = side / output.width
+        let height = side / output.height
+        let insetX = margin / output.width
+        let insetY = margin / output.height
+
+        let origin: CGPoint = switch webcam.corner {
+        case .topLeft: CGPoint(x: insetX, y: insetY)
+        case .topRight: CGPoint(x: 1 - insetX - width, y: insetY)
+        case .bottomLeft: CGPoint(x: insetX, y: 1 - insetY - height)
+        case .bottomRight: CGPoint(x: 1 - insetX - width, y: 1 - insetY - height)
+        case .custom:
+            // `position` is the bubble's *centre*, which is what a drag on the preview
+            // hands over and the only reading under which the default (0.85, 0.85) means
+            // what the default corner — bottom right — means.
+            CGPoint(x: webcam.position.x - width / 2, y: webcam.position.y - height / 2)
+        }
+
+        // Kept inside the frame whatever was asked for. A bubble half off the edge is not a
+        // composition choice, it is a corrupt file or a drag that ran past the window.
+        let rect = CGRect(x: min(max(origin.x, 0), max(0, 1 - width)),
+                          y: min(max(origin.y, 0), max(0, 1 - height)),
+                          width: min(width, 1),
+                          height: min(height, 1))
+
+        return WebcamLayer(rect: rect,
+                           // Half the side is a circle, and `roundness` is the fraction of
+                           // the way there — so the model's 0…1 needs no second convention.
+                           cornerRadius: side / 2 * min(max(webcam.roundness, 0), 1),
+                           isMirrored: webcam.isMirrored,
+                           shadowOpacity: min(max(webcam.shadowOpacity, 0), 1))
     }
 
     /// The line being spoken at this moment, if captions are on and there is one.

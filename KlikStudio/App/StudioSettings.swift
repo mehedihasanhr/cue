@@ -23,6 +23,7 @@ final class StudioSettings {
         static let microphone = "recording.microphone"
         static let camera = "recording.camera"
         static let microphoneID = "recording.microphoneID"
+        static let cameraID = "recording.cameraID"
         static let capturesClicks = "recording.clicks"
         static let capturesFocus = "recording.focus"
         static let cursorInVideo = "recording.cursorInVideo"
@@ -54,11 +55,23 @@ final class StudioSettings {
     var codec: VideoCodec { didSet { defaults.set(codec.rawValue, forKey: Key.codec) } }
     var recordsSystemAudio: Bool { didSet { defaults.set(recordsSystemAudio, forKey: Key.systemAudio) } }
     var recordsMicrophone: Bool { didSet { defaults.set(recordsMicrophone, forKey: Key.microphone) } }
-    /// Kept, and kept off, until the webcam recorder lands: the bar shows the state
-    /// so the feature is visibly coming rather than quietly missing.
+    /// Whether a take records the camera as well as the screen.
+    ///
+    /// Off by default, and it stays off until somebody says otherwise in this app: a
+    /// recorder that remembers "yes" from a fortnight ago and films a face nobody expected
+    /// is the one failure here that cannot be undone after the fact. It is persisted, so a
+    /// user who does want it every time gets it — but nothing else ever sets it, and it is
+    /// the only thing that puts a `webcamID` on a configuration.
     var recordsCamera: Bool { didSet { defaults.set(recordsCamera, forKey: Key.camera) } }
     /// Empty means "whatever the system calls the default input".
     var microphoneID: String { didSet { defaults.set(microphoneID, forKey: Key.microphoneID) } }
+    /// Which camera, by `uniqueID`. Empty means the system's default one.
+    ///
+    /// Remembered the way `microphoneID` is, for the same reason: somebody with a good
+    /// external camera and a laptop lid should not have to pick it before every take. And
+    /// held as an ID rather than as a device, so a camera unplugged since the last take
+    /// fails when the recording starts rather than recording nothing.
+    var cameraID: String { didSet { defaults.set(cameraID, forKey: Key.cameraID) } }
     var recordsClicks: Bool { didSet { defaults.set(recordsClicks, forKey: Key.capturesClicks) } }
     /// Record which window, app and text field had focus, so the editor can zoom to
     /// what was being looked at and not only to what was clicked.
@@ -125,6 +138,7 @@ final class StudioSettings {
         recordsMicrophone = defaults.bool(forKey: Key.microphone)
         recordsCamera = defaults.bool(forKey: Key.camera)
         microphoneID = defaults.string(forKey: Key.microphoneID) ?? ""
+        cameraID = defaults.string(forKey: Key.cameraID) ?? ""
         recordsClicks = defaults.object(forKey: Key.capturesClicks) as? Bool ?? true
         recordsFocus = defaults.object(forKey: Key.capturesFocus) as? Bool ?? true
         burnsCursorIntoVideo = defaults.bool(forKey: Key.cursorInVideo)
@@ -214,6 +228,11 @@ final class StudioSettings {
         configuration.capturesFocus = recordsFocus
         configuration.capturesCursorInVideo = burnsCursorIntoVideo
         configuration.microphoneID = recordsMicrophone ? (microphoneID.isEmpty ? MicrophoneRecorder.defaultDevice?.uniqueID : microphoneID) : nil
+        // The one place a camera is ever asked for. `recordsCamera` off leaves this `nil`,
+        // and `nil` is the state in which `RecordingSession` never builds a camera session
+        // at all — so "the toggle is off" and "the camera is not opened" are the same fact
+        // rather than two that could drift apart.
+        configuration.webcamID = recordsCamera ? (cameraID.isEmpty ? WebcamRecorder.defaultDevice?.uniqueID : cameraID) : nil
         return configuration
     }
 

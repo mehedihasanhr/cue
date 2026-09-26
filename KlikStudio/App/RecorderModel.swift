@@ -81,7 +81,12 @@ final class RecorderModel {
     private(set) var windows: [Source] = []
     private(set) var recents: [Recording] = []
     private(set) var microphones: [AVCaptureDevice] = []
+    /// The cameras this Mac can see. Listed, never opened — see `WebcamRecorder`.
+    private(set) var cameras: [AVCaptureDevice] = []
     private(set) var permissionDenied = false
+    /// Said out loud when the camera has been turned on but the grant is refused, so the
+    /// bar can say so before a take fails instead of after.
+    private(set) var cameraDenied = false
 
     private(set) var mode: Mode = .display
     /// What will be recorded when the button is pressed.
@@ -112,7 +117,52 @@ final class RecorderModel {
 
     var canRecord: Bool { target != nil && !studio.session.state.isBusy }
 
-    var cameraLabel: String { settings.recordsCamera ? "Camera" : "No camera" }
+    /// What the camera chip says. The device's own name when one has been chosen, because
+    /// "Camera" on a Mac with a Studio Display and a Continuity iPhone says nothing.
+    var cameraLabel: String {
+        guard settings.recordsCamera else { return "No camera" }
+        if cameraDenied { return "Camera not allowed" }
+        if settings.cameraID.isEmpty { return "Camera" }
+        return cameras.first { $0.uniqueID == settings.cameraID }?.localizedName ?? "Camera"
+    }
+
+    /// Turns the camera on or off for the takes that follow.
+    ///
+    /// Asking for permission happens *here*, when the user has just said they want the
+    /// camera — that is the honest moment for the dialog, and it means a refusal is known
+    /// before a take rather than three seconds into one. Turning it *off* asks nothing and
+    /// opens nothing.
+    ///
+    /// Note what this does not do: it does not start a capture session, and there is no
+    /// path in this app that starts one to show the user what their camera sees. A camera
+    /// indicator that lights because somebody flicked a switch in a settings bar is the app
+    /// telling the truth about the hardware and a lie about what it is doing.
+    func setCamera(_ on: Bool) {
+        guard on else {
+            settings.recordsCamera = false
+            cameraDenied = false
+            return
+        }
+        settings.recordsCamera = true
+        guard !WebcamRecorder.isAuthorized else {
+            cameraDenied = false
+            return
+        }
+        // Already refused for good: the system will not show the dialog again, so say so
+        // rather than appearing to ask.
+        guard !WebcamRecorder.isDenied else {
+            cameraDenied = true
+            return
+        }
+        Task {
+            let granted = await WebcamRecorder.requestAccess()
+            cameraDenied = !granted
+            // Left on when refused, deliberately: the switch reflects what was asked for,
+            // and the chip now says the camera is not allowed with somewhere to go about
+            // it. Silently flicking it back off would look like the click was lost.
+            cameras = WebcamRecorder.devices
+        }
+    }
 
     var microphoneLabel: String {
         guard settings.recordsMicrophone else { return "No microphone" }
@@ -252,6 +302,13 @@ final class RecorderModel {
         microphones = AVCaptureDevice.DiscoverySession(deviceTypes: [.microphone, .external],
                                                       mediaType: .audio,
                                                       position: .unspecified).devices
+        // Discovering a camera is not opening one: this reads the system's list and no
+        // indicator lights. The list is refreshed alongside the windows because both change
+        // for the same reasons — a lid closed, a cable plugged in.
+        cameras = WebcamRecorder.devices
+        // Re-checked rather than remembered: the grant can be given in System Settings
+        // while the bar is open, and a chip still saying "not allowed" after that is wrong.
+        if settings.recordsCamera { cameraDenied = WebcamRecorder.isDenied }
     }
 
     var filteredWindows: [Source] {
@@ -272,6 +329,12 @@ final class RecorderModel {
     /// screen-recording list would send the user to a switch that is already on.
     func openMicrophoneSettings() {
         open(privacyPane: "Privacy_Microphone")
+    }
+
+    /// The third pane a recording can be refused by. Camera and microphone are separate
+    /// lists, so a camera denial must not send anybody to the microphone one.
+    func openCameraSettings() {
+        open(privacyPane: "Privacy_Camera")
     }
 
     private func open(privacyPane pane: String) {

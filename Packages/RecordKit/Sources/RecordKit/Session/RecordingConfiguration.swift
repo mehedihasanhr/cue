@@ -55,6 +55,16 @@ public struct RecordingConfiguration: Sendable {
     /// crosses threads and outlives the moment, and a device that was unplugged in
     /// between should fail when the recording starts, not silently record nothing.
     public var microphoneID: String?
+    /// The camera's `uniqueID`, or `nil` for a take with no camera in it.
+    ///
+    /// Modelled exactly like `microphoneID`, and for the same two reasons: a configuration
+    /// is a value that crosses threads and outlives the moment it was made, and a camera
+    /// unplugged in between should fail when the recording starts rather than silently
+    /// record nothing. There is a third reason here, and it is the important one — **`nil`
+    /// is the only state in which no camera session is ever created.** A boolean plus a
+    /// separately-stored device would have two ways to spell "no camera", and the one that
+    /// got out of step would be an app filming somebody who did not ask.
+    public var webcamID: String?
     public var codec: VideoCodec
     public var quality: CaptureQuality
     /// Where the `.klikrec` package is created.
@@ -80,6 +90,7 @@ public struct RecordingConfiguration: Sendable {
                 capturesCursorInVideo: Bool = false,
                 systemAudio: Bool = true,
                 microphoneID: String? = nil,
+                webcamID: String? = nil,
                 codec: VideoCodec = .automatic,
                 quality: CaptureQuality = .better,
                 cursorSampleRate: Int = 120,
@@ -93,6 +104,7 @@ public struct RecordingConfiguration: Sendable {
         self.capturesCursorInVideo = capturesCursorInVideo
         self.systemAudio = systemAudio
         self.microphoneID = microphoneID
+        self.webcamID = webcamID
         self.codec = codec
         self.quality = quality
         self.cursorSampleRate = cursorSampleRate

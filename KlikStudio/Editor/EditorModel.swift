@@ -52,6 +52,11 @@ final class EditorModel {
     private let renderer = SceneRenderer()
     private var builder: SceneBuilder
     private var frames: FrameSource?
+    /// The camera's frames, when this recording has a camera. Its own source rather than a
+    /// second track of the first: see `RecordingSession`'s manifest for why the two are
+    /// separate files. `nil` for every recording made before the camera was recorded, which
+    /// is what keeps their preview the render it always was.
+    private var webcamFrames: FrameSource?
     private var renderTask: Task<Void, Never>?
     private var ticker: PlaybackTicker?
     private var lastTick: Date?
@@ -83,6 +88,18 @@ final class EditorModel {
             if settings.suggestsZoomsOnOpen, document.timeline.zooms.isEmpty {
                 autoZoomOnOpen = true
             }
+        }
+        // A take recorded with the camera on opens with the bubble showing.
+        //
+        // `WebcamSettings.isEnabled` defaults to `false`, which is right for the model — it
+        // is what makes every project written before the bubble existed render unchanged —
+        // but wrong as the first thing somebody sees after deliberately filming their face.
+        // Only on a document nobody has edited, like the style defaults above, so this can
+        // never turn a bubble back on that the user switched off.
+        if !document.hasBeenEdited, document.manifest.track(.webcam) != nil, !document.timeline.webcam.isEnabled {
+            var opened = document.timeline
+            opened.webcam.isEnabled = true
+            document.adopt(opened)
         }
         Task { await openSource() }
     }
@@ -135,6 +152,7 @@ final class EditorModel {
             let audio = PreviewAudio(videoURL: url, packageURL: document.package.url, settings: settings)
             audio.prepare(for: timeline)
             self.audio = audio
+            await openWebcamSource()
         } catch {
             errorMessage = error.localizedDescription
             Self.log.error("Couldn't open \(url.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)")
@@ -317,6 +335,11 @@ final class EditorModel {
         // The only place the preview is allowed to differ from the export, and only while
         // the picture is moving.
         let drawn = scene.scaled(by: previewFidelity)
+        // Only asked for when the frame being built actually has a bubble in it. The crop
+        // tool's flattened preview describes no webcam layer, and neither does a project
+        // with the camera switched off — in both cases a seek into the camera's file would be
+        // a decode nobody looks at.
+        let webcamFrames = drawn.webcam == nil ? nil : webcamFrames
 
         renderTask = Task { [renderer] in
             defer {
@@ -329,8 +352,11 @@ final class EditorModel {
                 }
             }
             let source = await frames?.frame(at: drawn.sourceTime)
+            // The same source time as the screen: the two files were written against one
+            // clock, so one moment in the edit is one moment in both of them.
+            let camera = await webcamFrames?.frame(at: drawn.sourceTime)
             guard !Task.isCancelled else { return }
-            let image = renderer.cgImage(for: drawn, source: source)
+            let image = renderer.cgImage(for: drawn, source: source, webcam: camera)
             guard !Task.isCancelled, let image else { return }
             // Sized in the *full* frame's points even when the pixels are fewer, so the pane's
             // layout and its aspect-fit arithmetic do not move when the fidelity does. The
@@ -1185,6 +1211,50 @@ final class EditorModel {
         }
     }
 
+    // MARK: - The camera bubble
+
+    /// Opens the camera's file, if there is one.
+    ///
+    /// After the screen's source and the sound, and failing quietly: a camera file that has
+    /// gone missing or will not decode costs a bubble, and it must not stop a recording of
+    /// the screen from opening. `webcamFrames` staying `nil` is exactly the state every
+    /// project without a camera is already in, and the renderer draws no bubble without a
+    /// frame to draw one from.
+    private func openWebcamSource() async {
+        guard let url = document.webcamURL else { return }
+        do {
+            // A small cache: the bubble is a fraction of the frame, so its decoded frames are
+            // small, but there is no reason to hold as many of them as the screen's.
+            webcamFrames = try await FrameSource(url: url, capacity: 12)
+            refresh()
+        } catch {
+            Self.log.error("Couldn't open the camera's file: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Puts the bubble where it was dragged to, as one undoable edit.
+    ///
+    /// `point` is the bubble's centre, normalised to the *output* frame — the same reading
+    /// `SceneBuilder` gives `WebcamSettings.position`, so what the overlay measures and what
+    /// the renderer draws cannot disagree. Setting the corner to `.custom` is part of the
+    /// same change rather than a second one: a position that the corner overrides would be a
+    /// drag that visibly does nothing.
+    func moveWebcam(to point: CGPoint) {
+        let clamped = CGPoint(x: min(1, max(0, point.x)), y: min(1, max(0, point.y)))
+        apply(Commands.Restyle("Move Camera") {
+            $0.webcam.corner = .custom
+            $0.webcam.position = clamped
+        })
+    }
+
+    /// Where the bubble is now, normalised to the output frame with a top-left origin.
+    ///
+    /// Read off the descriptor the preview was actually drawn from rather than recomputed
+    /// from the settings, for the reason `scene` exists at all: the corners, the margin and
+    /// the zoom reaction are the builder's arithmetic, and a second copy of it here would be
+    /// a handle that sits somewhere the renderer is not.
+    var webcamRect: CGRect? { scene?.webcam?.rect }
+
     /// An exporter for this project, set up the way the editor is showing it.
     ///
     /// Made here rather than in the export sheet because everything it needs — the
@@ -1201,6 +1271,10 @@ final class EditorModel {
                              builder: builder,
                              cursor: document.cursorTrack,
                              videoURL: videoURL,
+                             // Handed over unconditionally; the exporter opens it only if the
+                             // timeline actually draws a bubble. `nil` for a take with no
+                             // camera, which is the path every older project takes.
+                             webcamURL: document.webcamURL,
                              packageURL: packageURL,
                              settings: settings)
     }
