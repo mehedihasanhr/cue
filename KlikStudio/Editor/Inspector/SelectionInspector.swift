@@ -247,6 +247,16 @@ struct SelectionInspector: View {
     private func zoom(index: Int) -> some View {
         let zoom = model.timeline.zooms[index]
         return VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
+            // First, because it decides whether anything below it is doing anything.
+            // Switching a zoom off keeps its framing and its place on the lane, which is
+            // what makes a run of suggestions something you can audition rather than
+            // something you have to accept or destroy.
+            Toggle(model.hasMultipleSelected ? "Zooms on" : "Zoom on", isOn: Binding(
+                get: { zoom.isEnabled },
+                set: { model.setZoomsEnabled($0) }
+            ))
+            .help("Keeps its framing and its timing, and takes it out of the picture")
+
             InspectorSlider(model: model, "Scale", systemImage: "plus.magnifyingglass",
                             value: binding(index, \.scale, "Zoom Scale"), range: 1...8,
                             format: { String(format: "%.1f×", $0) })

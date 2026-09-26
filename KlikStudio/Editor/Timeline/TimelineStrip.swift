@@ -322,7 +322,23 @@ struct TimelineStrip: View {
                           height: Self.regionHeight,
                           selection: Selection.zoom) { zoom in
             HStack(spacing: 6) {
+                // Which zooms are off, at a glance down the lane. A switched-off zoom keeps
+                // its place and its framing, so without a mark on it the lane shows a zoom
+                // where the picture does not move and there is nothing to explain why.
+                if !zoom.isEnabled {
+                    Image(systemName: "eye.slash").font(.system(size: 9, weight: .semibold))
+                }
                 Text("\(zoom.scale, format: .number.precision(.fractionLength(0...1)))×")
+                // What asked for this zoom. A suggestion somebody can see the reason for is
+                // one they adjust; one that appeared from nowhere is one they delete. The
+                // glyph rather than the word, because the word is on the tooltip and the
+                // chip is often forty points wide.
+                if let source = zoom.source, source != .manual {
+                    Image(systemName: Self.symbol(for: source))
+                        .font(.system(size: 9, weight: .semibold))
+                        .opacity(0.8)
+                        .accessibilityLabel("Suggested by \(source.title.lowercased())")
+                }
                 // A padlock rather than a different tint: the chip already carries selection
                 // in its tint, and a lock is the reason a drag is about to appear to fail —
                 // which is exactly the moment somebody looks at the chip to find out why.
@@ -341,6 +357,21 @@ struct TimelineStrip: View {
                 }
             }
             .font(.system(size: 10, weight: .semibold))
+            // Faded, not hidden: it is still a thing on the timeline you can select, move
+            // and switch back on.
+            .opacity(zoom.isEnabled ? 1 : 0.45)
+        }
+    }
+
+    /// What asked for a zoom, as one glyph.
+    private static func symbol(for source: ZoomRegion.Source) -> String {
+        switch source {
+        case .manual: "hand.point.up.left"
+        case .click: "cursorarrow.click"
+        case .typing: "keyboard"
+        case .field: "character.cursor.ibeam"
+        case .window: "macwindow"
+        case .application: "square.on.square"
         }
     }
 

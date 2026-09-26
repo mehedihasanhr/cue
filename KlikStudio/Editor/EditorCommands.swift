@@ -91,6 +91,13 @@ struct EditorCommands: SwiftUI.Commands {
                 .disabled(editor?.canSplitZoom != true)
             Button("Merge Zoom with Next") { editor?.mergeZoomWithNext() }
                 .disabled(editor?.zoomToMergeInto == nil)
+            // Acts on every selected zoom, so a run of suggestions can be auditioned in one
+            // press. ⌘⇧E because ⌘E is taken and this is the same idea as hiding a layer.
+            Button(editor?.isActiveZoomEnabled == false ? "Turn Zoom On" : "Turn Zoom Off") {
+                editor?.setZoomsEnabled()
+            }
+            .keyboardShortcut("e", modifiers: [.command, .shift])
+            .disabled(editor?.activeZoom == nil)
             Button(editor?.activeZoom?.isLocked == true ? "Unlock Zoom" : "Lock Zoom") {
                 editor?.toggleZoomLock()
             }

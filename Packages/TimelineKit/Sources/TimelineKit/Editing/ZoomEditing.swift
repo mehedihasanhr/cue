@@ -128,8 +128,13 @@ public enum ZoomLane {
     /// opinion (`nil` — every project saved before `source` existed), or if they locked it.
     /// Everything else on the lane is the last run's output, and the next run's job is to
     /// replace it rather than to pile a second copy on top of it.
+    /// Switching a suggestion off counts as the user's, and that is the policy rather than
+    /// an accident of the predicate: "not a zoom here" is a decision about that stretch of
+    /// the take, exactly as placing one by hand is, and a run that regenerated over it
+    /// would overrule a judgement the user has already made. The way to take the decision
+    /// back is to delete the zoom, which is aimed at it and cannot happen by surprise.
     public static func isSuggestion(_ region: ZoomRegion) -> Bool {
-        !region.isLocked && region.source != nil && region.source != .manual
+        !region.isLocked && region.isEnabled && region.source != nil && region.source != .manual
     }
 
     /// What the zoom lane should hold after auto-zoom has run again.

@@ -987,6 +987,36 @@ final class EditorModel {
         select(.zoom(zoom.id))
     }
 
+    /// Switches a zoom off, or back on — see `ZoomRegion.isEnabled` for why this is not
+    /// the same as deleting it or locking it.
+    ///
+    /// Acts on every selected zoom when several are, so auditioning a run of suggestions is
+    /// one gesture rather than one per chip. The decision is taken from the zoom the
+    /// inspector is about, so a mixed selection all ends up the same way rather than each
+    /// flipping to its own opposite — which is what makes it a switch rather than a toggle
+    /// you have to press twice to line up.
+    func setZoomsEnabled(_ enabled: Bool? = nil) {
+        let ids = selected.compactMap { selection -> UUID? in
+            guard case .zoom(let id) = selection else { return nil }
+            return id
+        }
+        let targets = ids.isEmpty ? [activeZoom?.id].compactMap { $0 } : ids
+        guard !targets.isEmpty else { return }
+        let wanted = enabled ?? !(timeline.zooms.first { $0.id == targets[0] }?.isEnabled ?? true)
+
+        document.beginInteraction(wanted ? "Turn Zoom On" : "Turn Zoom Off")
+        for id in targets {
+            apply(Commands.RestyleZoom(id: id, name: wanted ? "Turn Zoom On" : "Turn Zoom Off") {
+                $0.isEnabled = wanted
+            })
+        }
+        finishInteraction()
+    }
+
+    /// Whether the zoom the inspector is about is switched on. `true` when there is none,
+    /// so a control bound to this does not flicker as the selection changes.
+    var isActiveZoomEnabled: Bool { activeZoom?.isEnabled ?? true }
+
     func toggleZoomLock() {
         guard let zoom = activeZoom else { return }
         let locking = !zoom.isLocked

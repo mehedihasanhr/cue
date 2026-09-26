@@ -137,6 +137,19 @@ public struct ZoomRegion: TimelineRegion {
     /// the Delete key would be a region the user cannot get rid of without knowing why.
     public var isLocked: Bool
 
+    /// Whether this zoom does anything.
+    ///
+    /// Deliberately not the same as deleting it, and deliberately not the same as
+    /// `isLocked`. A lock says "do not move this"; switching one off says "not this one,
+    /// not now" while keeping its framing, its timing and its place on the lane so it can
+    /// be brought back without being re-aimed. That is the difference between trying
+    /// something and losing it — and it is what makes a whole run of suggested zooms
+    /// something you can audition rather than something you have to accept or destroy.
+    ///
+    /// Read by the camera and by nothing else: a disabled zoom is still on the timeline,
+    /// still selectable, still editable, and contributes exactly nothing to the frame.
+    public var isEnabled: Bool
+
     /// What a zoom looks like when nobody has changed it, and what Reset puts back.
     ///
     /// Named constants rather than literals in the initialiser, so "the default" is one
@@ -164,7 +177,8 @@ public struct ZoomRegion: TimelineRegion {
                 transitionOut: CMTime? = nil,
                 followsCursor: Bool = true,
                 source: Source? = nil,
-                isLocked: Bool = false) {
+                isLocked: Bool = false,
+                isEnabled: Bool = true) {
         self.id = id
         self.start = start
         self.duration = duration
@@ -177,6 +191,7 @@ public struct ZoomRegion: TimelineRegion {
         self.followsCursor = followsCursor
         self.source = source
         self.isLocked = isLocked
+        self.isEnabled = isEnabled
     }
 
     /// Decodes a zoom written by an older or a newer build.
@@ -207,13 +222,15 @@ public struct ZoomRegion: TimelineRegion {
         followsCursor = value(.followsCursor, default: true)
         source = value(.source, default: nil)
         isLocked = value(.isLocked, default: false)
+        // Absent means on, which is what every zoom written before this existed was.
+        isEnabled = value(.isEnabled, default: true)
     }
 
     /// Spelled out so the decoder above and the synthesised encoder agree, and so renaming
     /// a property is a compile error rather than a silently unreadable project.
     enum CodingKeys: String, CodingKey {
         case id, start, duration, scale, center, easing, transition
-        case transitionIn, transitionOut, followsCursor, source, isLocked
+        case transitionIn, transitionOut, followsCursor, source, isLocked, isEnabled
     }
 
     /// How long the move in and how long the move out actually take.
@@ -242,7 +259,10 @@ public struct ZoomRegion: TimelineRegion {
     /// summed without them fighting. A ramp of zero at either end means the camera is
     /// already there on the first frame it covers — the seam a split leaves.
     public func scale(at time: CMTime) -> Double {
-        guard contains(time) else { return 1 }
+        // A zoom that is switched off is 1 everywhere, which is the same answer as a zoom
+        // that is not there. Asked here rather than by each caller so there is one place
+        // that decides it and no way for the preview and the exporter to disagree.
+        guard isEnabled, contains(time) else { return 1 }
         let ramps = ramps
         // A ramp of zero is "arrived", not "divide by zero": the progress it contributes
         // is 1 everywhere inside the region, so the other end alone decides the curve.
