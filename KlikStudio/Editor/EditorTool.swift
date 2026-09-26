@@ -12,14 +12,10 @@ enum EditorTool: String, CaseIterable, Identifiable, Hashable {
     case blur
     case annotate
     case cursor
-    /// Aiming a zoom on the picture. Reached from the zoom inspector rather than from the
-    /// rail: it is a tool for a region that is already selected, and a rail button for it
-    /// would be one that does nothing most of the time.
-    case zoom
     /// The camera bubble: the webcam recording, drawn over the picture.
     ///
     /// Spelled `webcam` rather than `camera`, and that is not pedantry: `Timeline.camera`
-    /// is the *zoomed* camera — how steadily it follows the pointer — and `CameraInspector`
+    /// is the *zoomed* camera — how steadily it follows the pointer — and `CameraControls`
     /// edits that. Two things called Camera, one of which is a lens and one of which is a
     /// crop of the recording, is a confusion that would be paid for by every reader of this
     /// file from here on.
@@ -36,7 +32,6 @@ enum EditorTool: String, CaseIterable, Identifiable, Hashable {
         case .blur: "Blur"
         case .annotate: "Annotate"
         case .cursor: "Pointer"
-        case .zoom: "Aim"
         case .webcam: "Webcam"
         case .captions: "Captions"
         case .audio: "Audio"
@@ -54,7 +49,6 @@ enum EditorTool: String, CaseIterable, Identifiable, Hashable {
         case .blur: "drop.halffull"
         case .annotate: "character.textbox"
         case .cursor: "cursorarrow.rays"
-        case .zoom: "dot.scope"
         case .webcam: "person.crop.square"
         case .captions: "captions.bubble"
         case .audio: "waveform"
@@ -68,26 +62,21 @@ enum EditorTool: String, CaseIterable, Identifiable, Hashable {
     /// and annotation work *on* the composed frame, so they draw over it as it is.
     var isCanvasTool: Bool {
         switch self {
-        case .crop, .blur, .annotate, .zoom: true
+        case .crop, .blur, .annotate: true
         default: false
         }
     }
 
     /// Whether the preview has to be flattened for this tool to be usable.
     ///
-    /// Crop and zoom both draw a rectangle *of the recording*, and neither can be drawn on
-    /// a picture that is already padded, rounded and — the decisive one — zoomed. Framing a
-    /// zoom over the zoomed picture means the box always fills the frame, because that is
-    /// exactly what the zoom already did: the tool would show you the answer and refuse
-    /// you the question.
-    var flattensPreview: Bool { self == .crop || self == .zoom }
-
-    /// Whether flattening also drops the crop.
+    /// Only crop. Cropping is direct manipulation of the *source* frame, and a crop
+    /// rectangle cannot be dragged over a picture that is already cropped, padded, rounded
+    /// and zoomed — the tool would be showing its own answer.
     ///
-    /// Crop must, because it is the crop that is being drawn. Zoom must not: a zoom's
-    /// centre is normalised to the *cropped* recording, so a preview showing more than the
-    /// crop would put the box somewhere the renderer will not.
-    var flatteningDropsCrop: Bool { self == .crop }
+    /// Framing a zoom needs the zooms out of the way for the same reason and nothing else
+    /// out of the way at all, which is why it is not a tool and not here: see
+    /// `EditorModel.isFramingZoom`.
+    var flattensPreview: Bool { self == .crop }
 
     /// Why a tool is off, or `nil` when it is on.
     ///
@@ -97,7 +86,7 @@ enum EditorTool: String, CaseIterable, Identifiable, Hashable {
     /// holding a reason, and it now has a recorder and a renderer behind it.
     var unavailableReason: String? {
         switch self {
-        case .frame, .crop, .cursor, .blur, .annotate, .captions, .audio, .zoom, .webcam:
+        case .frame, .crop, .cursor, .blur, .annotate, .captions, .audio, .webcam:
             nil
         }
     }
@@ -112,9 +101,6 @@ enum EditorTool: String, CaseIterable, Identifiable, Hashable {
         case .blur: "3"
         case .annotate: "4"
         case .cursor: "5"
-        // Off the end of the rail's numbers, because it is not on the rail — and it is not
-        // reachable by ⌘9 either, since the shortcut is only wired up by the rail buttons.
-        case .zoom: "9"
         case .webcam: "6"
         case .captions: "7"
         case .audio: "8"

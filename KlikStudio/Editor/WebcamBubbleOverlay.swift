@@ -6,7 +6,7 @@ import TimelineKit
 /// `WebcamSettings.position` has been in the model from the start and there has never been a
 /// way to set it: four corners covered most cases and the fifth, `.custom`, could only be
 /// reached by hand-editing a project file. Two normalised numbers in the inspector would
-/// have been the cheap answer and the wrong one, for the reason `ZoomAimOverlay` gives about
+/// have been the cheap answer and the wrong one, for the reason `ZoomFramingOverlay` gives about
 /// aiming a zoom — nobody knows where 0.38, 0.71 is, but everybody knows they want their
 /// face out of the way of the sidebar.
 ///

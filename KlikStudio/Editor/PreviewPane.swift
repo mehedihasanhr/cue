@@ -45,17 +45,27 @@ struct PreviewPane: View {
                     CropOverlay(model: model, stage: stage(in: proxy.size))
                 case .blur, .annotate:
                     RegionCanvas(model: model, stage: stage(in: proxy.size))
-                case .zoom:
-                    ZoomAimOverlay(model: model, stage: stage(in: proxy.size))
                 case .webcam:
                     // Drawn over the preview without being an `isCanvasTool`: that flag says
                     // the tool's *inspector* is a selection rather than settings, and the
                     // webcam panel is settings. What it needs here is a handle on the picture.
                     WebcamBubbleOverlay(model: model, stage: stage(in: proxy.size))
                 default:
-                    // Not a tool: whenever a zoom is selected, the picture says where it
-                    // is pointed. See `ZoomFrameIndicator`.
-                    ZoomFrameIndicator(model: model, stage: stage(in: proxy.size))
+                    // Not a tool, and no mode to enter: selecting a zoom on the timeline is
+                    // already an unambiguous statement about which zoom you mean, so its
+                    // framing box is simply here. See `EditorModel.framedZoom`.
+                    if model.isFramingZoom {
+                        ZoomFramingOverlay(model: model, stage: stage(in: proxy.size))
+                        ZoomFramingHint(model: model)
+                    }
+                }
+
+                // The one control that says which question this surface is answering. It
+                // sits on the picture rather than in the inspector because it is about the
+                // picture, and it is the last thing in the stack so the framing handles
+                // never end up underneath it.
+                if model.canChooseZoomPreview {
+                    ZoomPreviewSwitch(model: model)
                 }
             }
             // How big the picture is allowed to be, told to the thing that renders it.

@@ -573,4 +573,62 @@ struct RenderBenchmarks {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         return folder
     }
+
+    // MARK: - Editing a zoom by hand
+
+    /// What a framing drag costs, per pointer event.
+    ///
+    /// The three things a drag actually does sixty times a second: work out the new
+    /// rectangle, clamp it to what the camera will honour, and re-describe the frame so the
+    /// overlay has a current mapping to draw against. The decode is *not* in here and that
+    /// is the point — framing renders the timeline with its zooms taken out, so the picture
+    /// under the box cannot change while the box moves, and the model skips it for the whole
+    /// gesture. See `ZoomFramingAgreementTests.aFramingDragCannotChangeTheFrameUnderTheBox`.
+    ///
+    /// The budget to read these against is 16.6 ms, one frame at 60 Hz.
+    @Test func draggingAFramingBox() {
+        let timeline = RenderWorkload.timeline()
+        var framing = timeline
+        framing.zooms = []
+        let builder = RenderWorkload.builder()
+        let track = RenderWorkload.cursorTrack()
+        let at = RenderWorkload.time(4)
+        let mapping = PictureMapping(stage: CGRect(x: 30, y: 12, width: 1_280, height: 720),
+                                     video: CGRect(x: 0.1, y: 0.1, width: 0.8, height: 0.8))
+        var area = ZoomFraming.area(of: ZoomRegion(start: .zero, duration: .zero, scale: 2))
+
+        RenderWorkload.report("framing: geometry alone", microseconds: RenderWorkload.median(count: 2_000) { step in
+            let delta = mapping.delta(view: CGSize(width: Double(step % 7) - 3, height: 2))
+            area = ZoomFraming.moved(area, by: delta)
+            _ = mapping.view(recording: area)
+        })
+        RenderWorkload.report("framing: a resize handle", microseconds: RenderWorkload.median(count: 2_000) { step in
+            let delta = mapping.delta(view: CGSize(width: Double(step % 5) - 2, height: 1))
+            area = ZoomFraming.resized(area, by: delta, handle: .bottomRight)
+        })
+        RenderWorkload.report("framing: one pointer event", microseconds: RenderWorkload.median(count: 600) { step in
+            let delta = mapping.delta(view: CGSize(width: Double(step % 7) - 3, height: 2))
+            area = ZoomFraming.moved(area, by: delta)
+            _ = mapping.view(recording: area)
+            // What the drag actually asks the model for: the description, never the decode.
+            _ = builder.descriptor(for: framing, at: at, cursor: track)
+        })
+    }
+
+    /// Scrubbing, and moving a slider in the inspector — both of which *do* change the
+    /// picture, so both pay for a description on every event.
+    @Test func scrubbingAndTuning() {
+        var timeline = RenderWorkload.timeline()
+        let builder = RenderWorkload.builder()
+        let track = RenderWorkload.cursorTrack()
+        let times = (0..<600).map { RenderWorkload.time(Double($0) / 20) }
+
+        RenderWorkload.report("scrub: one pointer event", microseconds: RenderWorkload.median(count: 600) { step in
+            _ = builder.descriptor(for: timeline, at: times[step % times.count], cursor: track)
+        })
+        RenderWorkload.report("inspector: one slider step", microseconds: RenderWorkload.median(count: 600) { step in
+            timeline.zooms[0].scale = 1 + Double(step % 70) * 0.1
+            _ = builder.descriptor(for: timeline, at: times[step % times.count], cursor: track)
+        })
+    }
 }

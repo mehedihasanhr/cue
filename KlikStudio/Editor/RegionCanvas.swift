@@ -357,20 +357,15 @@ struct CanvasGeometry {
 
     // MARK: - Annotations: normalised to the finished frame
 
-    func view(annotation rect: CGRect) -> CGRect {
-        CGRect(x: stage.minX + rect.minX * stage.width,
-               y: stage.minY + rect.minY * stage.height,
-               width: rect.width * stage.width,
-               height: rect.height * stage.height)
-    }
+    /// The pure mapping underneath, which lives in TimelineKit so it can be tested without
+    /// a window. This type is what knows where the recording ended up; that one is the
+    /// arithmetic for going back and forth, and both directions of both conversions come
+    /// from it rather than being written out twice here.
+    var mapping: PictureMapping { PictureMapping(stage: stage, video: videoInOutput) }
 
-    func annotation(view rect: CGRect) -> CGRect {
-        guard stage.width > 0, stage.height > 0 else { return .zero }
-        return CGRect(x: (rect.minX - stage.minX) / stage.width,
-                      y: (rect.minY - stage.minY) / stage.height,
-                      width: rect.width / stage.width,
-                      height: rect.height / stage.height)
-    }
+    func view(annotation rect: CGRect) -> CGRect { mapping.view(frame: rect) }
+
+    func annotation(view rect: CGRect) -> CGRect { mapping.frame(view: rect) }
 
     // MARK: - Blurs: normalised to the recording
 
@@ -391,21 +386,7 @@ struct CanvasGeometry {
                       height: frame.height / scene.outputSize.height)
     }
 
-    func view(blur rect: CGRect) -> CGRect {
-        let video = videoInOutput
-        return view(annotation: CGRect(x: video.minX + rect.minX * video.width,
-                                       y: video.minY + rect.minY * video.height,
-                                       width: rect.width * video.width,
-                                       height: rect.height * video.height))
-    }
+    func view(blur rect: CGRect) -> CGRect { mapping.view(recording: rect) }
 
-    func blur(view rect: CGRect) -> CGRect {
-        let video = videoInOutput
-        guard video.width > 0, video.height > 0 else { return .zero }
-        let output = annotation(view: rect)
-        return CGRect(x: (output.minX - video.minX) / video.width,
-                      y: (output.minY - video.minY) / video.height,
-                      width: output.width / video.width,
-                      height: output.height / video.height)
-    }
+    func blur(view rect: CGRect) -> CGRect { mapping.recording(view: rect) }
 }

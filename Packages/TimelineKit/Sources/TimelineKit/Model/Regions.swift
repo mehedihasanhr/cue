@@ -150,6 +150,23 @@ public struct ZoomRegion: TimelineRegion {
     /// still selectable, still editable, and contributes exactly nothing to the frame.
     public var isEnabled: Bool
 
+    /// Whether somebody has framed this zoom by hand.
+    ///
+    /// Auto-zoom's contract is that a later run replaces the previous run's output, which
+    /// is right until the moment the user drags one of those suggestions to where they
+    /// actually wanted it. After that it is no longer the run's output: it is an edit that
+    /// happens to have started life as a suggestion, and throwing it away is throwing away
+    /// work nobody can get back.
+    ///
+    /// Deliberately not the same as `source = .manual`: where a zoom came from is worth
+    /// keeping — "suggested by a click, then framed by you" is a more useful thing for the
+    /// inspector to say than either half alone — and rewriting the provenance to protect
+    /// the edit would lose it.
+    ///
+    /// Set by direct manipulation only. Sliding the scale or the ramp is tuning, and a zoom
+    /// somebody tuned but never aimed is still the run's to replace.
+    public var isEdited: Bool
+
     /// What a zoom looks like when nobody has changed it, and what Reset puts back.
     ///
     /// Named constants rather than literals in the initialiser, so "the default" is one
@@ -178,7 +195,8 @@ public struct ZoomRegion: TimelineRegion {
                 followsCursor: Bool = true,
                 source: Source? = nil,
                 isLocked: Bool = false,
-                isEnabled: Bool = true) {
+                isEnabled: Bool = true,
+                isEdited: Bool = false) {
         self.id = id
         self.start = start
         self.duration = duration
@@ -192,6 +210,7 @@ public struct ZoomRegion: TimelineRegion {
         self.source = source
         self.isLocked = isLocked
         self.isEnabled = isEnabled
+        self.isEdited = isEdited
     }
 
     /// Decodes a zoom written by an older or a newer build.
@@ -224,13 +243,17 @@ public struct ZoomRegion: TimelineRegion {
         isLocked = value(.isLocked, default: false)
         // Absent means on, which is what every zoom written before this existed was.
         isEnabled = value(.isEnabled, default: true)
+        // Absent means untouched. A project saved before this existed has no record of
+        // which of its suggestions were framed by hand, and guessing `true` would freeze
+        // every one of them against a regeneration the user may well want.
+        isEdited = value(.isEdited, default: false)
     }
 
     /// Spelled out so the decoder above and the synthesised encoder agree, and so renaming
     /// a property is a compile error rather than a silently unreadable project.
     enum CodingKeys: String, CodingKey {
         case id, start, duration, scale, center, easing, transition
-        case transitionIn, transitionOut, followsCursor, source, isLocked, isEnabled
+        case transitionIn, transitionOut, followsCursor, source, isLocked, isEnabled, isEdited
     }
 
     /// How long the move in and how long the move out actually take.

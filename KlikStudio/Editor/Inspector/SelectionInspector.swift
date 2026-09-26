@@ -15,10 +15,7 @@ struct SelectionInspector: View {
                 }
             case .zoom(let id):
                 if let index = model.timeline.zooms.firstIndex(where: { $0.id == id }) {
-                    zoom(index: index)
-                    // How the camera moves, next to the zoom whose movement you are watching.
-                    CameraInspector(model: model,
-                                    isFollowing: model.timeline.zooms[index].followsCursor)
+                    ZoomInspector(model: model, index: index)
                 }
             case .blur(let id):
                 if let index = model.timeline.blurs.firstIndex(where: { $0.id == id }) {
@@ -240,130 +237,6 @@ struct SelectionInspector: View {
         }
         .controlSize(.small)
         .padding(.top, 2)
-    }
-
-    // MARK: - Zoom
-
-    private func zoom(index: Int) -> some View {
-        let zoom = model.timeline.zooms[index]
-        return VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-            // First, because it decides whether anything below it is doing anything.
-            // Switching a zoom off keeps its framing and its place on the lane, which is
-            // what makes a run of suggestions something you can audition rather than
-            // something you have to accept or destroy.
-            Toggle(model.hasMultipleSelected ? "Zooms on" : "Zoom on", isOn: Binding(
-                get: { zoom.isEnabled },
-                set: { model.setZoomsEnabled($0) }
-            ))
-            .help("Keeps its framing and its timing, and takes it out of the picture")
-
-            InspectorSlider(model: model, "Scale", systemImage: "plus.magnifyingglass",
-                            value: binding(index, \.scale, "Zoom Scale"), range: 1...8,
-                            format: { String(format: "%.1f×", $0) })
-            InspectorSlider(model: model, "Ramp", systemImage: "timelapse",
-                            value: Binding(
-                                get: { zoom.transition.seconds },
-                                set: { seconds in
-                                    change("Zoom Ramp") { $0.zooms[index].transition = CMTime(seconds: seconds, preferredTimescale: 600) }
-                                }
-                            ),
-                            range: 0...2,
-                            format: { String(format: "%.2fs", $0) })
-
-            InspectorField(title: "Easing") {
-                InspectorPicker(selection: Binding(
-                    get: { zoom.easing },
-                    set: { easing in change("Zoom Easing") { $0.zooms[index].easing = easing } }
-                ), options: Easing.allCases) { $0.rawValue.capitalized }
-            }
-
-            Toggle("Follow the pointer", isOn: Binding(
-                get: { zoom.followsCursor },
-                set: { follows in change("Follow Cursor") { $0.zooms[index].followsCursor = follows } }
-            ))
-
-            // Placed and timed here as well as by dragging the chip. A zoom that should
-            // begin a quarter-second earlier is a correction you make after watching it,
-            // and hunting for a few pixels on a zoomed-out timeline is the wrong way to
-            // ask for it.
-            timing(zoom, title: "Starts", value: Timecode.short(zoom.start)) { delta in
-                model.nudgeZoom(zoom.id, start: delta)
-            }
-            timing(zoom, title: "Lasts", value: Timecode.length(zoom.duration)) { delta in
-                model.nudgeZoom(zoom.id, duration: delta)
-            }
-            HStack(spacing: 6) {
-                Button("Start Here") { model.moveZoom(zoom.id, toStartAt: model.playhead) }
-                    .help("Begin this zoom at the playhead, keeping its length")
-                Button("End Here") { model.moveZoom(zoom.id, toEndAt: model.playhead) }
-                    .help("End this zoom at the playhead, keeping where it starts")
-                Spacer(minLength: 0)
-            }
-            .controlSize(.small)
-            // Why this zoom is here. A suggestion someone can see the reason for is one
-            // they adjust; one that appeared from nowhere is one they delete.
-            if let source = zoom.source, source != .manual {
-                InspectorRow(title: "Suggested by", value: source.title)
-                    .foregroundStyle(.secondary)
-            }
-
-            Divider()
-            zoomVerbs(zoom)
-        }
-        .inspectorSection("Zoom", systemImage: "plus.magnifyingglass")
-    }
-
-    /// The four things people do to a zoom on the second pass over a take.
-    ///
-    /// Together in one block under a divider, rather than scattered among the sliders,
-    /// because they are a different kind of thing: the sliders change how this zoom looks,
-    /// these change how many zooms there are and which ones may be touched. They are also in
-    /// the Edit menu — this is the copy somebody finds while already looking at the zoom.
-    ///
-    /// Each one says why it is off when it is off, in the help text rather than in a dialog.
-    /// A disabled button with no explanation is the single most common way an editor makes
-    /// someone feel they have done something wrong.
-    @ViewBuilder
-    private func zoomVerbs(_ zoom: ZoomRegion) -> some View {
-        Toggle("Lock it", isOn: Binding(
-            get: { zoom.isLocked },
-            set: { _ in model.toggleZoomLock() }
-        ))
-        .help("A locked zoom cannot be dragged or resized on the timeline, and the next auto-zoom run leaves it alone. You can still change it here, and still delete it.")
-
-        // One ramp at one end and nothing at the other: this is half of a split, and saying
-        // so is what stops the Ramp slider above looking broken.
-        if zoom.ramps.in != zoom.ramps.out {
-            Label(zoom.ramps.in == .zero
-                  ? "Cut from the zoom before it — no ramp at its start."
-                  : "Cut from the zoom after it — no ramp at its end.",
-                  systemImage: "scissors")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-
-        HStack(spacing: 6) {
-            Button("Split at Playhead") { model.splitZoomAtPlayhead() }
-                .disabled(!model.canSplitZoom)
-                .help(model.canSplitZoom
-                      ? "Cut this zoom in two at the playhead, so the halves can be aimed apart. The picture does not move at the cut."
-                      : "Move the playhead further inside this zoom — a split too near either end would leave a chip too small to grab.")
-            Button("Merge with Next") { model.mergeZoomWithNext() }
-                .disabled(model.zoomToMergeInto == nil)
-                .help(model.zoomToMergeInto == nil
-                      ? "There is no zoom after this one to merge it with."
-                      : "Join this zoom and the one after it into a single push-in, keeping the ramp at each outer end.")
-        }
-        .controlSize(.small)
-
-        HStack(spacing: 6) {
-            Button("Aim on the Picture") { model.aimSelectedZoom() }
-                .help("Click the preview to say what this zoom should be pointed at.")
-            Button("Reset") { model.resetZoom() }
-                .help("Scale, ramp and easing back to what a new zoom has. Where it is and what it points at are left alone.")
-        }
-        .controlSize(.small)
     }
 
     // MARK: - Blur

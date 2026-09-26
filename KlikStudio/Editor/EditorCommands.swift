@@ -102,7 +102,10 @@ struct EditorCommands: SwiftUI.Commands {
                 editor?.toggleZoomLock()
             }
             .disabled(editor?.activeZoom == nil)
-            Button("Aim Zoom on the Picture") { editor?.aimSelectedZoom() }
+            Button("Frame Zoom on the Picture") { editor?.frameSelectedZoom() }
+                .disabled(editor?.activeZoom == nil)
+            Button("Preview Zoom Result") { editor?.previewZoomResult() }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(editor?.activeZoom == nil)
             Button("Reset Zoom") { editor?.resetZoom() }
                 .disabled(editor?.activeZoom == nil)

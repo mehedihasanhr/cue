@@ -50,7 +50,7 @@ struct InspectorPanel: View {
             } else {
                 SelectionInspector(model: model)
             }
-        case .blur, .annotate, .zoom:
+        case .blur, .annotate:
             // What is selected, or — with nothing drawn yet — how to draw one.
             if model.selection.isEmpty {
                 canvasHint(model.tool)
@@ -85,7 +85,7 @@ struct InspectorPanel: View {
     private var selectionOwnsPanel: Bool {
         guard !model.selection.isEmpty else { return false }
         switch model.tool {
-        case .frame, .blur, .annotate, .zoom: return true
+        case .frame, .blur, .annotate: return true
         case .crop, .cursor, .webcam, .captions, .audio: return false
         }
     }
@@ -145,10 +145,6 @@ struct InspectorPanel: View {
         switch tool {
         case .blur:
             "Drag over anything on the picture to hide it — a password, a name, a face. It stays on the thing it covers when the camera moves."
-        case .zoom:
-            // Reachable only from a selected zoom, so this is the state where the selection
-            // was deleted or undone out from under the tool.
-            "Pick a zoom on the timeline, then click the picture to say what it should be pointed at."
         default:
             "Drag on the picture to place a label, an arrow or a box — or add one below and drag it where it belongs. Either way it stays where you put it in the finished frame."
         }

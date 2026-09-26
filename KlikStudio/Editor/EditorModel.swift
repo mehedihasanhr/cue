@@ -255,10 +255,20 @@ final class EditorModel {
     private func play() {
         guard frames != nil else { return }
         if playhead >= duration { playhead = .zero }
+        // Playing answers the question framing mode was asking, so the framing box gets out
+        // of the way and stays out of it. Left in `.framing`, pressing pause would snap the
+        // picture back to the un-zoomed recording the instant it stopped — the camera state
+        // the user had just watched arrive, thrown away by the act of stopping to look at
+        // it. See `ZoomPreview`.
+        if case .zoom = selection { zoomPreview = .result }
         isPlaying = true
         lastTick = .now
         viewport.followsPlayhead = true
         audio?.play(from: playhead, timeline: timeline)
+        // The framing box is gone now, which means the rendered timeline has its zooms
+        // back: the very first frame of playback has to be described again or it would be
+        // the flat one the box was drawn over.
+        refresh()
         Task { await frames?.setQuality(.preview(previewPixelSize)) }
 
         ticker = PlaybackTicker { [weak self] in
@@ -391,6 +401,11 @@ final class EditorModel {
         // a ratio — but "what the file will contain" is the more useful thing to publish.
         self.scene = scene
 
+        // Nothing to redraw: the zoom being dragged is not in the rendered timeline, so
+        // every frame of a framing drag would decode the same source frame and composite
+        // the same output. See `isFramingDrag`.
+        guard !isFramingDrag else { return }
+
         guard renderTask == nil else {
             hasPendingRender = true
             return
@@ -472,11 +487,22 @@ final class EditorModel {
         if let editing = editingAnnotation {
             draft.annotations.removeAll { $0.id == editing }
         }
-        guard tool.flattensPreview else { return draft }
-        if tool.flatteningDropsCrop {
-            draft.style.crop = nil
-            draft.style.aspect = .source
+        // Framing a zoom: the camera comes out and *nothing else does*.
+        //
+        // A framing box drawn over a picture the zoom has already been applied to would
+        // always be the whole picture — the tool would be showing its own answer and
+        // refusing the question — so the zooms have to go. The padding, the corners, the
+        // shadow and the background stay, which is the difference between this and the crop
+        // tool below: those are not in the way of a rectangle *of the recording*, and
+        // stripping them made switching into framing look like a different video. The
+        // output size is unchanged too, so the picture does not resize underneath the box.
+        if isFramingZoom {
+            draft.zooms = []
+            return draft
         }
+        guard tool.flattensPreview else { return draft }
+        draft.style.crop = nil
+        draft.style.aspect = .source
         draft.style.padding = 0
         draft.style.cornerRadius = 0
         draft.style.shadowOpacity = 0
@@ -528,7 +554,14 @@ final class EditorModel {
     func select(_ selection: Selection, extending: Bool = false) {
         guard extending else {
             guard selected != [selection] else { return }
+            let wasZoom = self.selection
             selected = [selection]
+            // Picking a *different* zoom is a question about that zoom, and the answer it
+            // wants is the framing box. Without this, playing once — which pushes the
+            // preview to Result and leaves it there, deliberately — would mean every chip
+            // clicked afterwards showed a zoomed picture and no way to edit it, which is
+            // the whole feature quietly switching itself off.
+            if case .zoom = selection, selection != wasZoom { zoomPreview = .framing }
             return
         }
         if let index = selected.firstIndex(of: selection) {
@@ -974,6 +1007,102 @@ final class EditorModel {
         select(.zoom(region.id))
     }
 
+    // MARK: - Framing a zoom on the picture
+
+    /// What the one preview is showing while a zoom is selected.
+    ///
+    /// There used to be two pictures: the main preview, and a panel in the corner drawing
+    /// the same frame again through the zoom being edited. Two previews of one video is one
+    /// too many — the eye has to travel between them to answer a single question — and the
+    /// small one was the one that actually showed the effect, which is the wrong way round.
+    ///
+    /// One surface, two readings of it, and the user says which.
+    enum ZoomPreview: String, CaseIterable, Identifiable, Hashable {
+        /// The whole recording, with the framing rectangle drawn over it. What you edit in.
+        case framing
+        /// The zoom as it will play and as it will export. What you judge in.
+        case result
+
+        var id: String { rawValue }
+        var title: String { self == .framing ? "Framing" : "Result" }
+        var symbol: String { self == .framing ? "dot.viewfinder" : "play.rectangle" }
+    }
+
+    /// Which reading is on screen. Not persisted: it is a way of looking, not a property of
+    /// the project.
+    var zoomPreview: ZoomPreview = .framing {
+        didSet { if zoomPreview != oldValue { refresh() } }
+    }
+
+    /// Whether the zoom inspector's Advanced section is open.
+    ///
+    /// On the model rather than in the view, so opening it for one zoom and clicking the
+    /// next chip does not fold it shut again — a panel that forgets is a panel you stop
+    /// opening.
+    var isZoomAdvancedOpen = false
+
+    /// The zoom the picture is being framed for, or `nil` when the picture is just the
+    /// picture.
+    ///
+    /// Selection alone decides this. There is no mode to enter: clicking a chip on the zoom
+    /// lane is already an unambiguous statement about which zoom you mean, and making that
+    /// statement twice — once on the timeline, once on a tool rail — was the step that made
+    /// framing feel like a place you had to go rather than something you could just do.
+    var framedZoom: ZoomRegion? {
+        guard zoomPreview == .framing, !isPlaying, !tool.flattensPreview else { return nil }
+        guard case .zoom(let id) = selection else { return nil }
+        return timeline.zooms.first { $0.id == id }
+    }
+
+    var isFramingZoom: Bool { framedZoom != nil }
+
+    /// Whether the framing box may be switched at all — a zoom is selected, and playback is
+    /// not the thing deciding what the picture shows.
+    var canChooseZoomPreview: Bool {
+        guard case .zoom = selection else { return false }
+        return !isPlaying && !tool.flattensPreview
+    }
+
+    /// Set while a framing handle is being dragged.
+    ///
+    /// The framing preview renders the timeline with the zooms taken out, so the picture
+    /// under the box cannot change while the box moves: every frame of the drag would
+    /// decode the same source frame and composite the same output. The description is still
+    /// rebuilt — the overlay reads `scene` for its coordinate mapping — and the decode is
+    /// skipped. See `refresh()`.
+    @ObservationIgnored var isFramingDrag = false
+
+    /// Frames a zoom: select it, put the playhead somewhere it can be judged, and show the
+    /// box.
+    ///
+    /// Parking the playhead is not a nicety. A zoom only magnifies while the playhead is
+    /// inside it, so switching to Result from outside one shows a completely unchanged
+    /// picture — the zoom working perfectly with no moment at which you could see it.
+    /// Moved to just past the ramp-in, where the camera has arrived; the region's first
+    /// frame is the one instant inside it where the scale is still 1.
+    func frameSelectedZoom() {
+        guard let zoom = activeZoom else { return }
+        select(.zoom(zoom.id))
+        parkPlayhead(inside: zoom)
+        if tool.flattensPreview { tool = .frame }
+        zoomPreview = .framing
+    }
+
+    /// Shows the selected zoom as it will play, from a moment where it is fully in.
+    func previewZoomResult() {
+        guard let zoom = activeZoom else { return }
+        select(.zoom(zoom.id))
+        parkPlayhead(inside: zoom)
+        if tool.flattensPreview { tool = .frame }
+        zoomPreview = .result
+    }
+
+    private func parkPlayhead(inside zoom: ZoomRegion) {
+        guard !zoom.contains(playhead) else { return }
+        let settled = zoom.start + min(zoom.ramps.in, CMTimeMultiplyByFloat64(zoom.duration, multiplier: 0.5))
+        scrub(to: min(settled, zoom.end - CMTime(value: 1, timescale: 600)))
+    }
+
     // MARK: - Zooms, on the second pass
 
     /// The zoom the verbs act on: the selected one, or — with nothing selected — the one
@@ -1079,6 +1208,27 @@ final class EditorModel {
         apply(Commands.RestyleZoom(id: zoom.id, name: "Reset Zoom") { $0 = ZoomLane.reset($0) })
     }
 
+    /// Framing back to the middle of the picture at the default magnification, following
+    /// the pointer again.
+    ///
+    /// The way out of a framing somebody has dragged into a corner and cannot get back.
+    /// It puts `followsCursor` back on, because that is what a new zoom does and because a
+    /// zoom aimed at the middle of the screen and held there is almost never what anyone
+    /// wants — aiming it by hand was the thing that turned following off, so undoing the
+    /// aim has to undo that too.
+    ///
+    /// `isEdited` goes back with it: a zoom whose framing is the default again has no
+    /// hand-made framing left for a suggestion run to protect.
+    func resetZoomFraming() {
+        guard let zoom = activeZoom else { return }
+        apply(Commands.RestyleZoom(id: zoom.id, name: "Reset Framing") {
+            $0.scale = ZoomRegion.defaultScale
+            $0.center = CGPoint(x: 0.5, y: 0.5)
+            $0.followsCursor = true
+            $0.isEdited = false
+        })
+    }
+
     /// Point a zoom at somewhere on the picture.
     ///
     /// `center` is normalised to the *recording*, like a blur's rect — the overlay converts
@@ -1096,6 +1246,9 @@ final class EditorModel {
         apply(Commands.RestyleZoom(id: id, name: "Aim Zoom") {
             $0.center = clamped
             $0.followsCursor = false
+            // Pointed by hand, so the next auto-zoom run leaves it alone. See
+            // `ZoomRegion.isEdited`.
+            $0.isEdited = true
         })
     }
 
@@ -1114,46 +1267,26 @@ final class EditorModel {
     /// user framed is never cropped tighter than they drew it.
     func setZoomArea(_ id: UUID, to rect: CGRect, name: String = "Frame Zoom") {
         guard rect.width > 0 else { return }
-        let area = Self.honouredZoomArea(rect)
+        let area = ZoomFraming.honoured(rect)
         apply(Commands.RestyleZoom(id: id, name: name) {
-            $0.scale = 1 / area.width
+            $0.scale = ZoomFraming.scale(forSide: area.width)
             $0.center = CGPoint(x: area.midX, y: area.midY)
             $0.followsCursor = false
+            $0.isEdited = true
         })
     }
 
-    /// The rectangle a drawn one will actually become: square, no wider than the whole
-    /// recording, no tighter than the renderer allows, and wholly inside the picture.
+    /// The rectangle a drawn one will actually become.
     ///
-    /// The centre is re-derived from the clamped scale rather than taken from the
-    /// rectangle: if the drag asked for more than the renderer will give, the centre has
-    /// to be the centre of what will actually be shown, or the picture drifts away from
-    /// the box. Overlays draw through this so what is under the pointer mid-drag is the
-    /// framing that will be stored, not the one that was asked for.
-    static func honouredZoomArea(_ rect: CGRect) -> CGRect {
-        let scale = min(ZoomRegion.maximumScale, max(1, 1 / max(rect.width, 1e-6)))
-        let half = 0.5 / scale
-        let centre = CGPoint(x: min(1 - half, max(half, rect.midX)),
-                             y: min(1 - half, max(half, rect.midY)))
-        return CGRect(x: centre.x - half, y: centre.y - half, width: half * 2, height: half * 2)
-    }
+    /// `ZoomFraming` owns the arithmetic, so the box on the picture, the command that
+    /// stores it and the tests are all reading one implementation. Kept here as the name
+    /// the overlay already calls, because the overlay's job is to draw what will be stored
+    /// and this is how it asks.
+    static func honouredZoomArea(_ rect: CGRect) -> CGRect { ZoomFraming.honoured(rect) }
 
     /// What a zoom currently frames, as a rectangle of the recording — the inverse of
     /// `setZoomArea`, and what the overlay draws.
-    func zoomArea(of zoom: ZoomRegion) -> CGRect {
-        // Clamped, because the renderer clamps: the camera is held inside the picture at
-        // the last moment, so a zoom whose stored centre points off the edge is rendered
-        // pointing somewhere else. Drawing the stored centre showed a framing box hanging
-        // off the top of the picture that the finished video never used — the overlay
-        // promising one shot and the export giving another.
-        //
-        // The same arithmetic `honouredZoomArea` applies to a drawn rectangle, read the
-        // other way round, so a box dragged and a box merely shown cannot disagree.
-        let half = 0.5 / max(1, zoom.scale)
-        let centre = CGPoint(x: min(1 - half, max(half, zoom.center.x)),
-                             y: min(1 - half, max(half, zoom.center.y)))
-        return CGRect(x: centre.x - half, y: centre.y - half, width: half * 2, height: half * 2)
-    }
+    func zoomArea(of zoom: ZoomRegion) -> CGRect { ZoomFraming.area(of: zoom) }
 
     /// Nudges when a zoom begins, or how long it runs, by a fraction of a second.
     ///
@@ -1184,25 +1317,6 @@ final class EditorModel {
             let start = max(.zero, min(zoom.start, end - Clip.minimumDuration))
             apply(Commands.MoveRegion(id: id, start: start, duration: max(Clip.minimumDuration, end - start)))
         }
-    }
-
-    /// Turn the aiming overlay on for a zoom, having selected it.
-    ///
-    /// And park the playhead inside that zoom, which is not a nicety. A zoom only magnifies
-    /// while the playhead is inside it, so aiming one from somewhere else in the edit meant
-    /// framing a shot and then leaving the tool to find the picture completely unchanged —
-    /// the zoom was working perfectly and there was no moment at which you could see it.
-    ///
-    /// Moved to just past the ramp-in, where the zoom has arrived at full magnification.
-    /// The start of the region is the one instant inside it where the scale is still 1.
-    func aimSelectedZoom() {
-        guard let zoom = activeZoom else { return }
-        select(.zoom(zoom.id))
-        if !zoom.contains(playhead) {
-            let settled = zoom.start + min(zoom.ramps.in, CMTimeMultiplyByFloat64(zoom.duration, multiplier: 0.5))
-            scrub(to: min(settled, zoom.end - CMTime(value: 1, timescale: 600)))
-        }
-        tool = .zoom
     }
 
     func setSpeed(_ speed: Double, of clipID: UUID) {

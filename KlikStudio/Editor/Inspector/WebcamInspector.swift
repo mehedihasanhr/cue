@@ -5,7 +5,7 @@ import TimelineKit
 /// The camera bubble: whether it is there, where it sits, and what shape it is.
 ///
 /// Named for the webcam and not for "the camera", because this editor already has a camera
-/// and it is a different thing: `CameraInspector` next door tunes how the *zoomed* camera
+/// and it is a different thing: `CameraControls`, inside the zoom inspector, tunes how the *zoomed* camera
 /// follows the pointer. One panel is about a lens pointed at a face, the other is about a
 /// crop drifting over a screenshot, and the two being one word apart is how somebody ends
 /// up tuning steadiness to stop a bubble wobbling.

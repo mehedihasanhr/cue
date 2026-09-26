@@ -133,8 +133,14 @@ public enum ZoomLane {
     /// the take, exactly as placing one by hand is, and a run that regenerated over it
     /// would overrule a judgement the user has already made. The way to take the decision
     /// back is to delete the zoom, which is aimed at it and cannot happen by surprise.
+    ///
+    /// Framing one by hand counts as the user's for the same reason, and without the cost
+    /// of a lock: dragging a suggested zoom to where it should have been pointed is the
+    /// single most valuable edit anybody makes on the second pass, and it was the one the
+    /// next run silently undid. See `ZoomRegion.isEdited`.
     public static func isSuggestion(_ region: ZoomRegion) -> Bool {
-        !region.isLocked && region.isEnabled && region.source != nil && region.source != .manual
+        !region.isLocked && region.isEnabled && !region.isEdited
+            && region.source != nil && region.source != .manual
     }
 
     /// What the zoom lane should hold after auto-zoom has run again.
