@@ -30,9 +30,13 @@ struct TimelineStrip: View {
     private static let regionHeight: CGFloat = 28
     private static let spacing: CGFloat = 6
     private static let padding: CGFloat = 10
-    /// Wide enough for "System Audio" and for a microphone's own name at a glance, and no
-    /// wider: every point here is a point of edit that is not on screen.
-    private static let gutterWidth: CGFloat = 148
+    /// A stripe and a glyph, and nothing else.
+    ///
+    /// The headings carried their names at first, which cost 148 points of every screen —
+    /// and the names were the part you stop reading: after the first look you know the blue
+    /// row is the screen and the green one is you. The name is still there on hover, for
+    /// the take with two microphones on it where the glyphs are the same.
+    private static let gutterWidth: CGFloat = 46
 
     // MARK: - What rows there are
 
@@ -194,8 +198,8 @@ struct TimelineStrip: View {
             }
         }
         .padding(.vertical, Self.padding)
-        .padding(.leading, 10)
-        .padding(.trailing, 8)
+        .padding(.leading, 9)
+        .padding(.trailing, 6)
         .frame(maxHeight: .infinity, alignment: .topLeading)
         .contentShape(Rectangle())
     }
@@ -211,14 +215,9 @@ struct TimelineStrip: View {
                 .fill(lane.tint(in: timeline).opacity(muted ? 0.3 : 0.9))
                 .frame(width: 3)
             Image(systemName: muted ? "speaker.slash.fill" : lane.symbol(in: timeline))
-                .font(.system(size: 11))
+                .font(.system(size: 12))
                 .foregroundStyle(muted ? AnyShapeStyle(.tertiary) : AnyShapeStyle(lane.tint(in: timeline)))
-                .frame(width: 14)
-            Text(lane.title(in: timeline))
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(muted ? .tertiary : .secondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
+                .frame(width: 18)
             Spacer(minLength: 0)
         }
         .frame(height: lane.height)

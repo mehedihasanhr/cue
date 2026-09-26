@@ -296,7 +296,7 @@ public final class RecordingSession {
         audioLanes = lanes
 
         try await prepareWebcam(configuration, package: package, clock: clock)
-        startTelemetry(for: configuration, filter: filter, package: package)
+        startTelemetry(for: configuration, shareable: shareable, package: package)
     }
 
     /// A file for one sound, and the manifest entry that will point at it.
@@ -375,7 +375,7 @@ public final class RecordingSession {
     }
 
     private func startTelemetry(for configuration: RecordingConfiguration,
-                                filter: SCContentFilter,
+                                shareable: SCShareableContent,
                                 package: RecordingPackage) {
         let cursorWriter = JSONLWriter(url: package.telemetryFolder.appendingPathComponent("cursor.jsonl"), queue: queue)
         let inputWriter = configuration.capturesClicks
@@ -394,13 +394,17 @@ public final class RecordingSession {
         self.focusWriter = focusWriter
 
         // Where the recorded area starts on screen, so a pointer position becomes a
-        // position inside the frame.
-        var origin = filter.contentRect.origin
-        if case .area(_, let rect) = configuration.target {
-            origin.x += rect.origin.x
-            origin.y += rect.origin.y
-        }
-        let mapper = CursorMapper(origin: origin)
+        // position inside the frame. Asked of the target rather than of the filter — see
+        // `ShareableContentStore.origin(of:in:)` for what the filter answers and why it is
+        // the wrong number.
+        //
+        // A window is followed while it is recorded: the picture does not move when
+        // somebody drags the window, but the pointer's global position does, so an origin
+        // fixed at the start would drift by exactly the length of the drag.
+        var followedWindow: CGWindowID?
+        if case .window(let id) = configuration.target { followedWindow = id }
+        let mapper = CursorMapper(origin: content.origin(of: configuration.target, in: shareable),
+                                  following: followedWindow)
         cursor = CursorTracker(cursorWriter: cursorWriter,
                                inputWriter: inputWriter,
                                queue: queue,

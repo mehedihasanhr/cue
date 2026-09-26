@@ -168,24 +168,70 @@ public struct CursorStyle: Codable, Equatable, Sendable {
     public var scale: Double
     /// 0 is the raw sampled path, 1 is as smooth as it goes.
     public var smoothing: Double
+    /// The pointer swells a little when a button goes down.
     public var clickEffect: Bool
     public var motionBlur: Bool
     /// Keep the pointer's size steady while the camera zooms, instead of letting the
     /// zoom magnify it too.
     public var sizeIsIndependentOfZoom: Bool
+    /// A ring at the place a click happened, spreading and fading.
+    ///
+    /// Separate from `clickEffect`, and not a replacement for it: the swell says *the
+    /// pointer* did something, the ring says *this spot* was clicked. The swell alone is
+    /// easy to miss in a silent screen recording, which is the whole reason this exists —
+    /// a viewer watching a demo cannot hear the click and has nothing else to go on.
+    public var clickHighlight: Bool
+    /// What colour the ring is. White reads on almost everything, which is why it is the
+    /// default, and a light interface is exactly when somebody will want to change it.
+    public var clickColor: ColorValue
+    /// How big the ring grows, as a fraction of the shorter side of the finished frame.
+    public var clickSize: Double
 
     public init(isVisible: Bool = true,
                 scale: Double = 1.4,
                 smoothing: Double = 0.6,
                 clickEffect: Bool = true,
                 motionBlur: Bool = false,
-                sizeIsIndependentOfZoom: Bool = true) {
+                sizeIsIndependentOfZoom: Bool = true,
+                clickHighlight: Bool = true,
+                clickColor: ColorValue = .white,
+                clickSize: Double = 0.07) {
         self.isVisible = isVisible
         self.scale = scale
         self.smoothing = smoothing
         self.clickEffect = clickEffect
         self.motionBlur = motionBlur
         self.sizeIsIndependentOfZoom = sizeIsIndependentOfZoom
+        self.clickHighlight = clickHighlight
+        self.clickColor = clickColor
+        self.clickSize = clickSize
+    }
+
+    /// Decoded field by field, for the reason `Timeline.init(from:)` gives — and here it
+    /// is not hypothetical. The synthesised decoder wants every key, so the first field
+    /// added to this type would have made every project written before it fail to decode
+    /// its pointer settings, and `Timeline`'s lenient decoder would have quietly handed
+    /// back a *default* `CursorStyle`: somebody's pointer size, smoothing and motion blur
+    /// replaced by the factory ones, because a ring was added.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        func value<T: Decodable>(_ key: CodingKeys, default fallback: @autoclosure () -> T) -> T {
+            ((try? container.decodeIfPresent(T.self, forKey: key)) ?? nil) ?? fallback()
+        }
+        isVisible = value(.isVisible, default: true)
+        scale = value(.scale, default: 1.4)
+        smoothing = value(.smoothing, default: 0.6)
+        clickEffect = value(.clickEffect, default: true)
+        motionBlur = value(.motionBlur, default: false)
+        sizeIsIndependentOfZoom = value(.sizeIsIndependentOfZoom, default: true)
+        clickHighlight = value(.clickHighlight, default: true)
+        clickColor = value(.clickColor, default: ColorValue.white)
+        clickSize = value(.clickSize, default: 0.07)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case isVisible, scale, smoothing, clickEffect, motionBlur, sizeIsIndependentOfZoom
+        case clickHighlight, clickColor, clickSize
     }
 }
 

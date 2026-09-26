@@ -116,6 +116,7 @@ public struct SceneBuilder: Sendable {
                                zoomCenter: camera.center,
                                blurs: blurLayers(timeline, at: time),
                                cursor: cursorLayer(timeline, at: time, sourceTime: sourceTime, track: track, crop: crop),
+                               clicks: clickLayers(timeline, sourceTime: sourceTime, track: track, crop: crop),
                                annotations: annotationLayers(timeline, at: time),
                                caption: captionLayer(timeline, at: time),
                                webcam: webcamLayer(timeline, output: output, zoom: camera.zoom),
@@ -379,6 +380,34 @@ public struct SceneBuilder: Sendable {
                             y: point.y + (held.y - point.y) * override.holding)
         }
         return point
+    }
+
+    /// The marks for clicks that are still showing.
+    ///
+    /// Drawn at the *recorded* place rather than at the drawn pointer's, and the difference
+    /// is the point: smoothing moves the pointer a few pixels towards where it was going,
+    /// so a ring centred on the smoothed position would sit slightly off the button that
+    /// was actually pressed. The pointer may drift away from its own click over the next
+    /// half second — it should, because the hand did.
+    ///
+    /// Hidden along with the pointer. A recording where the pointer has been faded out for
+    /// a stretch is one where the viewer is being asked to look at something else, and a
+    /// ring appearing over it would be the one thing on screen moving.
+    private func clickLayers(_ timeline: Timeline,
+                             sourceTime: CMTime,
+                             track: CursorTrack?,
+                             crop: CGRect) -> [ClickLayer] {
+        let style = timeline.cursor
+        guard style.isVisible, style.clickHighlight, let track, !track.clicks.isEmpty else { return [] }
+
+        return track.marks(at: sourceTime.seconds).compactMap { mark in
+            guard let position = normalised(mark.click.point, crop: crop) else { return nil }
+            return ClickLayer(position: position,
+                              progress: mark.progress,
+                              color: style.clickColor,
+                              size: style.clickSize,
+                              isSecondary: mark.click.isSecondary)
+        }
     }
 
     private func cursorLayer(_ timeline: Timeline,

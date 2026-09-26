@@ -239,20 +239,20 @@ struct TimelineSoundRow: View {
 
     /// A grabbable end of a run, and the line that says it is there.
     ///
-    /// Drawn rather than left invisible, for the reason `TimelineRegionRow` gives: a handle
-    /// you have to find by sweeping the pointer along the piece is barely a handle.
+    /// Drawn on the run that is selected, and on whichever end the pointer is over, flush
+    /// with that end — for the reasons `TimelineRegionRow` gives.
     private func edge(_ run: SoundRun, leading: Bool, width: CGFloat) -> some View {
         let key = "\(run.id)-\(leading)"
         let isHovered = hoveredGrip == key
         return Rectangle()
             .fill(.clear)
             .frame(width: edgeWidth, height: height)
-            .overlay {
-                if width >= minimumGripWidth {
-                    Capsule()
-                        .fill(.white.opacity(isHovered ? 1 : 0.6))
-                        .frame(width: isHovered ? 3 : 2, height: max(8, height - 12))
-                        .shadow(color: .black.opacity(0.35), radius: 1, y: 0.5)
+            .overlay(alignment: leading ? .leading : .trailing) {
+                if width >= minimumGripWidth, model.selection == .soundRun(run.id) || isHovered {
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .fill(.white.opacity(isHovered ? 1 : 0.85))
+                        .frame(width: isHovered ? 5 : 4, height: max(10, height - 10))
+                        .shadow(color: .black.opacity(0.4), radius: 1, y: 0.5)
                         .animation(StudioMotion.state, value: isHovered)
                 }
             }

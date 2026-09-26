@@ -10,15 +10,37 @@ import RecordKit
 /// deliberate, and it can only be done here, after the fact, because the recorder was
 /// careful not to burn the pointer into the picture.
 public struct CursorTrack: Sendable {
+    /// A button going down: when, and where.
+    ///
+    /// The position was always on disk and was always thrown away here, because the only
+    /// thing drawn for a click was a swell of the pointer, which happens wherever the
+    /// pointer already is. Anything that marks the *place* a click happened needs the
+    /// place — and it has to be the recorded one rather than the drawn one, because
+    /// smoothing moves the pointer a little and a ring drawn around the smoothed position
+    /// would sit slightly off the thing that was actually clicked.
+    public struct Click: Equatable, Sendable {
+        public let t: Double
+        public let point: CGPoint
+        /// A right-click, or a two-finger tap. Drawn differently, because the two mean
+        /// different things to someone following along.
+        public let isSecondary: Bool
+
+        public init(t: Double, point: CGPoint, isSecondary: Bool) {
+            self.t = t
+            self.point = point
+            self.isSecondary = isSecondary
+        }
+    }
+
     public let samples: [CursorSample]
-    public let clicks: [Double]
+    public let clicks: [Click]
 
     public init(samples: [CursorSample], input: [InputSample] = []) {
         self.samples = samples.sorted { $0.t < $1.t }
         clicks = input.compactMap { sample in
-            if case .mouseDown(let t, _, _, _) = sample { return t }
-            return nil
-        }.sorted()
+            guard case .mouseDown(let t, let button, let x, let y) = sample else { return nil }
+            return Click(t: t, point: CGPoint(x: x, y: y), isSecondary: button == 1)
+        }.sorted { $0.t < $1.t }
     }
 
     public var isEmpty: Bool { samples.isEmpty }
@@ -83,7 +105,22 @@ public struct CursorTrack: Sendable {
         return CursorTrack(samples: forward, clicks: clicks)
     }
 
-    private init(samples: [CursorSample], clicks: [Double]) {
+    /// The clicks worth drawing a mark for at this moment, each with how far through its
+    /// mark it is — 0 the instant the button went down, 1 when the mark has finished.
+    ///
+    /// Several can overlap: a double-click is two, and they must not be collapsed into one
+    /// or the second tap would be invisible, which is exactly the moment somebody is
+    /// watching for.
+    public func marks(at time: Double, duration: Double = 0.45) -> [(click: Click, progress: Double)] {
+        guard duration > 0 else { return [] }
+        return clicks.compactMap { click in
+            let elapsed = time - click.t
+            guard elapsed >= 0, elapsed < duration else { return nil }
+            return (click, elapsed / duration)
+        }
+    }
+
+    private init(samples: [CursorSample], clicks: [Click]) {
         self.samples = samples
         self.clicks = clicks
     }
@@ -94,8 +131,8 @@ public struct CursorTrack: Sendable {
     /// settles. It is the cheapest possible way to make a click legible in a silent
     /// video, which is what most of these recordings are.
     public func clickScale(at time: Double, duration: Double = 0.28, depth: Double = 0.25) -> Double {
-        guard let click = clicks.last(where: { $0 <= time && time - $0 < duration }) else { return 1 }
-        let progress = (time - click) / duration
+        guard let click = clicks.last(where: { $0.t <= time && time - $0.t < duration }) else { return 1 }
+        let progress = (time - click.t) / duration
         // One dip, one overshoot, settling at 1.
         return 1 - depth * sin(progress * .pi * 2) * (1 - progress)
     }

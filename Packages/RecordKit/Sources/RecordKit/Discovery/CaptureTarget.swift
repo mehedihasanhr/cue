@@ -17,6 +17,27 @@ public enum CaptureTarget: Sendable, Hashable {
         }
     }
 
+    /// The recorded area's top-left, given where the thing it is part of sits on screen.
+    ///
+    /// `container` is the display's bounds for a display or an area, and the window's frame
+    /// for a window — both already in the space the pointer is read in: points, y
+    /// downwards, main display's top-left at zero.
+    ///
+    /// Pulled out as arithmetic on its own so it can be checked without a screen. The
+    /// mistake it replaces was not a hard sum, it was asking the wrong object for the
+    /// number, and a sum nobody can run is how that survives.
+    public func origin(inside container: CGRect) -> CGPoint {
+        switch self {
+        case .display, .window:
+            return container.origin
+        case .area(_, let rect):
+            // The area is measured from the display's top-left, so the recorded corner is
+            // the display's corner plus the area's own offset.
+            return CGPoint(x: container.origin.x + rect.origin.x,
+                           y: container.origin.y + rect.origin.y)
+        }
+    }
+
     /// The target a host's request asks for, or `nil` when the request says "ask me" and
     /// the add-on has to put a picker up.
     public init?(_ request: RecordingRequest.Target) {
@@ -85,6 +106,28 @@ public struct ShareableContentStore: Sendable {
             let code = (error as NSError).code
             if code == -3801 || code == -3802 { throw .permissionDenied }
             throw .contentUnavailable(error.localizedDescription)
+        }
+    }
+
+    /// Where the recorded area's top-left sits in global screen points.
+    ///
+    /// The one number the pointer track is built on, and the one that was wrong. It has to
+    /// be in `CGEvent`'s space — points, y downwards, main display's top-left at zero —
+    /// because that is what the pointer is read in. `SCContentFilter.contentRect` is not in
+    /// that space: its origin is zero, because it describes how big the content is rather
+    /// than where on the desk it is. Reading it gave a translation of nothing, which is
+    /// right only for a recording of the main display and wrong by a whole display or a
+    /// whole window for everything else.
+    ///
+    /// `CGDisplayBounds` and `SCWindow.frame` are both already in that space, which is why
+    /// they are asked instead.
+    public func origin(of target: CaptureTarget, in content: SCShareableContent) -> CGPoint {
+        switch target {
+        case .display(let id), .area(let id, _):
+            return target.origin(inside: CGDisplayBounds(id))
+        case .window(let id):
+            guard let window = content.windows.first(where: { $0.windowID == id }) else { return .zero }
+            return target.origin(inside: window.frame)
         }
     }
 

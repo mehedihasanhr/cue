@@ -129,11 +129,13 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
 
     /// A grabbable end of a chip: the hit area, and the line that says it is there.
     ///
-    /// The hit area was always here; the line was not, and an invisible handle is a
-    /// feature only the person who wrote it knows about. So the ends are drawn — two
-    /// vertical bars, the same vocabulary as the trim handles on a clip — and they are
-    /// drawn *always* rather than on hover, because a control you have to find by
-    /// sweeping the pointer across the chip is barely better than no control.
+    /// The hit area was always here; the bar was not, and an invisible handle is a feature
+    /// only the person who wrote it knows about.
+    ///
+    /// Shown on the chip that is selected, and on whichever end the pointer is over. Every
+    /// chip wearing handles all the time turned the lane into a row of brackets and said
+    /// nothing about which one you were working on — and a chip has to be selected to be
+    /// worked on anyway, so the handles arrive exactly when they become useful.
     ///
     /// Hidden below `minimumGripWidth`: on a chip a few points wide the two bars would
     /// meet in the middle and read as a filled block rather than as two ends, and the
@@ -144,12 +146,15 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
         return Rectangle()
             .fill(.clear)
             .frame(width: edgeWidth, height: height)
-            .overlay {
-                if width >= minimumGripWidth {
-                    Capsule()
-                        .fill(.white.opacity(isHovered ? 1 : (isSelected(region) ? 0.9 : 0.55)))
-                        .frame(width: isHovered ? 3 : 2, height: max(8, height - 10))
-                        .shadow(color: .black.opacity(0.35), radius: 1, y: 0.5)
+            // Flush with the chip's own edge, inside it — the bar is the end of the thing
+            // being resized, so it sits on that end rather than floating in the middle of
+            // the area that happens to catch the drag.
+            .overlay(alignment: leading ? .leading : .trailing) {
+                if width >= minimumGripWidth, isSelected(region) || isHovered {
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .fill(.white.opacity(isHovered ? 1 : 0.85))
+                        .frame(width: isHovered ? 5 : 4, height: max(10, height - 8))
+                        .shadow(color: .black.opacity(0.4), radius: 1, y: 0.5)
                         .animation(StudioMotion.state, value: isHovered)
                 }
             }

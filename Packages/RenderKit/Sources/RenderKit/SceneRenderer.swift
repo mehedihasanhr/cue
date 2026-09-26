@@ -85,6 +85,14 @@ public final class SceneRenderer: @unchecked Sendable {
         if let caption = scene.caption, let layer = CaptionArtwork.image(caption, outputSize: scene.outputSize) {
             image = layer.composited(over: image)
         }
+        // Under the pointer, deliberately: the mark says where a click landed, and the
+        // pointer is the thing the viewer is following. Clipped like the pointer is, so a
+        // click near the edge of a zoomed recording does not spill onto the padding.
+        for click in scene.clicks {
+            if let layer = clickImage(click, in: scene) {
+                image = layer.cropped(to: scene.videoFrame).composited(over: image)
+            }
+        }
         if let cursor = scene.cursor, let layer = cursorImage(cursor, in: scene) {
             // Clipped to where the video is, like the video itself. The pointer is
             // positioned against the *zoomed* frame, which is larger than the hole it
@@ -427,6 +435,81 @@ public final class SceneRenderer: @unchecked Sendable {
             .applyingFilter("CIColorMatrix", parameters: [
                 "inputAVector": CIVector(x: 0, y: 0, z: 0, w: cursor.opacity),
             ])
+    }
+
+    /// A click, marked where it happened: a ring that spreads and fades.
+    ///
+    /// A screen recording is usually watched without sound, so a click has nothing to
+    /// announce it. The pointer's swell says *something* happened; it is small, it is over
+    /// in a quarter of a second, and on a busy screen it is genuinely easy to miss. A ring
+    /// at the spot says which spot.
+    ///
+    /// Built from generators rather than drawn into a bitmap, unlike the pointer: a ring is
+    /// two rounded rectangles with the same radius as their own half-width — which is a
+    /// circle — and nothing about it varies per frame except numbers, so there is no
+    /// drawing to cache and nothing for a cache key to get wrong.
+    private func clickImage(_ click: ClickLayer, in scene: SceneDescriptor) -> CIImage? {
+        let video = scene.transformedVideoFrame
+        let point = CGPoint(x: video.minX + click.position.x * video.width,
+                            y: video.maxY - click.position.y * video.height)
+        let shorter = min(scene.outputSize.width, scene.outputSize.height)
+
+        // Out fast, then easing to a stop — the shape of something being released rather
+        // than something being animated at a constant speed, which reads as mechanical.
+        let progress = min(1, max(0, click.progress))
+        let eased = 1 - pow(1 - progress, 3)
+        let radius = shorter * click.size * (0.28 + 0.72 * eased) / 2
+        let thickness = max(1.5, shorter * click.size * 0.07)
+        guard radius > thickness else { return nil }
+
+        let fade = pow(1 - progress, 1.6)
+        let colour = click.color
+        func ink(_ alpha: Double) -> CIColor {
+            CIColor(red: colour.r, green: colour.g, blue: colour.b,
+                    alpha: max(0, min(1, colour.a * alpha)))
+        }
+
+        var mark = ring(at: point, radius: radius, thickness: thickness, color: ink(fade))
+        // A right-click gets a second, tighter ring rather than a different colour: colour
+        // is the user's setting, and overriding it to say "this one was the other button"
+        // would take their choice away to make a distinction they may not care about.
+        if click.isSecondary,
+           let inner = ring(at: point, radius: radius * 0.55, thickness: thickness * 0.8,
+                            color: ink(fade * 0.9)) {
+            mark = inner.composited(over: mark ?? CIImage.empty())
+        }
+        // A wash inside the ring for the first half, so the spot reads even on a busy
+        // screen where a thin outline can land on top of text.
+        if progress < 0.5, let fill = disc(at: point, radius: radius,
+                                           color: ink(fade * 0.18 * (1 - progress * 2))) {
+            mark = (mark ?? CIImage.empty()).composited(over: fill)
+        }
+        return mark
+    }
+
+    /// A filled circle. `roundedRectangleGenerator` with a radius of half its own side is
+    /// exactly that, and it antialiases the way every other shape here does.
+    private func disc(at point: CGPoint, radius: Double, color: CIColor) -> CIImage? {
+        guard radius > 0.5 else { return nil }
+        let filter = CIFilter.roundedRectangleGenerator()
+        let extent = CGRect(x: point.x - radius, y: point.y - radius,
+                            width: radius * 2, height: radius * 2)
+        filter.extent = extent
+        filter.radius = Float(radius)
+        filter.color = color
+        // Generators are infinite; cropping is what gives the shape an edge.
+        return filter.outputImage?.cropped(to: extent)
+    }
+
+    private func ring(at point: CGPoint, radius: Double, thickness: Double, color: CIColor) -> CIImage? {
+        guard let outer = disc(at: point, radius: radius, color: color),
+              let inner = disc(at: point, radius: radius - thickness, color: color)
+        else { return nil }
+        // Source-out keeps the outer disc only where the inner one is transparent, which
+        // is the band between them.
+        return outer.applyingFilter("CISourceOutCompositing", parameters: [
+            kCIInputBackgroundImageKey: inner,
+        ])
     }
 
     /// Smears the pointer along its travel, when it is travelling.

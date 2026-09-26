@@ -1,3 +1,5 @@
+import AppKit
+import BackgroundKit
 import SwiftUI
 import TimelineKit
 
@@ -21,7 +23,6 @@ struct CursorInspector: View {
                 InspectorSlider(model: model, "Smoothing", systemImage: "scribble",
                                 value: style.binding(\.cursor.smoothing, "Smoothing"), range: 0...1)
 
-                Toggle("Click effect", isOn: style.binding(\.cursor.clickEffect, "Click Effect"))
                 Toggle("Motion blur", isOn: style.binding(\.cursor.motionBlur, "Motion Blur"))
                 Toggle("Keep size while zoomed",
                        isOn: style.binding(\.cursor.sizeIsIndependentOfZoom, "Pointer Zoom"))
@@ -30,7 +31,43 @@ struct CursorInspector: View {
             .disabled(!model.timeline.cursor.isVisible && false)
             .inspectorSection("Pointer", systemImage: "cursorarrow.rays")
 
+            clicks
             overTime
+        }
+    }
+
+    /// What a click looks like.
+    ///
+    /// Its own section rather than two more toggles in the list above, because a screen
+    /// recording is watched without sound and this is the only thing in the whole editor
+    /// that says a click happened. Two settings, and they are not the same one: the swell
+    /// says *the pointer* did something, the ring says *this spot* was clicked.
+    @ViewBuilder
+    private var clicks: some View {
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
+            Toggle("Mark where clicks happen", isOn: style.binding(\.cursor.clickHighlight, "Click Marks"))
+            InspectorSlider(model: model, "Size", systemImage: "circle.dashed",
+                            value: style.binding(\.cursor.clickSize, "Click Size"),
+                            range: 0.03...0.16)
+                .disabled(!model.timeline.cursor.clickHighlight)
+            ColorPicker("Colour", selection: clickColour, supportsOpacity: false)
+                .disabled(!model.timeline.cursor.clickHighlight)
+            Toggle("Pointer swells on click", isOn: style.binding(\.cursor.clickEffect, "Click Effect"))
+            Text("A ring spreads from the spot that was clicked. Right-clicks get a second ring inside it.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.system(size: 12))
+        .disabled(!model.timeline.cursor.isVisible)
+        .inspectorSection("Clicks", systemImage: "cursorarrow.click")
+    }
+
+    private var clickColour: Binding<Color> {
+        Binding {
+            Color(model.timeline.cursor.clickColor.rgba.nsColor)
+        } set: { colour in
+            style.set(\.cursor.clickColor, to: RGBA(NSColor(colour)).colorValue, "Click Colour")
         }
     }
 

@@ -24,6 +24,10 @@ public struct SceneDescriptor: Equatable, Sendable {
     public var zoomCenter: CGPoint
     public var blurs: [BlurLayer]
     public var cursor: CursorLayer?
+    /// Where clicks happened, while their marks are still showing. Usually empty, often
+    /// one, occasionally two — a double-click is two marks, and collapsing them would hide
+    /// the second tap, which is the one somebody is watching for.
+    public var clicks: [ClickLayer]
     public var annotations: [AnnotationLayer]
     /// The line being spoken, if any is.
     public var caption: CaptionLayer?
@@ -51,6 +55,7 @@ public struct SceneDescriptor: Equatable, Sendable {
                 zoomCenter: CGPoint = CGPoint(x: 0.5, y: 0.5),
                 blurs: [BlurLayer] = [],
                 cursor: CursorLayer? = nil,
+                clicks: [ClickLayer] = [],
                 annotations: [AnnotationLayer] = [],
                 caption: CaptionLayer? = nil,
                 webcam: WebcamLayer? = nil,
@@ -67,6 +72,7 @@ public struct SceneDescriptor: Equatable, Sendable {
         self.zoomCenter = zoomCenter
         self.blurs = blurs
         self.cursor = cursor
+        self.clicks = clicks
         self.annotations = annotations
         self.caption = caption
         self.webcam = webcam
@@ -158,6 +164,32 @@ public struct BlurLayer: Equatable, Sendable {
         self.rect = rect
         self.style = style
         self.radius = radius
+    }
+}
+
+/// A click, marked where it happened.
+///
+/// The position is normalised to the video like the pointer's, so the mark travels with a
+/// zoom and is dropped by the same crop. The *size* is not here: it is a fraction of the
+/// finished frame, which only the renderer knows, and resolving it twice is how a ring
+/// ends up a different size in the preview than in the export.
+public struct ClickLayer: Equatable, Sendable {
+    /// Normalised to the video, top-left origin.
+    public var position: CGPoint
+    /// 0 the instant the button went down, 1 when the mark has finished spreading.
+    public var progress: Double
+    public var color: ColorValue
+    /// How big the ring grows, as a fraction of the shorter side of the output.
+    public var size: Double
+    public var isSecondary: Bool
+
+    public init(position: CGPoint, progress: Double, color: ColorValue,
+                size: Double, isSecondary: Bool) {
+        self.position = position
+        self.progress = progress
+        self.color = color
+        self.size = size
+        self.isSecondary = isSecondary
     }
 }
 
