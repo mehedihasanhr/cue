@@ -16,6 +16,12 @@ import TimelineKit
 /// own answer and give you no way to ask the question. Flat, the picture is the recording,
 /// and the box is a rectangle of it.
 ///
+/// The box has two verbs and no third: the four corners change how much is in shot, the
+/// middle moves what is in it. Nothing else on the picture is a control — a drag that
+/// lands off the box does nothing at all, rather than throwing the framing away and
+/// starting a new one, which is what it used to do and which cost the framing you had
+/// every time a move slipped an inch wide.
+///
 /// Every edit here goes through `EditorModel.setZoomArea`, which owns the arithmetic and
 /// the clamping, so the box and the renderer cannot disagree about what was drawn.
 struct ZoomAimOverlay: View {
@@ -54,12 +60,17 @@ struct ZoomAimOverlay: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            // A catcher under the box: a drag on empty picture frames a new area from
-            // scratch, the way the blur tool draws a new rectangle.
-            Color.clear
-                .contentShape(Rectangle())
-                .gesture(frameFromScratch)
-
+            // Nothing under the box catches a drag any more.
+            //
+            // There used to be a catcher here: a drag on bare picture threw the framing
+            // away and drew a new one, the way the blur tool draws a new rectangle. That is
+            // right for a blur, where a drag *makes* something, and wrong here, where the
+            // thing already exists and the drag is the only way to adjust it. Sliding a
+            // little off the box while moving it re-framed the shot from scratch, and the
+            // framing that had just been set was gone with no warning that it could be.
+            //
+            // The box has two verbs and no third: the corners resize it, the middle moves
+            // it. Everywhere else is the picture, and the picture is not a control.
             if let zoom {
                 let area = draft ?? model.zoomArea(of: zoom)
                 let rect = geometry.view(blur: area)
@@ -287,23 +298,6 @@ struct ZoomAimOverlay: View {
                 let x = anchor.x ? start.maxX - side : start.minX
                 let y = anchor.y ? start.maxY - side : start.minY
                 frame(zoom, to: CGRect(x: x, y: y, width: side, height: side),
-                      name: "Frame Zoom")
-            }
-            .onEnded { _ in end() }
-    }
-
-    /// Dragging on bare picture frames an area from nothing, like drawing a blur.
-    private var frameFromScratch: some Gesture {
-        DragGesture(minimumDistance: 4)
-            .onChanged { value in
-                guard let zoom else { return }
-                _ = begin(zoom, name: "Frame Zoom")
-                let a = geometry.blur(view: CGRect(origin: value.startLocation, size: .zero)).origin
-                let b = geometry.blur(view: CGRect(origin: value.location, size: .zero)).origin
-                // The longer side of what was swept, so a tall drag draws a box too.
-                let side = max(0.05, max(abs(b.x - a.x), abs(b.y - a.y)))
-                frame(zoom, to: CGRect(x: min(a.x, b.x), y: min(a.y, b.y),
-                                       width: side, height: side),
                       name: "Frame Zoom")
             }
             .onEnded { _ in end() }
