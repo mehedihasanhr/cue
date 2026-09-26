@@ -408,8 +408,16 @@ final class EditorModel {
     /// rectangle over. In crop mode the preview shows the whole recording, flat, so the
     /// mapping from a point on screen to a point in the footage is one aspect-fit.
     private var renderedTimeline: Timeline {
-        guard tool.flattensPreview else { return timeline }
         var draft = timeline
+        // The label being typed into is drawn by the text field on the canvas, so the
+        // renderer must not draw it as well. It did, and the two were never in the same
+        // place: the field sized its font off the box on screen while the renderer sized it
+        // off the finished frame, so typing produced a second, differently-sized copy of
+        // the words sitting across the first.
+        if let editing = editingAnnotation {
+            draft.annotations.removeAll { $0.id == editing }
+        }
+        guard tool.flattensPreview else { return draft }
         if tool.flatteningDropsCrop {
             draft.style.crop = nil
             draft.style.aspect = .source
@@ -420,6 +428,19 @@ final class EditorModel {
         draft.style.background = .color(ColorValue(r: 0.06, g: 0.06, b: 0.07))
         draft.zooms = []
         return draft
+    }
+
+    /// The label being typed into, if any — see `renderedTimeline`.
+    ///
+    /// Re-renders on the way in and on the way out, because it changes what the frame
+    /// contains: without that the renderer's copy of the words would stay on screen until
+    /// the next keystroke happened to redraw it, which is a double image that appears and
+    /// disappears depending on how fast you type.
+    var editingAnnotation: UUID? {
+        didSet {
+            guard editingAnnotation != oldValue else { return }
+            refresh()
+        }
     }
 
     /// The preview's own frame size, which differs from the export's while cropping.
@@ -1450,7 +1471,17 @@ final class EditorModel {
     @discardableResult
     func addAnnotation(_ kind: AnnotationItem.Kind, rect: CGRect) -> UUID {
         let range = drawnRange
-        let item = AnnotationItem(start: range.start, duration: range.duration, kind: kind, rect: rect)
+        var item = AnnotationItem(start: range.start, duration: range.duration, kind: kind, rect: rect)
+        // Text is sized to the box that was drawn for it. The font is a fraction of the
+        // finished frame's height and the box is a fraction of it too, so one line of text
+        // filling the box is simply the box's own height — a little under, to leave the
+        // descenders somewhere to go. Without this a box drawn any size at all got the same
+        // default size of type, which either rattled around inside it or spilled straight
+        // out of it, and the first thing anybody had to do after typing was go and find the
+        // size slider.
+        if case .text = kind {
+            item.fontSize = min(0.4, max(0.02, rect.height * 0.82))
+        }
         apply(Commands.AddAnnotation(item))
         select(.annotation(item.id))
         return item.id

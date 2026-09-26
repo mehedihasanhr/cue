@@ -109,7 +109,16 @@ struct RegionCanvas: View {
                 // tap, SwiftUI hands the first click to selection and the second never
                 // arrives as a pair.
                 .onTapGesture(count: 2) { if case .annotation = kind { beginEditing(id) } }
-                .onTapGesture { select(id: id, kind: kind) }
+                .onTapGesture {
+                    // A label that is already selected opens for typing on a single click,
+                    // the way a name does in Finder. Double-click still works from cold,
+                    // and neither is the only way in: the inspector has the same field.
+                    if case .annotation(let item) = kind, case .text = item.kind, isSelected {
+                        beginEditing(id)
+                    } else {
+                        select(id: id, kind: kind)
+                    }
+                }
                 .gesture(moveDrag(id: id, kind: kind))
 
             if case .annotation(let item) = kind, editingID == id {
@@ -139,7 +148,7 @@ struct RegionCanvas: View {
                               lineWidth: isSelected ? 2 : 1)
                 .overlay(alignment: .topLeading) {
                     if case .text(let string) = item.kind, string.isEmpty, editingID != item.id {
-                        Text("Double-click to type")
+                        Text("Click to type")
                             .font(.system(size: 10))
                             .foregroundStyle(.white.opacity(0.7))
                             .padding(4)
@@ -154,19 +163,31 @@ struct RegionCanvas: View {
     /// is how a label ends up empty in an export. A new text annotation opens this
     /// immediately, so drawing one and typing into it is a single motion.
     private func editor(for item: AnnotationItem, in rect: CGRect) -> some View {
-        TextField("", text: text(of: item.id), axis: .vertical)
+        TextField("Type your label", text: text(of: item.id), axis: .vertical)
             .textFieldStyle(.plain)
             .multilineTextAlignment(.leading)
-            .font(.system(size: max(9, rect.height * 0.5), weight: .semibold))
+            // The renderer's font, exactly: `NSFont.systemFont(ofSize: outputHeight *
+            // fontSize, weight: .semibold)`. The stage *is* the finished frame on screen, so
+            // its height stands in for the output's. This used to be half the box's height,
+            // which is a different number entirely — which is why what you typed was never
+            // the size of what appeared.
+            .font(.system(size: max(9, stage.height * item.fontSize), weight: .semibold))
             .foregroundStyle(Color(item.color.rgba.nsColor))
-            .padding(4)
-            .background(.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+            // No plate behind it. The point of typing on the picture is seeing what the
+            // label will look like on the picture, and a dark rectangle under it is the one
+            // thing guaranteed not to be in the export. What says "you are typing" is the
+            // caret and the box's own accent outline.
             .frame(width: rect.width, height: rect.height, alignment: .topLeading)
             .offset(x: rect.minX, y: rect.minY)
             .focused($isTyping)
             .onSubmit { endEditing() }
             .onExitCommand { endEditing() }
-            .onAppear { isTyping = true }
+            .onAppear {
+                isTyping = true
+                model.editingAnnotation = item.id
+            }
+            .onDisappear { model.editingAnnotation = nil }
+            .accessibilityLabel("Annotation text")
     }
 
     private func text(of id: UUID) -> Binding<String> {
@@ -182,6 +203,7 @@ struct RegionCanvas: View {
     private func beginEditing(_ id: UUID) {
         model.select(.annotation(id))
         editingID = id
+        model.editingAnnotation = id
     }
 
     /// Leaves typing, and takes an empty label away with it.
@@ -189,7 +211,11 @@ struct RegionCanvas: View {
     /// A blank text annotation draws nothing at all, so leaving one behind would be an
     /// invisible object on the timeline that the user cannot see to delete.
     private func endEditing() {
-        defer { editingID = nil; isTyping = false }
+        defer {
+            editingID = nil
+            isTyping = false
+            model.editingAnnotation = nil
+        }
         guard let editingID,
               let item = model.timeline.annotations.first(where: { $0.id == editingID }),
               case .text(let string) = item.kind,
