@@ -9,9 +9,12 @@ struct TimelineClipRow: View {
     let height: CGFloat
 
     @State private var trimOrigin: Clip?
+    /// Which handle the pointer is over, as "<clip id>-<side>".
+    @State private var hoveredHandle: String?
 
     private var viewport: TimelineViewport { model.viewport }
     private let handleWidth: CGFloat = 10
+    private let radius: CGFloat = 6
 
     private static let speeds: [Double] = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4, 8]
 
@@ -35,23 +38,25 @@ struct TimelineClipRow: View {
         let left = viewport.x(for: start)
         let width = max(4, clip.duration.seconds * viewport.pointsPerSecond)
 
-        return RoundedRectangle(cornerRadius: 6, style: .continuous)
+        return RoundedRectangle(cornerRadius: radius, style: .continuous)
             .fill(Color.orange.opacity(isSelected(clip) ? 0.5 : 0.32))
             .overlay { badge(clip, width: width) }
             .overlay { sourceTimes(clip, width: width) }
             .overlay {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
                     .strokeBorder(.white.opacity(isSelected(clip) ? 0.9 : 0), lineWidth: 1.5)
             }
             .frame(width: width, height: height)
-            .offset(x: left)
+            .overlay(alignment: .leading) { handle(clip, at: index, leading: true, width: width) }
+            .overlay(alignment: .trailing) { handle(clip, at: index, leading: false, width: width) }
             .contentShape(Rectangle())
             .onTapGesture { model.select(.clip(clip.id)) }
-            .overlay {
-                handle(clip, at: index, leading: true).offset(x: left)
-                handle(clip, at: index, leading: false).offset(x: left + width - handleWidth)
-            }
             .contextMenu { menu(clip, at: index) }
+            // Placed, not drawn-offset. See `TimelineRegionRow.body(for:)` for what the
+            // offset this replaces did to hit testing — here it meant that after a split
+            // only the last piece could be clicked, because every piece's hit area was
+            // stacked on the first one's.
+            .position(x: left + width / 2, y: height / 2)
     }
 
     /// Length and speed, the way the reference puts them: one chip in the middle.
@@ -129,15 +134,30 @@ struct TimelineClipRow: View {
 
     // MARK: - Trimming
 
-    private func handle(_ clip: Clip, at index: Int, leading: Bool) -> some View {
-        Rectangle()
-            .fill(.white.opacity(0.001))
-            .frame(width: handleWidth, height: height)
+    /// A grabbable end of a clip, drawn the way a region's is: a solid bar in the lane's
+    /// colour, full height, carrying the clip's corners on its outside.
+    ///
+    /// It used to be invisible — `white.opacity(0.001)` — which made trimming a thing you
+    /// had to already know about, and put the only sign that a clip has ends you can move
+    /// nowhere at all.
+    private func handle(_ clip: Clip, at index: Int, leading: Bool, width: CGFloat) -> some View {
+        let key = "\(clip.id)-\(leading)"
+        let isHovered = hoveredHandle == key
+        let bar = max(2, min(handleWidth, width / 3))
+        return UnevenRoundedRectangle(topLeadingRadius: leading ? radius : 0,
+                                      bottomLeadingRadius: leading ? radius : 0,
+                                      bottomTrailingRadius: leading ? 0 : radius,
+                                      topTrailingRadius: leading ? 0 : radius,
+                                      style: .continuous)
+            .fill(Color.orange.opacity(isHovered ? 1 : 0.8))
+            .frame(width: bar, height: height)
             .contentShape(Rectangle())
             .onHover { inside in
+                hoveredHandle = inside ? key : (hoveredHandle == key ? nil : hoveredHandle)
                 if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
             }
             .gesture(trim(clip, at: index, leading: leading))
+            .animation(StudioMotion.state, value: isHovered)
     }
 
     private func trim(_ clip: Clip, at index: Int, leading: Bool) -> some Gesture {
@@ -214,7 +234,7 @@ struct TimelineClipRow: View {
                 .background(Color.yellow, in: Circle())
             }
             .buttonStyle(BarButtonStyle())
-            .offset(x: x, y: (height - 26) / 2)
+            .position(x: x + 13, y: height / 2)
             .help(head ? "Put back \(Timecode.length(trimmed)) from the start"
                        : "Put back \(Timecode.length(trimmed)) from the end")
         }

@@ -54,9 +54,8 @@ struct TimelineSoundRow: View {
         return !model.timeline.sound.isAudible
     }
     private var runs: [SoundRun]? { model.timeline.detachedSound }
-    private let edgeWidth: CGFloat = 8
-    /// Below this the two grips would touch, so the piece is left plain.
-    private let minimumGripWidth: CGFloat = 26
+    private let edgeWidth: CGFloat = 10
+    private let radius: CGFloat = 5
     @State private var hoveredGrip: String?
 
     /// What this lane selects when it is clicked as a whole: this source, or — with no
@@ -163,12 +162,12 @@ struct TimelineSoundRow: View {
         let width = max(4, clip.duration.seconds * viewport.pointsPerSecond)
         let selected = model.selection == laneSelection
 
-        return RoundedRectangle(cornerRadius: 5, style: .continuous)
+        return RoundedRectangle(cornerRadius: radius, style: .continuous)
             .fill(tint.opacity(selected ? 0.4 : 0.26))
             .overlay { waveform(clippedTo: width, offsetBy: left,
                                 spans: TimelineWaveform.Span.followingClips(of: model.timeline)) }
             .overlay {
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
                     .strokeBorder(.white.opacity(selected ? 0.9 : 0), lineWidth: 1.5)
             }
             // Only on the first slice, so a cut-up recording gets one label rather than
@@ -178,7 +177,7 @@ struct TimelineSoundRow: View {
             }
             .opacity(isMuted ? 0.45 : 1)
             .frame(width: width, height: height)
-            .offset(x: left)
+            .position(x: left + width / 2, y: height / 2)
     }
 
     // MARK: - Detached: the sound with a life of its own
@@ -188,36 +187,34 @@ struct TimelineSoundRow: View {
         let width = max(6, run.duration.seconds * viewport.pointsPerSecond)
         let selected = model.selection == .soundRun(run.id)
 
-        return RoundedRectangle(cornerRadius: 5, style: .continuous)
+        return RoundedRectangle(cornerRadius: radius, style: .continuous)
             .fill(tint.opacity(selected ? 0.46 : 0.3))
             .overlay { waveform(clippedTo: width, offsetBy: left, spans: [.init(run)]) }
             .overlay {
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
                     .strokeBorder(.white.opacity(selected ? 0.9 : 0), lineWidth: 1.5)
             }
             .overlay(alignment: .leading) {
                 // Only where there is room: a run trimmed to half a second is narrower
                 // than its own badge, and a badge overhanging its run points at the
                 // wrong one.
-                if width > 34 { label.padding(.leading, 6) }
+                if width > 34 + edgeWidth { label.padding(.leading, edgeWidth + 4) }
             }
             .opacity(isMuted ? 0.45 : 1)
             .frame(width: width, height: height)
-            .offset(x: left)
+            .overlay(alignment: .leading) { edge(run, leading: true, width: width) }
+            .overlay(alignment: .trailing) { edge(run, leading: false, width: width) }
             .contentShape(Rectangle())
             .onTapGesture { model.select(.soundRun(run.id)) }
             .gesture(move(run))
-            // Aligned to the run's own ends, no offsets — see `TimelineRegionRow` for what
-            // the offsets that used to be here were doing and why they were a chip's width
-            // out.
-            .overlay(alignment: .leading) { edge(run, leading: true, width: width) }
-            .overlay(alignment: .trailing) { edge(run, leading: false, width: width) }
             .contextMenu {
                 Button("Delete", role: .destructive) { model.deleteSelection(run.id) }
                 Divider()
                 laneMenu
             }
             .help("Sound · \(Timecode.length(run.duration))")
+            // Placed rather than offset — see `TimelineRegionRow.body(for:)`.
+            .position(x: left + width / 2, y: height / 2)
     }
 
     // MARK: - Gestures
@@ -238,31 +235,25 @@ struct TimelineSoundRow: View {
             .onEnded { _ in end() }
     }
 
-    /// A grabbable end of a run, and the line that says it is there.
-    ///
-    /// Drawn on the run that is selected, and on whichever end the pointer is over, flush
-    /// with that end — for the reasons `TimelineRegionRow` gives.
+    /// A grabbable end of a run, drawn the way a region's is — see `TimelineRegionRow.edge`.
     private func edge(_ run: SoundRun, leading: Bool, width: CGFloat) -> some View {
         let key = "\(run.id)-\(leading)"
         let isHovered = hoveredGrip == key
-        return Rectangle()
-            .fill(.clear)
-            .frame(width: edgeWidth, height: height)
-            .overlay(alignment: leading ? .leading : .trailing) {
-                if width >= minimumGripWidth, model.selection == .soundRun(run.id) || isHovered {
-                    RoundedRectangle(cornerRadius: 2, style: .continuous)
-                        .fill(.white.opacity(isHovered ? 1 : 0.85))
-                        .frame(width: isHovered ? 5 : 4, height: max(10, height - 10))
-                        .shadow(color: .black.opacity(0.4), radius: 1, y: 0.5)
-                        .animation(StudioMotion.state, value: isHovered)
-                }
-            }
+        let bar = max(2, min(edgeWidth, width / 3))
+        return UnevenRoundedRectangle(topLeadingRadius: leading ? radius : 0,
+                                      bottomLeadingRadius: leading ? radius : 0,
+                                      bottomTrailingRadius: leading ? 0 : radius,
+                                      topTrailingRadius: leading ? 0 : radius,
+                                      style: .continuous)
+            .fill(tint.opacity(isHovered ? 1 : 0.75))
+            .frame(width: bar, height: height)
             .contentShape(Rectangle())
             .onHover { inside in
                 hoveredGrip = inside ? key : (hoveredGrip == key ? nil : hoveredGrip)
                 if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
             }
             .gesture(trim(run, leading: leading))
+            .animation(StudioMotion.state, value: isHovered)
     }
 
     /// Dragging an edge trims: the sound that survives stays exactly where it was, and the

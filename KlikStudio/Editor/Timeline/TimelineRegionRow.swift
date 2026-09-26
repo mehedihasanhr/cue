@@ -36,9 +36,8 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
     @State private var hoveredGrip: String?
 
     private var viewport: TimelineViewport { model.viewport }
-    private let edgeWidth: CGFloat = 8
-    /// Below this the two grips would touch, so the chip is left plain.
-    private let minimumGripWidth: CGFloat = 26
+    private let edgeWidth: CGFloat = 10
+    private let radius: CGFloat = 5
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -61,11 +60,11 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
         let left = viewport.x(for: region.start)
         let width = max(6, region.duration.seconds * viewport.pointsPerSecond)
 
-        return RoundedRectangle(cornerRadius: 5, style: .continuous)
+        return RoundedRectangle(cornerRadius: radius, style: .continuous)
             .fill(tint.opacity(isSelected(region) ? 0.85 : 0.5))
             .overlay { shape(of: region, width: width, left: left) }
             .overlay {
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
                     .strokeBorder(.white.opacity(isSelected(region) ? 0.9 : 0), lineWidth: 1.5)
             }
             .overlay {
@@ -75,27 +74,15 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
                 }
                 .foregroundStyle(.white)
                 .lineLimit(1)
-                .padding(.horizontal, 6)
+                // Clear of the ends, so a label never runs underneath a handle.
+                .padding(.horizontal, edgeWidth + 2)
             }
             .frame(width: width, height: height)
-            .offset(x: left)
+            .overlay(alignment: .leading) { edge(region, leading: true, width: width) }
+            .overlay(alignment: .trailing) { edge(region, leading: false, width: width) }
             .contentShape(Rectangle())
             .onTapGesture { model.select(selection(region.id)) }
             .gesture(move(region))
-            // Aligned to the chip's own ends, with no offset of any kind.
-            //
-            // These used to carry `.offset(x: left)` and `.offset(x: left + width - edgeWidth)`,
-            // which were the right numbers for an overlay on the *lane* — and this overlay is
-            // on the chip, which has already been sized and moved to `left`. So the ends were
-            // placed in the chip's coordinates using the lane's, landing a whole chip's width
-            // away and, at the middle of the timeline, off the chip entirely. An overlay with
-            // no alignment centres its content, so the leading end sat in the middle of the
-            // label and the trailing one out past the right edge.
-            //
-            // The hit areas were in those same wrong places all along; nobody could see them,
-            // so resizing by an edge simply did not work where the pointer said it should.
-            .overlay(alignment: .leading) { edge(region, leading: true, width: width) }
-            .overlay(alignment: .trailing) { edge(region, leading: false, width: width) }
             .contextMenu {
                 // Acting on the region under the pointer rather than on `model.selection`,
                 // which is why these take a `Selection` — a right-click should not change
@@ -112,6 +99,19 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
                 Button("Delete", role: .destructive) { model.deleteSelection(region.id) }
             }
             .help("\(title) · \(Timecode.length(region.duration))")
+            // Laid out at its place on the timeline, rather than drawn there.
+            //
+            // This used to be `.offset(x: left)`, and an offset is a *drawing* — the view's
+            // layout frame stays where the stack put it, which for every chip in this lane
+            // is the very start. Everything that reads a layout frame therefore read the
+            // wrong one: the handles came out at the lane's left edge instead of on their
+            // chip, and the chips' hit areas all piled up on top of each other there, so a
+            // click went to whichever chip happened to be last in the stack rather than to
+            // the one under the pointer. That is why only the newest region on a lane could
+            // be selected, and why a chip further along could not be reached at all.
+            //
+            // `.position` places it, so the frame and the picture are the same rectangle.
+            .position(x: left + width / 2, y: height / 2)
     }
 
     /// The waveform, drawn across the row and then masked down to this chip.
@@ -137,43 +137,36 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
 
     // MARK: - Gestures
 
-    /// A grabbable end of a chip: the hit area, and the line that says it is there.
+    /// A grabbable end of a chip: a solid bar in the chip's own colour, full height, with
+    /// the chip's corners on its outside.
     ///
-    /// The hit area was always here; the bar was not, and an invisible handle is a feature
-    /// only the person who wrote it knows about.
+    /// Drawn on every chip rather than only on the selected one. The handles *are* the
+    /// affordance — they are what says this thing has ends you can take hold of — and
+    /// showing them only after you have already worked out that it is draggable is showing
+    /// them to somebody who no longer needs them.
     ///
-    /// Shown on the chip that is selected, and on whichever end the pointer is over. Every
-    /// chip wearing handles all the time turned the lane into a row of brackets and said
-    /// nothing about which one you were working on — and a chip has to be selected to be
-    /// worked on anyway, so the handles arrive exactly when they become useful.
-    ///
-    /// Hidden below `minimumGripWidth`: on a chip a few points wide the two bars would
-    /// meet in the middle and read as a filled block rather than as two ends, and the
-    /// drag still works because the hit areas do not depend on the drawing.
+    /// What you see is what you grab: the bar and the hit area are the same rectangle, so
+    /// there is no invisible margin around it to explain a drag that did not take.
     private func edge(_ region: Region, leading: Bool, width: CGFloat) -> some View {
         let key = "\(region.id)-\(leading)"
         let isHovered = hoveredGrip == key
-        return Rectangle()
-            .fill(.clear)
-            .frame(width: edgeWidth, height: height)
-            // Flush with the chip's own edge, inside it — the bar is the end of the thing
-            // being resized, so it sits on that end rather than floating in the middle of
-            // the area that happens to catch the drag.
-            .overlay(alignment: leading ? .leading : .trailing) {
-                if width >= minimumGripWidth, isSelected(region) || isHovered {
-                    RoundedRectangle(cornerRadius: 2, style: .continuous)
-                        .fill(.white.opacity(isHovered ? 1 : 0.85))
-                        .frame(width: isHovered ? 5 : 4, height: max(10, height - 8))
-                        .shadow(color: .black.opacity(0.4), radius: 1, y: 0.5)
-                        .animation(StudioMotion.state, value: isHovered)
-                }
-            }
+        // Never more than a third of a short chip, or a chip a few points wide would be
+        // nothing but its own handles.
+        let bar = max(2, min(edgeWidth, width / 3))
+        return UnevenRoundedRectangle(topLeadingRadius: leading ? radius : 0,
+                                      bottomLeadingRadius: leading ? radius : 0,
+                                      bottomTrailingRadius: leading ? 0 : radius,
+                                      topTrailingRadius: leading ? 0 : radius,
+                                      style: .continuous)
+            .fill(tint.opacity(isHovered ? 1 : 0.9))
+            .frame(width: bar, height: height)
             .contentShape(Rectangle())
             .onHover { inside in
                 hoveredGrip = inside ? key : (hoveredGrip == key ? nil : hoveredGrip)
                 if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
             }
             .gesture(resize(region, leading: leading))
+            .animation(StudioMotion.state, value: isHovered)
     }
 
     private func move(_ region: Region) -> some Gesture {
