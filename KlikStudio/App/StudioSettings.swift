@@ -173,9 +173,27 @@ final class StudioSettings {
         library = Self.defaultLibrary
     }
 
+    /// Resolves the bookmark *and opens it*.
+    ///
+    /// Resolving a security-scoped bookmark gives a URL; it does not give access to what
+    /// the URL points at. Without the `startAccessing` call this app can list a library
+    /// the user chose and not much else — the recorder writes into it because a recording
+    /// is created through a path the system already granted, but renaming a package,
+    /// copying one or moving one to the Trash is refused by the sandbox. The failure is
+    /// reported rather than silent, so it read as "Recordings can't rename things", which
+    /// is not what was wrong.
+    ///
+    /// Never balanced with `stopAccessing`, deliberately: this is the app's one library
+    /// folder, it is wanted for as long as the app is running, and the process exiting
+    /// releases it.
     private static func resolve(_ bookmark: Data) -> URL? {
         var stale = false
-        return try? URL(resolvingBookmarkData: bookmark, options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: &stale)
+        guard let url = try? URL(resolvingBookmarkData: bookmark,
+                                 options: .withSecurityScope,
+                                 relativeTo: nil,
+                                 bookmarkDataIsStale: &stale) else { return nil }
+        _ = url.startAccessingSecurityScopedResource()
+        return url
     }
 
     // MARK: - What the settings mean
