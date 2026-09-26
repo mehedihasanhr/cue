@@ -337,14 +337,48 @@ public final class SessionWriter: @unchecked Sendable {
 /// something, or every later sample sits earlier in the file than the picture it belongs
 /// to. The filler has to have the same format as its neighbours, which is why it is
 /// built from one.
+///
+/// Every refusal here returns `nil`. That is not defensiveness for its own sake: this runs
+/// on a capture callback, `AVAudioPCMBuffer`'s initialiser reports bad arguments by raising
+/// an Objective-C exception, and an exception on a dispatch queue is an abort — there is
+/// nothing above it to catch it. Missing silence is a recording that is slightly out of
+/// step. A raise is a recording that is gone.
 enum SilenceBuffer {
+    /// The longest silence worth synthesising in one buffer.
+    ///
+    /// Thirty seconds at 48 kHz stereo is about eleven megabytes, which is already far more
+    /// than any real gap. Beyond this something has gone wrong with the clock rather than
+    /// with the audio, and allocating what the arithmetic asks for is how that becomes an
+    /// abort instead of a glitch.
+    static let maximumDuration = CMTime(seconds: 30, preferredTimescale: 600)
+
     static func make(like buffer: CMSampleBuffer, duration: CMTime, at time: CMTime) -> CMSampleBuffer? {
-        guard let description = buffer.formatDescription,
-              let streamDescription = description.audioStreamBasicDescription,
-              let format = AVAudioFormat(streamDescription: [streamDescription].withUnsafeBufferPointer { $0.baseAddress! })
+        guard duration.isValid, !duration.isIndefinite, duration > .zero, duration <= maximumDuration,
+              time.isValid,
+              let description = buffer.formatDescription,
+              let streamDescription = description.audioStreamBasicDescription
         else { return nil }
 
-        let frames = AVAudioFrameCount(max(1, (duration.seconds * format.sampleRate).rounded()))
+        // `AVAudioFormat(streamDescription:)` borrows the pointer it is given, so the
+        // pointer has to be valid *while it reads it*. This used to be written as
+        // `[streamDescription].withUnsafeBufferPointer { $0.baseAddress! }`, which returns
+        // the address of a temporary array and then uses it after the closure — and
+        // therefore after the array may be gone. It worked for as long as nothing happened
+        // to reuse that memory, and when something did the format came back describing
+        // whatever was there instead. A format that is not PCM makes `AVAudioPCMBuffer`
+        // raise, which is why this was a crash in the middle of a recording rather than a
+        // silence of the wrong length.
+        var asbd = streamDescription
+        guard let format = withUnsafePointer(to: &asbd, { AVAudioFormat(streamDescription: $0) }),
+              // The raise this function exists to avoid. A compressed format has no frames
+              // to zero, and there is no silence to make for it.
+              format.commonFormat != .otherFormat,
+              format.channelCount > 0, format.sampleRate > 0
+        else { return nil }
+
+        let requested = (duration.seconds * format.sampleRate).rounded()
+        guard requested >= 1, requested.isFinite, requested <= Double(AVAudioFrameCount.max) else { return nil }
+        let frames = AVAudioFrameCount(requested)
         guard let pcm = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else { return nil }
         pcm.frameLength = frames   // freshly allocated buffers are zeroed, which is silence
 
