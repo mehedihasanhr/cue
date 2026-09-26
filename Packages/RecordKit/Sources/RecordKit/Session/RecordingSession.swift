@@ -400,6 +400,16 @@ public final class RecordingSession {
         return false
     }
 
+    /// Whether a camera is open for the take that is running.
+    ///
+    /// Read off the apparatus rather than off any preference, and that distinction is the
+    /// whole reason it exists: the bar draws an indicator from this, and a preference can
+    /// say yes for a take that a host's request turned the camera off for. An indicator
+    /// about a camera that is right most of the time is worse than none — it is the app
+    /// claiming to be filming somebody when it is not, which teaches the user to stop
+    /// believing it in the case that matters.
+    public var isRecordingCamera: Bool { webcam != nil }
+
     @discardableResult
     public func stop() async -> Result<URL, RecordingError> {
         // A paused take is stopped by letting it go first: the file is still open, so

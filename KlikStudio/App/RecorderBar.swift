@@ -336,13 +336,16 @@ struct RecorderBar: View {
     /// strip. So while a take is running with the camera on, the bar says so in words, in
     /// the same place the elapsed time is.
     ///
-    /// Read off the state, not off a flag of our own: the layout only exists in `.recording`,
-    /// `.paused` and `.finishing`, and `recordsCamera` is what put a `webcamID` on the
-    /// configuration this take is running under. Dimmed while paused, because the camera's
-    /// session is still open but nothing is reaching the file.
+    /// Read off the session's own apparatus rather than off `recordsCamera`: a host's
+    /// request can switch the camera off for one take while the preference still says yes,
+    /// and an indicator about a camera that is right most of the time is worse than none.
+    /// Dimmed while paused, because the session is still open but nothing is reaching the
+    /// file.
     @ViewBuilder
     private var cameraLive: some View {
-        if settings.recordsCamera, studio.session.state.isTaking || studio.session.state == .finishing {
+        // `isTaking` as well, so this goes away the moment Stop is pressed: `.finishing` is
+        // the file being closed, and the camera has already been let go of by then.
+        if studio.session.isRecordingCamera, studio.session.state.isTaking {
             HStack(spacing: 5) {
                 Image(systemName: "video.fill")
                     .font(.system(size: 11))
