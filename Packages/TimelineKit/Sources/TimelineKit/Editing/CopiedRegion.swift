@@ -23,8 +23,9 @@ public enum CopiedRegion: Equatable, Sendable {
 
     /// Reads whatever the selection points at, if it points at something copyable.
     ///
-    /// `nil` for a clip, a range and the trim handles. That is not an oversight — see the
-    /// note on `placed(at:in:)` about why footage is a different feature.
+    /// `nil` for a clip, a range and the trim handles. Not an oversight and no longer a
+    /// refusal either: footage is `CopiedFootage`'s business, and the two initialisers
+    /// divide every selection between them so a caller can simply ask both.
     public init?(_ selection: Selection, in timeline: Timeline) {
         switch selection {
         case .zoom(let id):
@@ -47,8 +48,10 @@ public enum CopiedRegion: Equatable, Sendable {
             self = .cursor(region)
         // A run of the recording's own sound is footage, not a region, whatever lane it
         // is drawn on — pasting one would mean a second copy of the same take playing over
-        // itself, which is a feature, not a side effect of Copy. Listed with the clip for
-        // exactly the reason the note above gives.
+        // itself, which is a feature, not a side effect of Copy. Still refused even now
+        // that footage *is* copyable, and deliberately: `CopiedFootage` copies picture and
+        // sound together, and a sound run on its own would paste sound that no picture in
+        // the edit accounts for. Listed with the clip for exactly that reason.
         case .none, .clip, .range, .headTrim, .tailTrim, .sound, .soundRun:
             return nil
         }
@@ -147,12 +150,14 @@ public enum CopiedRegion: Equatable, Sendable {
     /// `nil` when the edit has no room for a region at all, which is a timeline shorter
     /// than `Clip.minimumDuration` — nothing sensible to do but refuse.
     ///
-    /// Deliberately only regions. A copied *clip* or a copied `Selection.range` is
-    /// footage, and pasting footage is a different operation: it has to insert time into
-    /// the timeline, split whatever clip the playhead is inside, and ripple every region
-    /// after the insertion point along — which is `ClipSequence`'s work, not a paste's.
-    /// Doing it badly would be worse than not offering it, so the range cases return
-    /// `nil` from `init?(_:in:)` above and the menu item stays disabled.
+    /// Deliberately only regions, and that division has outlived the reason it was first
+    /// written down. A copied *clip* or a copied `Selection.range` is footage, and pasting
+    /// footage is a different operation: it inserts time into the timeline, cuts the
+    /// sequence at the insertion point and ripples every region after it along. That is
+    /// `ClipSequence.insert`'s work and `CopiedFootage`'s payload — never a region paste's,
+    /// because appending into a lane cannot make a timeline longer. The range cases still
+    /// return `nil` from `init?(_:in:)` above; what has changed is that the editor asks
+    /// `CopiedFootage` next instead of disabling the menu item.
     public func placed(at start: CMTime, in timeline: Timeline) -> CopiedRegion? {
         let end = timeline.duration
         guard end > Clip.minimumDuration else { return nil }
