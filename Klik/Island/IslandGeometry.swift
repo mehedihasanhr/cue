@@ -70,6 +70,9 @@ nonisolated struct IslandGeometry: Equatable {
     static let flashContentHeight: CGFloat = 48
     static let promptContentHeight: CGFloat = 64
     static let formWidth: CGFloat = 460
+    /// The recording surface is the form's width on purpose: it holds a grid of window
+    /// pictures, and anything narrower puts two to a row on a laptop.
+    static let recordWidth: CGFloat = 460
     static let formContentHeight: CGFloat = 300
     static let panelHorizontalPadding: CGFloat = 4
     static let panelBottomPadding: CGFloat = 8 // with the panel's own 16, the same 24 as its sides

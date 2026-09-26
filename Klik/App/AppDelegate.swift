@@ -1092,6 +1092,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             settingsWindow?.present(.studio)
             return
         }
+        // Asked here rather than by the add-on. `\.ask` handed the question to Klik
+        // Studio, which answered it by taking the whole screen — a second app dimming the
+        // display to ask which part of it you meant, while you were already in Klik.
+        guard let island else { return askAddOnToChoose() }
+        let preferences = recorder.preferences
+        var parts = [preferences.recordsSystemAudio ? "System audio" : "No system audio"]
+        if preferences.recordsMicrophone { parts.append("Microphone") }
+        if preferences.countdownSeconds > 0 { parts.append("\(preferences.countdownSeconds)s countdown") }
+        island.showRecorder(summary: parts.joined(separator: " · ")) { [recorder] target in
+            Task {
+                do {
+                    try await recorder.record(target: target)
+                } catch {
+                    Log.addOns.error("Recording request failed: \(error.localizedDescription, privacy: .public)")
+                    NSAlert(error: error).runModal()
+                }
+            }
+        }
+    }
+
+    /// The old route, for the case where there is no island to ask in.
+    private func askAddOnToChoose() {
         Task { [recorder] in
             do {
                 try await recorder.record(target: .ask)

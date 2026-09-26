@@ -1,4 +1,5 @@
 import os
+import AddOnKit
 import AppKit
 import SwiftUI
 
@@ -80,6 +81,15 @@ final class IslandController {
             guard let self, model.phase == .expanded else { return }
             model.arrowPress = (delta, model.arrowPress.tick + 1)
         }
+        // The recorder closes the way the clock does: back to the panel if the pointer is
+        // still over it, otherwise out of the way entirely.
+        model.onRecordClosed = { [weak self] in
+            guard let self else { return }
+            model.recorder.cancel()
+            removeOutsideClickMonitor()
+            resignKeyIfNeeded()
+            collapse()
+        }
         model.onClockClosed = { [weak self] in
             guard let self else { return }
             removeOutsideClickMonitor()
@@ -92,6 +102,11 @@ final class IslandController {
             }
         }
         model.onOpenTimeSettings = { [weak self] in
+            self?.collapse()
+            actions.openSettings()
+        }
+        model.onOpenStudioSettings = { [weak self] in
+            self?.model.recorder.cancel()
             self?.collapse()
             actions.openSettings()
         }
@@ -447,6 +462,23 @@ final class IslandController {
         window.makeKey() // so ⎋ reaches the island
     }
 
+    /// Opens the recorder in the compact island; ⎋ or a click outside closes it.
+    ///
+    /// The choice is made here and the add-on is *told* it. Klik Studio has always been
+    /// able to take an explicit target over the bridge — it was only ever asked to find
+    /// one itself, which meant a second app taking the screen to ask a question the user
+    /// had already come here to answer.
+    func showRecorder(summary: String, onRecord: @escaping (RecordingRequest.Target) -> Void) {
+        model.recorder.summary = summary
+        model.recorder.onRecord = onRecord
+        guard model.geometry != nil, model.phase != .record else { return }
+        closeTask?.cancel()
+        flashTask?.cancel()
+        setPhase(.record, animated: true)
+        installOutsideClickMonitor()
+        window.makeKey() // so ⎋ reaches the island
+    }
+
     /// Opens the clock in the compact island; ⎋ or a click outside closes it.
     func showClock() {
         guard model.geometry != nil, model.phase != .clock else { return }
@@ -475,6 +507,8 @@ final class IslandController {
             model.onTaskDetailClosed(nil)
         case .clock:
             model.onClockClosed()
+        case .record:
+            model.onRecordClosed()
         case .prompt(let prompt):
             model.onPromptFinished(prompt, nil)
         default:
