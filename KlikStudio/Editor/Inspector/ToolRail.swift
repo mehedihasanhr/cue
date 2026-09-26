@@ -20,7 +20,7 @@ struct ToolRail: View {
     private static let groups: [[EditorTool]] = [
         [.frame, .crop],
         [.blur, .annotate],
-        [.cursor, .camera],
+        [.cursor, .webcam],
         [.captions, .audio],
     ]
 

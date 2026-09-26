@@ -118,6 +118,7 @@ public struct SceneBuilder: Sendable {
                                cursor: cursorLayer(timeline, at: time, sourceTime: sourceTime, track: track, crop: crop),
                                annotations: annotationLayers(timeline, at: time),
                                caption: captionLayer(timeline, at: time),
+                               webcam: webcamLayer(timeline, output: output, zoom: camera.zoom),
                                sourceTime: sourceTime,
                                sourceCrop: crop)
     }
@@ -168,15 +169,30 @@ public struct SceneBuilder: Sendable {
         // resting hand still gets the calm averaged camera. It binds only when the pointer
         // is about to leave, and then only by as much as it has to.
         let half = 0.5 / best.scale
-        if best.region.followsCursor, camera.follow > 0, timeline.cursor.isVisible, let track, !track.isEmpty,
+        let override = timeline.cursorOverride(at: time)
+        // A pointer nobody can see has no claim on the framing: keeping a hidden cursor in
+        // shot would drag the camera for something the viewer is not being shown, which is
+        // the opposite of why the pointer was hidden. Faded in with the region rather than
+        // switched off at its edge, so the camera does not lurch as the pointer goes.
+        if best.region.followsCursor, camera.follow > 0, timeline.cursor.isVisible,
+           override.hiding < 1, let track, !track.isEmpty,
            let sourceTime = timeline.sourceTime(at: time),
-           // The pointer as it is *drawn* — the same smoothed track and the same
-           // normalisation `cursorLayer` uses, so the two cannot disagree about where it
-           // is and the frame cannot be right about a cursor that is somewhere else.
-           let live = track.position(at: sourceTime.seconds).flatMap({ normalised($0, crop: crop) }) {
+           // The pointer as it is *drawn* — the same point `cursorLayer` uses, held and
+           // smoothed the same way, so the two cannot disagree about where it is and the
+           // frame cannot be right about a cursor that is somewhere else.
+           let live = pointerPoint(timeline, at: time, sourceTime: sourceTime,
+                                   track: track, override: override)
+               .flatMap({ normalised($0, crop: crop) }) {
             let reach = half * camera.safeArea
-            center.x = min(max(center.x, live.x - reach), live.x + reach)
-            center.y = min(max(center.y, live.y - reach), live.y + reach)
+            let kept = CGPoint(x: min(max(center.x, live.x - reach), live.x + reach),
+                               y: min(max(center.y, live.y - reach), live.y + reach))
+            // Released as the pointer fades, not the moment it is gone: the clamp can be
+            // holding the frame several per cent off the averaged centre, and dropping it on
+            // one frame would snap the picture across. `hiding` is 0 outside a hiding region,
+            // so with no cursor regions this is `kept` exactly.
+            let claim = 1 - override.hiding
+            center = CGPoint(x: center.x + (kept.x - center.x) * claim,
+                             y: center.y + (kept.y - center.y) * claim)
         }
 
         // Keep the camera inside the picture: at 2× the centre can only travel between
@@ -227,6 +243,76 @@ public struct SceneBuilder: Sendable {
         }
     }
 
+    // MARK: - The camera bubble
+
+    /// How far the bubble sits in from the edge it is parked against, as a fraction of the
+    /// shorter output side.
+    ///
+    /// A constant rather than a setting, and deliberately so: the one thing anybody wants
+    /// to change about where the bubble sits is *which* corner, and after that they want it
+    /// somewhere specific — which is what `.custom` is for. A margin slider would be a
+    /// third way of saying the same thing, with two of them able to disagree. Measured
+    /// against the shorter side like the padding, so the inset reads the same at 1080p, at
+    /// 4K and in a 9:16 reframe.
+    private static let webcamMargin = 0.035
+
+    /// The bubble for this frame, or `nil` when there isn't one.
+    ///
+    /// `nil` whenever the webcam is off, which is every project written before this
+    /// existed: `WebcamSettings.isEnabled` defaults to `false` and decodes to `false`, so
+    /// an old recording describes — and renders — exactly the frame it always did.
+    ///
+    /// Everything read out of the settings is clamped on the way through. A project is a
+    /// file, and a file can ask for a bubble of size 40, a roundness of −3 or a position
+    /// off the side of the frame; none of those should be able to produce a render nobody
+    /// can explain.
+    private func webcamLayer(_ timeline: Timeline, output: CGSize, zoom: Double) -> WebcamLayer? {
+        let webcam = timeline.webcam
+        guard webcam.isEnabled, output.width > 0, output.height > 0 else { return nil }
+
+        let shorter = min(output.width, output.height)
+        // Grown a little while the camera is in, so the bubble keeps its weight in a frame
+        // whose contents have just got bigger instead of appearing to shrink away from
+        // them. Gently, and capped: the bubble tracking a 4× zoom one-for-one would end up
+        // most of the picture, which is the opposite of the intent.
+        let reaction = webcam.reactsToZoom ? 1 + min(0.3, max(0, zoom - 1) * 0.12) : 1
+        let side = shorter * min(max(webcam.size, 0.05), 0.6) * reaction
+        let margin = shorter * Self.webcamMargin
+
+        // Normalised to the output, so the rect can be clamped and reasoned about in the
+        // same space the layer stores it in.
+        let width = side / output.width
+        let height = side / output.height
+        let insetX = margin / output.width
+        let insetY = margin / output.height
+
+        let origin: CGPoint = switch webcam.corner {
+        case .topLeft: CGPoint(x: insetX, y: insetY)
+        case .topRight: CGPoint(x: 1 - insetX - width, y: insetY)
+        case .bottomLeft: CGPoint(x: insetX, y: 1 - insetY - height)
+        case .bottomRight: CGPoint(x: 1 - insetX - width, y: 1 - insetY - height)
+        case .custom:
+            // `position` is the bubble's *centre*, which is what a drag on the preview
+            // hands over and the only reading under which the default (0.85, 0.85) means
+            // what the default corner — bottom right — means.
+            CGPoint(x: webcam.position.x - width / 2, y: webcam.position.y - height / 2)
+        }
+
+        // Kept inside the frame whatever was asked for. A bubble half off the edge is not a
+        // composition choice, it is a corrupt file or a drag that ran past the window.
+        let rect = CGRect(x: min(max(origin.x, 0), max(0, 1 - width)),
+                          y: min(max(origin.y, 0), max(0, 1 - height)),
+                          width: min(width, 1),
+                          height: min(height, 1))
+
+        return WebcamLayer(rect: rect,
+                           // Half the side is a circle, and `roundness` is the fraction of
+                           // the way there — so the model's 0…1 needs no second convention.
+                           cornerRadius: side / 2 * min(max(webcam.roundness, 0), 1),
+                           isMirrored: webcam.isMirrored,
+                           shadowOpacity: min(max(webcam.shadowOpacity, 0), 1))
+    }
+
     /// The line being spoken at this moment, if captions are on and there is one.
     ///
     /// Only one, even where two cues overlap: recognisers do produce overlapping
@@ -255,13 +341,62 @@ public struct SceneBuilder: Sendable {
                             opacity: max(0, min(1, opacity)))
     }
 
+    /// Where the pointer is drawn at this moment, in recorded points.
+    ///
+    /// One answer, used by both the cursor layer and the camera's safe-area clamp: the two
+    /// must not disagree about where the pointer is, or the frame is kept around a cursor
+    /// that is somewhere else. With no cursor regions this is `track.position(at:)` and
+    /// nothing more, so an old project gets exactly the pixels it always did.
+    private func pointerPoint(_ timeline: Timeline,
+                              at time: CMTime,
+                              sourceTime: CMTime,
+                              track: CursorTrack,
+                              override: CursorOverride) -> CGPoint? {
+        guard var point = track.position(at: sourceTime.seconds) else { return nil }
+        guard !override.isNothing else { return point }
+
+        // Extra smoothing: blend towards where the pointer has *been* over a short window.
+        // The same averaging the camera follows, for the same reason — it lags, and lag is
+        // exactly what takes the snap out of a flick — and stateless, so scrubbing to this
+        // frame gives the same point as playing to it. Blended by the window's own
+        // strength rather than switched on, so the calm arrives over the region's ramp
+        // instead of on one frame.
+        if override.smoothingWindow > 0,
+           let averaged = track.averagePosition(at: sourceTime.seconds, window: override.smoothingWindow) {
+            let strength = min(1, override.smoothingWindow / CursorRegion.maximumSmoothingWindow)
+            point = CGPoint(x: point.x + (averaged.x - point.x) * strength,
+                            y: point.y + (averaged.y - point.y) * strength)
+        }
+
+        // A hold: ease from wherever the pointer is towards where it was when the region
+        // began. Interpolated rather than assigned, so the pointer comes to rest over the
+        // ramp and leaves again the same way — a hard freeze mid-movement is the one thing
+        // that reads as a broken render rather than an edit.
+        if override.holding > 0, let since = override.heldSince,
+           let heldSource = timeline.sourceTime(at: since),
+           let held = track.position(at: heldSource.seconds) {
+            point = CGPoint(x: point.x + (held.x - point.x) * override.holding,
+                            y: point.y + (held.y - point.y) * override.holding)
+        }
+        return point
+    }
+
     private func cursorLayer(_ timeline: Timeline,
                              at time: CMTime,
                              sourceTime: CMTime,
                              track: CursorTrack?,
                              crop: CGRect) -> CursorLayer? {
         guard timeline.cursor.isVisible, let track, !track.isEmpty else { return nil }
-        guard let point = track.position(at: sourceTime.seconds),
+
+        let override = timeline.cursorOverride(at: time)
+        // Fully faded out means no layer at all rather than a transparent one: everything
+        // downstream — the renderer's filter chain, a test asking "is the pointer drawn?" —
+        // should get one answer, and an invisible pointer is not drawn.
+        let opacity = 1 - min(1, max(0, override.hiding))
+        guard opacity > 0.001 else { return nil }
+
+        guard let point = pointerPoint(timeline, at: time, sourceTime: sourceTime,
+                                       track: track, override: override),
               let position = normalised(point, crop: crop) else { return nil }
 
         var scale = timeline.cursor.scale
@@ -273,13 +408,38 @@ public struct SceneBuilder: Sendable {
         // applied to noise. `track` is the smoothed one — the caller smooths before
         // handing it over, which is what keeps that filter off the per-frame path.
         let velocity = timeline.cursor.motionBlur
-            ? track.velocity(at: sourceTime.seconds)
+            ? pointerVelocity(timeline, at: time, sourceTime: sourceTime, track: track)
             : .zero
         return CursorLayer(position: position,
                            shape: CursorShapeKind(track.shape(at: sourceTime.seconds)),
                            scale: scale,
+                           opacity: opacity,
                            velocity: velocity,
                            sizeFollowsZoom: !timeline.cursor.sizeIsIndependentOfZoom)
+    }
+
+    /// How fast the pointer is moving *as drawn*.
+    ///
+    /// Differentiated from `pointerPoint` rather than read off the track, because inside a
+    /// hold the pointer is standing still while the recorded hand is not: smearing it for
+    /// travel it is no longer making would look like a rendering fault, which is the exact
+    /// thing motion blur's direction is there to avoid. With no cursor region in force both
+    /// samples are plain track positions, so this reduces to `track.velocity(at:)` and an
+    /// old project's smear is unchanged to the last pixel.
+    private func pointerVelocity(_ timeline: Timeline,
+                                 at time: CMTime,
+                                 sourceTime: CMTime,
+                                 track: CursorTrack,
+                                 window: Double = 1 / 30) -> CGVector {
+        let before = time - CMTime(seconds: window, preferredTimescale: 600)
+        guard let now = pointerPoint(timeline, at: time, sourceTime: sourceTime, track: track,
+                                     override: timeline.cursorOverride(at: time)),
+              let then = pointerPoint(timeline, at: before,
+                                      sourceTime: sourceTime - CMTime(seconds: window, preferredTimescale: 600),
+                                      track: track,
+                                      override: timeline.cursorOverride(at: before))
+        else { return .zero }
+        return CGVector(dx: (now.x - then.x) / window, dy: (now.y - then.y) / window)
     }
 }
 

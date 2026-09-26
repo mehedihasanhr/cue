@@ -7,12 +7,15 @@ import TimelineKit
 /// The editor: the picture, what to do to it, and where you are in it.
 struct EditorView: View {
     @Environment(StudioSettings.self) private var settings
+    /// The app's exports, not this window's: one of them may well have been started here
+    /// and be finishing long after this window has gone.
+    @Environment(ExportJobs.self) private var exports
     /// What has loaded and whether the export sheet is up. Owned by the window rather
     /// than by this view, because the menu bar acts on the front editor and cannot reach
     /// a view's private state.
     @Bindable var session: EditorSession
-    /// Held by the view rather than made per presentation, so the settings someone chose
-    /// survive closing the sheet and a running export is not thrown away by a redraw.
+    /// The sheet's own state — the settings and which job it last started. The export
+    /// itself lives in `exports` above, so nothing here is holding the work.
     @State private var export = ExportModel()
     /// How wide the settings column is. Remembered across windows and launches, because
     /// somebody who widened it to read a caption meant it, and dragging it back every
@@ -57,7 +60,7 @@ struct EditorView: View {
         VStack(spacing: 0) {
             // The window's own title bar is transparent and empty — `EditorWindowController`
             // makes it so — and this is the top of the window: the name, and Export.
-            EditorToolbar(model: model) { session.isExporting = true }
+            EditorToolbar(model: model, exports: exports) { session.isExporting = true }
 
             HStack(spacing: 0) {
                 ToolRail(model: model)
@@ -100,13 +103,24 @@ struct EditorView: View {
         // The bar runs to the very top of the window, under where the title bar was.
         .ignoresSafeArea(.container, edges: .top)
         .sheet(isPresented: $session.isExporting) {
-            ExportSheet(editor: model, model: export)
+            ExportSheet(editor: model, model: export, jobs: exports)
         }
         .alert("Klik Studio", isPresented: .init(get: { model.errorMessage != nil },
                                                  set: { if !$0 { model.dismissError() } })) {
             Button("OK") { model.dismissError() }
         } message: {
             Text(model.errorMessage ?? "")
+        }
+        // Here rather than on the sound lane because two places ask to re-attach — the
+        // lane's context menu and the Edit menu — and a dialogue attached to the lane
+        // would not appear for a recording whose lane is hidden for having no sound.
+        .confirmationDialog("Re-attach the recording's sound?",
+                            isPresented: .init(get: { model.soundReattachWarning != nil },
+                                               set: { if !$0 { model.cancelSoundReattach() } })) {
+            Button("Re-attach", role: .destructive) { model.attachSound() }
+            Button("Cancel", role: .cancel) { model.cancelSoundReattach() }
+        } message: {
+            Text(model.soundReattachWarning ?? "")
         }
     }
 }

@@ -23,6 +23,7 @@ final class StudioSettings {
         static let microphone = "recording.microphone"
         static let camera = "recording.camera"
         static let microphoneID = "recording.microphoneID"
+        static let cameraID = "recording.cameraID"
         static let capturesClicks = "recording.clicks"
         static let capturesFocus = "recording.focus"
         static let cursorInVideo = "recording.cursorInVideo"
@@ -43,6 +44,7 @@ final class StudioSettings {
         static let clickEffect = "editor.clickEffect"
         static let previewVolume = "editor.previewVolume"
         static let previewMuted = "editor.previewMuted"
+        static let voiceoverCountIn = "editor.voiceoverCountIn"
     }
 
     // MARK: - Recording
@@ -53,11 +55,23 @@ final class StudioSettings {
     var codec: VideoCodec { didSet { defaults.set(codec.rawValue, forKey: Key.codec) } }
     var recordsSystemAudio: Bool { didSet { defaults.set(recordsSystemAudio, forKey: Key.systemAudio) } }
     var recordsMicrophone: Bool { didSet { defaults.set(recordsMicrophone, forKey: Key.microphone) } }
-    /// Kept, and kept off, until the webcam recorder lands: the bar shows the state
-    /// so the feature is visibly coming rather than quietly missing.
+    /// Whether a take records the camera as well as the screen.
+    ///
+    /// Off by default, and it stays off until somebody says otherwise in this app: a
+    /// recorder that remembers "yes" from a fortnight ago and films a face nobody expected
+    /// is the one failure here that cannot be undone after the fact. It is persisted, so a
+    /// user who does want it every time gets it — but nothing else ever sets it, and it is
+    /// the only thing that puts a `webcamID` on a configuration.
     var recordsCamera: Bool { didSet { defaults.set(recordsCamera, forKey: Key.camera) } }
     /// Empty means "whatever the system calls the default input".
     var microphoneID: String { didSet { defaults.set(microphoneID, forKey: Key.microphoneID) } }
+    /// Which camera, by `uniqueID`. Empty means the system's default one.
+    ///
+    /// Remembered the way `microphoneID` is, for the same reason: somebody with a good
+    /// external camera and a laptop lid should not have to pick it before every take. And
+    /// held as an ID rather than as a device, so a camera unplugged since the last take
+    /// fails when the recording starts rather than recording nothing.
+    var cameraID: String { didSet { defaults.set(cameraID, forKey: Key.cameraID) } }
     var recordsClicks: Bool { didSet { defaults.set(recordsClicks, forKey: Key.capturesClicks) } }
     /// Record which window, app and text field had focus, so the editor can zoom to
     /// what was being looked at and not only to what was clicked.
@@ -102,6 +116,15 @@ final class StudioSettings {
     var previewVolume: Double { didSet { defaults.set(previewVolume, forKey: Key.previewVolume) } }
     var previewIsMuted: Bool { didSet { defaults.set(previewIsMuted, forKey: Key.previewMuted) } }
 
+    /// How long the editor counts in before it starts recording a voiceover.
+    ///
+    /// Its own preference rather than `countdownSeconds`, which is the recorder's: that
+    /// countdown is time to get out of the way of the screen and is often turned off
+    /// entirely, whereas this one is time to draw breath and is wanted even by somebody
+    /// who records the screen with no countdown at all. Sharing one number would mean
+    /// each setting quietly changing the other feature.
+    var voiceoverCountInSeconds: Int { didSet { defaults.set(voiceoverCountInSeconds, forKey: Key.voiceoverCountIn) } }
+
     /// Where recordings are kept. A folder the user picked is held as a bookmark,
     /// because a sandboxed app that stores a path stores something it cannot open.
     private(set) var library: URL
@@ -115,6 +138,7 @@ final class StudioSettings {
         recordsMicrophone = defaults.bool(forKey: Key.microphone)
         recordsCamera = defaults.bool(forKey: Key.camera)
         microphoneID = defaults.string(forKey: Key.microphoneID) ?? ""
+        cameraID = defaults.string(forKey: Key.cameraID) ?? ""
         recordsClicks = defaults.object(forKey: Key.capturesClicks) as? Bool ?? true
         recordsFocus = defaults.object(forKey: Key.capturesFocus) as? Bool ?? true
         burnsCursorIntoVideo = defaults.bool(forKey: Key.cursorInVideo)
@@ -137,6 +161,7 @@ final class StudioSettings {
         clickEffect = defaults.object(forKey: Key.clickEffect) as? Bool ?? true
         previewVolume = defaults.object(forKey: Key.previewVolume) as? Double ?? 1
         previewIsMuted = defaults.bool(forKey: Key.previewMuted)
+        voiceoverCountInSeconds = defaults.object(forKey: Key.voiceoverCountIn) as? Int ?? 3
 
         library = (defaults.data(forKey: Key.libraryBookmark)).flatMap(Self.resolve) ?? Self.defaultLibrary
     }
@@ -162,9 +187,27 @@ final class StudioSettings {
         library = Self.defaultLibrary
     }
 
+    /// Resolves the bookmark *and opens it*.
+    ///
+    /// Resolving a security-scoped bookmark gives a URL; it does not give access to what
+    /// the URL points at. Without the `startAccessing` call this app can list a library
+    /// the user chose and not much else — the recorder writes into it because a recording
+    /// is created through a path the system already granted, but renaming a package,
+    /// copying one or moving one to the Trash is refused by the sandbox. The failure is
+    /// reported rather than silent, so it read as "Recordings can't rename things", which
+    /// is not what was wrong.
+    ///
+    /// Never balanced with `stopAccessing`, deliberately: this is the app's one library
+    /// folder, it is wanted for as long as the app is running, and the process exiting
+    /// releases it.
     private static func resolve(_ bookmark: Data) -> URL? {
         var stale = false
-        return try? URL(resolvingBookmarkData: bookmark, options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: &stale)
+        guard let url = try? URL(resolvingBookmarkData: bookmark,
+                                 options: .withSecurityScope,
+                                 relativeTo: nil,
+                                 bookmarkDataIsStale: &stale) else { return nil }
+        _ = url.startAccessingSecurityScopedResource()
+        return url
     }
 
     // MARK: - What the settings mean
@@ -185,6 +228,11 @@ final class StudioSettings {
         configuration.capturesFocus = recordsFocus
         configuration.capturesCursorInVideo = burnsCursorIntoVideo
         configuration.microphoneID = recordsMicrophone ? (microphoneID.isEmpty ? MicrophoneRecorder.defaultDevice?.uniqueID : microphoneID) : nil
+        // The one place a camera is ever asked for. `recordsCamera` off leaves this `nil`,
+        // and `nil` is the state in which `RecordingSession` never builds a camera session
+        // at all — so "the toggle is off" and "the camera is not opened" are the same fact
+        // rather than two that could drift apart.
+        configuration.webcamID = recordsCamera ? (cameraID.isEmpty ? WebcamRecorder.defaultDevice?.uniqueID : cameraID) : nil
         return configuration
     }
 

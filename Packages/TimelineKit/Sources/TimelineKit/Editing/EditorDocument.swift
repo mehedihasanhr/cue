@@ -95,6 +95,18 @@ public final class EditorDocument {
         return FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) ? url : nil
     }
 
+    /// The camera's file, for a take that recorded one — `nil` otherwise, which is every
+    /// recording made before the camera could be recorded at all.
+    ///
+    /// The existence check is the same one `videoURL` makes and matters for the same reason:
+    /// a manifest naming media that has been deleted out of the package must read as "no
+    /// camera" rather than as a decoder failure later on.
+    public var webcamURL: URL? {
+        guard let track = manifest.track(.webcam) else { return nil }
+        let url = package.url.appendingPathComponent(track.path)
+        return FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) ? url : nil
+    }
+
     public init(package: RecordingPackage) throws {
         let manifest = try package.readManifest()
         let projectURL = package.url.appendingPathComponent(Self.projectFileName)

@@ -43,12 +43,20 @@ final class EditorModel {
 
     let viewport = TimelineViewport()
     let waveform: WaveformStore
+    /// The waveforms of the sounds brought in from outside the recording. See
+    /// `RegionWaveformStore` for why these are not the one above.
+    let regionWaveforms: RegionWaveformStore
     /// The edit, out loud — and, while it plays, the clock the playhead follows.
     private(set) var audio: PreviewAudio?
 
     private let renderer = SceneRenderer()
     private var builder: SceneBuilder
     private var frames: FrameSource?
+    /// The camera's frames, when this recording has a camera. Its own source rather than a
+    /// second track of the first: see `RecordingSession`'s manifest for why the two are
+    /// separate files. `nil` for every recording made before the camera was recorded, which
+    /// is what keeps their preview the render it always was.
+    private var webcamFrames: FrameSource?
     private var renderTask: Task<Void, Never>?
     private var ticker: PlaybackTicker?
     private var lastTick: Date?
@@ -68,6 +76,7 @@ final class EditorModel {
                                backgrounds: StudioBackgroundResolver(),
                                packageURL: package.url)
         waveform = WaveformStore(package: package, manifest: document.manifest)
+        regionWaveforms = RegionWaveformStore(package: package)
 
         if let settings {
             // A project opened for the first time starts as the user's defaults say —
@@ -79,6 +88,18 @@ final class EditorModel {
             if settings.suggestsZoomsOnOpen, document.timeline.zooms.isEmpty {
                 autoZoomOnOpen = true
             }
+        }
+        // A take recorded with the camera on opens with the bubble showing.
+        //
+        // `WebcamSettings.isEnabled` defaults to `false`, which is right for the model — it
+        // is what makes every project written before the bubble existed render unchanged —
+        // but wrong as the first thing somebody sees after deliberately filming their face.
+        // Only on a document nobody has edited, like the style defaults above, so this can
+        // never turn a bubble back on that the user switched off.
+        if !document.hasBeenEdited, document.manifest.track(.webcam) != nil, !document.timeline.webcam.isEnabled {
+            var opened = document.timeline
+            opened.webcam.isEnabled = true
+            document.adopt(opened)
         }
         Task { await openSource() }
     }
@@ -131,6 +152,7 @@ final class EditorModel {
             let audio = PreviewAudio(videoURL: url, packageURL: document.package.url, settings: settings)
             audio.prepare(for: timeline)
             self.audio = audio
+            await openWebcamSource()
         } catch {
             errorMessage = error.localizedDescription
             Self.log.error("Couldn't open \(url.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)")
@@ -194,19 +216,30 @@ final class EditorModel {
             } else {
                 self.playhead = next
                 self.viewport.reveal(self.playhead, duration: self.duration)
-                self.refreshIfIdle()
+                // `refresh` coalesces, so the ticker can simply say what the playhead is now
+                // and let it decide whether that is a frame worth drawing. It used to have to
+                // ask whether a render was in flight, which meant this tick's playhead was
+                // thrown away rather than remembered.
+                self.refresh()
             }
         }
     }
 
     private func stop() {
         isPlaying = false
+        // Playback stopping ends a take, whether the playhead ran into the end of the edit
+        // or somebody pressed space: narration is recorded against the picture, and going
+        // on recording while the picture stands still would be recording against nothing.
+        voiceover?.stop()
         audio?.pause()
         ticker?.stop()
         ticker = nil
         lastTick = nil
         Task { [weak self] in
             await self?.frames?.setQuality(.exact)
+            // The one render that has to be perfect. Playback is over, `isPlaying` is
+            // already false, so `previewFidelity` is 1 and this draws the frame the export
+            // would write — byte for byte, which `RenderFidelityTests` is the guarantee of.
             self?.refresh()
         }
     }
@@ -221,26 +254,120 @@ final class EditorModel {
 
     // MARK: - Rendering
 
+    /// How big the preview pane is, in points, as SwiftUI last laid it out.
+    ///
+    /// Reported by `PreviewPane` rather than guessed, because the whole point is to
+    /// composite at the size that is actually going to be looked at, and that depends on
+    /// the window and on where the user has dragged the inspector's divider.
+    ///
+    /// `@ObservationIgnored` on purpose: it is written from a layout callback, and a stored
+    /// property the view both reads and writes during layout is a loop. Nothing observes
+    /// it — it only affects the *next* render, and the next render is already coming.
+    @ObservationIgnored private var previewPaneSize: CGSize = .zero
+
+    func previewPaneResized(to size: CGSize) {
+        previewPaneSize = size
+    }
+
+    /// The fraction of the project's resolution the preview composites at.
+    ///
+    /// 1 whenever the picture is standing still, which is the rule the export's fidelity
+    /// depends on: the moment playback stops, the frame on screen is the frame in the file.
+    /// While it plays, the size of the pane — a 4K project in a 900-point-wide pane on a 2×
+    /// display needs 1800 pixels across, not 3840, and the window server would throw the
+    /// rest away.
+    ///
+    /// Quantised to eighths rather than taken exactly, because the background cache and
+    /// Core Image's own kernels are keyed by size: a factor that drifted by a pixel with
+    /// every window resize would miss every cache it has, and would spend more on rebuilding
+    /// a gradient than it saved on compositing one.
+    private var previewFidelity: Double {
+        guard isPlaying else { return 1 }
+        let output = previewSize
+        guard output.width > 1, previewPaneSize.width > 1 else { return 1 }
+        let backing = NSScreen.main?.backingScaleFactor ?? 2
+        let wanted = max(previewPaneSize.width * backing / output.width,
+                         previewPaneSize.height * backing / output.height)
+        // Never below an eighth: past that the picture stops being a preview of anything,
+        // and the cost is by then dominated by the decode rather than by the composite.
+        return min(1, max(0.125, (wanted * 8).rounded(.up) / 8))
+    }
+
+    /// Whether a playhead change arrived while a render was in flight.
+    ///
+    /// The scrub coalescer. A drag produces events far faster than a frame decodes, and the
+    /// only frame that matters is the one under the pointer *now* — so a request that lands
+    /// on a busy renderer is remembered as "there is newer work" rather than started, and
+    /// picked up when the current frame lands. Cancelling instead, which is what this
+    /// replaced, could not help: a cancelled `Task` does not stop a decode already inside
+    /// `AVAssetImageGenerator`, so the work happened anyway and the frame the pointer was
+    /// over came back last.
+    @ObservationIgnored private var hasPendingRender = false
+
     /// Re-renders the frame under the playhead.
     ///
-    /// One render in flight at a time: dragging the scrubber asks for a new frame far
-    /// faster than a 4K frame can be decoded, and queueing them all would make the
-    /// picture lag the pointer by seconds.
+    /// One render in flight at a time, and one remembered behind it. The synchronous half —
+    /// describing the frame — runs on every call, because the overlays read `scene` and must
+    /// track the pointer without waiting for a decode; it costs a few microseconds. The
+    /// asynchronous half is what gets coalesced.
     func refresh() {
-        renderTask?.cancel()
         validateSelection()
+        // Here rather than at each place a sound is added, because there are four of them
+        // — an import, a voiceover, a paste, an undo — and the list of sounds the edit
+        // names is the only thing any of them has in common. Cheap on the ordinary path.
+        regionWaveforms.reconcile(paths: timeline.audio.map(\.path))
         let scene = builder.descriptor(for: renderedTimeline, at: playhead, cursor: smoothedCursor)
+        // Kept at full size whatever the preview draws at: this is the description of the
+        // frame the export would write, and the overlays map their handles through its
+        // `outputSize`. A scaled copy would work for them too, since everything they read is
+        // a ratio — but "what the file will contain" is the more useful thing to publish.
         self.scene = scene
+
+        guard renderTask == nil else {
+            hasPendingRender = true
+            return
+        }
+        startRender(of: scene)
+    }
+
+    private func startRender(of scene: SceneDescriptor) {
         let frames = frames
+        // The only place the preview is allowed to differ from the export, and only while
+        // the picture is moving.
+        let drawn = scene.scaled(by: previewFidelity)
+        // Only asked for when the frame being built actually has a bubble in it. The crop
+        // tool's flattened preview describes no webcam layer, and neither does a project
+        // with the camera switched off — in both cases a seek into the camera's file would be
+        // a decode nobody looks at.
+        let webcamFrames = drawn.webcam == nil ? nil : webcamFrames
 
         renderTask = Task { [renderer] in
-            defer { if !Task.isCancelled { self.renderTask = nil } }
-            let source = await frames?.frame(at: scene.sourceTime)
+            defer {
+                renderTask = nil
+                if hasPendingRender {
+                    hasPendingRender = false
+                    // Re-described rather than replayed: by now the playhead has moved on, and
+                    // the frame worth drawing is the one it is over now.
+                    refresh()
+                }
+            }
+            let source = await frames?.frame(at: drawn.sourceTime)
+            // The same source time as the screen: the two files were written against one
+            // clock, so one moment in the edit is one moment in both of them.
+            let camera = await webcamFrames?.frame(at: drawn.sourceTime)
             guard !Task.isCancelled else { return }
-            let image = renderer.cgImage(for: scene, source: source)
+            let image = renderer.cgImage(for: drawn, source: source, webcam: camera)
             guard !Task.isCancelled, let image else { return }
+            // Sized in the *full* frame's points even when the pixels are fewer, so the pane's
+            // layout and its aspect-fit arithmetic do not move when the fidelity does. The
+            // picture gets softer; nothing shifts.
             preview = NSImage(cgImage: image, size: scene.outputSize)
-            await frames?.prefetch(around: scene.sourceTime, forward: isPlaying)
+            // Skipped when a scrub is already waiting: warming the frames around a moment
+            // nobody is looking at any more is exactly the backlog this is trying not to
+            // build. Playback is the other way round — it is heading straight for those
+            // frames, so it pays for them gladly.
+            guard isPlaying || !hasPendingRender else { return }
+            await frames?.prefetch(around: drawn.sourceTime, forward: isPlaying)
         }
     }
 
@@ -260,11 +387,6 @@ final class EditorModel {
     }
 
     @ObservationIgnored private var cursorCache: (amount: Double, track: CursorTrack)?
-
-    private func refreshIfIdle() {
-        guard renderTask == nil else { return }
-        refresh()
-    }
 
     /// What the preview is showing, which is not always the edit.
     ///
@@ -343,6 +465,200 @@ final class EditorModel {
         select(.range(CMTimeRange(start: .zero, duration: duration)))
     }
 
+    // MARK: - Clipboard
+
+    /// What Copy would put on the pasteboard, or `nil` if there is nothing to put there.
+    ///
+    /// Computed from the selection each time rather than cached: the selection can stop
+    /// being valid without anything having deleted it (see `validateSelection`), and a
+    /// stale copy of a region that no longer exists is exactly the thing this must not
+    /// hand out.
+    private var copyable: CopiedRegion? { CopiedRegion(selection, in: timeline) }
+
+    /// Whether Cut, Copy and Duplicate would do anything.
+    ///
+    /// One answer for all three because they all need the same thing: something to copy.
+    /// Either half of the clipboard will do — a region, or the footage under a selected clip
+    /// or range — and which one it is only matters once the verb runs.
+    var canCopySelection: Bool { copyable != nil || copyableFootage != nil }
+
+    /// Whether Paste would do anything.
+    var canPasteRegion: Bool {
+        RegionPasteboard.shared.hasRegion || RegionPasteboard.shared.hasFootage
+    }
+
+    func copySelection() { copyRegion(selection) }
+
+    func cutSelection() { cutRegion(selection) }
+
+    func duplicateSelection() { duplicateRegion(selection) }
+
+    /// Copies whatever a selection points at, whether or not it is the current one.
+    ///
+    /// The `(_ selection:)` forms exist for the timeline's context menu, which acts on the
+    /// region the pointer is over. Making it select that region first would mean a
+    /// right-click quietly changed what the inspector is showing, which is not what a
+    /// context menu is for.
+    func copyRegion(_ selection: Selection) {
+        guard let region = CopiedRegion(selection, in: timeline) else {
+            copyFootage(selection)
+            return
+        }
+        RegionPasteboard.shared.write(region)
+    }
+
+    func cutRegion(_ selection: Selection) {
+        guard let region = CopiedRegion(selection, in: timeline) else {
+            cutFootage(selection)
+            return
+        }
+        // Written before the delete, so a failed encode leaves the region where it is
+        // rather than removing something the user can no longer paste back.
+        RegionPasteboard.shared.write(region)
+        apply(Commands.DeleteRegion(id: region.id))
+        if self.selection == selection { self.selection = .none }
+    }
+
+    /// A copy of the pasteboard's region, at the playhead.
+    ///
+    /// The playhead rather than where the original was, because the playhead is where the
+    /// user is looking and pasting on top of the original would make ⌘C ⌘V look like it
+    /// did nothing. Length, scale, easing and everything else are kept; only the identity
+    /// and the position are new.
+    func pasteAtPlayhead() {
+        // Footage first, because the two payloads never share a pasteboard — a copy of
+        // either clears it — so finding footage means footage is what was copied.
+        guard let copied = RegionPasteboard.shared.read() else {
+            pasteFootageAtPlayhead()
+            return
+        }
+        // A sound's path is relative to its own project package, so one copied out of
+        // another take names a file this project does not have. Refused rather than
+        // pasted, because a silent region that cannot be made to play is worse than a
+        // paste that explains itself. Bringing the file across is `SoundImport`'s job and
+        // a larger change than a paste.
+        if let path = copied.audioPath,
+           !FileManager.default.fileExists(atPath: packageURL.appendingPathComponent(path).path) {
+            errorMessage = "That sound belongs to another recording. Add it to this one with Add Sound…"
+            return
+        }
+        guard let placed = copied.placed(at: playhead, in: timeline) else { return }
+        apply(Commands.InsertRegion(placed, name: "Paste \(placed.title)"))
+        select(placed.selection)
+    }
+
+    /// A copy of a region, immediately after it.
+    ///
+    /// After rather than on top of, so the duplicate is visible and draggable the moment
+    /// it appears. Near the end of the edit there is no room for that, and `placed` pulls
+    /// it back inside — which leaves it overlapping the original, but on screen and
+    /// selected rather than somewhere the timeline cannot show.
+    func duplicateRegion(_ selection: Selection) {
+        guard let region = CopiedRegion(selection, in: timeline) else {
+            duplicateFootage(selection)
+            return
+        }
+        guard let placed = region.placed(at: region.end, in: timeline) else { return }
+        apply(Commands.InsertRegion(placed, name: "Duplicate \(placed.title)"))
+        select(placed.selection)
+    }
+
+    // MARK: - Clipboard: footage
+
+    /// The footage half of the clipboard, kept in one block below the region half rather
+    /// than interleaved with it.
+    ///
+    /// Every verb above asks `CopiedRegion` first and falls through to here, which works
+    /// because the two initialisers divide every `Selection` between them: a zoom is never
+    /// footage and a clip is never a region. So "did the region half refuse?" is a complete
+    /// test for "is this footage?", and neither half has to enumerate the other's cases.
+
+    /// What Copy would put on the pasteboard when the selection is footage.
+    ///
+    /// Computed each time for the reason `copyable` is: a selection can stop being valid
+    /// without anything having deleted it, and a stale stretch of an edit is exactly what
+    /// this must not hand out.
+    private var copyableFootage: CopiedFootage? { CopiedFootage(selection, in: timeline) }
+
+    func copyFootage(_ selection: Selection) {
+        guard let footage = CopiedFootage(selection, in: timeline) else { return }
+        RegionPasteboard.shared.write(footage)
+    }
+
+    /// Cut footage: copy it, then ripple-delete the stretch it came from.
+    ///
+    /// Two commands' worth of meaning and one edit, which is why it goes through
+    /// `Commands.DeleteRange` rather than `DeleteRegion` — closing the gap is the whole
+    /// difference between cutting footage and cutting a region, and it is the operation
+    /// pasting is the inverse of.
+    ///
+    /// Written to the pasteboard before the delete, the same order `cutRegion` uses and for
+    /// the same reason: a failed encode must leave the footage where it is rather than
+    /// removing something the user can no longer paste back.
+    func cutFootage(_ selection: Selection) {
+        guard let footage = CopiedFootage(selection, in: timeline),
+              let range = selection.range(in: timeline) else { return }
+        RegionPasteboard.shared.write(footage)
+        apply(Commands.DeleteRange(range))
+        if self.selection == selection { self.selection = .none }
+    }
+
+    /// A copy of the pasteboard's footage, inserted at the playhead.
+    ///
+    /// The playhead rather than where it came from, for the reason a region paste uses it:
+    /// it is where the user is looking. Unlike a region paste this makes the edit *longer*,
+    /// and everything after the playhead moves along with the footage it was placed against
+    /// — `ClipSequence.insert` is that arithmetic, and the comment there is the argument for
+    /// what travels and what is stretched.
+    ///
+    /// Sounds whose files this project has not got are dropped rather than refusing the
+    /// whole paste, which is the one place this differs from pasting a lone sound region. A
+    /// lone sound region *is* the paste, so failing it explains itself; a music cue attached
+    /// to ten seconds of picture is not what the user asked for, and throwing away their
+    /// footage over it would be the clipboard deciding what they meant.
+    func pasteFootageAtPlayhead() {
+        guard let copied = RegionPasteboard.shared.readFootage() else { return }
+        let package = packageURL
+        let settled = copied.withoutSounds { path in
+            !FileManager.default.fileExists(atPath: package.appendingPathComponent(path).path)
+        }
+        let dropped = copied.audio.count - settled.audio.count
+        let placed = settled.freshened()
+        guard applyFootage(placed, at: playhead, name: "Paste \(placed.title)") else { return }
+        if dropped > 0 {
+            errorMessage = dropped == 1
+                ? "One sound belonged to another recording and was left out. Add it with Add Sound…"
+                : "\(dropped) sounds belonged to another recording and were left out. Add them with Add Sound…"
+        }
+    }
+
+    /// A copy of the selected footage, immediately after it.
+    ///
+    /// After rather than on top of, which for footage is not a choice about visibility the
+    /// way it is for a region — there is nowhere else to put it. Inserting at the selection's
+    /// end is what makes ⌘D on a clip mean "play this twice".
+    func duplicateFootage(_ selection: Selection) {
+        guard let footage = CopiedFootage(selection, in: timeline),
+              let range = selection.range(in: timeline) else { return }
+        let placed = footage.freshened()
+        _ = applyFootage(placed, at: range.end, name: "Duplicate \(placed.title)")
+    }
+
+    /// The one door both of them go through, so the selection lands the same way either way.
+    ///
+    /// Selects the first clip that arrived rather than the range it occupies: the clips are
+    /// the things that exist afterwards and can be dragged, trimmed and deleted, and a
+    /// `.range` selection would have to be recomputed from the insertion point — arithmetic
+    /// the command has already done and would only get to disagree with.
+    @discardableResult
+    private func applyFootage(_ footage: CopiedFootage, at time: CMTime, name: String) -> Bool {
+        let before = timeline
+        apply(Commands.InsertFootage(footage, at: time, name: name))
+        guard timeline != before else { return false }
+        if let first = footage.clips.first { select(.clip(first.id)) }
+        return true
+    }
+
     // MARK: - Editing
 
     func apply(_ command: some TimelineCommand) {
@@ -369,6 +685,108 @@ final class EditorModel {
         select(.zoom(region.id))
     }
 
+    // MARK: - Zooms, on the second pass
+
+    /// The zoom the verbs act on: the selected one, or — with nothing selected — the one
+    /// under the playhead.
+    ///
+    /// Falling back to the playhead is not a convenience, it is what makes the menu items
+    /// usable: somebody scrubbing to the moment a push-in should become two has their hands
+    /// on the playhead, not on the lane, and making them click the chip first to say
+    /// something the playhead already says would be a step for the computer's benefit.
+    /// The last match wins where two overlap, which is the topmost chip on the lane.
+    var activeZoom: ZoomRegion? {
+        if case .zoom(let id) = selection, let zoom = timeline.zooms.first(where: { $0.id == id }) {
+            return zoom
+        }
+        return timeline.zooms.last { $0.contains(playhead) }
+    }
+
+    /// The zoom this one would be merged with: the next one along the lane.
+    ///
+    /// The next rather than the nearest, because the lane is sorted by start and "merge with
+    /// the one after this" is a sentence the user can predict the outcome of. `nil` for the
+    /// last zoom on the lane, which is what disables the menu item.
+    var zoomToMergeInto: ZoomRegion? {
+        guard let zoom = activeZoom,
+              let index = timeline.zooms.firstIndex(where: { $0.id == zoom.id }),
+              index + 1 < timeline.zooms.count else { return nil }
+        return timeline.zooms[index + 1]
+    }
+
+    /// Whether the playhead is somewhere the active zoom can actually be cut.
+    ///
+    /// Asked before the command so the menu item can be grey rather than inert: a split
+    /// within a few frames of either end would leave a chip too small to see or grab, and
+    /// `ZoomLane.split` refuses it.
+    var canSplitZoom: Bool {
+        guard let zoom = activeZoom else { return false }
+        return ZoomLane.split(zoom, at: playhead) != nil
+    }
+
+    /// One long push-in becomes two, cut at the playhead.
+    ///
+    /// The second half is left selected: the playhead is sitting at its start, so it is the
+    /// part the user is looking at and the one they cut in order to aim somewhere else.
+    func splitZoomAtPlayhead() {
+        guard let zoom = activeZoom else { return }
+        let before = Set(timeline.zooms.map(\.id))
+        apply(Commands.SplitZoom(id: zoom.id, at: playhead))
+        if let fresh = timeline.zooms.first(where: { !before.contains($0.id) }) {
+            select(.zoom(fresh.id))
+        }
+    }
+
+    func mergeZoomWithNext() {
+        guard let zoom = activeZoom, let next = zoomToMergeInto else { return }
+        apply(Commands.MergeZooms(zoom.id, next.id))
+        // The earlier id survives a merge, so the selection lands on a region that is still
+        // there — which is the reason `MergeZooms` keeps it rather than minting a new one.
+        select(.zoom(zoom.id))
+    }
+
+    func toggleZoomLock() {
+        guard let zoom = activeZoom else { return }
+        let locking = !zoom.isLocked
+        apply(Commands.RestyleZoom(id: zoom.id, name: locking ? "Lock Zoom" : "Unlock Zoom") {
+            $0.isLocked = locking
+        })
+    }
+
+    /// Scale, ramp and easing back to what a new zoom has; where it is and what it points at
+    /// left alone. `ZoomLane.reset` says why.
+    func resetZoom() {
+        guard let zoom = activeZoom else { return }
+        apply(Commands.RestyleZoom(id: zoom.id, name: "Reset Zoom") { $0 = ZoomLane.reset($0) })
+    }
+
+    /// Point a zoom at somewhere on the picture.
+    ///
+    /// `center` is normalised to the *recording*, like a blur's rect — the overlay converts
+    /// for us, because it is the only place that knows where the picture landed on screen.
+    /// Clamped here rather than there, so a point that came from a drag off the edge of the
+    /// window cannot be stored.
+    ///
+    /// Following the pointer is turned off in the same step, and that is the one thing here
+    /// that changes a setting the user did not touch. It is the honest reading of the
+    /// gesture: a zoom that follows the cursor works out its own centre every frame, so
+    /// placing a crosshair on a following zoom would be an edit with no effect on any frame.
+    /// One undo puts both back.
+    func aimZoom(_ id: UUID, at point: CGPoint) {
+        let clamped = CGPoint(x: min(1, max(0, point.x)), y: min(1, max(0, point.y)))
+        apply(Commands.RestyleZoom(id: id, name: "Aim Zoom") {
+            $0.center = clamped
+            $0.followsCursor = false
+        })
+    }
+
+    /// Turn the aiming overlay on for a zoom, having selected it.
+    func aimSelectedZoom() {
+        guard let zoom = activeZoom else { return }
+        select(.zoom(zoom.id))
+        tool = .zoom
+    }
+
     func setSpeed(_ speed: Double, of clipID: UUID) {
         guard let index = timeline.clips.firstIndex(where: { $0.id == clipID }) else { return }
         apply(Commands.SetSpeed(CMTimeRange(start: timeline.start(ofClipAt: index),
@@ -384,6 +802,10 @@ final class EditorModel {
 
     /// Whether a transcript is being made right now, so the inspector can say so.
     private(set) var isGeneratingCaptions = false
+    /// How far along it is, when the recogniser can honestly say — `nil` when it cannot,
+    /// which is the whole of the older recogniser's run and the whole of a model download.
+    /// The inspector spins on `nil` and fills on a number; neither of them invents one.
+    private(set) var captionProgress: Double?
 
     /// Listens to the recording and writes down what was said.
     ///
@@ -393,11 +815,20 @@ final class EditorModel {
     func generateCaptions() {
         guard !isGeneratingCaptions, let videoURL = document.videoURL else { return }
         isGeneratingCaptions = true
+        captionProgress = nil
 
         Task {
-            defer { isGeneratingCaptions = false }
+            defer {
+                isGeneratingCaptions = false
+                captionProgress = nil
+            }
             do {
-                let cues = try await CaptionGenerator.cues(for: videoURL, timeline: timeline)
+                let cues = try await CaptionGenerator.cues(for: videoURL, timeline: timeline) { [weak self] done in
+                    Task { @MainActor in
+                        guard let self, self.isGeneratingCaptions else { return }
+                        self.captionProgress = done
+                    }
+                }
                 apply(Commands.SetCaptions(cues))
             } catch let failure as CaptionGenerator.Failure {
                 errorMessage = failure.message
@@ -466,10 +897,211 @@ final class EditorModel {
         }
     }
 
+    // MARK: - Voiceover
+
+    /// The take being recorded, or `nil` when none is. Read by the inspector so the panel
+    /// can count in and offer Stop.
+    private(set) var voiceover: VoiceoverRecorder?
+
+    /// The timeline time the current take punched in at.
+    ///
+    /// Read once, at the instant the file opened, and never recomputed: by the time the
+    /// take stops the playhead has moved on by however long it lasted, so asking then
+    /// would place every voiceover at its own end.
+    private var voiceoverPunchIn: CMTime?
+
+    var isRecordingVoiceover: Bool { voiceover?.state.isBusy == true }
+
+    func toggleVoiceover() {
+        isRecordingVoiceover ? stopVoiceover() : startVoiceover()
+    }
+
+    /// Records narration against the edit, starting at the playhead.
+    ///
+    /// The permission comes first and on its own: a dialog that appears *during* a
+    /// count-in would eat the count-in, and a refusal has to be something the editor says
+    /// out loud rather than a take that turns out to be silence.
+    func startVoiceover() {
+        guard voiceover == nil else { return }
+        guard duration - playhead >= Clip.minimumDuration else {
+            errorMessage = "There is no room at the playhead for a voiceover. Move it back and try again."
+            return
+        }
+
+        Task {
+            do {
+                try await VoiceoverRecorder.requestAccess()
+            } catch let denial as RecordingError {
+                // Said in full, because the two halves are different facts: what is
+                // missing, and where to go and grant it.
+                errorMessage = [denial.errorDescription, denial.recoverySuggestion]
+                    .compactMap { $0 }
+                    .joined(separator: " ")
+                return
+            } catch {
+                report(error)
+                return
+            }
+            guard voiceover == nil, isRecordingVoiceover == false else { return }
+            arm()
+        }
+    }
+
+    private func arm() {
+        // A take starts from a stationary playhead: the count-in is time to draw breath,
+        // and the picture running through it would leave the first words over the wrong
+        // few seconds.
+        if isPlaying { stop() }
+
+        let recorder = VoiceoverRecorder(
+            deviceID: settings?.microphoneID,
+            countIn: settings?.voiceoverCountInSeconds ?? 3,
+            onPunchIn: { [weak self] in self?.voiceoverDidPunchIn() },
+            onFinish: { [weak self] result in self?.voiceoverDidFinish(result) }
+        )
+        voiceover = recorder
+        // Before anything is written, not when the file opens: the speakers have to be
+        // quiet for the whole of the take, including the moment it begins.
+        audio?.silenceForCapture()
+
+        do {
+            try recorder.arm()
+        } catch {
+            voiceover = nil
+            audio?.stopSilencingForCapture()
+            report(error)
+        }
+    }
+
+    /// The file is open. This is the take's zero, and the moment the edit starts playing.
+    private func voiceoverDidPunchIn() {
+        voiceoverPunchIn = playhead
+        if !isPlaying { play() }
+    }
+
+    func stopVoiceover() {
+        voiceover?.stop()
+    }
+
+    private func voiceoverDidFinish(_ result: Result<URL, Error>) {
+        let punchIn = voiceoverPunchIn ?? playhead
+        voiceoverPunchIn = nil
+        voiceover = nil
+        audio?.stopSilencingForCapture()
+        if isPlaying { stop() }
+
+        switch result {
+        case .success(let url):
+            Task { await adoptVoiceover(url, punchedInAt: punchIn) }
+        case .failure(let error):
+            // A cancelled take is something the user did, not something that went wrong.
+            guard (error as? RecordingError) != .cancelled else { return }
+            report(error)
+        }
+    }
+
+    /// Brings a finished take into the project.
+    ///
+    /// The same road an imported sound takes — copied into the package's `Audio` folder,
+    /// laid down as an `AudioRegion` through one command — because a voiceover is an
+    /// imported sound that happened to be recorded here, and two ways of getting sound
+    /// into a package would be two things to keep working.
+    ///
+    /// A re-take adds another region beside the last one rather than over it: the file has
+    /// its own name and the region its own identity, so the previous take stays on the lane
+    /// to be listened to, muted or deleted. Nothing is thrown away on the user's behalf.
+    private func adoptVoiceover(_ url: URL, punchedInAt punchIn: CMTime) async {
+        // The take was written somewhere temporary; once it has been copied in — or
+        // failed to be — the original has no reason to exist.
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        do {
+            let sound = try await SoundImport.copy(url, into: packageURL)
+            guard let placement = timeline.voiceoverPlacement(punchedInAt: punchIn,
+                                                              recorded: sound.duration) else {
+                // Nothing will refer to the copy, so it does not stay in the package.
+                try? FileManager.default.removeItem(at: packageURL.appendingPathComponent(sound.path))
+                errorMessage = "That take was too short to put on the timeline."
+                return
+            }
+            let region = AudioRegion(start: placement.start,
+                                     duration: placement.duration,
+                                     path: sound.path)
+            apply(Commands.AddAudio(region, name: "Record Voiceover"))
+            select(.audio(region.id))
+            if placement.wasTrimmed {
+                errorMessage = "The voiceover ran past the end of the video, so the region stops there. The whole take is in the file — drag the region's edge if you want more of it."
+            }
+        } catch {
+            report(error)
+        }
+    }
+
     /// Mutes or unmutes the recording's own sound.
     func toggleRecordedSound() {
         let muted = timeline.sound.isMuted
         apply(Commands.Restyle(muted ? "Unmute" : "Mute") { $0.sound.isMuted = !muted })
+    }
+
+    // MARK: - Detaching the recording's own sound
+
+    var isSoundDetached: Bool { timeline.isSoundDetached }
+
+    /// What re-attaching is about to throw away, or `nil` when nothing is pending.
+    ///
+    /// Lives here rather than in the lane's view because two places ask for a re-attach —
+    /// the lane's context menu and the Edit menu — and a dialogue owned by one of them
+    /// would not appear for the other. The view watches this and presents it; the model
+    /// never presents anything itself.
+    private(set) var soundReattachWarning: String?
+
+    /// Cuts the recording's sound loose from the picture, and selects its first run so
+    /// the inspector explains what just happened instead of leaving the lane looking
+    /// merely redrawn.
+    func detachSound() {
+        guard !isSoundDetached else { return }
+        apply(Commands.DetachSound())
+        if let first = timeline.detachedSound?.first { select(.soundRun(first.id)) }
+    }
+
+    /// Asks to put the sound back in step, warning first when that costs an edit.
+    ///
+    /// Silent when the lane has not been touched, because then re-attaching is a no-op you
+    /// can hear nothing of and a dialogue would be a question with one sensible answer.
+    func requestSoundReattach() {
+        guard isSoundDetached else { return }
+        guard !timeline.detachedSoundIsInStepWithClips else {
+            attachSound()
+            return
+        }
+        soundReattachWarning = Self.reattachWarning(for: timeline)
+    }
+
+    func cancelSoundReattach() { soundReattachWarning = nil }
+
+    func attachSound() {
+        soundReattachWarning = nil
+        guard isSoundDetached else { return }
+        apply(Commands.AttachSound())
+    }
+
+    /// Says what will go, in the units the user worked in.
+    ///
+    /// Counting runs rather than saying "your edits will be lost": the lane is a row of
+    /// runs and the user can see how many they moved, so a number they can check against
+    /// the screen is the difference between a warning and a scare.
+    private static func reattachWarning(for timeline: Timeline) -> String {
+        let runs = timeline.detachedSound ?? []
+        let expected = timeline.soundRunsFollowingClips
+        let moved = runs.count == expected.count
+            ? zip(runs, expected).count { $0.start != $1.start || $0.duration != $1.duration
+                                          || $0.sourceStart != $1.sourceStart || $0.speed != $1.speed }
+            : max(runs.count, expected.count)
+        let what = moved == 1 ? "one run of sound" : "\(moved) runs of sound"
+        return """
+            Re-attaching cuts the recording's sound where the picture is cut again, \
+            which undoes \(what) you moved or trimmed. The picture is not touched.
+            """
     }
 
     func addBlur(rect: CGRect) -> UUID {
@@ -507,6 +1139,45 @@ final class EditorModel {
         timeline.annotations.filter { $0.contains(playhead) }
     }
 
+    // MARK: - The pointer over time
+
+    /// Hides the pointer over the selected stretch, or over a few seconds at the playhead.
+    ///
+    /// Two behaviours in one item on purpose: "hide the pointer *here*" is the same wish
+    /// whether the user has marked a range first or has only parked the playhead, and a
+    /// menu item that is disabled until a range exists teaches nobody how to make one. A
+    /// selected range wins when there is one, because saying where is more specific than
+    /// not saying.
+    @discardableResult
+    func hidePointerOverSelection() -> UUID? {
+        let span = selection.range(in: timeline) ?? {
+            let range = drawnRange
+            return CMTimeRange(start: range.start, duration: range.duration)
+        }()
+        guard span.duration >= Clip.minimumDuration else {
+            errorMessage = "There is no room at the playhead to hide the pointer over."
+            return nil
+        }
+        let region = CursorRegion(start: span.start, duration: span.duration)
+        apply(Commands.AddCursorRegion(region))
+        guard timeline.cursorRegions.contains(where: { $0.id == region.id }) else { return nil }
+        select(.cursorRegion(region.id))
+        return region.id
+    }
+
+    /// Changes what one cursor region does. Undoable like every other edit.
+    func restyleCursorRegion(_ id: UUID,
+                             _ name: String,
+                             _ change: @escaping @Sendable (inout CursorRegion) -> Void) {
+        apply(Commands.RestyleCursorRegion(id: id, name: name, change))
+    }
+
+    /// The cursor region under the playhead, for the inspector to offer when nothing is
+    /// selected — the pointer panel is where someone looking for this will already be.
+    var cursorRegionAtPlayhead: CursorRegion? {
+        timeline.cursorRegions.first { $0.contains(playhead) }
+    }
+
     /// Reads the recorded clicks and focus events and proposes zooms.
     ///
     /// `quietly` is for the automatic pass when a project opens: a recording with no
@@ -527,8 +1198,62 @@ final class EditorModel {
             if !quietly { errorMessage = "Nothing in this recording looked like a moment to zoom into." }
             return
         }
-        apply(Commands.AddZooms(regions))
+        // `SuggestZooms`, not `AddZooms`: this button gets pressed more than once over a
+        // take, and appending would double the last run's work and leave it fighting with
+        // whatever the user has placed since. See `ZoomLane.reconciled`.
+        let before = timeline.zooms
+        apply(Commands.SuggestZooms(regions))
+        // A run that proposed things and changed nothing is the ordinary outcome of pressing
+        // the button twice, or of having already covered those moments by hand — and silence
+        // there reads as a broken button rather than as agreement.
+        if timeline.zooms == before, !quietly {
+            errorMessage = "Auto-zoom came up with the same zooms you already have."
+        }
     }
+
+    // MARK: - The camera bubble
+
+    /// Opens the camera's file, if there is one.
+    ///
+    /// After the screen's source and the sound, and failing quietly: a camera file that has
+    /// gone missing or will not decode costs a bubble, and it must not stop a recording of
+    /// the screen from opening. `webcamFrames` staying `nil` is exactly the state every
+    /// project without a camera is already in, and the renderer draws no bubble without a
+    /// frame to draw one from.
+    private func openWebcamSource() async {
+        guard let url = document.webcamURL else { return }
+        do {
+            // A small cache: the bubble is a fraction of the frame, so its decoded frames are
+            // small, but there is no reason to hold as many of them as the screen's.
+            webcamFrames = try await FrameSource(url: url, capacity: 12)
+            refresh()
+        } catch {
+            Self.log.error("Couldn't open the camera's file: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Puts the bubble where it was dragged to, as one undoable edit.
+    ///
+    /// `point` is the bubble's centre, normalised to the *output* frame — the same reading
+    /// `SceneBuilder` gives `WebcamSettings.position`, so what the overlay measures and what
+    /// the renderer draws cannot disagree. Setting the corner to `.custom` is part of the
+    /// same change rather than a second one: a position that the corner overrides would be a
+    /// drag that visibly does nothing.
+    func moveWebcam(to point: CGPoint) {
+        let clamped = CGPoint(x: min(1, max(0, point.x)), y: min(1, max(0, point.y)))
+        apply(Commands.Restyle("Move Camera") {
+            $0.webcam.corner = .custom
+            $0.webcam.position = clamped
+        })
+    }
+
+    /// Where the bubble is now, normalised to the output frame with a top-left origin.
+    ///
+    /// Read off the descriptor the preview was actually drawn from rather than recomputed
+    /// from the settings, for the reason `scene` exists at all: the corners, the margin and
+    /// the zoom reaction are the builder's arithmetic, and a second copy of it here would be
+    /// a handle that sits somewhere the renderer is not.
+    var webcamRect: CGRect? { scene?.webcam?.rect }
 
     /// An exporter for this project, set up the way the editor is showing it.
     ///
@@ -546,6 +1271,10 @@ final class EditorModel {
                              builder: builder,
                              cursor: document.cursorTrack,
                              videoURL: videoURL,
+                             // Handed over unconditionally; the exporter opens it only if the
+                             // timeline actually draws a bubble. `nil` for a take with no
+                             // camera, which is the path every older project takes.
+                             webcamURL: document.webcamURL,
                              packageURL: packageURL,
                              settings: settings)
     }
@@ -610,9 +1339,14 @@ final class EditorModel {
 
     /// Stops playing, and lets go of the sound. For a window on its way out.
     func silence() {
+        // Cancelled rather than stopped: a window on its way out has nowhere to put a
+        // take, and adding a region to a document that is closing would be worse than
+        // losing the few seconds it holds.
+        voiceover?.cancel()
         if isPlaying { stop() }
         audio?.cancel()
         waveform.cancel()
+        regionWaveforms.cancel()
     }
 }
 

@@ -12,7 +12,18 @@ enum EditorTool: String, CaseIterable, Identifiable, Hashable {
     case blur
     case annotate
     case cursor
-    case camera
+    /// Aiming a zoom on the picture. Reached from the zoom inspector rather than from the
+    /// rail: it is a tool for a region that is already selected, and a rail button for it
+    /// would be one that does nothing most of the time.
+    case zoom
+    /// The camera bubble: the webcam recording, drawn over the picture.
+    ///
+    /// Spelled `webcam` rather than `camera`, and that is not pedantry: `Timeline.camera`
+    /// is the *zoomed* camera — how steadily it follows the pointer — and `CameraInspector`
+    /// edits that. Two things called Camera, one of which is a lens and one of which is a
+    /// crop of the recording, is a confusion that would be paid for by every reader of this
+    /// file from here on.
+    case webcam
     case captions
     case audio
 
@@ -25,7 +36,8 @@ enum EditorTool: String, CaseIterable, Identifiable, Hashable {
         case .blur: "Blur"
         case .annotate: "Annotate"
         case .cursor: "Pointer"
-        case .camera: "Camera"
+        case .zoom: "Aim"
+        case .webcam: "Webcam"
         case .captions: "Captions"
         case .audio: "Audio"
         }
@@ -42,7 +54,8 @@ enum EditorTool: String, CaseIterable, Identifiable, Hashable {
         case .blur: "drop.halffull"
         case .annotate: "character.textbox"
         case .cursor: "cursorarrow.rays"
-        case .camera: "camera.viewfinder"
+        case .zoom: "dot.scope"
+        case .webcam: "person.crop.square"
         case .captions: "captions.bubble"
         case .audio: "waveform"
         }
@@ -55,7 +68,7 @@ enum EditorTool: String, CaseIterable, Identifiable, Hashable {
     /// and annotation work *on* the composed frame, so they draw over it as it is.
     var isCanvasTool: Bool {
         switch self {
-        case .crop, .blur, .annotate: true
+        case .crop, .blur, .annotate, .zoom: true
         default: false
         }
     }
@@ -65,16 +78,14 @@ enum EditorTool: String, CaseIterable, Identifiable, Hashable {
 
     /// Why a tool is off, or `nil` when it is on.
     ///
-    /// A disabled tool is a promise, so it says what it is waiting for rather than just
-    /// going grey. All three of these are fully modelled and persisted today — they are
-    /// waiting on a renderer, not on a decision. `StudioSettings.recordsCamera` already
-    /// sets this precedent: visibly coming beats quietly missing.
+    /// Nothing is off any more. The mechanism stays, and deliberately: a disabled tool is a
+    /// promise, so it says what it is waiting for rather than just going grey, and the next
+    /// feature that lands model-first wants exactly this again. The webcam was the last one
+    /// holding a reason, and it now has a recorder and a renderer behind it.
     var unavailableReason: String? {
         switch self {
-        case .frame, .crop, .cursor, .blur, .annotate, .captions, .audio:
+        case .frame, .crop, .cursor, .blur, .annotate, .captions, .audio, .zoom, .webcam:
             nil
-        case .camera:
-            "The camera bubble arrives with the webcam recorder."
         }
     }
 
@@ -88,7 +99,10 @@ enum EditorTool: String, CaseIterable, Identifiable, Hashable {
         case .blur: "3"
         case .annotate: "4"
         case .cursor: "5"
-        case .camera: "6"
+        // Off the end of the rail's numbers, because it is not on the rail — and it is not
+        // reachable by ⌘9 either, since the shortcut is only wired up by the rail buttons.
+        case .zoom: "9"
+        case .webcam: "6"
         case .captions: "7"
         case .audio: "8"
         }
@@ -99,5 +113,5 @@ enum EditorTool: String, CaseIterable, Identifiable, Hashable {
     /// Shortcuts and Links from the reference are not here: neither has a model behind
     /// it, and a greyed icon for something that does not exist yet is a promise with
     /// nothing to keep it.
-    static let rail: [EditorTool] = [.frame, .crop, .blur, .annotate, .cursor, .camera, .captions, .audio]
+    static let rail: [EditorTool] = [.frame, .crop, .blur, .annotate, .cursor, .webcam, .captions, .audio]
 }

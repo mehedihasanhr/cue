@@ -11,7 +11,11 @@ import TimelineKit
 /// anything written here would be.
 ///
 /// The same clip list drives this and the video loop, so the two cannot drift: if a cut
-/// moves, both move, because both read `timeline.clips`.
+/// moves, both move, because both read `timeline.clips` — unless the user has explicitly
+/// detached the sound, in which case `timeline.detachedSound` is the whole truth about it
+/// and the clips say nothing. Both states are laid down here, in one function, because
+/// this one function is what the preview plays *and* what the exporter writes: the moment
+/// there were two, the thing you heard while cutting would stop being the thing you shipped.
 public enum AudioMixdown {
     /// What the exporter reads the finished audio out of.
     ///
@@ -67,35 +71,108 @@ public enum AudioMixdown {
 
         var parameters: [AVAudioMixInputParameters] = []
         for source in sources {
-            guard let track = composition.addMutableTrack(withMediaType: .audio,
-                                                          preferredTrackID: kCMPersistentTrackID_Invalid) else { continue }
-            var playhead = CMTime.zero
-            for clip in timeline.clips {
-                let range = CMTimeRange(start: clip.sourceStart, duration: clip.sourceDuration)
-                do {
-                    try track.insertTimeRange(range, of: source, at: playhead)
-                } catch {
-                    // A clip reaching past the end of the sound — a recording whose
-                    // audio stops a few milliseconds early — leaves silence rather than
-                    // failing the export. The picture is still there to show.
-                    playhead = playhead + clip.duration
-                    continue
-                }
-                if clip.speed != 1 {
-                    // The range as it now sits in the composition, scaled to the length
-                    // the clip occupies on the timeline.
-                    track.scaleTimeRange(CMTimeRange(start: playhead, duration: clip.sourceDuration),
-                                         toDuration: clip.duration)
-                }
-                playhead = playhead + clip.duration
-            }
+            // The two states of the lane, and the only place in the app that has to know
+            // there are two. Everything downstream — the player, the exporter, the
+            // playhead that follows the player's clock — sees one composition either way.
+            let laid = timeline.detachedSound.map { runs in
+                appendDetached(runs, of: source, into: composition)
+            } ?? [appendFollowingClips(timeline.clips, of: source, into: composition)].compactMap { $0 }
 
             guard sound.level != 1 else { continue }
-            let input = AVMutableAudioMixInputParameters(track: track)
-            input.setVolume(Float(sound.level), at: .zero)
-            parameters.append(input)
+            for track in laid {
+                let input = AVMutableAudioMixInputParameters(track: track)
+                input.setVolume(Float(sound.level), at: .zero)
+                parameters.append(input)
+            }
         }
         return parameters
+    }
+
+    /// The sound cut exactly where the picture is cut: one contiguous track, clip by clip.
+    ///
+    /// Unchanged from the day the preview learned to play, and deliberately so — this is
+    /// what every project written before the sound could be detached must go on sounding
+    /// like, down to the track count.
+    private static func appendFollowingClips(_ clips: [Clip],
+                                             of source: AVAssetTrack,
+                                             into composition: AVMutableComposition) -> AVMutableCompositionTrack? {
+        guard let track = composition.addMutableTrack(withMediaType: .audio,
+                                                      preferredTrackID: kCMPersistentTrackID_Invalid) else { return nil }
+        var playhead = CMTime.zero
+        for clip in clips {
+            let range = CMTimeRange(start: clip.sourceStart, duration: clip.sourceDuration)
+            do {
+                try track.insertTimeRange(range, of: source, at: playhead)
+            } catch {
+                // A clip reaching past the end of the sound — a recording whose audio
+                // stops a few milliseconds early — leaves silence rather than failing the
+                // export. The picture is still there to show.
+                playhead = playhead + clip.duration
+                continue
+            }
+            if clip.speed != 1 {
+                // The range as it now sits in the composition, scaled to the length the
+                // clip occupies on the timeline.
+                track.scaleTimeRange(CMTimeRange(start: playhead, duration: clip.sourceDuration),
+                                     toDuration: clip.duration)
+            }
+            playhead = playhead + clip.duration
+        }
+        return track
+    }
+
+    /// A detached lane: runs laid at the times they claim, with silence between them.
+    ///
+    /// Three things make this more than the loop above with different numbers. A run says
+    /// where it starts, so the gaps are real and have to be inserted as empty ranges rather
+    /// than arrived at by adding up lengths. Runs need not be in order, so they are sorted
+    /// first — a composition track is built front to back whatever order the user dragged
+    /// them into. And runs may *overlap*, because two of them over one moment is an
+    /// ordinary edit (a word held over a cut), which one track cannot express: so a run
+    /// that would start before the current track has finished opens a new one. That is what
+    /// an editor's audio lanes are underneath, and it is why this returns several tracks.
+    private static func appendDetached(_ runs: [SoundRun],
+                                       of source: AVAssetTrack,
+                                       into composition: AVMutableComposition) -> [AVMutableCompositionTrack] {
+        var tracks: [AVMutableCompositionTrack] = []
+        /// How far each track has been filled, so the next run can find one that is free.
+        var filled: [CMTime] = []
+
+        for run in runs.sorted(by: { $0.start < $1.start }) {
+            guard run.duration > .zero else { continue }
+            let lane = filled.firstIndex { $0 <= run.start } ?? tracks.count
+            if lane == tracks.count {
+                guard let track = composition.addMutableTrack(withMediaType: .audio,
+                                                              preferredTrackID: kCMPersistentTrackID_Invalid)
+                else { continue }
+                tracks.append(track)
+                filled.append(.zero)
+            }
+            let track = tracks[lane]
+
+            // The silence before this run, said out loud. Relying on `insertTimeRange(at:)`
+            // past the end of a track to pad would work today and is not written down
+            // anywhere; an empty range is.
+            if run.start > filled[lane] {
+                track.insertEmptyTimeRange(CMTimeRange(start: filled[lane], end: run.start))
+            }
+
+            let range = CMTimeRange(start: run.sourceStart, duration: run.sourceDuration)
+            do {
+                try track.insertTimeRange(range, of: source, at: run.start)
+            } catch {
+                // Same bargain as the attached branch: a run reaching past the end of the
+                // recording's sound leaves silence rather than failing the export.
+                filled[lane] = run.start
+                continue
+            }
+            if run.speed != 1 {
+                track.scaleTimeRange(CMTimeRange(start: run.start, duration: run.sourceDuration),
+                                     toDuration: run.duration)
+            }
+            filled[lane] = run.end
+        }
+        return tracks
     }
 
     /// Music, voiceover, anything dropped on top. Each gets its own track so one can be

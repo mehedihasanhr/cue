@@ -150,6 +150,33 @@ final class StudioAppDelegate: NSObject, NSApplicationDelegate {
         for url in urls { studio.open(url) }
     }
 
+    /// An export in progress is worth interrupting a Quit for.
+    ///
+    /// The whole point of moving exports off the window is that closing an editor no longer
+    /// loses one — which makes ⌘Q the only remaining way to throw minutes of encoding away
+    /// by accident, and the one place left that has to ask. Answered here rather than by
+    /// blocking the quit outright: somebody who means it should still be able to leave.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard editors.exports.isBusy else { return .terminateNow }
+
+        let alert = NSAlert()
+        alert.messageText = "An export is still being written."
+        // Deliberately not promising a clean-up. A cancel is honoured at the next frame
+        // boundary, and a process that is quitting may not be alive for it — so the file
+        // it was writing may be left where it is, unfinished.
+        alert.informativeText = "Quitting now stops it, and leaves the file it was writing unfinished."
+        alert.addButton(withTitle: "Keep Exporting")
+        alert.addButton(withTitle: "Quit Anyway")
+        // Destructive, so it is not the one the Return key presses.
+        alert.buttons.last?.hasDestructiveAction = true
+
+        if alert.runModal() == .alertFirstButtonReturn { return .terminateCancel }
+        // Cancelled rather than abandoned: the exporters delete what they had half written,
+        // which is the difference between quitting and leaving a broken file behind.
+        editors.exports.cancelAll()
+        return .terminateNow
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         // The bar is not an `NSWindow` anyone thinks of as a window: quitting because the
         // library was closed would take the recorder with it.

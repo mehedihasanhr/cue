@@ -49,6 +49,28 @@ final class PreviewAudio {
         }
     }
 
+    /// Silenced while narration is being recorded through the built-in microphone.
+    ///
+    /// Separate from `isMuted` on purpose, and not persisted: muting is a choice the user
+    /// made and has to find intact afterwards, whereas this is the preview getting out of
+    /// the way of the microphone for a minute. Without it the take contains the edit — the
+    /// speakers go into the mic and the voiceover arrives with the video underneath it,
+    /// doubled and half a beat late.
+    private(set) var isSilencedForCapture = false
+
+    /// Keeps the preview quiet until `stopSilencingForCapture()`. The level and the mute
+    /// the user chose are untouched, so restoring is a matter of clearing one flag rather
+    /// than remembering and putting back two values.
+    func silenceForCapture() {
+        isSilencedForCapture = true
+        applyLevel()
+    }
+
+    func stopSilencingForCapture() {
+        isSilencedForCapture = false
+        applyLevel()
+    }
+
     private let videoURL: URL
     private let packageURL: URL
     private let settings: StudioSettings?
@@ -164,7 +186,7 @@ final class PreviewAudio {
 
     private func applyLevel() {
         player?.volume = Float(max(0, min(1, volume)))
-        player?.isMuted = isMuted
+        player?.isMuted = isMuted || isSilencedForCapture
     }
 
     func cancel() {

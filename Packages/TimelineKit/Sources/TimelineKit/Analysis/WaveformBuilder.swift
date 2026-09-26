@@ -131,20 +131,32 @@ public struct WaveformBuilder: Sendable {
 
     // MARK: - The cache on disk
 
-    /// Reads `derived/peaks.bin`, or `nil` when it is absent, stale or damaged.
-    public static func cached(in package: RecordingPackage, source url: URL) -> WaveformPeaks? {
+    /// Reads a cached set of peaks, or `nil` when it is absent, stale or damaged.
+    ///
+    /// `key` names *which* sound inside the project this is, and it exists because the
+    /// recording stopped being the only one: an imported piece of music or a voiceover take
+    /// has a waveform worth drawing too, and one file called `peaks.bin` could only ever
+    /// hold the recording's. The stamp still does the validating — a file whose size or
+    /// date has moved is thrown away and read again — so the key only has to be unique,
+    /// not meaningful.
+    public static func cached(in package: RecordingPackage,
+                             source url: URL,
+                             key: String = recordingKey) -> WaveformPeaks? {
         guard let stamp = stamp(of: url),
-              let data = try? Data(contentsOf: cacheURL(in: package)) else { return nil }
+              let data = try? Data(contentsOf: cacheURL(in: package, key: key)) else { return nil }
         return WaveformPeaks.Cache.decode(data, sourceSize: stamp.size, sourceModified: stamp.modified)
     }
 
     /// Writes the cache, creating `derived/` — which `RecordingPackage.create` does not.
-    public static func cache(_ peaks: WaveformPeaks, in package: RecordingPackage, source url: URL) {
+    public static func cache(_ peaks: WaveformPeaks,
+                             in package: RecordingPackage,
+                             source url: URL,
+                             key: String = recordingKey) {
         guard let stamp = stamp(of: url) else { return }
         do {
             try FileManager.default.createDirectory(at: package.derivedFolder, withIntermediateDirectories: true)
             let data = WaveformPeaks.Cache.encode(peaks, sourceSize: stamp.size, sourceModified: stamp.modified)
-            try data.write(to: cacheURL(in: package), options: .atomic)
+            try data.write(to: cacheURL(in: package, key: key), options: .atomic)
         } catch {
             // Regenerable by definition: failing to write it is worth a line in the log
             // and nothing else.
@@ -152,8 +164,29 @@ public struct WaveformBuilder: Sendable {
         }
     }
 
-    public static func cacheURL(in package: RecordingPackage) -> URL {
-        package.derivedFolder.appendingPathComponent("peaks.bin")
+    /// The recording's own key, which is the name the cache has always had — so a project
+    /// carrying a `peaks.bin` from before any of this still reads.
+    public static let recordingKey = "peaks"
+
+    public static func cacheURL(in package: RecordingPackage, key: String = recordingKey) -> URL {
+        package.derivedFolder.appendingPathComponent("\(key).bin")
+    }
+
+    /// A filename-safe key for a file inside the project, from the path the timeline
+    /// stores.
+    ///
+    /// Hashed rather than escaped: a relative path contains separators and may be any
+    /// length, and a cache filename derived by substitution would collide the first time
+    /// two folders differed only in a character that had to be replaced. The path is the
+    /// document's own idea of identity — two regions naming the same file share one
+    /// waveform, which is what should happen when the same music is laid down twice.
+    public static func key(forPath path: String) -> String {
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        for byte in path.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 0x100_0000_01b3
+        }
+        return "peaks-" + String(hash, radix: 36)
     }
 
     private static func stamp(of url: URL) -> (size: UInt64, modified: Double)? {

@@ -23,6 +23,25 @@ public struct Timeline: Equatable, Codable, Sendable {
     public var annotations: [AnnotationItem]
     public var captions: [CaptionCue]
     public var audio: [AudioRegion]
+    /// The recording's own sound, once it has been cut loose from the picture.
+    ///
+    /// `nil` — the default, and what every project written before this field existed
+    /// decodes to — means the sound is not a lane of its own at all: it is cut exactly
+    /// where `clips` is cut, because it is one take, and `AudioMixdown` lays it down from
+    /// `clips`. That is the right default and nothing here changes it.
+    ///
+    /// Non-`nil` means the user detached it, and these runs are now the whole truth about
+    /// the recording's sound: the picture's cuts say nothing about it any more. An *empty*
+    /// array is therefore a meaningful state — a detached lane whose runs have all been
+    /// deleted, which is silence — and that is why this is an `Optional` rather than an
+    /// array whose emptiness would have to mean "attached".
+    public var detachedSound: [SoundRun]?
+    /// Stretches where the pointer does something other than what `cursor` says.
+    ///
+    /// An override on top of the global style, never a replacement for it: empty means
+    /// "the pointer is drawn as `cursor` describes, everywhere", which is what every
+    /// project written before this field existed decodes to.
+    public var cursorRegions: [CursorRegion]
     public var style: FrameStyle
     public var cursor: CursorStyle
     public var camera: CameraStyle
@@ -39,6 +58,8 @@ public struct Timeline: Equatable, Codable, Sendable {
                 annotations: [AnnotationItem] = [],
                 captions: [CaptionCue] = [],
                 audio: [AudioRegion] = [],
+                detachedSound: [SoundRun]? = nil,
+                cursorRegions: [CursorRegion] = [],
                 style: FrameStyle = FrameStyle(),
                 cursor: CursorStyle = CursorStyle(),
                 camera: CameraStyle = CameraStyle(),
@@ -53,6 +74,8 @@ public struct Timeline: Equatable, Codable, Sendable {
         self.annotations = annotations
         self.captions = captions
         self.audio = audio
+        self.detachedSound = detachedSound
+        self.cursorRegions = cursorRegions
         self.style = style
         self.cursor = cursor
         self.camera = camera
@@ -87,6 +110,14 @@ public struct Timeline: Equatable, Codable, Sendable {
         annotations = value(.annotations, default: [])
         captions = value(.captions, default: [])
         audio = value(.audio, default: [])
+        // Absent in every project written before the sound could be detached, and absent
+        // is `nil` rather than `[]` — the sound follows the picture, which is what those
+        // projects sounded like and must go on sounding like.
+        detachedSound = ((try? container.decodeIfPresent([SoundRun].self, forKey: .detachedSound)) ?? nil)
+        // Absent in every project written before cursor regions existed, and empty is
+        // exactly "the pointer behaves as the global style says" — so an old project opens
+        // and renders frame for frame as it did.
+        cursorRegions = value(.cursorRegions, default: [])
         style = value(.style, default: FrameStyle())
         cursor = value(.cursor, default: CursorStyle())
         camera = value(.camera, default: CameraStyle())
@@ -99,7 +130,8 @@ public struct Timeline: Equatable, Codable, Sendable {
     /// renaming a property is a compile error rather than a silently unreadable project.
     enum CodingKeys: String, CodingKey {
         case formatVersion, sourceDuration, clips, zooms, blurs
-        case annotations, captions, audio, style, cursor, camera, sound, webcam, captionStyle
+        case annotations, captions, audio, detachedSound, cursorRegions
+        case style, cursor, camera, sound, webcam, captionStyle
     }
 
     /// How long the edit plays for.
@@ -169,6 +201,74 @@ public struct Timeline: Equatable, Codable, Sendable {
         return nil
     }
 
+    /// What the cursor regions ask of the pointer at one moment.
+    ///
+    /// On the model rather than in the renderer because it is a question about the edit,
+    /// not about pixels, and because it has to be answerable without a renderer to test it
+    /// with. The early return is not just tidiness: this runs on every frame of the
+    /// preview and every frame of an export, and a project with no cursor regions — every
+    /// project written before they existed — must pay nothing at all for them.
+    public func cursorOverride(at time: CMTime) -> CursorOverride {
+        guard !cursorRegions.isEmpty else { return .none }
+
+        var override = CursorOverride.none
+        for region in cursorRegions {
+            let region = region.sanitised
+            let presence = region.presence(at: time)
+            guard presence > 0 else { continue }
+            if region.isHidden { override.hiding = max(override.hiding, presence) }
+            override.smoothingWindow = max(override.smoothingWindow, region.smoothingWindow(at: time))
+            // The hold that has arrived furthest wins its anchor, because blending two
+            // frozen positions would put the pointer somewhere it never was.
+            if region.isHeld, presence > override.holding {
+                override.holding = presence
+                override.heldSince = region.start
+            }
+        }
+        return override
+    }
+
+    // MARK: - The sound lane
+
+    /// Whether the recording's sound has a life of its own yet.
+    public var isSoundDetached: Bool { detachedSound != nil }
+
+    /// The runs a detach performed right now would produce: the sound as the picture cuts
+    /// it, one run per clip.
+    ///
+    /// Written once and used three ways — to perform the detach, to decide whether a
+    /// re-attach would throw an edit away, and to test that detaching changes nothing you
+    /// can hear. Three readings of one rule beat three implementations of it.
+    public var soundRunsFollowingClips: [SoundRun] {
+        var runs: [SoundRun] = []
+        runs.reserveCapacity(clips.count)
+        var playhead = CMTime.zero
+        for clip in clips {
+            runs.append(SoundRun(start: playhead,
+                                 duration: clip.duration,
+                                 sourceStart: clip.sourceStart,
+                                 speed: clip.speed))
+            playhead = playhead + clip.duration
+        }
+        return runs
+    }
+
+    /// Whether a detached lane still sounds exactly like the picture it was cut from.
+    ///
+    /// The question re-attaching has to ask before it answers: putting the sound back in
+    /// step is free when nobody has moved anything, and destructive the moment somebody
+    /// has. Identity is deliberately ignored — a run that was detached and never touched
+    /// carries a fresh `id`, and that is not an edit anyone made.
+    public var detachedSoundIsInStepWithClips: Bool {
+        guard let detachedSound else { return true }
+        let expected = soundRunsFollowingClips
+        guard detachedSound.count == expected.count else { return false }
+        return zip(detachedSound, expected).allSatisfy {
+            $0.start == $1.start && $0.duration == $1.duration
+                && $0.sourceStart == $1.sourceStart && $0.speed == $1.speed
+        }
+    }
+
     /// Every edge a drag can snap to: clip cuts, region edges, the start and the end.
     public var boundaries: [CMTime] {
         var times: [CMTime] = [.zero, duration]
@@ -182,6 +282,10 @@ public struct Timeline: Equatable, Codable, Sendable {
         for item in annotations { times.append(item.start); times.append(item.end) }
         for cue in captions { times.append(cue.start); times.append(cue.end) }
         for region in audio { times.append(region.start); times.append(region.end) }
+        // Only when detached: an attached lane's edges are the clip cuts already above,
+        // and adding them twice would make the snapping arithmetic do the same work twice.
+        for run in detachedSound ?? [] { times.append(run.start); times.append(run.end) }
+        for region in cursorRegions { times.append(region.start); times.append(region.end) }
         return times
     }
 }

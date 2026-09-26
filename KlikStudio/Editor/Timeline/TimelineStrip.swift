@@ -31,6 +31,7 @@ struct TimelineStrip: View {
         if !timeline.blurs.isEmpty { rows += 1 }
         if !timeline.annotations.isEmpty { rows += 1 }
         if !timeline.audio.isEmpty { rows += 1 }
+        if !timeline.cursorRegions.isEmpty { rows += 1 }
         return padding * 2 + rulerHeight + clipHeight
             + (hasSound ? soundHeight + spacing : 0)
             + (regionHeight + spacing) * rows + spacing
@@ -43,6 +44,7 @@ struct TimelineStrip: View {
                 TimelineClipRow(model: model, height: Self.clipHeight)
                 soundRow
                 zoomRow
+                cursorRow
                 addedSoundRow
                 blurRow
                 annotationRow
@@ -97,7 +99,11 @@ struct TimelineStrip: View {
                               title: "Sound",
                               symbol: "music.note",
                               height: Self.regionHeight,
-                              selection: Selection.audio) { region in
+                              selection: Selection.audio,
+                              waveform: { region in
+                                  model.regionWaveforms.peaks(forPath: region.path)
+                                      .map { ($0, [TimelineWaveform.Span(region)]) }
+                              }) { region in
                 Text((region.path as NSString).lastPathComponent)
                     .font(.system(size: 10, weight: .semibold))
             }
@@ -114,6 +120,12 @@ struct TimelineStrip: View {
                           selection: Selection.zoom) { zoom in
             HStack(spacing: 6) {
                 Text("\(zoom.scale, format: .number.precision(.fractionLength(0...1)))×")
+                // A padlock rather than a different tint: the chip already carries selection
+                // in its tint, and a lock is the reason a drag is about to appear to fail —
+                // which is exactly the moment somebody looks at the chip to find out why.
+                if zoom.isLocked {
+                    Image(systemName: "lock.fill").font(.system(size: 9, weight: .semibold))
+                }
                 if zoom.followsCursor {
                     Label("Auto", systemImage: "cursorarrow")
                         .labelStyle(.titleAndIcon)
@@ -122,6 +134,28 @@ struct TimelineStrip: View {
                 }
             }
             .font(.system(size: 10, weight: .semibold))
+        }
+    }
+
+    /// Stretches where the pointer does something other than what the Pointer panel says:
+    /// hidden, calmed, held still.
+    ///
+    /// Directly under the zoom lane, because the two are read together — the pointer is
+    /// what a following zoom is aimed at, and "hidden here" is usually an answer to what a
+    /// zoom is showing. Shown only when there is something in it, like the lanes below.
+    @ViewBuilder
+    private var cursorRow: some View {
+        if !model.timeline.cursorRegions.isEmpty {
+            TimelineRegionRow(model: model,
+                              regions: model.timeline.cursorRegions,
+                              tint: .orange,
+                              title: "Pointer",
+                              symbol: "cursorarrow.slash",
+                              height: Self.regionHeight,
+                              selection: Selection.cursorRegion) { region in
+                Text(region.title)
+                    .font(.system(size: 10, weight: .semibold))
+            }
         }
     }
 

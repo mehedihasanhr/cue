@@ -15,7 +15,14 @@ import TimelineKit
 /// Each shape is drawn once per size and kept: a pointer is redrawn on every frame of
 /// every preview, and a `CGContext` per frame is a cost that shows up immediately.
 enum CursorArtwork {
-    private static let cache = OSAllocatedUnfairLock(initialState: [Key: CIImage]())
+    /// Bounded, where it used to be a dictionary that only grew.
+    ///
+    /// Seven shapes and one integer size each, so in practice it settled at a handful of
+    /// entries — but a click bounce and a zoom that magnifies the pointer both walk the
+    /// size through a range, and at 4K a pointer bitmap is 120 kB. Thirty-two entries covers
+    /// every shape at several sizes at once, which is more than any one frame can ask for,
+    /// and puts a ceiling on a per-frame path that had none.
+    private static let cache = ArtworkCache<Key, CIImage>(capacity: 32)
 
     private struct Key: Hashable {
         let shape: CursorShapeKind
@@ -25,12 +32,11 @@ enum CursorArtwork {
 
     static func image(_ shape: CursorShapeKind, size: Double) -> CIImage? {
         let key = Key(shape: shape, size: Int(size.rounded()))
-        if let cached = cache.withLock({ $0[key] }) { return cached }
-
-        guard let image = draw(shape, size: Double(key.size)) else { return nil }
-        cache.withLock { $0[key] = image }
-        return image
+        return cache.value(for: key) { draw(shape, size: Double(key.size)) }
     }
+
+    /// Empties it, so a test can draw one cold.
+    static func clearCache() { cache.removeAll() }
 
     private static func draw(_ shape: CursorShapeKind, size: Double) -> CIImage? {
         let width = Int(size.rounded())
@@ -124,11 +130,68 @@ enum CursorArtwork {
 
 /// Text, arrows and boxes, drawn with Core Text and Core Graphics.
 enum AnnotationArtwork {
+    /// What the bitmap depends on, and not a thing more.
+    ///
+    /// The rectangle contributes its *size* only: where the label lands is an affine
+    /// transform applied below, so an annotation dragged across the frame redraws nothing
+    /// until it is also resized. Opacity is absent for the same reason — the renderer fades
+    /// annotations with a colour matrix, so the fade at each end of an item costs lookups
+    /// rather than layouts.
+    private struct Key: Hashable {
+        let kind: String
+        let width: Int
+        let height: Int
+        let r: Double, g: Double, b: Double, a: Double
+        let fontSize: Double
+        let outputHeight: Double
+    }
+
+    /// Enough for every annotation on screen at once, several times over. Bounded because
+    /// dragging an annotation's handle walks through a new size on every mouse event, and a
+    /// cache with no ceiling would keep all of them.
+    private static let drawings = ArtworkCache<Key, CGImage>(capacity: 16)
+
+    /// A kind, as a string that changes whenever the drawing would.
+    private static func signature(_ kind: AnnotationItem.Kind) -> String {
+        switch kind {
+        case .rectangle: "rectangle"
+        case .text(let string): "text:\(string)"
+        case .arrow(let from, let to): "arrow:\(from.x),\(from.y),\(to.x),\(to.y)"
+        // The path, not the file's contents: an annotation pointing at a picture that
+        // changes under it is the same staleness `BackgroundCache` already accepts for a
+        // wallpaper, and re-reading and decoding the file on every frame of an export is
+        // the cost that buys freshness nobody asked for.
+        case .image(let path): "image:\(path)"
+        }
+    }
+
+    /// Empties the cache, so a test can draw one cold.
+    static func clearCache() { drawings.removeAll() }
+
     static func image(_ annotation: AnnotationLayer, in rect: CGRect, outputHeight: Double) -> CIImage? {
         let width = Int(rect.width.rounded())
         let height = Int(rect.height.rounded())
-        guard width > 1, height > 1,
-              let context = CGContext(data: nil,
+        guard width > 1, height > 1 else { return nil }
+
+        let key = Key(kind: signature(annotation.kind),
+                      width: width, height: height,
+                      r: annotation.color.r, g: annotation.color.g,
+                      b: annotation.color.b, a: annotation.color.a,
+                      fontSize: annotation.fontSize,
+                      outputHeight: outputHeight)
+        guard let cgImage = drawings.value(for: key, make: {
+            draw(annotation, width: width, height: height, outputHeight: outputHeight)
+        }) else { return nil }
+
+        return CIImage(cgImage: cgImage)
+            .transformed(by: CGAffineTransform(translationX: rect.minX, y: rect.minY))
+    }
+
+    private static func draw(_ annotation: AnnotationLayer,
+                             width: Int,
+                             height: Int,
+                             outputHeight: Double) -> CGImage? {
+        guard let context = CGContext(data: nil,
                                       width: width,
                                       height: height,
                                       bitsPerComponent: 8,
@@ -190,8 +253,6 @@ enum AnnotationArtwork {
             context.draw(cgImage, in: bounds)
         }
 
-        guard let cgImage = context.makeImage() else { return nil }
-        return CIImage(cgImage: cgImage)
-            .transformed(by: CGAffineTransform(translationX: rect.minX, y: rect.minY))
+        return context.makeImage()
     }
 }

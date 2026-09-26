@@ -37,7 +37,13 @@ struct CaptionInspector: View {
             } label: {
                 if model.isGeneratingCaptions {
                     HStack(spacing: 6) {
-                        ProgressView().controlSize(.small)
+                        // Determinate only where the recogniser actually reports a
+                        // fraction; a spinner is the honest answer to "no idea yet".
+                        if let done = model.captionProgress {
+                            ProgressView(value: done).progressViewStyle(.circular).controlSize(.small)
+                        } else {
+                            ProgressView().controlSize(.small)
+                        }
                         Text("Listening…")
                     }
                 } else {

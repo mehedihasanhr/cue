@@ -50,7 +50,7 @@ struct InspectorPanel: View {
             } else {
                 SelectionInspector(model: model)
             }
-        case .blur, .annotate:
+        case .blur, .annotate, .zoom:
             // What is selected, or — with nothing drawn yet — how to draw one.
             if model.selection.isEmpty {
                 canvasHint(model.tool)
@@ -63,8 +63,8 @@ struct InspectorPanel: View {
             CaptionInspector(model: model)
         case .audio:
             AudioInspector(model: model)
-        case .camera:
-            unavailable(model.tool)
+        case .webcam:
+            WebcamInspector(model: model)
         }
     }
 
@@ -85,8 +85,8 @@ struct InspectorPanel: View {
     private var selectionOwnsPanel: Bool {
         guard !model.selection.isEmpty else { return false }
         switch model.tool {
-        case .frame, .blur, .annotate: return true
-        case .crop, .cursor, .camera, .captions, .audio: return false
+        case .frame, .blur, .annotate, .zoom: return true
+        case .crop, .cursor, .webcam, .captions, .audio: return false
         }
     }
 
@@ -128,12 +128,28 @@ struct InspectorPanel: View {
     /// selected yet, and an empty panel reads as a feature that is broken rather than
     /// one that is ready.
     private func canvasHint(_ tool: EditorTool) -> some View {
-        hint(tool == .blur
-             ? "Drag over anything on the picture to hide it — a password, a name, a face. It stays on the thing it covers when the camera moves."
-             : "Drag on the picture to place a label, an arrow or a box. It stays where you put it in the finished frame.",
-             symbol: tool.symbol)
+        hint(hint(for: tool), symbol: tool.symbol)
     }
 
+    private func hint(for tool: EditorTool) -> String {
+        switch tool {
+        case .blur:
+            "Drag over anything on the picture to hide it — a password, a name, a face. It stays on the thing it covers when the camera moves."
+        case .zoom:
+            // Reachable only from a selected zoom, so this is the state where the selection
+            // was deleted or undone out from under the tool.
+            "Pick a zoom on the timeline, then click the picture to say what it should be pointed at."
+        default:
+            "Drag on the picture to place a label, an arrow or a box. It stays where you put it in the finished frame."
+        }
+    }
+
+    /// What a tool is waiting for, when one is.
+    ///
+    /// Nothing reaches this today — the webcam was the last tool with an
+    /// `unavailableReason` — and it is kept rather than deleted for the same reason the
+    /// reason itself is: the next feature that lands model-first needs a panel that says so,
+    /// and writing it again from memory would be writing it worse.
     private func unavailable(_ tool: EditorTool) -> some View {
         hint(tool.unavailableReason ?? "", symbol: tool.symbol)
     }
@@ -169,6 +185,11 @@ private extension Selection {
         case .caption: ("Caption", "captions.bubble")
         case .audio: ("Sound", "music.note")
         case .sound: ("Recorded Sound", "waveform")
+        // Both lanes arrived after this heading did, and a panel that names what it is
+        // showing must name these too — a nil here is a header that says "Pointer" while
+        // the panel below it is about one stretch of pointer.
+        case .cursorRegion: ("Pointer over time", "cursorarrow.slash")
+        case .soundRun: ("Sound Run", "waveform.path")
         case .range: ("Range", "selection.pin.in.out")
         case .headTrim: ("Trimmed Start", "arrow.left.to.line")
         case .tailTrim: ("Trimmed End", "arrow.right.to.line")
