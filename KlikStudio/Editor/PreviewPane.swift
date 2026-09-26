@@ -41,6 +41,11 @@ struct PreviewPane: View {
                     RegionCanvas(model: model, stage: stage(in: proxy.size))
                 case .zoom:
                     ZoomAimOverlay(model: model, stage: stage(in: proxy.size))
+                case .webcam:
+                    // Drawn over the preview without being an `isCanvasTool`: that flag says
+                    // the tool's *inspector* is a selection rather than settings, and the
+                    // webcam panel is settings. What it needs here is a handle on the picture.
+                    WebcamBubbleOverlay(model: model, stage: stage(in: proxy.size))
                 default:
                     EmptyView()
                 }

@@ -177,12 +177,13 @@ struct RecorderBar: View {
     /// display picker and the record button moved to the overlay.
     private var inputs: some View {
         HStack(spacing: 4) {
-            InputChip(symbol: "video.slash",
-                      onSymbol: "video.fill",
-                      size: 15,
-                      isOn: settings.recordsCamera,
-                      isAvailable: false,
-                      label: model.cameraLabel) {}
+            InputChipMenu(symbol: "video.slash",
+                          onSymbol: "video.fill",
+                          size: 15,
+                          isOn: settings.recordsCamera,
+                          label: model.cameraLabel) {
+                cameraMenu
+            }
 
             InputChipMenu(symbol: "mic.slash",
                           onSymbol: "mic.fill",
@@ -202,6 +203,34 @@ struct RecorderBar: View {
             }
         }
         .padding(.horizontal, 2)
+    }
+
+    /// On or off, and which camera.
+    ///
+    /// A menu rather than a plain toggle, because the device matters here even more than it
+    /// does for the microphone: a Mac with a built-in camera, a display camera and an iPhone
+    /// on the desk has three, and recording a face through the wrong one is not a mistake
+    /// anybody notices until the export.
+    ///
+    /// The toggle goes through `model.setCamera` rather than binding straight at the
+    /// setting, because turning the camera on is the moment to ask for permission — and the
+    /// only moment, since nothing in this app opens a camera to preview it.
+    @ViewBuilder
+    private var cameraMenu: some View {
+        @Bindable var settings = settings
+        Toggle("Record camera", isOn: Binding { settings.recordsCamera } set: { model.setCamera($0) })
+        if model.cameraDenied {
+            Divider()
+            Button("Allow Camera in Settings…") { model.openCameraSettings() }
+        }
+        if !model.cameras.isEmpty {
+            Divider()
+            Picker("Camera", selection: $settings.cameraID) {
+                Text("System default").tag("")
+                ForEach(model.cameras, id: \.uniqueID) { Text($0.localizedName).tag($0.uniqueID) }
+            }
+            .pickerStyle(.inline)
+        }
     }
 
     @ViewBuilder
@@ -249,6 +278,7 @@ struct RecorderBar: View {
     private var recordingControls: some View {
         HStack(spacing: 10) {
             timer
+            cameraLive
             diskWarning
             separator
             Button { studio.togglePause() } label: {
@@ -296,6 +326,33 @@ struct RecorderBar: View {
         }
         .padding(.horizontal, 6)
         .animation(StudioMotion.state, value: studio.session.diskWarning)
+    }
+
+    /// The camera, while it is filming.
+    ///
+    /// The bar's other chips say what *will* happen; this says what is happening, and it is
+    /// here because a camera is a camera. The system's own green indicator is the ground
+    /// truth, but it is a two-pixel dot next to the lens, and the user is looking at this
+    /// strip. So while a take is running with the camera on, the bar says so in words, in
+    /// the same place the elapsed time is.
+    ///
+    /// Read off the state, not off a flag of our own: the layout only exists in `.recording`,
+    /// `.paused` and `.finishing`, and `recordsCamera` is what put a `webcamID` on the
+    /// configuration this take is running under. Dimmed while paused, because the camera's
+    /// session is still open but nothing is reaching the file.
+    @ViewBuilder
+    private var cameraLive: some View {
+        if settings.recordsCamera, studio.session.state.isTaking || studio.session.state == .finishing {
+            HStack(spacing: 5) {
+                Image(systemName: "video.fill")
+                    .font(.system(size: 11))
+                Text(studio.session.isPaused ? "Camera held" : "Camera on")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(studio.session.isPaused ? Color.orange : Color.green)
+            .transition(.opacity)
+        }
     }
 
     /// The disk running out, said while there is still time to do something about it.
@@ -485,6 +542,8 @@ extension RecorderBar {
                 pill("Open Settings") { model.openScreenRecordingSettings() }
             case .microphoneDenied:
                 pill("Open Settings") { model.openMicrophoneSettings() }
+            case .cameraDenied:
+                pill("Open Settings") { model.openCameraSettings() }
             default:
                 // Somewhere to go even when there is nothing to fix. An interruption
                 // finishes the file rather than discarding it, so for a good half of these

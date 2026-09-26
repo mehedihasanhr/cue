@@ -31,8 +31,8 @@ struct InspectorPanel: View {
                     CaptionInspector(model: model)
                 case .audio:
                     AudioInspector(model: model)
-                case .camera:
-                    unavailable(model.tool)
+                case .webcam:
+                    WebcamInspector(model: model)
                 }
             }
             .padding(16)
@@ -71,6 +71,12 @@ struct InspectorPanel: View {
         }
     }
 
+    /// What a tool is waiting for, when one is.
+    ///
+    /// Nothing reaches this today — the webcam was the last tool with an
+    /// `unavailableReason` — and it is kept rather than deleted for the same reason the
+    /// reason itself is: the next feature that lands model-first needs a panel that says so,
+    /// and writing it again from memory would be writing it worse.
     private func unavailable(_ tool: EditorTool) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Label(tool.title, systemImage: tool.symbol)

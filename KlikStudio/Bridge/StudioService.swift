@@ -66,7 +66,11 @@ final class StudioService: StudioRecording {
                                canRecordArea: true,
                                canRecordSystemAudio: true,
                                canRecordMicrophone: MicrophoneRecorder.isAuthorized,
-                               canRecordWebcam: false,
+                               // True now that there is a recorder and a renderer behind it.
+                               // Reported on the grant rather than unconditionally, like the
+                               // microphone: a host that offers "record with camera" and then
+                               // hits a permission wall has been told the wrong thing.
+                               canRecordWebcam: WebcamRecorder.isAuthorized,
                                canEdit: true,
                                canExportGIF: false,
                                canCaption: false)
@@ -108,6 +112,11 @@ final class StudioService: StudioRecording {
                                                    destination: writableDestination(for: request))
         configuration.systemAudio = configuration.systemAudio && request.systemAudio
         if !request.microphone { configuration.microphoneID = nil }
+        // The same rule, and it matters most here: a request can switch the camera off but
+        // never on. `settings.configuration` only set a `webcamID` if this app's own camera
+        // toggle is on, and no other app gets to decide that a face is being filmed. There
+        // is deliberately no branch that asks for camera permission on a host's behalf.
+        if !request.webcam { configuration.webcamID = nil }
 
         Task {
             if request.microphone, settings.recordsMicrophone, !MicrophoneRecorder.isAuthorized {
@@ -125,6 +134,7 @@ final class StudioService: StudioRecording {
     func record(target: CaptureTarget) {
         var request = RecordingRequest(microphone: settings.recordsMicrophone,
                                        systemAudio: settings.recordsSystemAudio,
+                                       webcam: settings.recordsCamera,
                                        countdownSeconds: settings.countdownSeconds,
                                        opensEditorWhenFinished: settings.opensEditorAfterRecording)
         switch target {
