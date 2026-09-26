@@ -209,6 +209,26 @@ struct LibraryTests {
         #expect(FileManager.default.fileExists(atPath: package.url.path(percentEncoded: false)))
     }
 
+    /// Why the window refuses to rename a take whose editor is open.
+    ///
+    /// An `EditorSession` holds its `packageURL` in a `let`, and the document saves
+    /// through it. This is what a rename does to anybody holding one: the path they have
+    /// stops existing, and every write through it — the timeline, an imported sound, an
+    /// export — goes somewhere that is not the recording. No window is involved in
+    /// asserting it, which is the point: the refusal in `LibraryCatalog` is not a
+    /// preference, it follows from this.
+    @Test func aUrlHeldFromBeforeARenameNoLongerPointsAtTheRecording() throws {
+        let folder = temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let package = try make("Demo", in: folder)
+        let held = package.url
+        try RecordingLibrary(folder: folder).rename(held, to: "Renamed")
+
+        #expect(!FileManager.default.fileExists(atPath: held.path(percentEncoded: false)))
+        #expect(throws: (any Error).self) { try RecordingPackage(url: held).readManifest() }
+    }
+
     // MARK: - Duplicating
 
     @Test func duplicatingTakesTheNextFreeNumberAndLeavesTheOriginal() throws {
