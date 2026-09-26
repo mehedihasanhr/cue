@@ -18,6 +18,14 @@ import SwiftUI
 final class TargetOverlayController {
     private var windows: [OverlayWindow] = []
     private let model: RecorderModel
+    /// Watches for escape while the overlay is up.
+    ///
+    /// A monitor rather than `cancelOperation`, which is what this relied on and which
+    /// never fired: the overlay is ordered front but deliberately never made key — the bar
+    /// above it has to stay usable, so you can change your mind about the microphone
+    /// without dismissing this first. A window that is not key has no first responder, so
+    /// the key never reached it and escape did nothing at all.
+    private var escape: Any?
 
     /// Pressing the button. The panel owns what that means, because starting a take also
     /// has to take the overlay down.
@@ -62,9 +70,17 @@ final class TargetOverlayController {
             window.orderFrontRegardless()
             windows.append(window)
         }
+
+        escape = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard event.keyCode == 53 else { return event }   // escape
+            self?.hide()
+            return nil                                        // swallowed, not passed on
+        }
     }
 
     func hide() {
+        if let escape { NSEvent.removeMonitor(escape) }
+        escape = nil
         for window in windows { window.orderOut(nil) }
         windows.removeAll()
     }

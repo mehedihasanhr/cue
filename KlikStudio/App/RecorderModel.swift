@@ -116,6 +116,10 @@ final class RecorderModel {
     /// Called once a window has been pointed at, for the same reason: the confirmation
     /// overlay follows the choice rather than standing in front of it.
     var onWindowPicked: () -> Void = {}
+    /// Called just before the pointer picker takes the screen, so the confirmation
+    /// overlay can get out of its way. Without it both are up at once: the overlay is
+    /// still showing whatever the last mode chose, and the picker draws over it.
+    var onWindowPickerWillBegin: () -> Void = {}
     /// Called when the pointer picker is waved off in favour of the searchable list —
     /// a window on another Space cannot be pointed at.
     var onWindowListWanted: () -> Void = {}
@@ -252,6 +256,7 @@ final class RecorderModel {
     }
 
     private func beginWindowPicker() {
+        onWindowPickerWillBegin()
         let controller = WindowPickerController()
         windowPicker = controller
         controller.begin(candidates: windows) { [weak self] outcome in

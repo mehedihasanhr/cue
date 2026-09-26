@@ -35,6 +35,7 @@ final class RecorderBarPanel {
         model.onAreaPicked = { [weak self] in self?.targets.show() }
         // Both pickers take the screen first and raise the confirmation afterwards; the
         // list is the fallback for a window that cannot be pointed at.
+        model.onWindowPickerWillBegin = { [weak self] in self?.targets.hide() }
         model.onWindowPicked = { [weak self] in self?.targets.show() }
         model.onWindowListWanted = { [weak self] in self?.targets.show() }
         targets.start = { [weak self] in
