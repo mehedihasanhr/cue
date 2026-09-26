@@ -54,6 +54,12 @@ struct RenderFidelityTests {
             hasher.combine(annotation.fontSize); hasher.combine(annotation.opacity)
             if case .text(let string) = annotation.kind { hasher.combine(string) }
         }
+        if let webcam = scene.webcam {
+            hasher.combine(webcam.rect.minX); hasher.combine(webcam.rect.minY)
+            hasher.combine(webcam.rect.width); hasher.combine(webcam.rect.height)
+            hasher.combine(webcam.cornerRadius)
+            hasher.combine(webcam.isMirrored); hasher.combine(webcam.shadowOpacity)
+        }
         if let caption = scene.caption {
             hasher.combine(caption.text); hasher.combine(caption.fontSize)
             hasher.combine(caption.backgroundOpacity); hasher.combine(caption.margin)
