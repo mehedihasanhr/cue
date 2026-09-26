@@ -194,16 +194,21 @@ struct TimelineSoundRow: View {
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
                     .strokeBorder(.white.opacity(selected ? 0.9 : 0), lineWidth: 1.5)
             }
-            .overlay(alignment: .leading) {
-                // Only where there is room: a run trimmed to half a second is narrower
-                // than its own badge, and a badge overhanging its run points at the
-                // wrong one.
-                if width > 34 + edgeWidth { label.padding(.leading, edgeWidth + 4) }
-            }
             .opacity(isMuted ? 0.45 : 1)
             .frame(width: width, height: height)
+            .overlay(alignment: .leading) {
+                // Against the leading edge and never re-laid-out: a run trimmed narrower
+                // than its own badge has the badge cut off by the run rather than shrunk
+                // inside it. See `TimelineRegionRow.label(_:width:)`.
+                label
+                    .fixedSize()
+                    .padding(.leading, edgeWidth + 4)
+                    .opacity(width > edgeWidth * 2 + 26 ? 1 : 0)
+                    .animation(StudioMotion.state, value: width > edgeWidth * 2 + 26)
+            }
             .overlay(alignment: .leading) { edge(run, leading: true, width: width) }
             .overlay(alignment: .trailing) { edge(run, leading: false, width: width) }
+            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
             .contentShape(Rectangle())
             .onTapGesture { model.select(.soundRun(run.id)) }
             .gesture(move(run))
@@ -245,7 +250,9 @@ struct TimelineSoundRow: View {
                                       bottomTrailingRadius: leading ? 0 : radius,
                                       topTrailingRadius: leading ? 0 : radius,
                                       style: .continuous)
-            .fill(tint.opacity(isHovered ? 1 : 0.75))
+            // Shown on the run that is selected, and on whichever end the pointer is over
+            // — see `TimelineRegionRow.edge`. Invisible is still grabbable.
+            .fill(tint.opacity(model.selection == .soundRun(run.id) ? (isHovered ? 1 : 0.8) : (isHovered ? 0.8 : 0)))
             .frame(width: bar, height: height)
             .contentShape(Rectangle())
             .onHover { inside in

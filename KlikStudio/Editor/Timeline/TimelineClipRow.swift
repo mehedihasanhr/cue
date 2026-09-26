@@ -40,15 +40,16 @@ struct TimelineClipRow: View {
 
         return RoundedRectangle(cornerRadius: radius, style: .continuous)
             .fill(Color.orange.opacity(isSelected(clip) ? 0.5 : 0.32))
-            .overlay { badge(clip, width: width) }
-            .overlay { sourceTimes(clip, width: width) }
             .overlay {
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
                     .strokeBorder(.white.opacity(isSelected(clip) ? 0.9 : 0), lineWidth: 1.5)
             }
             .frame(width: width, height: height)
+            .overlay(alignment: .leading) { badge(clip, width: width) }
+            .overlay { sourceTimes(clip, width: width) }
             .overlay(alignment: .leading) { handle(clip, at: index, leading: true, width: width) }
             .overlay(alignment: .trailing) { handle(clip, at: index, leading: false, width: width) }
+            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
             .contentShape(Rectangle())
             .onTapGesture { model.select(.clip(clip.id)) }
             .contextMenu { menu(clip, at: index) }
@@ -59,7 +60,12 @@ struct TimelineClipRow: View {
             .position(x: left + width / 2, y: height / 2)
     }
 
-    /// Length and speed, the way the reference puts them: one chip in the middle.
+    /// Length and speed, held against the clip's leading edge.
+    ///
+    /// It used to sit in the middle, which meant it slid for the whole of a trim: the
+    /// clip's centre moves at half the speed of the edge being dragged, so the numbers
+    /// drifted while the footage they describe stood still. See
+    /// `TimelineRegionRow.label(_:width:)`.
     private func badge(_ clip: Clip, width: Double) -> some View {
         HStack(spacing: 6) {
             Text(Timecode.length(clip.duration))
@@ -82,7 +88,12 @@ struct TimelineClipRow: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 2)
         .background(.black.opacity(0.28), in: Capsule())
-        .opacity(width > 110 ? 1 : 0)
+        .fixedSize()
+        .padding(.leading, handleWidth + 5)
+        // Faded rather than switched off: this changes mid-trim, and a badge blinking out
+        // under the pointer reads as something breaking.
+        .opacity(width > 130 ? 1 : 0)
+        .animation(StudioMotion.state, value: width > 130)
     }
 
     /// Where this clip sits in the recording, at the ends where a trim moves it.
@@ -94,8 +105,11 @@ struct TimelineClipRow: View {
         }
         .font(.system(size: 9, design: .monospaced))
         .foregroundStyle(.white.opacity(0.65))
-        .padding(.horizontal, 6)
-        .opacity(width > 150 ? 1 : 0)
+        // Clear of the handles, and pinned to the two ends rather than centred, so each
+        // number stays under the edge it describes while that edge is dragged.
+        .padding(.horizontal, handleWidth + 4)
+        .opacity(width > 190 ? 1 : 0)
+        .animation(StudioMotion.state, value: width > 190)
         .allowsHitTesting(false)
     }
 
@@ -137,9 +151,9 @@ struct TimelineClipRow: View {
     /// A grabbable end of a clip, drawn the way a region's is: a solid bar in the lane's
     /// colour, full height, carrying the clip's corners on its outside.
     ///
-    /// It used to be invisible — `white.opacity(0.001)` — which made trimming a thing you
-    /// had to already know about, and put the only sign that a clip has ends you can move
-    /// nowhere at all.
+    /// Shown on the selected clip and on whichever end the pointer is over. It used to be
+    /// invisible everywhere — `white.opacity(0.001)` — which made trimming a thing you had
+    /// to already know about.
     private func handle(_ clip: Clip, at index: Int, leading: Bool, width: CGFloat) -> some View {
         let key = "\(clip.id)-\(leading)"
         let isHovered = hoveredHandle == key
@@ -149,7 +163,7 @@ struct TimelineClipRow: View {
                                       bottomTrailingRadius: leading ? 0 : radius,
                                       topTrailingRadius: leading ? 0 : radius,
                                       style: .continuous)
-            .fill(Color.orange.opacity(isHovered ? 1 : 0.8))
+            .fill(Color.orange.opacity(isSelected(clip) ? (isHovered ? 1 : 0.85) : (isHovered ? 0.85 : 0)))
             .frame(width: bar, height: height)
             .contentShape(Rectangle())
             .onHover { inside in

@@ -67,19 +67,13 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
                     .strokeBorder(.white.opacity(isSelected(region) ? 0.9 : 0), lineWidth: 1.5)
             }
-            .overlay {
-                HStack(spacing: 5) {
-                    Image(systemName: symbol).font(.system(size: 9, weight: .semibold))
-                    badge(region)
-                }
-                .foregroundStyle(.white)
-                .lineLimit(1)
-                // Clear of the ends, so a label never runs underneath a handle.
-                .padding(.horizontal, edgeWidth + 2)
-            }
             .frame(width: width, height: height)
+            .overlay(alignment: .leading) { label(region, width: width) }
             .overlay(alignment: .leading) { edge(region, leading: true, width: width) }
             .overlay(alignment: .trailing) { edge(region, leading: false, width: width) }
+            // Anything that no longer fits is cut off by the chip rather than reflowed
+            // inside it. See `label(_:width:)`.
+            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
             .contentShape(Rectangle())
             .onTapGesture { model.select(selection(region.id)) }
             .gesture(move(region))
@@ -114,6 +108,34 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
             .position(x: left + width / 2, y: height / 2)
     }
 
+    /// What the chip says, held against its leading edge.
+    ///
+    /// Centred, it slid under the pointer for the whole of a resize: the chip's middle
+    /// moves at half the speed of the edge being dragged, so the words drifted while the
+    /// thing they name stood still. Against the leading edge they are motionless while the
+    /// trailing edge is dragged, and while the leading edge is dragged they travel with the
+    /// edge under the pointer — which reads as the chip moving rather than as the text
+    /// coming loose from it.
+    ///
+    /// `fixedSize` stops the words being squeezed and re-broken as the chip narrows; the
+    /// chip's own clip takes off whatever no longer fits, which is one edge moving instead
+    /// of a line of text rearranging itself.
+    private func label(_ region: Region, width: CGFloat) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: symbol).font(.system(size: 9, weight: .semibold))
+            badge(region)
+        }
+        .foregroundStyle(.white)
+        .lineLimit(1)
+        .fixedSize()
+        .padding(.leading, edgeWidth + 5)
+        // Faded rather than switched off: the chip is being dragged when this changes, and
+        // a label blinking out mid-drag reads as something breaking.
+        .opacity(width > edgeWidth * 2 + 26 ? 1 : 0)
+        .animation(StudioMotion.state, value: width > edgeWidth * 2 + 26)
+        .allowsHitTesting(false)
+    }
+
     /// The waveform, drawn across the row and then masked down to this chip.
     ///
     /// Masked rather than drawn to fit, for the reason `TimelineSoundRow` does the same: the
@@ -140,11 +162,6 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
     /// A grabbable end of a chip: a solid bar in the chip's own colour, full height, with
     /// the chip's corners on its outside.
     ///
-    /// Drawn on every chip rather than only on the selected one. The handles *are* the
-    /// affordance — they are what says this thing has ends you can take hold of — and
-    /// showing them only after you have already worked out that it is draggable is showing
-    /// them to somebody who no longer needs them.
-    ///
     /// What you see is what you grab: the bar and the hit area are the same rectangle, so
     /// there is no invisible margin around it to explain a drag that did not take.
     private func edge(_ region: Region, leading: Bool, width: CGFloat) -> some View {
@@ -158,7 +175,12 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
                                       bottomTrailingRadius: leading ? 0 : radius,
                                       topTrailingRadius: leading ? 0 : radius,
                                       style: .continuous)
-            .fill(tint.opacity(isHovered ? 1 : 0.9))
+            // Shown on the chip that is selected, and on whichever end the pointer is
+            // over. The handles say "this has ends you can take hold of", and saying it on
+            // every chip at once turns a lane into a row of brackets that says nothing
+            // about which one is being worked on. Invisible is still grabbable: the hit
+            // area below does not depend on the fill.
+            .fill(tint.opacity(isSelected(region) ? (isHovered ? 1 : 0.9) : (isHovered ? 0.9 : 0)))
             .frame(width: bar, height: height)
             .contentShape(Rectangle())
             .onHover { inside in
