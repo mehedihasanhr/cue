@@ -128,7 +128,17 @@ struct InspectorPanel: View {
     /// selected yet, and an empty panel reads as a feature that is broken rather than
     /// one that is ready.
     private func canvasHint(_ tool: EditorTool) -> some View {
-        hint(hint(for: tool), symbol: tool.symbol)
+        VStack(spacing: 14) {
+            hint(hint(for: tool), symbol: tool.symbol)
+            // Only the annotate tool offers a way in that is not a drag. A blur is a
+            // rectangle over a particular thing on the picture, so putting one in the
+            // middle of the frame and asking the user to drag it onto that thing is a worse
+            // gesture than drawing it there, not a second one.
+            if tool == .annotate {
+                AddAnnotationButton(model: model, isCompact: false)
+                    .padding(.horizontal, 6)
+            }
+        }
     }
 
     private func hint(for tool: EditorTool) -> String {
@@ -140,7 +150,7 @@ struct InspectorPanel: View {
             // was deleted or undone out from under the tool.
             "Pick a zoom on the timeline, then click the picture to say what it should be pointed at."
         default:
-            "Drag on the picture to place a label, an arrow or a box. It stays where you put it in the finished frame."
+            "Drag on the picture to place a label, an arrow or a box — or add one below and drag it where it belongs. Either way it stays where you put it in the finished frame."
         }
     }
 

@@ -1467,6 +1467,85 @@ final class EditorModel {
         return region.id
     }
 
+    /// The three things the Annotate tool can put on the picture, as something a button
+    /// can offer.
+    ///
+    /// `AnnotationItem.Kind` carries a payload — the words, the arrow's two ends — so it
+    /// cannot be offered directly by a menu. This is the choice before the payload exists.
+    enum NewAnnotation: String, CaseIterable, Identifiable {
+        case text, arrow, box
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .text: "Text"
+            case .arrow: "Arrow"
+            case .box: "Box"
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .text: "textformat"
+            case .arrow: "arrow.up.right"
+            case .box: "rectangle"
+            }
+        }
+
+        /// Where one lands when it is added rather than drawn: the middle of the frame, at
+        /// a size that reads without being asked to be resized first.
+        var rect: CGRect {
+            switch self {
+            case .text: CGRect(x: 0.22, y: 0.44, width: 0.56, height: 0.12)
+            case .arrow: CGRect(x: 0.3, y: 0.35, width: 0.4, height: 0.3)
+            case .box: CGRect(x: 0.3, y: 0.32, width: 0.4, height: 0.36)
+            }
+        }
+
+        var kind: AnnotationItem.Kind {
+            switch self {
+            // Something legible rather than nothing. An empty label draws no pixels, so a
+            // button that added one would look like a button that did nothing.
+            case .text: .text("Text")
+            case .arrow: .arrow(from: CGPoint(x: 0, y: 1), to: CGPoint(x: 1, y: 0))
+            case .box: .rectangle
+            }
+        }
+    }
+
+    /// Adds one in the middle of the frame, ready to be dragged where it belongs.
+    ///
+    /// The other way in is drawing one on the picture, which works well and which you have
+    /// to be told about. A button says the feature is there.
+    @discardableResult
+    func addAnnotation(_ new: NewAnnotation) -> UUID {
+        // The tool comes with it: the handles that move and resize what was just added live
+        // on the Annotate canvas, and adding something you then cannot touch would be worse
+        // than not offering the button.
+        tool = .annotate
+        return addAnnotation(new.kind, rect: offsetForClearSpace(new.rect))
+    }
+
+    /// Nudges a new rectangle clear of anything already at the playhead.
+    ///
+    /// Two labels added in a row land exactly on top of each other otherwise, and the
+    /// second one looks like nothing happened. Cascading down and right is what every
+    /// document-based app does with a duplicate, and for the same reason.
+    private func offsetForClearSpace(_ rect: CGRect) -> CGRect {
+        let step = 0.035
+        var rect = rect
+        var tries = 0
+        while tries < 8,
+              annotationsAtPlayhead.contains(where: { abs($0.rect.minX - rect.minX) < 0.001
+                                                   && abs($0.rect.minY - rect.minY) < 0.001 }) {
+            rect.origin.x += step
+            rect.origin.y += step
+            tries += 1
+        }
+        return rect
+    }
+
     /// Puts something on top: a label, an arrow, a box.
     @discardableResult
     func addAnnotation(_ kind: AnnotationItem.Kind, rect: CGRect) -> UUID {

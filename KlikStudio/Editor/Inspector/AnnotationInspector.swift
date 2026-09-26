@@ -38,7 +38,9 @@ struct AnnotationInspector: View {
                 InspectorRow(title: "Lasts", value: Timecode.length(item.duration))
             }
             .font(.system(size: 12))
-            .inspectorSection("Annotation", systemImage: "character.textbox")
+            .inspectorSection("Annotation", systemImage: "character.textbox") {
+                AddAnnotationButton(model: model)
+            }
         }
     }
 
