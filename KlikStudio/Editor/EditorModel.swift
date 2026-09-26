@@ -1101,9 +1101,21 @@ final class EditorModel {
     }
 
     /// Turn the aiming overlay on for a zoom, having selected it.
+    ///
+    /// And park the playhead inside that zoom, which is not a nicety. A zoom only magnifies
+    /// while the playhead is inside it, so aiming one from somewhere else in the edit meant
+    /// framing a shot and then leaving the tool to find the picture completely unchanged —
+    /// the zoom was working perfectly and there was no moment at which you could see it.
+    ///
+    /// Moved to just past the ramp-in, where the zoom has arrived at full magnification.
+    /// The start of the region is the one instant inside it where the scale is still 1.
     func aimSelectedZoom() {
         guard let zoom = activeZoom else { return }
         select(.zoom(zoom.id))
+        if !zoom.contains(playhead) {
+            let settled = zoom.start + min(zoom.ramps.in, CMTimeMultiplyByFloat64(zoom.duration, multiplier: 0.5))
+            scrub(to: min(settled, zoom.end - CMTime(value: 1, timescale: 600)))
+        }
         tool = .zoom
     }
 

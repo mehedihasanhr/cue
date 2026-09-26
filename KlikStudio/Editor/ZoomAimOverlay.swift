@@ -27,6 +27,14 @@ struct ZoomAimOverlay: View {
     /// where the box started rather than against where the last event left it, which is
     /// what stops a slow drag accumulating rounding into a drift.
     @State private var origin: CGRect?
+    /// Where the drag has put the box, before the document has been asked about it.
+    ///
+    /// The box used to be drawn from the model alone, so every frame of a drag waited on a
+    /// command, a refresh and a re-render of the preview before it moved: the pointer led
+    /// and the box followed a beat behind, which is the whole of "not smooth". The drag
+    /// draws itself now, through the same clamping the model applies, so what is on screen
+    /// is both immediate and honest about what will be rendered.
+    @State private var draft: CGRect?
     @State private var isDragging = false
 
     private var geometry: CanvasGeometry {
@@ -40,7 +48,9 @@ struct ZoomAimOverlay: View {
         return model.timeline.zooms.first { $0.id == id }
     }
 
-    private let handle: CGFloat = 14
+    /// How long a corner bracket's arms are, and how thick they are drawn.
+    private let arm: CGFloat = 20
+    private let thickness: CGFloat = 3
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -51,15 +61,61 @@ struct ZoomAimOverlay: View {
                 .gesture(frameFromScratch)
 
             if let zoom {
-                let rect = geometry.view(blur: model.zoomArea(of: zoom))
+                let area = draft ?? model.zoomArea(of: zoom)
+                let rect = geometry.view(blur: area)
                 shade(around: rect)
                 box(rect, zoom: zoom)
+                result(of: area)
             }
             hint
         }
         // Escape leaves the tool, as it does on the other canvas tools. The zoom stays
         // selected, so the inspector is still showing what was just framed.
         .onExitCommand { model.tool = .frame }
+    }
+
+    /// What this zoom will actually look like, live, in the corner.
+    ///
+    /// The tool flattens the preview — it has to, because a framing box drawn over an
+    /// already-zoomed picture would always be the whole picture, so the tool would be
+    /// showing you its own answer and refusing you the question. The cost was that while
+    /// aiming a zoom there was no moment at which you could see the zoom, which is most of
+    /// what "the zooming effect is not working" turned out to mean.
+    ///
+    /// It costs nothing to render. This is the picture already on screen, scaled up and
+    /// slid so the framed square fills the panel — which is precisely what the zoom does to
+    /// the frame. No second render, no decode, and it cannot disagree with the box, because
+    /// it is drawn from the same rectangle.
+    @ViewBuilder
+    private func result(of area: CGRect) -> some View {
+        if let preview = model.preview, area.width > 0, stage.width > 0 {
+            let width: CGFloat = 188
+            let height = width * stage.height / stage.width
+            let inner = CGSize(width: width / area.width, height: height / area.height)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Image(nsImage: preview)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: inner.width, height: inner.height)
+                    .offset(x: -area.minX * inner.width, y: -area.minY * inner.height)
+                    .frame(width: width, height: height, alignment: .topLeading)
+                    .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .strokeBorder(.white.opacity(0.25), lineWidth: 1)
+                    }
+                Text("What this zoom shows")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.75))
+            }
+            .padding(10)
+            .background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .padding(12)
+            .allowsHitTesting(false)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+        }
     }
 
     // MARK: - The frame
@@ -78,28 +134,37 @@ struct ZoomAimOverlay: View {
     private func box(_ rect: CGRect, zoom: ZoomRegion) -> some View {
         ZStack(alignment: .topLeading) {
             Rectangle()
-                .strokeBorder(.white.opacity(0.95), lineWidth: 1.5)
+                .strokeBorder(.white.opacity(isDragging ? 0.95 : 0.7), lineWidth: 1)
                 .background(Color.accentColor.opacity(0.06))
                 .frame(width: rect.width, height: rect.height)
                 .offset(x: rect.minX, y: rect.minY)
                 .contentShape(Rectangle())
                 .gesture(move(from: zoom))
-                .onHover { NSCursor.openHand.set(); if !$0 { NSCursor.arrow.set() } }
+                .onHover { inside in
+                    if inside { NSCursor.openHand.set() } else { NSCursor.arrow.set() }
+                }
 
             // The scale, on the box, because it is the number the box is setting.
-            Text("\(zoom.scale, format: .number.precision(.fractionLength(0...1)))×")
+            Text("\(scaleShown(zoom), format: .number.precision(.fractionLength(0...1)))×")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
                 .background(.black.opacity(0.55), in: Capsule())
-                .offset(x: rect.minX + 6, y: rect.minY + 6)
+                .offset(x: rect.minX + 8, y: rect.minY + 8)
                 .allowsHitTesting(false)
 
             ForEach(Corner.allCases, id: \.self) { corner in
                 grip(corner, of: rect, zoom: zoom)
             }
         }
+    }
+
+    /// The magnification the box is standing for — the draft's while a drag is running, so
+    /// the number on the box and the box itself are never a frame out of step.
+    private func scaleShown(_ zoom: ZoomRegion) -> Double {
+        guard let draft, draft.width > 0 else { return zoom.scale }
+        return 1 / draft.width
     }
 
     private enum Corner: CaseIterable {
@@ -116,6 +181,9 @@ struct ZoomAimOverlay: View {
             }
         }
 
+        var isTrailing: Bool { !anchorIsMax.x }
+        var isBottom: Bool { !anchorIsMax.y }
+
         func point(in rect: CGRect) -> CGPoint {
             switch self {
             case .topLeading: CGPoint(x: rect.minX, y: rect.minY)
@@ -124,17 +192,65 @@ struct ZoomAimOverlay: View {
             case .bottomTrailing: CGPoint(x: rect.maxX, y: rect.maxY)
             }
         }
+
+        @available(macOS 15.0, *)
+        var cursor: NSCursor {
+            switch self {
+            case .topLeading: .frameResize(position: .topLeft, directions: .all)
+            case .topTrailing: .frameResize(position: .topRight, directions: .all)
+            case .bottomLeading: .frameResize(position: .bottomLeft, directions: .all)
+            case .bottomTrailing: .frameResize(position: .bottomRight, directions: .all)
+            }
+        }
+    }
+
+    /// An angle at the corner rather than a block on it.
+    ///
+    /// A square handle is a viewfinder's answer to nothing: it covers the picture at the
+    /// one place the user is looking, and it says "grab me" without saying which way the
+    /// corner goes. Two arms along the edges they belong to leave the corner itself clear
+    /// and read as the corner of a frame.
+    nonisolated private struct CornerBracket: Shape {
+        let isTrailing: Bool
+        let isBottom: Bool
+
+        func path(in rect: CGRect) -> Path {
+            let vertexX = isTrailing ? rect.maxX : rect.minX
+            let vertexY = isBottom ? rect.maxY : rect.minY
+            let alongX = isTrailing ? rect.minX : rect.maxX
+            let alongY = isBottom ? rect.minY : rect.maxY
+            var path = Path()
+            path.move(to: CGPoint(x: alongX, y: vertexY))
+            path.addLine(to: CGPoint(x: vertexX, y: vertexY))
+            path.addLine(to: CGPoint(x: vertexX, y: alongY))
+            return path
+        }
     }
 
     private func grip(_ corner: Corner, of rect: CGRect, zoom: ZoomRegion) -> some View {
         let point = corner.point(in: rect)
-        return RoundedRectangle(cornerRadius: 3, style: .continuous)
-            .fill(.white)
-            .frame(width: handle, height: handle)
-            .shadow(color: .black.opacity(0.5), radius: 2)
-            .offset(x: point.x - handle / 2, y: point.y - handle / 2)
-            .contentShape(Rectangle().inset(by: -6))
+        // The arms run inward from the corner, and the stroke is inset by half its width
+        // so its outer edge lands on the box's line instead of straddling it.
+        let inset = thickness / 2
+        return CornerBracket(isTrailing: corner.isTrailing, isBottom: corner.isBottom)
+            .stroke(.white, style: StrokeStyle(lineWidth: thickness, lineCap: .round, lineJoin: .round))
+            .padding(inset)
+            .frame(width: arm, height: arm)
+            .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
+            .offset(x: corner.isTrailing ? point.x - arm : point.x,
+                    y: corner.isBottom ? point.y - arm : point.y)
+            // Bigger than it looks, because a 3pt line is not a target.
+            .contentShape(Rectangle().inset(by: -8))
             .gesture(resize(corner, from: zoom))
+            .onHover { inside in
+                if inside, #available(macOS 15.0, *) {
+                    corner.cursor.set()
+                } else if inside {
+                    NSCursor.crosshair.set()
+                } else {
+                    NSCursor.arrow.set()
+                }
+            }
     }
 
     // MARK: - Gestures
@@ -147,9 +263,8 @@ struct ZoomAimOverlay: View {
             .onChanged { value in
                 let start = begin(zoom, name: "Move Zoom")
                 let delta = normalisedDelta(value.translation)
-                model.setZoomArea(zoom.id,
-                                  to: start.offsetBy(dx: delta.width, dy: delta.height),
-                                  name: "Move Zoom")
+                frame(zoom, to: start.offsetBy(dx: delta.width, dy: delta.height),
+                      name: "Move Zoom")
             }
             .onEnded { _ in end() }
     }
@@ -161,14 +276,18 @@ struct ZoomAimOverlay: View {
                 let start = begin(zoom, name: "Frame Zoom")
                 let delta = normalisedDelta(value.translation)
                 let anchor = corner.anchorIsMax
-                // The side follows the horizontal drag: a zoom is one number, so the box
-                // stays the picture's shape and the width is the half the user is steering.
-                let side = max(0.05, anchor.x ? start.width - delta.width : start.width + delta.width)
+                // A zoom is one number, so the box stays the picture's shape and a corner
+                // drag has one degree of freedom. Taking it from the horizontal alone left
+                // a straight pull up or down doing nothing at all, which reads as a broken
+                // handle; the drag is measured along the corner's diagonal instead, so both
+                // axes push the corner the way the pointer is going.
+                let outward = (x: anchor.x ? -delta.width : delta.width,
+                               y: anchor.y ? -delta.height : delta.height)
+                let side = max(0.05, start.width + (outward.x + outward.y) / 2)
                 let x = anchor.x ? start.maxX - side : start.minX
                 let y = anchor.y ? start.maxY - side : start.minY
-                model.setZoomArea(zoom.id,
-                                  to: CGRect(x: x, y: y, width: side, height: side),
-                                  name: "Frame Zoom")
+                frame(zoom, to: CGRect(x: x, y: y, width: side, height: side),
+                      name: "Frame Zoom")
             }
             .onEnded { _ in end() }
     }
@@ -181,13 +300,23 @@ struct ZoomAimOverlay: View {
                 _ = begin(zoom, name: "Frame Zoom")
                 let a = geometry.blur(view: CGRect(origin: value.startLocation, size: .zero)).origin
                 let b = geometry.blur(view: CGRect(origin: value.location, size: .zero)).origin
-                let side = max(0.05, abs(b.x - a.x))
-                model.setZoomArea(zoom.id,
-                                  to: CGRect(x: min(a.x, b.x), y: min(a.y, b.y),
-                                             width: side, height: side),
-                                  name: "Frame Zoom")
+                // The longer side of what was swept, so a tall drag draws a box too.
+                let side = max(0.05, max(abs(b.x - a.x), abs(b.y - a.y)))
+                frame(zoom, to: CGRect(x: min(a.x, b.x), y: min(a.y, b.y),
+                                       width: side, height: side),
+                      name: "Frame Zoom")
             }
             .onEnded { _ in end() }
+    }
+
+    /// Puts a drawn rectangle on screen and into the document in the same breath.
+    ///
+    /// The drawn one goes through `EditorModel.honouredZoomArea` first, which is the
+    /// clamping `setZoomArea` will do anyway: the box can lead the render without ever
+    /// showing a framing the renderer would refuse.
+    private func frame(_ zoom: ZoomRegion, to rect: CGRect, name: String) {
+        draft = EditorModel.honouredZoomArea(rect)
+        model.setZoomArea(zoom.id, to: rect, name: name)
     }
 
     /// A drag's translation in view points, as a fraction of the recording.
@@ -212,6 +341,7 @@ struct ZoomAimOverlay: View {
     private func end() {
         guard isDragging else { return }
         origin = nil
+        draft = nil
         isDragging = false
         model.finishInteraction()
     }
@@ -236,5 +366,7 @@ struct ZoomAimOverlay: View {
         .padding(10)
         .allowsHitTesting(false)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .opacity(isDragging ? 0 : 1)
+        .animation(.easeOut(duration: 0.15), value: isDragging)
     }
 }
