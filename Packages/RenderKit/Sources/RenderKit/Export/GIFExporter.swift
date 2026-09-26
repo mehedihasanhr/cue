@@ -20,6 +20,10 @@ struct GIFExporter {
     let builder: SceneBuilder
     let cursor: CursorTrack?
     let videoURL: URL
+    /// The camera's file, when the take has one and the project draws it. See
+    /// `VideoExporter.webcamURL`; a GIF gets the bubble for the same reason it gets the
+    /// pointer — it is the same descriptor and the same renderer, so it cannot not.
+    var webcamURL: URL?
     let settings: ExportSettings
     /// The same flag `VideoExporter.cancel()` sets. A GIF used to stop only because the
     /// task around it had been cancelled as well, which made Cancel a coincidence.
@@ -29,9 +33,20 @@ struct GIFExporter {
     /// a very large GIF; beyond that it is a video with the wrong extension.
     static let maximumDimension: Double = 1_280
 
+    /// A reader for the camera's file, or `nil` when there is nothing to draw from. The
+    /// same three ordinary nothings as `VideoExporter.openWebcamReader()`, swallowed the
+    /// same way: a missing camera file is not a reason to refuse to write a GIF.
+    private func webcamFrames() async -> ExportFrameReader? {
+        guard timeline.webcam.isEnabled, let webcamURL,
+              let reader = try? await ExportFrameReader(url: webcamURL) else { return nil }
+        _ = await reader.naturalSize()
+        return reader
+    }
+
     func export(to destination: URL,
                 onProgress: @Sendable @escaping (ExportProgress) -> Void) async throws(ExportError) {
         let reader = try await ExportFrameReader(url: videoURL)
+        let webcamReader = await webcamFrames()
         let sourceSize = await reader.naturalSize()
         let builder = sourceSize == .zero ? self.builder : self.builder.resized(to: sourceSize)
 
@@ -84,15 +99,18 @@ struct GIFExporter {
                 // only commits on `finalize`, but it has already created the file, and an
                 // unfinalised GIF on the desktop is worse than no GIF at all.
                 reader.cancel()
+                webcamReader?.cancel()
                 try? FileManager.default.removeItem(at: destination)
                 throw ExportError.cancelled
             }
 
             let time = CMTime(value: CMTimeValue(index), timescale: CMTimeScale(frameRate))
             let scene = builder.descriptor(for: timeline, at: time, cursor: cursor)
-            let source = try reader.frame(at: timeline.sourceTime(at: time) ?? time)
+            let sourceTime = timeline.sourceTime(at: time) ?? time
+            let source = try reader.frame(at: sourceTime)
+            let camera = try? webcamReader?.frame(at: sourceTime)
 
-            var image = renderer.image(for: scene, source: source)
+            var image = renderer.image(for: scene, source: source, webcam: camera)
             if scale != 1 {
                 image = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
             }
@@ -101,6 +119,7 @@ struct GIFExporter {
                                                              format: .RGBA8,
                                                              colorSpace: renderer.colorSpace) else {
                 reader.cancel()
+                webcamReader?.cancel()
                 try? FileManager.default.removeItem(at: destination)
                 throw ExportError.writerFailed("A frame couldn't be drawn.")
             }
@@ -115,6 +134,7 @@ struct GIFExporter {
         }
 
         reader.cancel()
+        webcamReader?.cancel()
         guard CGImageDestinationFinalize(output) else {
             try? FileManager.default.removeItem(at: destination)
             throw ExportError.writerFailed("The GIF couldn't be finished.")

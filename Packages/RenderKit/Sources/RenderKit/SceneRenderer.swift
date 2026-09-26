@@ -45,7 +45,11 @@ public final class SceneRenderer: @unchecked Sendable {
 
     /// The finished frame as a `CIImage`, in output pixels with the origin bottom-left
     /// (Core Image's convention, and `CVPixelBuffer`'s).
-    public func image(for scene: SceneDescriptor, source: CIImage?) -> CIImage {
+    /// - Parameter webcam: the camera's frame at this moment, from the recording's own
+    ///   second video file. Defaulted, so every caller that has no webcam — the crop
+    ///   tool's flattened preview, a GIF, every test written before the bubble existed —
+    ///   goes on asking for exactly the frame it always got.
+    public func image(for scene: SceneDescriptor, source: CIImage?, webcam: CIImage? = nil) -> CIImage {
         let output = CGRect(origin: .zero, size: scene.outputSize)
         var image = background(for: scene).cropped(to: output)
 
@@ -55,6 +59,19 @@ public final class SceneRenderer: @unchecked Sendable {
                 image = shadow(under: video, scene: scene).composited(over: image)
             }
             image = video.composited(over: image)
+        }
+
+        // Above the picture and below everything written on top of it. The bubble is part
+        // of the *picture* — a second camera pointed at the presenter — whereas an
+        // annotation and a caption are notes about it and must never end up behind a face,
+        // and the pointer is what the viewer is being asked to follow. Both defaults put
+        // the bubble and the captions near the bottom of the frame, so this ordering is the
+        // difference between a line of subtitle that can be read and one that cannot.
+        if let layer = scene.webcam, let webcam, let bubble = webcamImage(layer, source: webcam, in: scene) {
+            if layer.shadowOpacity > 0 {
+                image = webcamShadow(layer, in: scene).composited(over: image)
+            }
+            image = bubble.composited(over: image)
         }
 
         for annotation in scene.annotations {
@@ -79,16 +96,16 @@ public final class SceneRenderer: @unchecked Sendable {
     }
 
     /// Renders straight into a pixel buffer — what both the preview and the writer want.
-    public func render(_ scene: SceneDescriptor, source: CIImage?, to buffer: CVPixelBuffer) {
-        context.render(image(for: scene, source: source),
+    public func render(_ scene: SceneDescriptor, source: CIImage?, webcam: CIImage? = nil, to buffer: CVPixelBuffer) {
+        context.render(image(for: scene, source: source, webcam: webcam),
                        to: buffer,
                        bounds: CGRect(origin: .zero, size: scene.outputSize),
                        colorSpace: colorSpace)
     }
 
     /// A still, for a thumbnail or a test.
-    public func cgImage(for scene: SceneDescriptor, source: CIImage?) -> CGImage? {
-        context.createCGImage(image(for: scene, source: source),
+    public func cgImage(for scene: SceneDescriptor, source: CIImage?, webcam: CIImage? = nil) -> CGImage? {
+        context.createCGImage(image(for: scene, source: source, webcam: webcam),
                               from: CGRect(origin: .zero, size: scene.outputSize))
     }
 
@@ -311,6 +328,74 @@ public final class SceneRenderer: @unchecked Sendable {
             .applyingGaussianBlur(sigma: scene.shadowRadius)
             .cropped(to: rect.insetBy(dx: -scene.shadowRadius * 3, dy: -scene.shadowRadius * 3))
             .transformed(by: CGAffineTransform(translationX: 0, y: -scene.shadowRadius * 0.6))
+    }
+
+    // MARK: - The camera bubble
+
+    /// The webcam, filled into its bubble and masked to its shape.
+    ///
+    /// Not cached, unlike the cursor and the caption plate: those two are *drawings* that
+    /// repeat for as long as nothing about them changes, whereas this is a fresh camera
+    /// frame every time — a cache keyed on the frame would never hit, and one keyed on
+    /// anything less would draw yesterday's face. What is left is a scale, an optional
+    /// flip, a crop and a mask, which is four Core Image nodes the GPU folds into the pass
+    /// it was already making.
+    ///
+    /// Fill, not fit — see `WebcamLayer` for why. The overhang is cropped symmetrically,
+    /// so a 16:9 camera in a circular bubble shows the middle of the shot, which is where
+    /// a face is.
+    private func webcamImage(_ layer: WebcamLayer, source: CIImage, in scene: SceneDescriptor) -> CIImage? {
+        let target = layer.pixelRect(in: scene.outputSize)
+        let extent = source.extent
+        guard target.width > 1, target.height > 1, extent.width > 0, extent.height > 0 else { return nil }
+
+        var image = source
+        // Mirrored before anything else, about the frame's own middle, so the flip does not
+        // also move the picture: a negative scale reflects through the origin, and Core
+        // Image's origin is a corner rather than the centre of the camera's frame.
+        if layer.isMirrored {
+            image = image.transformed(by: CGAffineTransform(translationX: extent.midX, y: 0)
+                .scaledBy(x: -1, y: 1)
+                .translatedBy(x: -extent.midX, y: 0))
+        }
+
+        // The larger of the two ratios, which is what makes this a fill: the smaller one
+        // would leave a gap down one pair of sides.
+        let scale = max(target.width / extent.width, target.height / extent.height)
+        image = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        image = image.transformed(by: CGAffineTransform(translationX: target.midX - image.extent.midX,
+                                                        y: target.midY - image.extent.midY))
+        image = image.cropped(to: target)
+        guard image.extent.width > 1, image.extent.height > 1 else { return nil }
+
+        return layer.cornerRadius > 0.5 ? rounded(image, radius: layer.cornerRadius) : image
+    }
+
+    /// The soft dark shape under the bubble.
+    ///
+    /// Its own rather than `shadow(under:)`: that one is measured off the video's frame and
+    /// its corner radius, and both of those are the wrong shape here. The radius is tied to
+    /// the bubble's own side, so a circular bubble casts a round shadow rather than a
+    /// square one peeking out from behind it.
+    private func webcamShadow(_ layer: WebcamLayer, in scene: SceneDescriptor) -> CIImage {
+        let rect = layer.pixelRect(in: scene.outputSize)
+        guard rect.width > 1, rect.height > 1 else { return CIImage.empty() }
+        // Proportional to the bubble rather than to the frame's shadow setting: the bubble
+        // is a small object close to the picture, and the video's shadow radius — tuned for
+        // lifting a whole screenshot off a wallpaper — would smear right across it.
+        let blur = min(rect.width, rect.height) * 0.09
+
+        let filter = CIFilter.roundedRectangleGenerator()
+        filter.extent = rect
+        filter.radius = Float(min(layer.cornerRadius, min(rect.width, rect.height) / 2))
+        filter.color = CIColor(red: 0, green: 0, blue: 0, alpha: layer.shadowOpacity)
+        guard let shape = filter.outputImage else { return CIImage.empty() }
+
+        return shape
+            .clampedToExtent()
+            .applyingGaussianBlur(sigma: blur)
+            .cropped(to: rect.insetBy(dx: -blur * 3, dy: -blur * 3))
+            .transformed(by: CGAffineTransform(translationX: 0, y: -blur * 0.6))
     }
 
     // MARK: - Cursor and annotations

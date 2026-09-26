@@ -20,6 +20,14 @@ public actor VideoExporter {
     private let builder: SceneBuilder
     private let cursor: CursorTrack?
     private let videoURL: URL
+    /// The camera's own file inside the package, when the take recorded one.
+    ///
+    /// A second file rather than a second track in the first: everything that reads a
+    /// recording asks for its first video track, and slipping another one in beside the
+    /// screen would make "the recording" mean whichever AVFoundation happened to list
+    /// first. Optional and defaulted, so a project with no webcam — which is every project
+    /// made before this — exports down exactly the path it always did.
+    private let webcamURL: URL?
     private let packageURL: URL?
     private let settings: ExportSettings
 
@@ -33,12 +41,14 @@ public actor VideoExporter {
                 builder: SceneBuilder,
                 cursor: CursorTrack?,
                 videoURL: URL,
+                webcamURL: URL? = nil,
                 packageURL: URL?,
                 settings: ExportSettings) {
         self.timeline = timeline
         self.builder = builder
         self.cursor = cursor
         self.videoURL = videoURL
+        self.webcamURL = webcamURL
         self.packageURL = packageURL
         self.settings = settings
     }
@@ -61,6 +71,7 @@ public actor VideoExporter {
                                   builder: builder,
                                   cursor: cursor,
                                   videoURL: videoURL,
+                                  webcamURL: webcamURL,
                                   settings: settings,
                                   cancellation: cancellation).export(to: destination, onProgress: onProgress)
             return
@@ -73,6 +84,12 @@ public actor VideoExporter {
     private func writeMovie(to destination: URL,
                             onProgress: @Sendable @escaping (ExportProgress) -> Void) async throws(ExportError) {
         let reader = try await ExportFrameReader(url: videoURL)
+        // The same sequential reader, pointed at the camera. Built only when the timeline
+        // actually draws a bubble: opening a decoder for a file nobody is going to ask a
+        // frame of is a second decode queue for nothing, and a webcam file that has gone
+        // missing must not fail an export of the screen it was recorded beside — hence
+        // `try?` rather than `try`.
+        let webcamReader = await openWebcamReader()
         // The source's real size, not the manifest's idea of it: a builder measured
         // against the wrong size puts the picture in the wrong place, and only in the
         // exported file.
@@ -147,10 +164,18 @@ public actor VideoExporter {
 
                 let time = CMTime(value: CMTimeValue(index), timescale: CMTimeScale(frameRate))
                 let scene = builder.descriptor(for: timeline, at: time, cursor: cursor)
-                let source = try reader.frame(at: timeline.sourceTime(at: time) ?? time)
+                let sourceTime = timeline.sourceTime(at: time) ?? time
+                let source = try reader.frame(at: sourceTime)
+                // The same source time, because the two files share a zero: the camera's
+                // writer starts its session at the moment the screen's first frame arrived
+                // rather than at its own, so "three seconds into the recording" means the
+                // same instant in both. A cut or a speed change therefore moves the face
+                // and the screen together, with no second mapping to keep in step.
+                let camera = try? webcamReader?.frame(at: sourceTime)
 
                 try await append(scene: scene,
                                  source: source,
+                                 webcam: camera,
                                  at: time,
                                  scale: scale,
                                  outputSize: outputSize,
@@ -185,12 +210,14 @@ public actor VideoExporter {
         } catch {
             writer.cancelWriting()
             reader.cancel()
+            webcamReader?.cancel()
             audioReader?.cancelReading()
             try? FileManager.default.removeItem(at: destination)
             throw error as? ExportError ?? ExportError.writerFailed(error.localizedDescription)
         }
 
         reader.cancel()
+        webcamReader?.cancel()
         onProgress(ExportProgress(framesWritten: totalFrames,
                                   totalFrames: totalFrames,
                                   elapsed: Date.now.timeIntervalSince(started)))
@@ -203,6 +230,7 @@ public actor VideoExporter {
     /// GPU can go and queues every frame the encoder has not got to yet.
     private func append(scene: SceneDescriptor,
                         source: CIImage?,
+                        webcam: CIImage?,
                         at time: CMTime,
                         scale: Double,
                         outputSize: CGSize,
@@ -222,7 +250,7 @@ public actor VideoExporter {
             throw ExportError.writerFailed("Ran out of buffers to draw into.")
         }
 
-        var image = renderer.image(for: scene, source: source)
+        var image = renderer.image(for: scene, source: source, webcam: webcam)
         if scale != 1 {
             // Scaled here rather than by building a smaller scene: the descriptor's
             // geometry is in project pixels, and re-deriving it at export size would be
@@ -250,6 +278,22 @@ public actor VideoExporter {
     }
 
     // MARK: - Setting up
+
+    /// A reader for the camera's file, or `nil` when this export has no use for one.
+    ///
+    /// Three ways of having no use for one, all of them ordinary: the project has no bubble
+    /// turned on, the recording never had a camera, or the file it named has been deleted
+    /// out of the package. None of those is a reason to refuse to export the screen, so a
+    /// failure here is swallowed and the frames simply come back without a bubble — which
+    /// is what the builder already describes when it has nothing to draw one from.
+    private func openWebcamReader() async -> ExportFrameReader? {
+        guard timeline.webcam.isEnabled, let webcamURL else { return nil }
+        guard let reader = try? await ExportFrameReader(url: webcamURL) else { return nil }
+        // Asked before the first frame, because this is also where the reader picks up the
+        // track's rotation — a camera recorded sideways would otherwise export sideways.
+        _ = await reader.naturalSize()
+        return reader
+    }
 
     private func prepare(_ destination: URL) throws(ExportError) {
         let folder = destination.deletingLastPathComponent()
