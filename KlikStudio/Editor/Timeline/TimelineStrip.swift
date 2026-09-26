@@ -329,11 +329,15 @@ struct TimelineStrip: View {
                 if zoom.isLocked {
                     Image(systemName: "lock.fill").font(.system(size: 9, weight: .semibold))
                 }
+                // The glyph without the word. "Auto" beside a pointer said the same thing
+                // twice and was the part that ran under the chip's trailing edge on a short
+                // zoom — and a label cut off mid-word is worse than no label. The sentence
+                // is on the chip's tooltip, where there is room for it.
                 if zoom.followsCursor {
-                    Label("Auto", systemImage: "cursorarrow")
-                        .labelStyle(.titleAndIcon)
-                        .font(.system(size: 9, weight: .medium))
+                    Image(systemName: "cursorarrow")
+                        .font(.system(size: 9, weight: .semibold))
                         .opacity(0.85)
+                        .accessibilityLabel("Follows the pointer")
                 }
             }
             .font(.system(size: 10, weight: .semibold))

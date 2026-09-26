@@ -13,7 +13,6 @@ struct TimelineClipRow: View {
     @State private var hoveredHandle: String?
 
     private var viewport: TimelineViewport { model.viewport }
-    private let handleWidth: CGFloat = 10
     private let radius: CGFloat = 6
 
     private static let speeds: [Double] = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4, 8]
@@ -95,7 +94,7 @@ struct TimelineClipRow: View {
         .padding(.vertical, 2)
         .background(.black.opacity(0.28), in: Capsule())
         .fixedSize()
-        .padding(.leading, handleWidth + 5)
+        .padding(.leading, TimelineHandle.target + 3)
         // Faded rather than switched off: this changes mid-trim, and a badge blinking out
         // under the pointer reads as something breaking.
         .opacity(width > 130 ? 1 : 0)
@@ -113,7 +112,7 @@ struct TimelineClipRow: View {
         .foregroundStyle(.white.opacity(0.65))
         // Clear of the handles, and pinned to the two ends rather than centred, so each
         // number stays under the edge it describes while that edge is dragged.
-        .padding(.horizontal, handleWidth + 4)
+        .padding(.horizontal, TimelineHandle.target + 3)
         .opacity(width > 190 ? 1 : 0)
         .animation(StudioMotion.state, value: width > 190)
         .allowsHitTesting(false)
@@ -154,24 +153,20 @@ struct TimelineClipRow: View {
 
     // MARK: - Trimming
 
-    /// A grabbable end of a clip, drawn the way a region's is: a solid bar in the lane's
-    /// colour, full height, carrying the clip's corners on its outside.
-    ///
-    /// Shown on the selected clip and on whichever end the pointer is over. It used to be
-    /// invisible everywhere — `white.opacity(0.001)` — which made trimming a thing you had
-    /// to already know about.
+    /// A grabbable end of a clip — see `TimelineHandle`. It used to be invisible
+    /// (`white.opacity(0.001)`), which made trimming footage a feature you had to be told
+    /// about.
     private func handle(_ clip: Clip, at index: Int, leading: Bool, width: CGFloat) -> some View {
         let key = "\(clip.id)-\(leading)"
         let isHovered = hoveredHandle == key
-        let bar = max(2, min(handleWidth, width / 3))
-        return UnevenRoundedRectangle(topLeadingRadius: leading ? radius : 0,
-                                      bottomLeadingRadius: leading ? radius : 0,
-                                      bottomTrailingRadius: leading ? 0 : radius,
-                                      topTrailingRadius: leading ? 0 : radius,
-                                      style: .continuous)
-            .fill(Color.orange.opacity(isSelected(clip) ? (isHovered ? 1 : 0.85) : (isHovered ? 0.85 : 0)))
-            .frame(width: bar, height: height)
-            .contentShape(Rectangle())
+        return TimelineHandle(leading: leading,
+                              height: height,
+                              chipWidth: width,
+                              radius: radius,
+                              isVisible: isSelected(clip) || isHovered,
+                              isHovered: isHovered,
+                              label: leading ? "Drag to trim the start of this clip"
+                                             : "Drag to trim the end of this clip")
             .onHover { inside in
                 // See `TimelineRegionRow.edge` — hover is noise while a trim is running.
                 guard !model.isGesturing else { return }
@@ -179,7 +174,6 @@ struct TimelineClipRow: View {
                 if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
             }
             .gesture(trim(clip, at: index, leading: leading))
-            .animation(StudioMotion.state, value: isHovered)
     }
 
     private func trim(_ clip: Clip, at index: Int, leading: Bool) -> some Gesture {

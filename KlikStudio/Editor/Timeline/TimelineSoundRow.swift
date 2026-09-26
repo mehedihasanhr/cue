@@ -51,7 +51,6 @@ struct TimelineSoundRow: View {
         return !model.timeline.sound.isAudible
     }
     private var runs: [SoundRun]? { model.timeline.detachedSound }
-    private let edgeWidth: CGFloat = 10
     private let radius: CGFloat = 5
     @State private var hoveredGrip: String?
 
@@ -202,9 +201,9 @@ struct TimelineSoundRow: View {
                 // inside it. See `TimelineRegionRow.label(_:width:)`.
                 label
                     .fixedSize()
-                    .padding(.leading, edgeWidth + 4)
-                    .opacity(width > edgeWidth * 2 + 26 ? 1 : 0)
-                    .animation(StudioMotion.state, value: width > edgeWidth * 2 + 26)
+                    .padding(.leading, TimelineHandle.target + 3)
+                    .opacity(width > TimelineHandle.target * 2 + 20 ? 1 : 0)
+                    .animation(StudioMotion.state, value: width > TimelineHandle.target * 2 + 20)
             }
             .overlay(alignment: .leading) { edge(run, leading: true, width: width) }
             .overlay(alignment: .trailing) { edge(run, leading: false, width: width) }
@@ -227,30 +226,24 @@ struct TimelineSoundRow: View {
 
     // MARK: - Gestures
 
-    /// A grabbable end of a run, drawn the way a region's is — see `TimelineRegionRow.edge`.
+    /// A grabbable end of a run — see `TimelineHandle`.
     private func edge(_ run: SoundRun, leading: Bool, width: CGFloat) -> some View {
         let key = "\(run.id)-\(leading)"
         let isHovered = hoveredGrip == key
-        let bar = max(2, min(edgeWidth, width / 3))
-        let shown = model.isSelected(.soundRun(run.id)) ? (isHovered ? 1.0 : 0.8) : (isHovered ? 0.8 : 0)
-        return UnevenRoundedRectangle(topLeadingRadius: leading ? radius : 0,
-                                      bottomLeadingRadius: leading ? radius : 0,
-                                      bottomTrailingRadius: leading ? 0 : radius,
-                                      topTrailingRadius: leading ? 0 : radius,
-                                      style: .continuous)
-            .fill(tint.opacity(shown))
-            .frame(width: bar, height: height)
-            .contentShape(Rectangle())
+        return TimelineHandle(leading: leading,
+                              height: height,
+                              chipWidth: width,
+                              radius: radius,
+                              isVisible: model.isSelected(.soundRun(run.id)) || isHovered,
+                              isHovered: isHovered,
+                              label: leading ? "Drag to trim the start of this sound"
+                                             : "Drag to trim the end of this sound")
             .onHover { inside in
-                // Ignored while a gesture runs: a chip sliding under a stationary pointer
-                // fires hover on and off all the way along, and each one costs a fade and a
-                // cursor push. See `EditorModel.isGesturing`.
                 guard !model.isGesturing else { return }
                 hoveredGrip = inside ? key : (hoveredGrip == key ? nil : hoveredGrip)
                 if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
             }
             .gesture(trim(run, leading: leading))
-            .animation(StudioMotion.state, value: isHovered)
     }
 
     /// Dragging the body slides everything selected and keeps it playing the same words,

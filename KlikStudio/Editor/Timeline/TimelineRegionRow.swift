@@ -35,7 +35,6 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
     @State private var hoveredGrip: String?
 
     private var viewport: TimelineViewport { model.viewport }
-    private let edgeWidth: CGFloat = 10
     private let radius: CGFloat = 5
 
     var body: some View {
@@ -136,11 +135,11 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
         .foregroundStyle(.white)
         .lineLimit(1)
         .fixedSize()
-        .padding(.leading, edgeWidth + 5)
+        .padding(.leading, TimelineHandle.target + 3)
         // Faded rather than switched off: the chip is being dragged when this changes, and
         // a label blinking out mid-drag reads as something breaking.
-        .opacity(width > edgeWidth * 2 + 26 ? 1 : 0)
-        .animation(StudioMotion.state, value: width > edgeWidth * 2 + 26)
+        .opacity(width > TimelineHandle.target * 2 + 20 ? 1 : 0)
+        .animation(StudioMotion.state, value: width > TimelineHandle.target * 2 + 20)
         .allowsHitTesting(false)
     }
 
@@ -167,30 +166,19 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
 
     // MARK: - Gestures
 
-    /// A grabbable end of a chip: a solid bar in the chip's own colour, full height, with
-    /// the chip's corners on its outside.
-    ///
-    /// What you see is what you grab: the bar and the hit area are the same rectangle, so
-    /// there is no invisible margin around it to explain a drag that did not take.
+    /// A grabbable end of a chip. The drawing is `TimelineHandle`; this says when it is
+    /// offered and what happens when it is pulled.
     private func edge(_ region: Region, leading: Bool, width: CGFloat) -> some View {
         let key = "\(region.id)-\(leading)"
         let isHovered = hoveredGrip == key
-        // Never more than a third of a short chip, or a chip a few points wide would be
-        // nothing but its own handles.
-        let bar = max(2, min(edgeWidth, width / 3))
-        return UnevenRoundedRectangle(topLeadingRadius: leading ? radius : 0,
-                                      bottomLeadingRadius: leading ? radius : 0,
-                                      bottomTrailingRadius: leading ? 0 : radius,
-                                      topTrailingRadius: leading ? 0 : radius,
-                                      style: .continuous)
-            // Shown on the chip that is selected, and on whichever end the pointer is
-            // over. The handles say "this has ends you can take hold of", and saying it on
-            // every chip at once turns a lane into a row of brackets that says nothing
-            // about which one is being worked on. Invisible is still grabbable: the hit
-            // area below does not depend on the fill.
-            .fill(tint.opacity(isSelected(region) ? (isHovered ? 1 : 0.9) : (isHovered ? 0.9 : 0)))
-            .frame(width: bar, height: height)
-            .contentShape(Rectangle())
+        return TimelineHandle(leading: leading,
+                              height: height,
+                              chipWidth: width,
+                              radius: radius,
+                              isVisible: isSelected(region) || isHovered,
+                              isHovered: isHovered,
+                              label: leading ? "Drag to change when this \(title.lowercased()) starts"
+                                             : "Drag to change when this \(title.lowercased()) ends")
             .onHover { inside in
                 // Ignored while a gesture runs: a chip sliding under a stationary pointer
                 // fires hover on and off all the way along, and each one costs a fade and a
@@ -200,7 +188,6 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
                 if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
             }
             .gesture(resize(region, leading: leading))
-            .animation(StudioMotion.state, value: isHovered)
     }
 
     /// Dragging the body slides everything selected, keeping every length.
