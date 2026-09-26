@@ -23,10 +23,16 @@ struct TimelineRuler: View {
                 guard second >= 0, second <= model.duration.seconds + step else { continue }
                 let x = viewport.x(forSeconds: second)
 
+                // Label and tick both start exactly on the second, and the rows below
+                // put a region's left edge on the same number: three nudges of a few
+                // points each is how a ruler stops agreeing with what it measures.
                 context.draw(Text(Timecode.ruler(second, step: step))
                     .font(.system(size: 9, design: .monospaced))
                     .foregroundStyle(.tertiary),
-                    at: CGPoint(x: x + 3, y: 6), anchor: .leading)
+                    at: CGPoint(x: x, y: 6), anchor: .leading)
+
+                context.fill(Path(CGRect(x: x, y: size.height - 5, width: 1, height: 5)),
+                             with: .color(.secondary.opacity(0.5)))
 
                 // A dot between each pair of labels, so the eye can subdivide without
                 // another row of numbers.

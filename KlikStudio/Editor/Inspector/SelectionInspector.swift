@@ -7,7 +7,7 @@ struct SelectionInspector: View {
     let model: EditorModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenSections) {
             switch model.selection {
             case .clip(let id):
                 if let index = model.timeline.clips.firstIndex(where: { $0.id == id }) {
@@ -40,12 +40,18 @@ struct SelectionInspector: View {
                 EmptyView()
             }
 
+            // No "Done" here: the panel's own heading carries the way out of a
+            // selection, and two controls for one idea is how a panel gets a footer
+            // nobody reads.
             if model.canDeleteSelection {
-                Button("Delete", role: .destructive) { model.deleteSelection() }
-                    .controlSize(.small)
-            }
-            Button("Done") { model.clearSelection() }
+                Button(role: .destructive) { model.deleteSelection() } label: {
+                    Label("Delete", systemImage: "trash")
+                        .frame(maxWidth: .infinity)
+                }
                 .controlSize(.small)
+                .padding(.top, SidebarSpacing.sectionPadding)
+                .help("Remove this from the timeline")
+            }
         }
         .font(.system(size: 12))
     }
@@ -53,17 +59,17 @@ struct SelectionInspector: View {
     // MARK: - Clip
 
     private func clip(_ clip: Clip, at index: Int) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            LabeledContent("Length", value: Timecode.length(clip.duration))
-            LabeledContent("From", value: Timecode.short(clip.sourceStart))
-            LabeledContent("To", value: Timecode.short(clip.sourceEnd))
+        VStack(alignment: .leading, spacing: 10) {
+            InspectorRow(title: "Length", value: Timecode.length(clip.duration))
+            InspectorRow(title: "From", value: Timecode.short(clip.sourceStart))
+            InspectorRow(title: "To", value: Timecode.short(clip.sourceEnd))
 
-            Picker("Speed", selection: Binding(
-                get: { clip.speed },
-                set: { model.setSpeed($0, of: clip.id) }
-            )) {
-                ForEach([0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 4.0, 8.0], id: \.self) { speed in
-                    Text(TimelineClipRow.speedLabel(speed)).tag(speed)
+            InspectorField(title: "Speed") {
+                InspectorPicker(selection: Binding(
+                    get: { clip.speed },
+                    set: { model.setSpeed($0, of: clip.id) }
+                ), options: [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 4.0, 8.0]) {
+                    TimelineClipRow.speedLabel($0)
                 }
             }
         }
@@ -74,9 +80,9 @@ struct SelectionInspector: View {
 
     private func sound(index: Int) -> some View {
         let region = model.timeline.audio[index]
-        return VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
             Text((region.path as NSString).lastPathComponent)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 12))
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .help(region.path)
@@ -94,8 +100,8 @@ struct SelectionInspector: View {
                             ),
                             range: 0...2)
 
-            LabeledContent("Starts", value: Timecode.short(region.start))
-            LabeledContent("Lasts", value: Timecode.length(region.duration))
+            InspectorRow(title: "Starts", value: Timecode.short(region.start))
+            InspectorRow(title: "Lasts", value: Timecode.length(region.duration))
             Text("Drag it along the timeline to move it, or take an edge to trim it.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -108,9 +114,10 @@ struct SelectionInspector: View {
 
     private func zoom(index: Int) -> some View {
         let zoom = model.timeline.zooms[index]
-        return VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
             InspectorSlider(model: model, "Scale", systemImage: "plus.magnifyingglass",
-                            value: binding(index, \.scale, "Zoom Scale"), range: 1...8)
+                            value: binding(index, \.scale, "Zoom Scale"), range: 1...8,
+                            format: { String(format: "%.1f×", $0) })
             InspectorSlider(model: model, "Ramp", systemImage: "timelapse",
                             value: Binding(
                                 get: { zoom.transition.seconds },
@@ -118,13 +125,14 @@ struct SelectionInspector: View {
                                     change("Zoom Ramp") { $0.zooms[index].transition = CMTime(seconds: seconds, preferredTimescale: 600) }
                                 }
                             ),
-                            range: 0...2)
+                            range: 0...2,
+                            format: { String(format: "%.2fs", $0) })
 
-            Picker("Easing", selection: Binding(
-                get: { zoom.easing },
-                set: { easing in change("Zoom Easing") { $0.zooms[index].easing = easing } }
-            )) {
-                ForEach(Easing.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
+            InspectorField(title: "Easing") {
+                InspectorPicker(selection: Binding(
+                    get: { zoom.easing },
+                    set: { easing in change("Zoom Easing") { $0.zooms[index].easing = easing } }
+                ), options: Easing.allCases) { $0.rawValue.capitalized }
             }
 
             Toggle("Follow the pointer", isOn: Binding(
@@ -132,12 +140,12 @@ struct SelectionInspector: View {
                 set: { follows in change("Follow Cursor") { $0.zooms[index].followsCursor = follows } }
             ))
 
-            LabeledContent("Starts", value: Timecode.short(zoom.start))
-            LabeledContent("Lasts", value: Timecode.length(zoom.duration))
+            InspectorRow(title: "Starts", value: Timecode.short(zoom.start))
+            InspectorRow(title: "Lasts", value: Timecode.length(zoom.duration))
             // Why this zoom is here. A suggestion someone can see the reason for is one
             // they adjust; one that appeared from nowhere is one they delete.
             if let source = zoom.source, source != .manual {
-                LabeledContent("Suggested by", value: source.title)
+                InspectorRow(title: "Suggested by", value: source.title)
                     .foregroundStyle(.secondary)
             }
         }
@@ -148,7 +156,7 @@ struct SelectionInspector: View {
 
     private func blur(index: Int) -> some View {
         let blur = model.timeline.blurs[index]
-        return VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
             Picker("Style", selection: Binding(
                 get: { blur.style },
                 set: { style in change("Blur Style") { $0.blurs[index].style = style } }
@@ -168,9 +176,9 @@ struct SelectionInspector: View {
     // MARK: - Range
 
     private func range(_ range: CMTimeRange) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            LabeledContent("From", value: Timecode.short(range.start))
-            LabeledContent("Length", value: Timecode.length(range.duration))
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
+            InspectorRow(title: "From", value: Timecode.short(range.start))
+            InspectorRow(title: "Length", value: Timecode.length(range.duration))
             Menu("Set Speed") {
                 ForEach([0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 4.0, 8.0], id: \.self) { speed in
                     Button(TimelineClipRow.speedLabel(speed)) {

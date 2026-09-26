@@ -26,7 +26,7 @@ struct CaptionInspector: View {
     private var empty: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label("Captions", systemImage: "captions.bubble")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 13))
             Text("Klik Studio can listen to the recording and write down what was said. It happens on this Mac — the audio is never sent anywhere.")
                 .font(.callout)
                 .foregroundStyle(.secondary)

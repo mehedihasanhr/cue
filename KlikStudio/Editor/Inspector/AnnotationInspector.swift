@@ -34,8 +34,8 @@ struct AnnotationInspector: View {
 
                 ColorPicker("Colour", selection: colour, supportsOpacity: true)
 
-                LabeledContent("Starts", value: Timecode.short(item.start))
-                LabeledContent("Lasts", value: Timecode.length(item.duration))
+                InspectorRow(title: "Starts", value: Timecode.short(item.start))
+                InspectorRow(title: "Lasts", value: Timecode.length(item.duration))
             }
             .font(.system(size: 12))
             .inspectorSection("Annotation", systemImage: "character.textbox")

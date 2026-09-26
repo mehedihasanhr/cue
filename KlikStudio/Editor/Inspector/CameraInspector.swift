@@ -21,7 +21,7 @@ struct CameraInspector: View {
     private var style: StyleBinding { StyleBinding(model: model) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
             InspectorSlider(model: model, "Steadiness", systemImage: "hand.raised",
                             value: style.binding(\.camera.steadiness, "Steadiness"), range: 0...2)
             InspectorSlider(model: model, "Follow", systemImage: "scope",

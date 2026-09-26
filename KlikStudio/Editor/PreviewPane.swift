@@ -11,20 +11,26 @@ struct PreviewPane: View {
 
     /// Room around the picture, so a shadow has somewhere to fall and a crop handle at
     /// the very edge is still grabbable.
-    private let inset: CGFloat = 22
+    private let inset: CGFloat = 30
 
     var body: some View {
         GeometryReader { proxy in
             ZStack {
-                // A neutral stage rather than flat black: the frame itself carries a
-                // background, and judging that background against pure black is the one
-                // lighting condition it will never be watched in.
-                LinearGradient(colors: [Color(white: 0.16), Color(white: 0.09)],
-                               startPoint: .top, endPoint: .bottom)
+                // The same surface as the panels and the timeline around it. The stage
+                // used to be a grey gradient of its own, which made the middle of the
+                // window a third colour competing with the frame standing on it — and
+                // the frame carries its own background, which is the thing that is
+                // supposed to be judged here.
+                Color.clear.studioSurface()
 
                 if let preview = model.preview {
                     Image(nsImage: preview)
                         .resizable()
+                        // The frame is composed at export size and shown at about a
+                        // third of it. Said out loud rather than left to a default,
+                        // because this is the scale the rounded corners are judged at.
+                        .interpolation(.high)
+                        .antialiased(true)
                         .aspectRatio(contentMode: .fit)
                         .clipShape(RoundedRectangle(cornerRadius: model.tool.flattensPreview ? 0 : 10, style: .continuous))
                         .shadow(color: .black.opacity(model.tool.flattensPreview ? 0 : 0.5), radius: 18, y: 8)
@@ -60,3 +66,5 @@ struct PreviewPane: View {
         return AVMakeRect(aspectRatio: ratio, insideRect: available)
     }
 }
+
+

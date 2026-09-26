@@ -12,6 +12,7 @@
 		4B53545544000000000A033 /* TimelineKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B53545544000000000A023 /* TimelineKit */; };
 		4B53545544000000000A034 /* RenderKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B53545544000000000A024 /* RenderKit */; };
 		4B53545544000000000A035 /* BackgroundKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B53545544000000000A025 /* BackgroundKit */; };
+		4B53545544000000000A041 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4B53545544000000000A005 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -19,6 +20,7 @@
 		4B53545544000000000A002 /* Studio.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Studio.xcconfig; path = ../Config/Studio.xcconfig; sourceTree = "<group>"; };
 		4B53545544000000000A003 /* KlikStudio.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; name = KlikStudio.entitlements; path = ../Config/KlikStudio.entitlements; sourceTree = "<group>"; };
 		4B53545544000000000A004 /* StudioInfo.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = StudioInfo.plist; path = ../Config/StudioInfo.plist; sourceTree = "<group>"; };
+		4B53545544000000000A005 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = ../Klik/Resources/Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -72,6 +74,7 @@
 				4B53545544000000000A002 /* Studio.xcconfig */,
 				4B53545544000000000A003 /* KlikStudio.entitlements */,
 				4B53545544000000000A004 /* StudioInfo.plist */,
+				4B53545544000000000A005 /* Assets.xcassets */,
 			);
 			name = Config;
 			sourceTree = "<group>";
@@ -162,6 +165,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4B53545544000000000A041 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -228,6 +232,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
@@ -269,6 +274,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;

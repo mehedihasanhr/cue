@@ -160,6 +160,45 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         windows.becameFront(session)
     }
 
+    /// Whether the unsaved-changes sheet has already been answered for this close.
+    private var isClosingDeliberately = false
+
+    /// Closing an edited recording asks first.
+    ///
+    /// The edits are a file inside the package, not something the window holds, so
+    /// "carry on later" only works if they were written. Until this, closing the window
+    /// silently threw away everything since the last ⌘S — which is the one thing an
+    /// editor is not allowed to do.
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard !isClosingDeliberately, let model = session.model, model.isDirty else { return true }
+
+        let alert = NSAlert()
+        alert.messageText = "Save the changes to “\(model.name)”?"
+        alert.informativeText = "Your edits are kept inside the recording, so you can open it and carry on. If you don't save them, they are lost."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Discard")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: sender) { [weak self] response in
+            guard let self else { return }
+            switch response {
+            case .alertFirstButtonReturn:
+                model.save()
+                // Still dirty means the save failed, and `model.errorMessage` is about
+                // to say why. Closing anyway would throw the work away on the way past
+                // the explanation.
+                guard !model.isDirty else { return }
+                self.isClosingDeliberately = true
+                sender.close()
+            case .alertSecondButtonReturn:
+                self.isClosingDeliberately = true
+                sender.close()
+            default:
+                break
+            }
+        }
+        return false
+    }
+
     func windowWillClose(_ notification: Notification) {
         // Silenced here rather than left to deallocation: a window that is closing has
         // stopped being something you are listening to, and the sound should go with the

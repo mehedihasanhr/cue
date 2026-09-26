@@ -53,7 +53,8 @@ struct TimelineStrip: View {
             .background {
                 // Clicking past the end of everything clears the selection, which is the
                 // only way out of one that does not involve the Escape key.
-                Color(nsColor: .underPageBackgroundColor)
+                Color.clear
+                    .studioSurface()
                     .contentShape(Rectangle())
                     .onTapGesture { model.clearSelection() }
             }
@@ -65,12 +66,13 @@ struct TimelineStrip: View {
                 viewport.setWidth(width, duration: model.duration)
             }
         }
-        .background(Color(nsColor: .underPageBackgroundColor))
+        .background { Color.clear.studioSurface() }
     }
 
     private func prepare(width: Double) {
+        // The fit itself is the viewport's business: it is the only one that knows
+        // whether it has ever been laid out at a width worth fitting to.
         viewport.setWidth(width, duration: model.duration)
-        if viewport.pointsPerSecond == 40 { viewport.fit(model.duration) }
     }
 
     // MARK: - Rows
@@ -176,10 +178,13 @@ struct TimelineStrip: View {
                 .frame(width: 1.5, height: height)
             // A grab handle at the top, inside the ruler, so the line itself can stay
             // out of the way of everything under it.
+            // Drawn in the frame's own coordinates — 0…10 across, not -5…5. Measured
+            // from the middle, the whole handle sat five points to the left of the line
+            // it is supposed to be the top of.
             Path { path in
-                path.move(to: CGPoint(x: -5, y: 0))
-                path.addLine(to: CGPoint(x: 5, y: 0))
-                path.addLine(to: CGPoint(x: 0, y: 8))
+                path.move(to: CGPoint(x: 0, y: 0))
+                path.addLine(to: CGPoint(x: 10, y: 0))
+                path.addLine(to: CGPoint(x: 5, y: 8))
                 path.closeSubpath()
             }
             .fill(Color.red)

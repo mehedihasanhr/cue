@@ -18,8 +18,15 @@ struct EditorToolbar: View {
     let export: () -> Void
 
     /// The width of the three system buttons plus the breathing room either side of them.
+    ///
+    /// Nothing of ours is drawn inside it. The traffic lights are the system's, they do
+    /// not line up with the tool rail below them, and a control of ours squeezed into the
+    /// gap lines up with neither — so the left end of the bar is left to them alone and
+    /// every control this bar owns is in one cluster at the other end.
     private static let trafficLightInset: CGFloat = 78
-    static let height: CGFloat = 52
+    /// As tall as it has to be for the traffic lights and a row of 26-point controls,
+    /// and no taller: this bar is the frame around the work, not part of it.
+    static let height: CGFloat = 40
 
     var body: some View {
         ZStack {
@@ -27,7 +34,6 @@ struct EditorToolbar: View {
             // middle of the *window* however wide the controls on either side grow.
             title
             HStack(spacing: 8) {
-                leading
                 Spacer(minLength: 40)
                 trailing
             }
@@ -38,11 +44,9 @@ struct EditorToolbar: View {
         .background {
             // Flat and dark, the way an editor's chrome is: the picture is the bright
             // thing in this window and everything around it should recede from it.
-            ZStack {
-                Rectangle().fill(.bar)
-                Rectangle().fill(.black.opacity(0.18))
-            }
-            .overlay(alignment: .bottom) { Divider() }
+            Color.clear
+                .studioSurface()
+                .overlay(alignment: .bottom) { StudioDivider() }
         }
         // The whole bar drags the window, the way a real title bar does — minus the
         // controls, which `Button` already claims.
@@ -53,39 +57,34 @@ struct EditorToolbar: View {
 
     // MARK: - The name
 
+    /// One line, quietly. The "Edited / Saved" line under it is gone: the Save button
+    /// says both of those things now, and a two-line title made this bar half again as
+    /// tall as it needed to be to say what file is open.
     private var title: some View {
-        VStack(spacing: 1) {
-            HStack(spacing: 0) {
-                Text(model.name)
-                    .font(.system(size: 13, weight: .medium))
-                // The extension dimmed rather than dropped: it says what kind of thing
-                // this is, without competing with what it is called.
-                Text(".\(model.packageURL.pathExtension)")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.tertiary)
-            }
-            .lineLimit(1)
-
-            Text(model.isDirty ? "Edited" : "Saved")
-                .font(.system(size: 9))
+        HStack(spacing: 0) {
+            Text(model.name)
+                .font(.system(size: 12))
+            // The extension dimmed rather than dropped: it says what kind of thing
+            // this is, without competing with what it is called.
+            Text(".\(model.packageURL.pathExtension)")
+                .font(.system(size: 12))
                 .foregroundStyle(.tertiary)
-                .contentTransition(.identity)
         }
+        .lineLimit(1)
+        .truncationMode(.middle)
         .allowsHitTesting(false)
-    }
-
-    // MARK: - Leading
-
-    private var leading: some View {
-        GlyphButton(symbol: "folder", help: "Show this recording in the Finder") {
-            NSWorkspace.shared.activateFileViewerSelecting([model.packageURL])
-        }
     }
 
     // MARK: - Trailing
 
     @ViewBuilder
     private var trailing: some View {
+        GlyphButton(symbol: "folder", help: "Show this recording in the Finder") {
+            NSWorkspace.shared.activateFileViewerSelecting([model.packageURL])
+        }
+
+        StudioDivider(axis: .vertical, length: 16).padding(.horizontal, 2)
+
         GlyphButton(symbol: "arrow.uturn.backward",
                     help: model.document.undoName.map { "Undo \($0)" } ?? "Undo",
                     isEnabled: model.document.canUndo) { model.undo() }
@@ -94,24 +93,43 @@ struct EditorToolbar: View {
                     help: "Redo",
                     isEnabled: model.document.canRedo) { model.redo() }
 
-        GlyphButton(symbol: "square.and.arrow.down",
-                    help: "Save (⌘S)",
-                    isEnabled: model.isDirty) { model.save() }
-            .keyboardShortcut("s")
+        StudioDivider(axis: .vertical, length: 16).padding(.horizontal, 2)
 
-        Divider().frame(height: 18).padding(.horizontal, 2)
+        // Spelled out rather than left as a glyph. The edits live in the recording and
+        // come back when it is opened again, which is worth a word: a downward arrow in
+        // a row of grey icons reads as "download" to most people, and the one control
+        // that keeps your work should not have to be guessed at.
+        Button { model.save() } label: {
+            Text(model.isDirty ? "Save" : "Saved")
+                .font(.system(size: 12))
+                .foregroundStyle(model.isDirty ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
+                .padding(.horizontal, 11)
+                .frame(height: 26)
+                .background {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(.white.opacity(model.isDirty ? 0.1 : 0.04))
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(BarButtonStyle())
+        .disabled(!model.isDirty)
+        .keyboardShortcut("s")
+        .animation(StudioMotion.state, value: model.isDirty)
+        .help(model.isDirty
+              ? "Save these edits into the recording, so you can open it and carry on later (⌘S)"
+              : "Every edit is saved in the recording")
 
         Button(action: export) {
             HStack(spacing: 5) {
                 Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 11))
                 Text("Export")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 12))
             }
             .foregroundStyle(.white)
-            .padding(.horizontal, 12)
-            .frame(height: 28)
-            .background(StudioPalette.brand, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .padding(.horizontal, 11)
+            .frame(height: 26)
+            .background(StudioPalette.brand, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
         .buttonStyle(BarButtonStyle())
         .help("Export this as a video or a GIF")
@@ -133,7 +151,7 @@ private struct GlyphButton: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 13))
-                .frame(width: 28, height: 28)
+                .frame(width: 26, height: 26)
                 .foregroundStyle(isEnabled ? AnyShapeStyle(.secondary) : AnyShapeStyle(.quaternary))
                 .background {
                     if isHovering, isEnabled {

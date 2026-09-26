@@ -12,7 +12,7 @@ struct AudioInspector: View {
     let model: EditorModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenSections) {
             tracks
             if model.waveform.state != .unavailable {
                 recorded
@@ -38,7 +38,7 @@ struct AudioInspector: View {
     private var recorded: some View {
         let style = StyleBinding(model: model)
 
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
             Toggle("Keep the recording's sound", isOn: Binding(
                 get: { !model.timeline.sound.isMuted },
                 set: { keep in
@@ -46,7 +46,8 @@ struct AudioInspector: View {
                 }
             ))
             InspectorSlider(model: model, "Level", systemImage: "speaker.wave.2",
-                            value: style.binding(\.sound.gain, "Level"), range: 0...2)
+                            value: style.binding(\.sound.gain, "Level"), range: 0...2,
+                            format: { "\(Int(($0 * 100).rounded()))%" })
                 .disabled(model.timeline.sound.isMuted)
             Text("Goes into the exported video. Turn it down to sit under music, or off to keep only a voiceover.")
                 .font(.caption)
@@ -73,7 +74,7 @@ struct AudioInspector: View {
 
     @ViewBuilder
     private var tracks: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             row("Screen audio", systemImage: "speaker.wave.2",
                 present: model.hasTrack(.systemAudio))
             row("Microphone", systemImage: "mic",
@@ -108,7 +109,7 @@ struct AudioInspector: View {
             Text(title)
             Spacer()
             Image(systemName: present ? "checkmark" : "minus")
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 10))
                 .foregroundStyle(present ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
         }
         .foregroundStyle(present ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
@@ -121,18 +122,21 @@ struct AudioInspector: View {
     private func level(_ audio: PreviewAudio) -> some View {
         @Bindable var audio = audio
 
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
             Toggle("Play sound while editing", isOn: Binding(
                 get: { !audio.isMuted },
                 set: { audio.isMuted = !$0 }
             ))
-            HStack(spacing: 8) {
-                Image(systemName: "speaker.wave.2")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 14)
-                Text("Volume").frame(width: 74, alignment: .leading)
-                Slider(value: $audio.volume, in: 0...1)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 7) {
+                    Text("Volume").foregroundStyle(.secondary)
+                    Spacer(minLength: 8)
+                    Text("\(Int((audio.volume * 100).rounded()))%")
+                        .font(.system(size: 10, design: .monospaced))
+                        .monospacedDigit()
+                        .foregroundStyle(.tertiary)
+                }
+                StudioSlider(value: $audio.volume, in: 0...1)
                     .disabled(audio.isMuted)
             }
             Text("How loud the editor plays. The exported video keeps the levels it was recorded at.")
@@ -150,11 +154,11 @@ struct AudioInspector: View {
     /// goes through the undo stack like every other edit.
     @ViewBuilder
     private var added: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
             ForEach(Array(model.timeline.audio.enumerated()), id: \.element.id) { index, region in
                 VStack(alignment: .leading, spacing: 4) {
                     Text((region.path as NSString).lastPathComponent)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 12))
                         .lineLimit(1)
                         .truncationMode(.middle)
                     InspectorSlider(model: model, "Level", systemImage: "waveform",
@@ -168,7 +172,8 @@ struct AudioInspector: View {
                                             }
                                         }
                                     ),
-                                    range: 0...2)
+                                    range: 0...2,
+                                    format: { "\(Int(($0 * 100).rounded()))%" })
                 }
             }
         }

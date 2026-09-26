@@ -28,7 +28,7 @@ struct WallpaperGrid: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenGroups) {
             gradients
             systemPictures
             yours
@@ -45,15 +45,12 @@ struct WallpaperGrid: View {
         let all = GradientPreset.allCases
         let shown = state.showsAllGradients ? all : Array(all.prefix(collapsedCount))
 
-        return VStack(alignment: .leading, spacing: 6) {
+        return VStack(alignment: .leading, spacing: 8) {
             header("Wallpaper") {
                 if all.count > collapsedCount {
-                    Button(state.showsAllGradients ? "Show less" : "Show all") {
+                    SectionButton(title: state.showsAllGradients ? "Show less" : "Show all") {
                         withAnimation(StudioMotion.state) { state.showsAllGradients.toggle() }
                     }
-                    .buttonStyle(.plain)
-                    .font(.caption2)
-                    .foregroundStyle(.tint)
                 }
             }
 
@@ -77,10 +74,25 @@ struct WallpaperGrid: View {
     private var systemPictures: some View {
         let pictures = catalog.systemWallpapers
         if !pictures.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                header("From macOS") { EmptyView() }
+            // A Mac ships dozens of desktop pictures, and all of them at once is a wall
+            // of thumbnails you scroll past to reach the controls underneath. Two rows,
+            // then ask.
+            let shown = state.showsAllSystemWallpapers ? pictures : Array(pictures.prefix(collapsedCount))
+
+            VStack(alignment: .leading, spacing: 8) {
+                header("From macOS") {
+                    if pictures.count > collapsedCount {
+                        SectionButton(title: state.showsAllSystemWallpapers
+                                      ? "Show less"
+                                      : "Show all (\(pictures.count))") {
+                            withAnimation(StudioMotion.state) {
+                                state.showsAllSystemWallpapers.toggle()
+                            }
+                        }
+                    }
+                }
                 LazyVGrid(columns: columns, spacing: 6) {
-                    ForEach(pictures, id: \.self) { wallpaper in
+                    ForEach(shown, id: \.self) { wallpaper in
                         let id = WallpaperID.system(wallpaper)
                         SwatchTile(isSelected: selectedID == id, title: wallpaper.title) {
                             choose(id)
@@ -97,7 +109,7 @@ struct WallpaperGrid: View {
     }
 
     private var yours: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             header("Yours") { EmptyView() }
             LazyVGrid(columns: columns, spacing: 6) {
                 ForEach(recents, id: \.bookmark) { recent in
@@ -126,7 +138,7 @@ struct WallpaperGrid: View {
     private func header(_ title: String, @ViewBuilder trailing: () -> some View) -> some View {
         HStack {
             Text(title)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 11))
                 .foregroundStyle(.secondary)
             Spacer()
             trailing()

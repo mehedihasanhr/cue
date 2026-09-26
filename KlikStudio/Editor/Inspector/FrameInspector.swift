@@ -8,18 +8,15 @@ import TimelineKit
 struct FrameInspector: View {
     let model: EditorModel
     let state: InspectorState
-    @Environment(StudioSettings.self) private var settings
 
     private var style: StyleBinding { StyleBinding(model: model) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        // Nothing of its own between the sections: each one already carries its padding
+        // and the rule that closes it. Adding a stack gap on top of that put 26 points
+        // under every rule and none above it, which is the lopsided gap this column had.
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenSections) {
             BackgroundPicker(model: model, state: state)
-
-            InspectorSlider(model: model, "Amount", systemImage: "circle.lefthalf.filled",
-                            value: style.binding(\.style.backgroundBlur, "Background Blur"),
-                            range: 0...0.04)
-                .inspectorSection("Background blur", systemImage: "drop")
 
             shape
             if model.timeline.style.crop != nil { crop }
@@ -28,38 +25,30 @@ struct FrameInspector: View {
 
     // MARK: - Shape
 
+    /// The frame's proportions.
+    ///
+    /// The aspect is on the heading, where "Shape: Shape" used to be — the section is
+    /// already called Shape, so the field's own label was the word said twice.
+    ///
+    /// No Reset: four sliders that each show their value and move on a drag are their
+    /// own undo, and ⌘Z puts back anything they got wrong.
     private var shape: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Picker("Shape", selection: style.binding(\.style.aspect, "Shape")) {
-                ForEach(AspectPreset.allCases, id: \.self) { Text($0.displayName).tag($0) }
-            }
-            .font(.system(size: 12))
-
-            InspectorSlider(model: model, "Padding", systemImage: "square.dashed.inset.filled",
-                            value: style.binding(\.style.padding, "Padding"), range: 0...0.2)
-            InspectorSlider(model: model, "Corners", systemImage: "rectangle.roundedtop",
-                            value: style.binding(\.style.cornerRadius, "Corners"), range: 0...0.08)
-            InspectorSlider(model: model, "Shadow", systemImage: "shadow",
-                            value: style.binding(\.style.shadowOpacity, "Shadow"), range: 0...1)
-            InspectorSlider(model: model, "Softness", systemImage: "aqi.medium",
-                            value: style.binding(\.style.shadowRadius, "Shadow Softness"), range: 0...0.08)
-
-            HStack {
-                Spacer()
-                Button("Reset") {
-                    // Back to *your* defaults, not to a table of constants: what a new
-                    // project looks like and what Reset gives you are one idea, and two
-                    // sets of numbers would drift apart within a release.
-                    let defaults = settings
-                    model.apply(Commands.Restyle("Reset Shape") { timeline in
-                        defaults.resetShape(&timeline)
-                    })
-                }
-                .controlSize(.small)
-                .help("Put padding, corners and shadow back to your defaults")
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenGroups) {
+            VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
+                InspectorSlider(model: model, "Padding", systemImage: "square.dashed.inset.filled",
+                                value: style.binding(\.style.padding, "Padding"), range: 0...0.2)
+                InspectorSlider(model: model, "Corners", systemImage: "rectangle.roundedtop",
+                                value: style.binding(\.style.cornerRadius, "Corners"), range: 0...0.08)
+                InspectorSlider(model: model, "Shadow", systemImage: "shadow",
+                                value: style.binding(\.style.shadowOpacity, "Shadow"), range: 0...1)
+                InspectorSlider(model: model, "Softness", systemImage: "aqi.medium",
+                                value: style.binding(\.style.shadowRadius, "Shadow Softness"), range: 0...0.08)
             }
         }
-        .inspectorSection("Shape", systemImage: "square.on.square")
+        .inspectorSection("Shape", systemImage: "square.on.square") {
+            InspectorPicker(selection: style.binding(\.style.aspect, "Shape"),
+                            options: AspectPreset.allCases) { $0.displayName }
+        }
     }
 
     // MARK: - Crop
@@ -68,25 +57,20 @@ struct FrameInspector: View {
     /// preserved against the *cropped* picture: cropping hard means a smaller export,
     /// and that is worth saying out loud rather than discovering later.
     private var crop: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            LabeledContent("Crop") {
-                Text("\(Int(model.croppedVideoSize.width)) × \(Int(model.croppedVideoSize.height))")
-                    .monospacedDigit()
-            }
-            LabeledContent("Output") {
-                Text("\(Int(model.outputSize.width)) × \(Int(model.outputSize.height))")
-                    .monospacedDigit()
-            }
-            HStack {
-                Button(model.tool == .crop ? "Done" : "Adjust…") {
-                    model.tool = model.tool == .crop ? .frame : .crop
-                }
-                Spacer()
-                Button("Reset") { model.setCrop(nil) }
+        VStack(alignment: .leading, spacing: 10) {
+            InspectorRow(title: "Crop",
+                         value: "\(Int(model.croppedVideoSize.width)) × \(Int(model.croppedVideoSize.height))")
+            InspectorRow(title: "Output",
+                         value: "\(Int(model.outputSize.width)) × \(Int(model.outputSize.height))")
+            Button(model.tool == .crop ? "Done" : "Adjust…") {
+                model.tool = model.tool == .crop ? .frame : .crop
             }
             .controlSize(.small)
         }
         .font(.system(size: 12))
-        .inspectorSection("Crop", systemImage: "crop")
+        .inspectorSection("Crop", systemImage: "crop") {
+            SectionButton(title: "Reset") { model.setCrop(nil) }
+                .help("Show the whole recording again")
+        }
     }
 }

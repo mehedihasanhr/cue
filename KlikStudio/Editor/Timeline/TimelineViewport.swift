@@ -23,6 +23,15 @@ final class TimelineViewport {
     /// playback starts.
     var followsPlayhead = true
 
+    /// Whether the whole edit still has to be fitted to the view.
+    ///
+    /// SwiftUI lays a `GeometryReader` out at zero before it lays it out for real, and
+    /// `onAppear` can arrive in that first pass. Fitting to a width of one point pins the
+    /// scale at its minimum — the whole recording as a sliver a few points wide — and
+    /// nothing afterwards asked for the fit again. So the fit is owed until it happens at
+    /// a width worth fitting to.
+    private var needsFit = true
+
     static let minimumPointsPerSecond = 1.0
     /// At 600 points a second one frame of 60 fps is ten points wide — enough to put a
     /// cut exactly where you mean to.
@@ -51,13 +60,19 @@ final class TimelineViewport {
         // A tolerance, not an exact compare: the strip's height is recomputed from the
         // timeline, so adding a row relays it out by a fraction of a point, and clamping
         // on that would nudge the scroll offset for no reason anyone asked for.
-        guard abs(width - self.width) > 0.5 else { return }
+        guard abs(width - self.width) > 0.5 || needsFit else { return }
         self.width = width
-        clamp(duration: duration)
+        if needsFit, width > 1 {
+            fit(duration)
+        } else {
+            clamp(duration: duration)
+        }
     }
 
     /// The whole edit, edge to edge, with a little air at each end.
     func fit(_ duration: CMTime) {
+        // A fit at a width nobody can see is not a fit; it is the bug above.
+        if width > 1 { needsFit = false }
         let seconds = max(0.5, duration.seconds)
         pointsPerSecond = min(Self.maximumPointsPerSecond,
                               max(Self.minimumPointsPerSecond, (width - 24) / seconds))

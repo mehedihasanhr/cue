@@ -11,11 +11,12 @@ struct CursorInspector: View {
     private var style: StyleBinding { StyleBinding(model: model) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
             Toggle("Show pointer", isOn: style.binding(\.cursor.isVisible, "Pointer"))
 
             InspectorSlider(model: model, "Size", systemImage: "arrow.up.left.and.arrow.down.right",
-                            value: style.binding(\.cursor.scale, "Pointer Size"), range: 0.5...3)
+                            value: style.binding(\.cursor.scale, "Pointer Size"), range: 0.5...3,
+                            format: { String(format: "%.1f×", $0) })
             InspectorSlider(model: model, "Smoothing", systemImage: "scribble",
                             value: style.binding(\.cursor.smoothing, "Smoothing"), range: 0...1)
 

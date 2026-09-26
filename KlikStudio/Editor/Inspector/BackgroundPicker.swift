@@ -37,15 +37,8 @@ struct BackgroundPicker: View {
     private var style: StyleBinding { StyleBinding(model: model) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Picker("Background", selection: tab) {
-                ForEach(BackgroundTab.allCases) { tab in
-                    Text(tab.title).tag(tab)
-                }
-            }
-            .pickerStyle(.segmented)
-            .controlSize(.small)
-            .labelsHidden()
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenGroups) {
+            InspectorTabs(selection: tab, items: BackgroundTab.allCases) { $0.title }
 
             switch tab.wrappedValue {
             case .wallpaper: WallpaperGrid(model: model, state: state)
@@ -53,6 +46,13 @@ struct BackgroundPicker: View {
             case .color: colors
             case .image: image
             }
+
+            // Here rather than in a section of its own: the blur is a property of the
+            // background, not a second subject, and a heading over one slider was a
+            // heading doing no work.
+            InspectorSlider(model: model, "Background blur",
+                            value: style.binding(\.style.backgroundBlur, "Background Blur"),
+                            range: 0...0.04)
         }
         .inspectorSection("Background", systemImage: "photo")
     }
@@ -83,8 +83,13 @@ struct BackgroundPicker: View {
 
     // MARK: - Gradient
 
+    /// Sized rather than stretched: five tiles sharing the column's width made each one
+    /// a 44-point slab, which is a lot of panel to say "indigo". They are swatches — big
+    /// enough to read the colour off, and no bigger — and they wrap if more are added.
     private var gradients: some View {
-        HStack(spacing: 8) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 30, maximum: 34), spacing: 8)],
+                  alignment: .leading,
+                  spacing: 8) {
             ForEach(BackgroundPreset.allCases) { preset in
                 SwatchTile(isSelected: model.timeline.style.background == preset.background,
                            title: preset.title) {
@@ -111,7 +116,7 @@ struct BackgroundPicker: View {
     // MARK: - Colour
 
     private var colors: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 22), spacing: 6), count: 9), spacing: 6) {
                 ForEach(Array(BackgroundPalette.colors.enumerated()), id: \.offset) { _, colour in
                     SwatchTile(isSelected: model.timeline.style.background == .color(colour.colorValue),
@@ -123,8 +128,10 @@ struct BackgroundPicker: View {
                 }
             }
 
-            ColorPicker("Custom", selection: custom, supportsOpacity: false)
-                .font(.system(size: 12))
+            InspectorField(title: "Custom") {
+                ColorPicker("Custom", selection: custom, supportsOpacity: false)
+                    .fixedSize()
+            }
         }
     }
 
