@@ -131,6 +131,9 @@ final class RecorderModel {
     private let studio: StudioService
     private var areaPicker: AreaSelectionController?
     private var windowPicker: WindowPickerController?
+    private var thumbnailTask: Task<Void, Never>?
+    /// A picture of each window, by id, filled in after the list itself.
+    private(set) var thumbnails: [CGWindowID: CGImage] = [:]
     private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "recorder")
 
     init(settings: StudioSettings, studio: StudioService) {
@@ -360,10 +363,31 @@ final class RecorderModel {
             // filtered on `isOnScreen` any more — that is what hid every full-screen app,
             // which lives on a Space of its own and is therefore never "on screen" while
             // you are looking at the bar.
-            windows = shareable.windows
+            let offered = shareable.windows
                 .filter { $0.frame.width > 120 && $0.frame.height > 80 }
                 .filter { $0.windowLayer == 0 }
                 .filter { $0.owningApplication?.bundleIdentifier != Bundle.main.bundleIdentifier }
+                // A window nobody can name is a window nobody asked for. Opening the list
+                // to every Space brought the machinery with it — autofill panels, the
+                // login window, helper processes — and they are all alike in this: the
+                // application has a name and the *window* does not. A real window you are
+                // not looking at still has a title; these never do.
+                //
+                // On-screen windows are kept regardless, because a genuinely untitled
+                // window you can see and point at is a window you can mean.
+                .filter { $0.isOnScreen || !($0.title ?? "").trimmingCharacters(in: .whitespaces).isEmpty }
+                .filter { Self.isOfferable($0) }
+
+            // One row per window, not per copy of a name. Several windows of one
+            // application showing the same document are the same choice as far as anyone
+            // reading the list is concerned, and five rows saying "Google Chrome" are five
+            // ways to pick wrong.
+            var seen: Set<String> = []
+            windows = offered
+                .filter { window in
+                    let key = "\(window.owningApplication?.applicationName ?? "")|\(window.title ?? "")"
+                    return seen.insert(key).inserted
+                }
                 .enumerated()
                 .map { depth, window in
                     Source(id: "window-\(window.windowID)",
@@ -382,6 +406,14 @@ final class RecorderModel {
                     return $0.title.localizedStandardCompare($1.title) == .orderedAscending
                 }
 
+            // Pictures of the windows, once the list of them is settled. Off the main
+            // actor and after the fact: the bar must not wait on a dozen captures to show
+            // a list it already has, and a tile that gains its picture a moment later is
+            // the ordinary behaviour of every file browser on the machine.
+            loadThumbnails(for: windows.compactMap {
+                if case .window(let id) = $0.target { return id } else { return nil }
+            })
+
             if target == nil, mode == .display { choose(.display) }
         } catch {
             permissionDenied = (error == .permissionDenied)
@@ -399,6 +431,50 @@ final class RecorderModel {
         // Re-checked rather than remembered: the grant can be given in System Settings
         // while the bar is open, and a chip still saying "not allowed" after that is wrong.
         if settings.recordsCamera { cameraDenied = WebcamRecorder.isDenied }
+    }
+
+    /// Whether a window is one of the machine's own rather than one of the user's.
+    ///
+    /// Named by bundle identifier rather than by how its title reads, because the title is
+    /// the thing that varies: the login window and the autofill panels are the same
+    /// processes on every Mac, and matching on their names would be matching on a
+    /// translation.
+    private static func isOfferable(_ window: SCWindow) -> Bool {
+        guard let bundle = window.owningApplication?.bundleIdentifier else { return true }
+        if Self.systemBundleIDs.contains(bundle) { return false }
+        // Autofill panels are vended by a helper whose identifier is the host application's
+        // with a suffix, and there is no honest general rule for that — so this matches the
+        // one shape they all share and says so.
+        return !bundle.hasSuffix(".AutoFillPanelService")
+    }
+
+    private static let systemBundleIDs: Set<String> = [
+        "com.apple.loginwindow",
+        "com.apple.WindowManager",
+        "com.apple.notificationcenterui",
+        "com.apple.controlcenter",
+        "com.apple.dock",
+        "com.apple.systemuiserver",
+        "com.apple.wallpaper.agent",
+    ]
+
+    /// A picture per window, arriving as each one is taken.
+    private func loadThumbnails(for ids: [CGWindowID]) {
+        thumbnailTask?.cancel()
+        // A hard ceiling: the list shows a screenful, and photographing forty windows to
+        // fill twelve tiles is work nobody sees.
+        let subjects = Array(ids.prefix(24))
+        thumbnailTask = Task { [weak self] in
+            await WindowThumbnail.images(of: subjects) { id, image in
+                await MainActor.run { self?.thumbnails[id] = image }
+            }
+        }
+    }
+
+    /// The picture of a window, once one has been taken.
+    func thumbnail(for source: Source) -> CGImage? {
+        guard case .window(let id) = source.target else { return nil }
+        return thumbnails[id]
     }
 
     var filteredWindows: [Source] {

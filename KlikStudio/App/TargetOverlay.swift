@@ -224,9 +224,10 @@ private struct TargetOverlayView: View {
                     .frame(height: 120)
             } else {
                 ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: 10)], spacing: 10) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 12)], spacing: 12) {
                         ForEach(model.filteredWindows) { source in
                             WindowTile(source: source,
+                                       thumbnail: model.thumbnail(for: source),
                                        isSelected: model.target == source.target) {
                                 model.select(source)
                             }
@@ -234,7 +235,7 @@ private struct TargetOverlayView: View {
                     }
                     .padding(.horizontal, 4)
                 }
-                .frame(maxWidth: 760, maxHeight: 300)
+                .frame(maxWidth: 780, maxHeight: 420)
             }
 
             StartButton(isArmed: model.target != nil, action: start)
@@ -248,42 +249,44 @@ private struct TargetOverlayView: View {
 
 /// One window on offer.
 private struct WindowTile: View {
-    /// What the row says under the name, which is not always the window's title.
-    ///
-    /// Two facts matter more than the title when they are true: a window the system will
-    /// not let a recording see captures as a black rectangle, and a window on another
-    /// Space cannot be pointed at — both are better said here than discovered afterwards.
-    private var subtitle: String {
-        if !source.isShareable { return "Hidden from recording by its app" }
-        if !source.isOnScreen { return "On another Space — recording will switch to it" }
-        return source.subtitle.isEmpty ? "Untitled window" : source.subtitle
-    }
-
     let source: RecorderModel.Source
+    let thumbnail: CGImage?
     let isSelected: Bool
     let action: () -> Void
     @State private var isHovering = false
 
+    /// The window's own title, which is what tells two windows of one application apart.
+    ///
+    /// It used to be replaced by "On another Space" whenever that was true, which was
+    /// exactly backwards: the Space is a footnote and the title is the answer. Five rows
+    /// reading "Google Chrome · On another Space" are five ways to pick the wrong one.
+    /// The Space, and a window that cannot be recorded at all, are badges instead.
+    private var subtitle: String {
+        source.subtitle.isEmpty ? "Untitled window" : source.subtitle
+    }
+
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(source.title)
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                Text(subtitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(source.isShareable ? .white.opacity(0.6) : Color.orange.opacity(0.9))
-                    .lineLimit(1)
+            VStack(alignment: .leading, spacing: 8) {
+                preview
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(source.title)
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 13)
-            .frame(height: 50)
+            .padding(9)
             .background(isSelected ? AnyShapeStyle(StudioPalette.brand.opacity(0.85))
                                    : AnyShapeStyle(.white.opacity(isHovering ? 0.16 : 0.09)),
-                        in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(.white.opacity(isSelected ? 0.3 : 0.12))
             }
             .contentShape(Rectangle())
@@ -292,6 +295,55 @@ private struct WindowTile: View {
         .onHover { hovering in
             withAnimation(StudioMotion.hover) { isHovering = hovering }
         }
+    }
+
+    /// The window itself, which is what anyone is actually picturing when they choose one.
+    @ViewBuilder
+    private var preview: some View {
+        ZStack(alignment: .topTrailing) {
+            Group {
+                if let thumbnail {
+                    Image(decorative: thumbnail, scale: 1)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    // Not yet photographed, or a window that refuses to be — the second is
+                    // said out loud by the badge below rather than left as a grey box.
+                    Rectangle().fill(.white.opacity(0.06))
+                        .overlay {
+                            Image(systemName: source.isShareable ? "macwindow" : "eye.slash")
+                                .font(.system(size: 18))
+                                .foregroundStyle(.white.opacity(0.35))
+                        }
+                }
+            }
+            .frame(height: 96)
+            .frame(maxWidth: .infinity)
+            .clipped()
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+
+            badges.padding(6)
+        }
+    }
+
+    @ViewBuilder
+    private var badges: some View {
+        VStack(alignment: .trailing, spacing: 4) {
+            if !source.isShareable {
+                badge("Hidden from recording", tint: .orange)
+            } else if !source.isOnScreen {
+                badge("Another Space", tint: .white.opacity(0.85))
+            }
+        }
+    }
+
+    private func badge(_ text: String, tint: Color) -> some View {
+        Text(text)
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(tint)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(.black.opacity(0.6), in: Capsule())
     }
 }
 
