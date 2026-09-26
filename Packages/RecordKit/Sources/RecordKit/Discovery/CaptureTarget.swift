@@ -29,6 +29,34 @@ public enum CaptureTarget: Sendable, Hashable {
     }
 }
 
+/// Which windows the system will actually let a recording see.
+///
+/// A window can refuse to be captured — `NSWindow.sharingType = .none`, which a browser's
+/// private window and a password manager both use — and ScreenCaptureKit does not say so.
+/// It lists the window, the recording starts, and what lands in the file is a black
+/// rectangle. Asking the window server directly is the only way to know before the take
+/// rather than after it.
+public enum WindowSharing {
+    /// The windows that would come out black, by id.
+    ///
+    /// Read from the window server rather than from `SCShareableContent`, which carries no
+    /// equivalent. A window missing from the list is treated as shareable: the failure to
+    /// read a state must not mark a perfectly good window as unrecordable.
+    public static func refusing() -> Set<CGWindowID> {
+        let options: CGWindowListOption = [.optionAll, .excludeDesktopElements]
+        guard let listing = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
+            return []
+        }
+        var refusing: Set<CGWindowID> = []
+        for entry in listing {
+            guard let id = entry[kCGWindowNumber as String] as? CGWindowID,
+                  let sharing = entry[kCGWindowSharingState as String] as? Int else { continue }
+            if sharing == 0 { refusing.insert(id) }
+        }
+        return refusing
+    }
+}
+
 /// What can be recorded right now.
 ///
 /// A thin wrapper over `SCShareableContent` so the rest of the package never has to
@@ -45,7 +73,12 @@ public struct ShareableContentStore: Sendable {
 
     public func content() async throws(RecordingError) -> SCShareableContent {
         do {
-            return try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            // `onScreenWindowsOnly: false` on purpose. A full-screen app lives on its
+            // own Space, and a Space you are not looking at is not "on screen" — so the
+            // strict version left the one window somebody most wants to record out of the
+            // list entirely, with no way to reach it. The cost is that hidden and
+            // minimised windows arrive too, which the caller filters on what it can see.
+            return try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
         } catch {
             // SCK reports a missing Screen Recording grant as a plain stream error, and
             // the difference matters to the user: one is a dialog, the other is a bug.

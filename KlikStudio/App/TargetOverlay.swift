@@ -232,6 +232,17 @@ private struct TargetOverlayView: View {
 
 /// One window on offer.
 private struct WindowTile: View {
+    /// What the row says under the name, which is not always the window's title.
+    ///
+    /// Two facts matter more than the title when they are true: a window the system will
+    /// not let a recording see captures as a black rectangle, and a window on another
+    /// Space cannot be pointed at — both are better said here than discovered afterwards.
+    private var subtitle: String {
+        if !source.isShareable { return "Hidden from recording by its app" }
+        if !source.isOnScreen { return "On another Space — recording will switch to it" }
+        return source.subtitle.isEmpty ? "Untitled window" : source.subtitle
+    }
+
     let source: RecorderModel.Source
     let isSelected: Bool
     let action: () -> Void
@@ -244,9 +255,9 @@ private struct WindowTile: View {
                     .font(.system(size: 12.5, weight: .semibold))
                     .foregroundStyle(.white)
                     .lineLimit(1)
-                Text(source.subtitle.isEmpty ? "Untitled window" : source.subtitle)
+                Text(subtitle)
                     .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(source.isShareable ? .white.opacity(0.6) : Color.orange.opacity(0.9))
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)

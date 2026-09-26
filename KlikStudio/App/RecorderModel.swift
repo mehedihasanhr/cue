@@ -75,6 +75,20 @@ final class RecorderModel {
         let title: String
         let subtitle: String
         let target: CaptureTarget
+        /// Where the window is, in display coordinates with the origin at the top left —
+        /// `SCWindow.frame`'s convention, kept rather than converted so the one place that
+        /// draws it does the flip once. `.zero` for a display or an area.
+        var frame: CGRect = .zero
+        /// Front to back, as the window server sees it. Kept because the list is sorted by
+        /// application name for reading, and pointing at overlapping windows needs the
+        /// order they are actually stacked in.
+        var depth: Int = 0
+        /// Whether this window is on a Space you are looking at. A full-screen app on
+        /// another Space is listed but cannot be pointed at.
+        var isOnScreen: Bool = true
+        /// Whether the system will let a recording see it. A private browser window says
+        /// no, and captures as a black rectangle — see `WindowSharing`.
+        var isShareable: Bool = true
     }
 
     private(set) var displays: [Source] = []
@@ -99,6 +113,12 @@ final class RecorderModel {
     /// Called once an area has been dragged out, so the target overlay can come up after
     /// the area picker rather than underneath it.
     var onAreaPicked: () -> Void = {}
+    /// Called once a window has been pointed at, for the same reason: the confirmation
+    /// overlay follows the choice rather than standing in front of it.
+    var onWindowPicked: () -> Void = {}
+    /// Called when the pointer picker is waved off in favour of the searchable list —
+    /// a window on another Space cannot be pointed at.
+    var onWindowListWanted: () -> Void = {}
 
     var windowSearch = ""
 
@@ -106,6 +126,7 @@ final class RecorderModel {
     private let settings: StudioSettings
     private let studio: StudioService
     private var areaPicker: AreaSelectionController?
+    private var windowPicker: WindowPickerController?
     private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "recorder")
 
     init(settings: StudioSettings, studio: StudioService) {
@@ -177,9 +198,11 @@ final class RecorderModel {
         case .display:
             select(displays.first { $0.target.displayID == Self.displayUnderPointer() } ?? displays.first)
         case .window:
-            // A window has to be named; the bar's menu does that.
+            // Pointed at rather than named. The list is still there behind the picker's
+            // `L`, because a window on another Space is not on any glass to point at.
             target = nil
             targetLabel = ""
+            pickWindow()
         case .area:
             pickArea()
         case .device:
@@ -201,6 +224,29 @@ final class RecorderModel {
         case .display: mode = .display
         case .window: mode = .window
         case .area: mode = .area
+        }
+    }
+
+    /// Points at a window on the screen, then keeps it as the target.
+    ///
+    /// The same shape as `pickArea`: the picker owns the screen until a choice is made,
+    /// and only then does the confirmation overlay come up. Cancelling falls back to
+    /// whatever was armed before rather than leaving the bar pointing at nothing.
+    func pickWindow() {
+        let controller = WindowPickerController()
+        windowPicker = controller
+        controller.begin(candidates: windows) { [weak self] outcome in
+            guard let self else { return }
+            windowPicker = nil
+            switch outcome {
+            case .picked(let source):
+                select(source)
+                onWindowPicked()
+            case .wantsList:
+                onWindowListWanted()
+            case .cancelled:
+                if target == nil { choose(.display) }
+            }
         }
     }
 
@@ -281,15 +327,35 @@ final class RecorderModel {
 
             // Windows worth offering: on screen, big enough to be a window rather than a
             // shadow or a tooltip, and not one of ours.
+            // Which windows would record as a black rectangle. Read once per refresh
+            // rather than per window: it is one call to the window server either way.
+            let refusing = WindowSharing.refusing()
+
+            // Worth offering: big enough to be a window rather than a shadow or a
+            // tooltip, on the normal window layer, and not one of ours. Deliberately *not*
+            // filtered on `isOnScreen` any more — that is what hid every full-screen app,
+            // which lives on a Space of its own and is therefore never "on screen" while
+            // you are looking at the bar.
             windows = shareable.windows
-                .filter { $0.isOnScreen && $0.frame.width > 120 && $0.frame.height > 80 }
+                .filter { $0.frame.width > 120 && $0.frame.height > 80 }
+                .filter { $0.windowLayer == 0 }
                 .filter { $0.owningApplication?.bundleIdentifier != Bundle.main.bundleIdentifier }
-                .sorted { ($0.owningApplication?.applicationName ?? "") < ($1.owningApplication?.applicationName ?? "") }
-                .map { window in
+                .enumerated()
+                .map { depth, window in
                     Source(id: "window-\(window.windowID)",
                            title: window.owningApplication?.applicationName ?? "Window",
                            subtitle: window.title ?? "",
-                           target: .window(window.windowID))
+                           target: .window(window.windowID),
+                           frame: window.frame,
+                           depth: depth,
+                           isOnScreen: window.isOnScreen,
+                           isShareable: !refusing.contains(window.windowID))
+                }
+                .sorted {
+                    // On-screen first, then by application, so the list reads as "what you
+                    // can point at" followed by "what you would have to switch to".
+                    if $0.isOnScreen != $1.isOnScreen { return $0.isOnScreen }
+                    return $0.title.localizedStandardCompare($1.title) == .orderedAscending
                 }
 
             if target == nil, mode == .display { choose(.display) }
