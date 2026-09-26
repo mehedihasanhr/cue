@@ -51,10 +51,16 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         window.delegate = self
         // ⎋ closes a preview (like Quick Look). In edit mode the canvas owns ⎋; this
         // catches it when a toolbar control has focus instead, so ⎋ still returns to Select.
+        // `self.window`, not the local `window`: this closure is stored *on* the window,
+        // so capturing it strongly makes the window own a closure that owns the window.
+        // With `isReleasedWhenClosed = false` — which is right, the controller manages the
+        // lifetime — that cycle means a closed editor is never deallocated. Eight of them
+        // were found alive and off-screen on a machine that had been editing all day, and
+        // they turn up in anything that lists windows, including this app's own recorder.
         window.onEscape = { [weak self] in
             guard let self else { return false }
             if model.mode == .preview {
-                window.performClose(nil)
+                self.window?.performClose(nil)
                 return true
             }
             guard model.tool != .select else { return false }

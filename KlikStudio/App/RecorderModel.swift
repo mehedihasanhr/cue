@@ -366,7 +366,14 @@ final class RecorderModel {
             let offered = shareable.windows
                 .filter { $0.frame.width > 120 && $0.frame.height > 80 }
                 .filter { $0.windowLayer == 0 }
-                .filter { $0.owningApplication?.bundleIdentifier != Bundle.main.bundleIdentifier }
+                // Klik's windows as well as the recorder's own. The store has always
+                // known both — it excludes them from what a *display* capture sees — and
+                // the list was asking a narrower question, so Klik's editors and panels
+                // turned up as a dozen rows called "Klik" for a recording nobody wants.
+                .filter { window in
+                    guard let bundle = window.owningApplication?.bundleIdentifier else { return true }
+                    return !content.excludedBundleIDs.contains(bundle)
+                }
                 // A window nobody can name is a window nobody asked for. Opening the list
                 // to every Space brought the machinery with it — autofill panels, the
                 // login window, helper processes — and they are all alike in this: the
