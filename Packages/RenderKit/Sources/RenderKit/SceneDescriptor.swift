@@ -88,6 +88,47 @@ public struct SceneDescriptor: Equatable, Sendable {
                       width: size.width,
                       height: size.height)
     }
+
+    /// The same frame, described at a fraction of its size.
+    ///
+    /// The preview pane is a few hundred points across; a 4K project composites eight
+    /// megapixels to fill it, and the difference is thrown away by the window server.
+    /// This is how the preview asks for the smaller picture *while it is moving* — not by
+    /// rendering the full frame and shrinking it, which would pay the full cost and then
+    /// some, but by describing a smaller frame so every blur, every rounded-corner mask
+    /// and every composite runs over fewer pixels.
+    ///
+    /// Why this can live on the descriptor rather than in the renderer: almost everything
+    /// here is already normalised — a blur's rect, an annotation's rect and font size, the
+    /// cursor's position and scale, the caption's font size, the crop, the zoom and its
+    /// centre are all fractions of something, so they land in the same relative place at
+    /// any size. Only four fields are in output pixels, and they are the four scaled here.
+    /// That is also why the scaling is *not* a shortcut the renderer could take on its own:
+    /// it is a decision about what the picture is, made by the one caller allowed to make
+    /// it, and the export never makes it.
+    ///
+    /// `factor` of 1 returns `self` unchanged — identical, not merely equal — because the
+    /// frame at rest and the frame the export writes must be the same bytes, and the
+    /// cheapest way to be sure of that is for there to be no arithmetic to be wrong about.
+    ///
+    /// One thing does *not* scale: `BlurLayer.radius` is a sigma in source-recording
+    /// pixels, applied before the footage is fitted into `videoFrame`, so a smaller output
+    /// downscales the blurred region further and the obscured patch comes out proportionally
+    /// softer-edged than it will in the file. That is a visible difference, and it is
+    /// allowed for exactly the same reason the whole frame being softer is allowed: it
+    /// lasts only while the picture is moving.
+    public func scaled(by factor: Double) -> SceneDescriptor {
+        guard factor > 0, factor != 1 else { return self }
+        var copy = self
+        // Rounded, because this size becomes a `CGImage`'s and a pixel buffer's, and a
+        // fractional one there is a rounding decision made somewhere we cannot see.
+        copy.outputSize = CGSize(width: max(1, (outputSize.width * factor).rounded()),
+                                 height: max(1, (outputSize.height * factor).rounded()))
+        copy.videoFrame = videoFrame.applying(CGAffineTransform(scaleX: factor, y: factor))
+        copy.cornerRadius = cornerRadius * factor
+        copy.shadowRadius = shadowRadius * factor
+        return copy
+    }
 }
 
 /// Something hidden in this frame.

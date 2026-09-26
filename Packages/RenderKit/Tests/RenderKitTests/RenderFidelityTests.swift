@@ -235,6 +235,98 @@ struct RenderFidelityTests {
                 "two labels that should look different came out identical — a cache key is short a field")
     }
 
+    // MARK: - The preview's own path
+
+    /// The frame at rest is the frame the export writes — byte for byte.
+    ///
+    /// The assertion the preview's fidelity switch stands or falls on. `EditorModel` scales
+    /// the descriptor down while the picture is moving and scales it by 1 the moment it
+    /// stops, so the whole guarantee reduces to this: `scaled(by: 1)` must be a no-op, not
+    /// approximately a no-op. Checked twice over — as a value, so no field was touched, and
+    /// as rendered bytes, so no field that *isn't* compared by `==` could have been either.
+    @Test func describingAFrameAtFullSizeChangesNothingAtAll() throws {
+        let timeline = RenderWorkload.timeline(regions: 6, duration: 12)
+        let track = RenderWorkload.cursorTrack(duration: 12)
+        let builder = SceneBuilder(videoSize: CGSize(width: 640, height: 360), displayScale: 2)
+        let source = RenderWorkload.source(CGSize(width: 640, height: 360))
+        let renderer = SceneRenderer()
+
+        for at in stride(from: 0.4, through: 11.4, by: 1.1) {
+            let exported = builder.descriptor(for: timeline, at: RenderWorkload.time(at), cursor: track)
+            let atRest = exported.scaled(by: 1)
+            #expect(atRest == exported, "the frame at rest moved at \(at)s")
+            #expect(fingerprint(atRest) == fingerprint(exported))
+
+            let written = try fingerprint(try #require(renderer.cgImage(for: exported, source: source)))
+            let shown = try fingerprint(try #require(renderer.cgImage(for: atRest, source: source)))
+            #expect(shown == written, "the preview at rest drew \(at)s differently from the export")
+        }
+    }
+
+    /// A scaled descriptor is smaller in output pixels and unchanged in everything
+    /// normalised.
+    ///
+    /// Which is the claim `scaled(by:)`'s comment makes, and the reason it is allowed to be
+    /// four lines long: if a normalised field were scaled too it would be scaled *twice* —
+    /// once here and once by the renderer multiplying it back up by the new output size —
+    /// and the pointer would drift to a quarter of the way across a half-size frame.
+    @Test func scalingAFrameMovesOnlyWhatIsMeasuredInPixels() {
+        let timeline = RenderWorkload.timeline(regions: 6, duration: 12)
+        let track = RenderWorkload.cursorTrack(duration: 12)
+        let builder = SceneBuilder(videoSize: CGSize(width: 3_840, height: 2_160), displayScale: 2)
+
+        for at in stride(from: 0.4, through: 11.4, by: 1.1) {
+            let full = builder.descriptor(for: timeline, at: RenderWorkload.time(at), cursor: track)
+            let half = full.scaled(by: 0.5)
+
+            #expect(half.outputSize.width == (full.outputSize.width / 2).rounded())
+            #expect(half.outputSize.height == (full.outputSize.height / 2).rounded())
+            #expect(half.videoFrame.width == full.videoFrame.width / 2)
+            #expect(half.videoFrame.minX == full.videoFrame.minX / 2)
+            #expect(half.cornerRadius == full.cornerRadius / 2)
+            #expect(half.shadowRadius == full.shadowRadius / 2)
+
+            // Everything normalised, untouched — and `sourceTime` above all, because the
+            // preview showing a *different moment* than the export is the one divergence
+            // this whole exercise refused to accept.
+            #expect(half.sourceTime == full.sourceTime)
+            #expect(half.sourceCrop == full.sourceCrop)
+            #expect(half.zoom == full.zoom)
+            #expect(half.zoomCenter == full.zoomCenter)
+            #expect(half.background == full.background)
+            #expect(half.backgroundBlur == full.backgroundBlur)
+            #expect(half.shadowOpacity == full.shadowOpacity)
+            #expect(half.blurs == full.blurs)
+            #expect(half.cursor == full.cursor)
+            #expect(half.annotations == full.annotations)
+            #expect(half.caption == full.caption)
+
+            // And the video still sits in the same relative place, which is what makes the
+            // overlays — which map through `outputSize` — land on the same spot either way.
+            #expect(abs(half.videoFrame.midX / half.outputSize.width
+                        - full.videoFrame.midX / full.outputSize.width) < 0.001)
+        }
+    }
+
+    /// Scaling is a description, not a resample: the smaller frame is a real composite at
+    /// the smaller size.
+    ///
+    /// Worth asserting because the lazy alternative — render the full frame and shrink the
+    /// result — would pass every test above while paying the full cost, which is the one
+    /// thing the preview path exists not to do. A `CGImage` of the scaled size is the
+    /// evidence that Core Image was never asked for the big one.
+    @Test func aScaledFrameIsDrawnAtItsOwnSize() throws {
+        let builder = SceneBuilder(videoSize: CGSize(width: 1_920, height: 1_080), displayScale: 2)
+        let scene = builder.descriptor(for: RenderWorkload.timeline(regions: 4, duration: 8),
+                                       at: RenderWorkload.time(2.5),
+                                       cursor: RenderWorkload.cursorTrack(duration: 8))
+        let quarter = scene.scaled(by: 0.25)
+        let image = try #require(SceneRenderer().cgImage(for: quarter, source: nil))
+        #expect(image.width == Int(quarter.outputSize.width))
+        #expect(image.height == Int(quarter.outputSize.height))
+        #expect(image.width < Int(scene.outputSize.width))
+    }
+
     /// The same renderer asked for the same frame twice hands back the same bytes.
     ///
     /// `SceneTests.thesameSceneRendersIdenticallyTwice` compares one pixel; this compares

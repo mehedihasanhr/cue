@@ -198,7 +198,11 @@ final class EditorModel {
             } else {
                 self.playhead = next
                 self.viewport.reveal(self.playhead, duration: self.duration)
-                self.refreshIfIdle()
+                // `refresh` coalesces, so the ticker can simply say what the playhead is now
+                // and let it decide whether that is a frame worth drawing. It used to have to
+                // ask whether a render was in flight, which meant this tick's playhead was
+                // thrown away rather than remembered.
+                self.refresh()
             }
         }
     }
@@ -215,6 +219,9 @@ final class EditorModel {
         lastTick = nil
         Task { [weak self] in
             await self?.frames?.setQuality(.exact)
+            // The one render that has to be perfect. Playback is over, `isPlaying` is
+            // already false, so `previewFidelity` is 1 and this draws the frame the export
+            // would write — byte for byte, which `RenderFidelityTests` is the guarantee of.
             self?.refresh()
         }
     }
@@ -229,30 +236,112 @@ final class EditorModel {
 
     // MARK: - Rendering
 
+    /// How big the preview pane is, in points, as SwiftUI last laid it out.
+    ///
+    /// Reported by `PreviewPane` rather than guessed, because the whole point is to
+    /// composite at the size that is actually going to be looked at, and that depends on
+    /// the window and on where the user has dragged the inspector's divider.
+    ///
+    /// `@ObservationIgnored` on purpose: it is written from a layout callback, and a stored
+    /// property the view both reads and writes during layout is a loop. Nothing observes
+    /// it — it only affects the *next* render, and the next render is already coming.
+    @ObservationIgnored private var previewPaneSize: CGSize = .zero
+
+    func previewPaneResized(to size: CGSize) {
+        previewPaneSize = size
+    }
+
+    /// The fraction of the project's resolution the preview composites at.
+    ///
+    /// 1 whenever the picture is standing still, which is the rule the export's fidelity
+    /// depends on: the moment playback stops, the frame on screen is the frame in the file.
+    /// While it plays, the size of the pane — a 4K project in a 900-point-wide pane on a 2×
+    /// display needs 1800 pixels across, not 3840, and the window server would throw the
+    /// rest away.
+    ///
+    /// Quantised to eighths rather than taken exactly, because the background cache and
+    /// Core Image's own kernels are keyed by size: a factor that drifted by a pixel with
+    /// every window resize would miss every cache it has, and would spend more on rebuilding
+    /// a gradient than it saved on compositing one.
+    private var previewFidelity: Double {
+        guard isPlaying else { return 1 }
+        let output = previewSize
+        guard output.width > 1, previewPaneSize.width > 1 else { return 1 }
+        let backing = NSScreen.main?.backingScaleFactor ?? 2
+        let wanted = max(previewPaneSize.width * backing / output.width,
+                         previewPaneSize.height * backing / output.height)
+        // Never below an eighth: past that the picture stops being a preview of anything,
+        // and the cost is by then dominated by the decode rather than by the composite.
+        return min(1, max(0.125, (wanted * 8).rounded(.up) / 8))
+    }
+
+    /// Whether a playhead change arrived while a render was in flight.
+    ///
+    /// The scrub coalescer. A drag produces events far faster than a frame decodes, and the
+    /// only frame that matters is the one under the pointer *now* — so a request that lands
+    /// on a busy renderer is remembered as "there is newer work" rather than started, and
+    /// picked up when the current frame lands. Cancelling instead, which is what this
+    /// replaced, could not help: a cancelled `Task` does not stop a decode already inside
+    /// `AVAssetImageGenerator`, so the work happened anyway and the frame the pointer was
+    /// over came back last.
+    @ObservationIgnored private var hasPendingRender = false
+
     /// Re-renders the frame under the playhead.
     ///
-    /// One render in flight at a time: dragging the scrubber asks for a new frame far
-    /// faster than a 4K frame can be decoded, and queueing them all would make the
-    /// picture lag the pointer by seconds.
+    /// One render in flight at a time, and one remembered behind it. The synchronous half —
+    /// describing the frame — runs on every call, because the overlays read `scene` and must
+    /// track the pointer without waiting for a decode; it costs a few microseconds. The
+    /// asynchronous half is what gets coalesced.
     func refresh() {
-        renderTask?.cancel()
         validateSelection()
         // Here rather than at each place a sound is added, because there are four of them
         // — an import, a voiceover, a paste, an undo — and the list of sounds the edit
         // names is the only thing any of them has in common. Cheap on the ordinary path.
         regionWaveforms.reconcile(paths: timeline.audio.map(\.path))
         let scene = builder.descriptor(for: renderedTimeline, at: playhead, cursor: smoothedCursor)
+        // Kept at full size whatever the preview draws at: this is the description of the
+        // frame the export would write, and the overlays map their handles through its
+        // `outputSize`. A scaled copy would work for them too, since everything they read is
+        // a ratio — but "what the file will contain" is the more useful thing to publish.
         self.scene = scene
+
+        guard renderTask == nil else {
+            hasPendingRender = true
+            return
+        }
+        startRender(of: scene)
+    }
+
+    private func startRender(of scene: SceneDescriptor) {
         let frames = frames
+        // The only place the preview is allowed to differ from the export, and only while
+        // the picture is moving.
+        let drawn = scene.scaled(by: previewFidelity)
 
         renderTask = Task { [renderer] in
-            defer { if !Task.isCancelled { self.renderTask = nil } }
-            let source = await frames?.frame(at: scene.sourceTime)
+            defer {
+                renderTask = nil
+                if hasPendingRender {
+                    hasPendingRender = false
+                    // Re-described rather than replayed: by now the playhead has moved on, and
+                    // the frame worth drawing is the one it is over now.
+                    refresh()
+                }
+            }
+            let source = await frames?.frame(at: drawn.sourceTime)
             guard !Task.isCancelled else { return }
-            let image = renderer.cgImage(for: scene, source: source)
+            let image = renderer.cgImage(for: drawn, source: source)
             guard !Task.isCancelled, let image else { return }
+            // Sized in the *full* frame's points even when the pixels are fewer, so the pane's
+            // layout and its aspect-fit arithmetic do not move when the fidelity does. The
+            // picture gets softer; nothing shifts.
             preview = NSImage(cgImage: image, size: scene.outputSize)
-            await frames?.prefetch(around: scene.sourceTime, forward: isPlaying)
+            // Skipped when a scrub is already waiting: warming the frames around a moment
+            // nobody is looking at any more is exactly the backlog this is trying not to
+            // build. Playback is the other way round — it is heading straight for those
+            // frames, so it pays for them gladly.
+            guard isPlaying || !hasPendingRender else { return }
+            await frames?.prefetch(around: drawn.sourceTime, forward: isPlaying)
         }
     }
 
@@ -272,11 +361,6 @@ final class EditorModel {
     }
 
     @ObservationIgnored private var cursorCache: (amount: Double, track: CursorTrack)?
-
-    private func refreshIfIdle() {
-        guard renderTask == nil else { return }
-        refresh()
-    }
 
     /// What the preview is showing, which is not always the edit.
     ///
