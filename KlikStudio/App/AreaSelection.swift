@@ -60,6 +60,12 @@ final class AreaSelectionController {
             window.makeFirstResponder(view)
         }
 
+        // Key on the screen the pointer is on, not whichever screen came last out of the
+        // loop: on two displays escape was being typed into an overlay nobody was looking
+        // at, and the drag appeared to ignore the keyboard.
+        let front = windows.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? windows.first
+        front?.makeKeyAndOrderFront(nil)
+        front?.makeFirstResponder(front?.contentView)
         NSApp.activate(ignoringOtherApps: true)
     }
 

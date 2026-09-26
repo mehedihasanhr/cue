@@ -77,6 +77,20 @@ final class TargetOverlayController {
             windows.append(window)
         }
 
+        // Key, and the app active — without which none of this can hear a keystroke.
+        //
+        // The bar is a `.nonactivatingPanel` that becomes key only if it needs to, which
+        // is right for a floating strip: clicking it must not pull the user out of what
+        // they are recording. The consequence is that Klik Studio is usually *not* the
+        // active app, and a local event monitor only ever sees events delivered to its own
+        // app — so escape was being typed into Finder, or Chrome, or whatever was in front,
+        // and the overlay could not have heard it however it was written. The area picker
+        // has always activated, which is why its escape has always worked.
+        let front = windows.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? windows.first
+        front?.makeKeyAndOrderFront(nil)
+        front?.makeFirstResponder(front?.contentView)
+        NSApp.activate(ignoringOtherApps: true)
+
         escape = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard event.keyCode == 53 else { return event }   // escape
             self?.hide()
