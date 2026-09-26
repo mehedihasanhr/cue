@@ -30,6 +30,18 @@ struct TimelineStrip: View {
     private static let regionHeight: CGFloat = 28
     private static let spacing: CGFloat = 6
     private static let padding: CGFloat = 10
+    /// The lanes' own coordinate space.
+    ///
+    /// Named because two gestures need a frame of reference that does not move: the ruler,
+    /// which scrolls with the viewport, and the playhead, which is dragged by the very
+    /// gesture that moves it. Measuring either in its own local space is measuring against
+    /// something the gesture is steering.
+    static let space = "timeline-lanes"
+
+    /// How wide the playhead's grab column is. The line is 1.5 points; this is what you
+    /// can actually hit.
+    private static let playheadGrab: CGFloat = 18
+
     /// A stripe and a glyph, and nothing else.
     ///
     /// The headings carried their names at first, which cost 148 points of every screen —
@@ -268,6 +280,7 @@ struct TimelineStrip: View {
         .overlay(alignment: .topLeading) { playhead }
         .overlay { events }
         .clipped()
+        .coordinateSpace(.named(Self.space))
     }
 
     @ViewBuilder
@@ -434,14 +447,24 @@ struct TimelineStrip: View {
     private var playhead: some View {
         let x = viewport.x(for: model.playhead)
         return ZStack(alignment: .top) {
+            // A column of nothing either side of the line, so the playhead can be taken
+            // hold of anywhere down the timeline rather than only at the small triangle on
+            // top. A 1.5-point line is not a target; this is.
+            Color.clear
+                .contentShape(Rectangle())
+                .onHover { inside in
+                    guard !model.isGesturing else { return }
+                    if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+                }
+                .gesture(scrubbing)
+
             Rectangle()
                 .fill(Color.red)
                 .frame(width: 1.5)
+                .allowsHitTesting(false)
+
             // A grab handle at the top, inside the ruler, so the line itself can stay
             // out of the way of everything under it.
-            // Drawn in the frame's own coordinates — 0…10 across, not -5…5. Measured
-            // from the middle, the whole handle sat five points to the left of the line
-            // it is supposed to be the top of.
             Path { path in
                 path.move(to: CGPoint(x: 0, y: 0))
                 path.addLine(to: CGPoint(x: 10, y: 0))
@@ -450,11 +473,27 @@ struct TimelineStrip: View {
             }
             .fill(Color.red)
             .frame(width: 10, height: 8)
+            .allowsHitTesting(false)
         }
+        // The width is stated rather than left to whichever child happens to be widest,
+        // and everything in the stack centres in it — so the offset below places the *line*
+        // at the playhead's time. Left implicit, the stack took the triangle's ten points
+        // and the line sat four points to the right of the moment it was marking.
+        .frame(width: Self.playheadGrab)
         .frame(maxHeight: .infinity, alignment: .top)
-        .offset(x: x - 0.75)
-        .allowsHitTesting(false)
+        .offset(x: x - Self.playheadGrab / 2)
         .opacity(x >= -4 ? 1 : 0)
+    }
+
+    /// Dragging the head itself. Same gesture as the ruler's, in the same space, so
+    /// grabbing the line and scrubbing the ruler cannot behave differently.
+    private var scrubbing: some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.space))
+            .onChanged { value in
+                model.beginScrub()
+                model.scrub(to: viewport.time(at: value.location.x))
+            }
+            .onEnded { _ in model.endScrub() }
     }
 
     private var events: some View {

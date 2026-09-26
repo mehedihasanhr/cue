@@ -46,11 +46,15 @@ struct TimelineRuler: View {
         .frame(height: height)
         .contentShape(Rectangle())
         .gesture(
-            DragGesture(minimumDistance: 0)
+            // The lanes' own space, which stays put: the ruler scrolls with the viewport,
+            // and a gesture measured in a space that can scroll under it is a gesture that
+            // can chase itself.
+            DragGesture(minimumDistance: 0, coordinateSpace: .named(TimelineStrip.space))
                 .onChanged { value in
-                    model.viewport.followsPlayhead = false
+                    model.beginScrub()
                     model.scrub(to: viewport.time(at: value.location.x))
                 }
+                .onEnded { _ in model.endScrub() }
         )
     }
 

@@ -178,8 +178,55 @@ final class EditorModel {
     func scrub(to time: CMTime) {
         playhead = max(.zero, min(time, duration))
         audio?.follow(playhead)
-        viewport.reveal(playhead, duration: duration)
+        // Not while the pointer is holding it. `reveal` scrolls the timeline to keep the
+        // playhead in view, which is right when playback walks it off the edge and wrong
+        // while somebody is dragging it: scrolling moves the ruler under the pointer, the
+        // pointer is then over a different time, and the playhead chases it. That is a
+        // feedback loop, and it reads as the head stuttering and running away.
+        if !isScrubbing { viewport.reveal(playhead, duration: duration) }
         refresh()
+    }
+
+    // MARK: - Scrubbing
+
+    /// Whether the playhead is being dragged right now.
+    ///
+    /// Three things read it: the autoscroll above, the preview's fidelity, and the decode
+    /// quality. A drag produces pointer events far faster than a 4K frame decodes, and
+    /// asking for an exact one at full resolution per event is the single most expensive
+    /// thing the editor can be asked to do — it is the same bargain playback already makes,
+    /// and a drag has exactly as little use for the detail.
+    private(set) var isScrubbing = false
+
+    /// Takes hold of the playhead.
+    ///
+    /// Playback stops. A drag and a ticker both writing the playhead is two hands on one
+    /// control: the picture would jump between where the pointer is and where the clock
+    /// thinks it should be, several times a second. Stopping is also what the user means —
+    /// reaching for the playhead is reaching for a particular frame.
+    func beginScrub() {
+        guard !isScrubbing else { return }
+        if isPlaying { togglePlayback() }
+        isScrubbing = true
+        viewport.followsPlayhead = false
+        Task { [weak self] in
+            guard let self else { return }
+            await frames?.setQuality(.preview(previewPixelSize))
+        }
+    }
+
+    /// Lets go, and draws the frame properly once.
+    func endScrub() {
+        guard isScrubbing else { return }
+        isScrubbing = false
+        Task { [weak self] in
+            guard let self else { return }
+            await frames?.setQuality(.exact)
+            // `isScrubbing` is already false, so this is full fidelity: the frame the
+            // export would write, which is what the user is now looking at rather than
+            // dragging past.
+            refresh()
+        }
     }
 
     func step(_ seconds: Double) {
@@ -296,7 +343,7 @@ final class EditorModel {
     /// every window resize would miss every cache it has, and would spend more on rebuilding
     /// a gradient than it saved on compositing one.
     private var previewFidelity: Double {
-        guard isPlaying else { return 1 }
+        guard isPlaying || isScrubbing else { return 1 }
         let output = previewSize
         guard output.width > 1, previewPaneSize.width > 1 else { return 1 }
         let backing = NSScreen.main?.backingScaleFactor ?? 2
