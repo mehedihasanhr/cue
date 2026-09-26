@@ -60,8 +60,14 @@ struct AnalysisTests {
                                             duration: time(60))
         #expect(regions.count == 1, "one moment, not three")
         let region = try? #require(regions.first)
-        #expect((region?.center.x ?? 1) < 0.2, "pointed where the clicking ended")
-        #expect((region?.center.y ?? 0) > 0.8)
+        // Pointed where the clicking ended — the bottom-left corner — and framed inside
+        // the picture rather than hanging off it, which is why the centre is not the
+        // corner itself.
+        #expect((region?.center.x ?? 1) < 0.5, "pointed at the left")
+        #expect((region?.center.y ?? 0) > 0.5, "pointed at the bottom")
+        let half = 0.5 / (region?.scale ?? 1)
+        #expect((region?.center.x ?? 0) - half >= -0.0001)
+        #expect((region?.center.y ?? 0) + half <= 1.0001)
     }
 
     @Test func aRecordingWithNoClicksSuggestsNothing() {
@@ -100,7 +106,14 @@ struct AnalysisTests {
         let region = try! #require(regions.first)
         #expect(region.source == .field)
         #expect(abs(region.center.x - 0.5) < 0.01)
-        #expect(abs(region.center.y - 0.212) < 0.01)
+        // The field sits a fifth of the way down, and a shot centred exactly on it would
+        // reach off the top of the picture — so the shot is pulled down until it is flush
+        // with the top edge. What matters is not where its centre ended up but that the
+        // field is inside the shot and the shot is inside the picture.
+        let half = 0.5 / region.scale
+        #expect(region.center.y - half >= -0.0001, "the shot reaches off the top")
+        #expect(region.center.y - half <= 0.2, "the field's top is outside the shot")
+        #expect(region.center.y + half >= 0.224, "the field's bottom is outside the shot")
         #expect(region.scale > 1.25, "close enough in to be able to read it")
         #expect(region.start.seconds < 10, "the move is over by the time the caret lands")
         #expect(!region.followsCursor, "a field does not move while it has focus")
@@ -155,7 +168,11 @@ struct AnalysisTests {
         #expect(regions.count == 1, "two zooms fighting over the camera is never what was meant")
         let region = try! #require(regions.first)
         #expect(region.source == .field, "the more specific aim wins rather than being averaged away")
-        #expect(abs(region.center.y - 0.212) < 0.01)
+        // Aimed at the field, framed inside the picture — see the note in
+        // `aFocusedTextFieldBecomesAZoomOntoIt`.
+        let half = 0.5 / region.scale
+        #expect(region.center.y - half >= -0.0001)
+        #expect(region.center.y - half <= 0.2 && region.center.y + half >= 0.224)
     }
 
     @Test func typingHoldsTheZoomUntilItStops() {

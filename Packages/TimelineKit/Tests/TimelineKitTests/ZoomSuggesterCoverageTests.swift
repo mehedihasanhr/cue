@@ -43,8 +43,11 @@ struct ZoomSuggesterCoverageTests {
         #expect(zooms.count == 2, "each click is its own moment")
         #expect(covered(zooms, at: 5), "the first click is in shot")
         #expect(covered(zooms, at: 7), "and so is the second")
-        #expect(zooms[0].center.x < 0.25, "the first is pointed at the left")
-        #expect(zooms[1].center.x > 0.75, "and the second at the right")
+        // Which half of the screen each is about. Not the click's own position: a shot
+        // around a click near an edge is pulled inside the picture, so the centre sits
+        // further in than the click did. See `ZoomEdgeFramingTests`.
+        #expect(zooms[0].center.x < 0.5, "the first is pointed at the left")
+        #expect(zooms[1].center.x > 0.5, "and the second at the right")
     }
 
     /// Clicks on the same thing are still one moment, not one zoom each. That was always
@@ -101,10 +104,9 @@ struct ZoomSuggesterCoverageTests {
     @Test func overlappingMomentsInDifferentPlacesAreNotAveraged() {
         let zooms = zooms([click(5, 120, 450), click(7, 1_320, 450)])
         #expect(zooms.count == 2)
-        for zoom in zooms {
-            #expect(zoom.center.x < 0.25 || zoom.center.x > 0.75,
-                    "a zoom landed at \(zoom.center.x), between the two clicks")
-        }
+        // Each is about one side or the other, rather than the midpoint of both.
+        #expect(zooms[0].center.x < 0.5 && zooms[1].center.x > 0.5,
+                "a zoom landed between the two clicks")
     }
 
     /// Too close together to be split into anything watchable, they stay one moment —
@@ -113,7 +115,7 @@ struct ZoomSuggesterCoverageTests {
     @Test func momentsTooCloseToSplitBecomeOneAimedAtTheLater() {
         let zooms = zooms([click(5, 120, 450), click(6.2, 1_320, 450)])
         #expect(zooms.count == 1)
-        #expect((zooms.first?.center.x ?? 0) > 0.75, "pointed where the clicking ended")
+        #expect((zooms.first?.center.x ?? 0) > 0.6, "pointed where the clicking ended")
     }
 
     /// And they still do not overlap, so the camera never has two answers at one moment.
@@ -141,5 +143,66 @@ private struct SeededGenerator: RandomNumberGenerator {
         state ^= state >> 7
         state ^= state << 17
         return state
+    }
+}
+
+/// Edge-aware framing: a zoom is aimed at something that is actually in the picture.
+///
+/// A click near an edge gave a centre near that edge, and a shot around it reaches past
+/// the frame — so the zoom was partly aimed at nothing. The renderer refused to go there,
+/// clamping the camera at the last moment, but the zoom on the timeline still *said* it
+/// pointed off the edge: the inspector showed that centre and the framing box on the
+/// preview was drawn hanging off the picture.
+struct ZoomEdgeFramingTests {
+    private let frame = CGSize(width: 1_440, height: 900)
+
+    private func click(_ t: Double, _ x: Double, _ y: Double) -> InputSample {
+        .mouseDown(t: t, button: 0, x: x, y: y)
+    }
+
+    private func zooms(_ input: [InputSample]) -> [ZoomRegion] {
+        ZoomSuggester(frameSize: frame).suggestions(
+            cursor: [], input: input, duration: CMTime(seconds: 60, preferredTimescale: 600))
+    }
+
+    /// The shot a zoom describes, in the frame's own coordinates.
+    private func area(_ zoom: ZoomRegion) -> CGRect {
+        let half = 0.5 / max(1, zoom.scale)
+        return CGRect(x: zoom.center.x - half, y: zoom.center.y - half,
+                      width: half * 2, height: half * 2)
+    }
+
+    @Test(arguments: [
+        CGPoint(x: 8, y: 8),            // top left
+        CGPoint(x: 1_432, y: 8),        // top right
+        CGPoint(x: 8, y: 892),          // bottom left
+        CGPoint(x: 1_432, y: 892),      // bottom right
+        CGPoint(x: 720, y: 2),          // hard against the top
+    ])
+    func aClickAtTheEdgeIsFramedInsideThePicture(_ at: CGPoint) {
+        let zooms = zooms([click(5, at.x, at.y)])
+        let zoom = try? #require(zooms.first)
+        let area = area(zoom ?? ZoomRegion(start: .zero, duration: .zero))
+
+        #expect(area.minX >= -0.0001, "reaches \(area.minX) off the left")
+        #expect(area.minY >= -0.0001, "reaches \(area.minY) off the top")
+        #expect(area.maxX <= 1.0001, "reaches \(area.maxX) off the right")
+        #expect(area.maxY <= 1.0001, "reaches \(area.maxY) off the bottom")
+    }
+
+    /// And it is still pointed at that corner rather than being dragged to the middle:
+    /// clamped by exactly as much as it had to be, and no more.
+    @Test func aCornerClickStillShowsTheCorner() {
+        let zoom = try? #require(zooms([click(5, 8, 8)]).first)
+        let area = area(zoom ?? ZoomRegion(start: .zero, duration: .zero))
+        #expect(abs(area.minX) < 0.0001, "flush against the left edge")
+        #expect(abs(area.minY) < 0.0001, "flush against the top edge")
+    }
+
+    /// A click in the middle is untouched — the clamp only binds where it must.
+    @Test func aClickInTheMiddleIsLeftAlone() {
+        let zoom = try? #require(zooms([click(5, 720, 450)]).first)
+        #expect(abs((zoom?.center.x ?? 0) - 0.5) < 0.01)
+        #expect(abs((zoom?.center.y ?? 0) - 0.5) < 0.01)
     }
 }

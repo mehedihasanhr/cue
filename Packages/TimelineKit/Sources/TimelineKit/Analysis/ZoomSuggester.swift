@@ -179,7 +179,7 @@ public struct ZoomSuggester: Sendable {
                                       duration: CMTime(seconds: min(length, duration.seconds - start),
                                                        preferredTimescale: 600),
                                       scale: tuning.scale,
-                                      center: clamped(centre),
+                                      center: clamped(centre, forScale: tuning.scale),
                                       source: .click))
         }
 
@@ -272,7 +272,7 @@ public struct ZoomSuggester: Sendable {
                                       duration: CMTime(seconds: min(length, duration.seconds - start),
                                                        preferredTimescale: 600),
                                       scale: scale,
-                                      center: clamped(centre),
+                                      center: clamped(centre, forScale: scale),
                                       // A field does not move while it has focus, and a
                                       // camera drifting after the pointer while someone
                                       // types is seasickness.
@@ -331,8 +331,23 @@ public struct ZoomSuggester: Sendable {
 
     // MARK: - Reconciling
 
-    private func clamped(_ point: CGPoint) -> CGPoint {
-        CGPoint(x: min(1, max(0, point.x)), y: min(1, max(0, point.y)))
+    /// A centre a zoom of this depth can actually be pointed at.
+    ///
+    /// Edge-aware framing, and it used to be missing. A click near the top of the screen
+    /// gave a centre near the top of the frame, and a 1.8× shot around it reaches a quarter
+    /// of the frame's height above the picture — so the zoom was aimed partly at nothing.
+    /// The renderer refused to go there, clamping the camera at the last moment, but the
+    /// zoom on the timeline still *said* it pointed off the edge: the inspector showed that
+    /// centre, the framing box on the preview was drawn there, and aiming one by hand
+    /// started from a rectangle hanging off the picture.
+    ///
+    /// Clamping here instead means what is stored is what will be shown. A click in the
+    /// corner becomes a shot of the corner — the whole corner, pulled inside the frame —
+    /// rather than a shot half off it.
+    private func clamped(_ point: CGPoint, forScale scale: Double) -> CGPoint {
+        let half = 0.5 / max(1, scale)
+        return CGPoint(x: min(1 - half, max(half, point.x)),
+                       y: min(1 - half, max(half, point.y)))
     }
 
     /// Two suggestions that overlap are one suggestion.
@@ -346,13 +361,20 @@ public struct ZoomSuggester: Sendable {
     /// click clusters, say — are averaged, because then the midpoint really is the
     /// middle of the work.
     /// Whether two regions are about places far enough apart that averaging them would
-    /// point at neither. Measured against the same spread a single cluster is allowed.
+    /// point at neither.
+    ///
+    /// Asked geometrically — is one's aim outside the other's shot? — rather than as a
+    /// distance in points. A fixed distance cannot answer it: the same gap is two separate
+    /// moments at 3× and comfortably one shot at 1.2×, and it is measured on centres that
+    /// have already been pulled inside the picture by `clamped(_:forScale:)`, so two clicks
+    /// at opposite edges of the screen end up closer together than they were clicked.
+    ///
+    /// The shot each one would actually show is the thing that decides it, which is the
+    /// question that was being asked all along.
     private func apart(_ a: ZoomRegion, _ b: ZoomRegion) -> Bool {
         guard (a.source ?? .manual).specificity == (b.source ?? .manual).specificity else { return false }
-        guard frameSize.width > 0, frameSize.height > 0 else { return false }
-        let dx = abs(a.center.x - b.center.x) * frameSize.width
-        let dy = abs(a.center.y - b.center.y) * frameSize.height
-        return max(dx, dy) > tuning.spreadLimit
+        let reach = min(0.5 / max(1, a.scale), 0.5 / max(1, b.scale))
+        return abs(a.center.x - b.center.x) > reach || abs(a.center.y - b.center.y) > reach
     }
 
     /// The earlier region, ending where the later one begins — or `nil` when that would

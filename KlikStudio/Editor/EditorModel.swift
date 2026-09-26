@@ -1141,9 +1141,18 @@ final class EditorModel {
     /// What a zoom currently frames, as a rectangle of the recording — the inverse of
     /// `setZoomArea`, and what the overlay draws.
     func zoomArea(of zoom: ZoomRegion) -> CGRect {
-        let side = 1 / max(1, zoom.scale)
-        return CGRect(x: zoom.center.x - side / 2, y: zoom.center.y - side / 2,
-                      width: side, height: side)
+        // Clamped, because the renderer clamps: the camera is held inside the picture at
+        // the last moment, so a zoom whose stored centre points off the edge is rendered
+        // pointing somewhere else. Drawing the stored centre showed a framing box hanging
+        // off the top of the picture that the finished video never used — the overlay
+        // promising one shot and the export giving another.
+        //
+        // The same arithmetic `honouredZoomArea` applies to a drawn rectangle, read the
+        // other way round, so a box dragged and a box merely shown cannot disagree.
+        let half = 0.5 / max(1, zoom.scale)
+        let centre = CGPoint(x: min(1 - half, max(half, zoom.center.x)),
+                             y: min(1 - half, max(half, zoom.center.y)))
+        return CGRect(x: centre.x - half, y: centre.y - half, width: half * 2, height: half * 2)
     }
 
     /// Nudges when a zoom begins, or how long it runs, by a fraction of a second.
