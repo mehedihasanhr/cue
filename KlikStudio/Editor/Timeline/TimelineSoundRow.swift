@@ -353,13 +353,9 @@ struct TimelineSoundRow: View {
             Image(systemName: isMuted ? "speaker.slash.fill"
                   : (track?.symbol ?? (model.isSoundDetached ? "waveform.badge.minus" : "waveform")))
                 .font(.system(size: 9, weight: .semibold))
-            // The source's name, on the lane, because two green lanes with waveforms on
-            // them are otherwise told apart only by remembering which is which.
-            if let track {
-                Text(track.name)
-                    .font(.system(size: 9, weight: .semibold))
-                    .lineLimit(1)
-            }
+            // No name here. The gutter beside the lane carries it, and a chip repeating
+            // it would be the same word twice, one of them sitting on top of the waveform
+            // it is there to let you read.
             if gain != 1, !isMuted {
                 Text("\(Int((gain * 100).rounded()))%")
                     .font(.system(size: 9, weight: .semibold))
