@@ -25,6 +25,38 @@ public enum Commands {
         }
     }
 
+    /// Putting footage back on the timeline: a paste, or a duplicate of a clip.
+    ///
+    /// The footage counterpart of `InsertRegion`, and one command rather than two for the
+    /// same reason that one is: paste and duplicate are the same insertion, and the undo
+    /// menu is the only place that has to tell them apart, so `name` is passed in.
+    ///
+    /// The footage arrives already freshened — new ids throughout, courtesy of
+    /// `CopiedFootage.freshened()` — and still measured from its own start, because the
+    /// insertion point is this command's argument rather than the payload's. That split is
+    /// deliberate in the same way `InsertRegion`'s is: freshening in here would mean the
+    /// command knew the ids of the clips it created and nobody else did, and the paste could
+    /// not leave the footage it just inserted selected.
+    ///
+    /// One command, so one entry on the undo stack, however many clips and regions came
+    /// along — and since `UndoStack` stores whole timelines, undoing it is one snapshot
+    /// rather than an inverse that would have to remember what it displaced.
+    public struct InsertFootage: TimelineCommand {
+        public let footage: CopiedFootage
+        public let time: CMTime
+        public let name: String
+
+        public init(_ footage: CopiedFootage, at time: CMTime, name: String) {
+            self.footage = footage
+            self.time = time
+            self.name = name
+        }
+
+        public func apply(to timeline: inout Timeline) -> Bool {
+            ClipSequence.insert(&timeline, footage, at: time)
+        }
+    }
+
     public struct SetSpeed: TimelineCommand {
         public let range: CMTimeRange
         public let speed: Double
