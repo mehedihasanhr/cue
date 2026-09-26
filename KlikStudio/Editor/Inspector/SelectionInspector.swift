@@ -91,10 +91,9 @@ struct SelectionInspector: View {
     // MARK: - Clip
 
     private func clip(_ clip: Clip, at index: Int) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
+            InspectorRow(title: "Starts", value: Timecode.short(model.timeline.start(ofClipAt: index)))
             InspectorRow(title: "Length", value: Timecode.length(clip.duration))
-            InspectorRow(title: "From", value: Timecode.short(clip.sourceStart))
-            InspectorRow(title: "To", value: Timecode.short(clip.sourceEnd))
 
             InspectorField(title: "Speed") {
                 InspectorPicker(selection: Binding(
@@ -104,8 +103,17 @@ struct SelectionInspector: View {
                     TimelineClipRow.speedLabel($0)
                 }
             }
+
+            // Trimming by hand, not only by dragging an edge. After a split there are
+            // several pieces and the interesting question moves from "where does the cut
+            // go" to "what does *this* piece show" — which is a request you make after
+            // watching it back, when the pointer is nowhere near the timeline.
+            trim(clip, edge: .head, title: "In", value: clip.sourceStart)
+            trim(clip, edge: .tail, title: "Out", value: clip.sourceEnd)
+
+            verbs(clip, at: index)
         }
-        .inspectorSection("Clip", systemImage: "film")
+        .inspectorSection("Clip \(index + 1) of \(model.timeline.clips.count)", systemImage: "film")
     }
 
     // MARK: - An added sound
@@ -142,6 +150,95 @@ struct SelectionInspector: View {
         .inspectorSection("Sound", systemImage: "music.note")
     }
 
+    /// A zoom's start or length, with a pair of nudges either side of it.
+    private func timing(_ zoom: ZoomRegion, title: String, value: String,
+                        _ nudge: @escaping (Double) -> Void) -> some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .frame(width: 44, alignment: .leading)
+            Text(value)
+                .font(.system(size: 12))
+                .monospacedDigit()
+            Spacer(minLength: 4)
+            Button { nudge(-0.1) } label: {
+                Image(systemName: "minus").font(.system(size: 9, weight: .semibold))
+                    .frame(width: 18, height: 16)
+            }
+            .buttonStyle(.bordered).controlSize(.mini)
+            Button { nudge(0.1) } label: {
+                Image(systemName: "plus").font(.system(size: 9, weight: .semibold))
+                    .frame(width: 18, height: 16)
+            }
+            .buttonStyle(.bordered).controlSize(.mini)
+        }
+    }
+
+    /// One end of one clip, with the source time it sits at and a pair of nudges.
+    ///
+    /// Source time rather than timeline time, because that is what a trim actually moves:
+    /// the clip keeps its place in the edit and shows different footage. Showing the
+    /// timeline position here would be showing a number the buttons do not change.
+    private func trim(_ clip: Clip, edge: EditorModel.ClipEdge, title: String, value: CMTime) -> some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .frame(width: 34, alignment: .leading)
+            Text(Timecode.short(value))
+                .font(.system(size: 12))
+                .monospacedDigit()
+            Spacer(minLength: 4)
+            nudge("minus", clip: clip, edge: edge, by: -1 / 30)
+            nudge("plus", clip: clip, edge: edge, by: 1 / 30)
+        }
+    }
+
+    private func nudge(_ symbol: String, clip: Clip, edge: EditorModel.ClipEdge, by seconds: Double) -> some View {
+        Button {
+            model.nudgeTrim(clip, edge: edge, by: seconds)
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 9, weight: .semibold))
+                .frame(width: 18, height: 16)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.mini)
+        .help("\(seconds < 0 ? "Earlier" : "Later") by a frame")
+    }
+
+    /// What can be done to this piece alone.
+    ///
+    /// Splitting used to leave you with pieces and nowhere to act on one: the only verbs
+    /// were on the menu bar and acted on the playhead or the whole edit. A piece you have
+    /// selected is the thing you are thinking about, so the verbs belong beside it.
+    private func verbs(_ clip: Clip, at index: Int) -> some View {
+        HStack(spacing: 6) {
+            Button("Split") { model.splitAtPlayhead() }
+                .disabled(!model.canSplit(clip))
+                .help(model.canSplit(clip)
+                      ? "Cut this piece in two at the playhead (⌘B)"
+                      : "Move the playhead inside this piece to cut it")
+            Button("Duplicate") { model.duplicateFootage(.clip(clip.id)) }
+                .help("A second copy of this piece, straight after it")
+            Button("Reset Speed") { model.resetSpeed(of: clip) }
+                .disabled(clip.speed == 1)
+            Spacer(minLength: 0)
+            Button(role: .destructive) {
+                model.deleteSelection()
+            } label: {
+                Image(systemName: "trash")
+            }
+            .disabled(model.timeline.clips.count < 2)
+            .help(model.timeline.clips.count < 2
+                  ? "An edit has to keep one piece"
+                  : "Remove this piece and close the gap")
+        }
+        .controlSize(.small)
+        .padding(.top, 2)
+    }
+
     // MARK: - Zoom
 
     private func zoom(index: Int) -> some View {
@@ -172,8 +269,24 @@ struct SelectionInspector: View {
                 set: { follows in change("Follow Cursor") { $0.zooms[index].followsCursor = follows } }
             ))
 
-            InspectorRow(title: "Starts", value: Timecode.short(zoom.start))
-            InspectorRow(title: "Lasts", value: Timecode.length(zoom.duration))
+            // Placed and timed here as well as by dragging the chip. A zoom that should
+            // begin a quarter-second earlier is a correction you make after watching it,
+            // and hunting for a few pixels on a zoomed-out timeline is the wrong way to
+            // ask for it.
+            timing(zoom, title: "Starts", value: Timecode.short(zoom.start)) { delta in
+                model.nudgeZoom(zoom.id, start: delta)
+            }
+            timing(zoom, title: "Lasts", value: Timecode.length(zoom.duration)) { delta in
+                model.nudgeZoom(zoom.id, duration: delta)
+            }
+            HStack(spacing: 6) {
+                Button("Start Here") { model.moveZoom(zoom.id, toStartAt: model.playhead) }
+                    .help("Begin this zoom at the playhead, keeping its length")
+                Button("End Here") { model.moveZoom(zoom.id, toEndAt: model.playhead) }
+                    .help("End this zoom at the playhead, keeping where it starts")
+                Spacer(minLength: 0)
+            }
+            .controlSize(.small)
             // Why this zoom is here. A suggestion someone can see the reason for is one
             // they adjust; one that appeared from nowhere is one they delete.
             if let source = zoom.source, source != .manual {

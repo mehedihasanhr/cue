@@ -397,8 +397,10 @@ final class EditorModel {
     private var renderedTimeline: Timeline {
         guard tool.flattensPreview else { return timeline }
         var draft = timeline
-        draft.style.crop = nil
-        draft.style.aspect = .source
+        if tool.flatteningDropsCrop {
+            draft.style.crop = nil
+            draft.style.aspect = .source
+        }
         draft.style.padding = 0
         draft.style.cornerRadius = 0
         draft.style.shadowOpacity = 0
@@ -673,6 +675,56 @@ final class EditorModel {
         audio?.prepare(for: timeline)
     }
 
+    // MARK: - One piece at a time
+
+    /// Whether the playhead is inside this clip, with room to cut on both sides.
+    ///
+    /// The question the Split button on a selected clip has to answer: a cut at a clip's
+    /// own edge is not a cut, and offering it is offering a button that does nothing.
+    func canSplit(_ clip: Clip) -> Bool {
+        guard let index = timeline.clips.firstIndex(where: { $0.id == clip.id }) else { return false }
+        let start = timeline.start(ofClipAt: index)
+        return playhead > start + Clip.minimumDuration
+            && playhead < start + clip.duration - Clip.minimumDuration
+    }
+
+    /// Trims one end of one clip, in source time.
+    ///
+    /// The timeline already had this on a drag of a clip's edge; what it did not have was
+    /// a way to say "a third of a second off the front", which is the request somebody has
+    /// after watching the cut rather than while dragging it. `TrimClip` is the same command
+    /// the drag uses, so the two cannot mean different things.
+    func trim(_ clip: Clip, head: CMTime? = nil, tail: CMTime? = nil) {
+        apply(Commands.TrimClip(clipID: clip.id, head: head, tail: tail))
+    }
+
+    /// Nudges a clip's in or out point by a small amount of source, keeping the clip long
+    /// enough to still be a clip.
+    func nudgeTrim(_ clip: Clip, edge: ClipEdge, by seconds: Double) {
+        let delta = CMTime(seconds: seconds, preferredTimescale: 600)
+        switch edge {
+        case .head:
+            let proposed = max(.zero, min(clip.sourceStart + delta,
+                                          clip.sourceEnd - Clip.minimumDuration))
+            guard proposed != clip.sourceStart else { return }
+            trim(clip, head: proposed)
+        case .tail:
+            let proposed = min(timeline.sourceDuration,
+                               max(clip.sourceEnd + delta,
+                                   clip.sourceStart + Clip.minimumDuration))
+            guard proposed != clip.sourceEnd else { return }
+            trim(clip, tail: proposed)
+        }
+    }
+
+    enum ClipEdge { case head, tail }
+
+    /// Puts a clip back to the speed it was recorded at, as one step.
+    func resetSpeed(of clip: Clip) {
+        guard clip.speed != 1 else { return }
+        setSpeed(1, of: clip.id)
+    }
+
     func splitAtPlayhead() {
         apply(Commands.Split(at: playhead))
     }
@@ -778,6 +830,74 @@ final class EditorModel {
             $0.center = clamped
             $0.followsCursor = false
         })
+    }
+
+    /// Sets what a zoom frames — where it looks *and* how much it takes in — from a
+    /// rectangle drawn on the picture.
+    ///
+    /// Aiming alone was half the job. A zoom is a rectangle of the recording promoted to
+    /// fill the frame, so the thing the user actually has in mind is "this part of the
+    /// screen", which is an area, not a point: they know which window they want in shot
+    /// and how much of it, and asking them to express the second half as a scale on a
+    /// slider is asking them to do the arithmetic the rectangle already did.
+    ///
+    /// The scale comes from the width alone. A zoom scales both axes by one number, so a
+    /// rectangle whose proportions differ from the picture's cannot be honoured as drawn;
+    /// taking the width and letting the height follow is the version where the thing the
+    /// user framed is never cropped tighter than they drew it.
+    func setZoomArea(_ id: UUID, to rect: CGRect, name: String = "Frame Zoom") {
+        guard rect.width > 0 else { return }
+        let scale = min(ZoomRegion.maximumScale, max(1, 1 / rect.width))
+        // Re-derived from the clamped scale rather than from the rectangle: if the drag
+        // asked for more than the renderer will give, the centre has to be the centre of
+        // what will actually be shown, or the picture drifts away from the box.
+        let half = 0.5 / scale
+        let centre = CGPoint(x: min(1 - half, max(half, rect.midX)),
+                             y: min(1 - half, max(half, rect.midY)))
+        apply(Commands.RestyleZoom(id: id, name: name) {
+            $0.scale = scale
+            $0.center = centre
+            $0.followsCursor = false
+        })
+    }
+
+    /// What a zoom currently frames, as a rectangle of the recording — the inverse of
+    /// `setZoomArea`, and what the overlay draws.
+    func zoomArea(of zoom: ZoomRegion) -> CGRect {
+        let side = 1 / max(1, zoom.scale)
+        return CGRect(x: zoom.center.x - side / 2, y: zoom.center.y - side / 2,
+                      width: side, height: side)
+    }
+
+    /// Nudges when a zoom begins, or how long it runs, by a fraction of a second.
+    ///
+    /// Through `MoveRegion` — the command a drag on the lane uses — so typing and dragging
+    /// cannot end up meaning different things, and so the lane's clamping applies here too.
+    func nudgeZoom(_ id: UUID, start: Double? = nil, duration: Double? = nil) {
+        guard let zoom = timeline.zooms.first(where: { $0.id == id }) else { return }
+        if let start {
+            let moved = max(.zero, zoom.start + CMTime(seconds: start, preferredTimescale: 600))
+            apply(Commands.MoveRegion(id: id, start: moved))
+        } else if let duration {
+            let length = max(Clip.minimumDuration,
+                             zoom.duration + CMTime(seconds: duration, preferredTimescale: 600))
+            apply(Commands.MoveRegion(id: id, start: zoom.start, duration: length))
+        }
+    }
+
+    /// Puts a zoom's start, or its end, on the playhead — keeping the other end where it is.
+    ///
+    /// The two requests people actually have about a zoom's timing, and both are awkward to
+    /// express by dragging: "it should start *here*" means dragging the chip until its left
+    /// edge is under a line you cannot see behind it.
+    func moveZoom(_ id: UUID, toStartAt time: CMTime? = nil, toEndAt end: CMTime? = nil) {
+        guard let zoom = timeline.zooms.first(where: { $0.id == id }) else { return }
+        if let time {
+            apply(Commands.MoveRegion(id: id, start: max(.zero, time), duration: zoom.duration))
+        } else if let end {
+            let start = max(.zero, min(zoom.start, end - Clip.minimumDuration))
+            apply(Commands.MoveRegion(id: id, start: start, duration: max(Clip.minimumDuration, end - start)))
+        }
     }
 
     /// Turn the aiming overlay on for a zoom, having selected it.

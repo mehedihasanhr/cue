@@ -143,6 +143,13 @@ public struct ZoomRegion: TimelineRegion {
     /// fact that the initialiser, the reset and the tests all read — three copies of 2.0
     /// is three places to disagree.
     public static let defaultScale = 2.0
+    /// As far in as a zoom will go.
+    ///
+    /// A named constant because two places now decide it — the inspector's slider, and the
+    /// rectangle drawn on the picture, which can ask for any magnification at all by being
+    /// dragged small. They must agree, or a box drawn tighter than the slider allows would
+    /// snap somewhere the user did not draw.
+    public static let maximumScale = 8.0
     public static let defaultEasing = Easing.spring
     public static let defaultTransition = CMTime(value: 1, timescale: 2)
 

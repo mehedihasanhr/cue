@@ -74,7 +74,20 @@ enum EditorTool: String, CaseIterable, Identifiable, Hashable {
     }
 
     /// Whether the preview has to be flattened for this tool to be usable.
-    var flattensPreview: Bool { self == .crop }
+    ///
+    /// Crop and zoom both draw a rectangle *of the recording*, and neither can be drawn on
+    /// a picture that is already padded, rounded and — the decisive one — zoomed. Framing a
+    /// zoom over the zoomed picture means the box always fills the frame, because that is
+    /// exactly what the zoom already did: the tool would show you the answer and refuse
+    /// you the question.
+    var flattensPreview: Bool { self == .crop || self == .zoom }
+
+    /// Whether flattening also drops the crop.
+    ///
+    /// Crop must, because it is the crop that is being drawn. Zoom must not: a zoom's
+    /// centre is normalised to the *cropped* recording, so a preview showing more than the
+    /// crop would put the box somewhere the renderer will not.
+    var flatteningDropsCrop: Bool { self == .crop }
 
     /// Why a tool is off, or `nil` when it is on.
     ///
