@@ -137,6 +137,46 @@ struct CameraFollowTests {
         #expect(abs(centre(edit, there, at: 8.5) - 0.5) < 0.002)
     }
 
+    /// A pointer that walks off the recorded area takes the camera to the edge it left by.
+    ///
+    /// This is the context-menu case. Record a window, right-click near its bottom, and the
+    /// menu is drawn by a *separate* window that the recording clips at the edge — so the
+    /// item you move down to is on pixels that were never filmed. The pointer cannot be
+    /// kept in shot, because it is not in the recording. What the camera can do is look at
+    /// the edge the action went towards, instead of sitting on whatever the person has
+    /// stopped doing.
+    @Test func aPointerLeavingTheRecordingTakesTheCameraToThatEdge() {
+        let edit = timeline()
+        // 800 × 500 points of recording; the pointer walks off the bottom of it.
+        let leaving = track([(0, middle), (3, CGPoint(x: 400, y: 495)), (6, CGPoint(x: 400, y: 620))])
+
+        let inside = centre(edit, leaving, at: 3).y
+        let outside = centre(edit, leaving, at: 6).y
+        #expect(inside > 0.6, "already pulled down while the pointer is still in the picture")
+        #expect(outside >= inside, "and it does not retreat when the pointer leaves")
+        #expect(abs(outside - (1 - 0.5 / 3)) < 0.01, "framing the bottom edge")
+    }
+
+    /// And it is the *nearest* edge, not a jump to a corner: leaving by the right takes
+    /// the camera right, and nowhere else.
+    @Test func leavingByOneEdgeDoesNotMoveTheOther() {
+        let edit = timeline()
+        let leaving = track([(0, middle), (4, CGPoint(x: 900, y: 250))])
+        let centre = centre(edit, leaving, at: 4)
+        #expect(centre.x > 0.6, "pulled towards the right edge")
+        #expect(abs(centre.y - 0.5) < 0.001, "and not up or down at all")
+    }
+
+    /// The cursor itself is still not drawn out there. A pointer on pixels that were never
+    /// filmed would be drawn on the padding beside the picture, which is a cursor the
+    /// recording never contained.
+    @Test func aPointerOutsideTheRecordingIsNotDrawn() {
+        let edit = timeline()
+        let gone = track([(0, middle), (4, CGPoint(x: 900, y: 250))])
+        let scene = builder().descriptor(for: edit, at: time(4), cursor: gone)
+        #expect(scene.cursor == nil)
+    }
+
     // MARK: - The dials
 
     @Test func followingCanBeTurnedOff() {

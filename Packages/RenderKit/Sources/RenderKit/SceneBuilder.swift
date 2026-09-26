@@ -216,11 +216,20 @@ public struct SceneBuilder: Sendable {
         // would genuinely be lost, and then by the least it can. For a zoom that already
         // follows, the comfortable clamp above has settled things long before this one has
         // anything to say.
+        //
+        // Clamped into the picture rather than abandoned when it leaves it. A pointer that
+        // walks off the recorded area — onto a context menu clipped by the window being
+        // filmed, onto the Dock, onto another screen — cannot be kept in shot, because it
+        // is not in the recording at all. What the camera *can* do is go to the edge it
+        // left by, so the viewer is looking at the part of the picture the action moved
+        // towards. Holding the old framing instead leaves the shot pointed at whatever the
+        // person has stopped doing.
         if camera.follow > 0, timeline.cursor.isVisible, override.hiding < 1,
            let track, !track.isEmpty,
            let sourceTime = timeline.sourceTime(at: time),
-           let live = drawnPointer(timeline, at: time, sourceTime: sourceTime,
-                                   track: track, override: override, crop: crop) {
+           let live = pointerPoint(timeline, at: time, sourceTime: sourceTime,
+                                   track: track, override: override)
+               .map({ normalisedClamped($0, crop: crop) }) {
             center = nudged(center, toKeep: live, within: half * 0.98, by: 1 - override.hiding)
         }
 
@@ -230,6 +239,23 @@ public struct SceneBuilder: Sendable {
         // the frame sliding off the picture to centre on it.
         return (best.scale, CGPoint(x: min(1 - half, max(half, center.x)),
                                     y: min(1 - half, max(half, center.y))))
+    }
+
+    /// A point in recorded points as a fraction of the cropped frame, held inside it.
+    ///
+    /// The forgiving twin of `normalised`, and the two are deliberately different. That one
+    /// refuses a point outside the picture because the *pointer* must not be drawn on the
+    /// padding beside it. This one is for the camera, which has to decide where to look
+    /// even when the thing it is following has gone somewhere that was never filmed: the
+    /// nearest edge is the honest answer, and holding still is not.
+    private func normalisedClamped(_ point: CGPoint, crop: CGRect) -> CGPoint {
+        let pixels = CGPoint(x: point.x * displayScale, y: point.y * displayScale)
+        guard videoSize.width > 0, videoSize.height > 0, crop.width > 0, crop.height > 0 else {
+            return CGPoint(x: 0.5, y: 0.5)
+        }
+        let u = (pixels.x / videoSize.width - crop.minX) / crop.width
+        let v = (pixels.y / videoSize.height - crop.minY) / crop.height
+        return CGPoint(x: min(1, max(0, u)), y: min(1, max(0, v)))
     }
 
     /// The pointer as it is actually drawn, as a fraction of the cropped frame.
