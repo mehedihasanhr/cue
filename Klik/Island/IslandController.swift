@@ -468,15 +468,21 @@ final class IslandController {
     /// able to take an explicit target over the bridge — it was only ever asked to find
     /// one itself, which meant a second app taking the screen to ask a question the user
     /// had already come here to answer.
-    func showRecorder(summary: String, onRecord: @escaping (RecordingRequest.Target) -> Void) {
+    /// - Returns: whether the island could show it. `false` when there is no island on
+    ///   screen to show it *in* — the caller then has somewhere else to send the user,
+    ///   rather than a command that silently does nothing.
+    @discardableResult
+    func showRecorder(summary: String, onRecord: @escaping (RecordingRequest.Target) -> Void) -> Bool {
         model.recorder.summary = summary
         model.recorder.onRecord = onRecord
-        guard model.geometry != nil, model.phase != .record else { return }
+        guard model.geometry != nil else { return false }
+        guard model.phase != .record else { return true }
         closeTask?.cancel()
         flashTask?.cancel()
         setPhase(.record, animated: true)
         installOutsideClickMonitor()
         window.makeKey() // so ⎋ reaches the island
+        return true
     }
 
     /// Opens the clock in the compact island; ⎋ or a click outside closes it.

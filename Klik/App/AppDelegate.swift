@@ -552,6 +552,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             ("Pick Color", #selector(pickColor(_:)), .pickColor),
         ]
         for (title, selector, id) in tools { menu.addItem(shortcutItem(title, selector, id)) }
+        // Recording sits with the other capture tools, because that is what it is. It had
+        // been reachable only from the app's own menu bar — which a menu-bar app's users
+        // rarely open, and which is why nobody found it.
+        menu.addItem(makeItem("Record Screen…", #selector(recordScreen(_:))))
         menu.addItem(.separator())
         let panels: [(String, Selector, HotkeyID)] = [
             ("Klik Panel", #selector(showPanel(_:)), .showPanel),
@@ -1100,7 +1104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var parts = [preferences.recordsSystemAudio ? "System audio" : "No system audio"]
         if preferences.recordsMicrophone { parts.append("Microphone") }
         if preferences.countdownSeconds > 0 { parts.append("\(preferences.countdownSeconds)s countdown") }
-        island.showRecorder(summary: parts.joined(separator: " · ")) { [recorder] target in
+        let shown = island.showRecorder(summary: parts.joined(separator: " · ")) { [recorder] target in
             Task {
                 do {
                     try await recorder.record(target: target)
@@ -1110,6 +1114,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
+        // No island on screen — it can be switched off in Settings, and it has no geometry
+        // until it has been placed. Falling through to the add-on's own picker beats a
+        // menu item that does nothing at all.
+        if !shown { askAddOnToChoose() }
     }
 
     /// The old route, for the case where there is no island to ask in.
