@@ -62,6 +62,14 @@ struct ZoomFramingOverlay: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
+            // Behind everything, and the only thing here that is focusable.
+            //
+            // The focus modifier used to be on this stack, wrapping the box and its
+            // handles. A modifier that wraps the gestures is a modifier that can eat them,
+            // and there is no way to tell by reading which one it will be — so it goes
+            // where it can only ever catch a click on bare footage, which does nothing
+            // else anyway.
+            keyboard
             if let zoom {
                 let area = draft ?? model.zoomArea(of: zoom)
                 let rect = geometry.view(blur: area)
@@ -69,26 +77,24 @@ struct ZoomFramingOverlay: View {
                 box(rect, zoom: zoom)
             }
         }
-        // Focusable so the arrow keys can nudge the framing without anyone having to find a
-        // number field. Nothing is drawn for the focus itself: the box is already the thing
-        // on screen saying what the keys will act on.
-        //
-        // Focus is *taken*, by clicking the picture, rather than claimed the moment a zoom
-        // is selected. Selecting a chip and having the preview silently pull focus off the
-        // timeline would mean Delete stopped deleting the thing that is visibly selected —
-        // a keyboard that does something different depending on where you last clicked is
-        // worse than one that needs a click first.
-        .focusable()
-        .focusEffectDisabled()
-        .onKeyPress(keys: [.upArrow, .downArrow, .leftArrow, .rightArrow]) { press in
-            nudge(press) ? .handled : .ignored
-        }
-        .onKeyPress(characters: ["=", "+", "-", "_"]) { press in
-            resizeByKey(press) ? .handled : .ignored
-        }
         // Escape hands the picture back without dropping the selection, so the inspector is
         // still showing the zoom that was just framed.
         .onExitCommand { model.zoomPreview = .result }
+    }
+
+    /// Takes focus when the picture is clicked, so the arrow keys can nudge the framing
+    /// without anyone having to find a number field. Draws nothing and does nothing else.
+    private var keyboard: some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .focusable()
+            .focusEffectDisabled()
+            .onKeyPress(keys: [.upArrow, .downArrow, .leftArrow, .rightArrow]) { press in
+                nudge(press) ? .handled : .ignored
+            }
+            .onKeyPress(characters: ["=", "+", "-", "_"]) { press in
+                resizeByKey(press) ? .handled : .ignored
+            }
     }
 
     // MARK: - Chrome
@@ -110,19 +116,36 @@ struct ZoomFramingOverlay: View {
         .animation(StudioMotion.state, value: isDragging)
     }
 
+    /// The move target, the outline, the number and the eight handles — in that order,
+    /// because later children sit on top and that is the priority a drag should have: a
+    /// handle near an edge, the body everywhere else.
     private func box(_ rect: CGRect, zoom: ZoomRegion) -> some View {
         ZStack(alignment: .topLeading) {
-            Rectangle()
-                .strokeBorder(.white.opacity(isDragging || isInside ? 0.95 : 0.72), lineWidth: 1)
+            // **Shaped, then placed.** `contentShape` describes the hit area of the view it
+            // is applied to, in that view's own frame — so a `contentShape` written *after*
+            // an `offset` describes a rectangle back where the view was laid out, not where
+            // it was drawn. The box drew in the right place and was grabbable in another,
+            // which is the whole of "dragging does nothing".
+            //
+            // `Color.clear` rather than the stroked rectangle for the same reason the camera
+            // bubble uses one: a stroke is hit only along the stroke, and the thing being
+            // dragged here is the area, not the line around it.
+            Color.clear
                 .frame(width: rect.width, height: rect.height)
-                .offset(x: rect.minX, y: rect.minY)
                 .contentShape(Rectangle())
+                .offset(x: rect.minX, y: rect.minY)
                 .gesture(move(from: zoom))
                 .onHover { inside in
                     guard !model.isGesturing || isDragging else { return }
                     isInside = inside
                     if inside { NSCursor.openHand.set() } else { NSCursor.arrow.set() }
                 }
+
+            Rectangle()
+                .strokeBorder(.white.opacity(isDragging || isInside ? 0.95 : 0.72), lineWidth: 1)
+                .frame(width: rect.width, height: rect.height)
+                .offset(x: rect.minX, y: rect.minY)
+                .allowsHitTesting(false)
 
             scaleChip(zoom, rect: rect)
 
@@ -239,11 +262,12 @@ struct ZoomFramingOverlay: View {
             }
         }
         .frame(width: size.width, height: size.height)
-        .offset(x: frame.minX, y: frame.minY)
         .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
         .opacity(room ? (lit ? 1 : 0.88) : 0)
-        // Bigger than it looks, because a 3pt line is not a target.
+        // Bigger than it looks, because a 3pt line is not a target — and described before
+        // the handle is moved into place, not after. See `box(_:zoom:)`.
         .contentShape(Rectangle().inset(by: -9))
+        .offset(x: frame.minX, y: frame.minY)
         .allowsHitTesting(room)
         .gesture(resize(handle, from: zoom))
         .onHover { inside in
