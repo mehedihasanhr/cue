@@ -198,37 +198,53 @@ struct ZoomFramingOverlay: View {
     private let arm: CGFloat = 20
     private let thickness: CGFloat = 3
 
+    /// One handle, placed by **offsetting its own frame** rather than by `.position`.
+    ///
+    /// That distinction is the whole of a bug worth remembering. `.position` does not place
+    /// a small view — it returns a view that fills every point of space it is offered and
+    /// draws its content at the given coordinate. The shared `contentShape` below then had
+    /// a stage-sized frame to inset, so each edge handle's grab area was the entire picture.
+    /// The last one in `allCases` is `.left`, drawn on top of everything, so every drag
+    /// anywhere — on the box, on a corner, on bare footage — was a left-edge resize.
+    ///
+    /// `.offset` moves both the drawing and the hit testing while leaving the layout frame
+    /// the size it was asked for, which is what a handle needs: a small frame, at a known
+    /// place, that `contentShape` can widen by a fixed slop.
     @ViewBuilder
     private func grip(_ handle: Handle, of rect: CGRect, zoom: ZoomRegion) -> some View {
-        let point = handle.point(in: rect)
         let lit = hovered == handle || isDragging
+        let along = handle.movesLeft || handle.movesRight
+        let size: CGSize = handle.isCorner
+            ? CGSize(width: arm, height: arm)
+            : (along ? CGSize(width: thickness, height: 26) : CGSize(width: 26, height: thickness))
+        // A corner's arms run *inward* from its vertex; an edge's bar straddles its middle.
+        // `ZoomFraming.Handle` works that out, and is where the claim that no handle covers
+        // the middle of the box is actually checked.
+        let frame = handle.frame(in: rect, size: size)
+        // Edge handles go away on a box too small to hold them and its corners both: eight
+        // targets crowded into ninety points is four of them unhittable. Hidden means gone,
+        // not merely invisible — an untouchable target that still takes the click is the
+        // same bug as above wearing a different hat.
+        let room = handle.isCorner || (along ? rect.height > 90 : rect.width > 90)
+
         Group {
             if handle.isCorner {
-                // The arms run inward from the corner, and the stroke is inset by half its
-                // width so its outer edge lands on the box's line instead of straddling it.
+                // The stroke is inset by half its width so its outer edge lands on the
+                // box's line instead of straddling it.
                 CornerBracket(isTrailing: handle.movesRight, isBottom: handle.movesBottom)
                     .stroke(.white, style: StrokeStyle(lineWidth: thickness, lineCap: .round, lineJoin: .round))
                     .padding(thickness / 2)
-                    .frame(width: arm, height: arm)
-                    .offset(x: handle.movesRight ? point.x - arm : point.x,
-                            y: handle.movesBottom ? point.y - arm : point.y)
             } else {
-                let along = handle.movesLeft || handle.movesRight
-                let size = along ? CGSize(width: thickness, height: 26) : CGSize(width: 26, height: thickness)
-                // Hidden on a box too small to hold both an edge handle and its corners:
-                // eight targets crowded into ninety points is four of them unhittable.
-                let room = along ? rect.height > 90 : rect.width > 90
-                Capsule()
-                    .fill(.white)
-                    .frame(width: size.width, height: size.height)
-                    .position(point)
-                    .opacity(room ? 1 : 0)
+                Capsule().fill(.white)
             }
         }
+        .frame(width: size.width, height: size.height)
+        .offset(x: frame.minX, y: frame.minY)
         .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
-        .opacity(lit ? 1 : 0.88)
+        .opacity(room ? (lit ? 1 : 0.88) : 0)
         // Bigger than it looks, because a 3pt line is not a target.
         .contentShape(Rectangle().inset(by: -9))
+        .allowsHitTesting(room)
         .gesture(resize(handle, from: zoom))
         .onHover { inside in
             guard !model.isGesturing || isDragging else { return }

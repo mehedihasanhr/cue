@@ -109,6 +109,23 @@ public enum ZoomFraming {
             CGPoint(x: movesLeft ? rect.minX : (movesRight ? rect.maxX : rect.midX),
                     y: movesTop ? rect.minY : (movesBottom ? rect.maxY : rect.midY))
         }
+
+        /// The handle's own area on a box of this size — what it draws in, and what a view
+        /// widens by a few points to get something worth aiming at.
+        ///
+        /// A corner's arms run *inward* from its vertex, so its area hangs inside the box;
+        /// an edge's bar straddles the middle of the edge it moves. Here rather than in the
+        /// view because getting it wrong is not a cosmetic mistake: a handle placed by a
+        /// method that fills the space it is offered — SwiftUI's `.position`, as it happens
+        /// — takes its grab area with it, and one handle covering the whole picture silently
+        /// swallows every other gesture on it, including dragging the box.
+        public func frame(in rect: CGRect, size: CGSize) -> CGRect {
+            let x = isCorner ? (movesRight ? point(in: rect).x - size.width : point(in: rect).x)
+                             : point(in: rect).x - size.width / 2
+            let y = isCorner ? (movesBottom ? point(in: rect).y - size.height : point(in: rect).y)
+                             : point(in: rect).y - size.height / 2
+            return CGRect(x: x, y: y, width: size.width, height: size.height)
+        }
     }
 
     /// The framing after a drag on one of its handles.

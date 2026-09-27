@@ -204,6 +204,75 @@ struct ZoomFramingTests {
         if handle.movesBottom { #expect(isClose(point.y, rect.maxY)) }
     }
 
+    // MARK: - Where the handles sit
+
+    /// The arm box, the edge bar and the few points of slop a view adds to each, in the
+    /// sizes the overlay actually uses.
+    private let arm = CGSize(width: 20, height: 20)
+    private let bar = CGSize(width: 3, height: 26)
+    private let slop: Double = 9
+
+    private func handleFrame(_ handle: ZoomFraming.Handle, in rect: CGRect) -> CGRect {
+        let along = handle.movesLeft || handle.movesRight
+        let size = handle.isCorner ? arm
+            : (along ? bar : CGSize(width: bar.height, height: bar.width))
+        return handle.frame(in: rect, size: size).insetBy(dx: -slop, dy: -slop)
+    }
+
+    /// **The regression.** No handle may cover the middle of the box.
+    ///
+    /// Dragging the middle is how the shot is moved, and it is the single most used gesture
+    /// on the overlay. It stopped working entirely because the edge handles were placed with
+    /// SwiftUI's `.position`, which does not place a small view — it fills the space it is
+    /// offered and draws the content at a point. Each edge handle's grab area became the
+    /// whole picture, and the last one drawn sat on top of the box, the corners and the
+    /// footage alike: every drag anywhere was a left-edge resize.
+    ///
+    /// Stated as arithmetic: a handle's area is small and near its own point, so the centre
+    /// of a box big enough to have handles is free.
+    @Test(arguments: ZoomFraming.Handle.allCases)
+    func noHandleCoversTheMiddleOfTheBox(handle: ZoomFraming.Handle) {
+        let box = CGRect(x: 100, y: 60, width: 420, height: 260)
+        let area = handleFrame(handle, in: box)
+        #expect(!area.contains(CGPoint(x: box.midX, y: box.midY)),
+                "\(handle) is sitting on the move target")
+        #expect(area.width < box.width / 2 && area.height < box.height / 2,
+                "\(handle) is not a handle, it is a sheet")
+    }
+
+    /// Each one is where its name says, and a corner's arms hang inside the box rather than
+    /// straddling the vertex — so the corner of the picture itself stays uncovered.
+    @Test(arguments: ZoomFraming.Handle.allCases)
+    func aHandlesAreaSitsOnTheEdgesItMoves(handle: ZoomFraming.Handle) {
+        let box = CGRect(x: 100, y: 60, width: 420, height: 260)
+        let along = handle.movesLeft || handle.movesRight
+        let size = handle.isCorner ? arm : (along ? bar : CGSize(width: bar.height, height: bar.width))
+        let drawn = handle.frame(in: box, size: size)
+        let point = handle.point(in: box)
+
+        #expect(drawn.size == size, "a handle is the size it was given")
+        #expect(drawn.insetBy(dx: -0.001, dy: -0.001).contains(point), "and sits on its own point")
+
+        if handle.isCorner {
+            #expect(box.insetBy(dx: -0.001, dy: -0.001).contains(drawn), "arms run inward")
+        } else {
+            // A bar straddles its edge, centred on the axis it does not move.
+            #expect(isClose(along ? drawn.midY : drawn.midX,
+                            along ? box.midY : box.midX, 0.001))
+        }
+    }
+
+    /// Two handles never fight over the same points on a box big enough to show all eight.
+    @Test func theEightHandlesDoNotOverlapOneAnother() {
+        let box = CGRect(x: 0, y: 0, width: 600, height: 400)
+        let frames = ZoomFraming.Handle.allCases.map { ($0, handleFrame($0, in: box)) }
+        for (a, one) in frames {
+            for (b, other) in frames where a != b {
+                #expect(!one.intersects(other), "\(a) and \(b) overlap")
+            }
+        }
+    }
+
     // MARK: - Boundaries
 
     /// However hard a handle is pulled, the framing stays inside the recording and inside
