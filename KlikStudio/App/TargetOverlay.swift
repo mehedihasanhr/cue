@@ -71,7 +71,8 @@ final class TargetOverlayController {
             window.isOpaque = false
             window.hasShadow = false
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-            window.isFloatingPanel = true
+            // Not `isFloatingPanel`: setting it puts the level back to `.floating`, which
+            // silently undid the `.screenSaver` above and left this under full-screen apps.
             window.hidesOnDeactivate = false
             window.becomesKeyOnlyIfNeeded = false
             window.isExcludedFromWindowsMenu = true
