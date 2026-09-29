@@ -45,7 +45,18 @@ final class EditorModel {
     /// gesture and has to stay one: moving them apart because they were dragged one at a
     /// time is the bug this exists to prevent. Ordinary clicking still leaves exactly one
     /// in here, so every reader that wants "the selection" keeps working.
-    private(set) var selected: [Selection] = []
+    private(set) var selected: [Selection] = [] {
+        didSet {
+            // The selected annotation is drawn at rest while paused — see
+            // `renderedTimeline` — so choosing a different one changes the frame.
+            guard Self.annotations(in: selected) != Self.annotations(in: oldValue) else { return }
+            refresh()
+        }
+    }
+
+    private static func annotations(in selection: [Selection]) -> [UUID] {
+        selection.compactMap { if case .annotation(let id) = $0 { id } else { nil } }
+    }
 
     let viewport = TimelineViewport()
     let waveform: WaveformStore
@@ -486,6 +497,20 @@ final class EditorModel {
         // the words sitting across the first.
         if let editing = editingAnnotation {
             draft.annotations.removeAll { $0.id == editing }
+        }
+        // The annotation being worked on is shown at full strength while paused.
+        //
+        // Otherwise the frame you are looking at decides whether you can see what you are
+        // editing: a new annotation starts at the playhead, and its first frame is the first
+        // frame of its fade — opacity zero. Typing into it changed nothing on the picture.
+        // Playing puts the entrance and exit back, and the export always has them, so this
+        // is a way of looking at the edit, not a change to it.
+        if !isPlaying {
+            let working = Set(Self.annotations(in: selected))
+            for index in draft.annotations.indices where working.contains(draft.annotations[index].id) {
+                draft.annotations[index].animation.entrance = .none
+                draft.annotations[index].animation.exit = .none
+            }
         }
         // Framing a zoom: the camera comes out and *nothing else does*.
         //
@@ -1040,6 +1065,9 @@ final class EditorModel {
     /// next chip does not fold it shut again — a panel that forgets is a panel you stop
     /// opening.
     var isZoomAdvancedOpen = false
+
+    /// The same, for the annotation inspector's Advanced section.
+    var isAnnotationAdvancedOpen = false
 
     /// The zoom the picture is being framed for, or `nil` when the picture is just the
     /// picture.

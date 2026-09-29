@@ -395,7 +395,11 @@ public enum Commands {
                 return true
             }
             if let index = timeline.annotations.firstIndex(where: { $0.id == id }) {
-                let clamped = Self.placed(rect)
+                // Locked means it stays put, from every door — the canvas, the keyboard,
+                // the inspector's numbers. Refused here for the reason `MoveRegion` refuses
+                // a locked zoom: a lock enforced in a view is one the next caller forgets.
+                guard !timeline.annotations[index].isLocked else { return false }
+                let clamped = Self.placed(AnnotationGeometry.sanitised(rect))
                 guard timeline.annotations[index].rect != clamped else { return false }
                 timeline.annotations[index].rect = clamped
                 return true
@@ -444,6 +448,65 @@ public enum Commands {
         }
     }
 
+    /// Moving an annotation up or down the stack.
+    ///
+    /// The stack is the order of `Timeline.annotations` — later draws on top — so this is
+    /// the only thing that changes which of two overlapping annotations is in front. A
+    /// command of its own, rather than a restyle, because it is not a property of the
+    /// annotation: it is where it stands among the others.
+    public struct ReorderAnnotation: TimelineCommand {
+        public enum Move: String, Sendable, CaseIterable {
+            case forward, backward, toFront, toBack
+
+            public var title: String {
+                switch self {
+                case .forward: "Bring Forward"
+                case .backward: "Send Backward"
+                case .toFront: "Bring to Front"
+                case .toBack: "Send to Back"
+                }
+            }
+        }
+
+        public let id: UUID
+        public let move: Move
+        public var name: String { move.title }
+
+        public init(id: UUID, _ move: Move) {
+            self.id = id
+            self.move = move
+        }
+
+        /// "Forward" is past the next annotation that is actually *on screen with it*.
+        /// Swapping with a neighbour in the list that never overlaps it in time changes the
+        /// file and nothing anybody can see, and a Bring Forward that visibly does nothing
+        /// gets pressed three more times.
+        public func apply(to timeline: inout Timeline) -> Bool {
+            guard let index = timeline.annotations.firstIndex(where: { $0.id == id }) else { return false }
+            let item = timeline.annotations[index]
+            let overlaps = { (other: AnnotationItem) in
+                other.start < item.end && item.start < other.end
+            }
+            let target: Int?
+            switch move {
+            case .toFront:
+                target = index == timeline.annotations.count - 1 ? nil : timeline.annotations.count - 1
+            case .toBack:
+                target = index == 0 ? nil : 0
+            case .forward:
+                target = timeline.annotations.indices
+                    .first { $0 > index && overlaps(timeline.annotations[$0]) }
+            case .backward:
+                target = timeline.annotations.indices
+                    .last { $0 < index && overlaps(timeline.annotations[$0]) }
+            }
+            guard let target, target != index else { return false }
+            timeline.annotations.remove(at: index)
+            timeline.annotations.insert(item, at: target)
+            return true
+        }
+    }
+
     /// Changing what an annotation says or how it looks.
     public struct RestyleAnnotation: TimelineCommand {
         public let id: UUID
@@ -460,6 +523,8 @@ public enum Commands {
             guard let index = timeline.annotations.firstIndex(where: { $0.id == id }) else { return false }
             let before = timeline.annotations[index]
             change(&timeline.annotations[index])
+            // Whatever the change did, what is stored is drawable. See `sanitise()`.
+            timeline.annotations[index].sanitise()
             return timeline.annotations[index] != before
         }
     }
@@ -669,6 +734,7 @@ public enum Commands {
             // the right shape for it as well: nothing lands on the undo stack, so a drag on
             // a locked zoom costs the user no undo to get back out of.
             if timeline.zooms.contains(where: { $0.id == id && $0.isLocked }) { return false }
+            if timeline.annotations.contains(where: { $0.id == id && $0.isLocked }) { return false }
 
             // The end of the timeline is read once, before anything is mutated: passing
             // `&timeline.zooms` while the closure still reads `timeline` is two accesses

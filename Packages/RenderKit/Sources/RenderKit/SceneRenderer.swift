@@ -561,6 +561,25 @@ public final class SceneRenderer: @unchecked Sendable {
         return (filter.outputImage ?? image).cropped(to: image.extent.insetBy(dx: -radius, dy: -radius))
     }
 
+    /// Turns, scales and slides the drawn annotation about its own centre.
+    ///
+    /// Core Image's y runs up, the model's runs down: a clockwise turn on the picture is a
+    /// negative angle here, and a slide down is a negative y. Written once, here, so the
+    /// two conventions meet in one place.
+    private func placed(_ image: CIImage, _ annotation: AnnotationLayer, about rect: CGRect,
+                        in scene: SceneDescriptor) -> CIImage {
+        let hasTurn = annotation.rotation != 0
+        let hasScale = annotation.scale != 1
+        let hasSlide = annotation.offset != .zero
+        guard hasTurn || hasScale || hasSlide else { return image }
+        let transform = CGAffineTransform(translationX: -rect.midX, y: -rect.midY)
+            .concatenating(CGAffineTransform(scaleX: annotation.scale, y: annotation.scale))
+            .concatenating(CGAffineTransform(rotationAngle: -annotation.rotation * .pi / 180))
+            .concatenating(CGAffineTransform(translationX: rect.midX + annotation.offset.dx * scene.outputSize.width,
+                                             y: rect.midY - annotation.offset.dy * scene.outputSize.height))
+        return image.transformed(by: transform, highQualityDownsample: true)
+    }
+
     private func annotationImage(_ annotation: AnnotationLayer, in scene: SceneDescriptor) -> CIImage? {
         let rect = CGRect(x: annotation.rect.minX * scene.outputSize.width,
                           y: (1 - annotation.rect.maxY) * scene.outputSize.height,
@@ -568,9 +587,10 @@ public final class SceneRenderer: @unchecked Sendable {
                           height: annotation.rect.height * scene.outputSize.height)
         guard rect.width > 1, rect.height > 1 else { return nil }
 
-        guard let image = AnnotationArtwork.image(annotation, in: rect, outputHeight: scene.outputSize.height) else {
+        guard var image = AnnotationArtwork.image(annotation, in: rect, outputHeight: scene.outputSize.height) else {
             return nil
         }
+        image = placed(image, annotation, about: rect, in: scene)
         guard annotation.opacity < 1 else { return image }
         return image.applyingFilter("CIColorMatrix", parameters: [
             "inputAVector": CIVector(x: 0, y: 0, z: 0, w: annotation.opacity),
