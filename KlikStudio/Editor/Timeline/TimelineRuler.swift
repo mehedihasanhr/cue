@@ -23,22 +23,25 @@ struct TimelineRuler: View {
                 guard second >= 0, second <= model.duration.seconds + step else { continue }
                 let x = viewport.x(forSeconds: second)
 
-                // Label and tick both start exactly on the second, and the rows below
-                // put a region's left edge on the same number: three nudges of a few
-                // points each is how a ruler stops agreeing with what it measures.
-                context.draw(Text(Timecode.ruler(second, step: step))
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(.tertiary),
-                    at: CGPoint(x: x, y: 6), anchor: .leading)
+                // The time centred over its mark, and a dot under it: the mark is the
+                // second, and the rows below put a region's edge on the same number.
+                // Held inside the ruler at the very start, where centring would put half
+                // of "0s" off the edge.
+                let label = context.resolve(Text(Timecode.ruler(second, step: step))
+                    .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.secondary))
+                let labelWidth = label.measure(in: size).width
+                let labelX = max(x, labelWidth / 2 + 1)
+                context.draw(label, at: CGPoint(x: labelX, y: 6), anchor: .center)
 
-                context.fill(Path(CGRect(x: x, y: size.height - 5, width: 1, height: 5)),
-                             with: .color(.secondary.opacity(0.5)))
+                context.fill(Path(ellipseIn: CGRect(x: x - 1.5, y: size.height - 5, width: 3, height: 3)),
+                             with: .color(.secondary.opacity(0.7)))
 
-                // A dot between each pair of labels, so the eye can subdivide without
-                // another row of numbers.
+                // A smaller, fainter dot between each pair of labels, so the eye can
+                // subdivide without another row of numbers.
                 let midway = viewport.x(forSeconds: second + step / 2)
                 if midway < size.width {
-                    context.fill(Path(ellipseIn: CGRect(x: midway - 1, y: size.height - 4, width: 2, height: 2)),
+                    context.fill(Path(ellipseIn: CGRect(x: midway - 1, y: size.height - 4.5, width: 2, height: 2)),
                                  with: .color(.secondary.opacity(0.4)))
                 }
             }

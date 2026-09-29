@@ -72,7 +72,7 @@ struct ZoomFramingOverlay: View {
             keyboard
             if let zoom {
                 let area = draft ?? model.zoomArea(of: zoom)
-                let rect = geometry.view(blur: area)
+                let rect = geometry.view(framing: area)
                 shade(around: rect)
                 box(rect, zoom: zoom)
             }
@@ -345,7 +345,7 @@ struct ZoomFramingOverlay: View {
 
     /// A drag's travel in view points, as a fraction of the recording.
     private func normalisedDelta(_ translation: CGSize) -> CGSize {
-        geometry.mapping.delta(view: translation)
+        geometry.recordingMapping.delta(view: translation)
     }
 
     private func begin(_ zoom: ZoomRegion, name: String) -> CGRect {

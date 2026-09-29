@@ -405,7 +405,11 @@ public final class RecordingSession {
         var followedWindow: CGWindowID?
         if case .window(let id) = configuration.target { followedWindow = id }
         let mapper = CursorMapper(origin: content.origin(of: configuration.target, in: shareable),
-                                  following: followedWindow)
+                                  following: followedWindow,
+                                  outputScale: CGFloat(displayScale))
+        // A window's frames say where it is and how much it was scaled to fit; a display's
+        // and an area's never move or scale, and their origin is already exact.
+        if followedWindow != nil { screen?.cursorMapper = mapper }
         // Only when the pointer is being recorded as data. A take that burns the system
         // cursor into the video already has the real artwork in the pixels, and saving it
         // twice would be saving it for nobody.

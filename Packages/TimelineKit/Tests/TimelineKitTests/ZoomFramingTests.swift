@@ -324,6 +324,80 @@ struct ZoomFramingTests {
         #expect(isClose(back.midY, start.midY, 1e-6))
         #expect(isClose(back.width, start.width, 1e-6))
     }
+
+    // MARK: - Reaching the edges
+
+    /// A box dragged hard at any edge lands flush on it, keeping its size.
+    ///
+    /// The one-corner version of this claim was already here; all four matter, because the
+    /// clamp is the same two lines applied to four numbers and a sign error in one of them
+    /// only shows on one edge.
+    @Test(arguments: [
+        (CGSize(width: 5, height: 0), "right"), (CGSize(width: -5, height: 0), "left"),
+        (CGSize(width: 0, height: -5), "top"), (CGSize(width: 0, height: 5), "bottom"),
+    ])
+    func theBoxCanBeDraggedToEveryEdge(travel: CGSize, edge: String) {
+        let start = ZoomFraming.area(of: zoom(scale: 3))
+        let moved = ZoomFraming.moved(start, by: travel)
+
+        #expect(isClose(moved.width, start.width), "\(edge) changed the shot's size")
+        switch edge {
+        case "right": #expect(isClose(moved.maxX, 1))
+        case "left": #expect(isClose(moved.minX, 0))
+        case "top": #expect(isClose(moved.minY, 0))
+        default: #expect(isClose(moved.maxY, 1))
+        }
+        // And flush, not past: nothing is framed that was never recorded.
+        #expect(moved.minX >= -1e-9 && moved.maxX <= 1 + 1e-9)
+        #expect(moved.minY >= -1e-9 && moved.maxY <= 1 + 1e-9)
+    }
+
+    /// Any one handle, pulled far enough, opens the box to the whole recording — so the
+    /// framing can say "all of it" from whichever corner the hand happens to be on.
+    @Test(arguments: ZoomFraming.Handle.allCases)
+    func everyHandleCanOpenTheBoxToTheWholeRecording(handle: ZoomFraming.Handle) {
+        let start = ZoomFraming.area(of: zoom(scale: 4, center: CGPoint(x: 0.3, y: 0.7)))
+
+        let opened = ZoomFraming.resized(start, to: 2, handle: handle)
+        #expect(isClose(opened.width, 1), "\(handle) stopped short of the whole picture")
+        #expect(isClose(opened.minX, 0))
+        #expect(isClose(opened.minY, 0))
+        #expect(isClose(ZoomFraming.scale(forSide: opened.width), 1))
+
+        // And the other end of the same travel is the deepest zoom, still on the picture.
+        let closed = ZoomFraming.resized(start, to: 0, handle: handle)
+        #expect(isClose(closed.width, ZoomFraming.minimumSide))
+        #expect(closed.minX >= -1e-9 && closed.maxX <= 1 + 1e-9)
+        #expect(closed.minY >= -1e-9 && closed.maxY <= 1 + 1e-9)
+    }
+
+    /// One clamp decides where a camera may look.
+    ///
+    /// The renderer, the suggester and this type all used to say it in their own words, which
+    /// is three chances for the box on the preview to promise a shot the file does not have.
+    /// The centre of the framing and the clamped centre are now the same arithmetic, and this
+    /// is what says so.
+    @Test(arguments: [
+        (1.0, CGPoint(x: 0.5, y: 0.5)),
+        (2.0, CGPoint(x: 0.1, y: 0.9)),
+        (4.0, CGPoint(x: -0.4, y: 1.8)),
+        (8.0, CGPoint(x: 0.5, y: 0.5)),
+        (99.0, CGPoint(x: 0.2, y: 0.2)),
+    ])
+    func oneClampDecidesWhereACameraMayLook(scale: Double, aim: CGPoint) {
+        let centre = ZoomFraming.honoured(center: aim, scale: scale)
+        let box = ZoomFraming.honoured(scale: scale, center: aim)
+        let half = ZoomFraming.halfSide(forScale: scale)
+
+        #expect(isClose(box.midX, centre.x))
+        #expect(isClose(box.midY, centre.y))
+        #expect(isClose(box.width, half * 2))
+        // Never further out than the framing allows, whatever was asked for.
+        #expect(centre.x >= half - 1e-9 && centre.x <= 1 - half + 1e-9)
+        #expect(centre.y >= half - 1e-9 && centre.y <= 1 - half + 1e-9)
+        // And the scale is held to what the camera will actually do.
+        #expect(half >= 0.5 / ZoomRegion.maximumScale - 1e-9 && half <= 0.5 + 1e-9)
+    }
 }
 
 /// Where a point on screen is in the recording, and back.
@@ -424,5 +498,35 @@ struct PictureMappingTests {
         let none = PictureMapping(stage: .zero, video: .zero)
         #expect(none.recording(view: CGRect(x: 10, y: 10, width: 5, height: 5)) == .zero)
         #expect(none.frame(view: CGRect(x: 10, y: 10, width: 5, height: 5)) == .zero)
+    }
+
+    /// Every recording shape maps the same way.
+    ///
+    /// A framing is square in normalised space, which is the recording's own shape in pixels
+    /// — so on screen the box is as wide over tall as the footage is, and a 4:3 take and a
+    /// portrait one must both come back as the fraction of themselves they went in as.
+    @Test(arguments: [16.0 / 9, 16.0 / 10, 4.0 / 3, 9.0 / 16])
+    func aFramingBoxMapsThroughEveryRecordingShape(recording ratio: Double) {
+        // The picture, fitted into a 16:9 output with a tenth of padding, in normalised
+        // output coordinates — the shape `SceneBuilder` hands the overlay.
+        let output = 16.0 / 9
+        let relative = ratio / output
+        let size = relative >= 1 ? CGSize(width: 0.8, height: 0.8 / relative)
+                                 : CGSize(width: 0.8 * relative, height: 0.8)
+        let video = CGRect(x: (1 - size.width) / 2, y: (1 - size.height) / 2,
+                           width: size.width, height: size.height)
+        let mapped = PictureMapping(stage: CGRect(x: 30, y: 12, width: 960, height: 540),
+                                    video: video)
+
+        for framing in [CGRect(x: 0, y: 0, width: 1, height: 1),
+                        CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5),
+                        CGRect(x: 0.75, y: 0, width: 0.25, height: 0.25)] {
+            #expect(isClose(mapped.recording(view: mapped.view(recording: framing)), framing, 1e-9),
+                    "\(ratio) lost \(framing)")
+        }
+
+        // The box on screen carries the recording's shape, not a square.
+        let box = mapped.view(recording: CGRect(x: 0.2, y: 0.2, width: 0.5, height: 0.5))
+        #expect(isClose(box.width / box.height, ratio, 1e-6))
     }
 }

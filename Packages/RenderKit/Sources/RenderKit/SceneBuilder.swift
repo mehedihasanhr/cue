@@ -154,7 +154,7 @@ public struct SceneBuilder: Sendable {
         // Where this zoom was aimed, and where the camera stays unless the pointer makes
         // it move.
         var center = best.region.center
-        let half = 0.5 / best.scale
+        let half = ZoomFraming.halfSide(forScale: best.scale)
         let override = timeline.cursorOverride(at: time)
 
         // Following the pointer is a *dead zone*, not a leash.
@@ -234,12 +234,11 @@ public struct SceneBuilder: Sendable {
             center = nudged(center, toKeep: live, within: half * 0.98, by: 1 - override.hiding)
         }
 
-        // Keep the camera inside the picture: at 2× the centre can only travel between
-        // 0.25 and 0.75 before the frame shows its own edge. Last, so it always wins — a
-        // pointer in the corner is kept in shot by the frame reaching the corner, not by
-        // the frame sliding off the picture to centre on it.
-        return (best.scale, CGPoint(x: min(1 - half, max(half, center.x)),
-                                    y: min(1 - half, max(half, center.y))))
+        // Keep the camera inside the picture. Last, so it always wins — a pointer in the
+        // corner is kept in shot by the frame reaching the corner, not by the frame sliding
+        // off the picture to centre on it. Through `ZoomFraming`, which is also what the
+        // framing box on the preview is drawn from, so the two cannot disagree.
+        return (best.scale, ZoomFraming.honoured(center: center, scale: best.scale))
     }
 
     /// A point in recorded points as a fraction of the cropped frame, held inside it.
@@ -318,19 +317,25 @@ public struct SceneBuilder: Sendable {
             .map { BlurLayer(rect: $0.rect, style: $0.style, radius: $0.radius) }
     }
 
+    /// Every annotation on screen at `time`, bottom of the stack first.
+    ///
+    /// The lane's order *is* the stack — see `AnnotationItem` — so this keeps it rather
+    /// than sorting. Hidden ones are left out here, which is the one place both the preview
+    /// and the export read, so "hidden" cannot mean one thing on screen and another in the
+    /// file.
     private func annotationLayers(_ timeline: Timeline, at time: CMTime) -> [AnnotationLayer] {
         timeline.annotations.compactMap { item in
-            guard item.contains(time) else { return nil }
-            // A short fade at each end, so an annotation appears rather than blinks.
-            let fade = min(0.25, item.duration.seconds / 4)
-            let progress = item.progress(at: time) * item.duration.seconds
-            let remaining = item.duration.seconds - progress
-            let opacity = fade > 0 ? min(1, min(progress, remaining) / fade) : 1
+            guard !item.isHidden, item.contains(time) else { return nil }
+            let pose = item.pose(atOffset: (time - item.start).seconds)
+            guard pose.opacity > 0.001 else { return nil }
             return AnnotationLayer(kind: item.kind,
                                    rect: item.rect,
                                    color: item.color,
                                    fontSize: item.fontSize,
-                                   opacity: max(0, min(1, opacity)))
+                                   opacity: max(0, min(1, pose.opacity)),
+                                   rotation: item.rotation,
+                                   scale: pose.scale,
+                                   offset: pose.offset)
         }
     }
 

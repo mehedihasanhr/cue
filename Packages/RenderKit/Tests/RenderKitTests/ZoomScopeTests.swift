@@ -177,4 +177,79 @@ struct ZoomScopeTests {
         #expect(CameraStyle().zoomsWholeFrame)
         #expect(Timeline(sourceDuration: .zero).camera.zoomsWholeFrame)
     }
+
+    // MARK: - Aimed at an edge
+
+    /// A zoom aimed at the edge of the recording exposes no more padding than was already
+    /// there, on any side.
+    ///
+    /// The whole-frame reading lets the picture grow over its padding, so the question this
+    /// answers is how far it may *fail* to. The clamp holds the camera's centre at least
+    /// `0.5/scale` from every edge, which works out to the grown picture always still
+    /// covering the rectangle it occupied at 1x — so the padding a viewer sees is padding
+    /// that was in the design, never a gap the camera opened.
+    @Test(arguments: [1.1, 2.0, 8.0])
+    func aZoomAimedAtAnEdgeExposesNoMorePaddingThanBefore(scale: Double) throws {
+        var edit = timeline(wholeFrame: true)
+        edit.style.cornerRadius = 0
+        edit.zooms[0].scale = scale
+        // The far corner, further than the camera may go, so the clamp is what decides.
+        edit.zooms[0].center = CGPoint(x: 1, y: 1)
+        let scene = builder().descriptor(for: edit, at: time(5))
+        let grown = scene.transformedVideoFrame
+
+        #expect(grown.minX <= scene.videoFrame.minX + 1e-6, "\(scale)x left a gap on the left")
+        #expect(grown.maxX >= scene.videoFrame.maxX - 1e-6, "\(scale)x left a gap on the right")
+        #expect(grown.minY <= scene.videoFrame.minY + 1e-6)
+        #expect(grown.maxY >= scene.videoFrame.maxY - 1e-6)
+
+        // And in pixels, at the corner the camera was aimed away from.
+        let image = try #require(SceneRenderer().cgImage(for: scene, source: red()))
+        let inside = try #require(pixel(image,
+                                        x: Int(scene.videoFrame.minX) + 2,
+                                        y: Int(scene.videoFrame.minY) + 2))
+        #expect(inside.r > 150 && inside.b < 100, "the corner of the picture is picture")
+    }
+
+    /// Which part of the recording a zoom shows cannot depend on the scope switch.
+    ///
+    /// The switch decides whether the *frame* grows over its padding; it has no say in where
+    /// the camera is pointed. Read in pixels, off-centre, because that is the pair of claims
+    /// that had quietly become one: the framing used to drift towards the middle of the
+    /// picture, and the two readings drifted with it by different amounts.
+    @Test func theFramedRegionFillsThePictureUnderBothScopes() throws {
+        let renderer = SceneRenderer()
+        for wholeFrame in [true, false] {
+            var edit = timeline(wholeFrame: wholeFrame)
+            edit.style.cornerRadius = 0
+            edit.zooms[0].scale = 4
+            edit.zooms[0].center = CGPoint(x: 0.75, y: 0.3)
+
+            let scene = builder().descriptor(for: edit, at: time(5))
+            let region = ZoomFraming.area(of: edit.zooms[0])
+            // Green where the shot is aimed, blue everywhere else in the recording.
+            let marker = CIImage(color: CIColor(red: 0, green: 1, blue: 0))
+                .cropped(to: CGRect(x: region.minX * videoSize.width,
+                                    y: (1 - region.maxY) * videoSize.height,
+                                    width: region.width * videoSize.width,
+                                    height: region.height * videoSize.height))
+            let source = marker.composited(over: CIImage(color: CIColor(red: 0, green: 0, blue: 1))
+                .cropped(to: CGRect(origin: .zero, size: videoSize)))
+
+            let image = try #require(renderer.cgImage(for: scene, source: source))
+            // A cross reaching most of the way across the picture, not just its middle: a
+            // camera drifting by a fraction of its own shot still has the right thing in the
+            // centre, and gives away the drift at the edges of the frame.
+            let dx = Int(scene.videoFrame.width * 0.35)
+            let dy = Int(scene.videoFrame.height * 0.35)
+            let middle = (x: image.width / 2, y: image.height / 2)
+            for point in [middle,
+                          (x: middle.x - dx, y: middle.y), (x: middle.x + dx, y: middle.y),
+                          (x: middle.x, y: middle.y - dy), (x: middle.x, y: middle.y + dy)] {
+                let sample = try #require(pixel(image, x: point.x, y: point.y))
+                #expect(sample.g > 150 && sample.b < 100,
+                        "whole frame \(wholeFrame), \(point) shows what is beside the shot: \(sample)")
+            }
+        }
+    }
 }

@@ -25,6 +25,12 @@ public final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @
     /// Called when the stream stops on its own — a window closed, a display unplugged,
     /// the disk filled. The session decides what that means for the recording.
     private let onStop: @Sendable (RecordingError) -> Void
+    /// Told where each frame's picture came from, for a recording of a window. Set before
+    /// `start()` and not after: it is read on the capture queue.
+    ///
+    /// A window is the one target whose picture can be moved and resized inside the file
+    /// while the take runs, and the frame is the only thing that knows by how much.
+    public var cursorMapper: CursorMapper?
 
     private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "screen")
 
@@ -75,6 +81,9 @@ public final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @
             // Writing those as frames would encode the same picture repeatedly; the
             // writer's pacer fills that time far more cheaply.
             guard buffer.screenFrameStatus == .complete else { return }
+            if let cursorMapper, let geometry = buffer.frameGeometry {
+                cursorMapper.place(geometry)
+            }
             writer.append(video: buffer)
         case .audio:
             audio?.append(buffer)
@@ -111,5 +120,21 @@ extension CMSampleBuffer {
               let raw = attachments.first?[.status] as? Int
         else { return nil }
         return SCFrameStatus(rawValue: raw)
+    }
+
+    /// Where this frame's picture was on the desk and where it was put in the frame.
+    ///
+    /// `nil` when any of it is missing — a frame that half-describes itself is not one to
+    /// move the pointer track on.
+    var frameGeometry: FrameGeometry? {
+        guard let attachments = CMSampleBufferGetSampleAttachmentsArray(self, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
+              let info = attachments.first,
+              let screen = info[.screenRect].flatMap({ CGRect(dictionaryRepresentation: $0 as! CFDictionary) }),
+              let content = info[.contentRect].flatMap({ CGRect(dictionaryRepresentation: $0 as! CFDictionary) }),
+              let contentScale = info[.contentScale] as? CGFloat,
+              let scaleFactor = info[.scaleFactor] as? CGFloat
+        else { return nil }
+        return FrameGeometry(screenRect: screen, contentRect: content,
+                             contentScale: contentScale, scaleFactor: scaleFactor)
     }
 }

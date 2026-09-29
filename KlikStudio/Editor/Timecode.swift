@@ -47,4 +47,18 @@ enum Timecode {
         }
         return step < 1 ? String(format: "%.1fs", seconds) : "\(Int(seconds.rounded()))s"
     }
+
+    /// A time somebody typed: `3.24`, `0:03.24`, `1:02`, `3.2s`. Seconds when there is no
+    /// colon, minutes and seconds when there is one. `nil` for anything else, so a field can
+    /// put back what it had rather than jump to zero.
+    static func parse(_ text: String) -> Double? {
+        var text = text.trimmingCharacters(in: .whitespaces).lowercased()
+        if text.hasSuffix("s") { text.removeLast() }
+        let parts = text.split(separator: ":", omittingEmptySubsequences: false)
+        guard (1...2).contains(parts.count) else { return nil }
+        guard let seconds = Double(parts.last ?? ""), seconds.isFinite, seconds >= 0 else { return nil }
+        if parts.count == 1 { return seconds }
+        guard let minutes = Int(parts[0]), minutes >= 0 else { return nil }
+        return Double(minutes) * 60 + seconds
+    }
 }

@@ -321,13 +321,42 @@ public struct BlurRegion: TimelineRegion {
     }
 }
 
-/// Something added on top: a label, an arrow, a picture.
+/// Something added on top: a label, an arrow, a box, a picture.
+///
+/// One type for every kind, on purpose. Where it sits, how it is turned, how see-through
+/// it is, when it comes and goes and how it arrives — all of that is the same whatever the
+/// annotation says, so it is written once here and every kind gets it. Only `kind` holds
+/// what differs.
+///
+/// **Coordinates.** `rect` is normalised to the *finished frame*, top-left origin, 0…1 on
+/// each axis — never to the preview on screen, which changes size with the window. That is
+/// what keeps a label exactly where it was put through a window resize, a different export
+/// size and a reopen, and it is why preview and export can share one renderer. `rotation`
+/// turns the rect about its own centre, measured on the finished picture (so a square stays
+/// square at any aspect ratio). An arrow's two ends are normalised to the rect.
+///
+/// **Order.** The position in `Timeline.annotations` is the stacking order: later is on
+/// top. It is data, not an accident of drawing, so the reorder commands change it and
+/// nothing else does.
 public struct AnnotationItem: TimelineRegion {
     public enum Kind: Codable, Equatable, Sendable {
         case text(String)
         case arrow(from: CGPoint, to: CGPoint)
         case rectangle
         case image(path: String)
+    }
+
+    /// What an annotation is pinned to.
+    ///
+    /// Only `canvas` is drawn today. `content` is here so a project can say "this arrow
+    /// points at the button, follow the button" when zooms learn to carry annotations with
+    /// them — deciding the field now means that is a new behaviour rather than a migration.
+    public enum Attachment: String, Codable, Sendable, CaseIterable {
+        /// Stays where it is on the finished frame, whatever the camera does. Titles,
+        /// explanations, anything addressed to the viewer.
+        case canvas
+        /// Stays on the part of the recording it was put over. Arrows at buttons.
+        case content
     }
 
     public let id: UUID
@@ -337,10 +366,28 @@ public struct AnnotationItem: TimelineRegion {
     public var rect: CGRect
     public var color: ColorValue
     public var fontSize: Double
+    /// Degrees, clockwise as seen on the picture, about the rect's centre.
+    public var rotation: Double
+    /// 0…1, on top of whatever the entrance and exit are doing.
+    public var opacity: Double
+    public var animation: AnnotationAnimation
+    /// A locked annotation draws as normal and can be selected and restyled, but will not
+    /// move — on the picture or on the timeline.
+    public var isLocked: Bool
+    /// Off. Kept on the timeline, drawn nowhere — not in the preview and not in the export,
+    /// so what you see is always what you get.
+    public var isHidden: Bool
+    public var attachment: Attachment
 
     public init(id: UUID = UUID(), start: CMTime, duration: CMTime, kind: Kind,
                 rect: CGRect, color: ColorValue = .init(r: 1, g: 0.23, b: 0.19),
-                fontSize: Double = 0.06) {
+                fontSize: Double = 0.06,
+                rotation: Double = 0,
+                opacity: Double = 1,
+                animation: AnnotationAnimation = AnnotationAnimation(),
+                isLocked: Bool = false,
+                isHidden: Bool = false,
+                attachment: Attachment = .canvas) {
         self.id = id
         self.start = start
         self.duration = duration
@@ -348,6 +395,73 @@ public struct AnnotationItem: TimelineRegion {
         self.rect = rect
         self.color = color
         self.fontSize = fontSize
+        self.rotation = rotation
+        self.opacity = opacity
+        self.animation = animation
+        self.isLocked = isLocked
+        self.isHidden = isHidden
+        self.attachment = attachment
+        sanitise()
+    }
+
+    /// Read field by field, for the reason `Timeline.init(from:)` gives — and more so here,
+    /// because the annotation lane is decoded as one array: one item that failed to decode
+    /// used to take every annotation in the project with it. A project written before the
+    /// shared fields existed opens with each at its default, which is exactly how it looked.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        func value<T: Decodable>(_ key: CodingKeys, default fallback: @autoclosure () -> T) -> T {
+            ((try? container.decodeIfPresent(T.self, forKey: key)) ?? nil) ?? fallback()
+        }
+        id = value(.id, default: UUID())
+        start = value(.start, default: .zero)
+        duration = value(.duration, default: CMTime(seconds: 3, preferredTimescale: 600))
+        kind = value(.kind, default: .rectangle)
+        rect = value(.rect, default: CGRect(x: 0.3, y: 0.3, width: 0.4, height: 0.4))
+        color = value(.color, default: ColorValue(r: 1, g: 0.23, b: 0.19))
+        fontSize = value(.fontSize, default: 0.06)
+        rotation = value(.rotation, default: 0)
+        opacity = value(.opacity, default: 1)
+        animation = value(.animation, default: AnnotationAnimation())
+        isLocked = value(.isLocked, default: false)
+        isHidden = value(.isHidden, default: false)
+        attachment = value(.attachment, default: .canvas)
+        sanitise()
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, start, duration, kind, rect, color, fontSize
+        case rotation, opacity, animation, isLocked, isHidden, attachment
+    }
+
+    /// Makes every number one the renderer can draw.
+    ///
+    /// NaN and infinity do not come from a person, they come from a division somewhere —
+    /// a zero-sized view, a drag measured against a stage that had not laid out — and once
+    /// one is in the project file it is in every frame of every export. So nothing
+    /// unreadable gets past the model: a broken value becomes the default rather than a
+    /// broken annotation.
+    public mutating func sanitise() {
+        if !start.isNumeric || start.seconds.isNaN || start < .zero { start = .zero }
+        if !duration.isNumeric || duration.seconds.isNaN || duration < .zero { duration = .zero }
+        rect = AnnotationGeometry.sanitised(rect)
+        if !fontSize.isFinite { fontSize = 0.06 }
+        fontSize = min(1, max(0.005, fontSize))
+        rotation = AnnotationGeometry.normalisedDegrees(rotation)
+        opacity = opacity.isFinite ? min(1, max(0, opacity)) : 1
+        animation.sanitise()
+        if case .arrow(let from, let to) = kind {
+            kind = .arrow(from: AnnotationGeometry.sanitised(from, default: CGPoint(x: 0, y: 1)),
+                          to: AnnotationGeometry.sanitised(to, default: CGPoint(x: 1, y: 0)))
+        }
+    }
+
+    /// The same annotation as it is `offset` seconds after its start: how visible, how big
+    /// and how far from home. Asked by the renderer, so preview and export animate alike.
+    public func pose(atOffset offset: Double) -> AnnotationPose {
+        var pose = animation.pose(atOffset: offset, of: duration.seconds)
+        pose.opacity *= opacity
+        return pose
     }
 }
 

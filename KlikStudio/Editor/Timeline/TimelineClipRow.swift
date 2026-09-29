@@ -13,7 +13,7 @@ struct TimelineClipRow: View {
     @State private var hoveredHandle: String?
 
     private var viewport: TimelineViewport { model.viewport }
-    private let radius: CGFloat = 6
+    private let radius: CGFloat = TimelineChipBackground.radius
 
     private static let speeds: [Double] = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4, 8]
 
@@ -37,14 +37,10 @@ struct TimelineClipRow: View {
         let left = viewport.x(for: start)
         let width = max(4, clip.duration.seconds * viewport.pointsPerSecond)
 
-        return RoundedRectangle(cornerRadius: radius, style: .continuous)
-            .fill(Color.orange.opacity(isSelected(clip) ? 0.5 : 0.32))
-            .overlay {
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .strokeBorder(.white.opacity(isSelected(clip) ? 0.9 : 0), lineWidth: 1.5)
-            }
+        return TimelineChipBackground(tint: TimelinePalette.clip, isSelected: isSelected(clip))
+            .overlay { marks(left: left, width: width) }
             .frame(width: width, height: height)
-            .overlay(alignment: .leading) { badge(clip, width: width) }
+            .overlay { badge(clip, width: width) }
             .overlay { sourceTimes(clip, width: width) }
             .overlay(alignment: .leading) { handle(clip, at: index, leading: true, width: width) }
             .overlay(alignment: .trailing) { handle(clip, at: index, leading: false, width: width) }
@@ -65,40 +61,59 @@ struct TimelineClipRow: View {
             .position(x: left + width / 2, y: height / 2)
     }
 
-    /// Length and speed, held against the clip's leading edge.
+    /// What the clip is, and its length and speed, centred on it.
     ///
-    /// It used to sit in the middle, which meant it slid for the whole of a trim: the
-    /// clip's centre moves at half the speed of the edge being dragged, so the numbers
-    /// drifted while the footage they describe stood still. See
-    /// `TimelineRegionRow.label(_:width:)`.
+    /// It used to be held against the leading edge so it would not slide during a trim.
+    /// Centred, it moves at half the speed of the edge being dragged — a small price for a
+    /// strip that reads like a player's, with the numbers where the eye lands on the chip.
     private func badge(_ clip: Clip, width: Double) -> some View {
-        HStack(spacing: 6) {
-            Text(Timecode.length(clip.duration))
-            Menu {
-                ForEach(Self.speeds, id: \.self) { speed in
-                    Button(Self.speedLabel(speed)) { model.setSpeed(speed, of: clip.id) }
+        TimelineChipLabel(title: "Clip", height: height, width: width, minimumWidth: 130) {
+            HStack(spacing: 6) {
+                Text(Timecode.length(clip.duration))
+                Menu {
+                    ForEach(Self.speeds, id: \.self) { speed in
+                        Button(Self.speedLabel(speed)) { model.setSpeed(speed, of: clip.id) }
+                    }
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "timer").font(.system(size: 10, weight: .semibold))
+                        Text(Self.speedLabel(clip.speed))
+                    }
+                    .foregroundStyle(.white)
                 }
-            } label: {
-                HStack(spacing: 3) {
-                    Image(systemName: "timer").font(.system(size: 9))
-                    Text(Self.speedLabel(clip.speed))
-                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Playback speed")
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
         }
-        .font(.system(size: 11, weight: .semibold))
-        .foregroundStyle(.white)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 2)
-        .background(.black.opacity(0.28), in: Capsule())
-        .fixedSize()
-        .padding(.leading, TimelineHandle.target + 3)
-        // Faded rather than switched off: this changes mid-trim, and a badge blinking out
-        // under the pointer reads as something breaking.
-        .opacity(width > 130 ? 1 : 0)
-        .animation(StudioMotion.state, value: width > 130)
+    }
+
+    /// A faint line at every mark on the ruler, carried down into the footage so a cut
+    /// can be lined up against the time above it without reading the numbers.
+    ///
+    /// Only the marks on screen are built, as one path: a clip zoomed far in is hundreds of
+    /// thousands of points wide, and it is the part in view that needs lines.
+    private func marks(left: Double, width: Double) -> some View {
+        let step = TimelineRuler.step(forPointsPerSecond: viewport.pointsPerSecond)
+        let visible = viewport.visibleSeconds
+        let from = max(viewport.seconds(at: left), visible.lowerBound)
+        let to = min(viewport.seconds(at: left + width), visible.upperBound)
+        let path = Path { path in
+            guard to > from else { return }
+            var second = (from / step).rounded(.up) * step
+            while second < to {
+                let x = viewport.x(forSeconds: second) - left
+                if x > 1, x < width - 1 {
+                    path.addRect(CGRect(x: x, y: 0, width: 1, height: height))
+                }
+                second += step
+            }
+        }
+        return path
+            .fill(.white.opacity(0.13))
+            .frame(width: width, height: height, alignment: .topLeading)
+            .allowsHitTesting(false)
     }
 
     /// Where this clip sits in the recording, at the ends where a trim moves it.
@@ -109,10 +124,14 @@ struct TimelineClipRow: View {
             Text(Timecode.short(clip.sourceEnd))
         }
         .font(.system(size: 9, design: .monospaced))
-        .foregroundStyle(.white.opacity(0.65))
+        .foregroundStyle(.white.opacity(0.7))
         // Clear of the handles, and pinned to the two ends rather than centred, so each
         // number stays under the edge it describes while that edge is dragged.
         .padding(.horizontal, TimelineHandle.target + 3)
+        // Along the bottom, below the badge. On the badge's own line the start time was
+        // drawn straight through the clip's length, and "0:00" under "12s" read as "0:12s".
+        .frame(maxHeight: .infinity, alignment: .bottom)
+        .padding(.bottom, 4)
         .opacity(width > 190 ? 1 : 0)
         .animation(StudioMotion.state, value: width > 190)
         .allowsHitTesting(false)

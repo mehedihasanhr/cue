@@ -17,6 +17,14 @@ import Foundation
 /// both axes by one number, so the area is always *square in normalised space* — which is
 /// the recording's own aspect ratio in pixels. That is what guarantees the output is never
 /// stretched: there is no way to express a non-uniform framing, at any point in this type.
+///
+/// **What the box promises**: the part of the recording that fills the *picture* — the
+/// rectangle the padding leaves for the footage, which is where a zoom lands its framing.
+/// When the whole frame zooms (`CameraStyle.zoomsWholeFrame`) the picture also grows over
+/// that padding, so the finished video shows a little more of the recording around the box,
+/// or background where the recording runs out. The box does not widen to claim that bleed:
+/// it would stop being square, stop meaning `scale`, and draw two different rectangles for
+/// one zoom depending on a switch somewhere else.
 public enum ZoomFraming {
     /// The tightest framing the camera will honour, as a fraction of the recording.
     public static var minimumSide: Double { 1 / ZoomRegion.maximumScale }
@@ -54,11 +62,29 @@ public enum ZoomFraming {
         min(ZoomRegion.maximumScale, max(1, 1 / max(side, 1e-6)))
     }
 
+    /// How far a camera at this scale reaches from its own centre, as a fraction of the
+    /// recording — which is also the distance it has to keep from every edge.
+    public static func halfSide(forScale scale: Double) -> Double {
+        0.5 / min(ZoomRegion.maximumScale, max(1, scale))
+    }
+
+    /// Where a camera at this scale may actually look.
+    ///
+    /// At 2× the centre can only travel between 0.25 and 0.75 before the frame shows its
+    /// own edge. That sentence was written out four times — in the renderer's camera, here,
+    /// in the suggester, and once more in the test that exists to check the first two agree
+    /// — so a change to any one of them was a silent disagreement between the box on screen
+    /// and the shot in the file. This is the one copy.
+    public static func honoured(center: CGPoint, scale: Double) -> CGPoint {
+        let half = halfSide(forScale: scale)
+        return CGPoint(x: min(1 - half, max(half, center.x)),
+                       y: min(1 - half, max(half, center.y)))
+    }
+
     /// The framing a zoom at this scale, aimed here, works out to.
     public static func honoured(scale: Double, center: CGPoint) -> CGRect {
-        let half = 0.5 / min(ZoomRegion.maximumScale, max(1, scale))
-        let centre = CGPoint(x: min(1 - half, max(half, center.x)),
-                             y: min(1 - half, max(half, center.y)))
+        let half = halfSide(forScale: scale)
+        let centre = honoured(center: center, scale: scale)
         return CGRect(x: centre.x - half, y: centre.y - half, width: half * 2, height: half * 2)
     }
 

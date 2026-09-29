@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreImage
 import CoreMedia
 import Foundation
 import Testing
@@ -24,12 +25,13 @@ struct ZoomFramingAgreementTests {
         SceneBuilder(videoSize: CGSize(width: 1_600, height: 1_000), displayScale: 2)
     }
 
-    /// What the camera is showing at this moment, as a rectangle of the recording — the
-    /// same arithmetic the framing overlay used to do by hand.
+    /// What the camera is showing at this moment, as a rectangle of the recording.
+    ///
+    /// The shipping arithmetic rather than a copy of it: this helper used to write the clamp
+    /// out again, which made it a fourth opinion in a file whose whole job is to check that
+    /// there is only one.
     private func shown(_ scene: SceneDescriptor) -> CGRect {
-        let half = 0.5 / max(1, scene.zoom)
-        return CGRect(x: scene.zoomCenter.x - half, y: scene.zoomCenter.y - half,
-                      width: half * 2, height: half * 2)
+        ZoomFraming.honoured(scale: scene.zoom, center: scene.zoomCenter)
     }
 
     private func timeline(scale: Double, center: CGPoint) -> Timeline {
@@ -161,5 +163,185 @@ struct ZoomFramingAgreementTests {
         #expect(first.zoom == second.zoom)
         #expect(first.zoomCenter == second.zoomCenter)
         #expect(first.transformedVideoFrame == second.transformedVideoFrame)
+    }
+
+    // MARK: - Where the framed region lands
+
+    private let videoSize = CGSize(width: 1_600, height: 1_000)
+
+    /// A recording that is one colour inside the given region of itself and another outside
+    /// it, so "is the framed region what the frame is showing?" is one pixel's worth of
+    /// question. `region` is normalised, top-left, like everything in the model; the crop
+    /// below is Core Image's bottom-left space, hence the flip.
+    private func marked(_ region: CGRect, marker: CGRect? = nil) -> CIImage {
+        let area = marker ?? region
+        let inside = CIImage(color: CIColor(red: 0, green: 1, blue: 0))
+            .cropped(to: CGRect(x: area.minX * videoSize.width,
+                                y: (1 - area.maxY) * videoSize.height,
+                                width: area.width * videoSize.width,
+                                height: area.height * videoSize.height))
+        let outside = CIImage(color: CIColor(red: 0, green: 0, blue: 1))
+            .cropped(to: CGRect(origin: .zero, size: videoSize))
+        return inside.composited(over: outside)
+    }
+
+    private func pixel(_ image: CGImage, x: Int, y: Int) -> (r: Int, g: Int, b: Int)? {
+        guard let data = image.dataProvider?.data, let bytes = CFDataGetBytePtr(data) else { return nil }
+        let offset = y * image.bytesPerRow + x * (image.bitsPerPixel / 8)
+        return (Int(bytes[offset]), Int(bytes[offset + 1]), Int(bytes[offset + 2]))
+    }
+
+    private func isMarker(_ sample: (r: Int, g: Int, b: Int)) -> Bool {
+        sample.g > 150 && sample.b < 100
+    }
+
+    /// A plain frame: no padding, no corners, no shadow, no pointer. The picture fills the
+    /// output, so what is asserted about the output is asserted about the picture.
+    private func plain(scale: Double, center: CGPoint, wholeFrame: Bool = true) -> Timeline {
+        var timeline = Timeline(sourceDuration: time(20))
+        timeline.style.padding = 0
+        timeline.style.cornerRadius = 0
+        timeline.style.shadowOpacity = 0
+        timeline.cursor.isVisible = false
+        timeline.camera.zoomsWholeFrame = wholeFrame
+        timeline.zooms = [ZoomRegion(start: .zero, duration: time(10), scale: scale,
+                                     center: center, easing: .linear, transition: .zero,
+                                     followsCursor: false)]
+        return timeline
+    }
+
+    /// **The decisive one.** The region the box draws is the region the pixels show.
+    ///
+    /// Everything else in this file compares one description against another; this compares a
+    /// description against the picture that came out, which is the only reading the person
+    /// framing the shot cares about. It fails for every off-centre argument against a camera
+    /// that scales about its aim rather than bringing its aim to the middle.
+    @Test(arguments: [
+        CGPoint(x: 0.5, y: 0.5),
+        CGPoint(x: 0.125, y: 0.125),
+        CGPoint(x: 0.875, y: 0.875),
+        CGPoint(x: 0.625, y: 0.75),
+    ])
+    func theFramedRegionFillsTheMiddleOfTheFrame(center: CGPoint) throws {
+        let edit = plain(scale: 4, center: center)
+        let region = ZoomFraming.area(of: edit.zooms[0])
+        let scene = SceneBuilder(videoSize: videoSize, displayScale: 2).descriptor(for: edit, at: time(5))
+        let image = try #require(SceneRenderer().cgImage(for: scene, source: marked(region)))
+
+        // The middle, and a cross reaching most of the way to the edges of the picture —
+        // well inside the framed region, which fills the whole of it.
+        let dx = Int(scene.videoFrame.width * 0.35)
+        let dy = Int(scene.videoFrame.height * 0.35)
+        let middle = (x: image.width / 2, y: image.height / 2)
+        for point in [middle,
+                      (x: middle.x - dx, y: middle.y), (x: middle.x + dx, y: middle.y),
+                      (x: middle.x, y: middle.y - dy), (x: middle.x, y: middle.y + dy)] {
+            let sample = try #require(pixel(image, x: point.x, y: point.y))
+            #expect(isMarker(sample),
+                    "aimed at \(center), \(point) shows what is beside the shot: \(sample)")
+        }
+    }
+
+    /// The same claim as a rectangle, at every scope: the framed region maps onto the picture
+    /// exactly. Cheap enough to run over a wider table than a pixel test can.
+    @Test(arguments: [
+        CGPoint(x: 0.5, y: 0.5),
+        CGPoint(x: 0.125, y: 0.125),
+        CGPoint(x: 0.875, y: 0.125),
+        CGPoint(x: 0.125, y: 0.875),
+        CGPoint(x: 0.875, y: 0.875),
+        CGPoint(x: 0.3, y: 0.7),
+    ])
+    func theFramedRegionLandsOnTheVideoFrameExactly(center: CGPoint) {
+        for wholeFrame in [true, false] {
+            var edit = plain(scale: 4, center: center, wholeFrame: wholeFrame)
+            edit.style.padding = 0.15
+            let scene = SceneBuilder(videoSize: videoSize, displayScale: 2).descriptor(for: edit, at: time(5))
+            let region = ZoomFraming.area(of: edit.zooms[0])
+            let frame = scene.transformedVideoFrame
+
+            // The region, in output pixels: its top in the model is its high y in Core Image.
+            let landed = CGRect(x: frame.minX + region.minX * frame.width,
+                                y: frame.minY + (1 - region.maxY) * frame.height,
+                                width: region.width * frame.width,
+                                height: region.height * frame.height)
+            #expect(isClose(landed, scene.videoFrame, 1e-6),
+                    "aimed at \(center), whole frame \(wholeFrame): \(landed) vs \(scene.videoFrame)")
+        }
+    }
+
+    /// One zoom hands over to the next without the picture jumping.
+    ///
+    /// Depth and aim both change across the seam, and the interpolation is the only thing
+    /// holding the two together — so this walks the frames rather than sampling two of them.
+    @Test func twoZoomsInARowMoveTheFrameWithoutAJump() {
+        var edit = Timeline(sourceDuration: time(20))
+        edit.style.padding = 0.1
+        edit.cursor.isVisible = false
+        edit.zooms = [
+            ZoomRegion(start: time(1), duration: time(4), scale: 2,
+                       center: CGPoint(x: 0.2, y: 0.8), easing: .easeInOut,
+                       transition: time(0.4), followsCursor: false),
+            ZoomRegion(start: time(5), duration: time(4), scale: 5,
+                       center: CGPoint(x: 0.8, y: 0.2), easing: .easeInOut,
+                       transition: time(0.4), followsCursor: false),
+        ]
+        let builder = SceneBuilder(videoSize: videoSize, displayScale: 2)
+
+        // Stepped finer than any frame rate, which is what separates the two things that
+        // look alike in a table of numbers: a zoom ramping hard covers less ground per step
+        // the smaller the step, while a discontinuity is the same size whatever the step is.
+        // So the bound is a fraction of the picture, and a ramp to 5x comes nowhere near it.
+        let step = 1.0 / 600
+        let limit = scene(builder, edit, 0).videoFrame.width * 0.08
+        var previous = scene(builder, edit, 0).transformedVideoFrame
+        for index in 1...12_000 {
+            let at = Double(index) * step
+            let now = scene(builder, edit, at).transformedVideoFrame
+            #expect(abs(now.minX - previous.minX) < limit, "a jump at \(at)s")
+            #expect(abs(now.minY - previous.minY) < limit, "a jump at \(at)s")
+            #expect(abs(now.width - previous.width) < limit, "a jump at \(at)s")
+            previous = now
+        }
+    }
+
+    private func scene(_ builder: SceneBuilder, _ edit: Timeline, _ at: Double) -> SceneDescriptor {
+        builder.descriptor(for: edit, at: time(at))
+    }
+
+    /// The export frames what the preview framed.
+    ///
+    /// The preview composites at a fraction of the export's pixels, and the exporter scales
+    /// the finished frame instead — two mechanisms for the same picture, which is exactly
+    /// where a framing can quietly part company with the file. Asserted as a rectangle *and*
+    /// in pixels: the marker covers the left half of the framed region, so its edge is a
+    /// landmark that has to sit in the same place in both renders.
+    @Test func theExportFramesWhatThePreviewFramed() throws {
+        let centre = CGPoint(x: 0.75, y: 0.3)
+        let edit = plain(scale: 4, center: centre)
+        let scene = SceneBuilder(videoSize: videoSize, displayScale: 2).descriptor(for: edit, at: time(5))
+        let cheap = scene.scaled(by: 0.4)
+
+        let full = scene.transformedVideoFrame
+        let small = cheap.transformedVideoFrame
+        #expect(isClose(small, full.applying(CGAffineTransform(scaleX: 0.4, y: 0.4)), 1e-6))
+
+        let region = ZoomFraming.area(of: edit.zooms[0])
+        var half = region
+        half.size.width /= 2
+        let source = marked(region, marker: half)
+        let renderer = SceneRenderer()
+
+        for (name, described) in [("export", scene), ("preview", cheap)] {
+            let image = try #require(renderer.cgImage(for: described, source: source))
+            let row = image.height / 2
+            var edge = 0
+            for x in 0..<image.width where isMarker(try #require(pixel(image, x: x, y: row))) {
+                edge = x
+            }
+            // The marker is the left half of the shot, so its last pixel is the middle of it.
+            #expect(abs(Double(edge) / Double(image.width) - 0.5) < 0.01,
+                    "the \(name) put the middle of the shot at \(Double(edge) / Double(image.width))")
+        }
     }
 }

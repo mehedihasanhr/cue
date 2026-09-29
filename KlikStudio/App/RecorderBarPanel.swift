@@ -96,6 +96,16 @@ final class RecorderBarPanel {
         // a full-screen app. The bar has to stay above it — choosing a window and then
         // changing the microphone is one continuous thought.
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
+        // Dark, whatever the system is set to.
+        //
+        // This chrome is white on a black-tinted glass, and the tint is deliberately light
+        // enough to let the wallpaper through. Under a light appearance the same glass
+        // renders near-white, so the labels went white-on-white and an unavailable one —
+        // already dimmed to 30% — disappeared altogether. A recorder floats over whatever
+        // is being filmed rather than over the app's own surfaces, so it has no appearance
+        // to agree with: it is furniture of its own, and pinning it is what lets the one
+        // palette hold.
+        panel.appearance = NSAppearance(named: .darkAqua)
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = false        // the SwiftUI bar draws its own, shaped to its corners
