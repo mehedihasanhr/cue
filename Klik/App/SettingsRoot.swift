@@ -5,15 +5,15 @@ import SwiftUI
 
 /// The pages of the Settings window, in sidebar order.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, appearance, shortcuts, sharing, permissions, about
-    case island, capture, editor, clipboard, tasks, snippets, notes, colors, time
+    case general, appearance, shortcuts, sharing, addOns, permissions, about
+    case island, capture, studio, editor, clipboard, tasks, snippets, notes, colors, time
 
     var id: String { rawValue }
 
     /// The sidebar shows the app-wide pages first, then a group per feature.
     static let groups: [[SettingsSection]] = [
-        [.general, .appearance, .shortcuts, .sharing, .permissions, .about],
-        [.island, .capture, .editor, .clipboard, .tasks, .snippets, .notes, .colors, .time],
+        [.general, .appearance, .shortcuts, .sharing, .addOns, .permissions, .about],
+        [.island, .capture, .studio, .editor, .clipboard, .tasks, .snippets, .notes, .colors, .time],
     ]
 
     var title: String {
@@ -22,10 +22,12 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: "Appearance"
         case .shortcuts: "Shortcuts"
         case .sharing: "Sharing"
+        case .addOns: "Add-ons"
         case .permissions: "Permissions"
         case .about: "About"
         case .island: "Island"
         case .capture: "Capture"
+        case .studio: "Studio"
         case .editor: "Editor"
         case .clipboard: "Clipboard"
         case .tasks: "Tasks"
@@ -43,10 +45,12 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: "The theme, in the editor, the panels and this window"
         case .shortcuts: "The keys that reach Klik from any app"
         case .sharing: "Where Copy Share Link uploads captures"
+        case .addOns: "Optional features that install separately, like screen recording"
         case .permissions: "What macOS lets Klik see and do"
         case .about: "Screenshots you can annotate, blur and share — built natively for macOS"
         case .island: "How the Dynamic Island opens, closes, looks and moves"
-        case .capture: "The pointer and the sound after each capture"
+        case .capture: "The pointer, the sound, and the language Capture Text reads"
+        case .studio: "Screen recording, and what Klik asks the recorder for"
         case .editor: "What every new annotation starts as"
         case .clipboard: "What Klik remembers of what you copy"
         case .tasks: "A server to keep tasks in step with, and webhooks for each change"
@@ -63,10 +67,12 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: "paintpalette.fill"
         case .shortcuts: "command"
         case .sharing: "link"
+        case .addOns: "puzzlepiece.extension.fill"
         case .permissions: "lock.shield.fill"
         case .about: "info"
         case .island: "rectangle.topthird.inset.filled"
         case .capture: "camera.fill"
+        case .studio: "record.circle.fill"
         case .editor: "paintbrush.pointed.fill"
         case .clipboard: "doc.on.clipboard.fill"
         case .tasks: "checklist"
@@ -83,10 +89,12 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: Color(red: 0.75, green: 0.3, blue: 0.5)
         case .shortcuts: .indigo
         case .sharing: .blue
+        case .addOns: .pink
         case .permissions: .green
         case .about: .brand
         case .island: .brand
         case .capture: .orange
+        case .studio: .red
         case .editor: .purple
         case .clipboard: .teal
         case .tasks: .green
@@ -104,6 +112,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: ["theme", "dark", "light", "system", "mode", "look"]
         case .shortcuts: ["hotkey", "keyboard", "keys", "global", "bindings", "record", "screenshot", "⌘"]
         case .sharing: ["upload", "s3", "r2", "bucket", "link", "url", "cloud", "endpoint", "custom", "keychain"]
+        case .addOns: ["add-on", "addon", "extension", "plugin", "install", "download", "optional", "separate app"]
         case .permissions: ["screen recording", "accessibility", "privacy", "access", "grant", "system settings"]
         case .about: ["version", "build", "credits", "stackrover", "copyright", "website"]
         case .island: ["dynamic island", "notch", "pill", "panel", "position", "hover", "click", "delay", "open", "close", "background", "flash", "status", "animation", "tab"]
@@ -111,7 +120,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .snippets: ["snippet", "expand", "keyword", "trigger", "text", "type", "accessibility"]
         case .notes: ["note", "quick note", "markdown", "folder", "icloud", "obsidian", "vault", "apple notes", "notion", "sync"]
         case .colors: ["color", "picker", "format", "hex", "rgb", "hsl", "swift", "css"]
-        case .capture: ["cursor", "pointer", "mouse", "sound", "shutter", "audio", "full screen"]
+        case .capture: ["cursor", "pointer", "mouse", "sound", "shutter", "audio", "full screen", "ocr", "text", "recognise", "recognize", "language", "bangla", "bengali", "hindi", "devanagari", "arabic", "script", "tesseract", "vision", "pack", "download", "cloud"]
+        case .studio: ["studio", "klik studio", "record", "recording", "screen recording", "video", "screencast", "demo", "countdown", "microphone", "system audio", "export", "add-on", "install"]
         case .editor: ["annotation", "color", "stroke", "width", "shape", "arrow", "fill", "text", "font", "marker", "highlighter", "blur", "pixelate", "counter", "defaults"]
         case .clipboard: ["history", "copy", "paste", "limit", "items", "clear", "pinned"]
         case .time: ["clock", "hour", "prayer", "salah", "fajr", "dhuhr", "asr", "maghrib", "isha", "location", "latitude", "longitude", "method", "madhab", "announce"]
@@ -224,10 +234,12 @@ struct SettingsRootView: View {
         case .appearance: AppearanceSettingsView()
         case .shortcuts: ShortcutSettingsView()
         case .sharing: ShareSettingsView()
+        case .addOns: AddOnSettingsView()
         case .permissions: PermissionSettingsView()
         case .about: AboutSettingsView()
         case .island: IslandSettingsView()
         case .capture: CaptureSettingsView()
+        case .studio: StudioAddOnSettingsView()
         case .editor: EditorSettingsView()
         case .clipboard: ClipboardSettingsView()
         case .tasks: TasksSettingsView()
@@ -791,7 +803,7 @@ struct AppIconTile: View {
     var body: some View {
         // Drawn rather than shipped flat, so it can blink where it is big enough to
         // be looked at; the signpost-sized tiles keep still.
-        BlinkingAppIcon(side: size, blinks: interactive)
+        AppIconView(side: size)
             // The icon has its own rounded shape; a little larger so it lines up
             // with the symbol tiles' edges.
             .scaleEffect(1.12 * lift)

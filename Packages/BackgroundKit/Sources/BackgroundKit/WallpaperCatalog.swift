@@ -1,37 +1,60 @@
-import os
 import AppKit
 import ImageIO
 import Observation
 import UniformTypeIdentifiers
 
-/// Wallpaper images for the Background tool: the macOS desktop pictures that ship with
-/// the system, plus files the user picks. Loads are downsampled and cached; thumbnails
-/// come straight from ImageIO so the picker stays snappy.
+/// Wallpaper images: the macOS desktop pictures that ship with the system, plus files
+/// the user picks. Loads are downsampled and cached; thumbnails come straight from
+/// ImageIO so a picker stays snappy.
+///
+/// Shared by both editors. `@MainActor` because it publishes to views; the part the
+/// renderer needs off the main actor is `WallpaperResolver`, which holds no state.
+@MainActor
 @Observable
-final class WallpaperStore {
-    static let shared = WallpaperStore()
+public final class WallpaperCatalog {
+    public static let shared = WallpaperCatalog()
 
-    private static let systemFolder = URL(fileURLWithPath: "/System/Library/Desktop Pictures", isDirectory: true)
-    private static let maxRenderPixels = 2400
+    public init() {}
+
+    nonisolated static let systemFolder = URL(fileURLWithPath: "/System/Library/Desktop Pictures", isDirectory: true)
+    public static let maxRenderPixels = 2400
     private static let thumbnailPixels = 96
 
     /// Full-size renders are ~13 MB each; only the last few tried are worth keeping.
     @ObservationIgnored private var images = LRUCache<Wallpaper, CGImage>(capacity: 4)
     private var thumbnails: [Wallpaper: NSImage] = [:]
 
+    nonisolated static let imageExtensions: Set<String> = ["heic", "jpg", "jpeg", "png"]
+
     /// The still (non-dynamic) desktop pictures installed on this Mac.
-    @ObservationIgnored private(set) lazy var systemWallpapers: [Wallpaper] = {
-        let files = (try? FileManager.default.contentsOfDirectory(at: Self.systemFolder, includingPropertiesForKeys: nil)) ?? []
-        return files
-            .filter { ["heic", "jpg", "jpeg", "png"].contains($0.pathExtension.lowercased()) }
-            .map { Wallpaper(name: $0.lastPathComponent, bookmark: nil) }
-            .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+    ///
+    /// One level deep, because the pictures the system ships are not all at the top:
+    /// `Solid Colors/` is a folder, and a flat listing silently drops every one of them.
+    /// The `.madesktop` stubs beside them are not images and are filtered out by
+    /// extension.
+    @ObservationIgnored public private(set) lazy var systemWallpapers: [Wallpaper] = {
+        let manager = FileManager.default
+        let top = (try? manager.contentsOfDirectory(at: Self.systemFolder,
+                                                    includingPropertiesForKeys: [.isDirectoryKey])) ?? []
+        var found: [Wallpaper] = []
+        for url in top {
+            let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+            if isDirectory {
+                let inside = (try? manager.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)) ?? []
+                found += inside
+                    .filter { Self.imageExtensions.contains($0.pathExtension.lowercased()) }
+                    .map { Wallpaper(name: "\(url.lastPathComponent)/\($0.lastPathComponent)", bookmark: nil) }
+            } else if Self.imageExtensions.contains(url.pathExtension.lowercased()) {
+                found.append(Wallpaper(name: url.lastPathComponent, bookmark: nil))
+            }
+        }
+        return found.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
     }()
 
     /// Wallpapers the user added from disk this session (persisted in the document as bookmarks).
-    private(set) var customWallpapers: [Wallpaper] = []
+    public private(set) var customWallpapers: [Wallpaper] = []
 
-    func chooseCustomWallpaper() -> Wallpaper? {
+    public func chooseCustomWallpaper() -> Wallpaper? {
         let panel = NSOpenPanel()
         panel.title = "Choose a background image"
         panel.allowedContentTypes = [.image]
@@ -45,7 +68,7 @@ final class WallpaperStore {
         return wallpaper
     }
 
-    func image(for wallpaper: Wallpaper) -> CGImage? {
+    public func image(for wallpaper: Wallpaper) -> CGImage? {
         if let cached = images[wallpaper] { return cached }
         guard let image = load(wallpaper, maxPixels: Self.maxRenderPixels) else { return nil }
         images[wallpaper] = image
@@ -53,7 +76,7 @@ final class WallpaperStore {
     }
 
     /// Decodes the full-size image off the main thread so selecting it doesn't stall the UI.
-    func prepare(_ wallpaper: Wallpaper) async {
+    public func prepare(_ wallpaper: Wallpaper) async {
         guard images[wallpaper] == nil, let url = url(for: wallpaper) else { return }
         let scoped = wallpaper.bookmark != nil
         let pixels = Self.maxRenderPixels
@@ -64,14 +87,14 @@ final class WallpaperStore {
 
     /// Cached only — decoding happens in `prepareThumbnails()` so the sidebar never
     /// blocks on HEIC decoding; call it early (app launch) and the picker opens instantly.
-    func thumbnail(for wallpaper: Wallpaper) -> NSImage? {
+    public func thumbnail(for wallpaper: Wallpaper) -> NSImage? {
         thumbnails[wallpaper]
     }
 
     private var preparing = false
 
     /// Decodes every missing thumbnail off the main thread, then publishes them.
-    func prepareThumbnails() async {
+    public func prepareThumbnails() async {
         guard !preparing else { return }
         preparing = true
         defer { preparing = false }
@@ -95,7 +118,7 @@ final class WallpaperStore {
         return Self.decode(url: url, scoped: wallpaper.bookmark != nil, maxPixels: maxPixels)
     }
 
-    nonisolated private static func decode(url: URL, scoped: Bool, maxPixels: Int) -> CGImage? {
+    nonisolated static func decode(url: URL, scoped: Bool, maxPixels: Int) -> CGImage? {
         let granted = scoped && url.startAccessingSecurityScopedResource()
         defer { if granted { url.stopAccessingSecurityScopedResource() } }
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
@@ -107,7 +130,7 @@ final class WallpaperStore {
         return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
     }
 
-    private func url(for wallpaper: Wallpaper) -> URL? {
+    func url(for wallpaper: Wallpaper) -> URL? {
         if let bookmark = wallpaper.bookmark {
             var stale = false
             return try? URL(resolvingBookmarkData: bookmark, options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: &stale)

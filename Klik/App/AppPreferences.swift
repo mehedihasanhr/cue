@@ -67,6 +67,13 @@ final class AppPreferences {
         static let tasksWebhookEvents = "tasks.webhook.events"
         static let snippetsEnabled = "snippets.enabled"
         static let snippetPrefix = "snippets.prefix"
+        static let ocrLanguages = "ocr.languages"
+        static let ocrCloudEnabled = "ocr.cloud.enabled"
+        static let ocrCloudProvider = "ocr.cloud.provider"
+        static let ocrCloudEndpoint = "ocr.cloud.endpoint"
+        static let ocrCloudModel = "ocr.cloud.model"
+        static let ocrPreferCloud = "ocr.cloud.preferred"
+        static let ocrChecksScript = "ocr.checksScript"
     }
 
     // MARK: Notes
@@ -171,6 +178,60 @@ final class AppPreferences {
     /// the form fills it in, and it can be changed there for one snippet.
     var snippetPrefix: String {
         didSet { defaults.set(snippetPrefix, forKey: Key.snippetPrefix) }
+    }
+
+    // MARK: Capture text
+
+    /// The languages Capture Text reads, in order; the first decides which engine
+    /// runs. Empty — the default, and what every existing install has — leaves Vision
+    /// to detect the language itself, exactly as Klik has always done.
+    var ocrLanguages: [String] {
+        didSet { defaults.set(ocrLanguages, forKey: Key.ocrLanguages) }
+    }
+
+    /// Say so when the text comes back in a different alphabet from the one asked
+    /// for, rather than copying it anyway.
+    var ocrChecksScript: Bool {
+        didSet { defaults.set(ocrChecksScript, forKey: Key.ocrChecksScript) }
+    }
+
+    /// Send the selected area to a recognition service. Off until switched on by hand.
+    var ocrCloudEnabled: Bool {
+        didSet { defaults.set(ocrCloudEnabled, forKey: Key.ocrCloudEnabled) }
+    }
+
+    var ocrCloudProvider: CloudOCRConfiguration.Provider {
+        didSet { defaults.set(ocrCloudProvider.rawValue, forKey: Key.ocrCloudProvider) }
+    }
+
+    /// The service's key, kept where the other service credentials are kept and never
+    /// written to UserDefaults or the log.
+    var ocrCloudSecret: String {
+        didSet { Keychain.set(ocrCloudSecret, for: "ocr.cloud.secret") }
+    }
+
+    var ocrCloudEndpoint: String {
+        didSet { defaults.set(ocrCloudEndpoint, forKey: Key.ocrCloudEndpoint) }
+    }
+
+    var ocrCloudModel: String {
+        didSet { defaults.set(ocrCloudModel, forKey: Key.ocrCloudModel) }
+    }
+
+    /// Use the service even for languages this Mac can read on its own.
+    var ocrPreferCloud: Bool {
+        didSet { defaults.set(ocrPreferCloud, forKey: Key.ocrPreferCloud) }
+    }
+
+    /// Everything recognition needs, copied out so a background capture can carry it.
+    var ocrSettings: OCRSettings {
+        OCRSettings(
+            selection: OCRPreferenceCodec.selection(fromTags: ocrLanguages),
+            cloud: OCRPreferenceCodec.cloud(enabled: ocrCloudEnabled, provider: ocrCloudProvider.rawValue,
+                                            secret: ocrCloudSecret, endpoint: ocrCloudEndpoint, model: ocrCloudModel),
+            preferCloud: ocrPreferCloud,
+            checksScript: ocrChecksScript
+        )
     }
 
     // MARK: Time & prayer
@@ -621,6 +682,14 @@ final class AppPreferences {
         tasksWebhookEvents = Set(defaults.stringArray(forKey: Key.tasksWebhookEvents) ?? ["created", "updated", "status", "deleted"])
         snippetsEnabled = defaults.object(forKey: Key.snippetsEnabled) as? Bool ?? true
         snippetPrefix = defaults.string(forKey: Key.snippetPrefix) ?? ";"
+        ocrLanguages = defaults.stringArray(forKey: Key.ocrLanguages) ?? []
+        ocrChecksScript = defaults.object(forKey: Key.ocrChecksScript) as? Bool ?? true
+        ocrCloudEnabled = defaults.bool(forKey: Key.ocrCloudEnabled)
+        ocrCloudProvider = CloudOCRConfiguration.Provider(rawValue: defaults.string(forKey: Key.ocrCloudProvider) ?? "") ?? .google
+        ocrCloudSecret = Keychain.get("ocr.cloud.secret") ?? ""
+        ocrCloudEndpoint = defaults.string(forKey: Key.ocrCloudEndpoint) ?? ""
+        ocrCloudModel = defaults.string(forKey: Key.ocrCloudModel) ?? ""
+        ocrPreferCloud = defaults.bool(forKey: Key.ocrPreferCloud)
         let stored = defaults.dictionary(forKey: Key.prayerAdjustments) as? [String: Int] ?? [:]
         prayerAdjustments = Dictionary(uniqueKeysWithValues: stored.compactMap { key, value in Prayer(rawValue: key).map { ($0, value) } })
         customSoundURL = defaults.data(forKey: Key.soundBookmark).flatMap(Self.resolve)

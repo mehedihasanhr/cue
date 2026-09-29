@@ -16,6 +16,8 @@ final class IslandModel {
         case taskDetail(UUID)
         /// The clock opened in the compact island: time, dates, prayer times.
         case clock
+        /// Choosing what to record, and starting it.
+        case record
         case expanded
 
         var geometryPhase: IslandGeometry.Phase {
@@ -24,7 +26,7 @@ final class IslandModel {
             case .flash: .flash
             case .status(let status): status.clock == nil ? .flash : .prompt
             case .prompt(let prompt): prompt.isForm ? .form : .prompt
-            case .taskDetail, .clock: .form
+            case .taskDetail, .clock, .record: .form
             case .expanded: .expanded
             }
         }
@@ -32,7 +34,7 @@ final class IslandModel {
         var isFlash: Bool {
             switch self {
             case .flash, .status: true
-            case .collapsed, .expanded, .prompt, .taskDetail, .clock: false
+            case .collapsed, .expanded, .prompt, .taskDetail, .clock, .record: false
             }
         }
 
@@ -42,7 +44,7 @@ final class IslandModel {
             switch self {
             case .flash, .status: true
             case .prompt(let prompt): prompt.isConfirm
-            case .collapsed, .expanded, .taskDetail, .clock: false
+            case .collapsed, .expanded, .taskDetail, .clock, .record: false
             }
         }
     }
@@ -55,6 +57,12 @@ final class IslandModel {
     /// fits it — nothing in it is ever cut short.
     var clockHeight: CGFloat?
     var clockWidth: CGFloat?
+    var recordHeight: CGFloat?
+    /// What the island offers to record. Lives on the model so the phase and its contents
+    /// are one thing, the way the clock's are.
+    let recorder = IslandRecorder()
+    var onRecordClosed: () -> Void = {}
+    var onOpenStudioSettings: () -> Void = {}
     /// The open panel's width: wide enough for its tab row, at least the fixed size.
     private(set) var panelWidth: CGFloat = IslandPanel.size.width
     /// The open panel's height: what its content needs, at most the fixed size.
@@ -81,10 +89,12 @@ final class IslandModel {
         let width: CGFloat? = switch phase {
         case .expanded: panelWidth
         case .clock: clockWidth
+        case .record: IslandGeometry.recordWidth
         default: phase.fitsContent ? contentWidth : nil
         }
         let height: CGFloat? = switch phase {
         case .clock: clockHeight
+        case .record: recordHeight
         case .expanded: panelHeight
         default: nil
         }
@@ -303,6 +313,16 @@ struct IslandView: View {
                     .modifier(IdealHeight { model.clockHeight = $0 })
                     .modifier(IdealWidth { model.clockWidth = $0 })
                     .frame(width: model.shapeRect(for: .clock).width, height: model.clockHeight ?? IslandGeometry.formContentHeight)
+            }
+            .transition(Self.contentTransition)
+        case .record:
+            VStack(spacing: 0) {
+                Color.clear.frame(height: strip)
+                RecordDetail(recorder: model.recorder,
+                             close: { model.onRecordClosed() },
+                             openSettings: { model.onOpenStudioSettings() })
+                    .modifier(IdealHeight { model.recordHeight = $0 })
+                    .frame(width: IslandGeometry.recordWidth)
             }
             .transition(Self.contentTransition)
         case .taskDetail(let id):

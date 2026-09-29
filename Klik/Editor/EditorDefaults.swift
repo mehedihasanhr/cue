@@ -1,3 +1,4 @@
+import BackgroundKit
 import Foundation
 
 /// The tool options every new editor window starts with. Edited in Settings › Editor;

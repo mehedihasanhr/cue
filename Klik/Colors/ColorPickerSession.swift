@@ -1,5 +1,6 @@
 import os
 import AppKit
+import BackgroundKit
 
 /// A pixel-exact color picker: every display is frozen, covered by an overlay, and a
 /// square loupe *is* the pointer — centred on it, the cursor hidden — showing the
@@ -10,6 +11,13 @@ final class ColorPickerSession {
     private var windows: [OverlayWindow] = []
     private var continuation: CheckedContinuation<PickedColor?, Never>?
     private var previousApp: NSRunningApplication?
+    private let shortcuts: ShortcutController?
+    /// ⎋ for as long as the loupe is up, since Klik never becomes the active app.
+    private var temporaryKeys: [ShortcutController.TemporaryShortcut] = []
+
+    init(shortcuts: ShortcutController? = nil) {
+        self.shortcuts = shortcuts
+    }
 
     func run(using service: ScreenCaptureService) async throws(CaptureError) -> PickedColor? {
         let frozen = try await service.captureAllDisplays()
@@ -30,9 +38,16 @@ final class ColorPickerSession {
         for window in windows {
             window.orderFrontRegardless()
         }
-        NSApp.activateForOverlay(keyWindow: initial)
+        // Key without activating Klik: activation would bring its other windows
+        // forward and take the user to the desktop those sit on.
+        initial.makeKeyAndOrderFront(nil)
         initial.makeFirstResponder(initial.contentView)
-        NSCursor.hide()
+        // `NSCursor.hide()` only counts for the active app, and the loupe stands in
+        // for the pointer, so the arrow has to go whoever is in front.
+        CGDisplayHideCursor(CGMainDisplayID())
+        if let shortcuts {
+            temporaryKeys = [shortcuts.registerTemporary(.escape, id: .cancelCapture) { [weak self] in self?.finish(with: nil) }]
+        }
         Log.app.info("Color picker shown on \(self.windows.count) screen(s)")
         return await withCheckedContinuation { continuation in
             self.continuation = continuation
@@ -42,10 +57,11 @@ final class ColorPickerSession {
     private func finish(with color: PickedColor?) {
         guard let continuation else { return }
         self.continuation = nil
+        temporaryKeys.removeAll()
         for window in windows { window.close() }
         windows.removeAll()
-        NSCursor.unhide()
-        previousApp?.activate(from: .current, options: [])
+        CGDisplayShowCursor(CGMainDisplayID())
+        if NSApp.isActive { previousApp?.activate(from: .current, options: []) }
         continuation.resume(returning: color)
     }
 }

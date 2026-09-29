@@ -14,6 +14,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     var onDelete: ((CaptureItem) -> Void)?
 
     private let preferences: AppPreferences
+    /// Opened over another app's full-screen Space: every-Space membership and floating.
+    private var overFullScreen = false
 
     init(item: CaptureItem, image: CapturedImage, library: CaptureLibrary, preferences: AppPreferences, mode: EditorMode) {
         self.item = item
@@ -24,7 +26,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
         let window = EditorWindow(
             contentRect: CGRect(x: 0, y: 0, width: 1100, height: 760),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
@@ -39,14 +41,26 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         window.backgroundColor = .windowBackgroundColor
         window.isReleasedWhenClosed = false
         window.tabbingMode = .disallowed
+        // Opens on the desktop the user is on, including a full-screen app's Space;
+        // without `.fullScreenAuxiliary` macOS sends it back to the plain desktop.
+        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        window.hidesOnDeactivate = false
+        window.isFloatingPanel = false
+        window.becomesKeyOnlyIfNeeded = false
         super.init(window: window)
         window.delegate = self
         // ⎋ closes a preview (like Quick Look). In edit mode the canvas owns ⎋; this
         // catches it when a toolbar control has focus instead, so ⎋ still returns to Select.
+        // `self.window`, not the local `window`: this closure is stored *on* the window,
+        // so capturing it strongly makes the window own a closure that owns the window.
+        // With `isReleasedWhenClosed = false` — which is right, the controller manages the
+        // lifetime — that cycle means a closed editor is never deallocated. Eight of them
+        // were found alive and off-screen on a machine that had been editing all day, and
+        // they turn up in anything that lists windows, including this app's own recorder.
         window.onEscape = { [weak self] in
             guard let self else { return false }
             if model.mode == .preview {
-                window.performClose(nil)
+                self.window?.performClose(nil)
                 return true
             }
             guard model.tool != .select else { return false }
@@ -69,7 +83,21 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
                 minimize: { [weak self] in self?.window?.miniaturize(nil) },
                 zoom: { [weak self] in
                     // Like the system's green button: full screen, ⌥-click zooms instead.
-                    if NSEvent.modifierFlags.contains(.option) { self?.window?.performZoom(nil) } else { self?.window?.toggleFullScreen(nil) }
+                    guard let window = self?.window else { return }
+                    if NSEvent.modifierFlags.contains(.option) {
+                        window.performZoom(nil)
+                    } else {
+                        // An auxiliary window can't take a Space of its own; become a
+                        // primary one for the trip (swapped back on exit).
+                        if !window.styleMask.contains(.fullScreen) {
+                            // A Space of its own is a desktop Klik must be allowed on.
+                            NSApp.activate()
+                            self?.overFullScreen = false
+                            window.level = .normal
+                            window.collectionBehavior = [.moveToActiveSpace, .fullScreenPrimary]
+                        }
+                        window.toggleFullScreen(nil)
+                    }
                 }
             )
         )
@@ -113,28 +141,59 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         ))
     }
 
-    /// Brings the window in front of whatever app the capture was taken over. A menu-bar
-    /// app may be refused activation right after a global hotkey, so the window is
-    /// floated above everything until it actually becomes key, then dropped back to normal.
+    /// Brings the window in front of whatever app the capture was taken over, on the
+    /// desktop the user is on — a full-screen app's Space included.
+    ///
+    /// Klik is never activated for it: activating an app (a regular one, with its Dock
+    /// tile, most of all) makes macOS switch to a desktop that app is allowed on, and
+    /// another app's full-screen Space never is. The editor is a non-activating panel,
+    /// so it takes the keyboard without that, the way the capture overlay does.
+    ///
+    /// Over another app's full screen, `.moveToActiveSpace` is not enough: macOS files
+    /// the window on the plain desktop. There it joins every Space instead, like a
+    /// pinned capture, and floats above the full-screen app until it is closed.
     func present() {
         guard let window else { return }
-        showWindow(nil)
+        if window.styleMask.contains(.fullScreen) {
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+        let screen = NSScreen.screens.first { NSPointInRect(CGPoint(x: window.frame.midX, y: window.frame.midY), $0.frame) }
+            ?? NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }
+        overFullScreen = screen.map(WindowDetector.isFullScreenSpace) ?? false
+        // Left open on another desktop: take it off there, so it comes out here
+        // instead of taking the user over to it.
+        if window.isVisible, !window.isOnActiveSpace { window.orderOut(nil) }
+        window.collectionBehavior = overFullScreen
+            ? [.canJoinAllSpaces, .fullScreenAuxiliary]
+            : [.moveToActiveSpace, .fullScreenAuxiliary]
         window.level = .floating
         window.orderFrontRegardless()
-        NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
-        if !window.isKeyWindow {
-            NSRunningApplication.current.activate(options: [.activateAllWindows])
-            window.makeKeyAndOrderFront(nil)
-        }
+        window.makeKey()
+        // On a plain desktop Klik comes to the front: trackpad pinches, the menu bar
+        // and ⌘-shortcuts only go to the active app. The window is already on this
+        // desktop, so activating does not move the user. Over a full-screen app it
+        // stays in the background, where activating would leave the Space.
+        (window as? EditorWindow)?.activatesOnClick = !overFullScreen
+        if !overFullScreen { NSApp.activate(ignoringOtherApps: true) }
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
-        window?.level = .normal
+        if !overFullScreen { window?.level = .normal }
     }
 
     func windowDidResignKey(_ notification: Notification) {
-        window?.level = .normal
+        if !overFullScreen { window?.level = .normal }
+    }
+
+    /// Back to auxiliary, so the next `present()` can join a full-screen app's Space.
+    func windowDidExitFullScreen(_ notification: Notification) {
+        window?.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+    }
+
+    /// Entering full screen failed or was refused: undo the swap made for it.
+    func windowDidFailToEnterFullScreen(_ window: NSWindow) {
+        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
     }
 
     /// Switch to the annotation tools; never drops back to preview once there are edits.
@@ -241,10 +300,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     @objc func saveDocument(_ sender: Any?) { save() }
     @objc func saveDocumentAs(_ sender: Any?) { export() }
     @objc func copy(_ sender: Any?) { copyToClipboard() }
-    @objc func zoomIn(_ sender: Any?) { model.zoomCommand = .zoomIn }
-    @objc func zoomOut(_ sender: Any?) { model.zoomCommand = .zoomOut }
-    @objc func zoomToFit(_ sender: Any?) { model.zoomCommand = .fit }
-    @objc func zoomActualSize(_ sender: Any?) { model.zoomCommand = .actualSize }
+    @objc func zoomIn(_ sender: Any?) { model.applyZoom(.zoomIn) }
+    @objc func zoomOut(_ sender: Any?) { model.applyZoom(.zoomOut) }
+    @objc func zoomToFit(_ sender: Any?) { model.applyZoom(.fit) }
+    @objc func zoomActualSize(_ sender: Any?) { model.applyZoom(.actualSize) }
 
     // MARK: - NSWindowDelegate
 
@@ -257,15 +316,21 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Don't Save")
         alert.addButton(withTitle: "Cancel")
-        switch alert.runModal() {
-        case .alertFirstButtonReturn:
-            save()
-            return true
-        case .alertSecondButtonReturn:
-            return true
-        default:
-            return false
+        // A sheet, not `runModal()`: a modal alert activates Klik, and the Space
+        // switch that comes with it would pull the user off a full-screen app.
+        alert.beginSheetModal(for: sender) { [weak self] response in
+            guard let self else { return }
+            switch response {
+            case .alertFirstButtonReturn:
+                save()
+                forceClose()
+            case .alertSecondButtonReturn:
+                forceClose()
+            default:
+                break
+            }
         }
+        return false
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -274,9 +339,23 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     }
 }
 
-/// Lets the controller intercept ⎋ before AppKit's default beep.
-final class EditorWindow: NSWindow {
+/// Lets the controller intercept ⎋ before AppKit's default beep. A panel so it can
+/// take the keyboard without activating Klik (see `EditorWindowController.present()`).
+final class EditorWindow: NSPanel {
     var onEscape: (() -> Bool)?
+
+    /// A click brings Klik to the front (set per presentation; see `present()`).
+    var activatesOnClick = true
+
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+
+    override func sendEvent(_ event: NSEvent) {
+        if activatesOnClick, !NSApp.isActive, [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(event.type) {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        super.sendEvent(event)
+    }
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53, onEscape?() == true { return }

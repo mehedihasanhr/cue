@@ -1,3 +1,4 @@
+import BackgroundKit
 import XCTest
 
 /// The bounded cache behind rendered-bitmap caching (blur regions, wallpapers).

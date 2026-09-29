@@ -1,4 +1,5 @@
 import AppKit
+import BackgroundKit
 
 /// Draws a document into the *current* `NSGraphicsContext`, which must be flipped
 /// (origin top-left, y down) with (0, 0) at the output's top-left corner. The canvas

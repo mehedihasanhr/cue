@@ -1,3 +1,4 @@
+import BackgroundKit
 import CoreImage
 import CoreImage.CIFilterBuiltins
 import CoreGraphics
@@ -65,7 +66,7 @@ final class EffectsCache {
     func wallpaper(_ wallpaper: Wallpaper, blur: CGFloat) -> CGImage? {
         let key = WallpaperKey(wallpaper: wallpaper, blur: blur.rounded())
         if let cached = wallpapers[key] { return cached }
-        guard let base = WallpaperStore.shared.image(for: wallpaper) else { return nil }
+        guard let base = WallpaperCatalog.shared.image(for: wallpaper) else { return nil }
         guard blur >= 1 else {
             wallpapers[key] = base
             return base

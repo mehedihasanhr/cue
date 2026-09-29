@@ -6,10 +6,18 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		4B4C494B000000000000A034 /* AddOnKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B4C494B000000000000A032 /* AddOnKit */; };
+		4B4C494B000000000000A036 /* AddOnKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B4C494B000000000000A037 /* AddOnKit */; };
+		4B4C494B000000000000A038 /* BackgroundKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B4C494B000000000000A03A /* BackgroundKit */; };
+		4B4C494B000000000000A039 /* BackgroundKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B4C494B000000000000A03B /* BackgroundKit */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		4B4C494B000000000000A001 /* Klik.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Klik.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4B4C494B000000000000A002 /* Klik.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Klik.entitlements; sourceTree = "<group>"; };
 		4B4C494B000000000000A003 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
+		4B4C494B000000000000A004 /* Vendor.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Vendor.xcconfig; sourceTree = "<group>"; };
 		4B4C494B000000000000A011 /* KlikTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KlikTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -34,11 +42,22 @@
 				Island/IslandGeometry.swift,
 				Capture/Scrolling/ScrollingCaptureEngine.swift,
 				OCR/OCRService.swift,
+				OCR/OCRScript.swift,
+				OCR/OCRLanguage.swift,
+				OCR/OCREngine.swift,
+				OCR/OCRRouter.swift,
+				OCR/OCRSettings.swift,
+				OCR/VisionOCREngine.swift,
+				OCR/TesseractLanguagePacks.swift,
+				OCR/TesseractOCREngine.swift,
+				OCR/TesseractRecognizer.swift,
+				OCR/LanguagePackStore.swift,
+				OCR/OCRImageBuffer.swift,
+				OCR/CloudOCRRequests.swift,
 				OCR/TextLayout.swift,
 				Support/CapturedImage.swift,
 				Support/Clipboard.swift,
 				Support/ImageEncoding.swift,
-				Support/LRUCache.swift,
 				Support/PanelPosition.swift,
 				Prayer/PrayerCalculator.swift,
 				Snippets/SnippetStore.swift,
@@ -53,6 +72,13 @@
 				Tasks/TaskStore.swift,
 				Tasks/TaskWire.swift,
 				Support/Log.swift,
+				AddOns/SemanticVersion.swift,
+				AddOns/AddOnCatalog.swift,
+				AddOns/AddOnDownloader.swift,
+				AddOns/AddOnLocator.swift,
+				AddOns/AddOnRegistry.swift,
+				AddOns/RecordingAddOnClient.swift,
+				AddOns/StudioPreferences.swift,
 			);
 			target = 4B4C494B000000000000E002 /* KlikTests */;
 		};
@@ -79,6 +105,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4B4C494B000000000000A034 /* AddOnKit in Frameworks */,
+				4B4C494B000000000000A038 /* BackgroundKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -86,6 +114,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4B4C494B000000000000A036 /* AddOnKit in Frameworks */,
+				4B4C494B000000000000A039 /* BackgroundKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -107,6 +137,7 @@
 			children = (
 				4B4C494B000000000000A002 /* Klik.entitlements */,
 				4B4C494B000000000000A003 /* Signing.xcconfig */,
+				4B4C494B000000000000A004 /* Vendor.xcconfig */,
 			);
 			path = Config;
 			sourceTree = "<group>";
@@ -140,6 +171,8 @@
 			);
 			name = Klik;
 			packageProductDependencies = (
+				4B4C494B000000000000A032 /* AddOnKit */,
+				4B4C494B000000000000A03A /* BackgroundKit */,
 			);
 			productName = Klik;
 			productReference = 4B4C494B000000000000A001 /* Klik.app */;
@@ -162,6 +195,8 @@
 			);
 			name = KlikTests;
 			packageProductDependencies = (
+				4B4C494B000000000000A037 /* AddOnKit */,
+				4B4C494B000000000000A03B /* BackgroundKit */,
 			);
 			productName = KlikTests;
 			productReference = 4B4C494B000000000000A011 /* KlikTests.xctest */;
@@ -202,6 +237,10 @@
 			);
 			mainGroup = 4B4C494B000000000000D001;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				4B4C494B000000000000A031 /* XCLocalSwiftPackageReference "Packages/AddOnKit" */,
+				4B4C494B000000000000A03C /* XCLocalSwiftPackageReference "Packages/BackgroundKit" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 4B4C494B000000000000D003 /* Products */;
 			projectDirPath = "";
@@ -246,6 +285,36 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		4B4C494B000000000000A031 /* XCLocalSwiftPackageReference "Packages/AddOnKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/AddOnKit;
+		};
+		4B4C494B000000000000A03C /* XCLocalSwiftPackageReference "Packages/BackgroundKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/BackgroundKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		4B4C494B000000000000A032 /* AddOnKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AddOnKit;
+		};
+		4B4C494B000000000000A037 /* AddOnKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AddOnKit;
+		};
+		4B4C494B000000000000A03A /* BackgroundKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BackgroundKit;
+		};
+		4B4C494B000000000000A03B /* BackgroundKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BackgroundKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCBuildConfiguration section */
 		4B4C494B000000000000F101 /* Debug */ = {
@@ -388,13 +457,14 @@
 		};
 		4B4C494B000000000000F201 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 4B4C494B000000000000A003 /* Signing.xcconfig */;
+			baseConfigurationReference = 4B4C494B000000000000A004 /* Vendor.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Config/Klik.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 13;
+				CURRENT_PROJECT_VERSION = 14;
+				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -409,7 +479,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.4.0;
+				MARKETING_VERSION = 0.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.stackrover.klik;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -418,13 +488,14 @@
 		};
 		4B4C494B000000000000F202 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 4B4C494B000000000000A003 /* Signing.xcconfig */;
+			baseConfigurationReference = 4B4C494B000000000000A004 /* Vendor.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Config/Klik.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 13;
+				CURRENT_PROJECT_VERSION = 14;
+				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -439,7 +510,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.4.0;
+				MARKETING_VERSION = 0.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.stackrover.klik;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -448,12 +519,12 @@
 		};
 		4B4C494B000000000000F301 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 4B4C494B000000000000A003 /* Signing.xcconfig */;
+			baseConfigurationReference = 4B4C494B000000000000A004 /* Vendor.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = "";
-				CURRENT_PROJECT_VERSION = 13;
+				CURRENT_PROJECT_VERSION = 14;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 0.4.0;
+				MARKETING_VERSION = 0.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.stackrover.klik.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
@@ -462,12 +533,12 @@
 		};
 		4B4C494B000000000000F302 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 4B4C494B000000000000A003 /* Signing.xcconfig */;
+			baseConfigurationReference = 4B4C494B000000000000A004 /* Vendor.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = "";
-				CURRENT_PROJECT_VERSION = 13;
+				CURRENT_PROJECT_VERSION = 14;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 0.4.0;
+				MARKETING_VERSION = 0.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.stackrover.klik.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;

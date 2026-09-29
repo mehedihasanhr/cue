@@ -1,3 +1,4 @@
+import BackgroundKit
 import SwiftUI
 
 /// UserDefaults keys for user preferences read outside SwiftUI.
@@ -685,7 +686,10 @@ struct PanelPositionPreview: View {
 
 struct CaptureSettingsView: View {
     @Environment(AppPreferences.self) private var preferences
+    @Environment(OCREngines.self) private var engines: OCREngines?
     @AppStorage(PreferenceKey.includeCursor) private var includeCursor = false
+    @State private var checkingCloud = false
+    @State private var cloudCheck: String?
 
     var body: some View {
         @Bindable var preferences = preferences
@@ -699,6 +703,8 @@ struct CaptureSettingsView: View {
                     .fixedSize()
                 }
             }
+
+            captureText
 
             SettingsGroup("Full screen") {
                 SettingsRow("Include mouse pointer") {
@@ -737,6 +743,159 @@ struct CaptureSettingsView: View {
                 .disabled(!preferences.soundEnabled)
             }
         }
+    }
+
+    // MARK: Capture text
+
+    @ViewBuilder
+    private var captureText: some View {
+        @Bindable var preferences = preferences
+        SettingsGroup("Capture text", footer: "Apple Vision reads the languages macOS ships models for. For the rest — Bangla among them — Klik downloads a language pack and reads them here on the Mac.") {
+            SettingsRow("Language", subtitle: engineNote, symbol: "text.viewfinder", tint: .green) {
+                SettingsLanguagePicker(tags: $preferences.ocrLanguages, availability: availability)
+                    .onChange(of: preferences.ocrLanguages) { _, new in engines?.prepare(for: new) }
+            }
+            if let pack = pendingPack, let engines {
+                SettingsRow(pack.displayName, subtitle: packNote(for: pack), symbol: "arrow.down.circle.fill", tint: .blue) {
+                    switch engines.packs.state(of: pack.code) {
+                    case .missing, .failed:
+                        Button("Download") { engines.packs.download(pack.code) }
+                    case .downloading:
+                        ProgressView().controlSize(.small)
+                    case .ready:
+                        Button("Remove") { engines.packs.remove(pack.code) }
+                    }
+                }
+            }
+            SettingsRow("Also recognise English", subtitle: "For screens that mix the two.") {
+                Toggle("Also English", isOn: alsoEnglish).toggleStyle(.switch)
+            }
+            .disabled(preferences.ocrLanguages.isEmpty)
+            SettingsRow("Say so when the text isn't in that language",
+                        subtitle: "Klik copies nothing rather than the wrong alphabet.") {
+                Toggle("Check the script", isOn: $preferences.ocrChecksScript).toggleStyle(.switch)
+            }
+            .disabled(preferences.ocrLanguages.isEmpty)
+        }
+
+        cloudEngine
+    }
+
+    @ViewBuilder
+    private var cloudEngine: some View {
+        @Bindable var preferences = preferences
+        SettingsGroup("Cloud engine", footer: "Off unless you turn it on. With it on, the area you select is uploaded to the service below using your key — and nothing else is: not the library, not the file name, not the window title. The key is kept in your keychain and never written to a log.") {
+            SettingsRow("Use a cloud service",
+                        subtitle: "For languages this Mac can't read, or when you want the best accuracy.") {
+                Toggle("Use a cloud service", isOn: $preferences.ocrCloudEnabled).toggleStyle(.switch)
+            }
+            SettingsRow("Service") {
+                Picker("Service", selection: $preferences.ocrCloudProvider) {
+                    ForEach(CloudOCRConfiguration.Provider.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .frame(width: 220)
+            }
+            .disabled(!preferences.ocrCloudEnabled)
+            SettingsRow("API key", subtitle: "Kept in your keychain.") {
+                SecureField("API key", text: $preferences.ocrCloudSecret,
+                            prompt: Text(preferences.ocrCloudProvider.keyPrompt))
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 300)
+            }
+            .disabled(!preferences.ocrCloudEnabled)
+            if preferences.ocrCloudProvider == .model {
+                SettingsRow("Endpoint") {
+                    TextField("Endpoint", text: $preferences.ocrCloudEndpoint,
+                              prompt: Text("https://…/v1/chat/completions"))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 300)
+                }
+                .disabled(!preferences.ocrCloudEnabled)
+                SettingsRow("Model") {
+                    TextField("Model", text: $preferences.ocrCloudModel, prompt: Text("claude-… · gpt-…"))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 300)
+                }
+                .disabled(!preferences.ocrCloudEnabled)
+            }
+            SettingsRow("Use it even for languages this Mac can read",
+                        subtitle: "Otherwise it is only asked when nothing here can read the language.") {
+                Toggle("Prefer the cloud", isOn: $preferences.ocrPreferCloud).toggleStyle(.switch)
+            }
+            .disabled(!preferences.ocrCloudEnabled)
+            SettingsRow("Connection", subtitle: cloudCheck) {
+                Button(checkingCloud ? "Checking…" : "Check") { checkCloud() }
+                    .disabled(checkingCloud || preferences.ocrCloudSecret.isEmpty)
+            }
+            .disabled(!preferences.ocrCloudEnabled)
+        }
+    }
+
+    private func checkCloud() {
+        guard let engines else { return }
+        checkingCloud = true
+        cloudCheck = nil
+        Task {
+            let result = await engines.checkCloud()
+            checkingCloud = false
+            cloudCheck = result
+        }
+    }
+
+    /// Named from the routing decision itself, so what this says and what actually
+    /// happens cannot drift apart.
+    private var engineNote: String {
+        switch OCRRouter.route(preferences.ocrSettings, availability: availability) {
+        case .success(let route) where route.detectsLanguage:
+            return "Apple Vision picks the language for you."
+        case .success(let route):
+            switch route.engine {
+            case .vision, .tesseract: return "Read here on the Mac by \(route.engine.title)."
+            case .cloud: return "Sent to \(preferences.ocrSettings.cloud?.provider.title ?? "a cloud service")."
+            }
+        case .failure(let reason):
+            return reason.errorDescription ?? "Klik can't read this one yet."
+        }
+    }
+
+    /// The pack the chosen language needs, when it needs one.
+    private var pendingPack: (code: String, displayName: String)? {
+        guard let language = preferences.ocrLanguages.first.flatMap(OCRLanguageCatalog.language(for:)),
+              !OCRLanguageCatalog.isVisionSupported(language),
+              let code = language.tesseractCode
+        else { return nil }
+        return (code, language.displayName)
+    }
+
+    private func packNote(for pack: (code: String, displayName: String)) -> String {
+        guard let engines else { return "" }
+        switch engines.packs.state(of: pack.code) {
+        case .ready: return "Installed. Read here on the Mac."
+        case .downloading: return "Downloading…"
+        case .failed(_, let offline):
+            return offline ? "Klik is offline." : "The download failed."
+        case .missing:
+            return TesseractLanguagePacks.sizeDescription(for: pack.code).map { "\($0), downloaded once." } ?? "Downloaded once."
+        }
+    }
+
+    private func availability(_ id: OCREngineID, _ language: OCRLanguage) -> OCREngineAvailability {
+        if let engines { return engines.availability(id, language) }
+        return id == .vision && OCRLanguageCatalog.isVisionSupported(language) ? .ready : .unsupported
+    }
+
+    /// English alongside the chosen language, for a screen that mixes them.
+    private var alsoEnglish: Binding<Bool> {
+        Binding(
+            get: { preferences.ocrLanguages.contains { OCRLanguage($0).base == "en" } },
+            set: { on in
+                var tags = preferences.ocrLanguages
+                guard let primary = tags.first, OCRLanguage(primary).base != "en" else { return }
+                tags.removeAll { OCRLanguage($0).base == "en" }
+                if on { tags.append("en-US") }
+                preferences.ocrLanguages = tags
+            }
+        )
     }
 }
 
@@ -1401,6 +1560,6 @@ struct AboutSettingsView: View {
 #Preview("Settings") {
     SettingsRootView(buttons: WindowButtons(close: {}, minimize: {}, zoom: {}))
         .environment(SettingsNavigation()).environment(AppModel()).environment(CaptureLibrary()).environment(AppPreferences())
-        .environment(ShortcutController()).environment(ClipboardHistory())
+        .environment(ShortcutController()).environment(ClipboardHistory()).environment(AddOnRegistry()).environment(StudioPreferences())
         .frame(width: 920, height: 640)
 }

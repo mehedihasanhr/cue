@@ -37,6 +37,20 @@ enum WindowDetector {
         }
     }
 
+    /// Whether `screen` is showing another app's full-screen Space right now.
+    ///
+    /// Two signs together, because either alone lies: the menu bar is gone, so the
+    /// visible frame reaches the top of the display (an auto-hiding menu bar does
+    /// that too), and a window fills the whole display (a maximised window on a
+    /// display with the menu bar showing does not).
+    static func isFullScreenSpace(on screen: NSScreen) -> Bool {
+        guard screen.visibleFrame.maxY >= screen.frame.maxY - 1 else { return false }
+        let size = screen.frame.size
+        return onScreenWindows().contains {
+            abs($0.frame.width - size.width) < 2 && abs($0.frame.height - size.height) < 2
+        }
+    }
+
     /// The frontmost window containing `point` (global AppKit coordinates).
     static func window(at point: CGPoint, in windows: [WindowInfo]) -> WindowInfo? {
         windows.first { $0.frame.contains(point) }

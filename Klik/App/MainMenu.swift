@@ -23,6 +23,8 @@ enum MainMenu {
             ("Capture Full Screen", #selector(AppDelegate.captureFullScreen(_:))),
             ("Capture Area", #selector(AppDelegate.captureArea(_:))),
             ("Capture Window", #selector(AppDelegate.captureWindow(_:))),
+            ("Record Screen…", #selector(AppDelegate.recordScreen(_:))),
+            ("Open Klik Studio", #selector(AppDelegate.openStudio(_:))),
             ("Scrolling Capture", #selector(AppDelegate.captureScrolling(_:))),
             ("Capture Text", #selector(AppDelegate.captureText(_:))),
             ("Pick Color", #selector(AppDelegate.pickColor(_:))),
@@ -63,6 +65,11 @@ enum MainMenu {
         // View — zoom commands for the editor.
         let viewMenu = NSMenu(title: "View")
         viewMenu.addItem(withTitle: "Zoom In", action: #selector(EditorWindowController.zoomIn(_:)), keyEquivalent: "+")
+        // ⌘= too: on most layouts "+" needs ⇧, and ⌘= is what people press.
+        let zoomInEquals = NSMenuItem(title: "Zoom In", action: #selector(EditorWindowController.zoomIn(_:)), keyEquivalent: "=")
+        zoomInEquals.isHidden = true
+        zoomInEquals.allowsKeyEquivalentWhenHidden = true
+        viewMenu.addItem(zoomInEquals)
         viewMenu.addItem(withTitle: "Zoom Out", action: #selector(EditorWindowController.zoomOut(_:)), keyEquivalent: "-")
         viewMenu.addItem(withTitle: "Zoom to Fit", action: #selector(EditorWindowController.zoomToFit(_:)), keyEquivalent: "0")
         viewMenu.addItem(withTitle: "Actual Size", action: #selector(EditorWindowController.zoomActualSize(_:)), keyEquivalent: "1")

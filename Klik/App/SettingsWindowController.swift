@@ -10,7 +10,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     private let navigation = SettingsNavigation()
 
-    init(model: AppModel, shortcuts: ShortcutController, library: CaptureLibrary, clipboard: ClipboardHistory, preferences: AppPreferences, clock: PrayerClock? = nil, share: ShareSettings? = nil, sync: SyncFolder? = nil, notes: NoteStore? = nil, taskSync: TaskSync? = nil) {
+    init(model: AppModel, shortcuts: ShortcutController, library: CaptureLibrary, clipboard: ClipboardHistory, preferences: AppPreferences, addOns: AddOnRegistry, studio: StudioPreferences, clock: PrayerClock? = nil, share: ShareSettings? = nil, sync: SyncFolder? = nil, notes: NoteStore? = nil, taskSync: TaskSync? = nil, ocrEngines: OCREngines? = nil) {
         // The window is made first so the traffic lights can reach it.
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 920, height: 640), styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
         let buttons = WindowButtons(close: { [weak window] in window?.performClose(nil) },
@@ -23,11 +23,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             .environment(library)
             .environment(clipboard)
             .environment(preferences)
+            .environment(addOns)
+            .environment(studio)
             .environment(clock)
             .environment(share)
             .environment(sync)
             .environment(notes)
             .environment(taskSync)
+            .environment(ocrEngines)
             .frame(minWidth: 820, minHeight: 540)
 
         window.contentViewController = NSHostingController(rootView: root)
@@ -63,8 +66,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         if let section { navigation.go(section) }
         showWindow(nil)
         guard let window else { return }
-        window.orderFrontRegardless()
-        NSApp.activateForOverlay(keyWindow: window)
+        NSApp.present(window)
         // The search field would take focus as the first field; the page reads better without a caret in it.
         window.makeFirstResponder(nil)
     }

@@ -1,3 +1,4 @@
+import BackgroundKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -58,7 +59,7 @@ struct EditorView: View {
             // The sidebar changes the canvas width; re-fit once the new layout has settled.
             Task { @MainActor in
                 await Task.yield()
-                model.zoomCommand = .fit
+                model.applyZoom(.fit)
             }
         }
     }
@@ -128,14 +129,14 @@ struct PreviewToolbar: View {
                 TrafficLights(onClose: windowButtons.close, onMinimize: windowButtons.minimize, onZoom: windowButtons.zoom)
                 Spacer()
                 ToolGroup {
-                    IconButton(symbol: "minus.magnifyingglass", help: "Zoom out (⌘−)") { model.zoomCommand = .zoomOut }
+                    IconButton(symbol: "minus.magnifyingglass", help: "Zoom out (⌘−)") { model.applyZoom(.zoomOut) }
                     Text("\(Int((model.zoom * 100).rounded()))%")
                         .font(.system(size: 11, weight: .medium))
                         .monospacedDigit()
                         .foregroundStyle(.primary.opacity(0.8))
                         .frame(width: 40)
-                    IconButton(symbol: "plus.magnifyingglass", help: "Zoom in (⌘+)") { model.zoomCommand = .zoomIn }
-                    IconButton(symbol: "arrow.down.left.and.arrow.up.right", help: "Fit to window (⌘0)") { model.zoomCommand = .fit }
+                    IconButton(symbol: "plus.magnifyingglass", help: "Zoom in (⌘+)") { model.applyZoom(.zoomIn) }
+                    IconButton(symbol: "arrow.down.left.and.arrow.up.right", help: "Fit to window (⌘0)") { model.applyZoom(.fit) }
                 }
                 ToolGroup {
                     IconButton(symbol: copied ? "checkmark" : "doc.on.doc", help: "Copy to clipboard (⌘C)", tint: copied ? .green : nil) {
@@ -513,13 +514,13 @@ struct EditorStatusBar: View {
             }
             Spacer()
             HStack(spacing: 2) {
-                IconButton(symbol: "minus.magnifyingglass", help: "Zoom out (⌘−)") { model.zoomCommand = .zoomOut }
+                IconButton(symbol: "minus.magnifyingglass", help: "Zoom out (⌘−)") { model.applyZoom(.zoomOut) }
                 Text("\(Int((model.zoom * 100).rounded()))%")
                     .monospacedDigit()
                     .frame(width: 44)
-                IconButton(symbol: "plus.magnifyingglass", help: "Zoom in (⌘+)") { model.zoomCommand = .zoomIn }
-                Button("Fit") { model.zoomCommand = .fit }.buttonStyle(.plain).foregroundStyle(.secondary)
-                Button("100%") { model.zoomCommand = .actualSize }.buttonStyle(.plain).foregroundStyle(.secondary)
+                IconButton(symbol: "plus.magnifyingglass", help: "Zoom in (⌘+)") { model.applyZoom(.zoomIn) }
+                Button("Fit") { model.applyZoom(.fit) }.buttonStyle(.plain).foregroundStyle(.secondary)
+                Button("100%") { model.applyZoom(.actualSize) }.buttonStyle(.plain).foregroundStyle(.secondary)
             }
         }
         .font(.system(size: 11))

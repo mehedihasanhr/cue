@@ -45,6 +45,33 @@ final class TextLayoutTests: XCTestCase {
         let rect = box.pixelRect(in: CGSize(width: 200, height: 100))
         XCTAssertEqual(rect, CGRect(x: 0, y: 0, width: 100, height: 20), accuracy: 0.001)
     }
+
+    // MARK: - Direction
+
+    /// Arabic, Hebrew, Persian and Urdu put the first word on the right. Joining a
+    /// line's fragments left to right would reverse it.
+    func testARightToLeftLineIsJoinedFromTheRight() {
+        let fragments = [item("\u{0627}\u{0644}\u{0623}\u{0648}\u{0644}", x: 0.6, y: 0.5),
+                         item("\u{0627}\u{0644}\u{062B}\u{0627}\u{0646}\u{064A}", x: 0.3, y: 0.5)]
+        XCTAssertEqual(TextLayout.compose(fragments, direction: .rightToLeft),
+                       "\u{0627}\u{0644}\u{0623}\u{0648}\u{0644} \u{0627}\u{0644}\u{062B}\u{0627}\u{0646}\u{064A}")
+        // Left to right it comes out the other way round, which is the bug being avoided.
+        XCTAssertEqual(TextLayout.compose(fragments, direction: .leftToRight),
+                       "\u{0627}\u{0644}\u{062B}\u{0627}\u{0646}\u{064A} \u{0627}\u{0644}\u{0623}\u{0648}\u{0644}")
+    }
+
+    /// Leading spaces on a right-to-left line would appear on the wrong side, so
+    /// indentation is skipped there entirely.
+    func testARightToLeftLineTakesNoIndent() {
+        let lines = [item("a", x: 0.0, y: 0.8), item("b", x: 0.5, y: 0.5)]
+        let indented = TextLayout.compose(lines, keepIndentation: true, direction: .rightToLeft)
+        XCTAssertFalse(indented.contains("  "), "got: \(indented)")
+    }
+
+    func testTheDefaultDirectionIsUnchanged() {
+        let fragments = [item("one", x: 0.1, y: 0.5), item("two", x: 0.5, y: 0.5)]
+        XCTAssertEqual(TextLayout.compose(fragments), "one two")
+    }
 }
 
 private func XCTAssertEqual(_ a: CGRect, _ b: CGRect, accuracy: CGFloat, file: StaticString = #filePath, line: UInt = #line) {

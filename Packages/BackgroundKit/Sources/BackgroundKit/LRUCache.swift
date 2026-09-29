@@ -3,20 +3,20 @@
 /// Used for rendered bitmaps (blur regions, blurred wallpapers), where only the last
 /// few results are ever reused and an unbounded dictionary can quietly hold hundreds
 /// of megabytes — a real problem on an 8 GB Mac mini.
-nonisolated struct LRUCache<Key: Hashable, Value> {
-    let capacity: Int
+public struct LRUCache<Key: Hashable, Value> {
+    public let capacity: Int
     private var storage: [Key: Value] = [:]
     /// Keys from least to most recently used.
     private var order: [Key] = []
 
-    init(capacity: Int) {
+    public init(capacity: Int) {
         precondition(capacity > 0)
         self.capacity = capacity
     }
 
-    var count: Int { storage.count }
+    public var count: Int { storage.count }
 
-    subscript(key: Key) -> Value? {
+    public subscript(key: Key) -> Value? {
         mutating get {
             guard let value = storage[key] else { return nil }
             touch(key)
@@ -37,7 +37,7 @@ nonisolated struct LRUCache<Key: Hashable, Value> {
         }
     }
 
-    mutating func removeAll() {
+    public mutating func removeAll() {
         storage.removeAll()
         order.removeAll()
     }

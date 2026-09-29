@@ -1,4 +1,5 @@
 import AppKit
+import BackgroundKit
 import Observation
 import os
 
@@ -182,7 +183,13 @@ final class EditorViewModel {
     var highlightColor: RGBA = .yellow { didSet { applyStyleToSelection() } }
 
     var zoom: CGFloat = 1
-    var zoomCommand: ZoomCommand?
+    /// Set by the canvas. Zoom goes straight to it rather than through an observed
+    /// property, which dropped a repeated click and re-applied on unrelated updates.
+    @ObservationIgnored var zoomHandler: ((ZoomCommand) -> Void)?
+
+    func applyZoom(_ command: ZoomCommand) {
+        zoomHandler?(command)
+    }
 
     let undoManager = UndoManager()
     private(set) var isDirty = false
@@ -276,7 +283,8 @@ final class EditorViewModel {
         effects.invalidate()
         isDirty = true
         registerUndo(returningTo: previous)
-        zoomCommand = .fit
+        // After the canvas has taken the new document's size.
+        DispatchQueue.main.async { [weak self] in self?.applyZoom(.fit) }
         return true
     }
 

@@ -48,7 +48,10 @@ final class SelectionView: NSView {
         didSet {
             guard desiredCursor !== oldValue else { return }
             window?.invalidateCursorRects(for: self)
-            if isDragging { desiredCursor.set() } // cursor rects don't update mid-drag
+            // Cursor rects are honoured only for the active app's key window, and the
+            // overlay deliberately leaves the app underneath in front; setting the
+            // cursor outright covers that, and mid-drag, where rects don't update.
+            desiredCursor.set()
         }
     }
     private var isDragging: Bool {
@@ -68,7 +71,9 @@ final class SelectionView: NSView {
         didSet { if isPassive != oldValue { needsDisplay = true } }
     }
 
-    private var toolbar: NSHostingView<SelectionToolbar>?
+    /// `FirstMouseHostingView`, not a plain one: the overlay takes clicks while Klik
+    /// is not the active app, and a plain hosting view swallows the first one.
+    private var toolbar: FirstMouseHostingView<SelectionToolbar>?
     private var trackingArea: NSTrackingArea?
 
     private static let handleRadius: CGFloat = 4.5
@@ -98,7 +103,7 @@ final class SelectionView: NSView {
         if let trackingArea { removeTrackingArea(trackingArea) }
         let area = NSTrackingArea(
             rect: bounds,
-            options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            options: [.mouseMoved, .mouseEnteredAndExited, .cursorUpdate, .activeAlways, .inVisibleRect],
             owner: self,
             userInfo: nil
         )
@@ -113,6 +118,12 @@ final class SelectionView: NSView {
 
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: desiredCursor)
+    }
+
+    /// The tracking area's cursor update: what keeps the crosshair right while Klik
+    /// is not the active app, which is the whole point of the overlay.
+    override func cursorUpdate(with event: NSEvent) {
+        desiredCursor.set()
     }
 
     // MARK: - External control
@@ -313,6 +324,12 @@ final class SelectionView: NSView {
         delegate?.selectionView(self, didConfirm: rect)
     }
 
+    /// ↩ arriving as a shortcut rather than a key press, for the moments the overlay
+    /// does not hold the keyboard.
+    func confirmFromShortcut() {
+        confirm()
+    }
+
     // MARK: - Geometry helpers
 
     private static func rect(from a: CGPoint, to b: CGPoint) -> CGRect {
@@ -387,11 +404,11 @@ final class SelectionView: NSView {
 
     private func showToolbar() {
         guard let rect = selection else { return }
-        let host: NSHostingView<SelectionToolbar>
+        let host: FirstMouseHostingView<SelectionToolbar>
         if let toolbar {
             host = toolbar
         } else {
-            host = NSHostingView(rootView: SelectionToolbar(
+            host = FirstMouseHostingView(rootView: SelectionToolbar(
                 mode: mode,
                 onConfirm: { [weak self] in self?.confirm() },
                 onCancel: { [weak self] in

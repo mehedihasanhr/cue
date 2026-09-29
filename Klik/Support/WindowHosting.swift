@@ -36,8 +36,7 @@ final class HostedWindowController: NSWindowController, NSWindowDelegate {
     func present() {
         showWindow(nil)
         guard let window else { return }
-        window.orderFrontRegardless()
-        NSApp.activateForOverlay(keyWindow: window)
+        NSApp.present(window)
     }
 
     func windowWillClose(_ notification: Notification) {

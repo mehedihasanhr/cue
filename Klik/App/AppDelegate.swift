@@ -1,6 +1,8 @@
+import AddOnKit
 import Carbon.HIToolbox
 import os
 import AppKit
+import BackgroundKit
 import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -21,11 +23,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var snippetFrontField: FrontField?
     private var prayerClock: PrayerClock?
     let preferences = AppPreferences()
-    private lazy var coordinator = CaptureCoordinator(shortcuts: shortcuts)
+    /// The recognisers Capture Text can use, and the language packs behind them.
+    private lazy var ocrEngines = OCREngines(preferences: preferences)
+    /// What optional features are installed. Cheap to hold: it knows where add-ons
+    /// are and nothing about what they do.
+    private lazy var studioPreferences = StudioPreferences()
+    private lazy var addOns = AddOnRegistry(preferences: studioPreferences)
+    /// The recording add-on, if it is installed. The host asks it to record and
+    /// takes the result; none of the recording code is in Klik.
+    private lazy var recorder = RecordingAddOnClient(registry: addOns, preferences: studioPreferences)
+    private lazy var coordinator = CaptureCoordinator(shortcuts: shortcuts, preferences: preferences, engines: ocrEngines)
 
     private var statusItem: NSStatusItem?
     /// Blinks the mark in the menu bar, when the mark is what is shown there.
-    private var blinker: StatusItemBlinker?
     private var statusMenu: NSMenu?
     private var floatingPanel: FloatingPanelWindow?
     private var island: IslandController?
@@ -54,7 +64,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // The bundle launches as an agent; the preference decides whether Klik takes
         // a Dock tile, so it can be turned off without reinstalling.
         preferences.applyDockVisibility()
-        AppIconBlinker.shared.start()
         // Alerts, onboarding and the About pane all draw the brand icon from the asset
         // catalog, independent of the icon-services cache for this bundle path.
         if let icon = NSImage(named: "AppIcon") { NSApp.applicationIconImage = icon }
@@ -63,6 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         coordinator.onCaptured = { [weak self] image in self?.handleCapture(image) }
         coordinator.onTextRecognized = { [weak self] text in self?.handleRecognizedText(text) }
+        coordinator.onTextUnavailable = { [weak self] reason in self?.handleTextUnavailable(reason) }
         coordinator.onPermissionRequired = { [weak self] kind in self?.showOnboarding(for: kind) }
         coordinator.onError = { [weak self] error in self?.presentError(error) }
         coordinator.onBusyChanged = { [weak self] busy in self?.island?.setHidden(busy) }
@@ -448,7 +458,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
         // Older captures get their text read in the background, a while after launch.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in self?.library.indexMissingText() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+            guard let self else { return }
+            // The search index is only as good as the language it was read in, so it
+            // is rebuilt when that changes before catching up on anything missing.
+            library.ocr = OCRService(settings: preferences.ocrSettings.forIndexing, engines: ocrEngines.set)
+            library.reindexIfLanguagesChanged(preferences.ocrLanguages)
+            library.indexMissingText()
+        }
         if !PermissionManager.hasScreenCaptureAccess {
             Log.app.notice("Screen Recording not granted; showing onboarding")
             showOnboarding(for: .screenRecording)
@@ -535,6 +552,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             ("Pick Color", #selector(pickColor(_:)), .pickColor),
         ]
         for (title, selector, id) in tools { menu.addItem(shortcutItem(title, selector, id)) }
+        // Recording sits with the other capture tools, because that is what it is. It had
+        // been reachable only from the app's own menu bar — which a menu-bar app's users
+        // rarely open, and which is why nobody found it.
+        menu.addItem(makeItem("Record Screen…", #selector(recordScreen(_:))))
         menu.addItem(.separator())
         let panels: [(String, Selector, HotkeyID)] = [
             ("Klik Panel", #selector(showPanel(_:)), .showPanel),
@@ -587,15 +608,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         toggleHistoryAtPointer()
     }
 
-    /// The mark blinks at what it just took — or, when the menu bar is showing a
-    /// glyph instead, that glyph gives once the way a shutter does.
+    /// The menu bar glyph gives once, the way a shutter does, at what Klik just took.
     private func pulseStatusItem() {
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
-        AppIconBlinker.shared.blink()
-        if let blinker {
-            blinker.blink()
-            return
-        }
         guard let button = statusItem?.button else { return }
         button.wantsLayer = true
         guard let layer = button.layer else { return }
@@ -613,12 +628,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Keeps the status item image in sync with the Settings choice.
     private func applyMenuBarIcon() {
         withObservationTracking {
-            blinker?.stop()
-            blinker = nil
-            // The mark is drawn from its paths so it can blink; every other choice is
-            // a still image.
-            if preferences.icon == .mark, let button = statusItem?.button {
-                blinker = StatusItemBlinker(button: button, height: 17)
+            // The mark is drawn from its paths; every other choice is a still image.
+            if preferences.icon == .mark {
+                statusItem?.button?.image = KlikMarkImage.template(height: 17)
             } else {
                 let image = preferences.menuBarImage()
                     ?? NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "Klik")
@@ -1074,6 +1086,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         coordinator.captureArea(fromMenu: sender is NSMenuItem)
     }
 
+    /// Record the screen — or, with no add-on installed, offer to install one.
+    ///
+    /// The command is always present so the feature is discoverable; what it does
+    /// depends on what is installed, which is what `commandTitle` says out loud.
+    @objc func recordScreen(_ sender: Any?) {
+        guard recorder.canRecord else {
+            showSettings(sender)
+            settingsWindow?.present(.studio)
+            return
+        }
+        // Asked here rather than by the add-on. `\.ask` handed the question to Klik
+        // Studio, which answered it by taking the whole screen — a second app dimming the
+        // display to ask which part of it you meant, while you were already in Klik.
+        guard let island else { return askAddOnToChoose() }
+        let preferences = recorder.preferences
+        var parts = [preferences.recordsSystemAudio ? "System audio" : "No system audio"]
+        if preferences.recordsMicrophone { parts.append("Microphone") }
+        if preferences.countdownSeconds > 0 { parts.append("\(preferences.countdownSeconds)s countdown") }
+        let shown = island.showRecorder(summary: parts.joined(separator: " · ")) { [recorder] target in
+            Task {
+                do {
+                    try await recorder.record(target: target)
+                } catch {
+                    Log.addOns.error("Recording request failed: \(error.localizedDescription, privacy: .public)")
+                    NSAlert(error: error).runModal()
+                }
+            }
+        }
+        // No island on screen — it can be switched off in Settings, and it has no geometry
+        // until it has been placed. Falling through to the add-on's own picker beats a
+        // menu item that does nothing at all.
+        if !shown { askAddOnToChoose() }
+    }
+
+    /// The old route, for the case where there is no island to ask in.
+    private func askAddOnToChoose() {
+        Task { [recorder] in
+            do {
+                try await recorder.record(target: .ask)
+            } catch {
+                Log.addOns.error("Recording request failed: \(error.localizedDescription, privacy: .public)")
+                NSAlert(error: error).runModal()
+            }
+        }
+    }
+
     @objc func captureScrolling(_ sender: Any?) {
         coordinator.captureScrolling(fromMenu: sender is NSMenuItem)
     }
@@ -1190,9 +1248,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return true
     }
 
+    /// Open Klik Studio — or its Settings page, when it is not installed yet.
+    @objc func openStudio(_ sender: Any?) {
+        do {
+            try recorder.launch()
+        } catch {
+            showSettings(sender)
+            settingsWindow?.present(.studio)
+        }
+    }
+
     @objc func showSettings(_ sender: Any?) {
         if settingsWindow == nil {
-            let controller = SettingsWindowController(model: model, shortcuts: shortcuts, library: library, clipboard: clipboard, preferences: preferences, clock: prayerClock, share: share, sync: syncFolder, notes: notes, taskSync: taskSync)
+            let controller = SettingsWindowController(model: model, shortcuts: shortcuts, library: library, clipboard: clipboard, preferences: preferences, addOns: addOns, studio: studioPreferences, clock: prayerClock, share: share, sync: syncFolder, notes: notes, taskSync: taskSync, ocrEngines: ocrEngines)
             controller.onClose = { [weak self] in
                 self?.settingsWindow = nil
                 self?.shortcuts.isRecording = false
@@ -1214,9 +1282,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Log.app.info("Captured \(item.fileName, privacy: .public) → clipboard + library")
         pulseStatusItem()
         island?.flash(item)
+        // The editor opens on the Space the capture came from, a full-screen app's too.
         switch preferences.afterCapture {
-        case .edit: openEditor(for: item, image: image, mode: .edit)
-        case .copy: FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: item.dimensions, image: library.thumbnail(for: item))
+        case .edit:
+            openEditor(for: item, image: image, mode: .edit)
+        case .copy:
+            FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: item.dimensions, image: library.thumbnail(for: item))
         }
     }
 
@@ -1266,7 +1337,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Decoding the wallpaper thumbnails costs seconds of CPU, so it waits for the
         // first editor rather than running at every login; it's done long before the
         // Background tool is reached, and a no-op once cached.
-        Task(priority: .utility) { await WallpaperStore.shared.prepareThumbnails() }
+        Task(priority: .utility) { await WallpaperCatalog.shared.prepareThumbnails() }
         let controller = EditorWindowController(item: item, image: image, library: library, preferences: preferences, mode: mode)
         controller.onClose = { [weak self] in self?.editorWindows[item.id] = nil }
         controller.onDelete = { [weak self] item in self?.library.delete(item) }
@@ -1287,8 +1358,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         preferences.playCaptureSound()
         let code = CodeSnippet.detect(text)
         let found = TextExtract.summary(of: text)
-        FeedbackHUD.show(code.map { "\($0.title) copied" } ?? "Text copied", symbol: "checkmark.circle.fill",
-                         subtitle: found.isEmpty ? nil : "Right-click it on the Clipboard tab to copy just the \(found)")
+        let title = code.map { "\($0.title) copied" } ?? (recognized.engine == .cloud ? "Text copied · \(recognized.engine.title)" : "Text copied")
+        FeedbackHUD.show(title, symbol: recognized.engine == .cloud ? "checkmark.icloud.fill" : "checkmark.circle.fill",
+                         subtitle: subtitle(for: recognized, extracted: found))
+    }
+
+    /// What the HUD says under the title. The script warning comes first: it is the
+    /// one case where Klik copied something it is not sure the reader wanted.
+    private func subtitle(for recognized: RecognizedText, extracted: String) -> String? {
+        if let warning = recognized.scriptWarning {
+            return "\(warning.found.displayName) — if that should be \(warning.possiblyIntended.displayName), pick it in Settings › Capture."
+        }
+        guard !extracted.isEmpty else { return nil }
+        return "Right-click it on the Clipboard tab to copy just the \(extracted)"
+    }
+
+    /// Klik declined to answer. Nothing is written to the clipboard on these paths —
+    /// whatever was there stays there, because pasting the wrong alphabet is the
+    /// failure this whole path exists to prevent.
+    private func handleTextUnavailable(_ reason: OCRUnavailable) {
+        FeedbackHUD.show(reason.errorDescription ?? "Klik couldn't read that",
+                         symbol: reason.symbol, subtitle: reason.recoverySuggestion)
     }
 
     private func deleteCapture(_ item: CaptureItem) {

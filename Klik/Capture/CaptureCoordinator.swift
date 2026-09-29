@@ -6,6 +6,8 @@ final class CaptureCoordinator {
     var onCaptured: ((CapturedImage) -> Void)?
     /// Result of a text capture: the recognised text (possibly empty when none was found).
     var onTextRecognized: ((RecognizedText) -> Void)?
+    /// Klik declined to read it, and can say why. Nothing reaches the clipboard.
+    var onTextUnavailable: ((OCRUnavailable) -> Void)?
     var onPermissionRequired: ((PermissionKind) -> Void)?
     var onError: ((any Error) -> Void)?
     /// `true` while a capture flow runs (selection overlay, scrolling session…).
@@ -14,12 +16,22 @@ final class CaptureCoordinator {
     var onColorPicked: ((PickedColor) -> Void)?
 
     private let service = ScreenCaptureService()
-    private let ocr = OCRService()
     private let shortcuts: ShortcutController
+    private let preferences: AppPreferences?
+    private let engines: OCREngines?
     private var isBusy = false
 
-    init(shortcuts: ShortcutController) {
+    init(shortcuts: ShortcutController, preferences: AppPreferences? = nil, engines: OCREngines? = nil) {
         self.shortcuts = shortcuts
+        self.preferences = preferences
+        self.engines = engines
+    }
+
+    /// Built fresh for each capture, so a language chosen in Settings takes effect on
+    /// the very next press rather than the next launch.
+    private var ocr: OCRService {
+        guard let preferences else { return OCRService() }
+        return OCRService(settings: preferences.ocrSettings, engines: engines?.set ?? .onDevice)
     }
 
     // MARK: - Entry points
@@ -38,7 +50,7 @@ final class CaptureCoordinator {
 
     func captureArea(fromMenu: Bool) {
         start(fromMenu: fromMenu) { [self] in
-            guard let selection = try await CaptureSession().run(mode: .region, using: service) else { return }
+            guard let selection = try await CaptureSession(shortcuts: shortcuts).run(mode: .region, using: service) else { return }
             guard let image = selection.frozen.cropped(toPoints: selection.localRect) else {
                 throw CaptureError.noDisplay
             }
@@ -49,7 +61,7 @@ final class CaptureCoordinator {
     /// Click a window to capture it alone, with its shadow (or drag an area as usual).
     func captureWindow(fromMenu: Bool) {
         start(fromMenu: fromMenu) { [self] in
-            guard let selection = try await CaptureSession().run(mode: .window, using: service) else { return }
+            guard let selection = try await CaptureSession(shortcuts: shortcuts).run(mode: .window, using: service) else { return }
             if let window = selection.window {
                 let content = try await service.shareableContent()
                 if let image = try await service.captureWindow(id: window.id, in: content, fallbackScale: selection.frozen.scale) {
@@ -67,7 +79,7 @@ final class CaptureCoordinator {
     /// scrolls by hand, so the permission is not a gate here.
     func captureScrolling(fromMenu: Bool) {
         start(fromMenu: fromMenu) { [self] in
-            guard let selection = try await CaptureSession().run(mode: .scrolling, using: service) else { return }
+            guard let selection = try await CaptureSession(shortcuts: shortcuts).run(mode: .scrolling, using: service) else { return }
             // Let the overlay windows disappear and the target app regain focus.
             try? await Task.sleep(for: .milliseconds(250))
             let session = ScrollingCaptureSession()
@@ -80,20 +92,24 @@ final class CaptureCoordinator {
     /// Select an area and copy the text in it — nothing is saved to the library.
     func captureText(fromMenu: Bool) {
         start(fromMenu: fromMenu) { [self] in
-            guard let selection = try await CaptureSession().run(mode: .text, using: service) else { return }
+            guard let selection = try await CaptureSession(shortcuts: shortcuts).run(mode: .text, using: service) else { return }
             guard let image = selection.frozen.cropped(toPoints: selection.localRect) else {
                 throw CaptureError.noDisplay
             }
-            let recognized = try await ocr.recognize(image.cgImage)
-            Log.ocr.info("Recognised \(recognized.items.count) line(s) in \(Int(image.pixelSize.width))×\(Int(image.pixelSize.height))px")
-            onTextRecognized?(recognized)
+            do {
+                let recognized = try await ocr.recognize(image.cgImage)
+                Log.ocr.info("Recognised \(recognized.items.count) line(s) with \(recognized.engine.rawValue, privacy: .public) in \(Int(image.pixelSize.width))×\(Int(image.pixelSize.height))px")
+                onTextRecognized?(recognized)
+            } catch OCRError.unavailable(let reason) {
+                onTextUnavailable?(reason)
+            }
         }
     }
 
     /// The pixel-grid color picker over frozen displays.
     func pickColor(fromMenu: Bool) {
         start(fromMenu: fromMenu) { [self] in
-            if let color = try await ColorPickerSession().run(using: service) {
+            if let color = try await ColorPickerSession(shortcuts: shortcuts).run(using: service) {
                 onColorPicked?(color)
             }
         }
