@@ -23,9 +23,15 @@ final class EditorWindows {
     /// window you are looking at.
     private(set) var front: EditorSession?
 
-    /// One window per recording, so opening the same one twice brings it forward rather
-    /// than making a second editor for one file.
-    private var controllers: [URL: EditorWindowController] = [:]
+    /// The one editor. Opening the recording it already shows brings it forward; opening
+    /// another replaces it, so every take does not leave a window behind it.
+    private var current: EditorWindowController?
+
+    /// A recording waiting for `current` to finish closing — it may be asking whether to
+    /// save first — before it takes the window's place.
+    private var pendingOpen: URL?
+    /// Where the replaced editor sat, so its successor lands on the same spot.
+    private var replacedFrame: NSRect?
 
     /// Every export the app has going, owned here rather than by a window.
     ///
@@ -42,7 +48,7 @@ final class EditorWindows {
     /// screen?" is the whole of its visibility rule.
     @ObservationIgnored var onChange: (() -> Void)?
 
-    var isEmpty: Bool { controllers.isEmpty }
+    var isEmpty: Bool { current == nil }
 
     func configure(settings: StudioSettings) {
         self.settings = settings
@@ -57,11 +63,28 @@ final class EditorWindows {
     }
 
     /// Opens a recording for editing, or brings its window forward if it is already open.
+    /// A different recording replaces the open one rather than opening beside it.
     func open(_ url: URL) {
-        let key = Self.key(for: url)
-        if let existing = controllers[key] {
-            existing.showWindow(nil)
+        if let current {
+            if Self.key(for: current.session.packageURL) == Self.key(for: url) {
+                // Asked for the one on screen: whatever replacement was waiting is off.
+                pendingOpen = nil
+                replacedFrame = nil
+                current.showWindow(nil)
+                NSApp.activate(ignoringOtherApps: true)
+                return
+            }
+            // Closed the way the close button closes it, so unsaved edits still get their
+            // Save / Discard / Cancel sheet. The new editor opens from `closed(_:)`.
+            // A close already under way — its sheet still up — just gets a new successor,
+            // not a second sheet.
+            let closing = pendingOpen != nil
+            pendingOpen = url
+            if closing { return }
+            replacedFrame = current.window?.frame
+            current.showWindow(nil)
             NSApp.activate(ignoringOtherApps: true)
+            current.window?.performClose(nil)
             return
         }
         guard let settings else {
@@ -73,16 +96,15 @@ final class EditorWindows {
                                                 settings: settings,
                                                 exports: exports,
                                                 windows: self)
-        controllers[key] = controller
-        // Offset from the last one so a second take does not land exactly on the first.
+        current = controller
         if let window = controller.window {
-            if let previous = controllers.values.first(where: { $0 !== controller })?.window {
-                window.setFrameTopLeftPoint(previous.frame.origin.applying(.init(translationX: 24, y: -24)))
-                window.cascadeTopLeft(from: previous.frame.origin)
+            if let replacedFrame {
+                window.setFrame(replacedFrame, display: false)
             } else {
                 window.center()
             }
         }
+        replacedFrame = nil
         controller.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
         onChange?()
@@ -91,7 +113,9 @@ final class EditorWindows {
     /// Closes every editor. Used at launch, when anything still open is left over rather
     /// than asked for.
     func closeAll() {
-        for controller in controllers.values { controller.close() }
+        pendingOpen = nil
+        replacedFrame = nil
+        current?.close()
     }
 
     // MARK: - Told by the windows
@@ -101,9 +125,11 @@ final class EditorWindows {
     }
 
     func closed(_ controller: EditorWindowController) {
-        controllers[Self.key(for: controller.session.packageURL)] = nil
+        if current === controller { current = nil }
         // The menu must not keep acting on a window that has gone.
-        if front === controller.session { front = controllers.values.first?.session }
+        if front === controller.session { front = nil }
+        let next = pendingOpen
+        pendingOpen = nil
 
         // Told on the next turn of the run loop, not this one.
         //
@@ -113,7 +139,20 @@ final class EditorWindows {
         // puts it in front of a reshuffle that is still happening, and it loses — the bar
         // is ordered front and then ordered straight back out, so closing the last editor
         // left the app with nothing on screen at all.
-        Task { @MainActor in self.onChange?() }
+        //
+        // A replacement waiting on this close opens first, so the bar sees an editor on
+        // screen and never flashes up between the two.
+        Task { @MainActor in
+            if let next { self.open(next) }
+            self.onChange?()
+        }
+    }
+
+    /// The editor stayed open — Cancel on its save sheet, or a save that failed — so the
+    /// recording that was going to replace it does not.
+    func closeCancelled() {
+        pendingOpen = nil
+        replacedFrame = nil
     }
 
     /// The same recording reached by two different paths — a Finder open and a row in the
@@ -206,14 +245,17 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
                 // Still dirty means the save failed, and `model.errorMessage` is about
                 // to say why. Closing anyway would throw the work away on the way past
                 // the explanation.
-                guard !model.isDirty else { return }
+                guard !model.isDirty else {
+                    self.windows.closeCancelled()
+                    return
+                }
                 self.isClosingDeliberately = true
                 sender.close()
             case .alertSecondButtonReturn:
                 self.isClosingDeliberately = true
                 sender.close()
             default:
-                break
+                self.windows.closeCancelled()
             }
         }
         return false
