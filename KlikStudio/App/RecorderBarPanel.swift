@@ -37,6 +37,10 @@ final class RecorderBarPanel {
             self?.model.record()
             self?.targets.hide()
         }
+        targets.barFrame = { [weak self] in
+            guard let panel = self?.panel, panel.isVisible else { return nil }
+            return panel.frame
+        }
     }
 
     var isVisible: Bool { panel?.isVisible ?? false }

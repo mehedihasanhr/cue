@@ -31,6 +31,9 @@ final class TargetOverlayController {
     /// has to take the overlay down.
     var start: () -> Void = {}
 
+    /// Where the bar is, so the window picker can stop short of it rather than slide under.
+    var barFrame: () -> NSRect? = { nil }
+
     init(model: RecorderModel) {
         self.model = model
     }
@@ -42,8 +45,13 @@ final class TargetOverlayController {
         let pointer = NSEvent.mouseLocation
 
         for screen in NSScreen.screens {
+            // A non-activating panel, the way Spotlight and Raycast come up. It takes the
+            // keyboard without making Klik Studio the active app — and activating an app is
+            // what makes macOS leave a full-screen Space for one where that app has a
+            // window. Over a full-screen app, or a private browser window you are about to
+            // pick, the overlay has to come up *there*.
             let window = OverlayWindow(contentRect: screen.frame,
-                                       styleMask: [.borderless],
+                                       styleMask: [.borderless, .nonactivatingPanel],
                                        backing: .buffered,
                                        defer: false,
                                        screen: screen)
@@ -56,45 +64,60 @@ final class TargetOverlayController {
             // never deliberate. The bar sits one above, so it stays usable: you can still
             // change your mind about the microphone without dismissing this first.
             window.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue)
+            // Not pinned to dark, unlike the bar. Everything drawn straight onto the scrim
+            // is white by hand; the window picker is a panel of its own, and it follows the
+            // system's light or dark appearance like any other window would.
             window.backgroundColor = .clear
             window.isOpaque = false
             window.hasShadow = false
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+            window.isFloatingPanel = true
+            window.hidesOnDeactivate = false
+            window.becomesKeyOnlyIfNeeded = false
             window.isExcludedFromWindowsMenu = true
             window.animationBehavior = .none
             window.onCancel = { [weak self] in self?.hide() }
 
             let view = TargetOverlayView(model: model,
+                                         insets: Self.insets(on: screen, clearing: barFrame()),
                                          displayID: Self.displayID(of: screen),
                                          screenName: screen.localizedName,
                                          // Only one screen should carry the card when the
                                          // target is not a display — the one being used.
                                          isPointerScreen: NSMouseInRect(pointer, screen.frame, false),
-                                         start: { [weak self] in self?.start() })
+                                         start: { [weak self] in self?.start() },
+                                         cancel: { [weak self] in self?.hide() })
 
             window.contentView = NSHostingView(rootView: view)
             window.orderFrontRegardless()
             windows.append(window)
         }
 
-        // Key, and the app active — without which none of this can hear a keystroke.
+        // Key — without which none of this can hear a keystroke.
         //
-        // The bar is a `.nonactivatingPanel` that becomes key only if it needs to, which
-        // is right for a floating strip: clicking it must not pull the user out of what
-        // they are recording. The consequence is that Klik Studio is usually *not* the
-        // active app, and a local event monitor only ever sees events delivered to its own
-        // app — so escape was being typed into Finder, or Chrome, or whatever was in front,
-        // and the overlay could not have heard it however it was written. The area picker
-        // has always activated, which is why its escape has always worked.
+        // A local event monitor only sees events delivered to this app, and keystrokes go
+        // to whichever app owns the key window. A non-activating panel can be that window
+        // while another app stays active, so escape, return and the search field all work
+        // without `NSApp.activate` — which is deliberately not called: it is what pulled
+        // the user off a full-screen Space the moment the picker opened.
         let front = windows.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? windows.first
         front?.makeKeyAndOrderFront(nil)
         front?.makeFirstResponder(front?.contentView)
-        NSApp.activate(ignoringOtherApps: true)
 
         escape = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard event.keyCode == 53 else { return event }   // escape
-            self?.hide()
-            return nil                                        // swallowed, not passed on
+            switch event.keyCode {
+            case 53:                                          // escape
+                self?.hide()
+                return nil                                    // swallowed, not passed on
+            case 36, 76:                                      // return, enter
+                // The button the overlay exists for, from the keyboard — so searching for
+                // a window and taking it never needs the mouse.
+                guard let self, self.model.target != nil else { return event }
+                self.start()
+                return nil
+            default:
+                return event
+            }
         }
     }
 
@@ -105,6 +128,20 @@ final class TargetOverlayController {
         windows.removeAll()
     }
 
+    /// The room the window picker has on one screen: under the menu bar, and above the
+    /// recorder bar if it is on this screen — or above the Dock if it is not.
+    private static func insets(on screen: NSScreen, clearing bar: NSRect?) -> EdgeInsets {
+        let frame = screen.frame
+        let visible = screen.visibleFrame
+        let top = frame.maxY - visible.maxY + 28
+        var bottom = visible.minY - frame.minY + 28
+        if let bar, frame.intersects(bar) {
+            // The panel's frame carries 14 points of transparent room for the bar's shadow.
+            bottom = max(bottom, bar.maxY - 14 - frame.minY + 20)
+        }
+        return EdgeInsets(top: top, leading: 40, bottom: bottom, trailing: 40)
+    }
+
     private static func displayID(of screen: NSScreen) -> CGDirectDisplayID? {
         (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)
             .map { CGDirectDisplayID($0.uint32Value) }
@@ -113,7 +150,7 @@ final class TargetOverlayController {
 
 /// Borderless windows cannot take the keyboard unless they say they can, and an overlay
 /// that swallows the screen without answering Escape is a trap.
-private final class OverlayWindow: NSWindow {
+private final class OverlayWindow: NSPanel {
     var onCancel: () -> Void = {}
     override var canBecomeKey: Bool { true }
     override func cancelOperation(_ sender: Any?) { onCancel() }
@@ -123,10 +160,12 @@ private final class OverlayWindow: NSWindow {
 
 private struct TargetOverlayView: View {
     let model: RecorderModel
+    let insets: EdgeInsets
     let displayID: CGDirectDisplayID?
     let screenName: String
     let isPointerScreen: Bool
     let start: () -> Void
+    let cancel: () -> Void
 
     var body: some View {
         ZStack {
@@ -148,13 +187,11 @@ private struct TargetOverlayView: View {
         .animation(StudioMotion.selection, value: model.targetLabel)
     }
 
-    /// Dark enough that white type is unambiguous over a bright wallpaper, with a breath
-    /// of Klik blue so the dim reads as this app's rather than the system's.
+    /// Dark enough that white type is unambiguous over a bright wallpaper. Neutral, not
+    /// tinted: a blue wash turned every wallpaper the same bruised navy and made the panel
+    /// on top of it look dirty in either theme.
     private var scrim: some View {
-        ZStack {
-            Color.black.opacity(0.52)
-            StudioPalette.brand.opacity(0.14)
-        }
+        Color.black.opacity(0.6)
     }
 
     /// Every display names itself. Anything else is named once, on the screen you are
@@ -218,97 +255,229 @@ private struct TargetOverlayView: View {
     /// The bar used to do this in a menu beside the modes. A menu of thirty near-identical
     /// rows is the wrong shape for "which of these am I pointing at" — the overlay has the
     /// whole screen, so the windows are laid out as things you point at.
+    ///
+    /// They are laid out on one panel rather than straight onto the dimmed wallpaper.
+    /// Loose cards over a photograph took their contrast from whatever was behind them, and
+    /// the button underneath collided with the bar. A single surface — header, windows,
+    /// footer — reads as one decision with one place to confirm it.
     private var windowPicker: some View {
-        @Bindable var model = model
-        return VStack(spacing: 16) {
-            Text(model.targetLabel.isEmpty ? "Choose a window" : model.targetLabel)
-                .font(.system(size: 34, weight: .bold))
-                .tracking(-0.5)
-                .foregroundStyle(.white)
-                .shadow(color: .black.opacity(0.4), radius: 16, y: 3)
-
-            TextField("Search windows", text: $model.windowSearch)
-                .textFieldStyle(.plain)
-                .font(.system(size: 13))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 14)
-                .frame(width: 280, height: 34)
-                .background(.white.opacity(0.12), in: Capsule())
-                .overlay(Capsule().strokeBorder(.white.opacity(0.16)))
-
-            if model.filteredWindows.isEmpty {
-                Text(model.windows.isEmpty ? "No windows are open to record."
-                                           : "Nothing matches that.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.white.opacity(0.6))
-                    .frame(height: 120)
-            } else {
-                ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 12)], spacing: 12) {
-                        ForEach(model.filteredWindows) { source in
-                            WindowTile(source: source,
-                                       thumbnail: model.thumbnail(for: source),
-                                       isSelected: model.target == source.target) {
-                                model.select(source)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 4)
-                }
-                .frame(maxWidth: 780, maxHeight: 420)
-            }
-
-            StartButton(isArmed: model.target != nil, action: start)
-                .padding(.top, 4)
-                .disabled(model.target == nil)
-                .opacity(model.target == nil ? 0.45 : 1)
-        }
-        .padding(40)
+        WindowPickerPanel(model: model, start: start, cancel: cancel)
+            // Clear of the menu bar and of the recorder bar, which stays usable under this.
+            .padding(insets)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
-/// One window on offer.
-private struct WindowTile: View {
-    let source: RecorderModel.Source
-    let thumbnail: CGImage?
-    let isSelected: Bool
+/// The window picker: search, the windows grouped by where they are, and the choice.
+///
+/// Shaped like a launcher rather than a dialog. The search field *is* the header, there
+/// are no rules or outlines — space and a change of shade do the separating — and the one
+/// action lives in a quiet bar along the bottom, with the key that does it beside it.
+private struct WindowPickerPanel: View {
+    @Bindable var model: RecorderModel
+    let start: () -> Void
+    /// The same as pressing escape.
+    let cancel: () -> Void
+    @FocusState private var searchFocused: Bool
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var onScreen: [RecorderModel.Source] { model.filteredWindows.filter(\.isOnScreen) }
+    private var elsewhere: [RecorderModel.Source] { model.filteredWindows.filter { !$0.isOnScreen } }
+
+    private var selected: RecorderModel.Source? {
+        model.windows.first { $0.target == model.target }
+    }
+
+    private let radius: CGFloat = 20
+
+    var body: some View {
+        VStack(spacing: 0) {
+            searchBar
+            content
+            actionBar
+        }
+        .frame(maxWidth: 880)
+        .background {
+            let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+            ZStack {
+                // Near-solid, not glass. Over a scrim this dark any material turns to the
+                // same muddy grey in both themes, and the previews and labels on it lose
+                // their edges. A clean surface is what lets the content carry the contrast.
+                shape.fill(.regularMaterial)
+                shape.fill(colorScheme == .dark ? Color(white: 0.13).opacity(0.95)
+                                                : Color(white: 0.985).opacity(0.97))
+            }
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.5 : 0.3), radius: 44, y: 20)
+        }
+        .onAppear { searchFocused = true }
+    }
+
+    // MARK: Search
+
+    private var searchBar: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "macwindow")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(.secondary)
+            // The prompt is styled apart from the text: `foregroundStyle` below would
+            // otherwise paint it full strength, and a hint that looks typed is not a hint.
+            TextField("", text: $model.windowSearch,
+                      prompt: Text("Choose a window to record…").foregroundStyle(.tertiary))
+                .textFieldStyle(.plain)
+                .font(.system(size: 19))
+                .foregroundStyle(.primary)
+                .focused($searchFocused)
+            if model.windowSearch.isEmpty {
+                Text(countLine)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.tertiary)
+            } else {
+                Button {
+                    model.windowSearch = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 22)
+        .frame(height: 64)
+    }
+
+    private var countLine: String {
+        let count = model.windows.count
+        return count == 1 ? "1 window" : "\(count) windows"
+    }
+
+    // MARK: Windows
+
+    @ViewBuilder
+    private var content: some View {
+        if model.filteredWindows.isEmpty {
+            emptyState
+        } else {
+            // Grows with the windows until it runs out of room, then scrolls — a panel
+            // that is 600 points tall around four windows is mostly nothing.
+            ViewThatFits(in: .vertical) {
+                sections
+                ScrollView { sections }.scrollIndicators(.automatic)
+            }
+        }
+    }
+
+    private var sections: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            if !onScreen.isEmpty {
+                section("On this desktop", onScreen)
+            }
+            // The Space used to be a badge on every card; as a heading it is said once, and
+            // the windows you can see come first.
+            if !elsewhere.isEmpty {
+                section("On other Spaces", elsewhere)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 2)
+        .padding(.bottom, 12)
+    }
+
+    private func section(_ title: String, _ sources: [RecorderModel.Source]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 240, maximum: 320), spacing: 4)],
+                      alignment: .leading,
+                      spacing: 4) {
+                ForEach(sources) { source in
+                    WindowTile(source: source,
+                               thumbnail: model.thumbnail(for: source),
+                               isSelected: model.target == source.target) {
+                        model.select(source)
+                    }
+                }
+            }
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: model.windows.isEmpty ? "macwindow.on.rectangle" : "magnifyingglass")
+                .font(.system(size: 26, weight: .light))
+                .foregroundStyle(.primary.opacity(0.35))
+                .padding(.bottom, 4)
+            Text(model.windows.isEmpty ? "No windows are open to record"
+                                       : "No windows match “\(model.windowSearch)”")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.primary.opacity(0.85))
+            Text(model.windows.isEmpty ? "Open the app you want to record, and it will appear here."
+                                       : "Try the app's name, or part of the window's title.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 60)
+    }
+
+    // MARK: Actions
+
+    private var actionBar: some View {
+        HStack(spacing: 10) {
+            if let selected {
+                AppIcon(processID: selected.processID, size: 20)
+                Text(selected.title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.primary.opacity(0.9))
+                    .lineLimit(1)
+                Text(model.targetDetail.isEmpty ? selected.subtitle : model.targetDetail)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            } else {
+                Text("Select a window to record it")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 16)
+
+            ActionChip(title: "Record Window", key: "↩", isPrimary: true, action: start)
+                .disabled(selected == nil)
+                .opacity(selected == nil ? 0.4 : 1)
+            Rectangle()
+                .fill(.primary.opacity(0.12))
+                .frame(width: 1, height: 16)
+            ActionChip(title: "Cancel", key: "esc", isPrimary: false, action: cancel)
+        }
+        .padding(.leading, 22)
+        .padding(.trailing, 12)
+        .frame(height: 56)
+        .animation(StudioMotion.selection, value: selected?.id)
+    }
+}
+
+/// An action and its key, the way a launcher lists them: words, then the keycap.
+private struct ActionChip: View {
+    let title: String
+    let key: String
+    let isPrimary: Bool
     let action: () -> Void
     @State private var isHovering = false
 
-    /// The window's own title, which is what tells two windows of one application apart.
-    ///
-    /// It used to be replaced by "On another Space" whenever that was true, which was
-    /// exactly backwards: the Space is a footnote and the title is the answer. Five rows
-    /// reading "Google Chrome · On another Space" are five ways to pick the wrong one.
-    /// The Space, and a window that cannot be recorded at all, are badges instead.
-    private var subtitle: String {
-        source.subtitle.isEmpty ? "Untitled window" : source.subtitle
-    }
-
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 8) {
-                preview
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(source.title)
-                        .font(.system(size: 12.5, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                    Text(subtitle)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.white.opacity(0.6))
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 8) {
+                Text(title)
+                    .font(.system(size: 13, weight: isPrimary ? .semibold : .regular))
+                    .foregroundStyle(.primary.opacity(isPrimary ? 0.95 : 0.6))
+                KeyCap(key: key)
             }
-            .padding(9)
-            .background(isSelected ? AnyShapeStyle(StudioPalette.brand.opacity(0.85))
-                                   : AnyShapeStyle(.white.opacity(isHovering ? 0.16 : 0.09)),
-                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(.white.opacity(isSelected ? 0.3 : 0.12))
-            }
+            .padding(.horizontal, 10)
+            .frame(height: 32)
+            .background(.primary.opacity(isHovering ? 0.08 : 0),
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(BarButtonStyle(pressedScale: 0.97))
@@ -316,54 +485,155 @@ private struct WindowTile: View {
             withAnimation(StudioMotion.hover) { isHovering = hovering }
         }
     }
+}
 
-    /// The window itself, which is what anyone is actually picturing when they choose one.
-    @ViewBuilder
-    private var preview: some View {
-        ZStack(alignment: .topTrailing) {
-            Group {
-                if let thumbnail {
-                    Image(decorative: thumbnail, scale: 1)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } else {
-                    // Not yet photographed, or a window that refuses to be — the second is
-                    // said out loud by the badge below rather than left as a grey box.
-                    Rectangle().fill(.white.opacity(0.06))
-                        .overlay {
-                            Image(systemName: source.isShareable ? "macwindow" : "eye.slash")
-                                .font(.system(size: 18))
-                                .foregroundStyle(.white.opacity(0.35))
-                        }
-                }
-            }
-            .frame(height: 96)
-            .frame(maxWidth: .infinity)
-            .clipped()
-            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+/// A key, drawn as a key.
+private struct KeyCap: View {
+    let key: String
 
-            badges.padding(6)
-        }
-    }
-
-    @ViewBuilder
-    private var badges: some View {
-        VStack(alignment: .trailing, spacing: 4) {
-            if !source.isShareable {
-                badge("Hidden from recording", tint: .orange)
-            } else if !source.isOnScreen {
-                badge("Another Space", tint: .white.opacity(0.85))
-            }
-        }
-    }
-
-    private func badge(_ text: String, tint: Color) -> some View {
-        Text(text)
-            .font(.system(size: 9, weight: .semibold))
-            .foregroundStyle(tint)
+    var body: some View {
+        Text(key)
+            .font(.system(size: 11, weight: .medium, design: .rounded))
+            .foregroundStyle(.primary.opacity(0.6))
             .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .background(.black.opacity(0.6), in: Capsule())
+            .frame(minWidth: 22, minHeight: 20)
+            .background(.primary.opacity(0.1), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+    }
+}
+
+/// The icon of the application that owns a window.
+private struct AppIcon: View {
+    let processID: pid_t
+    let size: CGFloat
+
+    var body: some View {
+        if processID != 0, let icon = NSRunningApplication(processIdentifier: processID)?.icon {
+            Image(nsImage: icon)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: size, height: size)
+        } else {
+            Image(systemName: "macwindow")
+                .font(.system(size: size * 0.6))
+                .foregroundStyle(.secondary)
+                .frame(width: size, height: size)
+        }
+    }
+}
+
+/// One window on offer.
+///
+/// No outline in any state. Resting, it is the window and its name on the panel; hovered
+/// or chosen, a soft wash comes up behind it, the way a launcher marks the row you are on.
+private struct WindowTile: View {
+    let source: RecorderModel.Source
+    let thumbnail: CGImage?
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var isHovering = false
+    @Environment(\.colorScheme) private var colorScheme
+
+    /// The window's own title, which is what tells two windows of one application apart.
+    ///
+    /// It used to be replaced by "On another Space" whenever that was true, which was
+    /// exactly backwards: the Space is a footnote and the title is the answer. Five rows
+    /// reading "Google Chrome · On another Space" are five ways to pick the wrong one.
+    private var subtitle: String {
+        source.subtitle.isEmpty ? "Untitled window" : source.subtitle
+    }
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 10) {
+                preview
+                HStack(spacing: 9) {
+                    AppIcon(processID: source.processID, size: 22)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(source.title)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Text(subtitle)
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.horizontal, 2)
+            }
+            .padding(10)
+            .background(.primary.opacity(highlight),
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(BarButtonStyle(pressedScale: 0.98))
+        .onHover { hovering in
+            withAnimation(StudioMotion.hover) { isHovering = hovering }
+        }
+        .animation(StudioMotion.selection, value: isSelected)
+        .help(source.subtitle.isEmpty ? source.title : "\(source.title) — \(source.subtitle)")
+    }
+
+    /// A wash behind the tile, lighter in light mode — the same step of grey reads twice
+    /// as heavy on a white panel as on a dark one.
+    private var highlight: Double {
+        let dark = colorScheme == .dark
+        if isSelected { return dark ? 0.12 : 0.07 }
+        return isHovering ? (dark ? 0.06 : 0.035) : 0
+    }
+
+    /// The window itself, shown whole inside a well rather than cropped to fill it — the
+    /// way Mission Control shows it — so a tall window and a wide one both read as windows.
+    private var preview: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                // A step lighter than the panel in dark mode, not darker: most windows are
+                // dark themselves, and a black well swallowed them whole.
+                .fill(colorScheme == .dark ? Color.white.opacity(0.045) : Color.black.opacity(0.045))
+
+            if let thumbnail {
+                Image(decorative: thumbnail, scale: 1)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                    .shadow(color: .black.opacity(colorScheme == .dark ? 0.35 : 0.18), radius: 8, y: 3)
+                    .padding(12)
+            } else {
+                // Not photographed — another Space, or a window that refuses to be. The
+                // app's icon says whose it is, which a grey box never did.
+                AppIcon(processID: source.processID, size: 44)
+                    .opacity(source.isShareable ? 0.9 : 0.35)
+            }
+
+            VStack {
+                HStack(alignment: .top) {
+                    if !source.isShareable {
+                        Label("Hidden from recording", systemImage: "eye.slash")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.orange)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 4)
+                            .background(.black.opacity(0.6), in: Capsule())
+                    }
+                    Spacer()
+                    if isSelected {
+                        // The one mark of the accent in the grid: which window will record.
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 17, weight: .semibold))
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(.white, StudioPalette.brand)
+                            .transition(.scale(scale: 0.5).combined(with: .opacity))
+                    }
+                }
+                Spacer()
+            }
+            .padding(7)
+        }
+        .aspectRatio(16 / 10, contentMode: .fit)
+        .frame(maxWidth: .infinity)
     }
 }
 

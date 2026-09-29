@@ -89,6 +89,9 @@ final class RecorderModel {
         /// Whether the system will let a recording see it. A private browser window says
         /// no, and captures as a black rectangle — see `WindowSharing`.
         var isShareable: Bool = true
+        /// The application that owns the window, so the picker can show its icon — the
+        /// fastest way to find one window among thirty. Zero for a display or an area.
+        var processID: pid_t = 0
     }
 
     private(set) var displays: [Source] = []
@@ -357,7 +360,8 @@ final class RecorderModel {
                            frame: window.frame,
                            depth: depth,
                            isOnScreen: window.isOnScreen,
-                           isShareable: !refusing.contains(window.windowID))
+                           isShareable: !refusing.contains(window.windowID),
+                           processID: window.owningApplication?.processID ?? 0)
                 }
                 .sorted {
                     // On-screen first, then by application, so the list reads as "what you
