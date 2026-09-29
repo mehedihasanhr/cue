@@ -156,4 +156,20 @@ public extension Timeline {
                               deviceID: track.deviceID)
         }
     }
+
+    /// Switches the voice treatments on for every microphone, as a new recording's
+    /// starting point.
+    ///
+    /// Microphones only: "clean up voice" run over a browser tab's music takes the music's
+    /// quiet passages out as if they were hiss, and "even out volume" on system audio
+    /// levels whatever the demo happened to play. Only ever switches *on* — a default that
+    /// is off leaves the lane as the recorder made it, rather than asserting "off" over a
+    /// project that may already have been given a treatment some other way. A recording
+    /// whose sound is inside the video has no microphone lanes and is left alone.
+    mutating func treatVoices(cleansVoice: Bool, evensVolume: Bool) {
+        for index in soundTracks.indices where soundTracks[index].source == .microphone {
+            if cleansVoice { soundTracks[index].style.cleansVoice = true }
+            if evensVolume { soundTracks[index].style.evensVolume = true }
+        }
+    }
 }

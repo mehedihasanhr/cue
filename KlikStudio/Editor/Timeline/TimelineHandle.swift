@@ -37,6 +37,20 @@ struct TimelineHandle: View {
     /// The widest the grabbable area goes.
     static let target: CGFloat = 14
 
+    @Environment(\.colorScheme) private var colorScheme
+
+    /// The same ink as the selection ring the bars sit on — see
+    /// `TimelineChipBackground`. White bars on a light strip vanished into the lane, and
+    /// took the ends of the ring with them: a selected chip was two dark lines, one
+    /// above it and one below.
+    private var ink: Color {
+        colorScheme == .dark ? .white : Color(white: 0.08)
+    }
+
+    private var mark: Color {
+        colorScheme == .dark ? .black.opacity(0.38) : .white.opacity(0.7)
+    }
+
     /// Never more than a quarter of the chip: at that point the two bars and the label are
     /// competing for the same few points, and the label loses.
     private var bar: CGFloat { max(3, min(7, chipWidth / 4)) }
@@ -54,7 +68,7 @@ struct TimelineHandle: View {
                                        bottomTrailingRadius: leading ? 0 : radius,
                                        topTrailingRadius: leading ? 0 : radius,
                                        style: .continuous)
-                    .fill(.white.opacity(isVisible ? (isHovered ? 1 : 0.88) : 0))
+                    .fill(ink.opacity(isVisible ? (isHovered ? 1 : 0.88) : 0))
                     .overlay { grip }
                     .frame(width: bar, height: height)
                     .animation(StudioMotion.state, value: isVisible)
@@ -71,7 +85,7 @@ struct TimelineHandle: View {
     private var grip: some View {
         if bar >= 6 {
             Capsule()
-                .fill(.black.opacity(isVisible ? 0.38 : 0))
+                .fill(mark.opacity(isVisible ? 1 : 0))
                 .frame(width: 1.5, height: max(6, height * 0.42))
         }
     }

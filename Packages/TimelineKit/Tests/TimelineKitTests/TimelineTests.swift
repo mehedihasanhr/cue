@@ -279,10 +279,14 @@ struct TimelineTests {
         let older = try JSONSerialization.data(withJSONObject: object)
 
         let read = try JSONDecoder().decode(Timeline.self, from: older)
-        #expect(read.camera == CameraStyle())
+        // Every number the renderer used before the camera could be adjusted — and no
+        // gliding, which arrived later still and is the one thing a new project gets
+        // that this one must not.
+        #expect(read.camera == CameraStyle.asSavedBeforeGliding)
         #expect(read.camera.steadiness == 0.7)
         #expect(read.camera.follow == 1)
         #expect(read.camera.safeArea == 0.85)
+        #expect(read.camera.glidesBetweenZooms == false)
     }
 
     @Test func cameraSettingsSurviveARoundTrip() throws {

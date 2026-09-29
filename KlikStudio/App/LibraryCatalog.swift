@@ -20,6 +20,9 @@ import RecordKit
 @Observable
 final class LibraryCatalog {
     private(set) var entries: [RecordingEntry] = []
+    /// Takes that never finished, shown above the others with a way to recover them.
+    /// Never the one being recorded right now, which has a marker for the best of reasons.
+    private(set) var interrupted: [InterruptedTake] = []
     /// True until the first listing has come back, so an empty folder and a folder that
     /// has not been read yet do not both draw "No recordings yet".
     private(set) var isLoading = true
@@ -77,7 +80,12 @@ final class LibraryCatalog {
     /// for the detachment to lose.
     func reload() async {
         let library = library
-        entries = await Task.detached(priority: .userInitiated) { library.entries() }.value
+        let live = StudioAppDelegate.shared?.studio?.session.packageURL.map { Set([$0]) } ?? []
+        (entries, interrupted) = await Task.detached(priority: .userInitiated) {
+            // A take that finished but kept its marker is an ordinary entry; the launch
+            // check tidies the marker away.
+            (library.entries(), library.interruptedTakes(excluding: live).filter { !$0.hasFinished })
+        }.value
         isLoading = false
     }
 

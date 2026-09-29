@@ -204,10 +204,16 @@ public struct PictureMapping: Equatable, Sendable {
     public let stage: CGRect
     /// Where the recording is inside the finished frame, normalised, top-left origin.
     public let video: CGRect
+    /// Which part of the recording `video` is showing, normalised to the whole recording.
+    /// The whole of it unless the picture has been cropped.
+    public let crop: CGRect
 
-    public init(stage: CGRect, video: CGRect) {
+    public static let wholeRecording = CGRect(x: 0, y: 0, width: 1, height: 1)
+
+    public init(stage: CGRect, video: CGRect, crop: CGRect = PictureMapping.wholeRecording) {
         self.stage = stage
         self.video = video
+        self.crop = crop.width > 0 && crop.height > 0 ? crop : PictureMapping.wholeRecording
     }
 
     /// A rect normalised to the finished frame, in view points.
@@ -243,6 +249,31 @@ public struct PictureMapping: Equatable, Sendable {
                       y: (output.minY - video.minY) / video.height,
                       width: output.width / video.width,
                       height: output.height / video.height)
+    }
+
+    // MARK: - The footage, crop or no crop
+
+    /// A rect normalised to the *whole* recording, in view points.
+    ///
+    /// For things that are attached to the footage rather than to the picture — a blur is
+    /// over an email address, and the address is at the same place in the recording
+    /// whatever the crop is. The renderer applies a blur before it crops for exactly that
+    /// reason; drawing the blur's outline against the cropped picture instead put the
+    /// outline in one place and the blur in another as soon as there was a crop.
+    public func view(footage rect: CGRect) -> CGRect {
+        view(recording: CGRect(x: (rect.minX - crop.minX) / crop.width,
+                               y: (rect.minY - crop.minY) / crop.height,
+                               width: rect.width / crop.width,
+                               height: rect.height / crop.height))
+    }
+
+    /// A rect in view points, normalised to the whole recording.
+    public func footage(view rect: CGRect) -> CGRect {
+        let shown = recording(view: rect)
+        return CGRect(x: crop.minX + shown.minX * crop.width,
+                      y: crop.minY + shown.minY * crop.height,
+                      width: shown.width * crop.width,
+                      height: shown.height * crop.height)
     }
 
     /// A drag's travel in view points, as a fraction of the recording.

@@ -47,8 +47,6 @@ final class LibraryWindowController: NSWindowController {
     }
 
     func present() {
-        showWindow(nil)
-        window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        StudioAutomation.present(self)
     }
 }

@@ -20,6 +20,10 @@ public enum CopiedRegion: Equatable, Sendable {
     case caption(CaptionCue)
     case audio(AudioRegion)
     case cursor(CursorRegion)
+    /// A key press shown in the video.
+    case key(KeyCue)
+    /// A stretch with its own camera layout.
+    case cameraLayout(CameraLayoutRegion)
 
     /// Reads whatever the selection points at, if it points at something copyable.
     ///
@@ -46,6 +50,12 @@ public enum CopiedRegion: Equatable, Sendable {
         case .cursorRegion(let id):
             guard let region = timeline.cursorRegions.first(where: { $0.id == id }) else { return nil }
             self = .cursor(region)
+        case .keyCue(let id):
+            guard let cue = timeline.keyCues.first(where: { $0.id == id }) else { return nil }
+            self = .key(cue)
+        case .cameraLayout(let id):
+            guard let region = timeline.cameraLayouts.first(where: { $0.id == id }) else { return nil }
+            self = .cameraLayout(region)
         // A run of the recording's own sound is footage, not a region, whatever lane it
         // is drawn on — pasting one would mean a second copy of the same take playing over
         // itself, which is a feature, not a side effect of Copy. Still refused even now
@@ -70,6 +80,8 @@ public enum CopiedRegion: Equatable, Sendable {
         case .caption(let r): r.id
         case .audio(let r): r.id
         case .cursor(let r): r.id
+        case .key(let r): r.id
+        case .cameraLayout(let r): r.id
         }
     }
 
@@ -81,6 +93,8 @@ public enum CopiedRegion: Equatable, Sendable {
         case .caption(let r): r.start
         case .audio(let r): r.start
         case .cursor(let r): r.start
+        case .key(let r): r.start
+        case .cameraLayout(let r): r.start
         }
     }
 
@@ -92,6 +106,8 @@ public enum CopiedRegion: Equatable, Sendable {
         case .caption(let r): r.duration
         case .audio(let r): r.duration
         case .cursor(let r): r.duration
+        case .key(let r): r.duration
+        case .cameraLayout(let r): r.duration
         }
     }
 
@@ -105,11 +121,15 @@ public enum CopiedRegion: Equatable, Sendable {
     public var title: String {
         switch self {
         case .zoom: "Zoom"
-        case .blur: "Blur"
+        // The kind's own name: "Paste Spotlight", not "Paste Blur" for a region that
+        // hides nothing.
+        case .blur(let r): r.style.title
         case .annotation: "Annotation"
         case .caption: "Caption"
         case .cursor: "Pointer"
         case .audio: "Sound"
+        case .key: "Shortcut"
+        case .cameraLayout: "Camera Layout"
         }
     }
 
@@ -123,6 +143,8 @@ public enum CopiedRegion: Equatable, Sendable {
         case .caption(let r): .caption(r.id)
         case .audio(let r): .audio(r.id)
         case .cursor(let r): .cursorRegion(r.id)
+        case .key(let r): .keyCue(r.id)
+        case .cameraLayout(let r): .cameraLayout(r.id)
         }
     }
 
@@ -134,6 +156,12 @@ public enum CopiedRegion: Equatable, Sendable {
     /// checks — see `EditorModel.pasteAtPlayhead`.
     public var audioPath: String? {
         if case .audio(let region) = self { return region.path }
+        return nil
+    }
+
+    /// The file a copied picture needs, relative to its project.
+    public var picturePath: String? {
+        if case .annotation(let item) = self, case .image(let path) = item.kind { return path }
         return nil
     }
 
@@ -176,12 +204,18 @@ public enum CopiedRegion: Equatable, Sendable {
             // to the region it was cut from, and a copy landing somewhere else with no ramp
             // at one end would snap in; and a copy arrives unlocked, because the first thing
             // anybody does with a duplicate is drag it.
+            //
+            // Whether it is switched on, and whether it was framed by hand, are what the
+            // zoom *is* and so they travel: a zoom that was off coming back on is the copy
+            // undoing an edit, and one that forgot it was hand-framed is one the next
+            // auto-zoom run feels free to replace.
             return .zoom(ZoomRegion(start: start, duration: duration, scale: r.scale,
                                     center: r.center, easing: r.easing, transition: r.transition,
-                                    followsCursor: r.followsCursor, source: r.source))
+                                    followsCursor: r.followsCursor, source: r.source,
+                                    isEnabled: r.isEnabled, isEdited: r.isEdited,
+                                    isInstant: r.isInstant))
         case .blur(let r):
-            return .blur(BlurRegion(start: start, duration: duration,
-                                    rect: r.rect, style: r.style, radius: r.radius))
+            return .blur(r.placed(at: start, duration: duration))
         case .annotation(let r):
             // Everything that makes it look and move the way it does comes along — a copy
             // that lost its turn or its entrance would not be a copy. It arrives unlocked,
@@ -190,16 +224,27 @@ public enum CopiedRegion: Equatable, Sendable {
                                               rect: r.rect, color: r.color, fontSize: r.fontSize,
                                               rotation: r.rotation, opacity: r.opacity,
                                               animation: r.animation, isLocked: false,
-                                              isHidden: r.isHidden, attachment: r.attachment))
+                                              isHidden: r.isHidden, attachment: r.attachment,
+                                              style: r.style))
         case .caption(let r):
-            return .caption(CaptionCue(start: start, duration: duration, text: r.text))
+            return .caption(CaptionCue(start: start, duration: duration, text: r.text, words: r.words))
         case .audio(let r):
             return .audio(AudioRegion(start: start, duration: duration, path: r.path,
-                                      gain: r.gain, sourceStart: r.sourceStart))
+                                      gain: r.gain, sourceStart: r.sourceStart,
+                                      fadeIn: r.fadeIn, fadeOut: r.fadeOut,
+                                      ducksUnderSpeech: r.ducksUnderSpeech, duckAmount: r.duckAmount))
         case .cursor(let r):
             return .cursor(CursorRegion(start: start, duration: duration, isHidden: r.isHidden,
                                         smoothing: r.smoothing, isHeld: r.isHeld,
-                                        transition: r.transition))
+                                        transition: r.transition,
+                                        spotlights: r.spotlights, magnifies: r.magnifies))
+        case .key(let r):
+            // The keys, the count and whether it is shown all travel: a copy that came
+            // back visible would be the copy undoing an edit.
+            return .key(KeyCue(start: start, duration: duration, modifiers: r.modifiers,
+                               key: r.key, count: r.count, isHidden: r.isHidden))
+        case .cameraLayout(let r):
+            return .cameraLayout(CameraLayoutRegion(start: start, duration: duration, layout: r.layout))
         }
     }
 
@@ -219,13 +264,16 @@ public enum CopiedRegion: Equatable, Sendable {
         case .zoom(let r):
             return "Klik zoom · \(String(format: "%.1f", r.scale))× · \(length)"
         case .blur(let r):
-            return "Klik blur · \(r.style == .pixelate ? "pixelate" : "gaussian") · \(length)"
+            return "Klik mask · \(r.style.rawValue) · \(length)"
         case .annotation(let r):
             switch r.kind {
             case .text(let text): return "Klik annotation · “\(text)” · \(length)"
             case .arrow: return "Klik annotation · arrow · \(length)"
             case .rectangle: return "Klik annotation · rectangle · \(length)"
             case .image(let path): return "Klik annotation · \((path as NSString).lastPathComponent) · \(length)"
+            case .callout(let text, _): return "Klik callout · “\(text)” · \(length)"
+            case .ellipse, .line, .highlight, .step:
+                return "Klik annotation · \(r.kind.label.lowercased()) · \(length)"
             }
         case .caption(let r):
             // The caption's own words, which are the thing somebody pasting a caption
@@ -234,7 +282,19 @@ public enum CopiedRegion: Equatable, Sendable {
         case .audio(let r):
             return "Klik sound · \((r.path as NSString).lastPathComponent) · \(length)"
         case .cursor(let r):
-            return "Klik pointer · \(r.isHidden ? "hidden" : (r.isHeld ? "held" : "calmed")) · \(length)"
+            // Every override the stretch carries, so a spotlight or magnifier stretch is not
+            // described as a calmed one.
+            var what: [String] = []
+            if r.isHidden { what.append("hidden") }
+            if r.isHeld { what.append("held") }
+            if r.spotlights { what.append("spotlit") }
+            if r.magnifies { what.append("magnified") }
+            if what.isEmpty { what.append("calmed") }
+            return "Klik pointer · \(what.joined(separator: ", ")) · \(length)"
+        case .key(let r):
+            return "Klik shortcut · \(r.title) · \(length)"
+        case .cameraLayout(let r):
+            return "Klik camera · \(r.layout.title.lowercased()) · \(length)"
         }
     }
 }
@@ -255,6 +315,8 @@ extension CopiedRegion: Codable {
     /// make every copy made by an older build unreadable.
     private enum Kind: String, Codable {
         case zoom, blur, annotation, caption, audio, cursor
+        case key
+        case cameraLayout
     }
 
     private var kind: Kind {
@@ -265,6 +327,8 @@ extension CopiedRegion: Codable {
         case .caption: .caption
         case .audio: .audio
         case .cursor: .cursor
+        case .key: .key
+        case .cameraLayout: .cameraLayout
         }
     }
 
@@ -279,6 +343,8 @@ extension CopiedRegion: Codable {
         case .caption(let r): try container.encode(r, forKey: .region)
         case .audio(let r): try container.encode(r, forKey: .region)
         case .cursor(let r): try container.encode(r, forKey: .region)
+        case .key(let r): try container.encode(r, forKey: .region)
+        case .cameraLayout(let r): try container.encode(r, forKey: .region)
         }
     }
 
@@ -295,6 +361,9 @@ extension CopiedRegion: Codable {
         case .caption: self = .caption(try container.decode(CaptionCue.self, forKey: .region))
         case .audio: self = .audio(try container.decode(AudioRegion.self, forKey: .region))
         case .cursor: self = .cursor(try container.decode(CursorRegion.self, forKey: .region))
+        case .key: self = .key(try container.decode(KeyCue.self, forKey: .region))
+        case .cameraLayout:
+            self = .cameraLayout(try container.decode(CameraLayoutRegion.self, forKey: .region))
         }
     }
 

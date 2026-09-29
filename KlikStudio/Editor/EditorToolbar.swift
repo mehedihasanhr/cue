@@ -102,25 +102,30 @@ struct EditorToolbar: View {
         // come back when it is opened again, which is worth a word: a downward arrow in
         // a row of grey icons reads as "download" to most people, and the one control
         // that keeps your work should not have to be guessed at.
+        //
+        // It reads the autosaver's state, which is the one truth about saving: written,
+        // being written, waiting to be written, or not written and why. A failure stays
+        // on show — red, and pressable to try again — until a write succeeds.
+        let saving = model.autosaver.state
         Button { model.save() } label: {
-            Text(model.isDirty ? "Save" : "Saved")
+            Text(saveTitle(for: saving))
                 .font(.system(size: 12))
-                .foregroundStyle(model.isDirty ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
+                .foregroundStyle(saveStyle(for: saving))
                 .padding(.horizontal, 11)
                 .frame(height: 26)
                 .background {
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(.white.opacity(model.isDirty ? 0.1 : 0.04))
+                        .fill(.white.opacity(saveIsPressable(saving) ? 0.1 : 0.04))
                 }
                 .contentShape(Rectangle())
         }
         .buttonStyle(BarButtonStyle())
-        .disabled(!model.isDirty)
-        .keyboardShortcut("s")
-        .animation(StudioMotion.state, value: model.isDirty)
-        .help(model.isDirty
-              ? "Save these edits into the recording, so you can open it and carry on later (⌘S)"
-              : "Every edit is saved in the recording")
+        .disabled(!saveIsPressable(saving))
+        // ⌘S is File › Save's, in the menu bar, where it answers whatever has the keyboard.
+        .animation(StudioMotion.state, value: saving)
+        .help(saveHelp(for: saving))
+        .accessibilityLabel("Save")
+        .accessibilityValue(saveTitle(for: saving))
 
         // Where a running export lives: in the chrome, not in a modal sheet. Nothing at
         // all when nothing is exporting.
@@ -140,6 +145,49 @@ struct EditorToolbar: View {
         }
         .buttonStyle(BarButtonStyle())
         .help("Export this as a video or a GIF")
+    }
+
+    // MARK: - The Save control's four faces
+
+    private func saveTitle(for state: EditorAutosaver.State) -> String {
+        switch state {
+        case .saved: "Saved"
+        case .edited: "Save"
+        case .saving: "Saving…"
+        case .failed: "Couldn't save"
+        }
+    }
+
+    /// Red for a failure in either appearance: `Color.red` adapts, and it is the one
+    /// state in this bar that must not be quiet.
+    private func saveStyle(for state: EditorAutosaver.State) -> AnyShapeStyle {
+        switch state {
+        case .saved, .saving: AnyShapeStyle(.tertiary)
+        case .edited: AnyShapeStyle(.primary)
+        case .failed: AnyShapeStyle(Color.red)
+        }
+    }
+
+    private func saveIsPressable(_ state: EditorAutosaver.State) -> Bool {
+        switch state {
+        case .edited, .failed: true
+        case .saved, .saving: false
+        }
+    }
+
+    private func saveHelp(for state: EditorAutosaver.State) -> String {
+        switch state {
+        case .saved:
+            "Every edit is saved in the recording"
+        case .edited:
+            model.autosaver.isEnabled
+                ? "These edits will be saved into the recording in a moment. ⌘S saves them now."
+                : "Save these edits into the recording, so you can open it and carry on later (⌘S)"
+        case .saving:
+            "Writing the edits into the recording"
+        case .failed(let reason):
+            reason
+        }
     }
 }
 

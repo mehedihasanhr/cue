@@ -54,6 +54,12 @@ struct AudioInspector: View {
                             value: style.binding(\.sound.gain, "Level"), range: 0...2,
                             format: { "\(Int(($0 * 100).rounded()))%" })
                 .disabled(model.timeline.sound.isMuted)
+            // Here only for a recording with its sound inside the video: with separate
+            // sources the switches are per source, in Sources above.
+            if !model.timeline.hasSeparateSound {
+                VoiceSwitches(model: model, id: nil,
+                              unavailable: model.timeline.sound.isMuted ? "Off while the recording's sound is off." : nil)
+            }
             Text("Goes into the exported video. Turn it down to sit under music, or off to keep only a voiceover.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -226,6 +232,17 @@ struct AudioInspector: View {
     private func source(_ track: SoundTrack) -> some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
             HStack(spacing: 7) {
+                // A tick, like every other on-and-off in these panels. It was the one
+                // switch in the editor, which made a source look like a different kind of
+                // setting from "Keep the recording's sound" two rows under it.
+                Toggle("", isOn: Binding(
+                    get: { !track.style.isMuted },
+                    set: { _ in model.toggleSoundMute(track.id) }
+                ))
+                .labelsHidden()
+                .toggleStyle(.checkbox)
+                .help(track.style.isMuted ? "Bring \(track.name) back" : "Leave \(track.name) out")
+                .accessibilityLabel("Include \(track.name)")
                 Image(systemName: track.style.isMuted ? "speaker.slash.fill" : track.symbol)
                     .font(.system(size: 11))
                     .foregroundStyle(track.style.isMuted ? .secondary : Color.accentColor)
@@ -245,14 +262,6 @@ struct AudioInspector: View {
                         .controlSize(.mini)
                         .help("Leave only this one audible")
                 }
-                Toggle("", isOn: Binding(
-                    get: { !track.style.isMuted },
-                    set: { _ in model.toggleSoundMute(track.id) }
-                ))
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .help(track.style.isMuted ? "Bring \(track.name) back" : "Leave \(track.name) out")
             }
             InspectorSlider(model: model, "Level", systemImage: "speaker.wave.2",
                             value: Binding(
@@ -262,6 +271,8 @@ struct AudioInspector: View {
                             range: 0...2,
                             format: { "\(Int(($0 * 100).rounded()))%" })
                 .disabled(track.style.isMuted)
+            VoiceSwitches(model: model, id: track.id,
+                          unavailable: track.style.isMuted ? "Off while \(track.name) is left out." : nil)
         }
     }
 
@@ -366,6 +377,7 @@ struct AudioInspector: View {
                                     ),
                                     range: 0...2,
                                     format: { "\(Int(($0 * 100).rounded()))%" })
+                    DuckControls(model: model, id: region.id, compact: true)
                 }
             }
         }

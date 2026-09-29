@@ -11,20 +11,32 @@ struct SelectionInspector: View {
             switch model.selection {
             case .clip(let id):
                 if let index = model.timeline.clips.firstIndex(where: { $0.id == id }) {
-                    clip(model.timeline.clips[index], at: index)
+                    let clip = model.timeline.clips[index]
+                    if clip.isFootage {
+                        self.clip(clip, at: index)
+                    } else {
+                        ClipHoldInspector(model: model, clip: clip, index: index)
+                    }
+                    if index > 0 {
+                        ClipTransitionInspector(model: model, clip: clip)
+                    }
                 }
             case .zoom(let id):
                 if let index = model.timeline.zooms.firstIndex(where: { $0.id == id }) {
                     ZoomInspector(model: model, index: index)
                 }
             case .blur(let id):
-                if let index = model.timeline.blurs.firstIndex(where: { $0.id == id }) {
-                    blur(index: index)
-                }
+                MaskInspector(model: model, id: id)
             case .annotation(let id):
                 AnnotationInspector(model: model, id: id)
             case .cursorRegion(let id):
                 CursorRegionInspector(model: model, id: id)
+            case .caption(let id):
+                CaptionCueInspector(model: model, id: id)
+            case .keyCue(let id):
+                KeyCueInspector(model: model, id: id)
+            case .cameraLayout(let id):
+                CameraLayoutInspector(model: model, id: id)
             case .sound, .soundTrack:
                 // The whole panel, because selecting the lane is how most people will
                 // arrive at these settings — and because the Sources section it opens with
@@ -92,6 +104,11 @@ struct SelectionInspector: View {
 
     private func clip(_ clip: Clip, at index: Int) -> some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
+            // A movie brought in says which, so its In and Out below are read as times in
+            // that file rather than in the recording.
+            if let name = model.mediaName(of: clip) {
+                InspectorRow(title: "Plays", value: name)
+            }
             InspectorRow(title: "Starts", value: Timecode.short(model.timeline.start(ofClipAt: index)))
             InspectorRow(title: "Length", value: Timecode.length(clip.duration))
 
@@ -139,6 +156,20 @@ struct SelectionInspector: View {
                                 }
                             ),
                             range: 0...2)
+
+            // Up to half the sound each, or five seconds: past that it is not a fade but
+            // the whole piece getting louder, which is a level, not an edge.
+            let longest = max(0.5, min(5, region.duration.seconds / 2))
+            InspectorSlider(model: model, "Fade in", systemImage: "arrow.up.right",
+                            value: fade(index, \.fadeIn, "Fade In"),
+                            range: 0...longest,
+                            format: Self.seconds)
+            InspectorSlider(model: model, "Fade out", systemImage: "arrow.down.right",
+                            value: fade(index, \.fadeOut, "Fade Out"),
+                            range: 0...longest,
+                            format: Self.seconds)
+
+            DuckControls(model: model, id: region.id)
 
             InspectorRow(title: "Starts", value: Timecode.short(region.start))
             InspectorRow(title: "Lasts", value: Timecode.length(region.duration))
@@ -190,8 +221,8 @@ struct SelectionInspector: View {
                 .font(.system(size: 12))
                 .monospacedDigit()
             Spacer(minLength: 4)
-            nudge("minus", clip: clip, edge: edge, by: -1 / 30)
-            nudge("plus", clip: clip, edge: edge, by: 1 / 30)
+            nudge("minus", clip: clip, edge: edge, by: -model.frameDuration)
+            nudge("plus", clip: clip, edge: edge, by: model.frameDuration)
         }
     }
 
@@ -225,6 +256,7 @@ struct SelectionInspector: View {
             Button("Reset Speed") { model.resetSpeed(of: clip) }
                 .disabled(clip.speed == 1)
             Spacer(minLength: 0)
+            ClipOrderButtons(model: model, index: index)
             Button(role: .destructive) {
                 model.deleteSelection()
             } label: {
@@ -237,27 +269,6 @@ struct SelectionInspector: View {
         }
         .controlSize(.small)
         .padding(.top, 2)
-    }
-
-    // MARK: - Blur
-
-    private func blur(index: Int) -> some View {
-        let blur = model.timeline.blurs[index]
-        return VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-            Picker("Style", selection: Binding(
-                get: { blur.style },
-                set: { style in change("Blur Style") { $0.blurs[index].style = style } }
-            )) {
-                Text("Blur").tag(BlurRegion.Style.gaussian)
-                Text("Pixelate").tag(BlurRegion.Style.pixelate)
-            }
-            .pickerStyle(.segmented)
-
-            InspectorSlider(model: model, "Strength", systemImage: "drop",
-                            value: binding(index, \.radius, "Blur Strength", on: \.blurs),
-                            range: 4...80)
-        }
-        .inspectorSection("Blur", systemImage: "drop.halffull")
     }
 
     // MARK: - Range
@@ -280,6 +291,26 @@ struct SelectionInspector: View {
 
     // MARK: - Plumbing
 
+    private static func seconds(_ value: Double) -> String {
+        value < 0.05 ? "Off" : String(format: "%.1fs", value)
+    }
+
+    private func fade(_ index: Int,
+                      _ path: WritableKeyPath<AudioRegion, Double> & Sendable,
+                      _ name: String) -> Binding<Double> {
+        Binding {
+            model.timeline.audio.indices.contains(index) ? model.timeline.audio[index][keyPath: path] : 0
+        } set: { value in
+            // Snapped to nothing at the bottom of the slider, so "Off" is off and not a
+            // fade of a few milliseconds nobody asked for.
+            let seconds = value < 0.05 ? 0 : value
+            change(name) { timeline in
+                guard timeline.audio.indices.contains(index) else { return }
+                timeline.audio[index][keyPath: path] = seconds
+            }
+        }
+    }
+
     private func change(_ name: String, _ mutate: @escaping @Sendable (inout Timeline) -> Void) {
         model.apply(Commands.Restyle(name, mutate))
     }
@@ -297,18 +328,4 @@ struct SelectionInspector: View {
         }
     }
 
-    private func binding(_ index: Int,
-                         _ path: WritableKeyPath<BlurRegion, Double> & Sendable,
-                         _ name: String,
-                         on regions: WritableKeyPath<Timeline, [BlurRegion]> & Sendable) -> Binding<Double> {
-        Binding {
-            model.timeline[keyPath: regions].indices.contains(index)
-                ? model.timeline[keyPath: regions][index][keyPath: path] : 0
-        } set: { value in
-            model.apply(Commands.Restyle(name) { timeline in
-                guard timeline[keyPath: regions].indices.contains(index) else { return }
-                timeline[keyPath: regions][index][keyPath: path] = value
-            })
-        }
-    }
 }

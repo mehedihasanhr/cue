@@ -4,6 +4,7 @@ import CoreMedia
 import Foundation
 import os
 import TimelineKit
+import VideoToolbox
 
 /// Turns an edit into a video file.
 ///
@@ -67,12 +68,17 @@ public actor VideoExporter {
         // still queued must stay cancelled when its turn comes round.
 
         if settings.format == .gif {
+            // Aimed at its size limit here, where the length is known: a GIF has no bitrate,
+            // so the only way to a smaller file is fewer or smaller frames.
+            let aimed = settings.aimedAtTarget(projectSize: builder.outputSize(for: timeline.style),
+                                               duration: timeline.duration.seconds)
             try await GIFExporter(timeline: timeline,
                                   builder: builder,
                                   cursor: cursor,
                                   videoURL: videoURL,
                                   webcamURL: webcamURL,
-                                  settings: settings,
+                                  packageURL: packageURL,
+                                  settings: aimed,
                                   cancellation: cancellation).export(to: destination, onProgress: onProgress)
             return
         }
@@ -113,7 +119,15 @@ public actor VideoExporter {
             throw ExportError.destinationNotWritable(error.localizedDescription)
         }
 
-        let video = videoInput(size: outputSize, frameRate: frameRate)
+        // Asked before the input is made: an input built from settings the encoder does
+        // not accept raises an Objective-C exception, which no `catch` here can see.
+        let videoSettings = videoOutputSettings(size: outputSize, frameRate: frameRate,
+                                                duration: timeline.duration.seconds)
+        guard writer.canApply(outputSettings: videoSettings, forMediaType: .video) else {
+            throw ExportError.writerFailed("The encoder refused those settings.")
+        }
+        let video = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
+        video.expectsMediaDataInRealTime = false
         guard writer.canAdd(video) else { throw ExportError.writerFailed("The encoder refused those settings.") }
         writer.add(video)
 
@@ -133,9 +147,12 @@ public actor VideoExporter {
         var audioReader: AVAssetReader?
         var audioOutput: AVAssetReaderOutput?
         if settings.writesAudio {
-            let mixdown = await AudioMixdown.build(timeline: timeline, videoURL: videoURL, packageURL: packageURL)
+            let mixdown = await AudioMixdown.build(timeline: timeline, videoURL: videoURL, packageURL: packageURL,
+                                                   clicks: cursor?.clicks ?? [],
+                                                   clickFrame: CGSize(width: builder.videoSize.width / builder.displayScale,
+                                                                      height: builder.videoSize.height / builder.displayScale))
             if !mixdown.isEmpty,
-               let (input, source, output) = try audioPath(for: mixdown) {
+               let (input, source, output) = try audioPath(for: mixdown, into: writer) {
                 guard writer.canAdd(input) else { throw ExportError.writerFailed("The encoder refused the audio.") }
                 writer.add(input)
                 audio = input
@@ -151,12 +168,21 @@ public actor VideoExporter {
         audioReader?.startReading()
 
         let renderer = SceneRenderer()
+        // The picture from whichever file each frame's clip plays. See `SourceFrames`.
+        let pictures = SourceFrames(recording: reader, packageURL: packageURL)
+        // The other side of a crossfade, read on readers of its own. See `LentFrames`.
+        let lentFrames = LentFrames(videoURL: videoURL, webcamURL: webcamReader == nil ? nil : webcamURL,
+                                    packageURL: packageURL)
         // Smoothed once, not per frame: the filter runs over every sample in the
         // recording, and an export asks for thousands of frames.
         let cursor = cursor?.smoothed(timeline.cursor.smoothing)
         let started = Date.now
         var framesWritten = 0
         var lastReport = Date.distantPast
+        var soundRanOut = false
+        var soundDone = false
+        let tail = SoundTail()
+        let editEnd = CMTime(value: CMTimeValue(totalFrames), timescale: CMTimeScale(frameRate))
 
         do {
             for index in 0..<totalFrames {
@@ -165,17 +191,23 @@ public actor VideoExporter {
                 let time = CMTime(value: CMTimeValue(index), timescale: CMTimeScale(frameRate))
                 let scene = builder.descriptor(for: timeline, at: time, cursor: cursor)
                 let sourceTime = timeline.sourceTime(at: time) ?? time
-                let source = try reader.frame(at: sourceTime)
+                // A title shows no recording, so none is read for it: reading one would
+                // send the reader back to the start and forward again around every title.
+                // An imported clip's picture is read from its own file.
+                let source = try await pictures.frame(for: scene)
                 // The same source time, because the two files share a zero: the camera's
                 // writer starts its session at the moment the screen's first frame arrived
                 // rather than at its own, so "three seconds into the recording" means the
                 // same instant in both. A cut or a speed change therefore moves the face
-                // and the screen together, with no second mapping to keep in step.
-                let camera = try? webcamReader?.frame(at: sourceTime)
+                // and the screen together, with no second mapping to keep in step. Not
+                // read over an imported clip, which has no face beside it.
+                let camera = scene.sourceMedia == nil ? try? webcamReader?.frame(at: sourceTime) : nil
+                let lent = try await lentFrames.frames(for: scene)
 
                 try await append(scene: scene,
                                  source: source,
                                  webcam: camera,
+                                 lent: lent,
                                  at: time,
                                  scale: scale,
                                  outputSize: outputSize,
@@ -186,7 +218,31 @@ public actor VideoExporter {
 
                 // Audio is drained alongside the picture rather than after it, so the
                 // writer never holds a whole track's worth of samples in memory.
-                if let audio, let audioOutput { drainAudio(into: audio, from: audioOutput) }
+                //
+                // And it is marked finished the moment it runs out. The writer keeps its
+                // tracks level with each other, so while the sound is still open and has
+                // nothing more to give, it stops taking pictures to wait for it — and an
+                // edit whose sound ends before its picture (music under the first half, a
+                // voiceover shorter than the video) waited there for ever.
+                if let audio, let audioOutput, !soundDone {
+                    if !soundRanOut {
+                        soundRanOut = !drainAudio(into: audio, from: audioOutput, tail: tail)
+                    }
+                    // Once the sound has run out, silence keeps it a second ahead of the
+                    // picture. Ahead, not level: the writer holds pictures back until the
+                    // sound has caught up with them, so silence written only as far as the
+                    // picture had got left each waiting for the other. See `SoundTail`.
+                    if soundRanOut {
+                        let ahead = CMTime(value: CMTimeValue(index + 1 + frameRate), timescale: CMTimeScale(frameRate))
+                        tail.pad(audio, upTo: min(ahead, editEnd))
+                        // Closed the moment it reaches the end: left open, the writer waits
+                        // for more of it before it will take the last pictures.
+                        if tail.end >= editEnd {
+                            audio.markAsFinished()
+                            soundDone = true
+                        }
+                    }
+                }
 
                 if Date.now.timeIntervalSince(lastReport) > 0.2 {
                     lastReport = .now
@@ -196,9 +252,27 @@ public actor VideoExporter {
                 }
             }
 
-            // Whatever sound is left once the pictures have run out.
-            if let audio, let audioOutput {
-                while audio.isReadyForMoreMediaData, drainAudio(into: audio, from: audioOutput) {}
+            // Whatever sound is left once the pictures have run out. Waited for rather than
+            // abandoned the moment the encoder is busy: it often is, for a few milliseconds,
+            // and stopping then cut the end off the sound.
+            if let audio, let audioOutput, !soundDone {
+                var idle = 0
+                while idle < 2_000, !soundRanOut {
+                    if audio.isReadyForMoreMediaData {
+                        idle = 0
+                        soundRanOut = !drainAudio(into: audio, from: audioOutput, tail: tail)
+                    } else {
+                        idle += 1
+                        try await Task.sleep(for: .milliseconds(5))
+                    }
+                }
+                // And the rest of the edit's length in silence, so the sound ends where
+                // the picture does.
+                idle = 0
+                while idle < 2_000, !tail.pad(audio, upTo: editEnd) {
+                    idle += 1
+                    try await Task.sleep(for: .milliseconds(5))
+                }
                 audio.markAsFinished()
             }
             video.markAsFinished()
@@ -209,15 +283,17 @@ public actor VideoExporter {
             }
         } catch {
             writer.cancelWriting()
-            reader.cancel()
+            pictures.cancel()
+            lentFrames.cancel()
             webcamReader?.cancel()
             audioReader?.cancelReading()
             try? FileManager.default.removeItem(at: destination)
             throw error as? ExportError ?? ExportError.writerFailed(error.localizedDescription)
         }
 
-        reader.cancel()
+        pictures.cancel()
         webcamReader?.cancel()
+        lentFrames.cancel()
         onProgress(ExportProgress(framesWritten: totalFrames,
                                   totalFrames: totalFrames,
                                   elapsed: Date.now.timeIntervalSince(started)))
@@ -231,6 +307,7 @@ public actor VideoExporter {
     private func append(scene: SceneDescriptor,
                         source: CIImage?,
                         webcam: CIImage?,
+                        lent: (screen: CIImage?, camera: CIImage?),
                         at time: CMTime,
                         scale: Double,
                         outputSize: CGSize,
@@ -250,7 +327,8 @@ public actor VideoExporter {
             throw ExportError.writerFailed("Ran out of buffers to draw into.")
         }
 
-        var image = renderer.image(for: scene, source: source, webcam: webcam)
+        var image = renderer.image(for: scene, source: source, webcam: webcam,
+                                   blending: lent.screen, blendingWebcam: lent.camera)
         if scale != 1 {
             // Scaled here rather than by building a smaller scene: the descriptor's
             // geometry is in project pixels, and re-deriving it at export size would be
@@ -269,10 +347,12 @@ public actor VideoExporter {
 
     /// Moves what audio the encoder will take right now. `false` when there is no more.
     @discardableResult
-    private func drainAudio(into input: AVAssetWriterInput, from output: AVAssetReaderOutput) -> Bool {
+    private func drainAudio(into input: AVAssetWriterInput, from output: AVAssetReaderOutput,
+                            tail: SoundTail) -> Bool {
         while input.isReadyForMoreMediaData {
             guard let sample = output.copyNextSampleBuffer() else { return false }
             guard input.append(sample) else { return false }
+            tail.note(sample)
         }
         return true
     }
@@ -309,28 +389,71 @@ public actor VideoExporter {
         }
     }
 
-    private func videoInput(size: CGSize, frameRate: Int) -> AVAssetWriterInput {
+    private func videoOutputSettings(size: CGSize, frameRate: Int, duration: Double) -> [String: Any] {
+        let codec = settings.videoCodec
         let pixels = Int(size.width * size.height)
-        let compression: [String: Any] = [
-            AVVideoAverageBitRateKey: settings.quality.bitrate(forPixels: pixels, frameRate: frameRate),
+        var compression: [String: Any] = [AVVideoExpectedSourceFrameRateKey: frameRate]
+        if !settings.format.isProRes {
+            // ProRes is written at its own fixed quality and every frame is a keyframe;
+            // it refuses a bitrate outright, which is why neither is asked of it.
+            let bitrate = settings.videoBitrate(forPixels: pixels, frameRate: frameRate, duration: duration)
+            compression[AVVideoAverageBitRateKey] = bitrate
+            if settings.targetByteCount != nil {
+                // An average is kept over the whole file, and a hard stretch — a scroll, a
+                // window opening — can borrow from the rest and still end over the limit.
+                // A ceiling on every second keeps the borrowing small.
+                compression[kVTCompressionPropertyKey_DataRateLimits as String] =
+                    [Double(bitrate) / 8 * ExportSettings.peakAllowance, 1.0]
+            }
             // A keyframe every two seconds: scrubbing the finished file stays responsive
             // without the size penalty of an all-intra stream.
-            AVVideoMaxKeyFrameIntervalDurationKey: 2,
-            AVVideoExpectedSourceFrameRateKey: frameRate,
-        ]
-        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
-            AVVideoCodecKey: settings.codec.resolved(for: settings.format),
+            compression[AVVideoMaxKeyFrameIntervalDurationKey] = 2
+        }
+        if settings.keepsTransparency {
+            // Core Image draws with its colours already multiplied by their alpha, and the
+            // encoder is told so. Taken as straight alpha, every soft edge — the rounded
+            // corners, the shadow's fringe — would come out darker than it was drawn.
+            compression[kVTCompressionPropertyKey_AlphaChannelMode as String] = kVTAlphaChannelMode_PremultipliedAlpha
+        }
+        if codec == .hevcWithAlpha {
+            // The alpha plane is compressed separately; this keeps its edges clean.
+            compression[kVTCompressionPropertyKey_TargetQualityForAlpha as String] = 0.9
+        }
+        return [
+            AVVideoCodecKey: codec,
             AVVideoWidthKey: Int(size.width),
             AVVideoHeightKey: Int(size.height),
             AVVideoCompressionPropertiesKey: compression,
-        ])
-        input.expectsMediaDataInRealTime = false
-        return input
+        ]
     }
 
     /// The encoder input and the reader that feeds it.
-    private func audioPath(for mixdown: AudioMixdown.Result) throws(ExportError)
+    private func audioPath(for mixdown: AudioMixdown.Result, into writer: AVAssetWriter) throws(ExportError)
         -> (AVAssetWriterInput, AVAssetReader, AVAssetReaderOutput)? {
+        guard let (reader, output) = try Self.audioReader(for: mixdown) else { return nil }
+        let audioSettings = Self.audioOutputSettings(for: settings.format)
+        guard writer.canApply(outputSettings: audioSettings, forMediaType: .audio) else {
+            throw ExportError.writerFailed("The encoder refused the audio.")
+        }
+        let input = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
+        input.expectsMediaDataInRealTime = false
+        return (input, reader, output)
+    }
+
+    /// The same path as a movie for watching gets it, for tests.
+    static func audioPath(for mixdown: AudioMixdown.Result) throws(ExportError)
+        -> (AVAssetWriterInput, AVAssetReader, AVAssetReaderOutput)? {
+        guard let (reader, output) = try audioReader(for: mixdown) else { return nil }
+        let input = AVAssetWriterInput(mediaType: .audio, outputSettings: audioOutputSettings(for: .mp4))
+        input.expectsMediaDataInRealTime = false
+        return (input, reader, output)
+    }
+
+    /// The mix, read as the exporter reads it.
+    ///
+    /// Static and internal so the tests can read exactly what the exporter reads.
+    static func audioReader(for mixdown: AudioMixdown.Result) throws(ExportError)
+        -> (AVAssetReader, AVAssetReaderOutput)? {
         let tracks = mixdown.composition.tracks(withMediaType: .audio)
         guard !tracks.isEmpty else { return nil }
 
@@ -354,14 +477,29 @@ public actor VideoExporter {
         output.audioMix = mixdown.audioMix
         guard reader.canAdd(output) else { return nil }
         reader.add(output)
+        return (reader, output)
+    }
 
-        let input = AVAssetWriterInput(mediaType: .audio, outputSettings: [
+    /// How the sound is written: AAC beside a movie meant for watching, and uncompressed
+    /// 24-bit PCM beside ProRes, which is meant for editing — an editor re-encodes the
+    /// sound on the way out, and AAC twice over is audibly worse than AAC once.
+    static func audioOutputSettings(for format: ExportFormat) -> [String: Any] {
+        if format.isProRes {
+            return [
+                AVFormatIDKey: kAudioFormatLinearPCM,
+                AVSampleRateKey: 48_000,
+                AVNumberOfChannelsKey: 2,
+                AVLinearPCMBitDepthKey: 24,
+                AVLinearPCMIsFloatKey: false,
+                AVLinearPCMIsBigEndianKey: false,
+                AVLinearPCMIsNonInterleaved: false,
+            ]
+        }
+        return [
             AVFormatIDKey: kAudioFormatMPEG4AAC,
             AVSampleRateKey: 48_000,
             AVNumberOfChannelsKey: 2,
             AVEncoderBitRateKey: 192_000,
-        ])
-        input.expectsMediaDataInRealTime = false
-        return (input, reader, output)
+        ]
     }
 }

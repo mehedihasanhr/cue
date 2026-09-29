@@ -126,7 +126,10 @@ struct DocumentTests {
 
         #expect(document.timeline.zooms.count == 1, "the zoom survived the unreadable style")
         #expect(document.timeline.zooms.first?.scale == 2.5)
-        #expect(document.timeline.style.padding == FrameStyle().padding, "the style fell back whole")
+        // The style used to fall back whole. Now that it reads field by field, only the
+        // background this build cannot draw is replaced, and the padding beside it stays.
+        #expect(document.timeline.style.padding == 0.2, "the style kept what it could read")
+        #expect(document.timeline.style.background == FrameStyle().background)
     }
 
     @Test func aProjectWithNoClipsGetsOneCoveringTheRecording() throws {

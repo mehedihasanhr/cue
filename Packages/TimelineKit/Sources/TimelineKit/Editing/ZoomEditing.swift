@@ -48,7 +48,8 @@ public enum ZoomLane {
                                 transitionOut: region.transitionOut,
                                 followsCursor: region.followsCursor,
                                 source: region.source,
-                                isLocked: region.isLocked)
+                                isLocked: region.isLocked,
+                                isInstant: region.isInstant)
         // Assigned rather than passed because the initialiser clamps `scale` into 1…8, and
         // this has to come through untouched: a split must not quietly restyle a zoom that
         // a hand edit or a newer build put outside that range.
@@ -92,6 +93,7 @@ public enum ZoomLane {
         merged.source = donor.source
         merged.isLocked = first.isLocked || second.isLocked
         merged.transition = donor.transition
+        merged.isInstant = donor.isInstant
 
         // The ramps the pair actually showed at its two ends, expressed against the donor's
         // `transition` so that a pair whose ends both want the plain ramp stores nothing at
@@ -119,6 +121,8 @@ public enum ZoomLane {
         reset.transition = ZoomRegion.defaultTransition
         reset.transitionIn = nil
         reset.transitionOut = nil
+        // A cut is a way of ramping — none at all — so it goes back with the ramps.
+        reset.isInstant = false
         return reset
     }
 

@@ -35,8 +35,6 @@ public final class AudioTrackWriter: @unchecked Sendable {
 
     private var firstTime: CMTime?
     private var writtenThrough: CMTime?
-    private var pausedTotal: CMTime = .zero
-    private var pausedAt: CMTime?
 
     public private(set) var isPaused = false
     public private(set) var audioGaps = 0
@@ -60,6 +58,8 @@ public final class AudioTrackWriter: @unchecked Sendable {
         } catch {
             throw .writerFailed(error.localizedDescription)
         }
+        // The same protection the picture has. See `CrashSafety`.
+        writer.movieFragmentInterval = CrashSafety.fragmentInterval
 
         input = AVAssetWriterInput(mediaType: .audio, outputSettings: [
             AVFormatIDKey: kAudioFormatMPEG4AAC,
@@ -110,7 +110,7 @@ public final class AudioTrackWriter: @unchecked Sendable {
             _ = input.append(filler)
         }
 
-        let stamped = pausedTotal == .zero
+        let stamped = time == buffer.presentationTimeStamp
             ? buffer
             : (try? CMSampleBuffer(copying: buffer, withNewTiming: [
                 CMSampleTimingInfo(duration: buffer.duration, presentationTimeStamp: time, decodeTimeStamp: .invalid),
@@ -122,11 +122,13 @@ public final class AudioTrackWriter: @unchecked Sendable {
         }
     }
 
-    /// A buffer's timestamp with the paused time taken out, or `nil` when it is unusable.
+    /// A buffer's timestamp with the paused time taken out, or `nil` when it is unusable
+    /// — invalid, or stamped inside a hold. The clock's answer, so this file loses exactly
+    /// the stretch the picture and the pointer lose.
     private func presentationTime(of buffer: CMSampleBuffer) -> CMTime? {
         let time = buffer.presentationTimeStamp
         guard time.isValid else { return nil }
-        return pausedTotal == .zero ? time : time - pausedTotal
+        return clock.recordingTime(forHost: time)
     }
 
     // MARK: - Pausing
@@ -134,11 +136,7 @@ public final class AudioTrackWriter: @unchecked Sendable {
     public func setPaused(_ paused: Bool) {
         dispatchPrecondition(condition: .onQueue(queue))
         guard paused != isPaused else { return }
-        if paused {
-            pausedAt = RecordingClock.now
-        } else if let pausedAt {
-            pausedTotal = pausedTotal + (RecordingClock.now - pausedAt)
-            self.pausedAt = nil
+        if !paused {
             // Audio resumes at its own new timestamp; without clearing this the gap filler
             // would helpfully insert the whole pause as silence.
             writtenThrough = nil

@@ -74,12 +74,12 @@ final class ExportJob: Identifiable {
 
         task = Task {
             do {
-                try await exporter.export(to: destination) { progress in
-                    Task { @MainActor [weak self] in
+                try await exporter.export(to: destination) { [self] progress in
+                    Task { @MainActor in
                         // A report can be in flight when a cancel lands. Putting the job
                         // back into a state it has already left would leave a finished
                         // export showing a progress bar forever.
-                        guard let self, self.phase.isRunning else { return }
+                        guard self.phase.isRunning else { return }
                         self.phase = .running(progress)
                     }
                 }

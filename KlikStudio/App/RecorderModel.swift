@@ -153,10 +153,11 @@ final class RecorderModel {
     /// before a take rather than three seconds into one. Turning it *off* asks nothing and
     /// opens nothing.
     ///
-    /// Note what this does not do: it does not start a capture session, and there is no
-    /// path in this app that starts one to show the user what their camera sees. A camera
-    /// indicator that lights because somebody flicked a switch in a settings bar is the app
-    /// telling the truth about the hardware and a lie about what it is doing.
+    /// Note what this does not do: it does not start a capture session. The one path that
+    /// shows the user what their camera sees is the preview beside the bar
+    /// (`CameraPreviewPanel`), and it opens the camera only once the grant exists and only
+    /// while the bar is on screen — so the indicator lights for a picture the user can see,
+    /// never for a switch flicked in a settings bar.
     func setCamera(_ on: Bool) {
         guard on else {
             settings.recordsCamera = false
@@ -383,7 +384,7 @@ final class RecorderModel {
             permissionDenied = (error == .permissionDenied)
             displays = []
             windows = []
-            Self.log.error("Couldn't read shareable content: \(error.localizedDescription ?? "unknown", privacy: .public)")
+            Self.log.error("Couldn't read shareable content: \(error.localizedDescription, privacy: .public)")
         }
         // The recorder's own list, not a second query that happens to agree with it today:
         // a device offered here that `RecordingSession` cannot resolve when the take starts

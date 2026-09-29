@@ -3,9 +3,14 @@ import BackgroundKit
 import SwiftUI
 import TimelineKit
 
-/// Which of the four kinds of background this is.
+/// Which of the six kinds of background this is.
 enum BackgroundTab: String, CaseIterable, Identifiable, Hashable {
     case wallpaper, gradient, color, image
+    /// A background that moves: drawn, or a movie. See `MotionBackgroundPicker`.
+    case motion
+    /// Nothing behind the picture: see-through. Titled "None", which is what it is to
+    /// look at; not *named* `none`, which an optional tab would read as nil.
+    case transparent
     var id: String { rawValue }
 
     var title: String {
@@ -14,15 +19,19 @@ enum BackgroundTab: String, CaseIterable, Identifiable, Hashable {
         case .gradient: "Gradient"
         case .color: "Color"
         case .image: "Image"
+        case .motion: "Motion"
+        case .transparent: "None"
         }
     }
 
     init(_ background: FrameStyle.Background) {
         switch background {
         case .wallpaper: self = .wallpaper
-        case .gradient: self = .gradient
+        case .gradient, .customGradient: self = .gradient
         case .color: self = .color
         case .image: self = .image
+        case .animated, .video: self = .motion
+        case .transparent: self = .transparent
         }
     }
 }
@@ -45,14 +54,19 @@ struct BackgroundPicker: View {
             case .gradient: gradients
             case .color: colors
             case .image: image
+            case .motion: MotionBackgroundPicker(model: model)
+            case .transparent: transparent
             }
 
             // Here rather than in a section of its own: the blur is a property of the
             // background, not a second subject, and a heading over one slider was a
             // heading doing no work.
-            InspectorSlider(model: model, "Background blur",
-                            value: style.binding(\.style.backgroundBlur, "Background Blur"),
-                            range: 0...0.04)
+            // Not for nothing: there is no background to soften.
+            if tab.wrappedValue != .transparent {
+                InspectorSlider(model: model, "Background blur",
+                                value: style.binding(\.style.backgroundBlur, "Background Blur"),
+                                range: 0...0.04)
+            }
         }
         .inspectorSection("Background", systemImage: "photo")
     }
@@ -77,6 +91,14 @@ struct BackgroundPicker: View {
                 if case .image = model.timeline.style.background {} else {
                     state.backgroundTabOverride = .image
                 }
+            case .motion:
+                // Keeps a moving background that is already there, movie included.
+                switch model.timeline.style.background {
+                case .animated, .video: break
+                default: model.setAnimatedBackground(AnimatedBackground())
+                }
+            case .transparent:
+                model.makeBackgroundTransparent()
             }
         }
     }
@@ -87,17 +109,45 @@ struct BackgroundPicker: View {
     /// a 44-point slab, which is a lot of panel to say "indigo". They are swatches — big
     /// enough to read the colour off, and no bigger — and they wrap if more are added.
     private var gradients: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 30, maximum: 34), spacing: 8)],
-                  alignment: .leading,
-                  spacing: 8) {
-            ForEach(BackgroundPreset.allCases) { preset in
-                SwatchTile(isSelected: model.timeline.style.background == preset.background,
-                           title: preset.title) {
-                    style.set(\.style.background, to: preset.background, "Background")
-                } content: {
-                    preview(of: preset.background)
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenGroups) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 30, maximum: 34), spacing: 8)],
+                      alignment: .leading,
+                      spacing: 8) {
+                ForEach(BackgroundPreset.allCases) { preset in
+                    SwatchTile(isSelected: model.timeline.style.background == preset.background,
+                               title: preset.title) {
+                        style.set(\.style.background, to: preset.background, "Background")
+                    } content: {
+                        preview(of: preset.background)
+                    }
                 }
             }
+            // Under the stock ones rather than instead of them: most people want one of
+            // those, and the editor starts from whichever is chosen.
+            GradientEditor(model: model)
+        }
+    }
+
+    // MARK: - None
+
+    /// What a see-through background means, since the answer depends on the export.
+    private var transparent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Checkerboard(square: 5)
+                    .frame(width: 44, height: 28)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .strokeBorder(.primary.opacity(0.08))
+                    }
+                Text("Transparent")
+                    .font(.system(size: 12))
+            }
+            Text("Nothing is drawn around the picture. ProRes 4444, and HEVC with transparency in a MOV, keep it see-through; other formats fill it with black.")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -108,6 +158,10 @@ struct BackgroundPicker: View {
             LinearGradient(colors: [from.color, to.color], startPoint: .topLeading, endPoint: .bottomTrailing)
         case .color(let colour):
             colour.color
+        case .customGradient(let gradient):
+            GradientSwatch(gradient: gradient)
+        case .transparent:
+            Checkerboard(square: 4)
         default:
             Color.secondary
         }

@@ -79,6 +79,54 @@ struct RenderFidelityTests {
         return hasher.finalize()
     }
 
+    /// How far apart two renders of one frame may be and still be the same picture: one
+    /// step of eight bits, in any channel of any pixel.
+    ///
+    /// Not zero, because Core Image does not promise zero. It has more than one way to run
+    /// a graph — a program stitched together from precompiled pieces, or one compiled
+    /// whole — and which it uses for a given render depends on whether the stitched one
+    /// is ready yet, which depends on how busy the machine is. The two round differently
+    /// where a cached bitmap is faded by a colour matrix, by exactly one step. That is
+    /// what failed this suite about one run in eight under load: the cold frames, drawn
+    /// first, were drawn the other way. Every one of the differing frames was
+    /// byte-identical to what Core Image draws with stitching turned off
+    /// (`CI_ENABLE_FUNCTION_STITCHING=0`), and every warm one to what it draws normally.
+    ///
+    /// One step cannot hide what these tests are for. A cache that serves the wrong
+    /// bitmap serves other words, another size or another colour — differences of tens or
+    /// hundreds of steps, over whole glyphs — and a buffer reused without clearing leaves
+    /// a whole other frame behind.
+    private static let coreImageRounding = 1
+
+    /// The largest difference, in eight-bit steps, between two rendered frames — or `nil`
+    /// when they are not even the same shape.
+    private func largestDifference(_ first: CGImage, _ second: CGImage) throws -> Int? {
+        guard first.width == second.width, first.height == second.height,
+              first.bitsPerPixel == second.bitsPerPixel, first.bytesPerRow == second.bytesPerRow,
+              first.bitmapInfo == second.bitmapInfo else { return nil }
+        let a = try #require(first.dataProvider?.data as Data?)
+        let b = try #require(second.dataProvider?.data as Data?)
+        let rowBytes = first.width * first.bitsPerPixel / 8
+        var largest = 0
+        a.withUnsafeBytes { a in
+            b.withUnsafeBytes { b in
+                for row in 0..<first.height {
+                    let start = row * first.bytesPerRow
+                    for index in start..<(start + rowBytes) {
+                        largest = max(largest, abs(Int(a[index]) - Int(b[index])))
+                    }
+                }
+            }
+        }
+        return largest
+    }
+
+    /// Whether two renders are the same picture, to within `coreImageRounding`.
+    private func samePicture(_ first: CGImage, _ second: CGImage) throws -> Bool {
+        guard let difference = try largestDifference(first, second) else { return false }
+        return difference <= Self.coreImageRounding
+    }
+
     /// One builder reused across a whole scrub must describe the same frames as a fresh
     /// builder per frame.
     ///
@@ -133,7 +181,10 @@ struct RenderFidelityTests {
     /// every cache emptied before each frame, and then the same frames are drawn again
     /// through a renderer warmed on a hundred *other* frames of the same project — where
     /// the caption, the label, the pointer and the camera have all moved in between. If a
-    /// key is missing a field, the warm draw serves the wrong bitmap and the hashes part.
+    /// key is missing a field, the warm draw serves the wrong bitmap and the frames part.
+    ///
+    /// "The same bytes" to within Core Image's own rounding — see `coreImageRounding` for
+    /// why that is one step and not zero, and why one step hides no wrong bitmap.
     @Test func aWarmRendererDrawsTheSameBytesAsAColdOne() throws {
         let timeline = RenderWorkload.timeline(regions: 6, duration: 12)
         let track = RenderWorkload.cursorTrack(duration: 12)
@@ -143,11 +194,11 @@ struct RenderFidelityTests {
         let source = RenderWorkload.source(CGSize(width: 640, height: 360))
         let moments = Array(stride(from: 0.4, through: 11.4, by: 1.1))
 
-        var cold: [Int] = []
+        var cold: [CGImage] = []
         for at in moments {
             clearArtworkCaches()
             let scene = builder.descriptor(for: timeline, at: RenderWorkload.time(at), cursor: track)
-            cold.append(try fingerprint(try #require(SceneRenderer().cgImage(for: scene, source: source))))
+            cold.append(try #require(SceneRenderer().cgImage(for: scene, source: source)))
         }
 
         // Warm every cache there is, on frames that are not the ones being compared.
@@ -159,8 +210,10 @@ struct RenderFidelityTests {
 
         for (index, at) in moments.enumerated() {
             let scene = builder.descriptor(for: timeline, at: RenderWorkload.time(at), cursor: track)
-            let hot = try fingerprint(try #require(warm.cgImage(for: scene, source: source)))
-            #expect(hot == cold[index], "a warm renderer drew \(at)s differently from a cold one")
+            let hot = try #require(warm.cgImage(for: scene, source: source))
+            let difference = try largestDifference(hot, cold[index])
+            #expect(try samePicture(hot, cold[index]),
+                    "a warm renderer drew \(at)s differently from a cold one (by \(difference.map(String.init) ?? "shape"))")
         }
     }
 
@@ -263,9 +316,11 @@ struct RenderFidelityTests {
             #expect(atRest == exported, "the frame at rest moved at \(at)s")
             #expect(fingerprint(atRest) == fingerprint(exported))
 
-            let written = try fingerprint(try #require(renderer.cgImage(for: exported, source: source)))
-            let shown = try fingerprint(try #require(renderer.cgImage(for: atRest, source: source)))
-            #expect(shown == written, "the preview at rest drew \(at)s differently from the export")
+            // The picture to within Core Image's rounding (`coreImageRounding`): the
+            // exactness this test is about is the descriptor's, asserted just above.
+            let written = try #require(renderer.cgImage(for: exported, source: source))
+            let shown = try #require(renderer.cgImage(for: atRest, source: source))
+            #expect(try samePicture(shown, written), "the preview at rest drew \(at)s differently from the export")
         }
     }
 
@@ -337,6 +392,8 @@ struct RenderFidelityTests {
     ///
     /// `SceneTests.thesameSceneRendersIdenticallyTwice` compares one pixel; this compares
     /// all of them, over a frame that has a caption, a label, a pointer and a blur in it.
+    /// To within Core Image's rounding: this is the very frame (3.7 s, a caption fading
+    /// in) that Core Image was seen to draw both ways — see `coreImageRounding`.
     @Test func theSameFrameRendersToTheSameBytesTwice() throws {
         let timeline = RenderWorkload.timeline(regions: 6, duration: 12)
         let track = RenderWorkload.cursorTrack(duration: 12)
@@ -347,6 +404,46 @@ struct RenderFidelityTests {
 
         let first = try #require(renderer.cgImage(for: scene, source: source))
         let second = try #require(renderer.cgImage(for: scene, source: source))
-        #expect(try fingerprint(first) == fingerprint(second))
+        #expect(try samePicture(first, second))
+    }
+
+    /// Core Image rounding a faded plate differently is the same picture; a different
+    /// plate is not.
+    ///
+    /// The regression test for the flake `coreImageRounding` describes, made to happen on
+    /// demand. Core Image chose its second way on its own, under load; here the graph is
+    /// split with an intermediate buffer, which is the same kind of choice made
+    /// deliberately, and on this machine it moves the faded plate by exactly one step.
+    /// With the old byte-for-byte comparison the first expectation failed every time. The
+    /// second is what keeps the tolerance honest: a plate one word different must still
+    /// be told apart.
+    @Test func coreImagesOwnRoundingIsNotADifferentPicture() throws {
+        let output = CGSize(width: 640, height: 360)
+        let frame = CGRect(origin: .zero, size: output)
+        let background = ColorValue(r: 0.2, g: 0.25, b: 0.5)
+        var scene = SceneDescriptor(outputSize: output, background: .color(background), videoFrame: frame)
+        // Part-way through fading in, which is what puts the plate through a colour matrix.
+        scene.caption = CaptionLayer(text: "Now open the settings panel",
+                                     fontSize: 0.06,
+                                     color: ColorValue(r: 1, g: 1, b: 1),
+                                     backgroundOpacity: 0.5,
+                                     position: .bottom,
+                                     margin: 0.05,
+                                     opacity: 0.83)
+        let renderer = SceneRenderer()
+        let drawn = try #require(renderer.cgImage(for: scene, source: nil))
+
+        let caption = try #require(scene.caption)
+        let plate = try #require(CaptionArtwork.image(caption, outputSize: output))
+        let flat = CIImage(color: CIColor(red: background.r, green: background.g, blue: background.b)).cropped(to: frame)
+        let split = try #require(renderer.context.createCGImage(
+            plate.insertingIntermediate(cache: false).composited(over: flat), from: frame))
+        let difference = try largestDifference(drawn, split)
+        #expect(try samePicture(drawn, split), "by \(difference.map(String.init) ?? "shape")")
+
+        var other = scene
+        other.caption?.text = "Now open the settings window"
+        let different = try #require(renderer.cgImage(for: other, source: nil))
+        #expect(try !samePicture(drawn, different))
     }
 }

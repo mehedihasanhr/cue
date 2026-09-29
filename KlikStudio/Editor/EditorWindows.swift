@@ -56,9 +56,17 @@ final class EditorWindows {
         // toolbar. One that lands after the last editor has closed has nowhere to do that,
         // so it shows itself the only way left: the file, selected in the Finder. Same
         // rule a download finishing has followed on this platform for twenty years.
+        //
+        // Settings › Export can ask for more than that: the Finder every time, or the file
+        // opened. Read when the export lands rather than when it started, so changing it
+        // mid-encode applies to the file that is still coming.
         exports.onFinish = { [weak self] job in
-            guard let self, self.isEmpty else { return }
-            job.reveal()
+            guard let self else { return }
+            switch self.settings?.app.afterExport ?? .announce {
+            case .announce: if self.isEmpty { job.reveal() }
+            case .reveal: job.reveal()
+            case .open: job.open()
+            }
         }
     }
 
@@ -70,8 +78,7 @@ final class EditorWindows {
                 // Asked for the one on screen: whatever replacement was waiting is off.
                 pendingOpen = nil
                 replacedFrame = nil
-                current.showWindow(nil)
-                NSApp.activate(ignoringOtherApps: true)
+                StudioAutomation.present(current)
                 return
             }
             // Closed the way the close button closes it, so unsaved edits still get their
@@ -82,8 +89,7 @@ final class EditorWindows {
             pendingOpen = url
             if closing { return }
             replacedFrame = current.window?.frame
-            current.showWindow(nil)
-            NSApp.activate(ignoringOtherApps: true)
+            StudioAutomation.present(current)
             current.window?.performClose(nil)
             return
         }
@@ -97,6 +103,12 @@ final class EditorWindows {
                                                 exports: exports,
                                                 windows: self)
         current = controller
+        // The menu bar's editor from the moment there is one, rather than from the moment
+        // its window becomes main. There is only ever one editor, so there is nothing to
+        // wait to find out — and a window that opens without coming to the front, behind
+        // the Recordings list or while another app is in use, never becomes main at all:
+        // every command in the menu bar was disabled with the editor plainly open.
+        front = controller.session
         if let window = controller.window {
             if let replacedFrame {
                 window.setFrame(replacedFrame, display: false)
@@ -105,8 +117,7 @@ final class EditorWindows {
             }
         }
         replacedFrame = nil
-        controller.showWindow(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        StudioAutomation.present(controller)
         onChange?()
     }
 
@@ -231,9 +242,32 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard !isClosingDeliberately, let model = session.model, model.isDirty else { return true }
 
+        // With autosave on, the edits are written now and the window closes on its own
+        // once they are; the sheet below is only for a write that failed, which is the
+        // one time somebody has to be told and asked.
+        if model.autosaver.isEnabled {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if await model.autosaver.flush() {
+                    self.isClosingDeliberately = true
+                    sender.close()
+                } else {
+                    self.askToSave(model, before: sender)
+                }
+            }
+            return false
+        }
+
+        askToSave(model, before: sender)
+        return false
+    }
+
+    /// The Save / Discard / Cancel sheet, for edits that are not on disk.
+    private func askToSave(_ model: EditorModel, before sender: NSWindow) {
         let alert = NSAlert()
         alert.messageText = "Save the changes to “\(model.name)”?"
-        alert.informativeText = "Your edits are kept inside the recording, so you can open it and carry on. If you don't save them, they are lost."
+        alert.informativeText = model.autosaver.failure
+            ?? "Your edits are kept inside the recording, so you can open it and carry on. If you don't save them, they are lost."
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Discard")
         alert.addButton(withTitle: "Cancel")
@@ -241,16 +275,20 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
             guard let self else { return }
             switch response {
             case .alertFirstButtonReturn:
-                model.save()
-                // Still dirty means the save failed, and `model.errorMessage` is about
-                // to say why. Closing anyway would throw the work away on the way past
-                // the explanation.
-                guard !model.isDirty else {
-                    self.windows.closeCancelled()
-                    return
+                Task { @MainActor in
+                    // Still dirty means the save failed, and the toolbar is now saying
+                    // why. Closing anyway would throw the work away on the way past the
+                    // explanation.
+                    guard await model.autosaver.flush() else {
+                        if let failure = model.autosaver.failure {
+                            model.report(EditorProblem(failure))
+                        }
+                        self.windows.closeCancelled()
+                        return
+                    }
+                    self.isClosingDeliberately = true
+                    sender.close()
                 }
-                self.isClosingDeliberately = true
-                sender.close()
             case .alertSecondButtonReturn:
                 self.isClosingDeliberately = true
                 sender.close()
@@ -258,7 +296,6 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
                 self.windows.closeCancelled()
             }
         }
-        return false
     }
 
     func windowWillClose(_ notification: Notification) {

@@ -72,8 +72,8 @@ final class StudioService: StudioRecording {
                                // hits a permission wall has been told the wrong thing.
                                canRecordWebcam: WebcamRecorder.isAuthorized,
                                canEdit: true,
-                               canExportGIF: false,
-                               canCaption: false)
+                               canExportGIF: true,
+                               canCaption: true)
         }
     }
 
@@ -83,7 +83,7 @@ final class StudioService: StudioRecording {
     }
 
     nonisolated func cancelRecording(_ correlationID: UUID) async {
-        await MainActor.run { Task { await session.cancel() } }
+        await session.cancel()
     }
 
     // MARK: - Recording
@@ -94,15 +94,30 @@ final class StudioService: StudioRecording {
     /// right default for a menu-bar command and it is what the source picker will
     /// pre-select when there is one.
     func start(_ request: RecordingRequest) {
+        guard let configuration = accept(request) else { return }
+        Task { await begin(request, configuration: configuration) }
+    }
+
+    /// Everything `start` decides before anything waits: the target, the settings, the
+    /// name. `nil` when a take is already under way, which has been reported.
+    ///
+    /// Split from the waiting half so Restart can run both back to back in one task —
+    /// with a `Task` between them, the bar would be idle for a frame and flash the setup
+    /// layout between the take thrown away and the one starting.
+    private func accept(_ request: RecordingRequest) -> RecordingConfiguration? {
         lastRequest = request
         StudioLog.bridge.notice("Request \(request.correlationID.uuidString, privacy: .public) received")
 
         guard !session.state.isBusy else {
             finish(request, outcome: .failed, message: RecordingError.alreadyRecording.localizedDescription)
-            return
+            return nil
         }
 
         let target = CaptureTarget(request.target) ?? .display(Self.displayUnderPointer())
+        lastTarget = target
+        // A question left over from a take that ended on its own — a closed window, a full
+        // disk — must not be asked over the next one.
+        clearRestart()
         // Settings say *how* to record — frame rate, quality, encoder, what the pointer
         // does. The request says *what* to record and what to do afterwards. A request
         // can switch a track off, never on: turning on a microphone the user did not ask
@@ -117,38 +132,39 @@ final class StudioService: StudioRecording {
         // toggle is on, and no other app gets to decide that a face is being filmed. There
         // is deliberately no branch that asks for camera permission on a host's behalf.
         if !request.webcam { configuration.webcamID = nil }
+        return configuration
+    }
 
-        Task {
-            if request.microphone, settings.recordsMicrophone, !MicrophoneRecorder.isAuthorized {
-                _ = await MicrophoneRecorder.requestAccess()
-                configuration.microphoneIDs = MicrophoneRecorder.isAuthorized
-                    ? [MicrophoneRecorder.defaultDevice?.uniqueID].compactMap { $0 }
-                    : []
-            }
-            await session.start(configuration, countdown: max(0, request.countdownSeconds))
-            if case .failed(let error) = session.state {
-                finish(request, outcome: .failed, message: error.localizedDescription)
-            }
+    /// The half of starting that waits: the microphone grant, then the session's own
+    /// preparing and countdown.
+    private func begin(_ request: RecordingRequest, configuration: RecordingConfiguration) async {
+        var configuration = configuration
+        if request.microphone, settings.recordsMicrophone, !MicrophoneRecorder.isAuthorized {
+            _ = await MicrophoneRecorder.requestAccess()
+            configuration.microphoneIDs = MicrophoneRecorder.isAuthorized
+                ? [MicrophoneRecorder.defaultDevice?.uniqueID].compactMap { $0 }
+                : []
+        }
+        await session.start(configuration, countdown: max(0, request.countdownSeconds))
+        if case .failed(let error) = session.state {
+            finish(request, outcome: .failed, message: error.localizedDescription)
         }
     }
 
     /// Records what the recorder window has selected, with this app's own settings.
     func record(target: CaptureTarget) {
-        var request = RecordingRequest(microphone: settings.recordsMicrophone,
-                                       systemAudio: settings.recordsSystemAudio,
-                                       webcam: settings.recordsCamera,
-                                       countdownSeconds: settings.countdownSeconds,
-                                       opensEditorWhenFinished: settings.opensEditorAfterRecording)
-        switch target {
-        case .display(let id): request.target = .display(id)
-        case .window(let id): request.target = .window(id)
-        case .area(let display, let rect): request.target = .area(display: display, rect: rect)
-        }
-        start(request)
+        start(request(for: target))
     }
 
     /// Holds a recording, or lets it carry on.
+    ///
+    /// While Restart is asking, resuming is the answer "keep it": the take was paused to
+    /// ask, and carrying on is carrying on with this one.
     func togglePause() {
+        if restartPending {
+            keepTake()
+            return
+        }
         session.isPaused ? session.resume() : session.pause()
     }
 
@@ -165,6 +181,7 @@ final class StudioService: StudioRecording {
     /// nobody asked for by name is: this app's own.
     func stop() {
         guard session.state.isTaking else { return }
+        clearRestart()
         let request = lastRequest
         Task {
             switch await session.stop() {
@@ -184,6 +201,7 @@ final class StudioService: StudioRecording {
     /// Same reasoning as `stop()`: discarding is what was asked for, and the report is a
     /// consequence of it rather than a precondition for it.
     func cancel() {
+        clearRestart()
         let request = lastRequest
         Task {
             await session.cancel()
@@ -191,9 +209,138 @@ final class StudioService: StudioRecording {
         }
     }
 
+    /// Ends what is under way because the app is quitting.
+    ///
+    /// A take is stopped and saved — and not opened, since the app is leaving. A countdown
+    /// is called off: nothing has been recorded yet. A stop already in progress is waited
+    /// for, so the file is closed before the process goes.
+    func finishBeforeQuitting() async {
+        let request = lastRequest
+        if session.state.isTaking {
+            switch await session.stop() {
+            case .success(let url):
+                if let request { finish(request, outcome: .finished, project: url) }
+            case .failure(let error):
+                if let request { finish(request, outcome: .failed, message: error.localizedDescription) }
+            }
+        } else if session.state.isStarting {
+            await session.cancel()
+            if let request { finish(request, outcome: .cancelled) }
+        }
+        while session.state == .finishing {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+    }
+
     /// Puts a reported failure away, so the bar can go back to offering a take.
     func dismissFailure() {
         session.acknowledgeFailure()
+    }
+
+    // MARK: - Restart, markers, and starting from anywhere
+
+    /// The target the take under way was started with, already resolved — so a restart
+    /// records the same display, window or area even when the request said "ask me".
+    private var lastTarget: CaptureTarget?
+
+    /// Restart has been asked for and is waiting to be confirmed. The take is paused
+    /// meanwhile, so the seconds spent deciding are not in it if it is kept.
+    private(set) var restartPending = false
+    /// Whether it was this that paused the take, so "keep it" resumes only what it held.
+    private var pausedForRestart = false
+
+    /// Restart, as the button, the shortcut and the menu ask for it: at once for a take of
+    /// ten seconds or less, which is a false start; asked about for anything longer — or
+    /// whatever length Settings › Recording says instead. Asked
+    /// twice — the shortcut pressed again while the bar is asking — is the answer yes.
+    func requestRestart() {
+        guard session.state.isTaking else { return }
+        if restartPending {
+            restart()
+            return
+        }
+        guard settings.app.restartNeedsConfirmation(recordedSeconds: session.state.recordedSeconds(at: .now)) else {
+            restart()
+            return
+        }
+        if !session.isPaused {
+            session.pause()
+            pausedForRestart = true
+        }
+        restartPending = true
+    }
+
+    /// Carries on with the take after all.
+    func keepTake() {
+        let resume = pausedForRestart
+        clearRestart()
+        if resume, session.isPaused { session.resume() }
+    }
+
+    private func clearRestart() {
+        restartPending = false
+        pausedForRestart = false
+    }
+
+    /// Throws the take away and starts again: same target, same settings, same countdown.
+    ///
+    /// Counts as the same request. Klik asked for one recording and will be told about
+    /// the one that is kept, not about the false start before it.
+    func restart() {
+        guard session.state.isTaking, let target = lastTarget else { return }
+        clearRestart()
+        var request = lastRequest ?? request(for: target)
+        request.target = Self.requestTarget(for: target)
+        let discarded = session.packageURL
+        Task {
+            await session.cancel()
+            // The session deletes the package itself; this is the check that it did,
+            // marker and all, so the library never offers the false start as interrupted.
+            if !TakeRestart.removeLeftovers(of: discarded) {
+                StudioLog.app.error("A restarted take was left on disk: \(discarded?.lastPathComponent ?? "?", privacy: .public)")
+            }
+            guard let configuration = accept(request) else { return }
+            await begin(request, configuration: configuration)
+        }
+    }
+
+    /// Drops a marker at this moment of the take.
+    func addMarker() {
+        session.addMarker()
+    }
+
+    /// Starts or stops, as the global shortcut and the menu bar icon mean it: stop a take,
+    /// call off a countdown, or start one of `target` — the display the pointer is on when
+    /// nothing has been chosen.
+    func toggleRecording(target: CaptureTarget?) {
+        let state = session.state
+        if state.isTaking {
+            stop()
+        } else if state.isStarting {
+            cancel()
+        } else if !state.isBusy {
+            if case .failed = state { dismissFailure() }
+            record(target: target ?? .display(Self.displayUnderPointer()))
+        }
+    }
+
+    /// The request the recorder window makes for a target, with this app's own settings.
+    private func request(for target: CaptureTarget) -> RecordingRequest {
+        var request = RecordingRequest(microphone: settings.recordsMicrophone,
+                                       systemAudio: settings.recordsSystemAudio,
+                                       webcam: settings.recordsCamera,
+                                       countdownSeconds: settings.countdownSeconds,
+                                       opensEditorWhenFinished: settings.opensEditorAfterRecording)
+        request.target = Self.requestTarget(for: target)
+        return request
+    }
+
+    private static func requestTarget(for target: CaptureTarget) -> RecordingRequest.Target {
+        switch target {
+        case .display(let id): .display(id)
+        case .window(let id): .window(id)
+        case .area(let display, let rect): .area(display: display, rect: rect)
+        }
     }
 
     private func finish(_ request: RecordingRequest,

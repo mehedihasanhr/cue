@@ -22,6 +22,8 @@ struct ToolRail: View {
         [.blur, .annotate],
         [.cursor, .webcam],
         [.captions, .audio],
+        // What was pressed. Its own group: it is neither said nor heard, it is shown.
+        [.keyboard],
     ]
 
     var body: some View {
@@ -77,7 +79,7 @@ struct ToolRail: View {
         let isSelected = model.tool == tool
 
         return Button {
-            model.tool = tool
+            model.choose(tool)
         } label: {
             Image(systemName: tool.symbol)
                 .font(.system(size: 14, weight: isSelected ? .medium : .regular))
@@ -97,7 +99,8 @@ struct ToolRail: View {
         }
         .buttonStyle(BarButtonStyle())
         .disabled(!tool.isAvailable)
-        .keyboardShortcut(tool.shortcut, modifiers: .command)
+        // The shortcut itself is the menu bar's — View lists the eight tools — so it
+        // answers whatever has the keyboard, and is not registered twice.
         .animation(StudioMotion.selection, value: model.tool)
         // The shortcut is on the tip because the rail is where somebody looks for it:
         // the menu bar has the same eight commands, and nobody finds them there twice.

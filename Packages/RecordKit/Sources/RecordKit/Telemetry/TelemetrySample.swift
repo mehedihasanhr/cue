@@ -55,11 +55,17 @@ public enum InputSample: Codable, Equatable, Sendable {
     /// they separate typing from shortcuts, and a modifier flag says nothing about what
     /// was written.
     case key(t: Double, modifiers: Int)
+    /// A key that may be named went down — a shortcut, or one of the `NamedKey`s — with
+    /// what was held. `KeyRecorder` is the rule that decides which presses become one of
+    /// these and which become an anonymous `key`; a press that reaches here has already
+    /// passed it.
+    case shortcut(t: Double, modifiers: KeyModifiers, key: String)
 
     public var t: Double {
         switch self {
         case .mouseDown(let t, _, _, _), .mouseUp(let t, _, _, _),
              .scroll(let t, _, _), .key(let t, _): t
+        case .shortcut(let t, _, _): t
         }
     }
 

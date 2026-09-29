@@ -70,11 +70,31 @@ struct TimelineChipLabel<Detail: View>: View {
     let height: CGFloat
     let width: CGFloat
     var minimumWidth: CGFloat = 60
+    /// Whether what it says is shortened to fit, with an ellipsis, instead of being left
+    /// whole for the chip to clip.
+    ///
+    /// Clipping suits a label that is a fact — "1.8×" is either there or not. It does not
+    /// suit a sentence: a caption's chip is usually narrower than its words, and a line
+    /// centred and cut at both ends reads "mpty captio".
+    var truncates = false
+    /// Room kept clear at each end, for the grips, when the words are being fitted.
+    var inset: CGFloat = 0
     @ViewBuilder let detail: () -> Detail
+
+    /// The room the words have, once the grips have taken theirs.
+    private var room: CGFloat { max(0, width - inset * 2) }
+
+    /// Too narrow to say anything worth reading. A sentence cut down to "E…" is noise, so
+    /// a fitted label gives up sooner than a clipped one.
+    private var isLegible: Bool {
+        truncates ? room >= 44 : width > minimumWidth
+    }
 
     var body: some View {
         VStack(spacing: 1) {
-            if height >= 34 {
+            // The name is never shortened: "C…" names nothing. It goes first when room
+            // runs out, and what the chip says keeps the space.
+            if height >= 34, !truncates || room >= 56 {
                 Text(title)
                     .font(.system(size: 9.5, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.5))
@@ -84,10 +104,12 @@ struct TimelineChipLabel<Detail: View>: View {
                 .foregroundStyle(.white)
         }
         .lineLimit(1)
-        .fixedSize()
+        .truncationMode(.tail)
+        .fixedSize(horizontal: !truncates, vertical: true)
+        .frame(width: truncates ? room : nil)
         .shadow(color: .black.opacity(0.18), radius: 1, y: 0.5)
         .frame(width: width, height: height)
-        .opacity(width > minimumWidth ? 1 : 0)
-        .animation(StudioMotion.state, value: width > minimumWidth)
+        .opacity(isLegible ? 1 : 0)
+        .animation(StudioMotion.state, value: isLegible)
     }
 }

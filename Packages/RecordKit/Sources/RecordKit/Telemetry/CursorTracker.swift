@@ -1,5 +1,6 @@
 import AppKit
 import CoreGraphics
+import CoreMedia
 import Foundation
 import os
 
@@ -208,8 +209,13 @@ public final class CursorTracker: @unchecked Sendable {
     private let clock: RecordingClock
     private let mapper: CursorMapper
     private let sampleRate: Int
+    /// How long after the pointer is somewhere the screen shows it there.
+    ///
+    /// Added to every time written here, so a sample says when the pointer was *seen* at
+    /// a place rather than when the system knew it was going to be. See
+    /// `PointerLatency`.
+    private let latency: CMTime
 
-    private let capturesKeystrokes: Bool
     /// Saves what each pointer actually looked like. `nil` when this take is not keeping
     /// the real artwork.
     private let artwork: CursorArtworkWriter?
@@ -217,15 +223,7 @@ public final class CursorTracker: @unchecked Sendable {
     private var positionTimer: DispatchSourceTimer?
     private var shapeTimer: Timer?
     private var clickMonitor: Any?
-    private var keyMonitor: Any?
     private let shape = OSAllocatedUnfairLock(initialState: CursorShape.arrow)
-
-    /// Whether the keystroke *rhythm* was actually recorded.
-    ///
-    /// Read after `start()`. False when it was not asked for, and false when it was but
-    /// macOS has not granted Accessibility — the two are different to the user and the
-    /// second is worth saying out loud, because the setting is on and the data is absent.
-    public private(set) var isRecordingKeystrokes = false
 
     public init(cursorWriter: JSONLWriter,
                 inputWriter: JSONLWriter?,
@@ -233,8 +231,9 @@ public final class CursorTracker: @unchecked Sendable {
                 clock: RecordingClock,
                 mapper: CursorMapper,
                 sampleRate: Int,
-                capturesKeystrokes: Bool = false,
+                latency: Double = 0,
                 artwork: CursorArtworkWriter? = nil) {
+        self.latency = CMTime(seconds: max(0, min(latency, 0.05)), preferredTimescale: 1_000_000_000)
         self.artwork = artwork
         self.cursorWriter = cursorWriter
         self.inputWriter = inputWriter
@@ -242,7 +241,6 @@ public final class CursorTracker: @unchecked Sendable {
         self.clock = clock
         self.mapper = mapper
         self.sampleRate = max(1, sampleRate)
-        self.capturesKeystrokes = capturesKeystrokes
     }
 
     public func start() {
@@ -266,7 +264,7 @@ public final class CursorTracker: @unchecked Sendable {
     private func sample() {
         guard let location = CGEvent(source: nil)?.location else { return }
         let point = mapper.map(location)
-        cursorWriter.append(CursorSample(t: clock.elapsed(),
+        cursorWriter.append(CursorSample(t: clock.elapsed(at: RecordingClock.now + latency),
                                          x: Double(point.x),
                                          y: Double(point.y),
                                          shape: shape.withLock { $0 }))
@@ -276,15 +274,14 @@ public final class CursorTracker: @unchecked Sendable {
 
     @MainActor
     private func startMainThreadWatchers() {
-        // Mouse events, unlike key events, need no Accessibility grant.
+        // Mouse events, unlike key events, need no Accessibility grant. The keys are
+        // `KeyTracker`'s, which is where the grant is checked and the privacy rule lives.
         clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp,
                                                                     .rightMouseDown, .rightMouseUp,
                                                                     .otherMouseDown, .otherMouseUp,
                                                                     .scrollWheel]) { [weak self] event in
             self?.record(event)
         }
-
-        startKeyboardWatcher()
 
         let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -308,36 +305,10 @@ public final class CursorTracker: @unchecked Sendable {
         shapeTimer = timer
     }
 
-    /// Watches the *rhythm* of typing, and nothing else.
-    ///
-    /// A global key monitor is the one thing here that needs Accessibility, which is why
-    /// it is opt-in and why this asks rather than assumes: without the grant the monitor
-    /// is installed happily and then delivers nothing at all, which would look like a
-    /// user who never typed rather than a permission that was never given.
-    ///
-    /// Nothing is read off the event but its time and its modifier flags. `characters`
-    /// is never touched — not stored, not inspected, not logged. The samples it writes
-    /// cannot reconstruct what was typed, by construction rather than by filtering.
-    @MainActor
-    private func startKeyboardWatcher() {
-        guard capturesKeystrokes else { return }
-        guard AXIsProcessTrusted() else {
-            Self.log.notice("Keystroke timing was asked for, but Accessibility is not granted — recording without it")
-            return
-        }
-        keyMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
-            self?.record(event)
-        }
-        isRecordingKeystrokes = keyMonitor != nil
-    }
-
     @MainActor
     private func stopMainThreadWatchers() {
         if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
         clickMonitor = nil
-        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
-        keyMonitor = nil
-        isRecordingKeystrokes = false
         shapeTimer?.invalidate()
         shapeTimer = nil
     }
@@ -345,8 +316,15 @@ public final class CursorTracker: @unchecked Sendable {
     @MainActor
     private func record(_ event: NSEvent) {
         guard let inputWriter else { return }
-        let t = clock.elapsed()
-        let location = mapper.map(CGEvent(source: nil)?.location ?? .zero)
+        // When and where it *happened*, not when and where this was told about it.
+        //
+        // A global monitor is called on the main thread some time after the event, and the
+        // main thread of a recorder is a busy place. Reading the clock and the pointer
+        // here used to stamp a click with the moment the callback ran and the place the
+        // pointer had got to by then — so a click made on the way somewhere landed further
+        // along the way, and the ring was drawn beside the thing that was pressed.
+        let t = clock.elapsed(at: Self.hostTime(of: event) + latency)
+        let location = mapper.map(Self.location(of: event))
 
         let sample: InputSample? = switch event.type {
         case .leftMouseDown, .rightMouseDown, .otherMouseDown:
@@ -355,15 +333,36 @@ public final class CursorTracker: @unchecked Sendable {
             .mouseUp(t: t, button: event.buttonNumber, x: Double(location.x), y: Double(location.y))
         case .scrollWheel:
             .scroll(t: t, dx: Double(event.scrollingDeltaX), dy: Double(event.scrollingDeltaY))
-        case .keyDown:
-            // The time and the modifiers. Deliberately not `event.characters`, and not
-            // `keyCode` either — a key code is the letter by another name.
-            .key(t: t, modifiers: Int(event.modifierFlags.rawValue))
         default:
             nil
         }
         guard let sample else { return }
         queue.async { inputWriter.append(sample) }
+    }
+
+    /// The moment an event happened, on the clock the frames are stamped in.
+    ///
+    /// `NSEvent.timestamp` counts seconds since the machine started, which is what the
+    /// host clock counts too. An event that claims to be from the future, or from more
+    /// than a second ago, is one whose timestamp cannot be trusted, and "now" is the
+    /// better answer.
+    static func hostTime(of event: NSEvent, now: CMTime = RecordingClock.now) -> CMTime {
+        hostTime(forEventTimestamp: event.timestamp, now: now)
+    }
+
+    static func hostTime(forEventTimestamp timestamp: TimeInterval, now: CMTime) -> CMTime {
+        let stamped = CMTime(seconds: timestamp, preferredTimescale: 1_000_000_000)
+        let age = (now - stamped).seconds
+        guard stamped.isValid, age >= -0.005, age < 1 else { return now }
+        return min(stamped, now)
+    }
+
+    /// Where an event happened, in the space the pointer is sampled in: global points,
+    /// y downwards, the main display's top-left at zero.
+    @MainActor
+    static func location(of event: NSEvent) -> CGPoint {
+        if let location = event.cgEvent?.location { return location }
+        return CGEvent(source: nil)?.location ?? .zero
     }
 }
 

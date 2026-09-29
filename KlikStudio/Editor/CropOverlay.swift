@@ -122,22 +122,26 @@ struct CropOverlay: View {
 
     private func handle(_ handle: Handle) -> some View {
         let point = position(of: handle)
-        let size: CGSize = handle.isCorner
-            ? CGSize(width: 18, height: 18)
-            : (handle.movesLeft || handle.movesRight ? CGSize(width: 4, height: 28) : CGSize(width: 28, height: 4))
-
-        return RoundedRectangle(cornerRadius: 2, style: .continuous)
-            .fill(Color.white)
-            .frame(width: size.width, height: size.height)
-            .shadow(color: .black.opacity(0.4), radius: 2)
-            // A grab ring wider than the drawn handle: eighteen points of white is a
-            // hairline to aim at, and the slop is what makes it feel solid.
-            .contentShape(Rectangle().inset(by: -10))
-            .position(point)
-            .onHover { inside in
-                if inside { handle.cursor.push() } else { NSCursor.pop() }
+        let vertical = handle.movesLeft || handle.movesRight
+        return Group {
+            if handle.isCorner {
+                // The bracket's arms run along the crop's edges, inwards from the corner.
+                CropBracket(horizontal: handle.movesLeft ? 1 : -1, vertical: handle.movesTop ? 1 : -1)
+            } else {
+                Capsule()
+                    .fill(Color.white)
+                    .frame(width: vertical ? 4 : 26, height: vertical ? 26 : 4)
+                    .shadow(color: .black.opacity(0.45), radius: 1.5)
             }
-            .gesture(drag(handle))
+        }
+        // A grab area wider than what is drawn: a four-point bar is a hairline to aim at.
+        .frame(width: 40, height: 40)
+        .contentShape(Rectangle())
+        .position(point)
+        .onHover { inside in
+            if inside { handle.cursor.push() } else { NSCursor.pop() }
+        }
+        .gesture(drag(handle))
     }
 
     // MARK: - Gestures

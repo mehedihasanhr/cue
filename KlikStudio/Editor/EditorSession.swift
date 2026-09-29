@@ -19,6 +19,9 @@ final class EditorSession {
     var model: EditorModel?
     var loadError: String?
     var isExporting = false
+    /// Whether the export sheet opens on the selected stretch rather than the whole
+    /// edit. Set by the menu item that asked for the sheet, read by the sheet as it opens.
+    var exportsSelection = false
 
     init(packageURL: URL) {
         self.packageURL = packageURL

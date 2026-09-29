@@ -37,34 +37,29 @@ struct InspectorPanel: View {
 
     @ViewBuilder
     private var content: some View {
-        switch model.tool {
-        case .crop:
-            // Crop is a mode, not a place the selection can speak over: the handles are
-            // on the picture and the way out of them has to be on the panel.
-            CropInspector(model: model)
-        case .frame:
-            // Selecting something on the timeline is a question about *that*, so
-            // it takes priority over the frame's own settings while it lasts.
-            if model.selection.isEmpty {
+        if selectionOwnsPanel {
+            SelectionInspector(model: model)
+        } else {
+            switch model.tool {
+            case .crop:
+                CropInspector(model: model)
+            case .frame:
                 FrameInspector(model: model, state: state)
-            } else {
-                SelectionInspector(model: model)
-            }
-        case .blur, .annotate:
-            // What is selected, or — with nothing drawn yet — how to draw one.
-            if model.selection.isEmpty {
+            case .blur, .annotate:
+                // How to draw one. Once one is drawn it is selected, and the panel is
+                // about that instead.
                 canvasHint(model.tool)
-            } else {
-                SelectionInspector(model: model)
+            case .cursor:
+                CursorInspector(model: model)
+            case .captions:
+                CaptionInspector(model: model)
+            case .audio:
+                AudioInspector(model: model)
+            case .webcam:
+                WebcamInspector(model: model)
+            case .keyboard:
+                KeyboardInspector(model: model)
             }
-        case .cursor:
-            CursorInspector(model: model)
-        case .captions:
-            CaptionInspector(model: model)
-        case .audio:
-            AudioInspector(model: model)
-        case .webcam:
-            WebcamInspector(model: model)
         }
     }
 
@@ -77,17 +72,21 @@ struct InspectorPanel: View {
         guard selectionOwnsPanel, let name = model.selection.panelName else {
             return (model.tool.title, model.tool.symbol)
         }
+        // A mask is named for its kind. "Blur" over a spotlight's settings would be the
+        // heading saying the opposite of what the panel does.
+        if case .blur = model.selection, let mask = model.selectedMask {
+            return (mask.style.title, mask.style.symbol)
+        }
         return name
     }
 
     /// Whether the panel is showing the selection rather than the tool — which is also
     /// when clearing the selection is the way back, and so when the header offers it.
     private var selectionOwnsPanel: Bool {
-        guard !model.selection.isEmpty else { return false }
-        switch model.tool {
-        case .frame, .blur, .annotate: return true
-        case .crop, .cursor, .webcam, .captions, .audio: return false
-        }
+        guard !model.selection.isEmpty, model.panelFollowsSelection else { return false }
+        // Crop is a mode, not a place the selection can speak over: the handles are on
+        // the picture and the way out of them has to be on the panel.
+        return model.tool != .crop
     }
 
     private var header: some View {
@@ -111,7 +110,7 @@ struct InspectorPanel: View {
                 }
                 .buttonStyle(BarButtonStyle())
                 .foregroundStyle(.secondary)
-                .help("Stop editing this and go back to the frame")
+                .help("Stop editing this and go back to \(model.tool.title)")
                 .accessibilityLabel("Clear selection")
             }
         }
@@ -138,15 +137,21 @@ struct InspectorPanel: View {
                 AddAnnotationButton(model: model, isCompact: false)
                     .padding(.horizontal, 6)
             }
+            // The mask tool does four things, so it says which one the next drag will
+            // do — and, unlike a blur, a spotlight is quite happy to start in the middle.
+            if tool == .blur {
+                MaskToolControls(model: model)
+                    .padding(.horizontal, 6)
+            }
         }
     }
 
     private func hint(for tool: EditorTool) -> String {
         switch tool {
         case .blur:
-            "Drag over anything on the picture to hide it — a password, a name, a face. It stays on the thing it covers when the camera moves."
+            "Drag over anything on the picture to hide it — a password, a name, a face — or to put a spotlight on it. A mask stays on the thing it covers when the camera moves."
         default:
-            "Drag on the picture to place a label, an arrow or a box — or add one below and drag it where it belongs. Either way it stays where you put it in the finished frame."
+            "Drag on the picture to place a label — or add an arrow, a shape, a numbered step or a callout below and drag it where it belongs. Either way it stays where you put it in the finished frame."
         }
     }
 
@@ -186,7 +191,7 @@ private extension Selection {
         case .none: nil
         case .clip: ("Clip", "film")
         case .zoom: ("Zoom", "plus.magnifyingglass")
-        case .blur: ("Blur", "drop.halffull")
+        case .blur: ("Mask", "drop.halffull")
         case .annotation: ("Annotation", "character.textbox")
         case .caption: ("Caption", "captions.bubble")
         case .audio: ("Sound", "music.note")
@@ -200,6 +205,8 @@ private extension Selection {
         case .range: ("Range", "selection.pin.in.out")
         case .headTrim: ("Trimmed Start", "arrow.left.to.line")
         case .tailTrim: ("Trimmed End", "arrow.right.to.line")
+        case .keyCue: ("Shortcut", "keyboard")
+        case .cameraLayout: ("Camera Layout", "person.crop.rectangle")
         }
     }
 }

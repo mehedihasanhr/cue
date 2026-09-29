@@ -29,6 +29,19 @@ public enum BackgroundLayer: Equatable, Sendable {
     /// An id nothing could resolve — a wallpaper that is gone, or a resolver nobody
     /// supplied. Drawn as something visibly wrong rather than silently as black.
     case missing
+    /// Nothing: the frame is see-through outside the picture.
+    case transparent
+    /// A gradient somebody built. Unlike `.gradient`, whose sweep overshoots the frame so
+    /// a stock gradient never quite reaches its end colours, this one is fitted: a linear
+    /// one reaches its first and last colours exactly at the frame's far corners (the
+    /// edges, when it runs straight across), and a radial one runs from the middle to the
+    /// corners. Somebody who picked a colour for an end expects to see it there.
+    case fittedGradient(stops: [GradientStop], angle: Double, isRadial: Bool)
+    /// A background that moves, at one moment. See `AnimatedBackgroundLayer`.
+    case animated(AnimatedBackgroundLayer)
+    /// A movie played on a loop, at a moment of the finished video — the renderer loops
+    /// it. Absolute, and openable by the time it gets here, like `image`.
+    case video(url: URL, time: Double)
 
     public static let fallbackColor = ColorValue(r: 0.08, g: 0.09, b: 0.12)
 }
@@ -62,6 +75,17 @@ public struct DefaultBackgroundResolver: BackgroundResolving, Sendable {
             return .image(url: Self.url(forPath: path, packageURL: packageURL))
         case .wallpaper:
             return .missing
+        case .transparent:
+            return .transparent
+        case .customGradient(let gradient):
+            return .fittedGradient(stops: gradient.stops.map { GradientStop(color: $0.color, location: $0.location) },
+                                   angle: gradient.angle,
+                                   isRadial: gradient.shape == .radial)
+        case .animated(let animation):
+            return .animated(AnimatedBackgroundLayer(kind: animation.kind, colors: animation.colors,
+                                                     speed: animation.speed, time: 0))
+        case .video(let path):
+            return .video(url: Self.url(forPath: path, packageURL: packageURL), time: 0)
         }
     }
 

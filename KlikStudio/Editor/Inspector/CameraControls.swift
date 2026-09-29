@@ -57,6 +57,32 @@ struct CameraControls: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            // Also for every zoom in the project, and also below the rule. What "close
+            // together" means is `ZoomGlide`'s rule; the caption says it in a sentence.
+            Toggle("Glide between zooms that are close together", isOn: Binding(
+                get: { model.glidesBetweenZooms },
+                set: { model.setGlidesBetweenZooms($0) }
+            ))
+            Text(model.glidesBetweenZooms
+                 ? "When two zooms touch, or the gap between them is shorter than their two ramps, the camera moves straight from one framing to the next instead of pulling back to the whole picture in between. An instant zoom never glides."
+                 : "The camera pulls back to the whole picture at the end of every zoom, however soon the next one begins.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            // A glide that waits, so it lives under the glide and only while it is on.
+            Picker("Stay zoomed in", selection: style.binding(\.camera.keepsZoomedInFor, "Stay Zoomed In")) {
+                Text("Never").tag(0.0)
+                ForEach([2.0, 4.0, 8.0], id: \.self) { Text("Across gaps up to \(Int($0)) s").tag($0) }
+            }
+            .disabled(!model.glidesBetweenZooms)
+            if model.glidesBetweenZooms, model.timeline.camera.keepsZoomedInFor > 0 {
+                Text("Between zooms up to \(Int(model.timeline.camera.keepsZoomedInFor)) seconds apart the camera holds the first framing, then travels to the next, instead of pulling out to the whole picture and back.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .font(.system(size: 12))
         .accessibilityElement(children: .contain)

@@ -36,6 +36,25 @@ public final class JSONLWriter: @unchecked Sendable {
         FileManager.default.createFile(atPath: url.path(percentEncoded: false), contents: nil)
         handle = try FileHandle(forWritingTo: url)
         isOpen = true
+        startFlushing()
+    }
+
+    /// Flushes on a clock as well as at a size.
+    ///
+    /// The size alone let a sparse sidecar — clicks, focus changes — hold its lines in memory
+    /// for a whole take, and even the pointer's track reached the file only every nine
+    /// seconds or so. A take that is cut short keeps its video to within a second
+    /// (`CrashSafety`), and its telemetry has to keep up with it or the recovered picture has
+    /// no pointer at its end.
+    private var flushTimer: DispatchSourceTimer?
+
+    private func startFlushing() {
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        let interval = CrashSafety.telemetryFlushInterval
+        timer.schedule(deadline: .now() + interval, repeating: interval, leeway: .milliseconds(100))
+        timer.setEventHandler { [weak self] in self?.flush() }
+        flushTimer = timer
+        timer.resume()
     }
 
     public func append(_ value: some Encodable) {
@@ -59,6 +78,8 @@ public final class JSONLWriter: @unchecked Sendable {
     @discardableResult
     public func close() -> Bool {
         dispatchPrecondition(condition: .onQueue(queue))
+        flushTimer?.cancel()
+        flushTimer = nil
         flush()
         try? handle?.close()
         handle = nil

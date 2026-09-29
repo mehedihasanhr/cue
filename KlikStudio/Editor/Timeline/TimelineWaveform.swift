@@ -87,12 +87,17 @@ struct TimelineWaveform: View {
 
 extension TimelineWaveform.Span {
     /// The picture's own spans: the recording's sound as the clips cut it.
+    ///
+    /// None for a freeze frame or a title, which are silent: drawn, a still showed the
+    /// sound of the two seconds after its frame, which is not what plays there. None for a
+    /// clip of a movie brought in either: its sound is its own file's, not the recording's.
     static func followingClips(of timeline: Timeline) -> [Self] {
-        timeline.clips.enumerated().map { index, clip in
-            Self(start: timeline.start(ofClipAt: index),
-                 duration: clip.duration,
-                 sourceStart: clip.sourceStart,
-                 speed: clip.speed)
+        timeline.clips.enumerated().compactMap { index, clip in
+            guard clip.playsRecording else { return nil }
+            return Self(start: timeline.start(ofClipAt: index),
+                        duration: clip.duration,
+                        sourceStart: clip.sourceStart,
+                        speed: clip.speed)
         }
     }
 

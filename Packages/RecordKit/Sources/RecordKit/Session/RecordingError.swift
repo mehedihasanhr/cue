@@ -22,6 +22,11 @@ public enum RecordingError: Error, LocalizedError, Equatable, Sendable {
     case alreadyRecording
     case notRecording
     case cancelled
+    /// The take started and could not be finished — the file stopped taking frames, or
+    /// would not close. What reached the disk is kept, with its marker, for Recordings to
+    /// recover. Not `.writerFailed`, which is a take that never started and has nothing to
+    /// keep.
+    case unfinished(String)
 
     public var errorDescription: String? {
         switch self {
@@ -47,6 +52,8 @@ public enum RecordingError: Error, LocalizedError, Equatable, Sendable {
             "Nothing is recording."
         case .cancelled:
             "The recording was cancelled."
+        case .unfinished(let reason):
+            "The recording stopped before it could be saved (\(reason))."
         }
     }
 
@@ -60,6 +67,8 @@ public enum RecordingError: Error, LocalizedError, Equatable, Sendable {
             "Turn on Klik Studio in System Settings › Privacy & Security › Camera, or turn the camera off in the bar and record without it."
         case .lowDiskSpace:
             "The part that was recorded has been kept."
+        case .unfinished:
+            "What was recorded is kept. Open Recordings to recover it."
         default:
             nil
         }

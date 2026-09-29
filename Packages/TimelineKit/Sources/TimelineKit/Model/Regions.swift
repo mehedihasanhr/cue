@@ -167,6 +167,18 @@ public struct ZoomRegion: TimelineRegion {
     /// somebody tuned but never aimed is still the run's to replace.
     public var isEdited: Bool
 
+    /// A cut rather than a movement.
+    ///
+    /// The camera is fully in on the first frame the region covers and fully out on the
+    /// first frame after it, with no travel at either end. For the moment where a smooth
+    /// push-in reads as slow — a keyboard shortcut appearing, a dialog opening — and the
+    /// viewer should simply find themselves closer. The ramp is kept underneath, not
+    /// zeroed, so switching this off gives the zoom its movement back exactly as it was.
+    ///
+    /// An instant zoom never glides either: gliding is one movement turning into another,
+    /// and this zoom has asked for no movement at all. See `ZoomGlide`.
+    public var isInstant: Bool
+
     /// What a zoom looks like when nobody has changed it, and what Reset puts back.
     ///
     /// Named constants rather than literals in the initialiser, so "the default" is one
@@ -196,7 +208,8 @@ public struct ZoomRegion: TimelineRegion {
                 source: Source? = nil,
                 isLocked: Bool = false,
                 isEnabled: Bool = true,
-                isEdited: Bool = false) {
+                isEdited: Bool = false,
+                isInstant: Bool = false) {
         self.id = id
         self.start = start
         self.duration = duration
@@ -211,6 +224,7 @@ public struct ZoomRegion: TimelineRegion {
         self.isLocked = isLocked
         self.isEnabled = isEnabled
         self.isEdited = isEdited
+        self.isInstant = isInstant
     }
 
     /// Decodes a zoom written by an older or a newer build.
@@ -247,6 +261,8 @@ public struct ZoomRegion: TimelineRegion {
         // which of its suggestions were framed by hand, and guessing `true` would freeze
         // every one of them against a regeneration the user may well want.
         isEdited = value(.isEdited, default: false)
+        // Absent means a movement, which is what every zoom written before this existed was.
+        isInstant = value(.isInstant, default: false)
     }
 
     /// Spelled out so the decoder above and the synthesised encoder agree, and so renaming
@@ -254,6 +270,7 @@ public struct ZoomRegion: TimelineRegion {
     enum CodingKeys: String, CodingKey {
         case id, start, duration, scale, center, easing, transition
         case transitionIn, transitionOut, followsCursor, source, isLocked, isEnabled, isEdited
+        case isInstant
     }
 
     /// How long the move in and how long the move out actually take.
@@ -266,6 +283,9 @@ public struct ZoomRegion: TimelineRegion {
     /// whole region ramping out, and halving it would have left the camera pulling back
     /// from the middle for no reason anyone asked for.
     public var ramps: (in: CMTime, out: CMTime) {
+        // A cut has no ramps at all, whatever is stored: zero at both ends is exactly the
+        // seam a split leaves, so `scale(at:)` needs no second idea of "already there".
+        guard !isInstant else { return (.zero, .zero) }
         let wanted = (in: max(.zero, transitionIn ?? transition),
                       out: max(.zero, transitionOut ?? transition))
         let total = wanted.in + wanted.out
@@ -296,10 +316,22 @@ public struct ZoomRegion: TimelineRegion {
     }
 }
 
-/// Something hidden: a password, a name, a face.
+/// Something hidden — a password, a name, a face — or, as a spotlight, the one thing
+/// that is *not* dimmed.
+///
+/// One region for four kinds, because they are the same edit: a rectangle of the
+/// recording, for a stretch of time. Only what happens inside it differs.
 public struct BlurRegion: TimelineRegion {
+    /// The raw values of the first two are what every project written so far stores,
+    /// and they stay exactly as they are — renaming one would make every blur in every
+    /// old project unreadable.
     public enum Style: String, Codable, Sendable, CaseIterable {
         case gaussian, pixelate
+        /// A solid colour over the area. The one kind that cannot be reversed by
+        /// looking closely, which is what a password wants.
+        case cover
+        /// The area is left alone and everything else in the picture is dimmed.
+        case spotlight
     }
 
     public let id: UUID
@@ -309,15 +341,76 @@ public struct BlurRegion: TimelineRegion {
     public var rect: CGRect
     public var style: Style
     public var radius: Double
+    /// The cover's colour. Black unless somebody says otherwise.
+    public var color: ColorValue
+    /// How much a spotlight darkens the rest of the picture, 0 to 1.
+    public var dimming: Double
+    /// How soft a spotlight's edge is, as a fraction of the shorter side of the
+    /// recording — so the feather is the same width at 1080p and at 4K.
+    public var softness: Double
+    /// Rounded corners on the region, as a fraction of its own shorter side: 0 is
+    /// square, 0.5 is a pill. Zero for every region written before it existed, which
+    /// keeps those drawn pixel for pixel as they were.
+    public var cornerRadius: Double
+    /// Where the mask goes while it follows what it covers, or `nil` for a mask that stays
+    /// where it was put — which is every mask written before following existed, and draws
+    /// exactly as it did. See `MaskPath`.
+    public var path: MaskPath?
+
+    public static let defaultDimming = 0.6
+    public static let defaultSoftness = 0.02
 
     public init(id: UUID = UUID(), start: CMTime, duration: CMTime,
-                rect: CGRect, style: Style = .gaussian, radius: Double = 18) {
+                rect: CGRect, style: Style = .gaussian, radius: Double = 18,
+                color: ColorValue = .black,
+                dimming: Double = BlurRegion.defaultDimming,
+                softness: Double = BlurRegion.defaultSoftness,
+                cornerRadius: Double = 0,
+                path: MaskPath? = nil) {
         self.id = id
         self.start = start
         self.duration = duration
         self.rect = rect
         self.style = style
         self.radius = radius
+        self.color = color
+        self.dimming = dimming
+        self.softness = softness
+        self.cornerRadius = cornerRadius
+        self.path = path?.isEmpty == true ? nil : path
+    }
+
+    /// Decoded field by field, for the reason `ZoomRegion.init(from:)` gives: the lane is
+    /// decoded as one array, so one region that will not decode costs the project every
+    /// blur it has. A region written before the cover and the spotlight existed carries
+    /// only the first six keys and decodes to exactly the region it was; a kind this build
+    /// has never heard of is read as a blur rather than thrown away, so the thing it was
+    /// hiding stays hidden.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        func value<T: Decodable>(_ key: CodingKeys, default fallback: @autoclosure () -> T) -> T {
+            ((try? container.decodeIfPresent(T.self, forKey: key)) ?? nil) ?? fallback()
+        }
+        id = value(.id, default: UUID())
+        start = value(.start, default: .zero)
+        duration = value(.duration, default: .zero)
+        rect = value(.rect, default: CGRect(x: 0.3, y: 0.3, width: 0.4, height: 0.4))
+        style = value(.style, default: .gaussian)
+        radius = value(.radius, default: 18)
+        color = value(.color, default: ColorValue.black)
+        dimming = min(max(value(.dimming, default: Self.defaultDimming), 0), 1)
+        softness = min(max(value(.softness, default: Self.defaultSoftness), 0), 0.2)
+        cornerRadius = min(max(value(.cornerRadius, default: 0), 0), 0.5)
+        // A path that cannot be read, or has nothing in it, is a still mask: it goes on
+        // hiding what it was put over rather than costing the project the region.
+        let path = (try? container.decodeIfPresent(MaskPath.self, forKey: .path)) ?? nil
+        self.path = path?.isEmpty == true ? nil : path
+    }
+
+    /// Spelled out so the decoder above and the synthesised encoder agree, and so renaming
+    /// a property is a compile error rather than a silently unreadable project.
+    enum CodingKeys: String, CodingKey {
+        case id, start, duration, rect, style, radius, color, dimming, softness, cornerRadius, path
     }
 }
 
@@ -344,6 +437,16 @@ public struct AnnotationItem: TimelineRegion {
         case arrow(from: CGPoint, to: CGPoint)
         case rectangle
         case image(path: String)
+        case ellipse
+        /// Two ends normalised to the rect, like an arrow's, with no head.
+        case line(from: CGPoint, to: CGPoint)
+        /// A marker-pen stroke over something: a translucent rounded fill, never opaque.
+        case highlight
+        /// A numbered circle. Always round, whatever shape of box it is given.
+        case step(Int)
+        /// Words in a bubble, with a tail whose tip is normalised to the rect and may lie
+        /// outside it — that is the point of a tail.
+        case callout(String, tail: CGPoint)
     }
 
     /// What an annotation is pinned to.
@@ -378,6 +481,9 @@ public struct AnnotationItem: TimelineRegion {
     /// so what you see is always what you get.
     public var isHidden: Bool
     public var attachment: Attachment
+    /// Line thickness, fill, type and shadow. Its defaults draw exactly what every
+    /// annotation drew before any of it could be set.
+    public var style: AnnotationStyle
 
     public init(id: UUID = UUID(), start: CMTime, duration: CMTime, kind: Kind,
                 rect: CGRect, color: ColorValue = .init(r: 1, g: 0.23, b: 0.19),
@@ -387,7 +493,8 @@ public struct AnnotationItem: TimelineRegion {
                 animation: AnnotationAnimation = AnnotationAnimation(),
                 isLocked: Bool = false,
                 isHidden: Bool = false,
-                attachment: Attachment = .canvas) {
+                attachment: Attachment = .canvas,
+                style: AnnotationStyle = AnnotationStyle()) {
         self.id = id
         self.start = start
         self.duration = duration
@@ -401,6 +508,7 @@ public struct AnnotationItem: TimelineRegion {
         self.isLocked = isLocked
         self.isHidden = isHidden
         self.attachment = attachment
+        self.style = style
         sanitise()
     }
 
@@ -426,12 +534,13 @@ public struct AnnotationItem: TimelineRegion {
         isLocked = value(.isLocked, default: false)
         isHidden = value(.isHidden, default: false)
         attachment = value(.attachment, default: .canvas)
+        style = value(.style, default: AnnotationStyle())
         sanitise()
     }
 
     enum CodingKeys: String, CodingKey {
         case id, start, duration, kind, rect, color, fontSize
-        case rotation, opacity, animation, isLocked, isHidden, attachment
+        case rotation, opacity, animation, isLocked, isHidden, attachment, style
     }
 
     /// Makes every number one the renderer can draw.
@@ -454,6 +563,8 @@ public struct AnnotationItem: TimelineRegion {
             kind = .arrow(from: AnnotationGeometry.sanitised(from, default: CGPoint(x: 0, y: 1)),
                           to: AnnotationGeometry.sanitised(to, default: CGPoint(x: 1, y: 0)))
         }
+        sanitiseNewerKinds()
+        style.sanitise()
     }
 
     /// The same annotation as it is `offset` seconds after its start: how visible, how big
@@ -467,16 +578,90 @@ public struct AnnotationItem: TimelineRegion {
 
 /// A line of spoken text, on screen while it is being said.
 public struct CaptionCue: TimelineRegion {
+    /// One word of a line, and when in the line it is said.
+    ///
+    /// As fractions of the cue rather than as times, so a cue that is dragged, stretched
+    /// or trimmed carries its words with it and nothing has to be recomputed.
+    public struct Word: Codable, Equatable, Sendable {
+        public var text: String
+        /// Where in the cue the word begins, 0 at its start and 1 at its end.
+        public var from: Double
+        /// Where it ends.
+        public var to: Double
+
+        public init(text: String, from: Double, to: Double) {
+            self.text = text
+            self.from = min(1, max(0, from))
+            self.to = min(1, max(self.from, to))
+        }
+    }
+
     public let id: UUID
     public var start: CMTime
     public var duration: CMTime
     public var text: String
+    /// When each word was said, when a recogniser said so. Empty for a line typed by hand
+    /// and for every caption made before word timings were kept.
+    public var words: [Word]
 
-    public init(id: UUID = UUID(), start: CMTime, duration: CMTime, text: String) {
+    public init(id: UUID = UUID(), start: CMTime, duration: CMTime, text: String, words: [Word] = []) {
         self.id = id
         self.start = start
         self.duration = duration
         self.text = text
+        self.words = words
+    }
+
+    /// Read field by field, so a caption written before it had words opens as the caption
+    /// it was — and so one caption that will not decode does not cost the project all of
+    /// them, which is what decoding a lane as one array does otherwise.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        func value<T: Decodable>(_ key: CodingKeys, default fallback: @autoclosure () -> T) -> T {
+            ((try? container.decodeIfPresent(T.self, forKey: key)) ?? nil) ?? fallback()
+        }
+        id = value(.id, default: UUID())
+        start = value(.start, default: .zero)
+        duration = value(.duration, default: CMTime(seconds: 2, preferredTimescale: 600))
+        text = value(.text, default: "")
+        words = value(.words, default: [])
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, start, duration, text, words
+    }
+
+    /// The words of the line and when each is said, whether or not anybody recorded it.
+    ///
+    /// The recogniser's timings when they still describe the text. Once the text has been
+    /// edited they describe a sentence that is no longer there, so the words as they now
+    /// stand are spread across the cue by length instead — a long word takes longer to say
+    /// than a short one, which is near enough for a highlight to move along in step.
+    public var timedWords: [Word] {
+        let spoken = text.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard !spoken.isEmpty else { return [] }
+        if words.count == spoken.count,
+           zip(words, spoken).allSatisfy({ $0.text.trimmingCharacters(in: .whitespacesAndNewlines) == $1 }) {
+            return words
+        }
+        let lengths = spoken.map { Double(max(1, $0.count)) }
+        let total = lengths.reduce(0, +)
+        var from = 0.0
+        return zip(spoken, lengths).map { word, length in
+            defer { from += length / total }
+            return Word(text: word, from: from, to: from + length / total)
+        }
+    }
+
+    /// Which word is being said at a moment on the timeline, or `nil` between words and
+    /// outside the cue.
+    public func wordIndex(at time: CMTime) -> Int? {
+        guard duration.seconds > 0, contains(time) else { return nil }
+        let progress = (time - start).seconds / duration.seconds
+        let timed = timedWords
+        // The last word that has begun: a highlight that goes out between words flickers
+        // at the rate of speech, so it stays on a word until the next one starts.
+        return timed.lastIndex { $0.from <= progress + 0.000_1 }
     }
 }
 
@@ -490,15 +675,112 @@ public struct AudioRegion: TimelineRegion {
     public var gain: Double
     /// The in-point in the audio file, so trimming a region does not re-cut the sound.
     public var sourceStart: CMTime
+    /// Seconds over which the sound rises from silence where it starts.
+    ///
+    /// Music that starts and stops at full volume sounds like a mistake, which is why
+    /// nearly every piece of music laid under a video wants both of these.
+    public var fadeIn: Double
+    /// Seconds over which it falls to silence where it ends.
+    public var fadeOut: Double
+    /// Lower this sound wherever somebody is speaking. Meant for music; see `Ducking`.
+    public var ducksUnderSpeech: Bool
+    /// How much lower, in decibels, while somebody speaks. Positive: 12 means 12 dB down.
+    public var duckAmount: Double
+    /// Seconds of the sound's own shape that lie before its start and after its end.
+    ///
+    /// Nought, except for a piece cut out of a longer sound for an excerpt export: its
+    /// fades then carry on from where they had got to, rather than starting again at the
+    /// excerpt's edges — a stretch taken from the middle of a fade-in begins part-way up
+    /// it, as the full edit plays it. Not saved: an excerpt is made to export and never
+    /// written down.
+    public var leadIn: Double = 0
+    public var leadOut: Double = 0
+
+    public static let defaultDuckAmount: Double = 12
 
     public init(id: UUID = UUID(), start: CMTime, duration: CMTime, path: String,
-                gain: Double = 1, sourceStart: CMTime = .zero) {
+                gain: Double = 1, sourceStart: CMTime = .zero,
+                fadeIn: Double = 0, fadeOut: Double = 0,
+                ducksUnderSpeech: Bool = false, duckAmount: Double = AudioRegion.defaultDuckAmount) {
         self.id = id
         self.start = start
         self.duration = duration
         self.path = path
         self.gain = gain
         self.sourceStart = sourceStart
+        self.fadeIn = fadeIn
+        self.fadeOut = fadeOut
+        self.ducksUnderSpeech = ducksUnderSpeech
+        self.duckAmount = duckAmount
+    }
+
+    /// The fades as they are heard: never longer than the sound, and never overlapping.
+    ///
+    /// Stored as asked for and fitted here, so trimming a sound short and then long again
+    /// gives its fades back rather than having cut them down on the way.
+    public var heardFades: (fadeIn: Double, fadeOut: Double) {
+        let length = max(0, duration.seconds) + max(0, leadIn) + max(0, leadOut)
+        let rising = fadeIn.isFinite ? min(max(0, fadeIn), length) : 0
+        let falling = fadeOut.isFinite ? min(max(0, fadeOut), length - rising) : 0
+        return (rising, falling)
+    }
+
+    /// How loud it is at a moment, as a fraction of `gain`: 0 in silence, 1 at full level.
+    public func envelope(at time: CMTime) -> Double {
+        guard contains(time) else { return 0 }
+        return shape(at: time)
+    }
+
+    /// The fades' level at a moment, whether or not the sound is playing then — so the
+    /// very end of a sound without a fade out reads 1, where `envelope` reads 0.
+    public func shape(at time: CMTime) -> Double {
+        let fades = heardFades
+        let into = (time - start).seconds + max(0, leadIn)
+        let left = (end - time).seconds + max(0, leadOut)
+        var level = 1.0
+        if fades.fadeIn > 0 { level = min(level, into / fades.fadeIn) }
+        if fades.fadeOut > 0 { level = min(level, left / fades.fadeOut) }
+        return max(0, min(1, level))
+    }
+
+    /// The moments inside the sound where its level turns a corner. Between two
+    /// neighbours the level is a straight line, so ramps laid corner to corner are exact.
+    public var fadeCorners: [CMTime] {
+        let fades = heardFades
+        let first = start.seconds, last = end.seconds
+        let risesFrom = first - max(0, leadIn), fallsTo = last + max(0, leadOut)
+        var corners: Set<Double> = [first, last]
+        if fades.fadeIn > 0 { corners.insert(risesFrom + fades.fadeIn) }
+        if fades.fadeOut > 0 { corners.insert(fallsTo - fades.fadeOut) }
+        if fades.fadeIn > 0, fades.fadeOut > 0 {
+            // Where the rising line meets the falling one — a corner only when they meet
+            // below full level, which is a piece short enough to be inside both fades.
+            let meeting = (fallsTo * fades.fadeIn + risesFrom * fades.fadeOut) / (fades.fadeIn + fades.fadeOut)
+            if (meeting - risesFrom) / fades.fadeIn < 1 { corners.insert(meeting) }
+        }
+        return corners.filter { $0 >= first && $0 <= last }.sorted()
+            .map { CMTime(seconds: $0, preferredTimescale: 48_000) }
+    }
+
+    /// Decoded field by field, so a project saved before fades existed keeps its sounds.
+    /// The synthesised decoder wants every key, and one missing would have thrown away
+    /// every piece of music in the project.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        start = try container.decode(CMTime.self, forKey: .start)
+        duration = try container.decode(CMTime.self, forKey: .duration)
+        path = try container.decode(String.self, forKey: .path)
+        gain = try container.decodeIfPresent(Double.self, forKey: .gain) ?? 1
+        sourceStart = try container.decodeIfPresent(CMTime.self, forKey: .sourceStart) ?? .zero
+        fadeIn = (try? container.decodeIfPresent(Double.self, forKey: .fadeIn)) ?? 0
+        fadeOut = (try? container.decodeIfPresent(Double.self, forKey: .fadeOut)) ?? 0
+        ducksUnderSpeech = (try? container.decodeIfPresent(Bool.self, forKey: .ducksUnderSpeech)) ?? false
+        duckAmount = (try? container.decodeIfPresent(Double.self, forKey: .duckAmount)) ?? Self.defaultDuckAmount
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, start, duration, path, gain, sourceStart, fadeIn, fadeOut, ducksUnderSpeech, duckAmount
     }
 }
 
@@ -636,13 +918,21 @@ public struct CursorRegion: TimelineRegion {
     /// is a worse fault than the flick it was smoothing away.
     public static let maximumSmoothingWindow = 0.5
 
+    /// Turn the pointer spotlight on here, when the Pointer panel limits it to marked
+    /// stretches. See `PointerEffectScope` for why the stretches are these ones.
+    public var spotlights: Bool
+    /// Turn the pointer magnifier on here, on the same terms.
+    public var magnifies: Bool
+
     public init(id: UUID = UUID(),
                 start: CMTime,
                 duration: CMTime,
                 isHidden: Bool = true,
                 smoothing: Double = 0,
                 isHeld: Bool = false,
-                transition: CMTime = CMTime(value: 1, timescale: 5)) {
+                transition: CMTime = CMTime(value: 1, timescale: 5),
+                spotlights: Bool = false,
+                magnifies: Bool = false) {
         self.id = id
         self.start = start
         self.duration = duration
@@ -650,6 +940,8 @@ public struct CursorRegion: TimelineRegion {
         self.smoothing = smoothing
         self.isHeld = isHeld
         self.transition = transition
+        self.spotlights = spotlights
+        self.magnifies = magnifies
     }
 
     /// Decodes a stretch written by an older or a newer build.
@@ -671,12 +963,15 @@ public struct CursorRegion: TimelineRegion {
         smoothing = value(.smoothing, default: 0)
         isHeld = value(.isHeld, default: false)
         transition = value(.transition, default: CMTime(value: 1, timescale: 5))
+        spotlights = value(.spotlights, default: false)
+        magnifies = value(.magnifies, default: false)
     }
 
     /// Spelled out so the decoder above and the synthesised encoder agree, and so renaming
     /// a property is a compile error rather than a silently unreadable project.
     enum CodingKeys: String, CodingKey {
         case id, start, duration, isHidden, smoothing, isHeld, transition
+        case spotlights, magnifies
     }
 
     /// The same region, clamped to what the renderer can act on.
@@ -691,7 +986,9 @@ public struct CursorRegion: TimelineRegion {
                      smoothing: min(max(smoothing, 0), 1),
                      isHeld: isHeld,
                      transition: max(.zero, min(transition,
-                                                CMTimeMultiplyByFloat64(duration, multiplier: 0.5))))
+                                                CMTimeMultiplyByFloat64(duration, multiplier: 0.5))),
+                     spotlights: spotlights,
+                     magnifies: magnifies)
     }
 
     /// Whether this region asks for anything at all.
@@ -699,7 +996,7 @@ public struct CursorRegion: TimelineRegion {
     /// A region that hides nothing, smooths nothing and holds nothing is a chip on the
     /// timeline that changes no pixel — worth saying out loud so the inspector can warn
     /// instead of leaving someone wondering why the picture did not move.
-    public var isInert: Bool { !isHidden && !isHeld && smoothing <= 0 }
+    public var isInert: Bool { !isHidden && !isHeld && smoothing <= 0 && !spotlights && !magnifies }
 
     /// How far this region's effect has arrived at `time`, 0 outside and 1 in the middle.
     ///
@@ -732,6 +1029,8 @@ public struct CursorRegion: TimelineRegion {
     /// a pointer nobody can see is worth a second word.
     public var title: String {
         if isHidden { return "Hidden" }
+        if spotlights { return "Spotlight" }
+        if magnifies { return "Magnified" }
         if isHeld { return "Held" }
         if smoothing > 0 { return "Calm" }
         return "Pointer"

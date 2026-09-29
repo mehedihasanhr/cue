@@ -14,6 +14,23 @@ struct TimelineRuler: View {
 
     var body: some View {
         Canvas { context, size in
+            // The selected stretch, as a band under the numbers: I and O mark it from the
+            // keyboard, and a selection that is drawn nowhere is one nobody can trust
+            // Export Selection with. Behind the ticks, so it colours rather than covers.
+            if let range = model.selectedRange {
+                let from = viewport.x(forSeconds: range.start.seconds)
+                let to = viewport.x(forSeconds: range.end.seconds)
+                let band = CGRect(x: from, y: 0, width: max(1, to - from), height: size.height)
+                    .intersection(CGRect(origin: .zero, size: size))
+                if !band.isNull {
+                    context.fill(Path(band), with: .color(StudioPalette.brand.opacity(0.22)))
+                    context.fill(Path(CGRect(x: band.minX, y: 0, width: 1, height: size.height)),
+                                 with: .color(StudioPalette.brand.opacity(0.8)))
+                    context.fill(Path(CGRect(x: band.maxX - 1, y: 0, width: 1, height: size.height)),
+                                 with: .color(StudioPalette.brand.opacity(0.8)))
+                }
+            }
+
             let step = Self.step(forPointsPerSecond: viewport.pointsPerSecond)
             let visible = viewport.visibleSeconds
             var second = (visible.lowerBound / step).rounded(.down) * step
@@ -44,6 +61,22 @@ struct TimelineRuler: View {
                     context.fill(Path(ellipseIn: CGRect(x: midway - 1, y: size.height - 4.5, width: 2, height: 2)),
                                  with: .color(.secondary.opacity(0.4)))
                 }
+            }
+
+            // The markers dropped while recording: a small flag each, over the numbers, in
+            // the colour a marker is everywhere. Orange rather than the brand blue, which is
+            // the selection's, and legible on the ruler's light and dark backgrounds alike.
+            for time in model.markerTimes {
+                let x = viewport.x(forSeconds: time.seconds)
+                guard x >= -6, x <= size.width + 6 else { continue }
+                context.fill(Path(CGRect(x: x - 0.75, y: 0, width: 1.5, height: size.height)),
+                             with: .color(.orange.opacity(0.9)))
+                var flag = Path()
+                flag.move(to: CGPoint(x: x, y: 0))
+                flag.addLine(to: CGPoint(x: x + 7, y: 3))
+                flag.addLine(to: CGPoint(x: x, y: 6))
+                flag.closeSubpath()
+                context.fill(flag, with: .color(.orange))
             }
         }
         .frame(height: height)

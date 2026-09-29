@@ -11,6 +11,11 @@ import UniformTypeIdentifiers
 @testable import RenderKit
 
 /// Turning an edit into a file: what size it comes out, and that it comes out at all.
+/// Serialized and time-limited: these read and write real movies, and many decoders and
+/// encoders at once — this suite in parallel with itself, beside other test runs — can
+/// leave AVFoundation waiting for a frame that never comes. One at a time, and a stall
+/// fails in minutes rather than hanging the run.
+@Suite(.serialized, .timeLimit(.minutes(3)))
 struct ExportTests {
     private func time(_ seconds: Double) -> CMTime {
         CMTime(seconds: seconds, preferredTimescale: 600)

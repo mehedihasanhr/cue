@@ -16,6 +16,26 @@ import TimelineKit
 /// Same builder, same renderer, same descriptor as the movie path. The only differences
 /// are the container and the frame rate.
 struct GIFExporter {
+    /// How long each frame is shown, in seconds.
+    ///
+    /// A GIF can only say how long a frame lasts in hundredths of a second, and a
+    /// thirtieth of a second is not a whole number of them. Written as 0.03 every time,
+    /// the whole GIF ran a tenth faster than the video it came from — thirty seconds of
+    /// edit played in twenty-seven. So the rounding is spread: each frame ends at the
+    /// hundredth nearest to where it should, which at 30 frames a second is 3, 4, 3, 3,
+    /// 4, 3 … and exactly a hundred every second.
+    static func delays(frames: Int, frameRate: Int) -> [Double] {
+        guard frames > 0, frameRate > 0 else { return [] }
+        func hundredths(through frame: Int) -> Int {
+            Int((Double(frame) * 100 / Double(frameRate)).rounded())
+        }
+        return (0..<frames).map { index in
+            // Never below two hundredths: most players treat anything shorter as "as slow
+            // as you like" and show it for a tenth of a second instead.
+            Double(max(2, hundredths(through: index + 1) - hundredths(through: index))) / 100
+        }
+    }
+
     let timeline: Timeline
     let builder: SceneBuilder
     let cursor: CursorTrack?
@@ -24,6 +44,8 @@ struct GIFExporter {
     /// `VideoExporter.webcamURL`; a GIF gets the bubble for the same reason it gets the
     /// pointer — it is the same descriptor and the same renderer, so it cannot not.
     var webcamURL: URL?
+    /// The project, for the movies brought into it. See `SourceFrames`.
+    var packageURL: URL?
     let settings: ExportSettings
     /// The same flag `VideoExporter.cancel()` sets. A GIF used to stop only because the
     /// task around it had been cancelled as well, which made Cancel a coincidence.
@@ -77,17 +99,13 @@ struct GIFExporter {
             kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFLoopCount: loopCount],
         ] as CFDictionary)
 
-        let frameProperties = [
-            kCGImagePropertyGIFDictionary: [
-                kCGImagePropertyGIFDelayTime: 1.0 / Double(frameRate),
-                // The unclamped delay is the one modern viewers honour; the clamped one
-                // above it is what older software reads. Writing both is why a fast GIF
-                // plays at the same speed in a browser and in Finder.
-                kCGImagePropertyGIFUnclampedDelayTime: 1.0 / Double(frameRate),
-            ],
-        ] as CFDictionary
+        let delays = Self.delays(frames: totalFrames, frameRate: frameRate)
 
         let renderer = SceneRenderer()
+        let pictures = SourceFrames(recording: reader, packageURL: packageURL)
+        let lentFrames = LentFrames(videoURL: videoURL, webcamURL: webcamReader == nil ? nil : webcamURL,
+                                    packageURL: packageURL)
+        defer { lentFrames.cancel() }
         // Smoothed once, not per frame, for the reason in `VideoExporter`.
         let cursor = cursor?.smoothed(timeline.cursor.smoothing)
         let started = Date.now
@@ -98,7 +116,7 @@ struct GIFExporter {
                 // Nothing half-written left where the user asked for a file. Image I/O
                 // only commits on `finalize`, but it has already created the file, and an
                 // unfinalised GIF on the desktop is worse than no GIF at all.
-                reader.cancel()
+                pictures.cancel()
                 webcamReader?.cancel()
                 try? FileManager.default.removeItem(at: destination)
                 throw ExportError.cancelled
@@ -107,10 +125,18 @@ struct GIFExporter {
             let time = CMTime(value: CMTimeValue(index), timescale: CMTimeScale(frameRate))
             let scene = builder.descriptor(for: timeline, at: time, cursor: cursor)
             let sourceTime = timeline.sourceTime(at: time) ?? time
-            let source = try reader.frame(at: sourceTime)
-            let camera = try? webcamReader?.frame(at: sourceTime)
+            let source = try await pictures.frame(for: scene)
+            let camera = scene.sourceMedia == nil ? try? webcamReader?.frame(at: sourceTime) : nil
+            let lent = try await lentFrames.frames(for: scene)
 
-            var image = renderer.image(for: scene, source: source, webcam: camera)
+            var image = renderer.image(for: scene, source: source, webcam: camera,
+                                       blending: lent.screen, blendingWebcam: lent.camera)
+            // A GIF has one bit of transparency, which would turn the shadow's soft edge
+            // into a hard, speckled one. A see-through frame goes onto black here, as it
+            // does in every movie format without an alpha channel.
+            if scene.background == .transparent {
+                image = image.composited(over: CIImage(color: .black))
+            }
             if scale != 1 {
                 image = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
             }
@@ -118,11 +144,20 @@ struct GIFExporter {
                                                              from: CGRect(origin: .zero, size: outputSize),
                                                              format: .RGBA8,
                                                              colorSpace: renderer.colorSpace) else {
-                reader.cancel()
+                pictures.cancel()
                 webcamReader?.cancel()
                 try? FileManager.default.removeItem(at: destination)
                 throw ExportError.writerFailed("A frame couldn't be drawn.")
             }
+            let frameProperties = [
+                kCGImagePropertyGIFDictionary: [
+                    kCGImagePropertyGIFDelayTime: delays[index],
+                    // The unclamped delay is the one modern viewers honour; the clamped
+                    // one above it is what older software reads. Writing both is why a
+                    // fast GIF plays at the same speed in a browser and in Finder.
+                    kCGImagePropertyGIFUnclampedDelayTime: delays[index],
+                ],
+            ] as CFDictionary
             CGImageDestinationAddImage(output, frame, frameProperties)
 
             if Date.now.timeIntervalSince(lastReport) > 0.2 {
@@ -133,7 +168,7 @@ struct GIFExporter {
             }
         }
 
-        reader.cancel()
+        pictures.cancel()
         webcamReader?.cancel()
         guard CGImageDestinationFinalize(output) else {
             try? FileManager.default.removeItem(at: destination)

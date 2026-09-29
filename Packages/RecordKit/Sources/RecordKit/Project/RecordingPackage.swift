@@ -63,17 +63,36 @@ public struct RecordingManifest: Codable, Equatable, Sendable {
         /// Absent from every recording made before the artwork was kept, and from any take
         /// where saving it was turned off.
         public var cursorArtwork: String?
+        /// Seconds added to every pointer sample and click when it was written, so that it
+        /// says when the picture showed the pointer there — see `PointerLatency`.
+        ///
+        /// For the record, not for correcting: the times in the sidecars already include
+        /// it. Absent from recordings made before the correction, whose pointer runs this
+        /// far ahead of their picture.
+        public var pointerLatency: Double?
+        /// Whether the keys were watched, and if not, why — see `KeyCapture`. Absent when
+        /// it was not asked for, which is also every recording made before it could be.
+        public var keys: KeyCapture?
+        /// The markers dropped while recording — see `MarkerLog`. Absent when none were,
+        /// and from every recording made before they could be.
+        public var markers: String? = nil
 
         public init(cursor: String? = nil,
                     input: String? = nil,
                     windowBounds: String? = nil,
                     focus: String? = nil,
-                    cursorArtwork: String? = nil) {
+                    cursorArtwork: String? = nil,
+                    pointerLatency: Double? = nil,
+                    keys: KeyCapture? = nil,
+                    markers: String? = nil) {
             self.cursor = cursor
             self.input = input
             self.windowBounds = windowBounds
             self.focus = focus
             self.cursorArtwork = cursorArtwork
+            self.pointerLatency = pointerLatency
+            self.keys = keys
+            self.markers = markers
         }
     }
 
@@ -90,6 +109,9 @@ public struct RecordingManifest: Codable, Equatable, Sendable {
     public var tracks: [Track]
     public var telemetry: Telemetry
     public var recordedBy: String
+    /// Set when the take was rebuilt from what an interrupted recording left on disk — see
+    /// `TakeRecovery`. Absent from every take that finished normally.
+    public var recovery: Recovery? = nil
 
     public init(name: String,
                 createdAt: Date = .now,

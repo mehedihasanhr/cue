@@ -22,6 +22,8 @@ enum EditorTool: String, CaseIterable, Identifiable, Hashable {
     case webcam
     case captions
     case audio
+    /// The shortcuts pressed during the take, drawn as keys over the picture.
+    case keyboard
 
     var id: String { rawValue }
 
@@ -29,12 +31,15 @@ enum EditorTool: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .frame: "Frame"
         case .crop: "Crop"
-        case .blur: "Blur"
+        // "Mask" rather than "Blur" now that the same tool covers and spotlights as well:
+        // a tool called Blur that dims everything *except* its rectangle is misnamed.
+        case .blur: "Mask"
         case .annotate: "Annotate"
         case .cursor: "Pointer"
         case .webcam: "Webcam"
         case .captions: "Captions"
         case .audio: "Audio"
+        case .keyboard: "Keyboard"
         }
     }
 
@@ -52,6 +57,7 @@ enum EditorTool: String, CaseIterable, Identifiable, Hashable {
         case .webcam: "person.crop.square"
         case .captions: "captions.bubble"
         case .audio: "waveform"
+        case .keyboard: "keyboard"
         }
     }
 
@@ -86,7 +92,7 @@ enum EditorTool: String, CaseIterable, Identifiable, Hashable {
     /// holding a reason, and it now has a recorder and a renderer behind it.
     var unavailableReason: String? {
         switch self {
-        case .frame, .crop, .cursor, .blur, .annotate, .captions, .audio, .webcam:
+        case .frame, .crop, .cursor, .blur, .annotate, .captions, .audio, .webcam, .keyboard:
             nil
         }
     }
@@ -104,6 +110,7 @@ enum EditorTool: String, CaseIterable, Identifiable, Hashable {
         case .webcam: "6"
         case .captions: "7"
         case .audio: "8"
+        case .keyboard: "9"
         }
     }
 
@@ -112,5 +119,5 @@ enum EditorTool: String, CaseIterable, Identifiable, Hashable {
     /// Shortcuts and Links from the reference are not here: neither has a model behind
     /// it, and a greyed icon for something that does not exist yet is a promise with
     /// nothing to keep it.
-    static let rail: [EditorTool] = [.frame, .crop, .blur, .annotate, .cursor, .webcam, .captions, .audio]
+    static let rail: [EditorTool] = [.frame, .crop, .blur, .annotate, .cursor, .webcam, .captions, .audio, .keyboard]
 }

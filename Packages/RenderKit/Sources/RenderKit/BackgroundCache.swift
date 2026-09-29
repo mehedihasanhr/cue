@@ -74,6 +74,24 @@ extension BackgroundLayer: Hashable {
             hasher.combine(url)
         case .missing:
             hasher.combine(3)
+        case .transparent:
+            hasher.combine(4)
+        case .fittedGradient(let stops, let angle, let isRadial):
+            hasher.combine(5)
+            hasher.combine(angle)
+            hasher.combine(isRadial)
+            for stop in stops {
+                hasher.combine(stop.location)
+                hasher.combine(stop.color.r); hasher.combine(stop.color.g)
+                hasher.combine(stop.color.b); hasher.combine(stop.color.a)
+            }
+        case .animated(let layer):
+            hasher.combine(6)
+            hasher.combine(layer)
+        case .video(let url, let time):
+            hasher.combine(7)
+            hasher.combine(url)
+            hasher.combine(time)
         }
     }
 }

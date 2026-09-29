@@ -39,13 +39,26 @@ public enum AudioMixdown {
     ///     has no audio at all and every source is a file in the package.
     ///   - packageURL: the project — for `AudioRegion` files stored inside it, and for the
     ///     recording's own sources.
+    ///   - clicks: the recording's clicks, for the click sounds. Passed by the preview and
+    ///     the exporter alike, so the clicks you hear while editing are the ones exported.
+    ///   - clickFrame: the recording's size in points, so clicks outside the crop — which
+    ///     are not drawn — are not heard either. `nil` hears them all.
     public static func build(timeline: Timeline,
                              videoURL: URL,
-                             packageURL: URL?) async -> Result {
+                             packageURL: URL?,
+                             clicks: [CursorTrack.Click] = [],
+                             clickFrame: CGSize? = nil) async -> Result {
+        let clicks = clickFrame.map { timeline.visibleClicks(clicks, frame: $0) } ?? clicks
         let composition = AVMutableComposition()
         var parameters = await appendRecordedAudio(of: timeline, from: videoURL,
                                                    packageURL: packageURL, into: composition)
-        parameters += await appendAudioRegions(of: timeline, packageURL: packageURL, into: composition)
+        // The movies brought into the project, under their own clips. See
+        // `AudioMixdown+Imported`.
+        parameters += await appendImportedAudio(of: timeline, packageURL: packageURL, into: composition)
+        let speech = await speech(in: timeline, videoURL: videoURL, packageURL: packageURL)
+        parameters += await appendAudioRegions(of: timeline, packageURL: packageURL, speech: speech,
+                                               into: composition)
+        parameters += await appendClickSounds(of: timeline, clicks: clicks, into: composition)
 
         var mix: AVAudioMix?
         if !parameters.isEmpty {
@@ -82,7 +95,15 @@ public enum AudioMixdown {
         guard timeline.hasSeparateSound else {
             let asset = AVURLAsset(url: videoURL)
             guard let sources = try? await asset.loadTracks(withMediaType: .audio) else { return [] }
-            return sources.flatMap { lay($0, of: timeline, at: timeline.sound.level, into: composition) }
+            var parameters: [AVAudioMixInputParameters] = []
+            for (index, source) in sources.enumerated() {
+                let recipe = await SoundAnalyzer.shared.recipe(for: videoURL, track: index,
+                                                               cleansVoice: timeline.sound.cleansVoice,
+                                                               evensVolume: timeline.sound.evensVolume)
+                parameters += lay(source, of: timeline, at: timeline.sound.level, treatedWith: recipe,
+                                  into: composition)
+            }
+            return parameters
         }
 
         var parameters: [AVAudioMixInputParameters] = []
@@ -93,7 +114,9 @@ public enum AudioMixdown {
             // One audio track per file, by construction — the recorder wrote it that way so
             // that this line could be a `.first` rather than a guess about ordering.
             guard let source = try? await asset.loadTracks(withMediaType: .audio).first else { continue }
-            parameters += lay(source, of: timeline, at: level, into: composition)
+            let recipe = await SoundAnalyzer.shared.recipe(for: asset.url, cleansVoice: track.style.cleansVoice,
+                                                           evensVolume: track.style.evensVolume)
+            parameters += lay(source, of: timeline, at: level, treatedWith: recipe, into: composition)
         }
         return parameters
     }
@@ -106,15 +129,27 @@ public enum AudioMixdown {
     private static func lay(_ source: AVAssetTrack,
                             of timeline: Timeline,
                             at level: Double,
+                            treatedWith recipe: VoiceRecipe? = nil,
                             into composition: AVMutableComposition) -> [AVAudioMixInputParameters] {
         let laid = timeline.detachedSound.map { runs in
             appendDetached(runs, of: source, into: composition)
         } ?? [appendFollowingClips(timeline.clips, of: source, into: composition)].compactMap { $0 }
 
-        guard level != 1 else { return [] }
+        // A cut with a transition fades the sound with the picture — but only while the
+        // sound follows the picture. A detached lane is the whole truth about the sound,
+        // and the cuts it was detached from say nothing about it any more.
+        if timeline.detachedSound == nil, let following = laid.first, !timeline.transitions.isEmpty {
+            return levelsThroughTransitions(of: timeline, on: following, from: source,
+                                            at: level, treatedWith: recipe, into: composition)
+        }
+
+        guard level != 1 || recipe != nil else { return [] }
         return laid.map { track in
             let input = AVMutableAudioMixInputParameters(track: track)
             input.setVolume(Float(level), at: .zero)
+            // A tap per track: a detached lane is several tracks, and a tap carries the
+            // state of the one sound running through it.
+            if let recipe { input.audioTapProcessor = VoiceTap.make(recipe) }
             return input
         }
     }
@@ -130,7 +165,20 @@ public enum AudioMixdown {
         guard let track = composition.addMutableTrack(withMediaType: .audio,
                                                       preferredTrackID: kCMPersistentTrackID_Invalid) else { return nil }
         var playhead = CMTime.zero
+        /// How far the track has really been filled, which falls behind `playhead` over a
+        /// freeze frame or a title — both silent — and is caught up with an empty range,
+        /// said out loud, as the detached lane does. Over an imported clip too: its sound
+        /// is its own file's, laid on a track of its own.
+        var filled = CMTime.zero
         for clip in clips {
+            guard clip.playsRecording else {
+                playhead = playhead + clip.duration
+                continue
+            }
+            if playhead > filled {
+                track.insertEmptyTimeRange(CMTimeRange(start: filled, end: playhead))
+                filled = playhead
+            }
             let range = CMTimeRange(start: clip.sourceStart, duration: clip.sourceDuration)
             do {
                 try track.insertTimeRange(range, of: source, at: playhead)
@@ -148,7 +196,12 @@ public enum AudioMixdown {
                                      toDuration: clip.duration)
             }
             playhead = playhead + clip.duration
+            filled = playhead
         }
+        // An edit that ends on a still or a title has sound that ends before its picture,
+        // like one whose recording's sound stops a little early: a composition keeps no
+        // empty stretch at its end to pad it with. The exporter finishes the sound when it
+        // runs out, and the preview goes back to the wall clock for the rest.
         return track
     }
 
@@ -210,6 +263,7 @@ public enum AudioMixdown {
     /// quiet without the others being touched.
     private static func appendAudioRegions(of timeline: Timeline,
                                            packageURL: URL?,
+                                           speech: [ClosedRange<Double>] = [],
                                            into composition: AVMutableComposition) async -> [AVAudioMixInputParameters] {
         guard let packageURL else { return [] }
         var parameters: [AVAudioMixInputParameters] = []
@@ -224,11 +278,83 @@ public enum AudioMixdown {
             let range = CMTimeRange(start: region.sourceStart, duration: region.duration)
             guard (try? track.insertTimeRange(range, of: source, at: region.start)) != nil else { continue }
 
-            guard region.gain != 1 else { continue }
-            let input = AVMutableAudioMixInputParameters(track: track)
-            input.setVolume(Float(max(0, region.gain)), at: .zero)
-            parameters.append(input)
+            let fades = region.heardFades
+            if region.ducksUnderSpeech {
+                parameters.append(duckedLevels(for: region, under: speech, on: track))
+                continue
+            }
+            guard region.gain != 1 || fades.fadeIn > 0 || fades.fadeOut > 0 else { continue }
+            parameters.append(levels(for: region, on: track))
         }
         return parameters
+    }
+
+    /// An added sound's level over time: its gain, reached from silence over the fade in
+    /// and taken back to silence over the fade out.
+    ///
+    /// Ramps rather than a level per moment, because a ramp is what the mixer applies
+    /// sample by sample. A fade stepped even every frame is audible as a staircase.
+    /// A ramp may not overlap a set level, so the level is only set where there is no
+    /// fade in to reach it.
+    static func levels(for region: AudioRegion, on track: AVAssetTrack) -> AVMutableAudioMixInputParameters {
+        let input = AVMutableAudioMixInputParameters(track: track)
+        let gain = Float(max(0, region.gain))
+        // Corner to corner, each ramp from the level there to the level at the next, so a
+        // piece that starts part-way up a fade (an excerpt) starts at that level rather
+        // than at silence. Laid end to end: the mix does not allow ramps to overlap.
+        let corners = region.fadeCorners
+        input.setVolume(gain * Float(region.shape(at: region.start)), at: .zero)
+        for (from, to) in zip(corners, corners.dropFirst()) where to > from {
+            input.setVolumeRamp(fromStartVolume: gain * Float(region.shape(at: from)),
+                                toEndVolume: gain * Float(region.shape(at: to)),
+                                timeRange: CMTimeRange(start: from, end: to))
+        }
+        return input
+    }
+
+    /// A click sound wherever a click is seen. See `Timeline.clickSoundMoments(for:)`.
+    ///
+    /// Each sound is laid on the first track that is free by then. A double-click puts
+    /// two sounds closer together than one of them lasts, and a track cannot hold two
+    /// things at one moment, so the second goes on another track rather than cutting the
+    /// first off. Four is plenty: nobody clicks five times inside seventy milliseconds.
+    private static func appendClickSounds(of timeline: Timeline,
+                                          clicks: [CursorTrack.Click],
+                                          into composition: AVMutableComposition) async -> [AVAudioMixInputParameters] {
+        let moments = timeline.clickSoundMoments(for: clicks)
+        guard !moments.isEmpty,
+              let url = try? ClickSound.file(for: timeline.cursor.clickSoundKind) else { return [] }
+        let asset = AVURLAsset(url: url)
+        guard let source = try? await asset.loadTracks(withMediaType: .audio).first,
+              let length = try? await asset.load(.duration), length > .zero else { return [] }
+
+        let end = timeline.duration
+        var lanes: [(track: AVMutableCompositionTrack, freeAt: CMTime)] = []
+        for moment in moments where moment.time < end {
+            let lane: Int
+            if let free = lanes.firstIndex(where: { $0.freeAt <= moment.time }) {
+                lane = free
+            } else {
+                guard lanes.count < 4,
+                      let track = composition.addMutableTrack(withMediaType: .audio,
+                                                              preferredTrackID: kCMPersistentTrackID_Invalid)
+                else { continue }
+                lanes.append((track, .zero))
+                lane = lanes.count - 1
+            }
+            // Cut short at the end of the edit rather than running past it: a sound
+            // longer than the picture would make the export's audio outlast its video.
+            let heard = CMTimeMinimum(length, end - moment.time)
+            guard (try? lanes[lane].track.insertTimeRange(CMTimeRange(start: .zero, duration: heard),
+                                                          of: source, at: moment.time)) != nil else { continue }
+            lanes[lane].freeAt = moment.time + heard
+        }
+
+        let volume = Float(timeline.cursor.clickSoundVolume)
+        return lanes.map { lane in
+            let input = AVMutableAudioMixInputParameters(track: lane.track)
+            input.setVolume(volume, at: .zero)
+            return input
+        }
     }
 }

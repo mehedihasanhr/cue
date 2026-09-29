@@ -12,22 +12,38 @@ public enum ClipSequence {
     /// A cut has no duration: both halves keep their own piece of the source, so the
     /// timeline is exactly as long afterwards as it was before. Splitting at a cut that
     /// already exists does nothing rather than inserting an empty clip.
+    ///
+    /// A freeze frame splits into two freeze frames of the same moment, so either half can
+    /// be deleted or lengthened on its own. A title does not split: it is one card with one
+    /// entrance, and two halves of it would play the entrance twice.
+    ///
+    /// The first half keeps the clip's identity and the way it arrives; the second is a new
+    /// clip arriving on a plain cut, because the cut it arrives on is new.
     @discardableResult
     public static func split(_ timeline: inout Timeline, at time: CMTime) -> Bool {
         guard let (index, clip, offset) = timeline.clip(at: time),
+              !clip.isTitle,
               offset > .zero, offset < clip.duration,
               offset >= Clip.minimumDuration,
               clip.duration - offset >= Clip.minimumDuration
         else { return false }
 
-        let consumed = CMTimeMultiplyByFloat64(offset, multiplier: clip.speed)
-        let first = Clip(id: clip.id,
-                         sourceStart: clip.sourceStart,
-                         sourceDuration: consumed,
-                         speed: clip.speed)
-        let second = Clip(sourceStart: clip.sourceStart + consumed,
+        var first = clip
+        let second: Clip
+        if let hold = clip.hold {
+            first.hold = offset
+            second = Clip.still(of: clip.sourceStart, for: hold - offset, in: clip.source)
+        } else {
+            // The second half's length is what the first did not consume, subtracted
+            // exactly, rather than re-derived from the offset: the two must add up to the
+            // clip's source to the last tick, or a split and a rejoin drift.
+            let consumed = CMTimeMultiplyByFloat64(offset, multiplier: clip.speed)
+            first.sourceDuration = consumed
+            second = Clip(sourceStart: clip.sourceStart + consumed,
                           sourceDuration: clip.sourceDuration - consumed,
-                          speed: clip.speed)
+                          speed: clip.speed,
+                          source: clip.source)
+        }
         timeline.clips.replaceSubrange(index...index, with: [first, second])
         return true
     }
@@ -68,21 +84,60 @@ public enum ClipSequence {
 
         split(&timeline, at: start)
         split(&timeline, at: end)
+        // Where a cut was refused — within `Clip.minimumDuration` of one that exists, or
+        // inside a title, which does not split — the edge goes to the nearest cut there is.
+        // Left where it was asked for, the clip across it stayed whole and nothing of it
+        // went: a second filler word a twentieth of a second after the first was not
+        // removed at all.
+        let (from, to) = (nearestCut(to: start, in: timeline), nearestCut(to: end, in: timeline))
+        guard to > from else { return false }
 
         var kept: [Clip] = []
+        // What actually went, measured from the clips rather than from the range: the
+        // regions have to move by the time that really left the edit. They used to move by
+        // the length asked for, and everything after the cut then sat early by whatever
+        // part of it had stayed.
+        var removedStart: CMTime?
+        var removedEnd = CMTime.zero
         var elapsed = CMTime.zero
         for clip in timeline.clips {
             let clipEnd = elapsed + clip.duration
-            let insideDeletion = elapsed >= start && clipEnd <= end
-            if !insideDeletion { kept.append(clip) }
+            let insideDeletion = elapsed >= from && clipEnd <= to
+            if insideDeletion {
+                if removedStart == nil { removedStart = elapsed }
+                removedEnd = clipEnd
+            } else {
+                kept.append(clip)
+            }
             elapsed = clipEnd
         }
-        guard kept.count != timeline.clips.count else { return false }
+        guard kept.count != timeline.clips.count, let removedStart else { return false }
         guard !kept.isEmpty else { return false }   // never delete the whole recording
 
         timeline.clips = kept
-        shiftRegions(&timeline, removing: CMTimeRange(start: start, end: end))
+        shiftRegions(&timeline, removing: CMTimeRange(start: removedStart, end: removedEnd))
         return true
+    }
+
+    /// The cut nearest a moment, counting the start and the end of the edit as cuts.
+    ///
+    /// Where a range's edge lands once the sequence has been cut there if it could be.
+    /// Found by distance rather than by equality, because a cut made inside a clip at
+    /// another speed goes through `CMTimeMultiplyByFloat64` twice and is not reliably `==`
+    /// the time that was asked for — the reason `insert` matches its seam the same way.
+    static func nearestCut(to time: CMTime, in timeline: Timeline) -> CMTime {
+        var nearest = CMTime.zero
+        var distance = CMTimeAbsoluteValue(time)
+        var elapsed = CMTime.zero
+        for clip in timeline.clips {
+            elapsed = elapsed + clip.duration
+            let away = CMTimeAbsoluteValue(elapsed - time)
+            if away < distance {
+                distance = away
+                nearest = elapsed
+            }
+        }
+        return nearest
     }
 
     /// Puts a stretch of footage into the timeline, pushing everything after it along.
@@ -127,7 +182,9 @@ public enum ClipSequence {
     ///
     /// Refuses footage naming source this recording has not got, which is the cross-project
     /// paste. See `CopiedFootage.sourceDuration` for why a length is the test and what the
-    /// better test would be.
+    /// better test would be. An imported clip is refused the same way when neither this
+    /// timeline nor the copy knows the file it names; one the copy knows is recorded here
+    /// as it lands, which is what makes a paste after undoing the import it came from work.
     @discardableResult
     public static func insert(_ timeline: inout Timeline,
                               _ footage: CopiedFootage,
@@ -135,6 +192,11 @@ public enum ClipSequence {
         let inserted = footage.duration
         guard !footage.clips.isEmpty, inserted >= Clip.minimumDuration else { return false }
         guard footage.sourceEnd <= timeline.sourceDuration else { return false }
+        let known = Set(timeline.media.map(\.path) + footage.media.map(\.path))
+        guard footage.clips.allSatisfy({ $0.source.map(known.contains) ?? true }) else { return false }
+        for file in footage.media where !timeline.media.contains(where: { $0.path == file.path }) {
+            timeline.media.append(file)
+        }
 
         let requested = max(.zero, min(time, timeline.duration))
         split(&timeline, at: requested)
@@ -156,15 +218,7 @@ public enum ClipSequence {
             }
         }
 
-        // Lifted out before the generic ripple runs, and put back by hand afterwards,
-        // because the sound lane is the one lane whose straddle rule differs — everything
-        // else wants stretching and a run wants cutting. Assigning `nil` here is not a
-        // statement that the lane is attached: nothing observes the timeline between these
-        // two lines, and the value is restored below whenever there was one.
-        let runs = timeline.detachedSound
-        timeline.detachedSound = nil
-        shiftRegions(&timeline, startingAtOrAfter: point, by: inserted)
-
+        openTime(&timeline, at: point, length: inserted)
         timeline.clips.insert(contentsOf: footage.clips, at: index)
 
         /// The travelling regions, moved from the copy's own clock into this timeline's.
@@ -182,6 +236,8 @@ public enum ClipSequence {
         timeline.captions.append(contentsOf: arriving(footage.captions))
         timeline.audio.append(contentsOf: arriving(footage.audio))
         timeline.cursorRegions.append(contentsOf: arriving(footage.cursorRegions))
+        timeline.keyCues.append(contentsOf: arriving(footage.keyCues))
+        timeline.cameraLayouts.append(contentsOf: arriving(footage.cameraLayouts))
         // Three lanes are kept in start order as an invariant rather than a convention —
         // the renderer sums zooms in order, `captionAtPlayhead` takes the last cue
         // containing the playhead, and an inspector open on a cursor region must not find
@@ -189,15 +245,35 @@ public enum ClipSequence {
         timeline.zooms.sort { $0.start < $1.start }
         timeline.captions.sort { $0.start < $1.start }
         timeline.cursorRegions.sort { $0.start < $1.start }
+        timeline.keyCues.sort { $0.start < $1.start }
+        timeline.cameraLayouts.sort { $0.start < $1.start }
 
-        if let runs {
-            timeline.detachedSound = (rippled(runs, at: point, by: inserted)
-                                      + arriving(footage.soundRuns))
+        if let runs = timeline.detachedSound {
+            timeline.detachedSound = (runs + arriving(footage.soundRuns))
                 .sorted { $0.start < $1.start }
         }
 
         clampRegions(&timeline)
         return true
+    }
+
+    /// Makes room for `length` of new time at `point`: everything from there on moves
+    /// later by that much.
+    ///
+    /// The ripple half of an insertion, and of a freeze frame growing. Every lane stretches
+    /// a region spanning the point, except the sound lane, whose runs are cut there instead
+    /// — see `rippled(_:at:by:)`. The lane is lifted out before the generic ripple runs and
+    /// put back by hand, because it is the one lane whose straddle rule differs. Assigning
+    /// `nil` in between is not a statement that the lane is attached: nothing observes the
+    /// timeline between those lines, and the value is restored whenever there was one.
+    static func openTime(_ timeline: inout Timeline, at point: CMTime, length: CMTime) {
+        guard length > .zero else { return }
+        let runs = timeline.detachedSound
+        timeline.detachedSound = nil
+        shiftRegions(&timeline, startingAtOrAfter: point, by: length)
+        if let runs {
+            timeline.detachedSound = rippled(runs, at: point, by: length).sorted { $0.start < $1.start }
+        }
     }
 
     /// Plays a stretch faster or slower.
@@ -217,54 +293,100 @@ public enum ClipSequence {
 
         split(&timeline, at: start)
         split(&timeline, at: end)
+        // To the nearest cut where one was refused, as `delete` does and for its reason:
+        // left where it was asked for, the clip across the edge kept its old speed while a
+        // stretch a twentieth of a second short of it was treated as retimed.
+        let (from, to) = (nearestCut(to: start, in: timeline), nearestCut(to: end, in: timeline))
+        guard to > from else { return false }
 
-        var changed = false
+        // The speed a clip will really get, so asking for a speed past the limits does not
+        // count as a change on a clip that is already at the limit.
+        let speed = max(Clip.minimumSpeed, min(speed, Clip.maximumSpeed))
+        /// Each clip that changed: where it was, how long it is now, and its old speed.
+        var changes: [(range: CMTimeRange, duration: CMTime, was: Double)] = []
         var elapsed = CMTime.zero
-        var newEnd = start
         for index in timeline.clips.indices {
             let clip = timeline.clips[index]
             let clipEnd = elapsed + clip.duration
-            let inside = elapsed >= start && clipEnd <= end
-            if inside, clip.speed != speed {
-                timeline.clips[index] = Clip(id: clip.id,
-                                             sourceStart: clip.sourceStart,
-                                             sourceDuration: clip.sourceDuration,
-                                             speed: speed)
-                changed = true
+            let inside = elapsed >= from && clipEnd <= to
+            // A clip that holds has no footage to play faster, so it keeps its length:
+            // a freeze frame in a stretch being sped up is still two seconds of stillness.
+            if inside, clip.isFootage, clip.speed != speed {
+                var faster = clip
+                faster.speed = speed
+                timeline.clips[index] = faster
+                changes.append((CMTimeRange(start: elapsed, end: clipEnd), faster.duration, clip.speed))
             }
-            if inside { newEnd = newEnd + timeline.clips[index].duration }
             elapsed = clipEnd
         }
-        guard changed else { return false }
+        guard !changes.isEmpty else { return false }
 
         // A zoom is a statement about a moment in the edit, so the ones *inside* the
         // range are stretched or squeezed with the footage they were placed on, and the
         // ones *after* it move by the length the range gained or lost. Leaving the later
         // ones where they were is what used to slide every downstream zoom off the thing
         // it was pointing at.
+        //
+        // Clip by clip, last first, because the clips in a range need not all change by
+        // the same factor: one at 1× and one at 2× both set to 4× shrink by four and by two.
+        // Retimed as one stretch they were given one factor between them, and everything
+        // inside drifted off its footage. Working back from the end means each clip is
+        // retimed while the ones before it are still where they were measured.
         if movesRegions {
-            let factor = (end - start).seconds > 0
-                ? (newEnd - start).seconds / (end - start).seconds
-                : 1
-            rescaleRegions(&timeline, in: CMTimeRange(start: start, end: end), about: start, by: factor)
-            shiftRegions(&timeline, startingAtOrAfter: end, by: newEnd - end)
+            for change in changes.reversed() {
+                retimeRegions(&timeline, range: change.range, newEnd: change.range.start + change.duration,
+                              speeds: (change.was, speed))
+            }
         }
         clampRegions(&timeline)
         return true
     }
 
-    /// Moves a clip to a different position in the order.
+    /// Moves a clip to a different position in the order, with what was placed on it.
     ///
     /// The destination is an **index**, not a time: a timeline with no gaps has nowhere
     /// to drop something except between two other clips, and resolving a drag to a
-    /// position would only re-derive an index from arithmetic that can round wrong.
+    /// position would only re-derive an index from arithmetic that can round wrong. It is
+    /// the clip's index once it has been taken out, which is what `Array.move` means too:
+    /// moving the first of three clips to 2 makes it the last.
+    ///
+    /// # What goes with it
+    ///
+    /// It used to be only the clip: the zooms, blurs, captions and sounds placed on it
+    /// stayed where they were in time and landed on whatever footage slid under them. So a
+    /// move is now the three edits it is made of, run on a copy and kept only if all three
+    /// succeed: the clip is lifted exactly as a copy lifts it, ripple-deleted, and inserted
+    /// again in front of the clip it is going before. Which means the rules are the ones
+    /// copy, delete and paste already keep and already test:
+    ///
+    /// - A region wholly on the clip travels with it, keeping its id, so a selected zoom is
+    ///   still selected afterwards.
+    /// - A region straddling the clip's edge stays behind, shortened by the part that was
+    ///   over the clip — the rule a ripple delete keeps. Half a caption spoken over the end
+    ///   of the clip loses the words the clip took away.
+    /// - A region spanning the cut the clip is dropped into is stretched over it, as it is
+    ///   when footage is pasted there.
+    /// - The recording's own sound goes with the picture: attached it follows the clips by
+    ///   construction, and detached, the runs over the clip are lifted and laid down again.
     @discardableResult
     public static func move(_ timeline: inout Timeline, from index: Int, to destination: Int) -> Bool {
-        guard timeline.clips.indices.contains(index) else { return false }
+        guard timeline.clips.indices.contains(index), timeline.clips.count > 1 else { return false }
         let target = max(0, min(destination, timeline.clips.count - 1))
         guard target != index else { return false }
-        let clip = timeline.clips.remove(at: index)
-        timeline.clips.insert(clip, at: target)
+        let clip = timeline.clips[index]
+        let range = CMTimeRange(start: timeline.start(ofClipAt: index), duration: clip.duration)
+
+        // The copy is the clip exactly — `CopiedFootage` cuts at the range's ends, and the
+        // range's ends are this clip's own cuts — so it carries the clip's id and nothing else.
+        guard let footage = CopiedFootage(range, in: timeline),
+              footage.clips.map(\.id) == [clip.id] else { return false }
+
+        var moved = timeline
+        guard delete(&moved, range: range) else { return false }
+        guard insert(&moved, footage, at: moved.start(ofClipAt: target)),
+              moved.clips.firstIndex(where: { $0.id == clip.id }) == target
+        else { return false }
+        timeline = moved
         return true
     }
 
@@ -281,6 +403,11 @@ public enum ClipSequence {
                             movesRegions: Bool = true) -> Bool {
         guard let index = timeline.clips.firstIndex(where: { $0.id == clipID }) else { return false }
         let original = timeline.clips[index]
+        // A clip that holds has no in- or out-point to move; its length is `setHold`'s.
+        guard original.isFootage else { return false }
+        // Bounded by its own file: the recording for a clip of it, the imported movie for
+        // one of those.
+        let available = timeline.sourceDuration(of: original)
         let clipStart = timeline.start(ofClipAt: index)
         var clip = original
 
@@ -295,7 +422,7 @@ public enum ClipSequence {
         let headShift = original.duration - clip.duration
 
         if let tail {
-            let newEnd = min(timeline.sourceDuration, max(tail, clip.sourceStart + Clip.minimumDuration))
+            let newEnd = min(available, max(tail, clip.sourceStart + Clip.minimumDuration))
             clip.sourceDuration = newEnd - clip.sourceStart
         }
         guard clip.sourceDuration >= Clip.minimumDuration, clip != original else { return false }
@@ -307,12 +434,22 @@ public enum ClipSequence {
         // Treating both as "shift what comes after the clip" leaves a zoom pointing at
         // the wrong second the moment anyone drags the left handle.
         if movesRegions {
-            if headShift != .zero {
+            if headShift > .zero {
+                // What was on the footage cut off the front goes with it, like a ripple
+                // delete of that stretch. Moved back instead, a zoom on the trimmed-away
+                // second landed on the clip before this one.
+                shiftRegions(&timeline, removing: CMTimeRange(start: clipStart, duration: headShift))
+            } else if headShift < .zero {
                 shiftRegions(&timeline, startingAtOrAfter: clipStart, by: .zero - headShift)
             }
             let afterHead = clipStart + original.duration - headShift
             let nowEnding = clipStart + clip.duration
-            if nowEnding != afterHead {
+            if nowEnding < afterHead {
+                // The tail's twin of the head's rule above: what was on the footage cut off
+                // the end goes with it. Moved instead, a zoom on the last second of a clip
+                // trimmed shorter slid onto the start of the next clip's footage.
+                shiftRegions(&timeline, removing: CMTimeRange(start: nowEnding, end: afterHead))
+            } else if nowEnding > afterHead {
                 shiftRegions(&timeline, startingAtOrAfter: afterHead, by: nowEnding - afterHead)
             }
         }
@@ -320,11 +457,111 @@ public enum ClipSequence {
         return true
     }
 
+    /// Changes how long a freeze frame or a title lasts.
+    ///
+    /// Its own edit rather than a trim, because a trim moves an in- or out-point in the
+    /// recording and a clip that holds has neither — only a length. It behaves as a trim
+    /// of the clip's far end does: what is placed on the clip keeps its place, and what
+    /// comes after moves by the difference. Longer opens time at the clip's end, the way an
+    /// insertion there would; shorter takes the time out of the clip's end, the way a
+    /// ripple delete of it would, so a zoom placed on the part that went goes too.
+    @discardableResult
+    public static func setHold(_ timeline: inout Timeline, clipID: UUID, to length: CMTime) -> Bool {
+        guard let index = timeline.clips.firstIndex(where: { $0.id == clipID }),
+              let hold = timeline.clips[index].hold else { return false }
+        let wanted = Clip.clampedHold(length)
+        guard wanted != hold else { return false }
+        let end = timeline.start(ofClipAt: index) + hold
+
+        if wanted > hold {
+            openTime(&timeline, at: end, length: wanted - hold)
+        } else {
+            shiftRegions(&timeline, removing: CMTimeRange(start: end - (hold - wanted), end: end))
+        }
+        timeline.clips[index].hold = wanted
+        clampRegions(&timeline)
+        return true
+    }
+
     // MARK: - Regions
+
+    /// Moves every region to follow a stretch that now plays faster or slower.
+    ///
+    /// One mapping for both ends of every region: a moment before the stretch stays, a
+    /// moment inside it is squeezed or stretched with it, a moment after it moves by what
+    /// the stretch gained or lost. It used to be two steps — stretch what was inside, then
+    /// move what was after — and a zoom stretched past the old end was then moved again:
+    /// slowing 10–20 s to half speed sent a zoom at 16 s to 32 s instead of 22 s.
+    ///
+    /// A detached sound run is footage too, and has to keep playing the same seconds of
+    /// the recording as the picture over it, so it is cut at the stretch's edges and the
+    /// part inside takes the new speed — rather than being made longer at the old speed,
+    /// which played ten seconds of sound under twenty seconds of picture.
+    ///
+    /// Captions are moved word by word through the same mapping — see
+    /// `CaptionCue.retimed(_:)`. And where `speeds` says what the footage's speed was and
+    /// is, a run that played at the old speed is given the new one exactly, rather than
+    /// the old one divided by a factor measured off rounded lengths, which drifts.
+    static func retimeRegions(_ timeline: inout Timeline, range: CMTimeRange, newEnd: CMTime,
+                              speeds: (was: Double, now: Double)? = nil) {
+        let length = range.duration.seconds
+        guard length > 0 else { return }
+        let factor = (newEnd - range.start).seconds / length
+        guard factor > 0, abs(factor - 1) > 1e-9 else { return }
+        let delta = newEnd - range.end
+
+        func place(_ time: CMTime) -> CMTime {
+            if time <= range.start { return time }
+            if time >= range.end { return time + delta }
+            return range.start + CMTimeMultiplyByFloat64(time - range.start, multiplier: factor)
+        }
+        func adjust<Region: TimelineRegion>(_ regions: [Region]) -> [Region] {
+            regions.map { region in
+                var region = region
+                let end = place(region.end)
+                region.start = place(region.start)
+                region.duration = max(Clip.minimumDuration, end - region.start)
+                return region
+            }
+        }
+
+        timeline.zooms = adjust(timeline.zooms)
+        // A followed path is re-timed with the footage under it. See `MaskFollowing`.
+        timeline.blurs = MaskFollowing.retimed(adjust(timeline.blurs), from: timeline.blurs,
+                                               breaks: [range.start, range.end], place: place)
+        timeline.annotations = adjust(timeline.annotations)
+        timeline.captions = timeline.captions.map { $0.retimed(place) }
+        timeline.audio = adjust(timeline.audio)
+        timeline.cursorRegions = adjust(timeline.cursorRegions)
+        timeline.keyCues = adjust(timeline.keyCues)
+        timeline.cameraLayouts = adjust(timeline.cameraLayouts)
+
+        if let runs = timeline.detachedSound {
+            let pieces = runs.flatMap { $0.split(at: [range.start, range.end]) }
+            timeline.detachedSound = pieces.map { run in
+                var run = run
+                let inside = run.start >= range.start && run.end <= range.end
+                let end = place(run.end)
+                run.start = place(run.start)
+                run.duration = max(Clip.minimumDuration, end - run.start)
+                if inside {
+                    if let speeds, abs(run.speed - speeds.was) < 1e-9 {
+                        run.speed = speeds.now
+                    } else {
+                        run.speed /= factor
+                    }
+                }
+                return run
+            }
+        }
+    }
 
     /// Drops regions inside a deleted range and pulls the later ones back by its length.
     private static func shiftRegions(_ timeline: inout Timeline, removing range: CMTimeRange) {
-        func adjust<Region: TimelineRegion>(_ regions: [Region]) -> [Region] {
+        /// - Parameter trimmedHead: told how much was cut off the front of a region that
+        ///   began inside the cut, for the kinds whose content has to move with it.
+        func adjust<Region: TimelineRegion>(_ regions: [Region],
+                                            trimmedHead: (inout Region, CMTime) -> Void = { _, _ in }) -> [Region] {
             regions.compactMap { region in
                 var region = region
                 if region.start >= range.start && region.end <= range.end { return nil }
@@ -334,19 +571,50 @@ public enum ClipSequence {
                     // Straddles the cut: keep the part that survived rather than
                     // dropping an effect the user placed deliberately.
                     let overlap = min(region.end, range.end) - max(region.start, range.start)
+                    if region.start > range.start {
+                        // It began inside the cut, so what is left of it begins where
+                        // the cut now is. Left where it was, it started late by however
+                        // much of it had been cut: a zoom arrived after its click, a
+                        // blur uncovered what it was hiding for that long.
+                        trimmedHead(&region, range.end - region.start)
+                        region.start = range.start
+                    }
                     region.duration = max(Clip.minimumDuration, region.duration - overlap)
                 }
                 return region
             }
         }
 
+        // The caption's words, placed before the cut changes the cues they are measured
+        // against. See `CaptionCue.cut(_:)`.
+        let captions = timeline.captions.map { $0.cut(range) }
+
         timeline.zooms = adjust(timeline.zooms)
-        timeline.blurs = adjust(timeline.blurs)
+        // What was under the cut is gone, so a followed path steps from the moment before
+        // it to the moment after it, like the picture does.
+        timeline.blurs = MaskFollowing.retimed(adjust(timeline.blurs), from: timeline.blurs,
+                                               breaks: [range.start, range.end]) { time in
+            time <= range.start ? time : time >= range.end ? time - range.duration : range.start
+        }
         timeline.annotations = adjust(timeline.annotations)
-        timeline.captions = adjust(timeline.captions)
-        timeline.audio = adjust(timeline.audio)
-        if let runs = timeline.detachedSound { timeline.detachedSound = adjust(runs) }
+        timeline.captions = captions.compactMap { $0 }
+        // A sound whose front was cut plays from where the cut ends, not from the start
+        // of its file again.
+        timeline.audio = adjust(timeline.audio) { region, trimmed in
+            region.sourceStart = region.sourceStart + trimmed
+        }
+        if let runs = timeline.detachedSound {
+            // Cut where the picture was cut, so the sound after the cut is still the sound
+            // of the picture after it. Shortened instead, a run spanning the cut went on
+            // playing the seconds that had been taken out, and fell behind by that much.
+            let pieces = runs.flatMap { $0.split(at: [range.start, range.end]) }
+            timeline.detachedSound = adjust(pieces) { run, trimmed in
+                run.sourceStart = run.sourceStart + CMTimeMultiplyByFloat64(trimmed, multiplier: run.speed)
+            }
+        }
         timeline.cursorRegions = adjust(timeline.cursorRegions)
+        timeline.keyCues = adjust(timeline.keyCues)
+        timeline.cameraLayouts = adjust(timeline.cameraLayouts)
     }
 
     /// Moves everything from `time` onwards by `delta`.
@@ -368,12 +636,27 @@ public enum ClipSequence {
         }
 
         timeline.zooms = adjust(timeline.zooms)
-        timeline.blurs = adjust(timeline.blurs)
+        // Time taken out before `time` (a negative delta) is a removal, and a path's
+        // moments inside it land where it now ends.
+        let removedFrom = time + min(delta, .zero)
+        timeline.blurs = MaskFollowing.retimed(adjust(timeline.blurs), from: timeline.blurs,
+                                               breaks: [removedFrom, time]) { moment in
+            moment >= time ? moment + delta : min(moment, removedFrom)
+        }
         timeline.annotations = adjust(timeline.annotations)
-        timeline.captions = adjust(timeline.captions)
+        // A line spanning the point is stretched like any region, but word by word: the
+        // words said after the point are said in the footage after it, and move with that
+        // footage. Stretched as a whole, every word in the line slid by a share of the
+        // opened time — "um" landed where the words before it are heard.
+        timeline.captions = timeline.captions.map { cue in
+            guard cue.start < time, cue.end > time else { return adjust([cue])[0] }
+            return cue.retimed { $0 >= time ? $0 + delta : $0 }
+        }
         timeline.audio = adjust(timeline.audio)
         if let runs = timeline.detachedSound { timeline.detachedSound = adjust(runs) }
         timeline.cursorRegions = adjust(timeline.cursorRegions)
+        timeline.keyCues = adjust(timeline.keyCues)
+        timeline.cameraLayouts = adjust(timeline.cameraLayouts)
     }
 
     /// Moves a detached sound lane out of the way of inserted footage.
@@ -453,12 +736,16 @@ public enum ClipSequence {
         }
 
         timeline.zooms = adjust(timeline.zooms)
-        timeline.blurs = adjust(timeline.blurs)
+        timeline.blurs = MaskFollowing.retimed(adjust(timeline.blurs), from: timeline.blurs) { time in
+            anchor + CMTimeMultiplyByFloat64(time - anchor, multiplier: factor)
+        }
         timeline.annotations = adjust(timeline.annotations)
         timeline.captions = adjust(timeline.captions)
         timeline.audio = adjust(timeline.audio)
         if let runs = timeline.detachedSound { timeline.detachedSound = adjust(runs) }
         timeline.cursorRegions = adjust(timeline.cursorRegions)
+        timeline.keyCues = adjust(timeline.keyCues)
+        timeline.cameraLayouts = adjust(timeline.cameraLayouts)
     }
 
     /// Keeps every region inside the timeline it belongs to.
@@ -477,10 +764,16 @@ public enum ClipSequence {
         timeline.zooms = clamp(timeline.zooms)
         timeline.blurs = clamp(timeline.blurs)
         timeline.annotations = clamp(timeline.annotations)
-        timeline.captions = clamp(timeline.captions)
+        // Cut rather than clamped, so the words said past the end go and the rest keep
+        // their moments. Clamped, the line's words were squeezed into what was left of it.
+        timeline.captions = clamp(timeline.captions.compactMap { cue in
+            cue.end > end ? cue.cut(CMTimeRange(start: end, end: cue.end)) : cue
+        })
         timeline.audio = clamp(timeline.audio)
         if let runs = timeline.detachedSound { timeline.detachedSound = clamp(runs) }
         timeline.cursorRegions = clamp(timeline.cursorRegions)
+        timeline.keyCues = clamp(timeline.keyCues)
+        timeline.cameraLayouts = clamp(timeline.cameraLayouts)
     }
 
     // MARK: - The sound lane

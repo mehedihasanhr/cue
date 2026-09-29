@@ -1,6 +1,8 @@
 import Foundation
 import os
-import Speech
+// `@preconcurrency`: the recogniser's result types are not marked `Sendable`; nothing of
+// theirs leaves the callback they arrive in.
+@preconcurrency import Speech
 import TimelineKit
 
 /// The recogniser every Mac that can run this app has.

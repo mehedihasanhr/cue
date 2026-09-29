@@ -84,6 +84,9 @@ public final class SessionWriter: @unchecked Sendable {
         } catch {
             throw .writerFailed(error.localizedDescription)
         }
+        // Playable up to its last second at every moment, so a crash costs the tail rather
+        // than the take. See `CrashSafety`.
+        writer.movieFragmentInterval = CrashSafety.fragmentInterval
 
         var compression: [String: any Sendable] = [
             AVVideoAverageBitRateKey: bitrate,
@@ -163,7 +166,9 @@ public final class SessionWriter: @unchecked Sendable {
             case .first:
                 firstTime = time
                 writer.startSession(atSourceTime: time)
-                clock.start()
+                // The frame's own timestamp, not the moment it got here: see
+                // `RecordingClock.start(at:)`.
+                clock.start(at: time)
             case .sharedClock:
                 // Dropped rather than kept: a frame from before the recording's first
                 // moment — the clock not started yet, or this camera frame stamped earlier
@@ -177,19 +182,36 @@ public final class SessionWriter: @unchecked Sendable {
             }
         }
 
+        // Never backwards. A frame stamped before the last one written is one that was in
+        // flight across a pause, and an encoder handed time running the wrong way fails
+        // the whole file rather than the one frame.
+        if let lastVideoTime, time <= lastVideoTime {
+            droppedFrames += 1
+            return
+        }
+
         // The screen only produces frames when it changes, so a still screen leaves a
         // hole. Repeat the last frame at the times the encoder expected one.
+        //
+        // Only for as long as the encoder will take them. These are copies of a picture
+        // that is already in the file; the frame they lead up to is the one that *ends*
+        // the stillness — the button going down, the menu opening — and it is the one that
+        // must not be lost. Filling used to run to the end regardless, the encoder stopped
+        // accepting part of the way through the burst, and the real frame behind it was
+        // dropped: the picture answered a click two or three frames late, every time the
+        // screen had been still beforehand.
         for fill in pacer.fillTimes(lastFrame: lastVideoTime, next: time) {
+            guard video.isReadyForMoreMediaData else { break }
             appendRepeat(at: fill)
         }
 
-        guard video.isReadyForMoreMediaData else {
+        guard waitForEncoder(upTo: 0.05) else {
             droppedFrames += 1
             return
         }
         // Re-stamped rather than appended as it arrived, because a pause takes real time
         // out of the middle of the recording: the buffer's own timestamp still carries it.
-        let stamped = pausedTotal == .zero
+        let stamped = time == buffer.presentationTimeStamp
             ? buffer
             : (try? CMSampleBuffer(copying: buffer, withNewTiming: [
                 CMSampleTimingInfo(duration: buffer.duration, presentationTimeStamp: time, decodeTimeStamp: .invalid),
@@ -204,23 +226,50 @@ public final class SessionWriter: @unchecked Sendable {
         }
     }
 
+    /// The screen saying that nothing changed.
+    ///
+    /// ScreenCaptureKit reports a still screen as it goes — a buffer with no picture in
+    /// it, at the rate frames would have arrived. Repeating the last frame at each of
+    /// those moments keeps the file in step with the clock one frame at a time, instead
+    /// of leaving the whole stillness to be filled in a burst when it ends.
+    public func appendStill(at hostTime: CMTime) {
+        dispatchPrecondition(condition: .onQueue(queue))
+        guard writer.status == .writing, !isPaused, hostTime.isValid,
+              let lastVideoTime, let time = clock.recordingTime(forHost: hostTime) else { return }
+        // Most of a frame later than the last one, or it is not a new frame's worth of
+        // time and repeating would only put two frames where one belongs.
+        guard time - lastVideoTime >= CMTimeMultiplyByFloat64(pacer.frameDuration, multiplier: 0.75) else { return }
+        guard video.isReadyForMoreMediaData else { return }
+        appendRepeat(at: time)
+    }
+
+    /// Gives the encoder a moment to be ready, and says whether it is.
+    ///
+    /// On the capture queue, so the moment is short: the stream keeps its own queue of
+    /// frames behind this one, and a wait of a few milliseconds costs nothing where a
+    /// dropped frame costs the picture its answer.
+    private func waitForEncoder(upTo seconds: Double) -> Bool {
+        if video.isReadyForMoreMediaData { return true }
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            usleep(500)
+            if video.isReadyForMoreMediaData { return true }
+        }
+        return video.isReadyForMoreMediaData
+    }
+
     // MARK: - Pausing
 
     /// Whether the recording is on hold.
     public private(set) var isPaused = false
-    /// How much of the wall clock has been spent paused, subtracted from every timestamp
-    /// after it so the file has no frozen stretch in the middle.
-    private var pausedTotal: CMTime = .zero
-    private var pausedAt: CMTime?
 
+    /// Stops or resumes accepting buffers. How *long* the hold lasted is the clock's
+    /// business — `RecordingClock.hold` — so that the picture, every sound and the
+    /// pointer all lose exactly the same stretch.
     public func setPaused(_ paused: Bool) {
         dispatchPrecondition(condition: .onQueue(queue))
         guard paused != isPaused else { return }
-        if paused {
-            pausedAt = RecordingClock.now
-        } else if let pausedAt {
-            pausedTotal = pausedTotal + (RecordingClock.now - pausedAt)
-            self.pausedAt = nil
+        if !paused {
             // Audio resumes at its own new timestamp; without clearing these, the gap
             // filler would helpfully insert the whole pause as silence.
             systemAudioThrough = nil
@@ -229,11 +278,12 @@ public final class SessionWriter: @unchecked Sendable {
         isPaused = paused
     }
 
-    /// A buffer's timestamp with the paused time taken out, or `nil` when it is unusable.
+    /// A buffer's timestamp with the paused time taken out, or `nil` when it is unusable
+    /// — invalid, or stamped inside a hold.
     private func presentationTime(of buffer: CMSampleBuffer) -> CMTime? {
         let time = buffer.presentationTimeStamp
         guard time.isValid else { return nil }
-        return pausedTotal == .zero ? time : time - pausedTotal
+        return clock.recordingTime(forHost: time)
     }
 
     public func append(systemAudio buffer: CMSampleBuffer) {
@@ -258,7 +308,7 @@ public final class SessionWriter: @unchecked Sendable {
             _ = input.append(filler)
         }
 
-        let stamped = pausedTotal == .zero
+        let stamped = start == buffer.presentationTimeStamp
             ? buffer
             : (try? CMSampleBuffer(copying: buffer, withNewTiming: [
                 CMSampleTimingInfo(duration: buffer.duration, presentationTimeStamp: start, decodeTimeStamp: .invalid),
@@ -278,6 +328,10 @@ public final class SessionWriter: @unchecked Sendable {
         if video.append(copy) {
             repeatedFrames += 1
             lastVideoTime = time
+        } else if writer.status == .failed {
+            // A still screen is all repeats, and a disk that fills during one has to be
+            // noticed here or not until something moves.
+            recordFailure()
         }
     }
 
@@ -291,8 +345,12 @@ public final class SessionWriter: @unchecked Sendable {
     public func finish() async throws(RecordingError) -> CMTime {
         let duration: CMTime = await withCheckedContinuation { continuation in
             queue.async {
-                let end = RecordingClock.now - self.pausedTotal
+                // Nothing is arriving any more, so there is time to let the encoder take
+                // each one: a tail that stops when the encoder blinks is a file that ends
+                // before the recording did.
+                let end = self.clock.recordingTime(forHost: RecordingClock.now) ?? self.lastVideoTime ?? .zero
                 for fill in self.pacer.tailTimes(lastFrame: self.lastVideoTime, end: end) {
+                    guard self.waitForEncoder(upTo: 0.1) else { break }
                     self.appendRepeat(at: fill)
                 }
                 self.video.markAsFinished()
@@ -326,9 +384,20 @@ public final class SessionWriter: @unchecked Sendable {
     }
 
     private func recordFailure() {
-        guard let error = writer.error else { return }
+        // Once: every frame after a failure comes through here, and a log line per frame
+        // is its own performance problem.
+        guard let error = writer.error, !hasReportedFailure else { return }
+        hasReportedFailure = true
         Self.log.error("Writer failed: \(error.localizedDescription, privacy: .public)")
+        onFailure?(error)
     }
+
+    /// Told once, on the queue, when the file stops accepting frames — a full disk, most
+    /// often. Without it a failed writer went on refusing frames in silence until the
+    /// user pressed Stop, and everything after the failure was a take that did not exist.
+    /// Set before the first frame, and not after: it is read on the queue.
+    public var onFailure: (@Sendable (any Error) -> Void)?
+    private var hasReportedFailure = false
 }
 
 /// Makes silence that matches a real audio buffer.

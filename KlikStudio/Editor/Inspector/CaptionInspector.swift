@@ -7,15 +7,29 @@ import TimelineKit
 struct CaptionInspector: View {
     let model: EditorModel
 
+    @Environment(StudioSettings.self) private var settings
+
+    /// How long a silence has to be before "Shorten Pauses" takes it in hand.
+    @State private var pauseLimit = 1.0
+    /// Whether the transcript is shown as text to type into rather than words to pick.
+    /// Words, whenever there are timed ones: cutting by what was said is what a
+    /// transcript in an editor is for, and correcting a line throws its timings away.
+    @State private var editsText = false
+
     private var style: StyleBinding { StyleBinding(model: model) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        // Nothing between the sections: each one brings its own air and its own rule.
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenSections) {
             if model.timeline.captions.isEmpty {
                 empty
             } else {
                 appearance
+                motion
                 transcript
+                tidy
+                source
+                export
             }
         }
         .font(.system(size: 12))
@@ -23,98 +37,189 @@ struct CaptionInspector: View {
 
     // MARK: - Nothing yet
 
+    /// Two ways in, because there are two kinds of recording: one where somebody is
+    /// talking, and one where nobody is and the captions are the narration.
     private var empty: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label("Captions", systemImage: "captions.bubble")
-                .font(.system(size: 13))
-            Text("Klik Studio can listen to the recording and write down what was said. It happens on this Mac — the audio is never sent anywhere.")
-                .font(.callout)
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
+            Text("Klik Studio can listen to the recording and write down what was said. It happens on this Mac. The audio is never sent anywhere.")
+                .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Button {
-                model.generateCaptions()
-            } label: {
-                if model.isGeneratingCaptions {
-                    HStack(spacing: 6) {
-                        // Determinate only where the recogniser actually reports a
-                        // fraction; a spinner is the honest answer to "no idea yet".
-                        if let done = model.captionProgress {
-                            ProgressView(value: done).progressViewStyle(.circular).controlSize(.small)
-                        } else {
-                            ProgressView().controlSize(.small)
-                        }
-                        Text("Listening…")
-                    }
-                } else {
-                    Text("Generate Captions")
-                }
-            }
-            .disabled(model.isGeneratingCaptions)
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
+            language
+
+            generate(title: "Generate Captions")
+                .buttonStyle(.borderedProminent)
+
+            Text("Or write them yourself, a line at a time, starting where the playhead is.")
+                .font(.system(size: 11.5))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            addLine
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .inspectorSection("Transcript", systemImage: "captions.bubble")
+    }
+
+    private var language: some View {
+        InspectorField(title: "Language") {
+            InspectorPicker(selection: chosenLanguage,
+                            options: CaptionLanguages.all,
+                            title: CaptionLanguages.title(for:))
+        }
+        .help("The language spoken in the recording")
+    }
+
+    private var chosenLanguage: Binding<String> {
+        Binding {
+            CaptionLanguages.resolved(settings.captionLanguage)
+        } set: { identifier in
+            settings.captionLanguage = identifier
+        }
+    }
+
+    private func generate(title: String) -> some View {
+        Button {
+            model.generateCaptions()
+        } label: {
+            if model.isGeneratingCaptions {
+                HStack(spacing: 6) {
+                    // Determinate only where the recogniser actually reports a
+                    // fraction; a spinner is the honest answer to "no idea yet".
+                    if let done = model.captionProgress {
+                        ProgressView(value: done).progressViewStyle(.circular).controlSize(.small)
+                    } else {
+                        ProgressView().controlSize(.small)
+                    }
+                    Text("Listening…")
+                }
+                .frame(maxWidth: .infinity)
+            } else {
+                Text(title)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .disabled(model.isGeneratingCaptions)
+        .controlSize(.small)
+    }
+
+    private var addLine: some View {
+        Button {
+            model.addCaptionAtPlayhead()
+        } label: {
+            Label("Add Caption at Playhead", systemImage: "plus")
+                .frame(maxWidth: .infinity)
+        }
+        .controlSize(.small)
+        .help("A caption to type into, starting at the playhead")
     }
 
     // MARK: - How they look
 
     private var appearance: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
             Toggle("Show captions", isOn: style.binding(\.captionStyle.isVisible, "Captions"))
 
-            Picker("Position", selection: style.binding(\.captionStyle.position, "Caption Position")) {
-                ForEach(CaptionStyle.Position.allCases, id: \.self) { Text($0.title).tag($0) }
+            Group {
+                InspectorField(title: "Position") {
+                    InspectorPicker(selection: style.binding(\.captionStyle.position, "Caption Position"),
+                                    options: CaptionStyle.Position.allCases,
+                                    title: \.title)
+                }
+                FontFamilyPicker(family: style.binding(\.captionStyle.fontFamily, "Caption Font"))
+                // The system's type comes in four designs; a chosen family has its own.
+                if model.timeline.captionStyle.fontFamily.isEmpty {
+                    InspectorField(title: "Typeface") {
+                        InspectorPicker(selection: style.binding(\.captionStyle.typeface, "Caption Typeface"),
+                                        options: CaptionStyle.Typeface.allCases,
+                                        title: \.title)
+                    }
+                }
+                InspectorSlider(model: model, "Size", systemImage: "textformat.size",
+                                value: style.binding(\.captionStyle.fontSize, "Caption Size"),
+                                range: 0.02...0.12)
+                InspectorSlider(model: model, "Backdrop", systemImage: "rectangle.fill",
+                                value: style.binding(\.captionStyle.backgroundOpacity, "Caption Backdrop"),
+                                range: 0...1)
+                InspectorSlider(model: model, "Margin", systemImage: "arrow.up.and.down",
+                                value: style.binding(\.captionStyle.margin, "Caption Margin"),
+                                range: 0.01...0.25)
+                InspectorField(title: "Colour") {
+                    ColorPicker("Colour", selection: colour(\.captionStyle.color, "Caption Colour"),
+                                supportsOpacity: false)
+                }
             }
-            .pickerStyle(.segmented)
-
-            InspectorSlider(model: model, "Size", systemImage: "textformat.size",
-                            value: style.binding(\.captionStyle.fontSize, "Caption Size"),
-                            range: 0.02...0.12)
-            InspectorSlider(model: model, "Backdrop", systemImage: "rectangle.fill",
-                            value: style.binding(\.captionStyle.backgroundOpacity, "Caption Backdrop"),
-                            range: 0...1)
-            InspectorSlider(model: model, "Margin", systemImage: "arrow.up.and.down",
-                            value: style.binding(\.captionStyle.margin, "Caption Margin"),
-                            range: 0.01...0.25)
-
-            ColorPicker("Colour", selection: colour, supportsOpacity: false)
+            // The switch itself stays live: it is the way back.
+            .disabled(!model.timeline.captionStyle.isVisible)
         }
-        .disabled(!model.timeline.captionStyle.isVisible)
         .inspectorSection("Appearance", systemImage: "textformat")
     }
 
-    private var colour: Binding<Color> {
+    private var motion: some View {
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
+            InspectorField(title: "Arrives") {
+                InspectorPicker(selection: style.binding(\.captionStyle.animation, "Caption Animation"),
+                                options: CaptionStyle.Animation.allCases,
+                                title: \.title)
+            }
+            Toggle("Light up each word as it is said",
+                   isOn: style.binding(\.captionStyle.highlightsWords, "Word Highlight"))
+            if model.timeline.captionStyle.highlightsWords {
+                InspectorField(title: "Highlight") {
+                    ColorPicker("Highlight", selection: colour(\.captionStyle.highlightColor, "Highlight Colour"),
+                                supportsOpacity: false)
+                }
+            }
+        }
+        .disabled(!model.timeline.captionStyle.isVisible)
+        .inspectorSection("Motion", systemImage: "sparkles")
+    }
+
+    private func colour(_ path: WritableKeyPath<Timeline, ColorValue> & Sendable, _ name: String) -> Binding<Color> {
         Binding {
-            Color(model.timeline.captionStyle.color.rgba.nsColor)
+            Color(model.timeline[keyPath: path].rgba.nsColor)
         } set: { colour in
-            style.set(\.captionStyle.color, to: RGBA(NSColor(colour)).colorValue, "Caption Colour")
+            style.set(path, to: RGBA(NSColor(colour)).colorValue, name)
         }
     }
 
     // MARK: - What they say
 
     private var transcript: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(model.timeline.captions) { cue in
-                line(cue)
+        let picksWords = model.hasTimedWords && !editsText
+        return VStack(alignment: .leading, spacing: 8) {
+            if picksWords {
+                TranscriptWords(model: model)
+            } else {
+                ForEach(model.timeline.captions) { cue in
+                    line(cue)
+                }
             }
-
-            HStack {
-                Button("Regenerate") { model.generateCaptions() }
-                    .disabled(model.isGeneratingCaptions)
-                Button("Clear", role: .destructive) { model.clearCaptions() }
-            }
-            .controlSize(.small)
-            .padding(.top, 4)
+            addLine
+                .padding(.top, 4)
         }
-        .inspectorSection("Transcript", systemImage: "captions.bubble")
+        .inspectorSection("Transcript", systemImage: "captions.bubble") {
+            HStack(spacing: 10) {
+                if model.hasTimedWords {
+                    SectionButton(title: editsText ? "Pick Words" : "Edit Text") {
+                        editsText.toggle()
+                        model.transcriptWords.clear()
+                    }
+                    .help(editsText
+                          ? "Pick words to cut them from the video"
+                          : "Type into the lines. A corrected line loses its word timings.")
+                }
+                SectionButton(title: "Clear") { model.clearCaptions() }
+                    .help("Remove every caption")
+            }
+        }
     }
 
     /// One line, editable, with the playhead's line marked.
     ///
-    /// Clicking a line moves the playhead to it, because the reason to look at a
-    /// transcript in an editor is almost always to find the moment it belongs to.
+    /// Clicking a line's time moves the playhead to it and selects it, because the reason
+    /// to look at a transcript in an editor is almost always to find the moment it belongs
+    /// to — and the next thing wanted is usually to retime or split that line.
     private func line(_ cue: CaptionCue) -> some View {
         let isCurrent = model.captionAtPlayhead?.id == cue.id
         return HStack(alignment: .top, spacing: 8) {
@@ -127,8 +232,9 @@ struct CaptionInspector: View {
             }
             .buttonStyle(.plain)
             .frame(width: 48, alignment: .leading)
+            .help("Go to this caption")
 
-            TextField("", text: text(for: cue), axis: .vertical)
+            TextField("Empty caption", text: text(for: cue), axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(1...4)
                 .font(.system(size: 11))
@@ -137,6 +243,55 @@ struct CaptionInspector: View {
         .padding(.horizontal, 6)
         .background(isCurrent ? Color.accentColor.opacity(0.12) : .clear,
                     in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+        .contextMenu {
+            Button("Go to This Line") { model.scrub(to: cue.start) }
+            Button("Edit Timing") { model.select(.caption(cue.id)) }
+            Divider()
+            Button("Remove Line from Video", role: .destructive) { model.removeCaptionFromVideo(cue.id) }
+        }
+    }
+
+    // MARK: - Tidying the speech
+
+    /// Cutting by what was said: the ums, and the waits.
+    private var tidy: some View {
+        let fillers = model.fillerRanges.count
+        let pauses = model.pauseRanges(longerThan: pauseLimit).count
+        let timed = model.hasTimedWords
+        return VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
+            Button {
+                model.removeFillerWords()
+            } label: {
+                Text(fillers == 0 ? "No Filler Words" : fillers == 1 ? "Remove 1 Filler Word" : "Remove \(fillers) Filler Words")
+                    .frame(maxWidth: .infinity)
+            }
+            .disabled(fillers == 0)
+            .help("Cut out every um, uh and er")
+
+            InspectorField(title: "Pauses") {
+                InspectorPicker(selection: $pauseLimit, options: [0.5, 1, 1.5, 2, 3]) { limit in
+                    limit < 1 ? "Over half a second" : limit == 1 ? "Over a second" : String(format: "Over %g seconds", limit)
+                }
+            }
+            Button {
+                model.shortenPauses(longerThan: pauseLimit)
+            } label: {
+                Text(pauses == 0 ? "No Pauses That Long" : pauses == 1 ? "Shorten 1 Pause" : "Shorten \(pauses) Pauses")
+                    .frame(maxWidth: .infinity)
+            }
+            .disabled(pauses == 0)
+            .help("Cut each long silence down to \(String(format: "%g", EditorModel.keptPause)) seconds")
+
+            Text(timed
+                 ? "Cuts the video there, picture and sound together. A pause in which something is clicked is left alone. Undo puts it all back."
+                 : "Only captions made by listening to the recording know when each word was said. Generate them to tidy the speech.")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .controlSize(.small)
+        .disabled(!timed)
+        .inspectorSection("Tidy Up", systemImage: "wand.and.stars")
     }
 
     private func text(for cue: CaptionCue) -> Binding<String> {
@@ -144,6 +299,68 @@ struct CaptionInspector: View {
             model.timeline.captions.first { $0.id == cue.id }?.text ?? ""
         } set: { text in
             model.setCaptionText(cue.id, text)
+        }
+    }
+
+    // MARK: - Listening again
+
+    private var source: some View {
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
+            language
+            generate(title: "Listen Again")
+            Text("Listening again replaces these captions, including any you have corrected. Undo brings them back.")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .inspectorSection("From the recording", systemImage: "waveform")
+    }
+
+    // MARK: - As a file
+
+    private var export: some View {
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
+            HStack(spacing: 8) {
+                ForEach(CaptionExport.Format.allCases, id: \.self) { format in
+                    Button {
+                        model.exportCaptions(as: format)
+                    } label: {
+                        Text(format.buttonTitle)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .help(format.purpose)
+                }
+            }
+            .controlSize(.small)
+            Text("A subtitle file to upload beside the video, for players that draw captions themselves.")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                model.isTranslatingCaptions = true
+            } label: {
+                Label("Translate Captions…", systemImage: "character.bubble")
+                    .frame(maxWidth: .infinity)
+            }
+            .controlSize(.small)
+            .help("Put the captions into another language, on this Mac. Undo puts the original back.")
+        }
+        .inspectorSection("Subtitle file", systemImage: "doc.text")
+    }
+}
+
+private extension CaptionExport.Format {
+    var buttonTitle: String {
+        switch self {
+        case .srt: "Export SRT…"
+        case .vtt: "Export VTT…"
+        }
+    }
+
+    var purpose: String {
+        switch self {
+        case .srt: "SubRip, which YouTube, LinkedIn and most video editors read"
+        case .vtt: "WebVTT, for video on a web page"
         }
     }
 }

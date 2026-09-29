@@ -77,12 +77,37 @@ struct ZoomInspector: View {
         InspectorSlider(model: model, "Smoothness", systemImage: "timelapse",
                         value: smoothness(zoom), range: 0...2,
                         format: { String(format: "%.2fs", $0) })
+            .disabled(zoom.isInstant)
+            .opacity(zoom.isInstant ? 0.5 : 1)
+
+        // A cut instead of a movement. Under Smoothness because it is the other answer to
+        // the same question, and because it is what greys that slider out.
+        Toggle("Instant", isOn: Binding(
+            get: { zoom.isInstant },
+            set: { _ in model.toggleZoomInstant() }
+        ))
+        .help("Cut straight in on the first frame and straight out after the last, with no movement. Smoothness is kept for switching back.")
+        if zoom.isInstant {
+            Text("Instant, so Smoothness is not used. The camera cuts in and out.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
 
         Toggle("Follow the pointer", isOn: Binding(
             get: { zoom.followsCursor },
             set: { follows in change("Follow Cursor") { $0.zooms[index].followsCursor = follows } }
         ))
         .help("The camera tracks the pointer while this zoom holds. Framing it by hand turns this off.")
+
+        // In front rather than under Advanced, because it is what somebody reaches for
+        // after watching a fast push-in — but it is the camera's, so it is for every zoom
+        // in the project, and the help says so.
+        Toggle("Motion blur", isOn: Binding(
+            get: { model.blursCameraMotion },
+            set: { model.setZoomMotionBlur($0) }
+        ))
+        .help("Softens the picture a little while the camera moves fast, as a real camera's shutter would. For every zoom in the project.")
 
         HStack(spacing: 6) {
             Button("Frame on the Picture") { model.frameSelectedZoom() }
@@ -203,6 +228,29 @@ struct ZoomInspector: View {
                       : "Join this zoom and the one after it into a single push-in, keeping the ramp at each outer end.")
         }
         .controlSize(.small)
+
+        // Touching is the surest way to make two zooms glide, and this is how to ask for
+        // it without dragging an edge onto a neighbour's. The reason it is off is written
+        // beside it, and so is the one thing that would stop the glide it promises.
+        HStack(spacing: 6) {
+            Button("Extend to Next Zoom") { model.extendZoomToNext() }
+                .disabled(!model.canExtendZoomToNext)
+                .help(model.extendToNextZoomReason
+                      ?? "Make this zoom end exactly where the next one begins, so the camera glides from one to the other.")
+            Spacer(minLength: 0)
+        }
+        .controlSize(.small)
+        if let reason = model.extendToNextZoomReason {
+            Text(reason)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        } else if !model.glidesBetweenZooms {
+            Text("Gliding is off for this project, so the camera will still pull back between them. Turn it on under Camera Motion below.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
 
         HStack(spacing: 6) {
             Button("Reset Scale & Ramp") { model.resetZoom() }

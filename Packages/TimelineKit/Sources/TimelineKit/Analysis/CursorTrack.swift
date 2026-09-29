@@ -34,13 +34,74 @@ public struct CursorTrack: Sendable {
 
     public let samples: [CursorSample]
     public let clicks: [Click]
+    /// The stretches in which the pointer was doing something — moving, or pressing a
+    /// button — oldest first, none touching. Everything between them is the pointer at
+    /// rest.
+    ///
+    /// Worked out from the recorded path and kept through smoothing: a filter spreads a
+    /// movement out in time, so a smoothed pointer looks as if it set off earlier and
+    /// arrived later than the hand did.
+    public let activity: [ClosedRange<Double>]
+    /// When the pointer's shape changed, and to what, with shapes held for only an instant
+    /// left out. See `steadyShape(at:)`.
+    private let steadyShapes: [(t: Double, shape: CursorShape)]
 
     public init(samples: [CursorSample], input: [InputSample] = []) {
-        self.samples = samples.sorted { $0.t < $1.t }
+        let sorted = samples.sorted { $0.t < $1.t }
+        self.samples = Self.pinned(sorted, to: input)
         clicks = input.compactMap { sample in
             guard case .mouseDown(let t, let button, let x, let y) = sample else { return nil }
             return Click(t: t, point: CGPoint(x: x, y: y), isSecondary: button == 1)
         }.sorted { $0.t < $1.t }
+        activity = Self.activity(in: self.samples, input: input)
+        steadyShapes = Self.steadyShapes(in: sorted)
+    }
+
+    /// The sampled path with every press and release added to it as a sample of its own.
+    ///
+    /// The path is read on a timer and a click is an event, so the two are two accounts of
+    /// where the pointer was — and at the one moment a viewer is looking hardest, they
+    /// differ: the timer's reading is as stale as the last time the pointer reported in,
+    /// which for a hand still moving as it clicks is a few points. A click says exactly
+    /// where the pointer was and exactly when. Putting that in the path makes the pointer
+    /// pass through the place it clicked, at the moment it clicked, by construction rather
+    /// than by the two happening to agree.
+    private static func pinned(_ samples: [CursorSample], to input: [InputSample]) -> [CursorSample] {
+        guard !samples.isEmpty else { return samples }
+        var pins: [(t: Double, point: CGPoint)] = []
+        for sample in input {
+            switch sample {
+            case .mouseDown(let t, _, let x, let y), .mouseUp(let t, _, let x, let y):
+                pins.append((t, CGPoint(x: x, y: y)))
+            case .scroll, .key:
+                continue
+            case .shortcut:
+                continue
+            }
+        }
+        guard !pins.isEmpty else { return samples }
+
+        var merged = samples
+        merged.reserveCapacity(samples.count + pins.count)
+        for pin in pins.sorted(by: { $0.t < $1.t }) {
+            // Where it goes: after every sample at or before its time.
+            var low = 0
+            var high = merged.count
+            while low < high {
+                let middle = (low + high) / 2
+                if merged[middle].t <= pin.t { low = middle + 1 } else { high = middle }
+            }
+            // The shape is whatever the pointer looked like just then, which a click does
+            // not say and the sample before it does.
+            let shape = merged[max(0, low - 1)].shape
+            if low > 0, merged[low - 1].t == pin.t {
+                merged[low - 1].x = pin.point.x
+                merged[low - 1].y = pin.point.y
+            } else {
+                merged.insert(CursorSample(t: pin.t, x: pin.point.x, y: pin.point.y, shape: shape), at: low)
+            }
+        }
+        return merged
     }
 
     public var isEmpty: Bool { samples.isEmpty }
@@ -103,7 +164,7 @@ public struct CursorTrack: Sendable {
             forward[index].y = forward[index].y * alpha + forward[index + 1].y * (1 - alpha)
         }
         anchorToClicks(&forward)
-        return CursorTrack(samples: forward, clicks: clicks)
+        return CursorTrack(samples: forward, clicks: clicks, activity: activity, steadyShapes: steadyShapes)
     }
 
     /// How long either side of a click the pointer is held to where it really was.
@@ -155,9 +216,128 @@ public struct CursorTrack: Sendable {
         }
     }
 
-    private init(samples: [CursorSample], clicks: [Click]) {
+    private init(samples: [CursorSample], clicks: [Click],
+                 activity: [ClosedRange<Double>],
+                 steadyShapes: [(t: Double, shape: CursorShape)]) {
         self.samples = samples
         self.clicks = clicks
+        self.activity = activity
+        self.steadyShapes = steadyShapes
+    }
+
+    // MARK: - At rest
+
+    /// Two movements closer together than this are one movement with a hesitation in it.
+    static let activityGap = 0.3
+    /// How far the pointer has to travel between two readings to count as having moved.
+    /// A pointer at rest reads the same place exactly; this is only room for rounding.
+    static let stillness = 0.5
+
+    private static func activity(in samples: [CursorSample], input: [InputSample]) -> [ClosedRange<Double>] {
+        var moments: [Double] = []
+        for (before, after) in zip(samples, samples.dropFirst())
+        where hypot(after.x - before.x, after.y - before.y) > stillness {
+            moments.append(before.t)
+            moments.append(after.t)
+        }
+        for event in input {
+            switch event {
+            case .mouseDown(let t, _, _, _), .mouseUp(let t, _, _, _): moments.append(t)
+            case .scroll(let t, _, _): moments.append(t)
+            case .key: continue
+            case .shortcut: continue
+            }
+        }
+        moments.sort()
+
+        var ranges: [ClosedRange<Double>] = []
+        for moment in moments {
+            if let last = ranges.last, moment - last.upperBound <= activityGap {
+                ranges[ranges.count - 1] = last.lowerBound...max(last.upperBound, moment)
+            } else {
+                ranges.append(moment...moment)
+            }
+        }
+        return ranges
+    }
+
+    /// How much of the pointer to draw at a moment, for a pointer that goes away when it
+    /// is left alone: 1 while it is in use, fading to 0 once it has been still for
+    /// `delay`, and back before it moves again.
+    ///
+    /// Back *before*, not as: the whole recording is already known, so the pointer can be
+    /// there when the movement begins instead of arriving part of the way through it. A
+    /// pointer that fades in while already travelling reads as one that appeared from
+    /// nowhere.
+    ///
+    /// Stateless, like everything the renderer asks: scrubbing to a moment gives what
+    /// playing to it gives.
+    public func idleOpacity(at time: Double, after delay: Double,
+                            fadeOut: Double = 0.35, fadeIn: Double = 0.2) -> Double {
+        guard !activity.isEmpty else {
+            // Never touched. It is shown for as long as the delay and then goes.
+            return Self.faded(since: time, delay: delay, over: fadeOut)
+        }
+        // The last stretch that has begun by now.
+        var low = 0
+        var high = activity.count
+        while low < high {
+            let middle = (low + high) / 2
+            if activity[middle].lowerBound <= time { low = middle + 1 } else { high = middle }
+        }
+        let previous = low > 0 ? activity[low - 1] : nil
+        let next = low < activity.count ? activity[low] : nil
+
+        if let previous, time <= previous.upperBound { return 1 }
+
+        let leaving = Self.faded(since: time - (previous?.upperBound ?? 0), delay: delay, over: fadeOut)
+        guard let next, fadeIn > 0 else { return leaving }
+        let arriving = 1 - min(1, max(0, (next.lowerBound - time) / fadeIn))
+        return max(leaving, arriving)
+    }
+
+    private static func faded(since rest: Double, delay: Double, over fade: Double) -> Double {
+        guard rest > delay else { return 1 }
+        guard fade > 0 else { return 0 }
+        return max(0, 1 - (rest - delay) / fade)
+    }
+
+    // MARK: - Shapes that last
+
+    /// A shape held for less than this is a flicker.
+    static let briefestShape = 0.15
+
+    private static func steadyShapes(in samples: [CursorSample]) -> [(t: Double, shape: CursorShape)] {
+        guard let first = samples.first else { return [] }
+        // Runs of one shape, as (when it began, what it was).
+        var runs: [(t: Double, shape: CursorShape)] = [(first.t, first.shape)]
+        for sample in samples.dropFirst() where sample.shape != runs[runs.count - 1].shape {
+            runs.append((sample.t, sample.shape))
+        }
+        let end = samples[samples.count - 1].t
+
+        var steady: [(t: Double, shape: CursorShape)] = []
+        for (index, run) in runs.enumerated() {
+            let length = (index + 1 < runs.count ? runs[index + 1].t : end) - run.t
+            // The first shape is kept however briefly it lasted: there is nothing before
+            // it to go on showing. So is the last, which lasts until the recording ends.
+            let isBrief = length < briefestShape && index > 0 && index + 1 < runs.count
+            if isBrief { continue }
+            if steady.last?.shape != run.shape { steady.append(run) }
+        }
+        return steady
+    }
+
+    /// The pointer's shape at a moment, ignoring any it held for only an instant.
+    public func steadyShape(at time: Double) -> CursorShape {
+        guard !steadyShapes.isEmpty else { return shape(at: time) }
+        var low = 0
+        var high = steadyShapes.count - 1
+        while low < high {
+            let middle = (low + high + 1) / 2
+            if steadyShapes[middle].t <= time { low = middle } else { high = middle - 1 }
+        }
+        return steadyShapes[low].shape
     }
 
     /// How much the pointer should swell for a click at this moment, 1 being not at all.

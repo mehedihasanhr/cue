@@ -7,6 +7,7 @@ import os
 import RecordKit
 import RenderKit
 import TimelineKit
+import UniformTypeIdentifiers
 
 /// An open editor: a document, a playhead, and the picture at it.
 ///
@@ -28,6 +29,10 @@ final class EditorModel {
     /// first time either of them changed.
     private(set) var scene: SceneDescriptor?
     private(set) var isPlaying = false
+    /// How fast, and which way, the playhead moves while it plays: 1 for normal speed,
+    /// ±2 and ±4 for the shuttle keys, negative backwards. Back to 1 on stopping. See
+    /// `EditorModel+Shuttle`.
+    private(set) var playbackRate: Double = 1
     private(set) var errorMessage: String?
 
     /// What the editor is set up to do. Drives the inspector, and — for `.crop` — what
@@ -39,6 +44,23 @@ final class EditorModel {
         }
     }
 
+    /// Whether the settings panel is answering the selection rather than the tool.
+    ///
+    /// The panel answers whichever was asked about last. Picking something on the timeline
+    /// is a question about that thing, and choosing a tool is a question about the tool —
+    /// and neither should need the other put away first. It used to depend on which tool
+    /// was open: with Pointer, Webcam, Captions or Audio showing, clicking a zoom or a
+    /// caption selected it and changed nothing else, so its settings could not be reached
+    /// without first guessing that another tool had to be chosen.
+    private(set) var panelFollowsSelection = true
+
+    /// Chooses a tool the way the person at the rail or the menu bar does: the panel
+    /// turns to it, whatever is selected. The selection itself is left alone.
+    func choose(_ tool: EditorTool) {
+        self.tool = tool
+        panelFollowsSelection = false
+    }
+
     /// Everything picked out on the timeline, oldest first.
     ///
     /// A list rather than one thing, because a drag with three chips selected is one
@@ -47,6 +69,12 @@ final class EditorModel {
     /// in here, so every reader that wants "the selection" keeps working.
     private(set) var selected: [Selection] = [] {
         didSet {
+            // However it came to be selected — a click, a paste, a split — it is now the
+            // newest thing asked about.
+            if selected != oldValue, !selected.isEmpty { panelFollowsSelection = true }
+            // Something on the timeline is what Delete is about now, not words in the
+            // transcript. See `TranscriptWordSelection`.
+            if !selected.isEmpty { transcriptWords.clear() }
             // The selected annotation is drawn at rest while paused — see
             // `renderedTimeline` — so choosing a different one changes the frame.
             guard Self.annotations(in: selected) != Self.annotations(in: oldValue) else { return }
@@ -63,8 +91,25 @@ final class EditorModel {
     /// The waveforms of the sounds brought in from outside the recording. See
     /// `RegionWaveformStore` for why these are not the one above.
     let regionWaveforms: RegionWaveformStore
+    /// Pictures of the footage for the clip lane.
+    let thumbnails: ClipThumbnails
+    /// The frames and filmstrips of the movies brought into the project. See
+    /// `EditorModel+Media`.
+    let importedMedia: ImportedMedia
+    /// The pacing suggestions under review, while their sheet is up. See
+    /// `EditorModel+Pacing`.
+    var pacing: PacingReview?
+    /// When the recording's picture was changing, once it has been measured.
+    var screenActivity: [ClosedRange<Double>]?
+    @ObservationIgnored var pacingTask: Task<Void, Never>?
+    /// Whether the translate-captions sheet is up.
+    var isTranslatingCaptions = false
+    /// The words picked in the transcript. See `EditorModel+TranscriptWords`.
+    let transcriptWords = TranscriptWordSelection()
     /// The edit, out loud — and, while it plays, the clock the playhead follows.
     private(set) var audio: PreviewAudio?
+    /// Writes the edit back on its own, and knows whether it is written.
+    let autosaver: EditorAutosaver
 
     private let renderer = SceneRenderer()
     private var builder: SceneBuilder
@@ -81,12 +126,14 @@ final class EditorModel {
     private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "editor")
 
     /// Kept, not just read at init: auto-zoom is re-run on demand from the toolbar, and
-    /// it should use what the preferences say *then*.
-    private let settings: StudioSettings?
+    /// it should use what the preferences say *then*. Readable, so the menu bar — which
+    /// has the editor and nothing else — can reach the same preferences.
+    let settings: StudioSettings?
 
     init(package: RecordingPackage, settings: StudioSettings? = nil) throws {
         self.settings = settings
         document = try EditorDocument(package: package)
+        autosaver = EditorAutosaver(document: document, settings: settings)
         let track = document.manifest.track(.screen)
         builder = SceneBuilder(videoSize: track?.pixelSize ?? CGSize(width: 1_920, height: 1_080),
                                displayScale: document.manifest.displayScale,
@@ -95,6 +142,9 @@ final class EditorModel {
                                cursorArtwork: document.cursorArtwork)
         waveform = WaveformStore(package: package, manifest: document.manifest)
         regionWaveforms = RegionWaveformStore(package: package)
+        thumbnails = ClipThumbnails(videoURL: document.videoURL,
+                                    size: track?.pixelSize ?? CGSize(width: 16, height: 9))
+        importedMedia = ImportedMedia(packageURL: package.url)
 
         if let settings {
             // A project opened for the first time starts as the user's defaults say —
@@ -103,7 +153,10 @@ final class EditorModel {
             if !document.hasBeenEdited {
                 document.adopt(settings.styled(document.timeline))
             }
-            if settings.suggestsZoomsOnOpen, document.timeline.zooms.isEmpty {
+            // Only for a recording nobody has edited. A project that was saved with no
+            // zooms in it is one whose zooms were taken out on purpose, and putting them
+            // back every time it is opened would be the editor arguing.
+            if settings.suggestsZoomsOnOpen, !document.hasBeenEdited, document.timeline.zooms.isEmpty {
                 autoZoomOnOpen = true
             }
         }
@@ -119,6 +172,9 @@ final class EditorModel {
             opened.webcam.isEnabled = true
             document.adopt(opened)
         }
+        // The shortcuts the recorder saw, as where the project starts rather than as an
+        // edit — see `EditorDocument.adoptRecordedKeys`.
+        document.adoptRecordedKeys()
         Task { await openSource() }
     }
 
@@ -132,6 +188,15 @@ final class EditorModel {
     var name: String { document.manifest.name }
     var videoSize: CGSize { builder.videoSize }
     var packageURL: URL { document.package.url }
+
+    /// The recording's size in the points the pointer and clicks are measured in, when the
+    /// manifest says.
+    var recordedFrame: CGSize? {
+        guard let size = document.manifest.track(.screen)?.pixelSize else { return nil }
+        let scale = document.manifest.displayScale
+        guard scale > 0 else { return nil }
+        return CGSize(width: size.width / scale, height: size.height / scale)
+    }
 
     /// Whether this recording kept a picture of the pointer it actually had.
     ///
@@ -149,6 +214,9 @@ final class EditorModel {
     /// reports so a heavy crop is not a silent loss of resolution.
     var outputSize: CGSize { builder.outputSize(for: timeline.style) }
     var croppedVideoSize: CGSize { builder.croppedVideoSize(for: timeline.style) }
+    /// The builder the preview and the export share, for a still of one frame — see
+    /// `EditorModel+FrameStill`. Measured against the real picture once it has been read.
+    var sceneBuilder: SceneBuilder { builder }
 
     /// The frame source is opened after init so the window can appear immediately: a
     /// recording is on disk, and waiting on `AVAsset` to load its tracks before showing
@@ -168,13 +236,16 @@ final class EditorModel {
                                    cursorArtwork: document.cursorArtwork)
             if autoZoomOnOpen {
                 autoZoomOnOpen = false
-                suggestZooms(quietly: true)
+                adoptSuggestedZooms()
             }
             refresh()
             waveform.load(videoURL: url)
             // Built here rather than in `init`, for the same reason the frame source is:
             // it needs the recording, and the window should be up before either is read.
-            let audio = PreviewAudio(videoURL: url, packageURL: document.package.url, settings: settings)
+            let audio = PreviewAudio(videoURL: url, packageURL: document.package.url,
+                                     clicks: document.cursorTrack.clicks,
+                                     clickFrame: recordedFrame,
+                                     settings: settings)
             audio.prepare(for: timeline)
             self.audio = audio
             await openWebcamSource()
@@ -244,6 +315,23 @@ final class EditorModel {
         scrub(to: playhead + CMTime(seconds: seconds, preferredTimescale: 600))
     }
 
+    /// How long one frame of this recording lasts.
+    ///
+    /// Read from the recording rather than assumed. "Next frame" used to move a thirtieth
+    /// of a second whatever had been recorded, and most takes are recorded at sixty — so
+    /// every press skipped a frame, and the one a click landed on could not be reached.
+    var frameDuration: Double {
+        let rate = document.manifest.track(.screen)?.frameRate ?? 60
+        return 1 / Double(max(1, rate))
+    }
+
+    /// One frame on or back, landing on a frame rather than beside one.
+    func stepFrame(forward: Bool) {
+        let frame = frameDuration
+        let index = (playhead.seconds / frame).rounded() + (forward ? 1 : -1)
+        scrub(to: CMTime(seconds: max(0, index * frame), preferredTimescale: 6_000))
+    }
+
     /// The cut before or after the playhead — ⌥← and ⌥→.
     func stepToBoundary(forward: Bool) {
         let edges = timeline.boundaries.sorted()
@@ -263,9 +351,12 @@ final class EditorModel {
         isPlaying ? stop() : play()
     }
 
-    private func play() {
+    private func play(rate: Double = 1) {
         guard frames != nil else { return }
-        if playhead >= duration { playhead = .zero }
+        playbackRate = rate
+        // Off the end in the direction of travel means starting again from the other end.
+        if rate > 0, playhead >= duration { playhead = .zero }
+        if rate < 0, playhead <= .zero { playhead = duration }
         // Playing answers the question framing mode was asking, so the framing box gets out
         // of the way and stays out of it. Left in `.framing`, pressing pause would snap the
         // picture back to the un-zoomed recording the instant it stopped — the camera state
@@ -275,7 +366,8 @@ final class EditorModel {
         isPlaying = true
         lastTick = .now
         viewport.followsPlayhead = true
-        audio?.play(from: playhead, timeline: timeline)
+        // Sound only at normal speed, forwards — see `EditorModel+Shuttle` for why.
+        if rate == 1 { audio?.play(from: playhead, timeline: timeline) } else { audio?.pause() }
         // The framing box is gone now, which means the rendered timeline has its zooms
         // back: the very first frame of playback has to be described again or it would be
         // the flat one the box was drawn over.
@@ -290,9 +382,17 @@ final class EditorModel {
             // against the audio over a long take — slowly, and then unmistakably, because
             // one of them is being resampled by a real audio device and the other is not.
             // The picture may drop a frame; the sound may not, so the picture follows it.
+            // At any rate but 1 the sound is paused and its clock is `nil`, so the wall
+            // clock keeps time, scaled — and runs the playhead backwards for a negative
+            // rate, which is the only way this player plays backwards: every frame shown
+            // is a seek. See `EditorModel+Shuttle`.
             let next = self.audio?.clock
-                ?? self.playhead + CMTime(seconds: now.timeIntervalSince(last), preferredTimescale: 600)
-            if next >= self.duration {
+                ?? self.playhead + CMTime(seconds: now.timeIntervalSince(last) * self.playbackRate,
+                                          preferredTimescale: 600)
+            if self.playbackRate < 0, next <= .zero {
+                self.playhead = .zero
+                self.stop()
+            } else if next >= self.duration {
                 self.playhead = self.duration
                 self.stop()
             } else {
@@ -309,6 +409,8 @@ final class EditorModel {
 
     private func stop() {
         isPlaying = false
+        // The rate is a property of playing, not of the editor: stopping puts it back.
+        playbackRate = 1
         // Playback stopping ends a take, whether the playhead ran into the end of the edit
         // or somebody pressed space: narration is recorded against the picture, and going
         // on recording while the picture stands still would be recording against nothing.
@@ -324,6 +426,19 @@ final class EditorModel {
             // would write — byte for byte, which `RenderFidelityTests` is the guarantee of.
             self?.refresh()
         }
+    }
+
+    /// Plays at a rate, or changes the rate of playback already running. The shuttle
+    /// keys' one door into playback; the rule for which rate comes next is theirs.
+    func setPlaybackRate(_ rate: Double) {
+        guard isPlaying else {
+            play(rate: rate)
+            return
+        }
+        playbackRate = rate
+        // The wall clock takes over from here, not from the last tick the sound drove.
+        lastTick = .now
+        if rate == 1 { audio?.play(from: playhead, timeline: timeline) } else { audio?.pause() }
     }
 
     /// Roughly what the preview pane can show. Seeking a full-resolution 4K frame with
@@ -426,6 +541,10 @@ final class EditorModel {
 
     private func startRender(of scene: SceneDescriptor) {
         let frames = frames
+        // A movie brought into the project is read at the quality the recording is being
+        // read at, so a scrub across a cut into one is as quick as a scrub within the take.
+        let media = importedMedia
+        let quality: FrameSource.Quality = isPlaying || isScrubbing ? .preview(previewPixelSize) : .exact
         // The only place the preview is allowed to differ from the export, and only while
         // the picture is moving.
         let drawn = scene.scaled(by: previewFidelity)
@@ -434,6 +553,10 @@ final class EditorModel {
         // with the camera switched off — in both cases a seek into the camera's file would be
         // a decode nobody looks at.
         let webcamFrames = drawn.webcam == nil ? nil : webcamFrames
+        // The other side of a crossfade, when this frame is in one: its own moment of the
+        // same two files. See `SceneBlend`.
+        let lent = drawn.blendedScene.flatMap { $0.showsRecording ? $0 : nil }
+        let lentWebcamFrames = lent?.webcam == nil ? nil : self.webcamFrames
 
         renderTask = Task { [renderer] in
             defer {
@@ -445,12 +568,31 @@ final class EditorModel {
                     refresh()
                 }
             }
-            let source = await frames?.frame(at: drawn.sourceTime)
+            // A title shows no recording, so there is no frame of it to decode. A clip of
+            // another file is read from that file.
+            let source: CIImage? = if !drawn.showsRecording {
+                nil
+            } else if let path = drawn.sourceMedia {
+                await media.frame(from: path, at: drawn.sourceTime, quality: quality)
+            } else {
+                await frames?.frame(at: drawn.sourceTime)
+            }
             // The same source time as the screen: the two files were written against one
             // clock, so one moment in the edit is one moment in both of them.
             let camera = await webcamFrames?.frame(at: drawn.sourceTime)
+            var blending: CIImage?
+            var blendingCamera: CIImage?
+            if let lent {
+                if let path = lent.sourceMedia {
+                    blending = await media.frame(from: path, at: lent.sourceTime, quality: quality)
+                } else {
+                    blending = await frames?.frame(at: lent.sourceTime)
+                    blendingCamera = await lentWebcamFrames?.frame(at: lent.sourceTime)
+                }
+            }
             guard !Task.isCancelled else { return }
-            let image = renderer.cgImage(for: drawn, source: source, webcam: camera)
+            let image = renderer.cgImage(for: drawn, source: source, webcam: camera,
+                                         blending: blending, blendingWebcam: blendingCamera)
             guard !Task.isCancelled, let image else { return }
             // Sized in the *full* frame's points even when the pixels are fewer, so the pane's
             // layout and its aspect-fit arithmetic do not move when the fidelity does. The
@@ -461,7 +603,11 @@ final class EditorModel {
             // build. Playback is the other way round — it is heading straight for those
             // frames, so it pays for them gladly.
             guard isPlaying || !hasPendingRender else { return }
-            await frames?.prefetch(around: drawn.sourceTime, forward: isPlaying)
+            if let path = drawn.sourceMedia {
+                await media.prefetch(from: path, around: drawn.sourceTime, forward: isPlaying && playbackRate > 0)
+            } else {
+                await frames?.prefetch(around: drawn.sourceTime, forward: isPlaying && playbackRate > 0)
+            }
         }
     }
 
@@ -523,14 +669,23 @@ final class EditorModel {
         // output size is unchanged too, so the picture does not resize underneath the box.
         if isFramingZoom {
             draft.zooms = []
+            // The camera goes back to its bubble too: a stretch of Camera Only would hide the
+            // very picture the box is being drawn over.
+            draft.cameraLayouts = []
             return draft
         }
         guard tool.flattensPreview else { return draft }
+        // No camera at all on the flat picture, which is what `startRender` already assumed
+        // it described: the bubble covered part of the recording being cropped, and a
+        // stretch of Camera Only would have covered all of it.
+        draft.webcam.isEnabled = false
+        draft.cameraLayouts = []
         draft.style.crop = nil
         draft.style.aspect = .source
         draft.style.padding = 0
         draft.style.cornerRadius = 0
         draft.style.shadowOpacity = 0
+        draft.style.borderWidth = 0
         draft.style.background = .color(ColorValue(r: 0.06, g: 0.06, b: 0.07))
         draft.zooms = []
         return draft
@@ -577,6 +732,8 @@ final class EditorModel {
     /// it was. That is what every list on this platform does, and a timeline that only ever
     /// grew a selection would need a second gesture to undo a misclick.
     func select(_ selection: Selection, extending: Bool = false) {
+        // Clicking what is already selected is still asking about it.
+        if !selection.isEmpty { panelFollowsSelection = true }
         guard extending else {
             guard selected != [selection] else { return }
             let wasZoom = self.selection
@@ -703,6 +860,7 @@ final class EditorModel {
 
     /// Whether Delete would do anything, so the menu item can be honest about it.
     var canDeleteSelection: Bool {
+        if !transcriptWords.isEmpty { return canCutWords }
         if hasMultipleSelected { return selected.contains { $0.regionID != nil } }
         return switch selection {
         case .none, .headTrim, .tailTrim, .sound: false
@@ -713,6 +871,12 @@ final class EditorModel {
     }
 
     func deleteSelection() {
+        // Words picked in the transcript are cut from the video: that is what Delete means
+        // to a transcript.
+        if !transcriptWords.isEmpty {
+            cutPickedWords()
+            return
+        }
         // Several at once is one edit and one undo entry, like the group drag above it.
         if hasMultipleSelected {
             let ids = selected.compactMap(\.regionID)
@@ -824,6 +988,12 @@ final class EditorModel {
             errorMessage = "That sound belongs to another recording. Add it to this one with Add Sound…"
             return
         }
+        // Pictures the same way, and for the same reason: pasted, it would be invisible.
+        if let path = copied.picturePath,
+           !FileManager.default.fileExists(atPath: packageURL.appendingPathComponent(path).path) {
+            errorMessage = "That picture belongs to another recording. Add it to this one with Picture… or Logo…"
+            return
+        }
         guard let placed = copied.placed(at: playhead, in: timeline) else { return }
         apply(Commands.InsertRegion(placed, name: "Paste \(placed.title)"))
         select(placed.selection)
@@ -901,12 +1071,25 @@ final class EditorModel {
     func pasteFootageAtPlayhead() {
         guard let copied = RegionPasteboard.shared.readFootage() else { return }
         let package = packageURL
-        let settled = copied.withoutSounds { path in
+        let isMissing = { (path: String) in
             !FileManager.default.fileExists(atPath: package.appendingPathComponent(path).path)
         }
+        // A clip of a movie brought into another project has no file here, and cannot be
+        // left out the way a sound can without changing the length of everything after it.
+        guard !copied.playsMissingMedia(where: isMissing) else {
+            errorMessage = "That footage plays a movie from another recording. Add the movie here with Add Video… first."
+            return
+        }
+        let settled = copied.withoutSounds(where: isMissing).withoutPictures(where: isMissing)
+        let droppedPictures = copied.annotations.count - settled.annotations.count
         let dropped = copied.audio.count - settled.audio.count
         let placed = settled.freshened()
         guard applyFootage(placed, at: playhead, name: "Paste \(placed.title)") else { return }
+        if droppedPictures > 0, dropped == 0 {
+            errorMessage = droppedPictures == 1
+                ? "One picture belonged to another recording and was left out. Add it with Picture…"
+                : "\(droppedPictures) pictures belonged to another recording and were left out. Add them with Picture…"
+        }
         if dropped > 0 {
             errorMessage = dropped == 1
                 ? "One sound belonged to another recording and was left out. Add it with Add Sound…"
@@ -977,7 +1160,9 @@ final class EditorModel {
     /// The question the Split button on a selected clip has to answer: a cut at a clip's
     /// own edge is not a cut, and offering it is offering a button that does nothing.
     func canSplit(_ clip: Clip) -> Bool {
-        guard let index = timeline.clips.firstIndex(where: { $0.id == clip.id }) else { return false }
+        // A title is one card with one entrance, and does not split.
+        guard !clip.isTitle,
+              let index = timeline.clips.firstIndex(where: { $0.id == clip.id }) else { return false }
         let start = timeline.start(ofClipAt: index)
         return playhead > start + Clip.minimumDuration
             && playhead < start + clip.duration - Clip.minimumDuration
@@ -1004,7 +1189,8 @@ final class EditorModel {
             guard proposed != clip.sourceStart else { return }
             trim(clip, head: proposed)
         case .tail:
-            let proposed = min(timeline.sourceDuration,
+            // Within the clip's own file: the recording, or the movie it plays.
+            let proposed = min(timeline.sourceDuration(of: clip),
                                max(clip.sourceEnd + delta,
                                    clip.sourceStart + Clip.minimumDuration))
             guard proposed != clip.sourceEnd else { return }
@@ -1399,9 +1585,12 @@ final class EditorModel {
                 captionProgress = nil
             }
             do {
-                let cues = try await CaptionGenerator.cues(for: videoURL, timeline: timeline) { [weak self] done in
+                // Held for as long as the work runs, which the task around this already
+                // does: a report of progress cannot outlive the thing it is reporting on.
+                let cues = try await CaptionGenerator.cues(for: videoURL, timeline: timeline,
+                                                           locale: settings?.captionLocale ?? .current) { [self] done in
                     Task { @MainActor in
-                        guard let self, self.isGeneratingCaptions else { return }
+                        guard self.isGeneratingCaptions else { return }
                         self.captionProgress = done
                     }
                 }
@@ -1420,6 +1609,88 @@ final class EditorModel {
 
     func clearCaptions() {
         apply(Commands.SetCaptions([]))
+        selected.removeAll { if case .caption = $0 { true } else { false } }
+    }
+
+    /// Captions on or off, without losing them.
+    func toggleCaptions() {
+        let shows = !timeline.captionStyle.isVisible
+        apply(Commands.Restyle(shows ? "Show Captions" : "Hide Captions") { $0.captionStyle.isVisible = shows })
+    }
+
+    /// Adds an empty caption at the playhead, for typing into.
+    ///
+    /// With the playhead inside a caption the new one goes after it, the way a new line in
+    /// a document goes under the line the caret is on. Putting it at the playhead itself
+    /// cut the caption already there short, to a sliver if the playhead was near its
+    /// start, which is not what anybody adding a line meant to do to the one before.
+    ///
+    /// - Returns: its id, so the caller can put the caret in it.
+    @discardableResult
+    func addCaptionAtPlayhead() -> UUID? {
+        guard let slot = CaptionPlacement.slot(at: playhead, among: timeline.captions, in: duration) else {
+            errorMessage = "There is no room here for another caption. Shorten the one before or after it first."
+            return nil
+        }
+        let cue = CaptionCue(start: slot.start, duration: slot.duration, text: "")
+        let before = timeline.captions
+        apply(Commands.AddCaption(cue))
+        guard timeline.captions != before else {
+            errorMessage = "There is no room here for another caption. Shorten the one before or after it first."
+            return nil
+        }
+        // Captions that nobody can see would be a caption added to nothing.
+        if !timeline.captionStyle.isVisible {
+            apply(Commands.Restyle("Captions") { $0.captionStyle.isVisible = true })
+        }
+        select(.caption(cue.id))
+        // Where the line is, so what is typed is typed over the moment it belongs to.
+        if slot.start != playhead { scrub(to: slot.start) }
+        return cue.id
+    }
+
+    /// Cuts the caption under the playhead in two there.
+    func splitCaptionAtPlayhead(_ id: UUID) {
+        let before = timeline.captions
+        apply(Commands.SplitCaption(id: id, at: playhead))
+        if timeline.captions == before {
+            errorMessage = "Put the playhead inside the caption, between two of its words, to split it there."
+        }
+    }
+
+    func canSplitCaption(_ cue: CaptionCue) -> Bool {
+        cue.timedWords.count > 1
+            && playhead - cue.start >= Clip.minimumDuration
+            && cue.end - playhead >= Clip.minimumDuration
+    }
+
+    /// Joins a caption to the one after it.
+    func mergeCaptionWithNext(_ id: UUID) {
+        apply(Commands.MergeCaptions(id: id))
+    }
+
+    /// The caption after this one, which is what merging would join it to.
+    func captionAfter(_ id: UUID) -> CaptionCue? {
+        let ordered = timeline.captions.sorted { $0.start < $1.start }
+        guard let index = ordered.firstIndex(where: { $0.id == id }), index + 1 < ordered.count else { return nil }
+        return ordered[index + 1]
+    }
+
+    /// Writes the captions out as a subtitle file, wherever the user says.
+    func exportCaptions(as format: CaptionExport.Format) {
+        guard !timeline.captions.isEmpty else { return }
+        let panel = NSSavePanel()
+        panel.title = "Export Captions"
+        panel.nameFieldStringValue = "\(name).\(format.fileExtension)"
+        panel.allowedContentTypes = [UTType(filenameExtension: format.fileExtension) ?? .plainText]
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try CaptionExport.text(for: timeline.captions, as: format)
+                .write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            errorMessage = "The captions couldn't be written. \(error.localizedDescription)"
+        }
     }
 
     /// The caption on screen at the playhead, which is the one the inspector should
@@ -1443,8 +1714,6 @@ final class EditorModel {
         return (start, min(Self.drawnRegionDuration, max(Clip.minimumDuration, duration - start)))
     }
 
-    /// Hides something: a password, a name, a face.
-    @discardableResult
     // MARK: - Sound
 
     /// Brings a sound into the project and lays it at the playhead.
@@ -1717,59 +1986,37 @@ final class EditorModel {
             """
     }
 
+    /// What the next mask drawn on the picture is: a blur unless the Mask panel or the
+    /// Mask menu said otherwise. Editor state, not a preference — it is about this
+    /// sitting, and remembering it across launches would surprise more than it helped.
+    var newMaskStyle: BlurRegion.Style = .gaussian
+
+    /// A mask being made to follow its content, while one is. See `EditorModel+Following`.
+    let following = MaskFollowingJob()
+
+    /// The scan for sensitive text and its review sheet. See `EditorModel+Sensitive`.
+    let sensitive = SensitiveScanJob()
+
+    /// Hides something: a password, a name, a face. Or, as a spotlight, shows it.
+    @discardableResult
     func addBlur(rect: CGRect) -> UUID {
         let range = drawnRange
-        let region = BlurRegion(start: range.start, duration: range.duration, rect: rect)
+        let region = BlurRegion(start: range.start, duration: range.duration, rect: rect, style: newMaskStyle)
         apply(Commands.AddBlur(region))
         select(.blur(region.id))
         return region.id
     }
 
-    /// The three things the Annotate tool can put on the picture, as something a button
-    /// can offer.
+    /// The things the Annotate tool can put on the picture, as something a button can
+    /// offer.
     ///
     /// `AnnotationItem.Kind` carries a payload — the words, the arrow's two ends — so it
     /// cannot be offered directly by a menu. This is the choice before the payload exists.
+    /// What each one is called, looks like and lands as is in `EditorModel+AnnotationKinds`.
     enum NewAnnotation: String, CaseIterable, Identifiable {
-        case text, arrow, box
+        case text, arrow, box, ellipse, line, highlight, step, callout
 
         var id: String { rawValue }
-
-        var title: String {
-            switch self {
-            case .text: "Text"
-            case .arrow: "Arrow"
-            case .box: "Box"
-            }
-        }
-
-        var symbol: String {
-            switch self {
-            case .text: "textformat"
-            case .arrow: "arrow.up.right"
-            case .box: "rectangle"
-            }
-        }
-
-        /// Where one lands when it is added rather than drawn: the middle of the frame, at
-        /// a size that reads without being asked to be resized first.
-        var rect: CGRect {
-            switch self {
-            case .text: CGRect(x: 0.22, y: 0.44, width: 0.56, height: 0.12)
-            case .arrow: CGRect(x: 0.3, y: 0.35, width: 0.4, height: 0.3)
-            case .box: CGRect(x: 0.3, y: 0.32, width: 0.4, height: 0.36)
-            }
-        }
-
-        var kind: AnnotationItem.Kind {
-            switch self {
-            // Something legible rather than nothing. An empty label draws no pixels, so a
-            // button that added one would look like a button that did nothing.
-            case .text: .text("Text")
-            case .arrow: .arrow(from: CGPoint(x: 0, y: 1), to: CGPoint(x: 1, y: 0))
-            case .box: .rectangle
-            }
-        }
     }
 
     /// Adds one in the middle of the frame, ready to be dragged where it belongs.
@@ -1782,7 +2029,11 @@ final class EditorModel {
         // on the Annotate canvas, and adding something you then cannot touch would be worse
         // than not offering the button.
         tool = .annotate
-        return addAnnotation(new.kind, rect: offsetForClearSpace(new.rect))
+        let aspect = outputSize.height > 0 ? outputSize.width / outputSize.height : 16.0 / 9
+        return addAnnotation(new.kind(nextStep: timeline.nextStepNumber),
+                             rect: offsetForClearSpace(new.rect(aspect: aspect)),
+                             named: "Add \(new.title)",
+                             configure: new.configure)
     }
 
     /// Nudges a new rectangle clear of anything already at the playhead.
@@ -1804,11 +2055,18 @@ final class EditorModel {
         return rect
     }
 
-    /// Puts something on top: a label, an arrow, a box.
+    /// Puts something on top: a label, an arrow, a box, a picture.
+    ///
+    /// - Parameter during: when it shows; at the playhead for the usual length if `nil`.
     @discardableResult
-    func addAnnotation(_ kind: AnnotationItem.Kind, rect: CGRect) -> UUID {
-        let range = drawnRange
+    func addAnnotation(_ kind: AnnotationItem.Kind, rect: CGRect,
+                       during: (start: CMTime, duration: CMTime)? = nil,
+                       animation: AnnotationAnimation? = nil,
+                       named name: String? = nil,
+                       configure: ((inout AnnotationItem) -> Void)? = nil) -> UUID {
+        let range = during ?? drawnRange
         var item = AnnotationItem(start: range.start, duration: range.duration, kind: kind, rect: rect)
+        if let animation { item.animation = animation }
         // Text is sized to the box that was drawn for it. The font is a fraction of the
         // finished frame's height and the box is a fraction of it too, so one line of text
         // filling the box is simply the box's own height — a little under, to leave the
@@ -1819,7 +2077,13 @@ final class EditorModel {
         if case .text = kind {
             item.fontSize = min(0.4, max(0.02, rect.height * 0.82))
         }
-        apply(Commands.AddAnnotation(item))
+        configure?(&item)
+        // And then the box is the words, so the frame on the picture starts out round the
+        // label rather than round the space it was drawn in. See `AnnotationFit`.
+        if AnnotationFit.isLabel(item) {
+            item.rect = AnnotationFit.fitted(item, frame: outputSize, setByCaller: false)
+        }
+        apply(Commands.AddAnnotation(item, name: name))
         select(.annotation(item.id))
         return item.id
     }
@@ -1829,7 +2093,26 @@ final class EditorModel {
     }
 
     func restyleAnnotation(_ id: UUID, _ name: String, _ change: @escaping @Sendable (inout AnnotationItem) -> Void) {
-        apply(Commands.RestyleAnnotation(id: id, name: name, change))
+        // A label's box is refitted to its words whatever changed them — the text, the
+        // size, the weight, the plate — so its frame on the picture is always the label.
+        // See `AnnotationFit`.
+        let frame = outputSize
+        apply(Commands.RestyleAnnotation(id: id, name: name) { item in
+            let before = item
+            change(&item)
+            guard AnnotationFit.needsFitting(before, item) else { return }
+            item.rect = AnnotationFit.fitted(item, frame: frame, setByCaller: before.rect != item.rect)
+        })
+    }
+
+    /// Resizes a text label from the canvas: its wrap width from the box, and — from a
+    /// corner — its type scaled with it. One command, so the box and the type land together.
+    func resizeLabel(_ id: UUID, rect: CGRect, fontSize: Double) {
+        restyleAnnotation(id, "Resize") { item in
+            guard !item.isLocked else { return }
+            item.rect = rect
+            item.fontSize = min(max(fontSize, 0.012), 0.3)
+        }
     }
 
     /// What is on screen at the playhead, for the canvas to put handles on.
@@ -1885,17 +2168,44 @@ final class EditorModel {
     /// `quietly` is for the automatic pass when a project opens: a recording with no
     /// clicks in it is a perfectly ordinary recording, and saying so unprompted is a
     /// dialog nobody asked for.
-    func suggestZooms(quietly: Bool = false) {
+    /// The zooms auto-zoom proposes for this recording as it stands.
+    private func suggestedZooms() -> [ZoomRegion] {
         let track = document.manifest.track(.screen)
         let size = track?.pixelSize ?? CGSize(width: 1_920, height: 1_080)
         let scale = document.manifest.displayScale
         // The suggester works in recorded points, which is what the sidecar holds.
         let suggester = ZoomSuggester(frameSize: CGSize(width: size.width / scale, height: size.height / scale),
+                                      // Against the picture as it is cropped, which is what
+                                      // a zoom's centre is a fraction of.
+                                      crop: timeline.style.crop?.rect ?? CropRect.full.rect,
                                       tuning: zoomTuning)
-        let regions = suggester.suggestions(cursor: document.cursorTrack.samples,
-                                            input: document.inputSamples,
-                                            focus: document.focusSamples,
-                                            duration: duration)
+        // The suggester reads the recording, so what it proposes is in the recording's
+        // time, over the whole recording. Placed as it came, every zoom after a cut, a
+        // speed change, a freeze frame or a title landed on the wrong moment — so each is
+        // put where its moment now is in the edit, and one whose moment was cut goes.
+        let found = suggester.suggestions(cursor: document.cursorTrack.samples,
+                                          input: document.inputSamples,
+                                          focus: document.focusSamples,
+                                          duration: timeline.sourceDuration)
+        return timeline.placedOnTimeline(found)
+    }
+
+    /// The zooms a recording opens with, as where it starts rather than as an edit.
+    ///
+    /// They used to arrive as a step on the undo stack, which made a recording that had
+    /// only been opened a recording with unsaved changes: it asked to be saved when it was
+    /// closed, by somebody who had not touched it. They are the same kind of thing as the
+    /// background and the padding a new project starts with — see `EditorDocument.adopt`.
+    private func adoptSuggestedZooms() {
+        var opened = document.timeline
+        guard Commands.SuggestZooms(suggestedZooms()).apply(to: &opened) else { return }
+        document.adopt(opened)
+        refresh()
+        audio?.prepare(for: timeline)
+    }
+
+    func suggestZooms(quietly: Bool = false) {
+        let regions = suggestedZooms()
         guard !regions.isEmpty else {
             if !quietly { errorMessage = "Nothing in this recording looked like a moment to zoom into." }
             return
@@ -1912,6 +2222,21 @@ final class EditorModel {
             errorMessage = "Auto-zoom came up with the same zooms you already have."
         }
     }
+
+    /// Takes every zoom out, except the ones that have been locked.
+    func removeAllZooms() {
+        let removed = Set(timeline.zooms.filter { !$0.isLocked }.map(\.id))
+        guard !removed.isEmpty else { return }
+        apply(Commands.RemoveAllZooms())
+        // A selection pointing at something that has gone is an inspector open on nothing.
+        selected.removeAll { selection in
+            if case .zoom(let id) = selection { return removed.contains(id) }
+            return false
+        }
+    }
+
+    /// Whether there is a zoom that "Remove All Zooms" would take out.
+    var hasRemovableZooms: Bool { timeline.zooms.contains { !$0.isLocked } }
 
     // MARK: - The camera bubble
 
@@ -1955,7 +2280,11 @@ final class EditorModel {
     /// from the settings, for the reason `scene` exists at all: the corners, the margin and
     /// the zoom reaction are the builder's arithmetic, and a second copy of it here would be
     /// a handle that sits somewhere the renderer is not.
-    var webcamRect: CGRect? { scene?.webcam?.rect }
+    ///
+    /// Only while it is a bubble: a camera a layout has spread across the frame or half of
+    /// it is not a thing to drag, and a drag on it would park a bubble somewhere nobody
+    /// asked for one.
+    var webcamRect: CGRect? { scene?.webcam.flatMap { $0.isBubble ? $0.rect : nil } }
 
     /// An exporter for this project, set up the way the editor is showing it.
     ///
@@ -1963,13 +2292,16 @@ final class EditorModel {
     /// builder measured against the real frame size, the cursor track, where the media
     /// is — already exists here, and a second assembly of the same parts is a second
     /// place for the file to come out different from the preview.
-    func exporter(settings: ExportSettings) -> VideoExporter? {
+    /// - Parameter range: the part of the edit to write, or `nil` for the whole of it.
+    ///   Cut by `Timeline.cut(to:)`, so the excerpt is the whole video's own frames with
+    ///   the clock started at zero.
+    func exporter(settings: ExportSettings, range: CMTimeRange? = nil) -> VideoExporter? {
         guard let videoURL = document.videoURL else { return nil }
         // `timeline`, never `renderedTimeline`: the latter is the flattened picture the
         // crop tool drags a rectangle over, with the crop, the zooms and the background
         // deliberately taken off. Exporting from it would quietly produce the wrong film
         // whenever the crop tool happened to be selected.
-        return VideoExporter(timeline: timeline,
+        return VideoExporter(timeline: range.map { timeline.cut(to: $0) } ?? timeline,
                              builder: builder,
                              cursor: document.cursorTrack,
                              videoURL: videoURL,
@@ -1990,7 +2322,8 @@ final class EditorModel {
     /// was opened without settings — a preview window, a test.
     private var zoomTuning: ZoomSuggester.Tuning {
         guard let settings else { return ZoomSuggester.Tuning() }
-        return ZoomSuggester.Tuning(scale: settings.zoomScale,
+        return ZoomSuggester.Tuning(holdAfter: settings.zoomHoldSeconds,
+                                    scale: settings.zoomScale,
                                     followsFocus: settings.zoomsOnFocus,
                                     followsWindows: settings.zoomsOnWindowChange)
     }
@@ -2011,22 +2344,29 @@ final class EditorModel {
         audio?.prepare(for: timeline)
     }
 
+    /// Writes the edit now — ⌘S. Through the autosaver, so a write it has in flight is
+    /// waited for rather than raced, and so the toolbar's account of saving stays true.
     func save() {
-        do {
-            try document.save()
-            pruneUnusedBackgrounds()
-        } catch {
-            errorMessage = error.localizedDescription
+        Task {
+            // No pruning of unused pictures here: the undo stack outlives a save, and
+            // undoing back to a background chosen before it has to find its file. They go
+            // as the window closes — see `silence()`.
+            if await !autosaver.flush(), let failure = autosaver.failure {
+                errorMessage = failure
+            }
         }
     }
 
     /// Deletes imported background pictures no longer referred to.
     ///
-    /// After the save, never before: undoing a background change has to be able to find
-    /// the file it went back to.
+    /// Only as the window closes with everything saved: until then undoing a background
+    /// change has to be able to find the file it went back to — a save does not clear the
+    /// undo stack, so pruning after ⌘S left Undo pointing at a deleted picture.
     private func pruneUnusedBackgrounds() {
         var kept: Set<String> = []
         if case .image(let path) = timeline.style.background { kept.insert(path) }
+        // A background movie lives in the same folder.
+        if let path = timeline.style.background.videoPath { kept.insert(path) }
         for url in BackgroundImport.unused(in: packageURL, keeping: kept) {
             try? FileManager.default.removeItem(at: url)
         }
@@ -2045,10 +2385,24 @@ final class EditorModel {
         // take, and adding a region to a document that is closing would be worse than
         // losing the few seconds it holds.
         voiceover?.cancel()
+        following.cancel()
+        sensitive.cancel()
         if isPlaying { stop() }
         audio?.cancel()
         waveform.cancel()
         regionWaveforms.cancel()
+        thumbnails.stop()
+        importedMedia.stop()
+        // The window has already written what it wanted written — see
+        // `EditorWindowController.windowShouldClose` — so nothing is left waiting, and
+        // the undo stack is going with the window: a background nothing refers to any
+        // more can go too, which autosave deliberately never does on its own account.
+        autosaver.stop()
+        if !isDirty {
+            pruneUnusedBackgrounds()
+            pruneUnusedPictures()
+            pruneUnusedMovies()
+        }
     }
 }
 

@@ -17,11 +17,26 @@ final class RecorderBarPanel {
     /// What the bar's menu items reach back into the app for.
     var showLibrary: () -> Void = {}
     var openSettings: () -> Void = {}
+    /// Told whenever the bar comes or goes. The microphone meter and the camera preview
+    /// run only while the bar is on screen, and this is how they know.
+    var onVisibilityChange: (Bool) -> Void = { _ in }
 
     /// The size the bar last said it wants. The panel is allowed to be bigger than this
     /// for a moment while a shape change plays out.
     private var wantedSize: NSSize = .zero
     private var tighten: Task<Void, Never>?
+    /// Where the bar is: the middle of its bottom edge, which is the one point of it that
+    /// stays put while its width changes.
+    ///
+    /// Kept here rather than read back off the window. The window's frame is what changes
+    /// when the bar changes shape, so a centre read from it afterwards is the centre of
+    /// wherever the resize happened to leave it — which is how the bar came to sit against
+    /// its old left edge for the whole of every take. Set when the bar is first placed and
+    /// when somebody drags it, and by nothing else.
+    private var anchor: CGPoint?
+    /// True while this is the one moving the window, so that is not mistaken for a drag.
+    private var isPlacing = false
+    private var moveObserver: (any NSObjectProtocol)?
     /// The screen-filling overlay that names the target. Owned here rather than by the
     /// bar, because it outlives any one view and starting a take has to take it down.
     private lazy var targets = TargetOverlayController(model: model)
@@ -58,6 +73,7 @@ final class RecorderBarPanel {
 
         if let panel {
             panel.orderFrontRegardless()
+            onVisibilityChange(true)
             return
         }
 
@@ -81,7 +97,10 @@ final class RecorderBarPanel {
             .background(BarSizeReporter { [weak self] size in self?.resize(to: size) })
 
         let hosting = NSHostingView(rootView: bar)
-        hosting.sizingOptions = [.intrinsicContentSize]
+        // The window's size is decided here and nowhere else. Left to size itself from its
+        // content, AppKit resizes a window about its bottom-left corner the moment the
+        // content changes — before `resize(to:)` has been told, and from the wrong corner.
+        hosting.sizingOptions = []
 
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 760, height: 100),
                             styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
@@ -120,12 +139,42 @@ final class RecorderBarPanel {
 
         self.panel = panel
         position(panel)
+        // Somebody dragging the bar is somebody choosing where it lives.
+        moveObserver = NotificationCenter.default.addObserver(forName: NSWindow.didMoveNotification,
+                                                              object: panel,
+                                                              queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.moved() }
+        }
         panel.orderFrontRegardless()
+        onVisibilityChange(true)
+    }
+
+    private func moved() {
+        guard let panel, !isPlacing else { return }
+        anchor = CGPoint(x: panel.frame.midX, y: panel.frame.minY)
     }
 
     func hide() {
         targets.hide()
         panel?.orderOut(nil)
+        onVisibilityChange(false)
+    }
+
+    /// The bar's window, for what sits beside it — the camera preview follows it about.
+    var window: NSWindow? { panel }
+
+    /// Starts choosing a target from outside the bar — the menu bar icon's Record Area and
+    /// Record Window — exactly as pressing that mode on the bar does.
+    func begin(_ mode: RecorderModel.Mode) {
+        show()
+        model.choose(mode)
+        guard mode.isAvailable, mode != .area else { return }
+        targets.show()
+    }
+
+    /// Takes the target overlay down, for a take started by a shortcut while it was up.
+    func hideTargets() {
+        targets.hide()
     }
 
     func toggle() {
@@ -141,11 +190,26 @@ final class RecorderBarPanel {
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
         guard let visible = screen?.visibleFrame else { return }
-        let size = panel.frame.size
-        panel.setFrame(NSRect(x: (visible.midX - size.width / 2).rounded(),
-                              y: visible.minY + 24,
-                              width: size.width, height: size.height),
-                       display: false)
+        let size = wantedSize.width > 1 ? wantedSize : panel.frame.size
+        anchor = CGPoint(x: visible.midX, y: visible.minY + 24)
+        place(panel, size: size, display: false)
+    }
+
+    /// Puts the window where the anchor says, at a size, without that counting as a drag.
+    private func place(_ panel: NSPanel, size: NSSize, display: Bool) {
+        guard let anchor else { return }
+        var frame = NSRect(x: (anchor.x - size.width / 2).rounded(),
+                           y: anchor.y.rounded(),
+                           width: size.width, height: size.height)
+        // Kept on the screen it is on: a bar dragged to the edge and then widened would
+        // otherwise grow off the side, with its close button out of reach.
+        if let visible = (panel.screen ?? NSScreen.main)?.visibleFrame, frame.width <= visible.width {
+            frame.origin.x = min(max(frame.minX, visible.minX), visible.maxX - frame.width)
+        }
+        guard frame != panel.frame else { return }
+        isPlacing = true
+        panel.setFrame(frame, display: display)
+        isPlacing = false
     }
 
     /// Takes the width the bar asked for, without letting it drift off centre.
@@ -158,7 +222,7 @@ final class RecorderBarPanel {
     private func resize(to size: CGSize) {
         guard let panel else { return }
         let target = NSSize(width: size.width.rounded(.up), height: size.height.rounded(.up))
-        guard target.width > 1, target.height > 1, target != panel.frame.size else { return }
+        guard target.width > 1, target.height > 1 else { return }
         wantedSize = target
         tighten?.cancel()
 
@@ -178,15 +242,11 @@ final class RecorderBarPanel {
         }
     }
 
-    /// Re-derives the origin from the centre the bar is on, so a change of width happens
-    /// about the middle of the bar rather than about its left edge. That centre is
-    /// whatever it currently is: the screen's, or wherever the user dragged the bar to.
+    /// Takes a size about the bar's anchor, so a change of width happens about the middle
+    /// of the bar rather than about its left edge. The anchor is the screen's bottom
+    /// centre, or wherever the user dragged the bar to.
     private func apply(_ size: NSSize) {
         guard let panel, size.width > 1, size.height > 1 else { return }
-        let frame = NSRect(x: (panel.frame.midX - size.width / 2).rounded(),
-                           y: panel.frame.minY,
-                           width: size.width, height: size.height)
-        guard frame != panel.frame else { return }
-        panel.setFrame(frame, display: true)
+        place(panel, size: size, display: true)
     }
 }

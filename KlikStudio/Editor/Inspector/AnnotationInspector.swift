@@ -4,7 +4,7 @@ import CoreMedia
 import SwiftUI
 import TimelineKit
 
-/// What a label, an arrow or a box says, how it looks, how it comes and goes, and when.
+/// What an annotation says, how it looks, how it comes and goes, and when.
 ///
 /// In the order an annotation is made: what it is, how it looks, how it arrives, when it
 /// is on screen. Only what nearly everybody reaches for is out in the open; the exact
@@ -25,6 +25,9 @@ struct AnnotationInspector: View {
         if let item {
             VStack(alignment: .leading, spacing: SidebarSpacing.betweenGroups) {
                 content(item)
+                if item.kind.hasWords {
+                    typeSettings(item)
+                }
                 appearance(item)
                 animation(item)
                 timing(item)
@@ -53,17 +56,40 @@ struct AnnotationInspector: View {
 
     @ViewBuilder
     private func content(_ item: AnnotationItem) -> some View {
-        VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-            Picker("Kind", selection: kind) {
-                Label("Text", systemImage: "textformat").tag(KindTag.text)
-                Label("Arrow", systemImage: "arrow.up.right").tag(KindTag.arrow)
-                Label("Box", systemImage: "rectangle").tag(KindTag.rectangle)
-            }
-            .pickerStyle(.segmented)
-            .labelStyle(.iconOnly)
-            .labelsHidden()
+        if case .image(let path) = item.kind {
+            picture(path)
+        } else {
+            shape(item)
+        }
+    }
 
-            if case .text = item.kind {
+    /// A picture has no kind to switch to: turning a logo into a box would throw the
+    /// logo away. What it has instead is a way to swap the picture for another.
+    private func picture(_: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "photo")
+                .foregroundStyle(.secondary)
+            Text("Picture")
+            Spacer(minLength: 8)
+            Button("Replace…") { model.replacePicture(ofAnnotation: id) }
+                .controlSize(.small)
+                .help("Choose another picture for this place")
+        }
+    }
+
+    /// What it is, and what it says or counts.
+    ///
+    /// The kind is a pop-up rather than a row of icons: eight kinds do not fit a segmented
+    /// control in this column (see `InspectorTabs`), and eight icons squeezed into one would
+    /// be eight guesses.
+    @ViewBuilder
+    private func shape(_ item: AnnotationItem) -> some View {
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
+            InspectorField(title: "Kind") {
+                InspectorPicker(selection: kind, options: AnnotationItem.KindName.switchable) { $0.title }
+            }
+
+            if item.kind.hasWords {
                 TextField("Say something", text: text, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
                     .lineLimit(1...4)
@@ -71,6 +97,45 @@ struct AnnotationInspector: View {
                 InspectorSlider(model: model, "Size", systemImage: "textformat.size",
                                 value: restyled(\.fontSize, "Annotation Size"), range: 0.02...0.2)
             }
+
+            if case .step = item.kind {
+                InspectorField(title: "Number") {
+                    HStack(spacing: 6) {
+                        TextField("Number", value: stepNumber, format: .number)
+                            .textFieldStyle(.roundedBorder)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 52)
+                        Stepper("Number", value: stepNumber, in: AnnotationItem.stepRange)
+                    }
+                }
+                .help("New steps count on from the highest number on the timeline")
+            }
+        }
+    }
+
+    // MARK: - Type
+
+    /// How the words are set: family, weight, where they sit, what is behind them.
+    private func typeSettings(_ item: AnnotationItem) -> some View {
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
+            FontFamilyPicker(family: restyled(\.style.fontFamily, "Text Font"))
+            InspectorField(title: "Weight") {
+                InspectorPicker(selection: restyled(\.style.weight, "Text Weight"),
+                                options: AnnotationStyle.Weight.allCases) { $0.title }
+            }
+            InspectorField(title: "Align") {
+                InspectorPicker(selection: restyled(\.style.alignment, "Text Alignment"),
+                                options: AnnotationStyle.Alignment.allCases) { $0.title }
+            }
+            InspectorField(title: item.kind.name == .callout ? "Bubble" : "Backdrop") {
+                InspectorPicker(selection: restyled(\.style.backdrop, "Text Backdrop"),
+                                options: AnnotationStyle.Backdrop.allCases) { backdrop in
+                    // A callout with nothing behind its words is still a bubble: an outline.
+                    item.kind.name == .callout && backdrop == .none ? "Outline" : backdrop.title
+                }
+            }
+            Toggle("Outline letters", isOn: restyled(\.style.outlinesText, "Outline Letters"))
+                .help("A dark or light ring round each letter, so it reads over a busy picture")
         }
     }
 
@@ -78,11 +143,28 @@ struct AnnotationInspector: View {
 
     private func appearance(_ item: AnnotationItem) -> some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-            InspectorField(title: "Colour") {
-                ColorPicker("Colour", selection: colour, supportsOpacity: true)
+            // A picture brings its own colours.
+            if !item.isPicture {
+                InspectorField(title: "Colour") {
+                    ColorPicker("Colour", selection: colour, supportsOpacity: true)
+                }
+            }
+            // Only where there is a line to thicken: a callout has one only when it is drawn
+            // as an outline.
+            if item.kind.hasThickness || (item.kind.name == .callout && item.style.backdrop == .none) {
+                InspectorSlider(model: model, "Thickness", value: restyled(\.style.thickness, "Line Thickness"),
+                                range: 0.5...6, format: { String(format: "%.1f×", $0) })
+            }
+            if item.kind.canBeFilled {
+                InspectorField(title: "Fill") {
+                    InspectorPicker(selection: restyled(\.style.fill, "Fill"),
+                                    options: AnnotationStyle.Fill.allCases) { $0.title }
+                }
             }
             InspectorSlider(model: model, "Opacity", value: restyled(\.opacity, "Annotation Opacity"),
                             range: 0...1)
+            Toggle("Shadow", isOn: restyled(\.style.hasShadow, "Shadow"))
+                .help("A soft shadow under it, so it lifts off a busy picture")
         }
     }
 
@@ -209,43 +291,35 @@ struct AnnotationInspector: View {
         }
     }
 
-    /// The kind, as something a segmented picker can hold.
+    /// The kind, as something a picker can hold.
     ///
     /// `AnnotationItem.Kind` carries a payload — the text, the arrow's two ends — so it
-    /// cannot be a tag directly. Switching kind keeps the rectangle and throws the
-    /// payload away, which is what "make this an arrow instead" means.
-    private enum KindTag: Hashable { case text, arrow, rectangle }
-
-    private var kind: Binding<KindTag> {
+    /// cannot be a tag directly. Switching keeps the rectangle and whatever of the payload
+    /// still means something: words between a label and a callout, ends between an arrow
+    /// and a line. See `Kind.converted(to:)`.
+    private var kind: Binding<AnnotationItem.KindName> {
         Binding {
-            guard let item else { return .text }
-            return switch item.kind {
-            case .text: .text
-            case .arrow: .arrow
-            case .rectangle, .image: .rectangle
-            }
-        } set: { tag in
-            model.restyleAnnotation(id, "Annotation Kind") { item in
-                switch tag {
-                case .text:
-                    item.kind = .text("")
-                case .arrow:
-                    // Corner to corner of its own rectangle, so a freshly switched arrow
-                    // points somewhere rather than being a zero-length dot.
-                    item.kind = .arrow(from: CGPoint(x: 0, y: 1), to: CGPoint(x: 1, y: 0))
-                case .rectangle:
-                    item.kind = .rectangle
-                }
-            }
+            item?.kind.name ?? .text
+        } set: { name in
+            model.setKind(ofAnnotation: id, to: name)
         }
     }
 
     private var text: Binding<String> {
         Binding {
-            guard let item, case .text(let string) = item.kind else { return "" }
-            return string
+            item?.kind.text ?? ""
         } set: { string in
-            model.restyleAnnotation(id, "Annotation Text") { $0.kind = .text(string) }
+            model.setText(ofAnnotation: id, to: string)
+        }
+    }
+
+    private var stepNumber: Binding<Int> {
+        Binding {
+            guard let item, case .step(let number) = item.kind else { return 1 }
+            return number
+        } set: { number in
+            model.setStepNumber(ofAnnotation: id, to: min(AnnotationItem.stepRange.upperBound,
+                                                          max(AnnotationItem.stepRange.lowerBound, number)))
         }
     }
 

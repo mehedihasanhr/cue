@@ -75,6 +75,12 @@ struct TimelineStrip: View {
         case addedSound
         case blurs
         case annotations
+        /// What is said, a line at a time.
+        case captions
+        /// What was pressed, a shortcut at a time.
+        case keys
+        /// Where the camera and the screen go, a stretch at a time.
+        case camera
 
         var id: String {
             switch self {
@@ -86,6 +92,9 @@ struct TimelineStrip: View {
             case .addedSound: "added"
             case .blurs: "blurs"
             case .annotations: "annotations"
+            case .captions: "captions"
+            case .keys: "keys"
+            case .camera: "camera"
             }
         }
 
@@ -93,7 +102,7 @@ struct TimelineStrip: View {
             switch self {
             case .clips: clipHeight
             case .recordedSound, .source: soundHeight
-            case .zooms, .pointer, .addedSound, .blurs, .annotations: regionHeight
+            case .zooms, .pointer, .addedSound, .blurs, .annotations, .captions, .keys, .camera: regionHeight
             }
         }
 
@@ -106,8 +115,11 @@ struct TimelineStrip: View {
             case .zooms: "Zoom"
             case .pointer: "Pointer"
             case .addedSound: "Sound"
-            case .blurs: "Blur"
+            case .blurs: "Masks"
             case .annotations: "Notes"
+            case .captions: "Captions"
+            case .keys: "Keys"
+            case .camera: "Camera"
             }
         }
 
@@ -121,6 +133,9 @@ struct TimelineStrip: View {
             case .addedSound: "music.note"
             case .blurs: "drop.halffull"
             case .annotations: "textformat"
+            case .captions: "captions.bubble"
+            case .keys: "keyboard"
+            case .camera: "person.crop.rectangle"
             }
         }
 
@@ -136,9 +151,19 @@ struct TimelineStrip: View {
             case .addedSound: .green
             case .blurs: .teal
             case .annotations: .pink
+            case .captions: .indigo
+            case .keys: TimelineStrip.keysTint
+            case .camera: TimelineStrip.cameraTint
             }
         }
     }
+
+    /// The Keys lane's colour, in one place: the heading, the chips and the inspector's
+    /// list all draw in it.
+    static let keysTint: Color = .mint
+
+    /// The Camera lane's colour: the heading and the chips.
+    static let cameraTint: Color = .purple
 
     /// The rows this edit has, top to bottom.
     ///
@@ -156,9 +181,13 @@ struct TimelineStrip: View {
         // The rest appear only when there is something in them: five permanently empty
         // lanes would be most of the strip's height spent on features nothing has added to.
         if !timeline.cursorRegions.isEmpty { lanes.append(.pointer) }
+        // Under the pointer lane, beside the other lanes about how the picture is framed.
+        if !timeline.cameraLayouts.isEmpty { lanes.append(.camera) }
         if !timeline.audio.isEmpty { lanes.append(.addedSound) }
         if !timeline.blurs.isEmpty { lanes.append(.blurs) }
         if !timeline.annotations.isEmpty { lanes.append(.annotations) }
+        if !timeline.captions.isEmpty { lanes.append(.captions) }
+        if !timeline.keyCues.isEmpty { lanes.append(.keys) }
         return lanes
     }
 
@@ -305,6 +334,82 @@ struct TimelineStrip: View {
             blurRow
         case .annotations:
             annotationRow
+        case .captions:
+            captionRow
+        case .keys:
+            keyRow
+        case .camera:
+            cameraRow
+        }
+    }
+
+    /// The shortcuts, each chip labelled with the keys it shows: "⌘⇧K", "⌘Z ×3".
+    ///
+    /// Every cue is on the lane, including the ones the picture leaves out — a hidden
+    /// one, or Return on its own while the style says not to show those. Faded and marked,
+    /// so a chip that draws nothing says why rather than vanishing from the one place it
+    /// can be selected and switched back on.
+    private var keyRow: some View {
+        TimelineRegionRow(model: model,
+                          regions: model.timeline.keyCues,
+                          tint: Self.keysTint,
+                          title: "Shortcut",
+                          symbol: "",
+                          height: Self.regionHeight,
+                          selection: Selection.keyCue) { cue in
+            HStack(spacing: 5) {
+                if !model.timeline.isShown(cue) {
+                    Image(systemName: "eye.slash").font(.system(size: 9, weight: .semibold))
+                }
+                Text(cue.isEmpty ? "Empty shortcut" : cue.title)
+                    .font(.system(size: 11, weight: .semibold))
+                    .opacity(cue.isEmpty ? 0.6 : 1)
+            }
+            .opacity(model.timeline.isShown(cue) ? 1 : 0.45)
+        }
+    }
+
+    /// Stretches where the camera sits somewhere other than its bubble, each labelled with
+    /// the layout it shows.
+    ///
+    /// Faded while the camera is switched off for the whole video: the stretches keep their
+    /// places, and a faded chip says why the picture is not doing what it says.
+    private var cameraRow: some View {
+        TimelineRegionRow(model: model,
+                          regions: model.timeline.cameraLayouts,
+                          tint: Self.cameraTint,
+                          title: "Camera",
+                          symbol: "",
+                          height: Self.regionHeight,
+                          selection: Selection.cameraLayout) { region in
+            HStack(spacing: 5) {
+                Image(systemName: region.layout.symbol).font(.system(size: 9, weight: .semibold))
+                Text(region.layout.title)
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .opacity(model.timeline.webcam.isEnabled ? 1 : 0.45)
+        }
+    }
+
+    /// The captions, each one a line you can move, trim and select.
+    ///
+    /// The words themselves are the label. A lane of chips that all say "Caption" tells
+    /// you only that there are captions; the reason to look at this lane is to find the
+    /// line that is early, and that means reading them.
+    private var captionRow: some View {
+        TimelineRegionRow(model: model,
+                          regions: model.timeline.captions,
+                          tint: .indigo,
+                          title: "Caption",
+                          symbol: "",
+                          height: Self.regionHeight,
+                          selection: Selection.caption,
+                          fitsWords: true) { cue in
+            Text(cue.text.isEmpty ? "Empty caption" : cue.text)
+                .font(.system(size: 11, weight: .medium))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .opacity(cue.text.isEmpty ? 0.6 : 1)
         }
     }
 
@@ -321,7 +426,8 @@ struct TimelineStrip: View {
                           waveform: { region in
                               model.regionWaveforms.peaks(forPath: region.path)
                                   .map { ($0, [TimelineWaveform.Span(region)]) }
-                          }) { region in
+                          },
+                          fades: { $0.heardFades }) { region in
             Text((region.path as NSString).lastPathComponent)
                 .font(.system(size: 11, weight: .semibold))
         }
@@ -411,11 +517,12 @@ struct TimelineStrip: View {
         TimelineRegionRow(model: model,
                           regions: model.timeline.blurs,
                           tint: .teal,
-                          title: "Blur",
+                          title: "Mask",
                           symbol: "drop.halffull",
                           height: Self.regionHeight,
                           selection: Selection.blur) { blur in
-            Text(blur.style == .pixelate ? "Pixelate" : "Blur")
+            // The kind, by name: a chip that said "Blur" over a spotlight would be lying.
+            Text(blur.title)
                 .font(.system(size: 11, weight: .semibold))
         }
     }
@@ -456,6 +563,7 @@ struct TimelineStrip: View {
         case .arrow: "arrow.up.right"
         case .rectangle: "rectangle"
         case .image: "photo"
+        case .ellipse, .line, .highlight, .step, .callout: kind.name.symbol
         }
     }
 
@@ -465,6 +573,7 @@ struct TimelineStrip: View {
         case .arrow: "Arrow"
         case .rectangle: "Box"
         case .image: "Image"
+        case .ellipse, .line, .highlight, .step, .callout: kind.label
         }
     }
 

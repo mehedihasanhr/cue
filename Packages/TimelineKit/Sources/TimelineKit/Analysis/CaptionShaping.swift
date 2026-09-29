@@ -149,7 +149,8 @@ public enum CaptionShaper {
                 .filter { !$0.isEmpty }
                 .joined(separator: " ")
             guard !text.isEmpty else { continue }
-            cues.append(CaptionCue(start: from, duration: to - from, text: text))
+            cues.append(CaptionCue(start: from, duration: to - from, text: text,
+                                   words: words(of: line, from: from, to: to, on: timeline)))
         }
 
         // Overlaps would put two lines on screen at once; the renderer shows only the
@@ -157,9 +158,49 @@ public enum CaptionShaper {
         // same thing. A cut inside a line can pull two cues onto the same instant, which
         // is why this happens after the mapping rather than before it.
         for index in cues.indices.dropLast() where cues[index].end > cues[index + 1].start {
+            let kept = (cues[index + 1].start - cues[index].start).seconds
+            let was = cues[index].duration.seconds
             cues[index].duration = cues[index + 1].start - cues[index].start
+            // The words were timed against the longer line; stretched onto the shorter
+            // one they would all be said early, so they are put back on its clock.
+            if was > 0, kept > 0 {
+                cues[index].words = cues[index].words.map {
+                    CaptionCue.Word(text: $0.text, from: min(1, $0.from * was / kept), to: min(1, $0.to * was / kept))
+                }
+            }
         }
         return cues.filter { $0.duration >= shape.minimumDuration }
+    }
+
+    /// When each word of a line is said, as fractions of the line, on the edit's clock.
+    ///
+    /// Through the timeline word by word rather than by proportion, because a line can
+    /// have a change of speed inside it and the words either side of that are not spaced
+    /// the way they were recorded. Empty if any word has nowhere to go — a half-timed line
+    /// would light up some of its words and skip the rest.
+    private static func words(of line: [TranscribedWord],
+                              from: CMTime, to: CMTime,
+                              on timeline: Timeline) -> [CaptionCue.Word] {
+        let length = (to - from).seconds
+        guard length > 0 else { return [] }
+        var words: [CaptionCue.Word] = []
+        for word in line {
+            let text = word.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+            // A recogniser's "word" can be two: it is drawn as the words it is.
+            let pieces = text.split(whereSeparator: \.isWhitespace).map(String.init)
+            guard let began = timeline.timelineTime(atSource: word.start),
+                  let ended = timeline.timelineTime(atSource: word.end) else { return [] }
+            let lower = (began - from).seconds / length
+            let upper = (ended - from).seconds / length
+            for (index, piece) in pieces.enumerated() {
+                let share = (upper - lower) / Double(pieces.count)
+                words.append(CaptionCue.Word(text: piece,
+                                             from: lower + share * Double(index),
+                                             to: lower + share * Double(index + 1)))
+            }
+        }
+        return words
     }
 
     // MARK: - Where a line stops

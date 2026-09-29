@@ -34,6 +34,7 @@ final class StudioSettings {
         static let zoomsOnFocus = "editor.zoomsOnFocus"
         static let zoomsOnWindows = "editor.zoomsOnWindows"
         static let zoomScale = "editor.zoomScale"
+        static let zoomHold = "editor.zoomHold"
         static let background = "editor.background"
         static let padding = "editor.padding"
         static let cornerRadius = "editor.cornerRadius"
@@ -46,7 +47,20 @@ final class StudioSettings {
         static let previewVolume = "editor.previewVolume"
         static let previewMuted = "editor.previewMuted"
         static let voiceoverCountIn = "editor.voiceoverCountIn"
+        static let captionLanguage = "editor.captionLanguage"
+        static let look = "editor.look"
+        static let autosave = "editor.autosave"
+        static let capturesKeys = "recording.keys"
     }
+
+    /// Record which keyboard shortcuts were pressed, as data beside the video.
+    ///
+    /// Off by default, like the camera, and for a cousin of the same reason: it needs the
+    /// Accessibility grant, and a recorder that quietly watches the keyboard because a
+    /// setting was left on a fortnight ago is not one anybody should be surprised by. What
+    /// is written is shortcuts only — see `KeyRecorder` for the rule that keeps typed
+    /// text out of the file.
+    var recordsKeys: Bool { didSet { defaults.set(recordsKeys, forKey: Key.capturesKeys) } }
 
     // MARK: - Recording
 
@@ -119,6 +133,10 @@ final class StudioSettings {
     var zoomsOnWindowChange: Bool { didSet { defaults.set(zoomsOnWindowChange, forKey: Key.zoomsOnWindows) } }
     /// How far a click zooms in.
     var zoomScale: Double { didSet { defaults.set(zoomScale, forKey: Key.zoomScale) } }
+    /// How long a suggested zoom stays in after the last click of its moment, in seconds.
+    /// See `ZoomSuggester.Tuning.holdAfter`, whose default this starts from.
+    var zoomHoldSeconds: Double { didSet { defaults.set(zoomHoldSeconds, forKey: Key.zoomHold) } }
+    static let zoomHoldRange: ClosedRange<Double> = 0.4...4
 
     // MARK: - New projects
 
@@ -131,6 +149,11 @@ final class StudioSettings {
     var cursorScale: Double { didSet { defaults.set(cursorScale, forKey: Key.cursorScale) } }
     var cursorSmoothing: Double { didSet { defaults.set(cursorSmoothing, forKey: Key.cursorSmoothing) } }
     var clickEffect: Bool { didSet { defaults.set(clickEffect, forKey: Key.clickEffect) } }
+    /// The look a new recording starts from, laid over the settings above. Only what
+    /// those settings do not cover is kept in here — see `useForNewRecordings(_:)`.
+    var newRecordingLook: Look? {
+        didSet { defaults.set(newRecordingLook.flatMap { try? JSONEncoder().encode($0) }, forKey: Key.look) }
+    }
 
     /// How loud the editor's preview is, and whether it is silenced.
     ///
@@ -148,6 +171,34 @@ final class StudioSettings {
     /// who records the screen with no countdown at all. Sharing one number would mean
     /// each setting quietly changing the other feature.
     var voiceoverCountInSeconds: Int { didSet { defaults.set(voiceoverCountInSeconds, forKey: Key.voiceoverCountIn) } }
+
+    /// The language captions are listened for, as a locale identifier. Empty means the
+    /// language this Mac is set to.
+    ///
+    /// A preference rather than part of the project: it is what the person at this Mac
+    /// speaks, and the project records what was *said* — the captions themselves.
+    var captionLanguage: String { didSet { defaults.set(captionLanguage, forKey: Key.captionLanguage) } }
+
+    /// The locale to listen in.
+    var captionLocale: Locale {
+        captionLanguage.isEmpty ? .current : Locale(identifier: captionLanguage)
+    }
+
+    /// Write edits into the recording on their own, a moment after each change and when
+    /// the window closes. Off means being asked, as before. See `EditorAutosaver`.
+    var savesAutomatically: Bool { didSet { defaults.set(savesAutomatically, forKey: Key.autosave) } }
+
+    /// Shortcuts, the menu bar icon, speaker notes, the desktop and the camera preview —
+    /// see `RecorderPreferences`.
+    let recorder = RecorderPreferences()
+
+    /// Appearance, the Dock, the restart question and what a finished export does — see
+    /// `StudioAppPreferences`.
+    let app = StudioAppPreferences()
+
+    /// The pointer, captions and voice a new recording starts with — see
+    /// `NewProjectDefaults`, which `styled(_:)` applies.
+    let newProjects = NewProjectDefaults()
 
     /// Where recordings are kept. A folder the user picked is held as a bookmark,
     /// because a sandboxed app that stores a path stores something it cannot open.
@@ -177,6 +228,9 @@ final class StudioSettings {
         zoomsOnFocus = defaults.object(forKey: Key.zoomsOnFocus) as? Bool ?? true
         zoomsOnWindowChange = defaults.bool(forKey: Key.zoomsOnWindows)
         zoomScale = defaults.object(forKey: Key.zoomScale) as? Double ?? 1.8
+        zoomHoldSeconds = (defaults.object(forKey: Key.zoomHold) as? Double)
+            .map { min(max($0, Self.zoomHoldRange.lowerBound), Self.zoomHoldRange.upperBound) }
+            ?? ZoomSuggester.Tuning().holdAfter
         backgroundPreset = (defaults.string(forKey: Key.background)).flatMap(BackgroundPreset.init) ?? .indigo
         padding = defaults.object(forKey: Key.padding) as? Double ?? 0.06
         cornerRadius = defaults.object(forKey: Key.cornerRadius) as? Double ?? 0.02
@@ -189,8 +243,19 @@ final class StudioSettings {
         previewVolume = defaults.object(forKey: Key.previewVolume) as? Double ?? 1
         previewIsMuted = defaults.bool(forKey: Key.previewMuted)
         voiceoverCountInSeconds = defaults.object(forKey: Key.voiceoverCountIn) as? Int ?? 3
+        captionLanguage = defaults.string(forKey: Key.captionLanguage) ?? ""
+        newRecordingLook = defaults.data(forKey: Key.look).flatMap { try? JSONDecoder().decode(Look.self, from: $0) }
+        // On unless someone turns it off: an editor that loses an afternoon's edits to a
+        // crash, having never been asked to save, is the failure this exists to prevent.
+        savesAutomatically = defaults.object(forKey: Key.autosave) as? Bool ?? true
+        recordsKeys = defaults.bool(forKey: Key.capturesKeys)
 
         library = (defaults.data(forKey: Key.libraryBookmark)).flatMap(Self.resolve) ?? Self.defaultLibrary
+
+        // A look chosen for new recordings before Settings had controls for its pointer
+        // and caption fields still carries them. Splitting it again moves those into the
+        // controls, where they can be seen; for a look already split it changes nothing.
+        if let look = newRecordingLook { useForNewRecordings(look) }
     }
 
     static var defaultLibrary: URL {
@@ -254,6 +319,7 @@ final class StudioSettings {
         configuration.capturesClicks = recordsClicks
         configuration.capturesFocus = recordsFocus
         configuration.capturesCursorInVideo = burnsCursorIntoVideo
+        configuration.capturesKeystrokes = recordsKeys
         // Nothing chosen means the system's default input, which is what somebody who
         // turned the microphone on and never opened the menu expects to be recorded.
         configuration.microphoneIDs = recordsMicrophone
@@ -266,6 +332,7 @@ final class StudioSettings {
         // at all — so "the toggle is off" and "the camera is not opened" are the same fact
         // rather than two that could drift apart.
         configuration.webcamID = recordsCamera ? (cameraID.isEmpty ? WebcamRecorder.defaultDevice?.uniqueID : cameraID) : nil
+        configuration.hidesDesktopIcons = recorder.hidesDesktopIcons
         return configuration
     }
 
@@ -281,6 +348,10 @@ final class StudioSettings {
         timeline.cursor.scale = cursorScale
         timeline.cursor.smoothing = cursorSmoothing
         timeline.cursor.clickEffect = clickEffect
+        newProjects.apply(to: &timeline)
+        // On top: the look carries only what the settings above do not, so nothing here
+        // is said twice. See `useForNewRecordings(_:)`.
+        newRecordingLook?.apply(to: &timeline)
         return timeline
     }
 

@@ -39,14 +39,30 @@ struct TransportBar: View {
     /// and the chrome around each one was more pixels than the icons it framed.
     private var controls: some View {
         HStack(spacing: 4) {
-            glyph("backward.end.fill", help: "Previous frame") { model.step(-1 / 30) }
+            glyph("backward.end.fill", help: "Previous frame") { model.stepFrame(forward: false) }
 
             glyph(model.isPlaying ? "pause.fill" : "play.fill",
                   help: model.isPlaying ? "Pause (Space)" : "Play (Space)",
                   tint: StudioPalette.brand,
                   size: 15) { model.togglePlayback() }
 
-            glyph("forward.end.fill", help: "Next frame") { model.step(1 / 30) }
+            glyph("forward.end.fill", help: "Next frame") { model.stepFrame(forward: true) }
+
+            // The rate, whenever it is not the ordinary one: J and L run the playhead at
+            // 2× and 4×, either way, and a picture moving at the wrong speed with nothing
+            // saying so reads as a fault.
+            if let rate = model.playbackRateLabel {
+                Text(rate)
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(StudioPalette.brand)
+                    .padding(.horizontal, 5)
+                    .frame(height: 18)
+                    .background(StudioPalette.brand.opacity(0.14),
+                                in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                    .help("\(model.playbackRateDescription ?? rate). K stops; Space pauses.")
+                    .accessibilityLabel(model.playbackRateDescription ?? rate)
+            }
 
             StudioDivider(axis: .vertical, length: 16).padding(.horizontal, 4)
 

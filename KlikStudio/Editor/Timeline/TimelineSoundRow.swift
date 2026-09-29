@@ -87,8 +87,11 @@ struct TimelineSoundRow: View {
                     body(for: run)
                 }
             } else {
+                // Nothing over a freeze frame or a title: they are silent, and the gap in
+                // the lane is the silence. Nothing over a movie brought in either: this lane
+                // is the recording's sound, and the movie's own plays with its clip.
                 ForEach(Array(model.timeline.clips.enumerated()), id: \.element.id) { index, clip in
-                    slice(clip, at: index)
+                    if clip.playsRecording { slice(clip, at: index) }
                 }
             }
         }
@@ -170,7 +173,7 @@ struct TimelineSoundRow: View {
             // Only on the first slice, so a cut-up recording gets one label rather than
             // one per piece.
             .overlay(alignment: .leading) {
-                if index == 0 { label.padding(.leading, 6) }
+                if index == model.timeline.clips.firstIndex(where: \.playsRecording) { label.padding(.leading, 6) }
             }
             .opacity(isMuted ? 0.45 : 1)
             .frame(width: width, height: height)
@@ -299,15 +302,15 @@ struct TimelineSoundRow: View {
         // the microphone lane would be a picture of the wrong sound, and the whole reason
         // to look at a waveform is to find the moment somebody spoke.
         if let peaks = track.map({ model.regionWaveforms.peaks(forPath: $0.path) }) ?? model.waveform.peaks {
+            // Given the lane from the screen's left edge to this piece's right-hand one,
+            // then slid back onto the piece — see `TimelineRegionRow.shape(of:width:left:)`
+            // for the piece-sized canvas this replaces, which drew nothing for any piece
+            // further along than it was long.
             TimelineWaveform(viewport: viewport, spans: spans, peaks: peaks, height: height)
-                .mask {
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .frame(width: width)
-                        .offset(x: left)
-                }
+                .frame(width: max(0, min(viewport.width, left + width)), alignment: .leading)
                 .offset(x: -left)
                 .frame(width: width, alignment: .leading)
-                .clipped()
+                .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
         }
     }
 

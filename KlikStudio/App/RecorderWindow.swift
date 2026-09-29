@@ -27,7 +27,7 @@ struct LibraryWindow: View {
             }
 
             if let catalog {
-                if !catalog.entries.isEmpty {
+                if !catalog.entries.isEmpty || !catalog.interrupted.isEmpty {
                     LibraryToolbar(catalog: catalog)
                     list(catalog)
                 } else if catalog.isLoading {
@@ -58,7 +58,10 @@ struct LibraryWindow: View {
             // A take that has just finished belongs at the top of this list without
             // anybody asking for it.
             if case .finished = state { Task { await catalog?.reload() } }
+            // A take that could not be closed is kept for recovery, and belongs here too.
+            if case .failed = state { Task { await catalog?.reload() } }
         }
+        .onChange(of: TakeRecoveryCenter.shared.finished) { Task { await catalog?.reload() } }
         .modifier(LibraryDialogs(catalog: catalog))
     }
 
@@ -68,6 +71,10 @@ struct LibraryWindow: View {
     private func list(_ catalog: LibraryCatalog) -> some View {
         ScrollView {
             LazyVStack(spacing: 2) {
+                // Above everything else, whatever the sort: these need something doing.
+                ForEach(catalog.interrupted.filter { catalog.search.isEmpty || $0.name.localizedCaseInsensitiveContains(catalog.search) }) { take in
+                    InterruptedTakeRow(take: take)
+                }
                 ForEach(catalog.visible) { entry in
                     RecordingRow(entry: entry, catalog: catalog)
                 }
@@ -102,9 +109,20 @@ struct LibraryWindow: View {
         .padding(.horizontal, 30)
     }
 
+    /// How many there are and where they are kept. The folder's name alone read as the
+    /// app signing its own window.
+    private var summary: String {
+        let folder = settings.library.lastPathComponent
+        switch catalog?.entries.count ?? 0 {
+        case 0: return folder
+        case 1: return "1 recording in \(folder)"
+        case let count: return "\(count) recordings in \(folder)"
+        }
+    }
+
     private var footer: some View {
         HStack(spacing: 10) {
-            Text(settings.library.lastPathComponent)
+            Text(summary)
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)

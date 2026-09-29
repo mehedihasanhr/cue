@@ -1,5 +1,6 @@
 import AddOnKit
 import AppKit
+import RecordKit
 import SwiftUI
 
 /// Klik Studio — the recording add-on.
@@ -27,16 +28,20 @@ struct StudioApp: App {
     }
 
     var body: some Scene {
-        // Neither the recorder bar, the library nor the editor is a scene: they are
-        // `NSWindow`s this app owns, for the reasons written on `EditorWindows` and
-        // `LibraryWindowController`. What is left for SwiftUI is the Settings window, which
-        // it handles well, and the menu bar.
+        // Neither the recorder bar, the library, the editor nor Settings is a scene: they
+        // are `NSWindow`s this app owns, for the reasons written on `EditorWindows`,
+        // `LibraryWindowController` and `StudioSettingsWindowController`. What is left for
+        // SwiftUI is the menu bar — and an `App` must have a scene to hang that on, so this
+        // is an empty one whose menu item is replaced below and which nothing ever opens.
         Settings {
-            StudioSettingsView()
-                .environment(settings)
-                .environment(studio)
+            EmptyView()
         }
         .commands {
+            // Settings… opens the app's own window, which SwiftUI's scene cannot be.
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") { StudioAppDelegate.openSettings() }
+                    .keyboardShortcut(",")
+            }
             // A recorder has nothing to make with ⌘N; the bar is the whole app.
             CommandGroup(replacing: .newItem) {}
             CommandGroup(after: .windowList) {
@@ -44,6 +49,10 @@ struct StudioApp: App {
                     .keyboardShortcut("0", modifiers: [.command, .shift])
                 Button("Recordings") { delegate.showLibrary() }
                     .keyboardShortcut("l")
+                Divider()
+                // Every command in the menu bar, by name. See `CommandMenuController`.
+                Button("Command Menu…") { CommandMenuController.shared.toggle() }
+                    .keyboardShortcut("p", modifiers: [.command, .shift])
             }
         }
         // Real menu items rather than shortcuts hidden on buttons: nothing lists those,
@@ -51,6 +60,9 @@ struct StudioApp: App {
         // scene because `.commands` builds the app's one menu bar wherever it is written,
         // and the editor is no longer a scene to hang it on.
         .commands { EditorCommands(windows: delegate.editors) }
+        // Start, hold, restart, mark and stop, with the global shortcuts written beside
+        // them — the same verbs as the menu bar icon, for when that is turned off.
+        .commands { RecorderCommands(studio: studio, settings: settings) }
     }
 }
 
@@ -59,6 +71,8 @@ struct StudioApp: App {
 @MainActor
 final class StudioAppDelegate: NSObject, NSApplicationDelegate {
     private(set) var bar: RecorderBarPanel?
+    /// See `RecorderCenter`.
+    private(set) var recorder: RecorderCenter?
     /// Kept so AppKit-level callbacks — opening a document, in particular — can reach
     /// the service without going through a scene that may not exist yet.
     private(set) var studio: StudioService?
@@ -92,9 +106,45 @@ final class StudioAppDelegate: NSObject, NSApplicationDelegate {
     private(set) static weak var shared: StudioAppDelegate?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        StudioAutomation.applyAppearance()
         Self.shared = self
         guard let handOff = Self.handOff else { return }
         configure(settings: handOff.settings, studio: handOff.studio)
+    }
+
+    /// Settings, made the first time somebody asks for it and kept, so it opens where it
+    /// was and on the page it was left on.
+    private var settingsWindow: StudioSettingsWindowController?
+
+    // MARK: - Appearance and the Dock
+
+    /// Follows Settings › General: the theme, and whether the app has a Dock icon.
+    ///
+    /// Watched rather than pushed from the settings object, because the Dock rule reads
+    /// three things — the switch, the menu bar icon, and whether an editor is open — and
+    /// any of them changing is a reason to look again.
+    private func followAppPreferences() {
+        withObservationTracking { [weak self] in
+            self?.applyAppPreferences()
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.followAppPreferences() }
+        }
+    }
+
+    private func applyAppPreferences() {
+        guard let settings else { return }
+        NSApp.appearance = settings.app.appearance.nsAppearance
+        // A test's appearance, in a debug build, over the user's.
+        StudioAutomation.applyAppearance()
+
+        // In the Dock when asked to be; always while an editor is open, because an app
+        // without a Dock icon has no menu bar and the editor's commands live there; and
+        // always while the menu bar icon is off, or there would be no way back but the bar.
+        let wantsDock = settings.app.showsInDock || !settings.recorder.showsMenuBarIcon || !editors.isEmpty
+        let policy: NSApplication.ActivationPolicy = wantsDock ? .regular : .accessory
+        if NSApp.activationPolicy() != policy {
+            NSApp.setActivationPolicy(policy)
+        }
     }
 
     func configure(settings: StudioSettings, studio: StudioService) {
@@ -103,6 +153,7 @@ final class StudioAppDelegate: NSObject, NSApplicationDelegate {
         self.settings = settings
 
         editors.configure(settings: settings)
+        followAppPreferences()
         // "Is an editor on screen?" is the whole of the bar's visibility rule, and now it
         // is a fact the app owns rather than a guess about what SwiftUI has opened.
         editors.onChange = { [weak self] in self?.syncBar() }
@@ -115,6 +166,14 @@ final class StudioAppDelegate: NSObject, NSApplicationDelegate {
         panel.openSettings = { Self.openSettings() }
         bar = panel
 
+        // The shortcuts, the menu bar icon, the speaker notes, the camera preview and the
+        // microphone meter — everything around a take that is not the bar.
+        let center = RecorderCenter(studio: studio, settings: settings, bar: panel)
+        center.showLibrary = { [weak self] in self?.showLibrary() }
+        center.openSettings = { Self.openSettings() }
+        center.restoreBar = { [weak self] in self?.syncBar() }
+        recorder = center
+
         // Anything that arrived before there was something to hand it to — a recording
         // double-clicked with the app shut, or a request from Klik.
         for url in pendingOpens { studio.open(url) }
@@ -125,6 +184,16 @@ final class StudioAppDelegate: NSObject, NSApplicationDelegate {
         // not come up in front of it; a recording *request* has no editor and the bar is
         // how that take gets stopped, so it does.
         syncBar()
+
+        // A take the last run of the app never finished. Asked after everything above, so
+        // a take that launched the app is already starting and the question waits.
+        let showLibrary: @MainActor () -> Void = { [weak self] in self?.showLibrary() }
+        Task {
+            await TakeRecoveryCenter.shared.offerAtLaunch(library: settings.library,
+                                                          isBusy: { studio.session.state.isBusy },
+                                                          live: { studio.session.packageURL },
+                                                          showLibrary: showLibrary)
+        }
     }
 
     /// The bar is on screen exactly when no editor is.
@@ -157,7 +226,23 @@ final class StudioAppDelegate: NSObject, NSApplicationDelegate {
     /// by accident, and the one place left that has to ask. Answered here rather than by
     /// blocking the quit outright: somebody who means it should still be able to leave.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard editors.exports.isBusy else { return .terminateNow }
+        // A take under way is stopped and saved first. Quitting used to take the app down
+        // with the writer still open, which left a file nothing could play: ⌘Q, a log-out
+        // or a restart threw the whole take away. Then the rest is asked as usual.
+        if let studio, studio.session.state.isBusy {
+            Task {
+                await studio.finishBeforeQuitting()
+                // The rest may itself answer later — a sheet asking about unsaved edits —
+                // and then it is that sheet that replies, not this.
+                let answer = self.applicationShouldTerminate(sender)
+                if answer != .terminateLater {
+                    NSApp.reply(toApplicationShouldTerminate: answer == .terminateNow)
+                }
+            }
+            return .terminateLater
+        }
+        // Unsaved edits next: written, or asked about — see `EditorWindows.readyToQuit`.
+        guard editors.exports.isBusy else { return editors.readyToQuit() }
 
         let alert = NSAlert()
         alert.messageText = "An export is still being written."
@@ -174,7 +259,7 @@ final class StudioAppDelegate: NSObject, NSApplicationDelegate {
         // Cancelled rather than abandoned: the exporters delete what they had half written,
         // which is the difference between quitting and leaving a broken file behind.
         editors.exports.cancelAll()
-        return .terminateNow
+        return editors.readyToQuit()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -202,6 +287,11 @@ final class StudioAppDelegate: NSObject, NSApplicationDelegate {
     /// of what the view already assumes.
     static func showBar() {
         shared?.bar?.show()
+    }
+
+    /// Starts choosing an area or a window, from the Record menu.
+    static func beginRecording(_ mode: RecorderModel.Mode) {
+        shared?.bar?.begin(mode)
     }
 
     /// Recordings stays shut unless somebody asked for it.
@@ -232,14 +322,18 @@ final class StudioAppDelegate: NSObject, NSApplicationDelegate {
         shared?.editors.open(url)
     }
 
-    // MARK: - Reaching SwiftUI's Settings window from AppKit
+    // MARK: - Settings
 
-    static func openSettings() {
-        NSApp.activate(ignoringOtherApps: true)
-        // The selector changed name in macOS 14; both are tried so neither version is a
-        // menu item that does nothing.
-        if !NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) {
-            NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
+    /// Opens Settings, on `section` when one is given.
+    static func openSettings(_ section: StudioSettingsSection? = nil) {
+        shared?.presentSettings(section)
+    }
+
+    private func presentSettings(_ section: StudioSettingsSection?) {
+        guard let settings, let studio else { return }
+        if settingsWindow == nil {
+            settingsWindow = StudioSettingsWindowController(settings: settings, studio: studio, recorder: bar?.model)
         }
+        settingsWindow?.present(section)
     }
 }

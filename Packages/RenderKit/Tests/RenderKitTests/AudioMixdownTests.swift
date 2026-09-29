@@ -159,15 +159,26 @@ struct AudioMixdownTests {
         player.volume = 0
 
         player.play()
-        try await Task.sleep(for: .milliseconds(700))
-        let reached = player.currentTime().seconds
+        // Until it is moving, rather than for a fixed time: the clock is the output
+        // device's, and a Bluetooth headset that has gone to sleep takes a second or more
+        // to wake. A fixed wait measured the headset, and failed whenever it was asleep.
+        let began = Date()
+        while player.currentTime().seconds <= 0.05, Date().timeIntervalSince(began) < 6 {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        let from = player.currentTime().seconds
+        let measured = Date()
+        try await Task.sleep(for: .milliseconds(600))
+        let advanced = player.currentTime().seconds - from
+        let elapsed = Date().timeIntervalSince(measured)
         player.pause()
 
         #expect(player.currentItem?.status == .readyToPlay)
         // Generous on both sides: the point is that it moves, and that it moves in
         // seconds of the edit rather than in some internal scale of its own.
-        #expect(reached > 0.1, "the clock did not advance")
-        #expect(reached < 2, "the clock advanced far faster than real time")
+        #expect(from > 0.05, "the clock never started")
+        #expect(advanced > elapsed * 0.5, "the clock ran slower than the edit")
+        #expect(advanced < elapsed * 2, "the clock advanced far faster than real time")
     }
 
     @Test func aSilentRecordingHasNoSoundRatherThanAnEmptyTrack() async throws {

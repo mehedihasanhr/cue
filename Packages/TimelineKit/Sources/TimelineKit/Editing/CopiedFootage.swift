@@ -64,6 +64,8 @@ public struct CopiedFootage: Equatable, Sendable {
     public var captions: [CaptionCue]
     public var audio: [AudioRegion]
     public var cursorRegions: [CursorRegion]
+    public var keyCues: [KeyCue]
+    public var cameraLayouts: [CameraLayoutRegion]
     /// The recording's own sound over this stretch — always, whether or not the lane it was
     /// lifted from had been detached.
     ///
@@ -83,6 +85,10 @@ public struct CopiedFootage: Equatable, Sendable {
     /// copied out of a long take and pasted into a short one, where the clips would point
     /// past the end of the file and play nothing at all.
     public var sourceDuration: CMTime
+    /// The imported movies these clips play, so a paste into the project they came from
+    /// can put back a file's record that an undo took away. Empty when every clip plays
+    /// the recording. See `ClipSequence.insert`.
+    public var media: [MediaFile]
 
     public init(clips: [Clip],
                 zooms: [ZoomRegion] = [],
@@ -91,8 +97,11 @@ public struct CopiedFootage: Equatable, Sendable {
                 captions: [CaptionCue] = [],
                 audio: [AudioRegion] = [],
                 cursorRegions: [CursorRegion] = [],
+                keyCues: [KeyCue] = [],
+                cameraLayouts: [CameraLayoutRegion] = [],
                 soundRuns: [SoundRun] = [],
-                sourceDuration: CMTime) {
+                sourceDuration: CMTime,
+                media: [MediaFile] = []) {
         self.clips = clips
         self.zooms = zooms
         self.blurs = blurs
@@ -100,8 +109,11 @@ public struct CopiedFootage: Equatable, Sendable {
         self.captions = captions
         self.audio = audio
         self.cursorRegions = cursorRegions
+        self.keyCues = keyCues
+        self.cameraLayouts = cameraLayouts
         self.soundRuns = soundRuns
         self.sourceDuration = sourceDuration
+        self.media = media
     }
 
     // MARK: - Lifting it off the timeline
@@ -119,6 +131,8 @@ public struct CopiedFootage: Equatable, Sendable {
             self.init(range, in: timeline)
         case .none, .zoom, .blur, .annotation, .caption, .audio, .cursorRegion,
              .sound, .soundTrack, .soundRun, .headTrim, .tailTrim:
+            return nil
+        case .keyCue, .cameraLayout:
             return nil
         }
     }
@@ -192,10 +206,14 @@ public struct CopiedFootage: Equatable, Sendable {
             following.reserveCapacity(lifted.count)
             var playhead = CMTime.zero
             for clip in lifted {
-                following.append(SoundRun(start: playhead,
-                                          duration: clip.duration,
-                                          sourceStart: clip.sourceStart,
-                                          speed: clip.speed))
+                // A still and a title are silent, and an imported clip's sound is its
+                // own rather than the recording's, as `soundRunsFollowingClips` says.
+                if clip.playsRecording {
+                    following.append(SoundRun(start: playhead,
+                                              duration: clip.duration,
+                                              sourceStart: clip.sourceStart,
+                                              speed: clip.speed))
+                }
                 playhead = playhead + clip.duration
             }
             runs = following
@@ -208,8 +226,11 @@ public struct CopiedFootage: Equatable, Sendable {
                   captions: lift(cut.captions),
                   audio: lift(cut.audio),
                   cursorRegions: lift(cut.cursorRegions),
+                  keyCues: lift(cut.keyCues),
+                  cameraLayouts: lift(cut.cameraLayouts),
                   soundRuns: runs,
-                  sourceDuration: timeline.sourceDuration)
+                  sourceDuration: timeline.sourceDuration,
+                  media: timeline.media.filter { file in lifted.contains { $0.source == file.path } })
     }
 
     // MARK: - What it is
@@ -225,9 +246,10 @@ public struct CopiedFootage: Equatable, Sendable {
     public var isEmpty: Bool { clips.isEmpty }
 
     /// The furthest into the recording any of these clips reaches, which is what a paste
-    /// measures against the destination's `sourceDuration`.
+    /// measures against the destination's `sourceDuration`. Imported clips are measured
+    /// against their own files, so they do not count.
     public var sourceEnd: CMTime {
-        clips.reduce(CMTime.zero) { max($0, $1.sourceEnd) }
+        clips.filter { $0.source == nil }.reduce(CMTime.zero) { max($0, $1.sourceEnd) }
     }
 
     /// What the menu and the undo stack call it.
@@ -242,6 +264,7 @@ public struct CopiedFootage: Equatable, Sendable {
     public var carried: Int {
         zooms.count + blurs.count + annotations.count + captions.count
             + audio.count + cursorRegions.count
+            + keyCues.count + cameraLayouts.count
     }
 
     // MARK: - Where it lands
@@ -261,40 +284,59 @@ public struct CopiedFootage: Equatable, Sendable {
     /// Two fields are deliberately dropped from a zoom, exactly as a region paste drops
     /// them: a seam ramp only means anything beside the region it was cut from, and a copy
     /// arrives unlocked because the first thing anybody does with one is drag it.
+    ///
+    /// Everything else comes along. A copy that arrived without its turn, its entrance or
+    /// its opacity would be a different annotation, and a zoom that had been switched off
+    /// coming back switched on is the copy undoing an edit.
     public func freshened() -> CopiedFootage {
         CopiedFootage(
-            clips: clips.map {
-                Clip(sourceStart: $0.sourceStart, sourceDuration: $0.sourceDuration, speed: $0.speed)
-            },
+            // Whatever each clip shows — a hold's length, a title's words, the way it
+            // arrives — comes along. Rebuilt field by field here, a pasted freeze frame
+            // arrived as a clip of no length at all.
+            clips: clips.map { $0.renewed() },
             zooms: zooms.map {
                 ZoomRegion(start: $0.start, duration: $0.duration, scale: $0.scale,
                            center: $0.center, easing: $0.easing, transition: $0.transition,
-                           followsCursor: $0.followsCursor, source: $0.source)
+                           followsCursor: $0.followsCursor, source: $0.source,
+                           isEnabled: $0.isEnabled, isEdited: $0.isEdited,
+                           isInstant: $0.isInstant)
             },
-            blurs: blurs.map {
-                BlurRegion(start: $0.start, duration: $0.duration,
-                           rect: $0.rect, style: $0.style, radius: $0.radius)
-            },
+            blurs: blurs.map { $0.placed(at: $0.start, duration: $0.duration) },
             annotations: annotations.map {
                 AnnotationItem(start: $0.start, duration: $0.duration, kind: $0.kind,
-                               rect: $0.rect, color: $0.color, fontSize: $0.fontSize)
+                               rect: $0.rect, color: $0.color, fontSize: $0.fontSize,
+                               rotation: $0.rotation, opacity: $0.opacity,
+                               animation: $0.animation, isLocked: false,
+                               isHidden: $0.isHidden, attachment: $0.attachment,
+                               style: $0.style)
             },
             captions: captions.map {
-                CaptionCue(start: $0.start, duration: $0.duration, text: $0.text)
+                CaptionCue(start: $0.start, duration: $0.duration, text: $0.text, words: $0.words)
             },
             audio: audio.map {
                 AudioRegion(start: $0.start, duration: $0.duration, path: $0.path,
-                            gain: $0.gain, sourceStart: $0.sourceStart)
+                            gain: $0.gain, sourceStart: $0.sourceStart,
+                            fadeIn: $0.fadeIn, fadeOut: $0.fadeOut,
+                            ducksUnderSpeech: $0.ducksUnderSpeech, duckAmount: $0.duckAmount)
             },
             cursorRegions: cursorRegions.map {
                 CursorRegion(start: $0.start, duration: $0.duration, isHidden: $0.isHidden,
-                             smoothing: $0.smoothing, isHeld: $0.isHeld, transition: $0.transition)
+                             smoothing: $0.smoothing, isHeld: $0.isHeld, transition: $0.transition,
+                             spotlights: $0.spotlights, magnifies: $0.magnifies)
+            },
+            keyCues: keyCues.map {
+                KeyCue(start: $0.start, duration: $0.duration, modifiers: $0.modifiers,
+                       key: $0.key, count: $0.count, isHidden: $0.isHidden)
+            },
+            cameraLayouts: cameraLayouts.map {
+                CameraLayoutRegion(start: $0.start, duration: $0.duration, layout: $0.layout)
             },
             soundRuns: soundRuns.map {
                 SoundRun(start: $0.start, duration: $0.duration,
                          sourceStart: $0.sourceStart, speed: $0.speed)
             },
-            sourceDuration: sourceDuration)
+            sourceDuration: sourceDuration,
+            media: media)
     }
 
     /// The same footage with the sounds this project cannot find taken out.
@@ -307,6 +349,26 @@ public struct CopiedFootage: Equatable, Sendable {
     public func withoutSounds(where isMissing: (String) -> Bool) -> CopiedFootage {
         var copy = self
         copy.audio = audio.filter { !isMissing($0.path) }
+        return copy
+    }
+
+    /// The same, for pictures laid over the footage: their files are inside the project
+    /// they were added to, and a picture whose file this project has not got would paste
+    /// as nothing at all.
+    /// Whether any clip plays a movie whose file the destination has not got — a clip
+    /// imported into another project. Such footage is refused rather than pasted as a
+    /// black stretch: unlike a sound or a picture, a clip cannot be left out without
+    /// changing the length of everything the copy carries.
+    public func playsMissingMedia(where isMissing: (String) -> Bool) -> Bool {
+        clips.contains { $0.source.map(isMissing) ?? false }
+    }
+
+    public func withoutPictures(where isMissing: (String) -> Bool) -> CopiedFootage {
+        var copy = self
+        copy.annotations = annotations.filter { annotation in
+            if case .image(let path) = annotation.kind { return !isMissing(path) }
+            return true
+        }
         return copy
     }
 
@@ -337,6 +399,7 @@ extension CopiedFootage: Codable {
     private enum CodingKeys: String, CodingKey {
         case formatVersion, kind, clips, zooms, blurs, annotations, captions
         case audio, cursorRegions, soundRuns, sourceDuration
+        case keyCues, cameraLayouts, media
     }
 
     /// A fixed discriminator in the payload, matching the `kind` string `CopiedRegion`
@@ -357,8 +420,12 @@ extension CopiedFootage: Codable {
         try container.encode(captions, forKey: .captions)
         try container.encode(audio, forKey: .audio)
         try container.encode(cursorRegions, forKey: .cursorRegions)
+        try container.encode(keyCues, forKey: .keyCues)
+        try container.encode(cameraLayouts, forKey: .cameraLayouts)
         try container.encode(soundRuns, forKey: .soundRuns)
         try container.encode(sourceDuration, forKey: .sourceDuration)
+        // Left out when empty, so a copy of the recording alone is the payload it was.
+        if !media.isEmpty { try container.encode(media, forKey: .media) }
     }
 
     /// Field by field, the way `Timeline.init(from:)` reads a project, and for the same
@@ -386,8 +453,12 @@ extension CopiedFootage: Codable {
                   captions: value(.captions, default: []),
                   audio: value(.audio, default: []),
                   cursorRegions: value(.cursorRegions, default: []),
+                  keyCues: value(.keyCues, default: []),
+                  cameraLayouts: value(.cameraLayouts, default: []),
                   soundRuns: value(.soundRuns, default: []),
-                  sourceDuration: value(.sourceDuration, default: .zero))
+                  sourceDuration: value(.sourceDuration, default: .zero),
+                  media: ((try? container.decodeIfPresent([MediaFile.Lenient].self, forKey: .media)) ?? nil)?
+                      .compactMap(\.value) ?? [])
     }
 
     /// The bytes to put on the pasteboard.

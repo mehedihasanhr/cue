@@ -193,6 +193,14 @@ struct InspectorTabs<Item: Identifiable & Hashable>: View {
     let title: (Item) -> String
 
     @State private var hovered: Item?
+    @Environment(\.colorScheme) private var colorScheme
+
+    /// The chosen one's words: white on the dark tint it has in dark mode, and the tint's
+    /// own blue in light mode, where the same tint is a pale wash and white on it could
+    /// barely be read.
+    private var chosenInk: AnyShapeStyle {
+        colorScheme == .dark ? AnyShapeStyle(.white) : AnyShapeStyle(Color.accentColor)
+    }
 
     var body: some View {
         HStack(spacing: 5) {
@@ -203,12 +211,11 @@ struct InspectorTabs<Item: Identifiable & Hashable>: View {
                         .font(.system(size: 12))
                         .lineLimit(1)
                         .minimumScaleFactor(0.65)
-                        // White on the chosen one, secondary on the rest. The tint and
+                        // Strong on the chosen one, secondary on the rest. The tint and
                         // the stroke already say which is chosen; the text only has to
                         // be the most readable thing in the row.
-                        .foregroundStyle(isSelected
-                                         ? AnyShapeStyle(.white)
-                                         : AnyShapeStyle(.secondary))
+                        .foregroundStyle(isSelected ? chosenInk : AnyShapeStyle(.secondary))
+                        .fontWeight(isSelected ? .medium : .regular)
                         .padding(.horizontal, 6)
                         .frame(maxWidth: .infinity)
                         .frame(height: 28)

@@ -103,7 +103,24 @@ struct EditorView: View {
         // The bar runs to the very top of the window, under where the title bar was.
         .ignoresSafeArea(.container, edges: .top)
         .sheet(isPresented: $session.isExporting) {
-            ExportSheet(editor: model, model: export, jobs: exports)
+            ExportSheet(editor: model, model: export, jobs: exports,
+                        startsOnSelection: session.exportsSelection)
+        }
+        .sheet(isPresented: .init(get: { model.isTranslatingCaptions },
+                                  set: { model.isTranslatingCaptions = $0 })) {
+            if #available(macOS 15.0, *) {
+                TranslateCaptionsSheet(model: model)
+            } else {
+                TranslationUnavailableSheet { model.isTranslatingCaptions = false }
+            }
+        }
+        .sheet(isPresented: .init(get: { model.pacing != nil },
+                                  set: { if !$0 { model.cancelPacing() } })) {
+            PacingSheet(model: model)
+        }
+        .sheet(isPresented: .init(get: { model.sensitive.review != nil },
+                                  set: { if !$0 { model.cancelSensitiveScan() } })) {
+            SensitiveSheet(model: model)
         }
         .alert("Klik Studio", isPresented: .init(get: { model.errorMessage != nil },
                                                  set: { if !$0 { model.dismissError() } })) {

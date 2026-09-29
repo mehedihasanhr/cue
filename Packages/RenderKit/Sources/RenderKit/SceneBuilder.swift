@@ -68,7 +68,7 @@ public struct SceneBuilder: Sendable {
     /// two, which is exactly the blur this rule exists to prevent.
     public func outputSize(for style: FrameStyle) -> CGSize {
         let source = croppedVideoSize(for: style)
-        guard let ratio = style.aspect.ratio else { return source }
+        guard let ratio = style.aspectRatio else { return source }
         let area = source.width * source.height
         var width = (area * ratio).squareRoot()
         var height = width / ratio
@@ -77,14 +77,16 @@ public struct SceneBuilder: Sendable {
         return CGSize(width: width, height: height)
     }
 
-    /// Everything about one frame of the finished video.
+    /// Everything about one frame of the finished video but its dressing — the window
+    /// round the picture and the camera's motion blur, which `descriptor(for:at:cursor:)`
+    /// adds from what this has worked out.
     ///
     /// - Parameter track: the recorded pointer, **already smoothed**. Smoothing runs a
     ///   two-pass filter over every sample in the recording — 150,000 of them in a long
     ///   take — so doing it here would repeat that work on every frame of the preview
     ///   and again on every frame of an export. Callers smooth once, when the setting
     ///   changes, and pass the result in.
-    public func descriptor(for timeline: Timeline,
+    func framingDescriptor(for timeline: Timeline,
                            at time: CMTime,
                            cursor track: CursorTrack? = nil) -> SceneDescriptor {
         let output = outputSize(for: timeline.style)
@@ -97,38 +99,96 @@ public struct SceneBuilder: Sendable {
         let available = CGSize(width: max(1, output.width - inset * 2),
                                height: max(1, output.height - inset * 2))
         let source = croppedVideoSize(for: style)
-        let fit = min(available.width / source.width, available.height / source.height)
+        // A window's bar needs room above the picture, and it is a fraction of the
+        // picture's own shorter side — so the picture and its bar are fitted together.
+        // Zero without a window, which leaves this exactly the arithmetic it always was.
+        let bar = SceneRenderer.barFraction(for: style.chrome.kind)
+        let fit = min(available.width / source.width,
+                      available.height / (source.height + bar * min(source.width, source.height)))
         let frame = CGSize(width: source.width * fit, height: source.height * fit)
+        let barHeight = bar * min(frame.width, frame.height)
+        // The window as a whole is centred, so the picture sits half a bar below the middle.
         let videoFrame = CGRect(x: (output.width - frame.width) / 2,
-                                y: (output.height - frame.height) / 2,
+                                y: (output.height - frame.height - barHeight) / 2,
                                 width: frame.width,
                                 height: frame.height)
 
-        let crop = style.crop?.rect ?? Self.unitRect
+        // Over a clip imported from another file, the picture is that file's and nothing
+        // measured against the recording belongs on it: no pointer, no clicks, no camera
+        // chasing a pointer from a different take. Dropping the track here is what says so
+        // to every layer below at once. The camera bubble goes too — it was filmed beside
+        // the recording, and over somebody else's footage it would be a face from another
+        // moment.
+        let moment = timeline.mediaTime(at: time)
+        let imported = moment?.source.flatMap { path in timeline.media.first { $0.path == path } }
+        let isImported = moment?.source != nil
+        let track = isImported ? nil : track
+        // The recording's crop is a crop *of the recording*; an imported picture is shown
+        // whole.
+        let crop = isImported ? Self.unitRect : (style.crop?.rect ?? Self.unitRect)
         let camera = self.camera(for: timeline, at: time, cursor: track, crop: crop)
-        let sourceTime = timeline.sourceTime(at: time) ?? .zero
+        let sourceTime = moment?.time ?? .zero
+        // Where the picture and the camera go at this moment — the bubble, or a camera
+        // layout moving them about. Everything below that is measured off the picture's
+        // frame is measured off the one this decides, so the corners, the border, the
+        // pointer and the zoom all follow the picture into its half of a split.
+        var stage = cameraStage(timeline, at: time, output: output, inset: inset,
+                                source: source, picture: videoFrame, zoom: camera.zoom)
+        if isImported {
+            // Fitted into the recording's place, its own shape kept, the background showing
+            // round it — and framed as the recording is, corners, shadow and border
+            // following the smaller picture. Decided here rather than by the renderer, so
+            // the preview and the export fit it the same way by construction. Placed where
+            // the recording sits with no camera layout in force: the layouts arrange the
+            // recording and its camera, and this is neither.
+            stage = (Self.fitted(imported?.pixelSize ?? .zero, into: videoFrame), 1, nil)
+        }
+        let shown = stage.videoFrame.size
 
-        return SceneDescriptor(outputSize: output,
+        // The pointer's style, spotlight and lens are laid on afterwards, in their own file,
+        // so the frame of a project that uses none of them is built exactly as before.
+        return dressingPointer(SceneDescriptor(outputSize: output,
                                background: backgrounds.layer(for: style.background, packageURL: packageURL),
                                // A fraction of the shorter side, like every other
                                // measurement here, so the same setting reads the same at
                                // 1080p and at 4K.
                                backgroundBlur: Double(shorter) * style.backgroundBlur,
-                               videoFrame: videoFrame,
-                               cornerRadius: Double(min(frame.width, frame.height)) * style.cornerRadius,
+                               videoFrame: stage.videoFrame,
+                               videoOpacity: stage.videoOpacity,
+                               cornerRadius: Double(min(shown.width, shown.height)) * style.cornerRadius,
                                shadowRadius: Double(shorter) * style.shadowRadius,
-                               shadowOpacity: style.shadowOpacity,
+                               shadowOpacity: style.shadowOpacity * stage.videoOpacity,
+                               border: borderLayer(style, frame: shown),
                                zoom: camera.zoom,
                                zoomCenter: camera.center,
                                zoomsWholeFrame: timeline.camera.zoomsWholeFrame,
                                blurs: blurLayers(timeline, at: time),
-                               cursor: cursorLayer(timeline, at: time, sourceTime: sourceTime, track: track, crop: crop),
-                               clicks: clickLayers(timeline, sourceTime: sourceTime, track: track, crop: crop),
+                               cursor: faded(cursorLayer(timeline, at: time, sourceTime: sourceTime,
+                                                         track: track, crop: crop),
+                                             by: stage.videoOpacity),
+                               clicks: faded(clickLayers(timeline, at: time, sourceTime: sourceTime,
+                                                         track: track, crop: crop),
+                                             by: stage.videoOpacity),
                                annotations: annotationLayers(timeline, at: time),
                                caption: captionLayer(timeline, at: time),
-                               webcam: webcamLayer(timeline, output: output, zoom: camera.zoom),
+                               keys: keyLayer(timeline, at: time),
+                               webcam: stage.webcam,
                                sourceTime: sourceTime,
-                               sourceCrop: crop)
+                               sourceCrop: crop,
+                               sourceMedia: moment?.source),
+                               timeline, at: time, sourceTime: sourceTime, track: track, crop: crop)
+    }
+
+    /// A picture of `size`, as large as it fits inside `frame`, centred in it.
+    ///
+    /// An unknown size is no fit at all — the frame as it is — which is what a movie whose
+    /// size was never measured gets, rather than a picture of no size.
+    static func fitted(_ size: CGSize, into frame: CGRect) -> CGRect {
+        guard size.width > 0, size.height > 0, frame.width > 0, frame.height > 0 else { return frame }
+        let scale = min(frame.width / size.width, frame.height / size.height)
+        let fitted = CGSize(width: size.width * scale, height: size.height * scale)
+        return CGRect(x: frame.midX - fitted.width / 2, y: frame.midY - fitted.height / 2,
+                      width: fitted.width, height: fitted.height)
     }
 
     // MARK: - Camera
@@ -138,9 +198,29 @@ public struct SceneBuilder: Sendable {
     /// Zooms do not stack: the strongest one at this moment wins. Two overlapping zooms
     /// multiplying into 4× is never what the user drew, and the timeline already merges
     /// suggestions for the same reason.
-    private func camera(for timeline: Timeline, at time: CMTime, cursor track: CursorTrack?, crop: CGRect) -> (zoom: Double, center: CGPoint) {
-        var best: (scale: Double, region: ZoomRegion)?
-        for region in timeline.zooms {
+    ///
+    /// - Parameter held: a zoom to frame as if it were fully in right now, whatever the
+    ///   time says — the shot it *would* be holding. What a glide asks of each of its two
+    ///   ends; see `ZoomGlide`. Left `nil`, the strongest zoom at this moment decides.
+    func camera(for timeline: Timeline, at time: CMTime, cursor track: CursorTrack?, crop: CGRect,
+                holding held: ZoomRegion? = nil) -> (zoom: Double, center: CGPoint) {
+        // Between two zooms that are close together the camera travels straight from one
+        // shot to the other rather than out to the whole picture and back. Each end of
+        // the path is the shot that zoom would be holding at this very moment, pointer
+        // following included, so the path joins what came before and what comes after
+        // without a step. `ZoomGlide` is the rule; this is only the blend.
+        if held == nil, let glide = timeline.zoomGlide(at: time) {
+            let leaving = camera(for: timeline, at: time, cursor: track, crop: crop, holding: glide.from)
+            let arriving = camera(for: timeline, at: time, cursor: track, crop: crop, holding: glide.to)
+            let progress = glide.progress(at: time)
+            let center = CGPoint(x: leaving.center.x + (arriving.center.x - leaving.center.x) * progress,
+                                 y: leaving.center.y + (arriving.center.y - leaving.center.y) * progress)
+            return settled(center, scale: glide.scale(at: time), timeline: timeline,
+                           at: time, cursor: track, crop: crop)
+        }
+
+        var best: (scale: Double, region: ZoomRegion)? = held.map { ($0.scale, $0) }
+        for region in timeline.zooms where held == nil {
             let scale = region.scale(at: time)
             guard scale > 1 else { continue }
             if best == nil || scale > best!.scale { best = (scale, region) }
@@ -202,8 +282,25 @@ public struct SceneBuilder: Sendable {
             }
         }
 
-        // And underneath all of it, for every zoom: a pointer that is being drawn may not
-        // be drawn outside the shot.
+        return settled(center, scale: best.scale, timeline: timeline, at: time, cursor: track, crop: crop)
+    }
+
+    /// The two rules every shot ends with, whatever decided it: a drawn pointer stays in
+    /// the shot, and the shot stays on the picture.
+    ///
+    /// One function because two things now decide a shot — a zoom on its own, and a glide
+    /// blending two — and the blend of two shots that each keep the pointer in frame does
+    /// not by itself keep it in frame: the blended shot is smaller than the average of the
+    /// two, so the pointer can be a hair outside it. Both rules are run again on the
+    /// result, and both are continuous, so the path stays continuous.
+    private func settled(_ center: CGPoint, scale: Double, timeline: Timeline, at time: CMTime,
+                         cursor track: CursorTrack?, crop: CGRect) -> (zoom: Double, center: CGPoint) {
+        var center = center
+        let half = ZoomFraming.halfSide(forScale: scale)
+        let camera = timeline.camera.sanitised
+        let override = timeline.cursorOverride(at: time)
+
+        // For every zoom: a pointer that is being drawn may not be drawn outside the shot.
         //
         // Not gated on `followsCursor`, and that is the point. Aiming a zoom by hand turns
         // following off — you chose a shot, so the camera holds it — and focus and typing
@@ -238,7 +335,7 @@ public struct SceneBuilder: Sendable {
         // corner is kept in shot by the frame reaching the corner, not by the frame sliding
         // off the picture to centre on it. Through `ZoomFraming`, which is also what the
         // framing box on the preview is drawn from, so the two cannot disagree.
-        return (best.scale, ZoomFraming.honoured(center: center, scale: best.scale))
+        return (scale, ZoomFraming.honoured(center: center, scale: scale))
     }
 
     /// A point in recorded points as a fraction of the cropped frame, held inside it.
@@ -248,7 +345,7 @@ public struct SceneBuilder: Sendable {
     /// padding beside it. This one is for the camera, which has to decide where to look
     /// even when the thing it is following has gone somewhere that was never filmed: the
     /// nearest edge is the honest answer, and holding still is not.
-    private func normalisedClamped(_ point: CGPoint, crop: CGRect) -> CGPoint {
+    func normalisedClamped(_ point: CGPoint, crop: CGRect) -> CGPoint {
         let pixels = CGPoint(x: point.x * displayScale, y: point.y * displayScale)
         guard videoSize.width > 0, videoSize.height > 0, crop.width > 0, crop.height > 0 else {
             return CGPoint(x: 0.5, y: 0.5)
@@ -314,7 +411,11 @@ public struct SceneBuilder: Sendable {
     private func blurLayers(_ timeline: Timeline, at time: CMTime) -> [BlurLayer] {
         timeline.blurs
             .filter { $0.contains(time) }
-            .map { BlurLayer(rect: $0.rect, style: $0.style, radius: $0.radius) }
+            // Where the mask is at this moment: a following mask moves, a still one is its
+            // `rect`. Asked here so the preview and the export cannot disagree about it.
+            .map { BlurLayer(rect: $0.rect(at: time), style: $0.style, radius: $0.radius,
+                             color: $0.color, dimming: $0.dimming, softness: $0.softness,
+                             cornerRadius: $0.cornerRadius) }
     }
 
     /// Every annotation on screen at `time`, bottom of the stack first.
@@ -328,14 +429,21 @@ public struct SceneBuilder: Sendable {
             guard !item.isHidden, item.contains(time) else { return nil }
             let pose = item.pose(atOffset: (time - item.start).seconds)
             guard pose.opacity > 0.001 else { return nil }
-            return AnnotationLayer(kind: item.kind,
+            // A picture is kept inside the project and named relative to it, so a project
+            // can be moved; the renderer is handed where it is now.
+            var kind = item.kind
+            if case .image(let path) = kind, !path.hasPrefix("/"), let packageURL {
+                kind = .image(path: packageURL.appendingPathComponent(path).path)
+            }
+            return AnnotationLayer(kind: kind,
                                    rect: item.rect,
                                    color: item.color,
                                    fontSize: item.fontSize,
                                    opacity: max(0, min(1, pose.opacity)),
                                    rotation: item.rotation,
                                    scale: pose.scale,
-                                   offset: pose.offset)
+                                   offset: pose.offset,
+                                   style: item.style)
         }
     }
 
@@ -352,7 +460,9 @@ public struct SceneBuilder: Sendable {
     /// 4K and in a 9:16 reframe.
     private static let webcamMargin = 0.035
 
-    /// The bubble for this frame, or `nil` when there isn't one.
+    /// The bubble for this frame, or `nil` when there isn't one — where it sits in the
+    /// bubble layout, whatever layout is actually in force. `cameraStage` moves it from
+    /// there.
     ///
     /// `nil` whenever the webcam is off, which is every project written before this
     /// existed: `WebcamSettings.isEnabled` defaults to `false` and decodes to `false`, so
@@ -362,7 +472,7 @@ public struct SceneBuilder: Sendable {
     /// file, and a file can ask for a bubble of size 40, a roundness of −3 or a position
     /// off the side of the frame; none of those should be able to produce a render nobody
     /// can explain.
-    private func webcamLayer(_ timeline: Timeline, output: CGSize, zoom: Double) -> WebcamLayer? {
+    func webcamLayer(_ timeline: Timeline, output: CGSize, zoom: Double) -> WebcamLayer? {
         let webcam = timeline.webcam
         guard webcam.isEnabled, output.width > 0, output.height > 0 else { return nil }
 
@@ -406,7 +516,25 @@ public struct SceneBuilder: Sendable {
                            // the way there — so the model's 0…1 needs no second convention.
                            cornerRadius: side / 2 * min(max(webcam.roundness, 0), 1),
                            isMirrored: webcam.isMirrored,
-                           shadowOpacity: min(max(webcam.shadowOpacity, 0), 1))
+                           shadowOpacity: min(max(webcam.shadowOpacity, 0), 1),
+                           crop: webcam.crop.sanitised,
+                           border: webcamBorder(webcam, side: side),
+                           background: webcam.background,
+                           backgroundBlur: webcam.backgroundBlur.isFinite
+                               ? min(max(webcam.backgroundBlur, 0), 1) : 0.5)
+    }
+
+    /// The bubble's border in output pixels, or `nil` for none.
+    ///
+    /// Measured against the bubble's side, so it keeps its weight as the bubble is resized;
+    /// and resolved once, here, so a camera layout that grows the bubble into a pane keeps
+    /// the same line rather than a line that swells with it.
+    private func webcamBorder(_ webcam: WebcamSettings, side: Double) -> BorderLayer? {
+        guard webcam.borderWidth.isFinite, webcam.borderColor.a > 0 else { return nil }
+        let fraction = min(max(webcam.borderWidth, WebcamSettings.borderWidthRange.lowerBound),
+                           WebcamSettings.borderWidthRange.upperBound)
+        let width = side * fraction
+        return width > 0 ? BorderLayer(width: width, color: webcam.borderColor) : nil
     }
 
     /// The line being spoken at this moment, if captions are on and there is one.
@@ -421,12 +549,10 @@ public struct SceneBuilder: Sendable {
         guard let cue = timeline.captions.last(where: { $0.contains(time) }),
               !cue.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
 
-        // A short fade at each end, as annotations get, so a line appears rather than
-        // snapping on — subtitles that blink are exhausting to read.
-        let fade = min(0.12, cue.duration.seconds / 4)
         let elapsed = cue.progress(at: time) * cue.duration.seconds
         let remaining = cue.duration.seconds - elapsed
-        let opacity = fade > 0 ? min(1, min(elapsed, remaining) / fade) : 1
+        let pose = Self.captionPose(style.animation, elapsed: elapsed, remaining: remaining,
+                                    length: cue.duration.seconds)
 
         return CaptionLayer(text: cue.text,
                             fontSize: style.fontSize,
@@ -434,7 +560,46 @@ public struct SceneBuilder: Sendable {
                             backgroundOpacity: style.backgroundOpacity,
                             position: style.position,
                             margin: style.margin,
-                            opacity: max(0, min(1, opacity)))
+                            opacity: max(0, min(1, pose.opacity)),
+                            typeface: style.typeface,
+                            spokenWord: style.highlightsWords ? cue.wordIndex(at: time) : nil,
+                            highlightColor: style.highlightColor,
+                            scale: pose.scale,
+                            drop: pose.drop * style.fontSize,
+                            fontFamily: style.fontFamily)
+    }
+
+    /// How a line is drawn a moment after it arrives and a moment before it goes.
+    ///
+    /// Every style leaves with the same short fade. An exit that moves pulls the eye to a
+    /// line that is finished, at the moment the next one is starting; only the arrival is
+    /// worth decorating. `drop` is in lines of text, so the rise is the same distance at
+    /// any caption size.
+    static func captionPose(_ animation: CaptionStyle.Animation,
+                            elapsed: Double, remaining: Double,
+                            length: Double) -> (opacity: Double, scale: Double, drop: Double) {
+        guard animation != .none else { return (1, 1, 0) }
+        // A short fade at each end, as annotations get, so a line appears rather than
+        // snapping on — subtitles that blink are exhausting to read.
+        let fade = min(0.12, length / 4)
+        let opacity = fade > 0 ? min(1, min(elapsed, remaining) / fade) : 1
+
+        let arrival = min(0.22, length / 3)
+        let arrived = arrival > 0 ? min(1, max(0, elapsed / arrival)) : 1
+        // Out fast and easing to rest: the shape of something settling, not of something
+        // being moved at a constant speed.
+        let eased = 1 - pow(1 - arrived, 3)
+
+        switch animation {
+        case .none, .fade:
+            return (opacity, 1, 0)
+        case .rise:
+            return (opacity, 1, (1 - eased) * 0.6)
+        case .pop:
+            // A little small, a little past its size, and then its size.
+            let overshoot = sin(arrived * .pi) * 0.05
+            return (opacity, 0.92 + 0.08 * eased + overshoot, 0)
+        }
     }
 
     /// Where the pointer is drawn at this moment, in recorded points.
@@ -443,7 +608,7 @@ public struct SceneBuilder: Sendable {
     /// must not disagree about where the pointer is, or the frame is kept around a cursor
     /// that is somewhere else. With no cursor regions this is `track.position(at:)` and
     /// nothing more, so an old project gets exactly the pixels it always did.
-    private func pointerPoint(_ timeline: Timeline,
+    func pointerPoint(_ timeline: Timeline,
                               at time: CMTime,
                               sourceTime: CMTime,
                               track: CursorTrack,
@@ -488,20 +653,32 @@ public struct SceneBuilder: Sendable {
     /// Hidden along with the pointer. A recording where the pointer has been faded out for
     /// a stretch is one where the viewer is being asked to look at something else, and a
     /// ring appearing over it would be the one thing on screen moving.
+    ///
+    /// That used to be only half done: the rule was written here and the code checked
+    /// whether the pointer was switched off for the whole project, never whether a stretch
+    /// had hidden it. A click inside a "Hide Pointer" stretch still sent out its ring.
     private func clickLayers(_ timeline: Timeline,
+                             at time: CMTime,
                              sourceTime: CMTime,
                              track: CursorTrack?,
                              crop: CGRect) -> [ClickLayer] {
         let style = timeline.cursor
         guard style.isVisible, style.clickHighlight, let track, !track.clicks.isEmpty else { return [] }
+        // Faded as the pointer is faded, so a ring does not outlast the pointer it
+        // belongs to by the length of the fade.
+        let shown = 1 - min(1, max(0, timeline.cursorOverride(at: time).hiding))
+        guard shown > 0.001 else { return [] }
+        var colour = style.clickColor
+        colour.a *= shown
 
         return track.marks(at: sourceTime.seconds).compactMap { mark in
             guard let position = normalised(mark.click.point, crop: crop) else { return nil }
             return ClickLayer(position: position,
                               progress: mark.progress,
-                              color: style.clickColor,
+                              color: colour,
                               size: style.clickSize,
-                              isSecondary: mark.click.isSecondary)
+                              isSecondary: mark.click.isSecondary,
+                              style: style.clickStyle)
         }
     }
 
@@ -516,7 +693,13 @@ public struct SceneBuilder: Sendable {
         // Fully faded out means no layer at all rather than a transparent one: everything
         // downstream — the renderer's filter chain, a test asking "is the pointer drawn?" —
         // should get one answer, and an invisible pointer is not drawn.
-        let opacity = 1 - min(1, max(0, override.hiding))
+        var opacity = 1 - min(1, max(0, override.hiding))
+        // Gone while it is left alone, when the project asks for that. Multiplied rather
+        // than chosen between, so a stretch that hides the pointer and a pointer that has
+        // gone to rest cannot argue about which of them is in charge.
+        if timeline.cursor.hidesWhenIdle {
+            opacity *= track.idleOpacity(at: sourceTime.seconds, after: timeline.cursor.idleDelay)
+        }
         guard opacity > 0.001 else { return nil }
 
         guard let point = pointerPoint(timeline, at: time, sourceTime: sourceTime,
@@ -534,7 +717,7 @@ public struct SceneBuilder: Sendable {
         let velocity = timeline.cursor.motionBlur
             ? pointerVelocity(timeline, at: time, sourceTime: sourceTime, track: track)
             : .zero
-        let shape = track.shape(at: sourceTime.seconds)
+        let shape = pointerShape(timeline.cursor, at: sourceTime.seconds, track: track)
         return CursorLayer(position: position,
                            shape: CursorShapeKind(shape),
                            scale: scale,
@@ -549,6 +732,12 @@ public struct SceneBuilder: Sendable {
                                    RecordedCursor(url: $0.url, hotspot: $0.hotspot, aspect: $0.aspect)
                                  }
                                : nil)
+    }
+
+    /// What the pointer looks like at a moment, as the project wants it drawn.
+    private func pointerShape(_ style: CursorStyle, at seconds: Double, track: CursorTrack) -> CursorShape {
+        if style.alwaysArrow { return .arrow }
+        return style.steadiesShape ? track.steadyShape(at: seconds) : track.shape(at: seconds)
     }
 
     /// How fast the pointer is moving *as drawn*.

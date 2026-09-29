@@ -23,12 +23,19 @@ public final class SceneRenderer: @unchecked Sendable {
     /// different colours is exactly what pinning this prevents.
     public let colorSpace: CGColorSpace
     private let backgrounds = BackgroundCache()
+    /// Background movies being read, held open between frames. See `BackgroundMovies`.
+    let movies = BackgroundMovies()
+    /// Where the person is in each camera frame, for a camera whose background is blurred
+    /// or removed. See `PersonMatte`.
+    let personMatte: any PersonMatting
 
     private static let unitRect = CGRect(x: 0, y: 0, width: 1, height: 1)
 
     public init(device: (any MTLDevice)? = MTLCreateSystemDefaultDevice(),
-                colorSpace: CGColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!) {
+                colorSpace: CGColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!,
+                personMatte: any PersonMatting = PersonMatte()) {
         self.colorSpace = colorSpace
+        self.personMatte = personMatte
         let options: [CIContextOption: Any] = [
             .workingColorSpace: colorSpace,
             .outputColorSpace: colorSpace,
@@ -49,16 +56,43 @@ public final class SceneRenderer: @unchecked Sendable {
     ///   second video file. Defaulted, so every caller that has no webcam — the crop
     ///   tool's flattened preview, a GIF, every test written before the bubble existed —
     ///   goes on asking for exactly the frame it always got.
-    public func image(for scene: SceneDescriptor, source: CIImage?, webcam: CIImage? = nil) -> CIImage {
+    /// - Parameters:
+    ///   - blending: the recording's frame for the other side of a crossfade, at
+    ///     `scene.blendedScene?.sourceTime`. Ignored by every frame that is not in one.
+    ///   - blendingWebcam: the camera's frame for that other side.
+    public func image(for scene: SceneDescriptor, source: CIImage?, webcam: CIImage? = nil,
+                      blending: CIImage? = nil, blendingWebcam: CIImage? = nil) -> CIImage {
+        blended(composed(scene, source: source, webcam: webcam),
+                scene: scene, blending: blending, blendingWebcam: blendingWebcam)
+    }
+
+    /// One frame, every layer, before any transition mixes it with another.
+    func composed(_ scene: SceneDescriptor, source: CIImage?, webcam: CIImage?) -> CIImage {
         let output = CGRect(origin: .zero, size: scene.outputSize)
         var image = background(for: scene).cropped(to: output)
 
-        if let source {
-            let video = videoLayer(scene, source: source)
+        // A title slide shows no recording: its panel, when it has one, stands where the
+        // picture would, and is framed exactly as the picture is. Not drawn at all once a
+        // camera layout has taken the screen away entirely: a picture at no opacity is
+        // still a decode, a crop and a mask for nothing.
+        if let source = scene.title == nil ? source : titlePanel(scene), scene.videoOpacity > 0.001 {
+            // The window's bar, when there is one, is part of the picture for everything
+            // that follows: it casts the shadow with it and sits under what is drawn on top.
+            var video = chromed(videoLayer(scene, source: source), in: scene)
+            if scene.videoOpacity < 1 { video = Self.faded(video, to: scene.videoOpacity) }
             if scene.shadowOpacity > 0, scene.shadowRadius > 0 {
                 image = shadow(under: video, scene: scene).composited(over: image)
             }
-            image = video.composited(over: image)
+            // Turned in space as one piece — picture, bar and border — when the project
+            // asks for a perspective. See `tilted(_:in:)`.
+            image = tilted(video, in: scene).composited(over: image)
+        }
+        // The spotlight darkens the background and the recording, and nothing laid over
+        // them: the bubble, the notes, the captions, the keys, the clicks and the pointer
+        // all stay as bright as they were. See `spotlightingPointer(_:in:)`.
+        image = spotlightingPointer(image, in: scene)
+        if let title = scene.title, let words = TitleArtwork.image(title, in: scene) {
+            image = words.composited(over: image)
         }
 
         // Above the picture and below everything written on top of it. The bubble is part
@@ -69,14 +103,20 @@ public final class SceneRenderer: @unchecked Sendable {
         // difference between a line of subtitle that can be read and one that cannot.
         if let layer = scene.webcam, let webcam, let bubble = webcamImage(layer, source: webcam, in: scene) {
             if layer.shadowOpacity > 0 {
-                image = webcamShadow(layer, in: scene).composited(over: image)
+                image = webcamShadow(layer, bubble: bubble, in: scene).composited(over: image)
             }
             image = bubble.composited(over: image)
+        }
+        // Over the bubble, so a lens that follows the pointer across it is not hidden
+        // behind a face, and under everything written on the picture.
+        if let source {
+            image = magnifyingPointer(image, in: scene, source: source)
         }
 
         for annotation in scene.annotations {
             if let layer = annotationImage(annotation, in: scene) {
-                image = layer.composited(over: image)
+                // A note on the picture turns with it, so what it points at stays pointed at.
+                image = tilted(layer, in: scene).composited(over: image)
             }
         }
         // Above the annotations and below the pointer: a caption belongs on top of the
@@ -85,12 +125,26 @@ public final class SceneRenderer: @unchecked Sendable {
         if let caption = scene.caption, let layer = CaptionArtwork.image(caption, outputSize: scene.outputSize) {
             image = layer.composited(over: image)
         }
+        // The keys above the caption, and kept clear of it in any case — see
+        // `KeycapArtwork.frame` — and below the click marks and the pointer, which are
+        // what the viewer is following.
+        // Clear of the camera bubble too: keys parked in the corner the bubble sits in
+        // were drawn over the person's face.
+        // Only a bubble is kept clear of: a camera filling the frame or half of it would
+        // push the keys off the picture. The rect is the one the camera is drawn in at
+        // this moment — moved by a layout, border inside it — so the keys clear what is
+        // actually there.
+        if let keys = scene.keys,
+           let layer = KeycapArtwork.image(keys, outputSize: scene.outputSize,
+                                           avoiding: keysAvoid(scene)) {
+            image = layer.composited(over: image)
+        }
         // Under the pointer, deliberately: the mark says where a click landed, and the
         // pointer is the thing the viewer is following. Clipped like the pointer is, so a
         // click near the edge of a zoomed recording does not spill onto the padding.
         for click in scene.clicks {
             if let layer = clickImage(click, in: scene) {
-                image = layer.cropped(to: scene.visibleVideoFrame).composited(over: image)
+                image = tilted(layer.cropped(to: scene.visibleVideoFrame), in: scene).composited(over: image)
             }
         }
         if let cursor = scene.cursor, let layer = cursorImage(cursor, in: scene) {
@@ -98,34 +152,39 @@ public final class SceneRenderer: @unchecked Sendable {
             // positioned against the *zoomed* frame, which is larger than the hole it
             // shows through, so without this a pointer near the edge of the recording
             // is drawn floating on the padding beside the picture.
-            image = layer.cropped(to: scene.visibleVideoFrame).composited(over: image)
+            // Clipped flat and then turned, so it is cut by the picture's own edge.
+            image = tilted(layer.cropped(to: scene.visibleVideoFrame), in: scene).composited(over: image)
         }
         return image.cropped(to: output)
     }
 
     /// Renders straight into a pixel buffer — what both the preview and the writer want.
-    public func render(_ scene: SceneDescriptor, source: CIImage?, webcam: CIImage? = nil, to buffer: CVPixelBuffer) {
-        context.render(image(for: scene, source: source, webcam: webcam),
+    public func render(_ scene: SceneDescriptor, source: CIImage?, webcam: CIImage? = nil,
+                       blending: CIImage? = nil, blendingWebcam: CIImage? = nil, to buffer: CVPixelBuffer) {
+        context.render(image(for: scene, source: source, webcam: webcam,
+                             blending: blending, blendingWebcam: blendingWebcam),
                        to: buffer,
                        bounds: CGRect(origin: .zero, size: scene.outputSize),
                        colorSpace: colorSpace)
     }
 
     /// A still, for a thumbnail or a test.
-    public func cgImage(for scene: SceneDescriptor, source: CIImage?, webcam: CIImage? = nil) -> CGImage? {
-        context.createCGImage(image(for: scene, source: source, webcam: webcam),
+    public func cgImage(for scene: SceneDescriptor, source: CIImage?, webcam: CIImage? = nil,
+                        blending: CIImage? = nil, blendingWebcam: CIImage? = nil) -> CGImage? {
+        context.createCGImage(image(for: scene, source: source, webcam: webcam,
+                                    blending: blending, blendingWebcam: blendingWebcam),
                               from: CGRect(origin: .zero, size: scene.outputSize))
     }
 
     // MARK: - Layers
 
-    private func background(for scene: SceneDescriptor) -> CIImage {
+    func background(for scene: SceneDescriptor) -> CIImage {
         let output = CGRect(origin: .zero, size: scene.outputSize)
         // A blur on a flat colour is a full-frame Gaussian that cannot change anything,
         // so it is skipped rather than paid for.
         let sigma = isFlat(scene.background) ? 0 : scene.backgroundBlur
 
-        return backgrounds.image(for: scene.background, size: scene.outputSize, blurSigma: sigma) {
+        let make = {
             var image = self.draw(scene.background, in: output)
             if sigma > 0 {
                 image = image.clampedToExtent()
@@ -134,11 +193,16 @@ public final class SceneRenderer: @unchecked Sendable {
             }
             return image
         }
+        // A background that moves is a different picture every frame: keeping it would
+        // only push the still ones out of the cache.
+        guard !scene.background.moves else { return make() }
+        return backgrounds.image(for: scene.background, size: scene.outputSize, blurSigma: sigma, make: make)
     }
 
     private func isFlat(_ layer: BackgroundLayer) -> Bool {
         if case .color = layer { return true }
         if case .missing = layer { return true }
+        if case .transparent = layer { return true }
         return false
     }
 
@@ -158,6 +222,18 @@ public final class SceneRenderer: @unchecked Sendable {
 
         case .gradient(let stops, let angle):
             return gradient(stops: stops, angle: angle, in: output)
+
+        case .transparent:
+            return CIImage(color: .clear).cropped(to: output)
+
+        case .fittedGradient(let stops, let angle, let isRadial):
+            return fittedGradient(stops: stops, angle: angle, isRadial: isRadial, in: output)
+
+        case .animated(let layer):
+            return animatedBackground(layer, in: output)
+
+        case .video(let url, let time):
+            return videoBackground(url, time: time, in: output) ?? draw(.missing, in: output)
 
         case .image(let url):
             guard let image = BackgroundImageLoader.load(url, fitting: output.size) else {
@@ -219,7 +295,7 @@ public final class SceneRenderer: @unchecked Sendable {
             .cropped(to: output)
     }
 
-    private static func ramp(_ stops: [GradientStop]) -> CGImage? {
+    static func ramp(_ stops: [GradientStop]) -> CGImage? {
         let width = 512
         let space = CGColorSpace(name: CGColorSpace.sRGB)!
         guard let context = CGContext(data: nil, width: width, height: 1, bitsPerComponent: 8,
@@ -238,7 +314,7 @@ public final class SceneRenderer: @unchecked Sendable {
     }
 
     /// The recording: scaled into place, camera applied, corners rounded, blurs applied.
-    private func videoLayer(_ scene: SceneDescriptor, source: CIImage) -> CIImage {
+    func videoLayer(_ scene: SceneDescriptor, source: CIImage) -> CIImage {
         var image = source
         let target = scene.transformedVideoFrame
         guard source.extent.width > 0, source.extent.height > 0 else { return source }
@@ -250,6 +326,9 @@ public final class SceneRenderer: @unchecked Sendable {
         for blur in scene.blurs {
             image = applyBlur(blur, to: image)
         }
+        // After every cover and blur, so a spotlight dims them too: it is about
+        // everything that is *not* in its rectangle. See `spotlit(_:by:)`.
+        image = spotlit(image, by: scene.blurs)
 
         if scene.sourceCrop != Self.unitRect {
             let extent = image.extent
@@ -269,8 +348,21 @@ public final class SceneRenderer: @unchecked Sendable {
         image = image.transformed(by: CGAffineTransform(translationX: target.minX - image.extent.minX,
                                                         y: target.minY - image.extent.minY))
 
-        if scene.cornerRadius > 0 {
-            image = rounded(image, radius: scene.cornerRadius * (target.width / scene.videoFrame.width))
+        // The colour correction: on the recording, placed, and on nothing laid over it
+        // afterwards. Not on a title's panel, which is a colour somebody chose.
+        if let grade = scene.grade, scene.title == nil {
+            image = graded(image, by: grade)
+        }
+
+        // Softened along the camera's travel while it moves fast, before the corners are
+        // cut so the frame's edge stays sharp — see `cameraBlurred(_:by:)`.
+        if let motion = scene.cameraMotion {
+            image = cameraBlurred(image, by: motion)
+        }
+        image = roundedPicture(image, in: scene)
+        // Over the picture and inside its edge, taking its shape — see `bordered(_:by:in:)`.
+        if let border = scene.border {
+            image = bordered(image, by: border, in: scene)
         }
         // Cropped to where the video is allowed to be. Ordinarily that is the hole the
         // padding left, so a zoomed-in picture magnifies inside it and never spills over
@@ -289,7 +381,7 @@ public final class SceneRenderer: @unchecked Sendable {
         guard rect.width > 1, rect.height > 1 else { return image }
 
         let region = image.cropped(to: rect)
-        let obscured: CIImage
+        var obscured: CIImage
         switch blur.style {
         case .gaussian:
             obscured = region.clampedToExtent()
@@ -301,12 +393,25 @@ public final class SceneRenderer: @unchecked Sendable {
             filter.scale = Float(max(2, blur.radius))
             filter.center = CGPoint(x: rect.midX, y: rect.midY)
             obscured = (filter.outputImage ?? region).cropped(to: rect)
+        case .cover:
+            obscured = CIImage(color: CIColor(red: blur.color.r, green: blur.color.g,
+                                              blue: blur.color.b, alpha: blur.color.a))
+                .cropped(to: rect)
+        case .spotlight:
+            // Not something over its rectangle at all. Handled once for every spotlight
+            // in the frame, after this loop — see `spotlit(_:by:)`.
+            return image
+        }
+        // Zero for every region written before corners existed, and zero is the exact
+        // path those regions always took.
+        if blur.cornerRadius > 0 {
+            obscured = maskedToRoundedRectangle(obscured, rect, cornerRadius: blur.cornerRadius)
         }
         return obscured.composited(over: image)
     }
 
     /// Rounds an image's corners by masking it.
-    private func rounded(_ image: CIImage, radius: Double) -> CIImage {
+    func rounded(_ image: CIImage, radius: Double) -> CIImage {
         let extent = image.extent
         guard radius > 0.5 else { return image }
 
@@ -325,88 +430,32 @@ public final class SceneRenderer: @unchecked Sendable {
 
     /// The soft dark shape under the video that lifts it off the background.
     private func shadow(under video: CIImage, scene: SceneDescriptor) -> CIImage {
-        let rect = scene.transformedVideoFrame.intersection(scene.visibleVideoFrame)
+        // The window's bar too, when there is one: it is part of what stands off the
+        // background.
+        let rect = scene.shadowCaster
         guard !rect.isNull, rect.width > 1 else { return CIImage.empty() }
+        // A turned picture casts a turned shadow, and a deeper one under it.
+        if let projection = scene.perspectiveProjection {
+            return tiltedShadow(scene, projection: projection)
+        }
 
         let filter = CIFilter.roundedRectangleGenerator()
         filter.extent = rect
-        filter.radius = Float(min(scene.cornerRadius, min(rect.width, rect.height) / 2))
+        // Never quite square. A generator with no rounding is a plain block of colour, and
+        // Core Image folds "a block of colour, blurred, cropped" into a colour with no edges
+        // at all: a square frame with a shadow came out with the whole background black.
+        // A pixel of rounding is invisible under a blur and keeps the shape a shape.
+        filter.radius = Float(max(1, min(scene.cornerRadius, min(rect.width, rect.height) / 2)))
         filter.color = CIColor(red: 0, green: 0, blue: 0, alpha: scene.shadowOpacity)
         guard let shape = filter.outputImage else { return CIImage.empty() }
 
+        // Blurred as it is, not clamped first: clamping repeats the shape's solid sides out
+        // to infinity, and the shadow came out as a dark band three blurs wide with a hard
+        // edge where it was cropped. Outside the shape is nothing, which is what fades.
         return shape
-            .clampedToExtent()
             .applyingGaussianBlur(sigma: scene.shadowRadius)
             .cropped(to: rect.insetBy(dx: -scene.shadowRadius * 3, dy: -scene.shadowRadius * 3))
             .transformed(by: CGAffineTransform(translationX: 0, y: -scene.shadowRadius * 0.6))
-    }
-
-    // MARK: - The camera bubble
-
-    /// The webcam, filled into its bubble and masked to its shape.
-    ///
-    /// Not cached, unlike the cursor and the caption plate: those two are *drawings* that
-    /// repeat for as long as nothing about them changes, whereas this is a fresh camera
-    /// frame every time — a cache keyed on the frame would never hit, and one keyed on
-    /// anything less would draw yesterday's face. What is left is a scale, an optional
-    /// flip, a crop and a mask, which is four Core Image nodes the GPU folds into the pass
-    /// it was already making.
-    ///
-    /// Fill, not fit — see `WebcamLayer` for why. The overhang is cropped symmetrically,
-    /// so a 16:9 camera in a circular bubble shows the middle of the shot, which is where
-    /// a face is.
-    private func webcamImage(_ layer: WebcamLayer, source: CIImage, in scene: SceneDescriptor) -> CIImage? {
-        let target = layer.pixelRect(in: scene.outputSize)
-        let extent = source.extent
-        guard target.width > 1, target.height > 1, extent.width > 0, extent.height > 0 else { return nil }
-
-        var image = source
-        // Mirrored before anything else, about the frame's own middle, so the flip does not
-        // also move the picture: a negative scale reflects through the origin, and Core
-        // Image's origin is a corner rather than the centre of the camera's frame.
-        if layer.isMirrored {
-            image = image.transformed(by: CGAffineTransform(translationX: extent.midX, y: 0)
-                .scaledBy(x: -1, y: 1)
-                .translatedBy(x: -extent.midX, y: 0))
-        }
-
-        // The larger of the two ratios, which is what makes this a fill: the smaller one
-        // would leave a gap down one pair of sides.
-        let scale = max(target.width / extent.width, target.height / extent.height)
-        image = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-        image = image.transformed(by: CGAffineTransform(translationX: target.midX - image.extent.midX,
-                                                        y: target.midY - image.extent.midY))
-        image = image.cropped(to: target)
-        guard image.extent.width > 1, image.extent.height > 1 else { return nil }
-
-        return layer.cornerRadius > 0.5 ? rounded(image, radius: layer.cornerRadius) : image
-    }
-
-    /// The soft dark shape under the bubble.
-    ///
-    /// Its own rather than `shadow(under:)`: that one is measured off the video's frame and
-    /// its corner radius, and both of those are the wrong shape here. The radius is tied to
-    /// the bubble's own side, so a circular bubble casts a round shadow rather than a
-    /// square one peeking out from behind it.
-    private func webcamShadow(_ layer: WebcamLayer, in scene: SceneDescriptor) -> CIImage {
-        let rect = layer.pixelRect(in: scene.outputSize)
-        guard rect.width > 1, rect.height > 1 else { return CIImage.empty() }
-        // Proportional to the bubble rather than to the frame's shadow setting: the bubble
-        // is a small object close to the picture, and the video's shadow radius — tuned for
-        // lifting a whole screenshot off a wallpaper — would smear right across it.
-        let blur = min(rect.width, rect.height) * 0.09
-
-        let filter = CIFilter.roundedRectangleGenerator()
-        filter.extent = rect
-        filter.radius = Float(min(layer.cornerRadius, min(rect.width, rect.height) / 2))
-        filter.color = CIColor(red: 0, green: 0, blue: 0, alpha: layer.shadowOpacity)
-        guard let shape = filter.outputImage else { return CIImage.empty() }
-
-        return shape
-            .clampedToExtent()
-            .applyingGaussianBlur(sigma: blur)
-            .cropped(to: rect.insetBy(dx: -blur * 3, dy: -blur * 3))
-            .transformed(by: CGAffineTransform(translationX: 0, y: -blur * 0.6))
     }
 
     // MARK: - Cursor and annotations
@@ -434,34 +483,45 @@ public final class SceneRenderer: @unchecked Sendable {
         // size, outline and colour, and their accessibility pointer if they use one. Scaled
         // to the same on-screen size as the drawn pointer would have been, so turning it on
         // changes what the pointer *is*, not how big it is.
-        if let artwork = cursor.artwork, let picture = RecordedCursorArtwork.image(artwork) {
-            let extent = picture.extent
+        let picture: CIImage
+        let drawn: CGSize
+        let hotspot: CGPoint
+        // A style of Klik's own is drawn at this frame's size, so it is as sharp in a 4K
+        // export as in the preview, and carries its own point.
+        if cursor.appearance != .asRecorded,
+           let styled = PointerStyleArtwork.drawing(cursor.appearance, size: size, color: cursor.dotColor) {
+            picture = styled.image
+            drawn = styled.image.extent.size
+            hotspot = styled.hotspot
+        } else if let artwork = cursor.artwork, let recorded = RecordedCursorArtwork.image(artwork) {
+            let extent = recorded.extent
             guard extent.width > 1, extent.height > 1 else { return nil }
-            let drawn = CGSize(width: size, height: size * artwork.aspect)
-            var image = picture.transformed(by: CGAffineTransform(scaleX: drawn.width / extent.width,
-                                                                  y: drawn.height / extent.height))
-            image = motionBlurred(image, velocity: cursor.velocity, size: size)
-            // Placed by its own hotspot rather than by a corner. A pointer's point is not
-            // its top-left — an I-beam's is halfway down the middle, a crosshair's is dead
-            // centre — and assuming otherwise puts every pointer but the arrow somewhere it
-            // never was. `hotspot` is measured from the top-left, and Core Image's origin is
-            // the bottom-left, so the vertical one is taken from the far side.
-            let origin = CGPoint(x: point.x - artwork.hotspot.x * drawn.width,
-                                 y: point.y - (1 - artwork.hotspot.y) * drawn.height)
-            return image
-                .transformed(by: CGAffineTransform(translationX: origin.x - image.extent.minX,
-                                                   y: origin.y - image.extent.minY))
-                .applyingFilter("CIColorMatrix", parameters: [
-                    "inputAVector": CIVector(x: 0, y: 0, z: 0, w: cursor.opacity),
-                ])
+            drawn = CGSize(width: size, height: size * artwork.aspect)
+            picture = recorded.transformed(by: CGAffineTransform(scaleX: drawn.width / extent.width,
+                                                                 y: drawn.height / extent.height))
+            hotspot = artwork.hotspot
+        } else {
+            guard let image = CursorArtwork.image(cursor.shape, size: size) else { return nil }
+            picture = image
+            drawn = image.extent.size
+            hotspot = CursorArtwork.hotspot(of: cursor.shape)
         }
 
-        guard var image = CursorArtwork.image(cursor.shape, size: size) else { return nil }
-        image = motionBlurred(image, velocity: cursor.velocity, size: size)
-        // The drawn shapes all have their point at the top-left of the artwork, which is
-        // its *bottom*-left in Core Image's flipped space.
-        return image
-            .transformed(by: CGAffineTransform(translationX: point.x, y: point.y - image.extent.height))
+        // Placed by its own hotspot rather than by a corner. A pointer's point is not its
+        // top-left — an I-beam's is halfway down the middle, a crosshair's is dead centre,
+        // and even the arrow's tip sits a little inside its picture — and assuming
+        // otherwise puts the pointer somewhere it never was. `hotspot` is measured from the
+        // top-left, and Core Image's origin is the bottom-left, so the vertical one is
+        // taken from the far side.
+        let origin = CGPoint(x: point.x - hotspot.x * drawn.width,
+                             y: point.y - (1 - hotspot.y) * drawn.height)
+        let placed = picture.transformed(by: CGAffineTransform(translationX: origin.x - picture.extent.minX,
+                                                               y: origin.y - picture.extent.minY))
+        // Smeared *after* it is in place. The smear makes the picture bigger on every side,
+        // and placing a picture by the corner of its smear moved the pointer by the length
+        // of it — further the faster it was going, which is exactly when it is being
+        // watched.
+        return motionBlurred(placed, velocity: cursor.velocity, size: size)
             .applyingFilter("CIColorMatrix", parameters: [
                 "inputAVector": CIVector(x: 0, y: 0, z: 0, w: cursor.opacity),
             ])
@@ -483,22 +543,64 @@ public final class SceneRenderer: @unchecked Sendable {
         let point = CGPoint(x: video.minX + click.position.x * video.width,
                             y: video.maxY - click.position.y * video.height)
         let shorter = min(scene.outputSize.width, scene.outputSize.height)
-
-        // Out fast, then easing to a stop — the shape of something being released rather
-        // than something being animated at a constant speed, which reads as mechanical.
         let progress = min(1, max(0, click.progress))
-        let eased = 1 - pow(1 - progress, 3)
-        let radius = shorter * click.size * (0.28 + 0.72 * eased) / 2
-        let thickness = max(1.5, shorter * click.size * 0.07)
-        guard radius > thickness else { return nil }
 
-        let fade = pow(1 - progress, 1.6)
         let colour = click.color
         func ink(_ alpha: Double) -> CIColor {
             CIColor(red: colour.r, green: colour.g, blue: colour.b,
                     alpha: max(0, min(1, colour.a * alpha)))
         }
 
+        let mark: CIImage? = switch click.style {
+        case .ring: ringMark(click, at: point, shorter: shorter, progress: progress, ink: ink)
+        case .ripple: rippleMark(click, at: point, shorter: shorter, progress: progress, ink: ink)
+        case .glow: glowMark(click, at: point, shorter: shorter, progress: progress, ink: ink)
+        }
+        guard let mark else { return nil }
+        return edged(mark, ink: colour, width: max(1.5, shorter * click.size * 0.03))
+    }
+
+    /// A mark with a soft edge of the opposite tone under it, so it shows on anything.
+    ///
+    /// The mark is white unless somebody changes it, and a great deal of what gets
+    /// recorded is white: a document, a web page, a spreadsheet. A white ring on a white
+    /// page is not there at all, and that is the click nobody could see. The edge is the
+    /// mark's own shape, darker and blurred, so against dark content it disappears and
+    /// against light content it is what is seen. It fades with the mark because it is made
+    /// from it.
+    private func edged(_ mark: CIImage, ink: ColorValue, width: Double) -> CIImage {
+        let luminance = 0.2126 * ink.r + 0.7152 * ink.g + 0.0722 * ink.b
+        // Dark under a light mark, light under a dark one.
+        let tone: CGFloat = luminance > 0.5 ? 0 : 1
+        let nothing = CIVector(x: 0, y: 0, z: 0, w: 0)
+        let edge = mark
+            .applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": nothing,
+                "inputGVector": nothing,
+                "inputBVector": nothing,
+                "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 0.85),
+                "inputBiasVector": CIVector(x: tone, y: tone, z: tone, w: 0),
+            ])
+            // Wider than the mark before it is softened. Blurred at its own width, all
+            // of the edge that is left is under the mark, where it cannot be seen.
+            .applyingFilter("CIMorphologyMaximum", parameters: [kCIInputRadiusKey: width * 0.5])
+            .applyingGaussianBlur(sigma: width * 0.6)
+            // A blur has no edge of its own; three widths out there is nothing left of it.
+            .cropped(to: mark.extent.insetBy(dx: -width * 3, dy: -width * 3))
+        return mark.composited(over: edge)
+    }
+
+    /// One ring, spreading and fading.
+    private func ringMark(_ click: ClickLayer, at point: CGPoint, shorter: Double,
+                          progress: Double, ink: (Double) -> CIColor) -> CIImage? {
+        // Out fast, then easing to a stop — the shape of something being released rather
+        // than something being animated at a constant speed, which reads as mechanical.
+        let eased = 1 - pow(1 - progress, 3)
+        let radius = shorter * click.size * (0.28 + 0.72 * eased) / 2
+        let thickness = max(1.5, shorter * click.size * 0.07)
+        guard radius > thickness else { return nil }
+
+        let fade = pow(1 - progress, 1.6)
         var mark = ring(at: point, radius: radius, thickness: thickness, color: ink(fade))
         // A right-click gets a second, tighter ring rather than a different colour: colour
         // is the user's setting, and overriding it to say "this one was the other button"
@@ -517,6 +619,52 @@ public final class SceneRenderer: @unchecked Sendable {
         return mark
     }
 
+    /// Three rings, each setting off a little after the one before, like a drop in water.
+    ///
+    /// The same ring as `ringMark` draws, three times, so the two styles are recognisably
+    /// the same family and a project switched from one to the other keeps its size and
+    /// colour meaning what they meant.
+    private func rippleMark(_ click: ClickLayer, at point: CGPoint, shorter: Double,
+                            progress: Double, ink: (Double) -> CIColor) -> CIImage? {
+        let thickness = max(1.2, shorter * click.size * 0.05)
+        var mark: CIImage?
+        let rings = click.isSecondary ? 4 : 3
+        for index in 0..<rings {
+            // Each ring has its own clock, started a sixth of the way after the last.
+            let delay = Double(index) * 0.16
+            let own = (progress - delay) / (1 - delay)
+            guard own > 0, own < 1 else { continue }
+            let eased = 1 - pow(1 - own, 3)
+            let radius = shorter * click.size * (0.2 + 0.8 * eased) / 2
+            guard radius > thickness else { continue }
+            // Later rings are fainter: the first is the click, the rest are its echo.
+            let strength = pow(1 - own, 1.4) * (1 - Double(index) * 0.22)
+            guard let next = ring(at: point, radius: radius, thickness: thickness, color: ink(strength)) else {
+                continue
+            }
+            mark = mark.map { next.composited(over: $0) } ?? next
+        }
+        return mark
+    }
+
+    /// A soft disc of light that swells and goes.
+    private func glowMark(_ click: ClickLayer, at point: CGPoint, shorter: Double,
+                          progress: Double, ink: (Double) -> CIColor) -> CIImage? {
+        let eased = 1 - pow(1 - progress, 2.2)
+        let radius = shorter * click.size * (0.35 + 0.65 * eased) / 2
+        guard radius > 1 else { return nil }
+        let strength = pow(1 - progress, 1.3) * (click.isSecondary ? 0.75 : 0.55)
+
+        let filter = CIFilter.radialGradient()
+        filter.center = point
+        filter.radius0 = Float(radius * 0.15)
+        filter.radius1 = Float(radius)
+        filter.color0 = ink(strength)
+        filter.color1 = ink(0)
+        let extent = CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2)
+        return filter.outputImage?.cropped(to: extent)
+    }
+
     /// A filled circle. `roundedRectangleGenerator` with a radius of half its own side is
     /// exactly that, and it antialiases the way every other shape here does.
     private func disc(at point: CGPoint, radius: Double, color: CIColor) -> CIImage? {
@@ -532,8 +680,12 @@ public final class SceneRenderer: @unchecked Sendable {
     }
 
     private func ring(at point: CGPoint, radius: Double, thickness: Double, color: CIColor) -> CIImage? {
+        // The hole is cut with an opaque disc whatever the ring's own colour. Source-out
+        // keeps the outer disc by one minus the inner one's alpha, so cutting with the
+        // ring's colour left a fading ring filled with a wash of itself — a quarter of its
+        // strength at half faded.
         guard let outer = disc(at: point, radius: radius, color: color),
-              let inner = disc(at: point, radius: radius - thickness, color: color)
+              let inner = disc(at: point, radius: radius - thickness, color: CIColor(red: 0, green: 0, blue: 0))
         else { return nil }
         // Source-out keeps the outer disc only where the inner one is transparent, which
         // is the band between them.

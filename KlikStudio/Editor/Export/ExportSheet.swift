@@ -1,3 +1,4 @@
+import CoreMedia
 import RenderKit
 import SwiftUI
 
@@ -14,6 +15,9 @@ struct ExportSheet: View {
     let editor: EditorModel
     @Bindable var model: ExportModel
     let jobs: ExportJobs
+    /// Whether the sheet opens on the selected stretch — File › Export Selection… —
+    /// rather than the whole edit.
+    var startsOnSelection = false
     @Environment(\.dismiss) private var dismiss
 
     /// The settings are folded away once there are presets to choose from: the whole point
@@ -38,7 +42,14 @@ struct ExportSheet: View {
             buttons.padding(16)
         }
         .frame(width: 440)
-        .onAppear { model.forgetSettledJob() }
+        .onAppear {
+            model.forgetSettledJob()
+            // Settings › Export may have changed the choices since this editor opened, and
+            // the model read them once, when the window was made. Re-read them while the
+            // sheet is only showing options — never over a job it is watching.
+            if model.job == nil { model.settings = ExportModel().settings }
+            model.scope = startsOnSelection && editor.selectedRange != nil ? .selection : .whole
+        }
     }
 
     private var header: some View {
@@ -61,7 +72,20 @@ struct ExportSheet: View {
     private var options: some View {
         VStack(alignment: .leading, spacing: 16) {
             presets
+            // Only when there is a stretch to offer. With nothing selected the whole
+            // edit is the only thing there is to export, and a picker with one choice
+            // is a question nobody asked.
+            if let range = editor.selectedRange {
+                Picker("Export", selection: $model.scope) {
+                    Text("Whole video").tag(ExportScope.whole)
+                    Text("Selection (\(Timecode.short(range.start))–\(Timecode.short(range.end)), \(Timecode.length(range.duration)))")
+                        .tag(ExportScope.selection)
+                }
+                .pickerStyle(.radioGroup)
+                .font(.callout)
+            }
             summary
+            transparency
 
             DisclosureGroup("Settings", isExpanded: $showsSettings) {
                 settings.padding(.top, 12)
@@ -124,7 +148,9 @@ struct ExportSheet: View {
                     }
                     .labelsHidden()
                 }
-                if model.settings.format != .gif {
+                // ProRes has a quality of its own and its codec is its name, so neither
+                // question is asked of it.
+                if model.settings.format.offersCodecChoice {
                     GridRow {
                         Text("Quality").foregroundStyle(.secondary)
                         Picker("", selection: $model.settings.quality) {
@@ -136,12 +162,30 @@ struct ExportSheet: View {
                     GridRow {
                         Text("Codec").foregroundStyle(.secondary)
                         Picker("", selection: $model.settings.codec) {
-                            ForEach(ExportCodec.allCases, id: \.self) { Text($0.title).tag($0) }
+                            ForEach(ExportCodec.choices(for: model.settings.format), id: \.self) { Text($0.title).tag($0) }
+                        }
+                        .labelsHidden()
+                    }
+                }
+                if model.settings.offersTargetSize {
+                    GridRow {
+                        Text("Target size").foregroundStyle(.secondary)
+                        Picker("", selection: target) {
+                            ForEach(ExportSettings.targetChoices, id: \.title) { choice in
+                                Text(choice.title).tag(choice.value ?? 0)
+                            }
+                            // A limit remembered from before that is not on the list.
+                            if let bytes = model.settings.targetByteCount,
+                               !ExportSettings.targetChoices.contains(where: { $0.value == bytes }) {
+                                Text(ExportEstimate.formatted(bytes)).tag(bytes)
+                            }
                         }
                         .labelsHidden()
                     }
                 }
             }
+
+            sizeNotes
 
             if model.settings.format == .gif {
                 Toggle("Loop forever", isOn: $model.settings.loops)
@@ -159,12 +203,68 @@ struct ExportSheet: View {
         return HStack(spacing: 6) {
             Image(systemName: "info.circle").foregroundStyle(.secondary)
             Text("\(Int(estimate.size.width)) × \(Int(estimate.size.height)) at \(estimate.frameRate) fps · "
-                 + "\(Timecode.length(editor.duration)) · "
+                 + "\(Timecode.length(model.duration(for: editor))) · "
                  + (estimate.isApproximate ? "roughly " : "about ") + estimate.formattedByteCount)
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
         }
+    }
+
+    /// Said whenever the background is see-through, because what happens to it depends
+    /// on the format: kept in two of them, black in the rest. Outside the folded settings,
+    /// since it is the one thing about this export that could surprise somebody.
+    @ViewBuilder
+    private var transparency: some View {
+        if editor.hasTransparentBackground {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: model.settings.keepsTransparency ? "checkerboard.rectangle" : "exclamationmark.triangle")
+                    .foregroundStyle(model.settings.keepsTransparency ? AnyShapeStyle(.secondary) : AnyShapeStyle(.orange))
+                Text(model.settings.keepsTransparency
+                     ? "The background is transparent, and this file keeps it that way."
+                     : "The background is transparent, but \(model.settings.format.title) has nowhere to keep that: it will be black.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 4)
+                if !model.settings.keepsTransparency {
+                    SectionButton(title: "Use ProRes 4444") { model.settings.format = .proRes4444 }
+                        .help("Export ProRes 4444, which keeps the background see-through")
+                }
+            }
+        }
+    }
+
+    /// What Smaller File and a size limit mean for this file, said where they are chosen.
+    @ViewBuilder
+    private var sizeNotes: some View {
+        let settings = model.settings
+        if settings.format.offersCodecChoice, settings.quality == .smaller, settings.codec == .automatic {
+            Text("Smaller File writes HEVC at a low bitrate: about half the size, and it plays on Apple devices, phones and current browsers.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        if let target = settings.targetByteCount, settings.offersTargetSize {
+            let estimate = model.estimate(for: editor)
+            if estimate.byteCount > target {
+                Label("This is too long to fit in \(ExportEstimate.formatted(target)) and still be watchable: the smallest it can be is about \(estimate.formattedByteCount).",
+                      systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if settings.format == .gif {
+                Text("A GIF can only be aimed at a size: it is drawn smaller, then with fewer frames, until it should fit. The file may come out a little either side.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var target: Binding<Int> {
+        Binding(get: { model.settings.targetByteCount ?? 0 },
+                set: { model.settings.targetByteCount = $0 > 0 ? $0 : nil })
     }
 
     private var dimension: Binding<Double> {

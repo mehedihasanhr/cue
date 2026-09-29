@@ -3,6 +3,7 @@ import AVFoundation
 import CoreGraphics
 import Foundation
 import ScreenCaptureKit
+import VideoToolbox
 
 /// Which encoder a recording uses.
 public enum VideoCodec: String, Sendable, Codable {
@@ -19,8 +20,28 @@ public enum VideoCodec: String, Sendable, Codable {
         case .hevc: .hevc
         case .automatic:
             // The check is for an encoder, not a decoder: an Intel Mac without one
-            // would otherwise write a file its own CPU has to software-encode.
-            VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC) ? .hevc : .h264
+            // would otherwise write a file its own CPU has to software-encode. It used
+            // to ask `VTIsHardwareDecodeSupported`, which answers the other question —
+            // plenty of Macs can play HEVC in hardware and cannot make it.
+            HardwareEncoders.canEncodeHEVC ? .hevc : .h264
+        }
+    }
+}
+
+/// What this Mac can encode without doing it on the processor.
+public enum HardwareEncoders {
+    /// Asked once: the answer is a property of the machine, and the list it is read from
+    /// is not free to build.
+    public static let canEncodeHEVC: Bool = hasHardwareEncoder(for: kCMVideoCodecType_HEVC)
+
+    static func hasHardwareEncoder(for codec: CMVideoCodecType) -> Bool {
+        var list: CFArray?
+        guard VTCopyVideoEncoderList(nil, &list) == noErr,
+              let encoders = list as? [[String: Any]] else { return false }
+        return encoders.contains { encoder in
+            guard let type = encoder[kVTVideoEncoderList_CodecType as String] as? NSNumber,
+                  type.uint32Value == codec else { return false }
+            return (encoder[kVTVideoEncoderList_IsHardwareAccelerated as String] as? Bool) ?? false
         }
     }
 }
@@ -97,6 +118,9 @@ public struct RecordingConfiguration: Sendable {
     /// pointer — the size they set, the outline they chose, the accessibility pointer they
     /// rely on — rather than an approximation of the stock one. See `CursorArtworkWriter`.
     public var capturesCursorArtwork: Bool
+    /// Leave the Finder's desktop icons out of a display or area recording — see
+    /// `CaptureExclusion`. Off by default; the Finder's own setting is never touched.
+    public var hidesDesktopIcons = false
 
     public init(target: CaptureTarget,
                 destination: URL,

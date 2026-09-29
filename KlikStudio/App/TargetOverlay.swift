@@ -662,6 +662,8 @@ private struct StartButton: View {
             .contentShape(Capsule())
         }
         .buttonStyle(BarButtonStyle(pressedScale: 0.96))
+        // The global shortcut, so it can be learned here and used from any app next time.
+        .help(RecorderCenter.shared?.help("Start recording", .record) ?? "Start recording")
         .onHover { hovering in
             withAnimation(StudioMotion.hover) { isHovering = hovering }
         }

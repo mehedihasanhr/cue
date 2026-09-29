@@ -26,6 +26,14 @@ struct CursorRegionInspector: View {
                 Toggle("Hide the pointer", isOn: toggle(\.isHidden, "Hide Pointer"))
                 Toggle("Hold it still", isOn: toggle(\.isHeld, "Hold Pointer"))
                     .help("Keeps the pointer where it was when this stretch began, so it stops wandering while something else is being read.")
+                stretchEffect("Spotlight here", \.spotlights, "Spotlight Stretch",
+                              isLimited: model.timeline.cursor.spotlight.isEnabled
+                                  && model.timeline.cursor.spotlight.scope == .markedStretches,
+                              why: "Turn on the Spotlight in the Pointer panel and set Where to Marked stretches.")
+                stretchEffect("Magnify here", \.magnifies, "Magnifier Stretch",
+                              isLimited: model.timeline.cursor.magnifier.isEnabled
+                                  && model.timeline.cursor.magnifier.scope == .markedStretches,
+                              why: "Turn on the Magnifier in the Pointer panel and set Where to Marked stretches.")
 
                 InspectorSlider(model: model, "Calm", systemImage: "scribble",
                                 value: slider(\.smoothing, "Calm Pointer"), range: 0...1)
@@ -42,7 +50,7 @@ struct CursorRegionInspector: View {
                     note("The pointer fades out and back over the ramp, and the camera stops following it while it is gone.")
                 }
                 if region.isInert {
-                    note("This stretch is not doing anything yet — hide the pointer, hold it, or give it some calm.")
+                    note("This stretch is not doing anything yet — hide the pointer, hold it, give it some calm, or spotlight or magnify it.")
                 }
 
                 LabeledContent("Starts", value: Timecode.short(region.start))
@@ -54,6 +62,22 @@ struct CursorRegionInspector: View {
             }
             .font(.system(size: 12))
             .inspectorSection("Pointer over time", systemImage: "cursorarrow.slash")
+        }
+    }
+
+    /// A switch for an effect limited to marked stretches, off with its reason beside it
+    /// when the effect is off or is on for the whole video — where marking a stretch
+    /// would change nothing.
+    @ViewBuilder
+    private func stretchEffect(_ title: String,
+                               _ path: WritableKeyPath<CursorRegion, Bool> & Sendable,
+                               _ name: String,
+                               isLimited: Bool,
+                               why: String) -> some View {
+        Toggle(title, isOn: toggle(path, name))
+            .disabled(!isLimited)
+        if !isLimited {
+            note(why)
         }
     }
 

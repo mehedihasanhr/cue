@@ -36,7 +36,10 @@ public struct ExportEstimate: Sendable, Equatable {
     }
 
     /// "18 MB", in whatever units the Mac is set to show.
-    public var formattedByteCount: String {
+    public var formattedByteCount: String { Self.formatted(byteCount) }
+
+    /// A number of bytes as the Finder would write it.
+    public static func formatted(_ byteCount: Int) -> String {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .file
         formatter.allowedUnits = byteCount < 10_000_000 ? [.useKB, .useMB] : [.useMB, .useGB]
@@ -51,6 +54,12 @@ public extension ExportSettings {
     /// which is what the preview is drawn at — so the dimensions here are the dimensions
     /// the file gets, not an approximation of them.
     func estimate(projectSize: CGSize, duration: Double) -> ExportEstimate {
+        // A GIF aimed at a size is estimated at the size and rate it will be written at.
+        if format == .gif, targetByteCount != nil {
+            var aimed = aimedAtTarget(projectSize: projectSize, duration: duration)
+            aimed.targetByteCount = nil
+            return aimed.estimate(projectSize: projectSize, duration: duration)
+        }
         // The GIF writer imposes a ceiling of its own on top of whatever cap the user
         // chose, so an estimate that ignored it would promise a 2560-wide GIF and deliver
         // a 1280-wide one. Asked of the same constant the writer uses.
@@ -60,7 +69,7 @@ public extension ExportSettings {
                                           GIFExporter.maximumDimension)
         }
         let output = capped.outputSize(fitting: projectSize)
-        let rate = effectiveFrameRate
+        let rate = capped.effectiveFrameRate
         let seconds = max(0, duration)
         let pixels = Int(output.width * output.height)
 
@@ -74,8 +83,20 @@ public extension ExportSettings {
             // the real file is the one that surprises people.
             bytes = Int(Double(pixels) * 0.28 * Double(max(1, Int((seconds * Double(rate)).rounded()))))
             approximate = true
+        case .proRes422, .proRes4444:
+            // ProRes is written at a quality rather than a bitrate, so its size follows
+            // the picture: Apple's published rates — about 2.4 bits a pixel a frame for
+            // 422 and 5.3 for 4444 — are for camera footage, and a screen recording's
+            // flat areas usually come in under them. Said to be a guess for that reason.
+            let bitsPerPixel = format == .proRes422 ? 2.4 : 5.3
+            let video = Double(pixels) * bitsPerPixel * Double(rate) / 8 * seconds
+            // 24-bit stereo PCM at 48 kHz, which is what `VideoExporter` writes beside
+            // ProRes.
+            let audio = writesAudio ? 48_000.0 * 2 * 3 * seconds : 0
+            bytes = Int((video + audio) * 1.02)
+            approximate = true
         case .mp4, .mov:
-            let video = Double(quality.bitrate(forPixels: pixels, frameRate: rate)) / 8 * seconds
+            let video = Double(videoBitrate(forPixels: pixels, frameRate: rate, duration: seconds)) / 8 * seconds
             // The same 192 kbps AAC `VideoExporter` asks for, and nothing if there will be
             // no sound track at all.
             let audio = writesAudio ? 192_000.0 / 8 * seconds : 0

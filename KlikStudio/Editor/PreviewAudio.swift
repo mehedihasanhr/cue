@@ -73,6 +73,11 @@ final class PreviewAudio {
 
     private let videoURL: URL
     private let packageURL: URL
+    /// The recording's clicks, for the click sounds. They never change for a recording,
+    /// so they are handed over once rather than with every edit.
+    private let clicks: [CursorTrack.Click]
+    /// The recording's size in points. See `AudioMixdown.build(clickFrame:)`.
+    private let clickFrame: CGSize?
     private let settings: StudioSettings?
 
     private var player: AVPlayer?
@@ -86,9 +91,12 @@ final class PreviewAudio {
 
     private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "audio")
 
-    init(videoURL: URL, packageURL: URL, settings: StudioSettings?) {
+    init(videoURL: URL, packageURL: URL, clicks: [CursorTrack.Click] = [], clickFrame: CGSize? = nil,
+         settings: StudioSettings?) {
+        self.clickFrame = clickFrame
         self.videoURL = videoURL
         self.packageURL = packageURL
+        self.clicks = clicks
         self.settings = settings
         volume = settings?.previewVolume ?? 1
         isMuted = settings?.previewIsMuted ?? false
@@ -122,10 +130,14 @@ final class PreviewAudio {
         building?.cancel()
         let videoURL = videoURL
         let packageURL = packageURL
+        let clicks = clicks
+        let clickFrame = clickFrame
         building = Task { [weak self] in
             let result = await AudioMixdown.build(timeline: timeline,
                                                   videoURL: videoURL,
-                                                  packageURL: packageURL)
+                                                  packageURL: packageURL,
+                                                  clicks: clicks,
+                                                  clickFrame: clickFrame)
             guard !Task.isCancelled, let self else { return }
             self.adopt(result, for: signature)
         }
@@ -133,23 +145,28 @@ final class PreviewAudio {
 
     private func adopt(_ result: AudioMixdown.Result, for signature: Timeline.AudioSignature) {
         building = nil
+        // Where the sound had got to, read off the player being replaced while it was
+        // still running. `resume` is where Play was pressed, which may be minutes ago:
+        // coming back in there made the playhead jump back to it whenever an edit landed
+        // during playback, because the picture follows the sound's clock.
+        let reached: CMTime? = if let player, player.rate > 0 { player.currentTime() } else { nil }
         hasSound = !result.isEmpty
         guard !result.isEmpty else {
             player = nil
             return
         }
 
-        let item = AVPlayerItem(asset: result.composition)
-        item.audioMix = result.audioMix
-        let player = AVPlayer(playerItem: item)
+        // The mix travels with the item: it carries the voice clean-up and the music's
+        // dips under speech, which an item made here by hand could leave behind.
+        let player = AVPlayer(playerItem: result.playerItem())
         player.actionAtItemEnd = .pause
         self.player = player
         applyLevel()
 
         // A rebuild that lands while playing joins in from where the picture has got to,
         // rather than waiting for the next press of Play.
-        if wantsToPlay, let resume {
-            player.seek(to: resume, toleranceBefore: .zero, toleranceAfter: .zero)
+        if wantsToPlay, let from = reached ?? resume {
+            player.seek(to: from, toleranceBefore: .zero, toleranceAfter: .zero)
             player.play()
         }
     }

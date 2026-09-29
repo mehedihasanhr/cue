@@ -42,6 +42,19 @@ public struct Timeline: Equatable, Codable, Sendable {
     /// "the pointer is drawn as `cursor` describes, everywhere", which is what every
     /// project written before this field existed decodes to.
     public var cursorRegions: [CursorRegion]
+    /// The key presses shown in the video. See `KeyCue`.
+    ///
+    /// Empty for every project written before keys were recorded, and for every take made
+    /// without the setting on: an empty lane draws nothing, so such a project renders as
+    /// it always did.
+    public var keyCues: [KeyCue]
+    /// How the camera and the screen share the frame, stretch by stretch. See
+    /// `CameraLayout`.
+    ///
+    /// Empty for every project written before layouts existed, and empty is the bubble
+    /// everywhere — which is what those projects drew, so they render frame for frame as
+    /// they did.
+    public var cameraLayouts: [CameraLayoutRegion]
     public var style: FrameStyle
     public var cursor: CursorStyle
     public var camera: CameraStyle
@@ -60,6 +73,13 @@ public struct Timeline: Equatable, Codable, Sendable {
     public var soundTracks: [SoundTrack]
     public var webcam: WebcamSettings
     public var captionStyle: CaptionStyle
+    /// How the pressed keys are drawn. See `KeyStyle`.
+    public var keyStyle: KeyStyle
+    /// The movies brought into the project, which imported clips name. See `MediaFile`.
+    ///
+    /// Empty for every project written before a project could hold more than one take,
+    /// and empty means every clip plays the recording — what those projects did.
+    public var media: [MediaFile]
 
     public init(formatVersion: Int = Timeline.currentFormat,
                 sourceDuration: CMTime,
@@ -71,13 +91,17 @@ public struct Timeline: Equatable, Codable, Sendable {
                 audio: [AudioRegion] = [],
                 detachedSound: [SoundRun]? = nil,
                 cursorRegions: [CursorRegion] = [],
+                keyCues: [KeyCue] = [],
+                cameraLayouts: [CameraLayoutRegion] = [],
                 style: FrameStyle = FrameStyle(),
                 cursor: CursorStyle = CursorStyle(),
                 camera: CameraStyle = CameraStyle(),
                 sound: SoundStyle = SoundStyle(),
                 soundTracks: [SoundTrack] = [],
                 webcam: WebcamSettings = WebcamSettings(),
-                captionStyle: CaptionStyle = CaptionStyle()) {
+                captionStyle: CaptionStyle = CaptionStyle(),
+                keyStyle: KeyStyle = KeyStyle(),
+                media: [MediaFile] = []) {
         self.formatVersion = formatVersion
         self.sourceDuration = sourceDuration
         self.clips = clips ?? [Clip(sourceStart: .zero, sourceDuration: sourceDuration)]
@@ -88,6 +112,8 @@ public struct Timeline: Equatable, Codable, Sendable {
         self.audio = audio
         self.detachedSound = detachedSound
         self.cursorRegions = cursorRegions
+        self.keyCues = keyCues
+        self.cameraLayouts = cameraLayouts
         self.style = style
         self.cursor = cursor
         self.camera = camera
@@ -95,6 +121,8 @@ public struct Timeline: Equatable, Codable, Sendable {
         self.soundTracks = soundTracks
         self.webcam = webcam
         self.captionStyle = captionStyle
+        self.keyStyle = keyStyle
+        self.media = media
     }
 
     // MARK: - Reading a project back
@@ -131,15 +159,28 @@ public struct Timeline: Equatable, Codable, Sendable {
         // exactly "the pointer behaves as the global style says" — so an old project opens
         // and renders frame for frame as it did.
         cursorRegions = value(.cursorRegions, default: [])
+        // Absent in every project written before keys were recorded, and empty draws
+        // nothing — so such a project renders frame for frame as it did.
+        keyCues = value(.keyCues, default: [])
+        // Absent in every project written before camera layouts, and empty is the bubble
+        // everywhere — what those projects drew.
+        cameraLayouts = value(.cameraLayouts, default: [])
         style = value(.style, default: FrameStyle())
         cursor = value(.cursor, default: CursorStyle())
-        camera = value(.camera, default: CameraStyle())
+        // A saved project with no camera at all predates gliding as surely as one whose
+        // camera lacks the key, and must look the same as it did: see `CameraStyle`.
+        camera = value(.camera, default: CameraStyle.asSavedBeforeGliding)
         sound = value(.sound, default: SoundStyle())
         // Absent in every project written before the recorder separated the sources, and
         // absent is empty: the sound is inside the recording's file and `sound` governs it.
         soundTracks = value(.soundTracks, default: [])
         webcam = value(.webcam, default: WebcamSettings())
         captionStyle = value(.captionStyle, default: CaptionStyle())
+        keyStyle = value(.keyStyle, default: KeyStyle())
+        // Absent in every project written before movies could be brought in, and read
+        // entry by entry so one unreadable entry costs that file rather than every one.
+        media = ((try? container.decodeIfPresent([MediaFile.Lenient].self, forKey: .media)) ?? nil)?
+            .compactMap(\.value) ?? []
     }
 
     /// Spelled out so `init(from:)` above and the synthesised encoder agree, and so
@@ -148,6 +189,9 @@ public struct Timeline: Equatable, Codable, Sendable {
         case formatVersion, sourceDuration, clips, zooms, blurs
         case annotations, captions, audio, detachedSound, cursorRegions
         case style, cursor, camera, sound, soundTracks, webcam, captionStyle
+        case keyCues, keyStyle
+        case cameraLayouts
+        case media
     }
 
     /// How long the edit plays for.
@@ -187,10 +231,15 @@ public struct Timeline: Equatable, Codable, Sendable {
 
     /// Where a timeline time lands in the recording.
     ///
-    /// This is the mapping everything else is built on: the preview seeks with it, the
-    /// exporter pulls frames with it, and the cursor overlay looks up telemetry with it.
+    /// This is the mapping everything measured against the recording is built on: the
+    /// pointer, the clicks, the camera following them, the masks following content.
+    ///
+    /// `nil` over a clip imported from another file, and deliberately so: its source time
+    /// is a moment in *that* file, and the recording's pointer at that moment is the
+    /// pointer from a different take. Whatever reads pictures rather than telemetry asks
+    /// `mediaTime(at:)`, which says which file as well as when.
     public func sourceTime(at time: CMTime) -> CMTime? {
-        guard let (_, clip, offset) = clip(at: time) else { return nil }
+        guard let (_, clip, offset) = clip(at: time), clip.source == nil else { return nil }
         return clip.sourceTime(atOffset: offset)
     }
 
@@ -208,7 +257,9 @@ public struct Timeline: Equatable, Codable, Sendable {
     public func timelineTime(atSource source: CMTime) -> CMTime? {
         var elapsed = CMTime.zero
         for clip in clips {
-            if source >= clip.sourceStart, source < clip.sourceEnd {
+            // An imported clip's source times are another file's, so the recording's
+            // moment never lands on it.
+            if clip.source == nil, source >= clip.sourceStart, source < clip.sourceEnd {
                 let into = source - clip.sourceStart
                 return elapsed + CMTimeMultiplyByFloat64(into, multiplier: 1 / clip.speed)
             }
@@ -250,7 +301,7 @@ public struct Timeline: Equatable, Codable, Sendable {
     public var isSoundDetached: Bool { detachedSound != nil }
 
     /// The runs a detach performed right now would produce: the sound as the picture cuts
-    /// it, one run per clip.
+    /// it, one run per clip that plays footage.
     ///
     /// Written once and used three ways — to perform the detach, to decide whether a
     /// re-attach would throw an edit away, and to test that detaching changes nothing you
@@ -260,10 +311,16 @@ public struct Timeline: Equatable, Codable, Sendable {
         runs.reserveCapacity(clips.count)
         var playhead = CMTime.zero
         for clip in clips {
-            runs.append(SoundRun(start: playhead,
-                                 duration: clip.duration,
-                                 sourceStart: clip.sourceStart,
-                                 speed: clip.speed))
+            // A freeze frame and a title are silent, so they lay no run down and the lane
+            // has a gap over them — the silence the mixdown plays there while attached.
+            // An imported clip lays none either: the lane is the *recording's* sound, and
+            // an imported clip's own sound stays with its picture — see `AudioMixdown`.
+            if clip.playsRecording {
+                runs.append(SoundRun(start: playhead,
+                                     duration: clip.duration,
+                                     sourceStart: clip.sourceStart,
+                                     speed: clip.speed))
+            }
             playhead = playhead + clip.duration
         }
         return runs
@@ -302,6 +359,10 @@ public struct Timeline: Equatable, Codable, Sendable {
         // and adding them twice would make the snapping arithmetic do the same work twice.
         for run in detachedSound ?? [] { times.append(run.start); times.append(run.end) }
         for region in cursorRegions { times.append(region.start); times.append(region.end) }
+        // Only the ones on the lane: a cue the style has switched off is not something a
+        // drag can see, so it is not something a drag should stick to.
+        for cue in keyCues where isShown(cue) { times.append(cue.start); times.append(cue.end) }
+        for region in cameraLayouts { times.append(region.start); times.append(region.end) }
         return times
     }
 }

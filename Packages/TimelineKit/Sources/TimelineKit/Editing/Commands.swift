@@ -208,6 +208,12 @@ public enum Commands {
                 // order so an inspector open on one region does not find itself pointing
                 // at another after a paste.
                 timeline.cursorRegions.sort { $0.start < $1.start }
+            case .key(let r):
+                timeline.keyCues.append(r)
+                timeline.keyCues.sort { $0.start < $1.start }
+            case .cameraLayout(let r):
+                timeline.cameraLayouts.append(r)
+                timeline.cameraLayouts.sort { $0.start < $1.start }
             }
             return true
         }
@@ -318,8 +324,13 @@ public enum Commands {
 
     public struct AddAnnotation: TimelineCommand {
         public let item: AnnotationItem
-        public var name: String { "Add Annotation" }
-        public init(_ item: AnnotationItem) { self.item = item }
+        /// What Undo calls it. "Add Annotation" unless the caller knows better — a logo is
+        /// an annotation to the model and a logo to the person undoing it.
+        public let name: String
+        public init(_ item: AnnotationItem, name: String? = nil) {
+            self.item = item
+            self.name = name ?? "Add Annotation"
+        }
         public func apply(to timeline: inout Timeline) -> Bool {
             timeline.annotations.append(item)
             return true
@@ -361,6 +372,131 @@ public enum Commands {
             guard let index = timeline.captions.firstIndex(where: { $0.id == id }),
                   timeline.captions[index].text != text else { return false }
             timeline.captions[index].text = text
+            return true
+        }
+    }
+
+    /// A caption written by hand.
+    ///
+    /// For a recording with nobody speaking in it, which is most screen recordings: the
+    /// captions are then the narration, and there is no voice to take them from.
+    public struct AddCaption: TimelineCommand {
+        public let cue: CaptionCue
+        public var name: String { "Add Caption" }
+        public init(_ cue: CaptionCue) { self.cue = cue }
+
+        public func apply(to timeline: inout Timeline) -> Bool {
+            guard cue.duration > .zero else { return false }
+            var placed = cue
+            // Room is made rather than refused. Two captions over one moment show only
+            // the later one, so a new line dropped onto an old one would hide it; the
+            // line it lands on is shortened to end where this begins, and this one ends
+            // where the next begins.
+            if let next = timeline.captions.first(where: { $0.start > placed.start && $0.start < placed.end }) {
+                placed.duration = next.start - placed.start
+            }
+            guard placed.duration >= Clip.minimumDuration else { return false }
+            for index in timeline.captions.indices
+            where timeline.captions[index].contains(placed.start) && timeline.captions[index].start < placed.start {
+                timeline.captions[index].duration = placed.start - timeline.captions[index].start
+            }
+            timeline.captions.append(placed)
+            timeline.captions.sort { $0.start < $1.start }
+            return true
+        }
+    }
+
+    /// One caption cut into two, at a moment inside it.
+    ///
+    /// The words go to whichever side they were said on. For a line with no word timings
+    /// they are shared out by how far through the line the cut is, which puts the break
+    /// near where it was heard.
+    public struct SplitCaption: TimelineCommand {
+        public let id: UUID
+        public let time: CMTime
+        public var name: String { "Split Caption" }
+        public init(id: UUID, at time: CMTime) {
+            self.id = id
+            self.time = time
+        }
+
+        public func apply(to timeline: inout Timeline) -> Bool {
+            guard let index = timeline.captions.firstIndex(where: { $0.id == id }) else { return false }
+            let cue = timeline.captions[index]
+            guard time - cue.start >= Clip.minimumDuration, cue.end - time >= Clip.minimumDuration else {
+                return false
+            }
+            let timed = cue.timedWords
+            guard timed.count > 1 else { return false }
+
+            let progress = (time - cue.start).seconds / cue.duration.seconds
+            // The first word that begins after the cut opens the second line — and there
+            // is always at least one word on each side.
+            let cut = min(timed.count - 1, max(1, timed.firstIndex { $0.from >= progress } ?? timed.count - 1))
+
+            func rescaled(_ words: ArraySlice<CaptionCue.Word>, from lower: Double, to upper: Double) -> [CaptionCue.Word] {
+                let span = upper - lower
+                guard span > 0 else { return [] }
+                return words.map {
+                    CaptionCue.Word(text: $0.text, from: ($0.from - lower) / span, to: ($0.to - lower) / span)
+                }
+            }
+            let keepsTimings = !cue.words.isEmpty && cue.words == timed
+            var first = cue
+            first.duration = time - cue.start
+            first.text = timed[..<cut].map(\.text).joined(separator: " ")
+            first.words = keepsTimings ? rescaled(timed[..<cut], from: 0, to: progress) : []
+
+            let second = CaptionCue(start: time,
+                                    duration: cue.end - time,
+                                    text: timed[cut...].map(\.text).joined(separator: " "),
+                                    words: keepsTimings ? rescaled(timed[cut...], from: progress, to: 1) : [])
+            timeline.captions[index] = first
+            timeline.captions.insert(second, at: index + 1)
+            return true
+        }
+    }
+
+    /// A caption joined to the one after it.
+    public struct MergeCaptions: TimelineCommand {
+        public let id: UUID
+        public var name: String { "Merge Captions" }
+        public init(id: UUID) { self.id = id }
+
+        public func apply(to timeline: inout Timeline) -> Bool {
+            let ordered = timeline.captions.sorted { $0.start < $1.start }
+            guard let position = ordered.firstIndex(where: { $0.id == id }), position + 1 < ordered.count else {
+                return false
+            }
+            let first = ordered[position], second = ordered[position + 1]
+            let length = (second.end - first.start).seconds
+            guard length > 0 else { return false }
+
+            // Both lines' words on the new line's clock, including the silence between
+            // the two — which is part of the line now.
+            func moved(_ cue: CaptionCue) -> [CaptionCue.Word] {
+                let offset = (cue.start - first.start).seconds / length
+                let share = cue.duration.seconds / length
+                return cue.timedWords.map {
+                    CaptionCue.Word(text: $0.text, from: offset + $0.from * share, to: offset + $0.to * share)
+                }
+            }
+            // Only when both lines' words are the ones recorded. A line corrected by hand
+            // still has words, but `timedWords` spreads them by length — a guess — and
+            // merged in here the guess would come out looking recorded, and the transcript
+            // tidy-up would cut where it says.
+            let keepsTimings = !first.words.isEmpty && !second.words.isEmpty
+                && first.words == first.timedWords && second.words == second.timedWords
+            let joined = CaptionCue(id: first.id,
+                                    start: first.start,
+                                    duration: second.end - first.start,
+                                    text: [first.text, second.text]
+                                        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                                        .filter { !$0.isEmpty }
+                                        .joined(separator: " "),
+                                    words: keepsTimings ? moved(first) + moved(second) : [])
+            timeline.captions = ordered.filter { $0.id != first.id && $0.id != second.id } + [joined]
+            timeline.captions.sort { $0.start < $1.start }
             return true
         }
     }
@@ -560,6 +696,22 @@ public enum Commands {
         }
     }
 
+    /// Taking every zoom out at once.
+    ///
+    /// Auto-zoom proposes; this is how somebody who wanted none of it says so in one step
+    /// rather than thirty. A locked zoom stays, because locking one is saying "leave this
+    /// alone" and a command that ignored that would make the lock mean less than it says.
+    public struct RemoveAllZooms: TimelineCommand {
+        public var name: String { "Remove All Zooms" }
+        public init() {}
+        public func apply(to timeline: inout Timeline) -> Bool {
+            let kept = timeline.zooms.filter(\.isLocked)
+            guard kept.count != timeline.zooms.count else { return false }
+            timeline.zooms = kept
+            return true
+        }
+    }
+
     /// Dragging or trimming one run of the detached sound.
     ///
     /// Not `MoveRegion`, and the difference is the whole reason this exists. Moving a
@@ -596,19 +748,27 @@ public enum Commands {
 
             let before = runs[index]
             var run = before
-            let settled = max(.zero, min(start, end - Clip.minimumDuration))
+            var settled = max(.zero, min(start, end - Clip.minimumDuration))
             if trimsHead {
-                // Negative when the edge moved left, which reveals source trimmed off
-                // earlier — clamped at the head of the recording, because there is nothing
-                // before second zero to reveal.
+                // The edge can go left only as far as there is recording to reveal. Past
+                // that it used to keep going while the in-point stopped at zero, so the
+                // run grew to the left with nothing new in it — and every word after it
+                // slid earlier by the difference, which is a trim re-cutting the take.
+                let room = CMTimeMultiplyByFloat64(run.sourceStart, multiplier: 1 / max(run.speed, 0.01))
+                settled = min(max(settled, run.start - room), run.end - Clip.minimumDuration)
                 let crossed = CMTimeMultiplyByFloat64(settled - run.start, multiplier: run.speed)
                 run.sourceStart = max(.zero, run.sourceStart + crossed)
-            }
-            run.start = settled
-            if let duration {
-                run.duration = max(Clip.minimumDuration, min(duration, end - run.start))
-            } else if run.end > end {
-                run.start = end - run.duration
+                // The far edge stays where it is: that is what makes it a trim.
+                let far = run.end
+                run.start = settled
+                run.duration = max(Clip.minimumDuration, far - settled)
+            } else {
+                run.start = settled
+                if let duration {
+                    run.duration = max(Clip.minimumDuration, min(duration, end - run.start))
+                } else if run.end > end {
+                    run.start = end - run.duration
+                }
             }
             guard run != before else { return false }
             runs[index] = run
@@ -629,6 +789,7 @@ public enum Commands {
             func counts(_ timeline: Timeline) -> [Int] {
                 [timeline.zooms.count, timeline.blurs.count, timeline.annotations.count,
                  timeline.captions.count, timeline.audio.count, timeline.cursorRegions.count,
+                 timeline.keyCues.count, timeline.cameraLayouts.count,
                  timeline.detachedSound?.count ?? 0]
             }
 
@@ -642,6 +803,8 @@ public enum Commands {
             // recording's sound is `SoundStyle.isMuted`'s job rather than this one's.
             timeline.detachedSound?.removeAll { $0.id == id }
             timeline.cursorRegions.removeAll { $0.id == id }
+            timeline.keyCues.removeAll { $0.id == id }
+            timeline.cameraLayouts.removeAll { $0.id == id }
             return before != counts(timeline)
         }
     }
@@ -672,8 +835,9 @@ public enum Commands {
             /// one of the other lanes. They clamp differently and a head trim means
             /// something different to each, so the two cannot share one path.
             public let isSoundRun: Bool
-            /// Only meaningful for a sound run: whether the recording stays put underneath
-            /// while the front edge moves.
+            /// Whether the front edge is being moved on its own. For anything that plays a
+            /// file — a run of the recording, an imported sound, a voiceover — that is a
+            /// trim: what is heard afterwards stays where it was.
             public let trimsHead: Bool
 
             public init(id: UUID,
@@ -707,7 +871,8 @@ public enum Commands {
                     ? MoveSoundRun(id: move.id, start: move.start,
                                    duration: move.duration, trimsHead: move.trimsHead)
                         .apply(to: &timeline)
-                    : MoveRegion(id: move.id, start: move.start, duration: move.duration)
+                    : MoveRegion(id: move.id, start: move.start, duration: move.duration,
+                                 trimsHead: move.trimsHead)
                         .apply(to: &timeline)
                 changed = changed || applied
             }
@@ -719,11 +884,15 @@ public enum Commands {
         public let id: UUID
         public let start: CMTime
         public let duration: CMTime?
+        /// Whether the front edge alone is being dragged. It matters to a sound, and only
+        /// to a sound: see `moveSound` below.
+        public let trimsHead: Bool
         public var name: String { duration == nil ? "Move" : "Resize" }
-        public init(id: UUID, start: CMTime, duration: CMTime? = nil) {
+        public init(id: UUID, start: CMTime, duration: CMTime? = nil, trimsHead: Bool = false) {
             self.id = id
             self.start = start
             self.duration = duration
+            self.trimsHead = trimsHead
         }
 
         public func apply(to timeline: inout Timeline) -> Bool {
@@ -755,8 +924,77 @@ public enum Commands {
                 return true
             }
 
-            return move(&timeline.zooms) || move(&timeline.blurs) || move(&timeline.annotations)
-                || move(&timeline.captions) || move(&timeline.audio) || move(&timeline.cursorRegions)
+            /// A sound that was brought in, trimmed from the front.
+            ///
+            /// Shortening a song from its start means it begins later *in the song*, and
+            /// everything after that plays exactly when it did. This used to go through the
+            /// same path as every other region, which moves the edge and leaves the
+            /// in-point alone — so the song still began at its first bar, and the whole of
+            /// it slid along the timeline by as much as was trimmed.
+            func moveSound(_ regions: inout [AudioRegion]) -> Bool {
+                guard trimsHead, let index = regions.firstIndex(where: { $0.id == id }) else {
+                    return move(&regions)
+                }
+                var region = regions[index]
+                let far = region.end
+                // No further left than the start of the file: there is nothing before its
+                // first sample to reveal.
+                let earliest = max(.zero, region.start - region.sourceStart)
+                let settled = min(max(start, earliest), far - Clip.minimumDuration)
+                region.sourceStart = max(.zero, region.sourceStart + (settled - region.start))
+                region.start = settled
+                region.duration = max(Clip.minimumDuration, far - settled)
+                guard region != regions[index] else { return false }
+                regions[index] = region
+                return true
+            }
+
+            /// A caption, whose recorded words are heard when they are heard: a resize keeps
+            /// them where they were and drops the ones it left outside. See
+            /// `CaptionCue.carryingWords(to:)`.
+            func moveCaption(_ cues: inout [CaptionCue]) -> Bool {
+                guard let index = cues.firstIndex(where: { $0.id == id }) else { return false }
+                let before = cues[index]
+                guard move(&cues) else { return false }
+                cues[index] = before.carryingWords(to: cues[index])
+                return true
+            }
+
+            // A resize keeps a followed path on the timeline moments it was followed at, so
+            // trimming a mask's front edge does not slide what it follows along with it.
+            let blurs = timeline.blurs
+            let moved = move(&timeline.zooms) || move(&timeline.blurs) || move(&timeline.annotations)
+                || moveCaption(&timeline.captions) || moveSound(&timeline.audio) || move(&timeline.cursorRegions)
+                || move(&timeline.keyCues) || move(&timeline.cameraLayouts)
+            guard moved else { return false }
+            if duration != nil {
+                timeline.blurs = MaskFollowing.retimed(timeline.blurs, from: blurs) { $0 }
+            }
+
+            // Back in time order, for the lanes that are read in it. "The next zoom" and
+            // "the zoom in force" are both asked of these by position, and a zoom dragged
+            // past its neighbour used to stay where it was in the list — so merging with
+            // the next one merged with the wrong one. Stable, so two that start together
+            // keep the order they had. Annotations are left alone: their order is the
+            // stack, and dragging a label along the timeline must not send it behind
+            // another.
+            timeline.zooms = Self.inTimeOrder(timeline.zooms)
+            timeline.cursorRegions = Self.inTimeOrder(timeline.cursorRegions)
+            timeline.captions = Self.inTimeOrder(timeline.captions)
+            timeline.keyCues = Self.inTimeOrder(timeline.keyCues)
+            timeline.cameraLayouts = Self.inTimeOrder(timeline.cameraLayouts)
+            return true
+        }
+
+        /// Sorted by start, without disturbing a lane that already is — so an untouched
+        /// lane keeps its storage, and its order, exactly.
+        static func inTimeOrder<Region: TimelineRegion>(_ regions: [Region]) -> [Region] {
+            let sorted = zip(regions, regions.dropFirst()).allSatisfy { $0.start <= $1.start }
+            guard !sorted else { return regions }
+            return regions.enumerated()
+                .sorted { $0.element.start == $1.element.start ? $0.offset < $1.offset
+                                                                : $0.element.start < $1.element.start }
+                .map(\.element)
         }
     }
 
@@ -773,8 +1011,31 @@ public enum Commands {
         public func apply(to timeline: inout Timeline) -> Bool {
             let settled = (crop?.isFull ?? true) ? nil : crop
             guard settled != timeline.style.crop else { return false }
+            let before = timeline.style.crop?.rect ?? CropRect.full.rect
+            let after = settled?.rect ?? CropRect.full.rect
             timeline.style.crop = settled
+            // A zoom is aimed at something in the recording, and says where as a fraction
+            // of the *picture* — which the crop has just changed the shape of. Left alone,
+            // every zoom would go on pointing at the same fraction of a different picture:
+            // crop the left half away and a zoom on the Save button is a zoom on whatever
+            // is now a third of the way across instead. So each one is re-aimed at the
+            // thing it was already aimed at.
+            for index in timeline.zooms.indices {
+                timeline.zooms[index].center = Self.reaimed(timeline.zooms[index].center,
+                                                            from: before, to: after)
+            }
             return true
+        }
+
+        /// A fraction of one crop, as the fraction of another that is the same place in the
+        /// recording. Held inside the picture: something cropped out of shot cannot be
+        /// pointed at, and the nearest edge is where it went.
+        static func reaimed(_ center: CGPoint, from before: CGRect, to after: CGRect) -> CGPoint {
+            guard after.width > 0, after.height > 0 else { return center }
+            let x = before.minX + center.x * before.width
+            let y = before.minY + center.y * before.height
+            return CGPoint(x: min(1, max(0, (x - after.minX) / after.width)),
+                           y: min(1, max(0, (y - after.minY) / after.height)))
         }
     }
 

@@ -23,6 +23,10 @@ public enum Selection: Equatable, Sendable {
     case audio(UUID)
     /// A stretch where the pointer behaves differently — hidden, calmed, held.
     case cursorRegion(UUID)
+    /// A key press shown in the video.
+    case keyCue(UUID)
+    /// A stretch with its own camera layout.
+    case cameraLayout(UUID)
     /// The recording's own sound, which is one lane rather than one of many regions —
     /// there is exactly one of it, so it needs no identity to be picked out.
     ///
@@ -51,6 +55,8 @@ public enum Selection: Equatable, Sendable {
         switch self {
         case .zoom(let id), .blur(let id), .annotation(let id), .caption(let id), .audio(let id),
              .cursorRegion(let id), .soundRun(let id):
+            id
+        case .keyCue(let id), .cameraLayout(let id):
             id
         // A sound source is not a region either: it has no position of its own, only a
         // level, so handing its id to a region command would quietly do nothing.
@@ -92,6 +98,10 @@ public enum Selection: Equatable, Sendable {
             return timeline.audio.contains { $0.id == id }
         case .cursorRegion(let id):
             return timeline.cursorRegions.contains { $0.id == id }
+        case .keyCue(let id):
+            return timeline.keyCues.contains { $0.id == id }
+        case .cameraLayout(let id):
+            return timeline.cameraLayouts.contains { $0.id == id }
         case .range(let range):
             return range.duration > .zero && range.start < timeline.duration
         case .sound:
@@ -104,10 +114,13 @@ public enum Selection: Equatable, Sendable {
             // to drop a selection that no longer points at anything drawable.
             return timeline.detachedSound?.contains { $0.id == id } ?? false
         case .headTrim:
-            return (timeline.clips.first?.sourceStart ?? .zero) > .zero
+            // Only footage has footage trimmed off it: a title first, or a freeze frame of
+            // a later moment, has nothing before it to put back.
+            guard let first = timeline.clips.first, first.isFootage else { return false }
+            return first.sourceStart > .zero
         case .tailTrim:
-            guard let last = timeline.clips.last else { return false }
-            return last.sourceEnd < timeline.sourceDuration
+            guard let last = timeline.clips.last, last.isFootage else { return false }
+            return last.sourceEnd < timeline.sourceDuration(of: last)
         }
     }
 
@@ -132,6 +145,10 @@ public enum Selection: Equatable, Sendable {
             return timeline.audio.first { $0.id == id }?.range
         case .cursorRegion(let id):
             return timeline.cursorRegions.first { $0.id == id }?.range
+        case .keyCue(let id):
+            return timeline.keyCues.first { $0.id == id }?.range
+        case .cameraLayout(let id):
+            return timeline.cameraLayouts.first { $0.id == id }?.range
         case .soundRun(let id):
             return timeline.detachedSound?.first { $0.id == id }?.range
         case .none, .headTrim, .tailTrim, .sound, .soundTrack:

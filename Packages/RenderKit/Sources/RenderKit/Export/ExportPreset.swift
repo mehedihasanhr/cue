@@ -108,7 +108,9 @@ public enum ExportPreset: String, Sendable, CaseIterable, Codable, Identifiable 
                   claimed.frameRate == settings.frameRate,
                   claimed.quality == settings.quality,
                   claimed.codec == settings.codec,
-                  claimed.maximumDimension == settings.maximumDimension else { return false }
+                  claimed.maximumDimension == settings.maximumDimension,
+                  // No preset has a size limit, so one that is set is somebody's own.
+                  claimed.targetByteCount == settings.targetByteCount else { return false }
             // Sound is only a claim where the format can carry any.
             return !claimed.format.carriesAudio || claimed.includesAudio == settings.includesAudio
         }

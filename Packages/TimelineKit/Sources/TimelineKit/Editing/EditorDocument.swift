@@ -80,7 +80,7 @@ public final class EditorDocument {
     private var savedTimeline: Timeline
 
     /// Where the edit lives inside the package, beside the media it refers to.
-    public static let projectFileName = "project.json"
+    public nonisolated static let projectFileName = "project.json"
 
     public var isDirty: Bool { timeline != savedTimeline }
     public var canUndo: Bool { undoStack.canUndo }
@@ -227,15 +227,49 @@ public final class EditorDocument {
     public func save() throws {
         hasBeenEdited = true
         let data = try Self.encoder.encode(timeline)
-        let destination = package.url.appendingPathComponent(Self.projectFileName)
-        let temporary = package.url.appendingPathComponent(".project.\(UUID().uuidString).json")
+        try Self.write(data, into: package.url)
+        savedTimeline = timeline
+    }
+
+    /// The same write, off the main thread, for a save nobody asked for.
+    ///
+    /// Autosave runs while somebody is working, so the disk must not stall the picture.
+    /// The edit is read the instant this is called — before anything else on the main
+    /// actor can run — and marked saved *after* the write lands, as that same value: if
+    /// the person edits while the file is being written, the document is still dirty
+    /// afterwards, against the version on disk, which is the only honest comparison, and
+    /// the next write picks it up. Callers serialise their writes; two in flight would
+    /// race for the file.
+    @discardableResult
+    public func saveInBackground() -> Task<Void, any Error> {
+        let snapshot = timeline
+        let folder = package.url
+        return Task {
+            let data = try Self.encoder.encode(snapshot)
+            try await Task.detached(priority: .utility) {
+                try Self.write(data, into: folder)
+            }.value
+            hasBeenEdited = true
+            savedTimeline = snapshot
+        }
+    }
+
+    /// Writes the project file into a package, atomically.
+    ///
+    /// To a neighbour and swapped in, like the manifest: a half-written `project.json`
+    /// would read as a corrupt project even with every frame intact, and a crash or a
+    /// power cut in the middle of a save has to leave the previous file whole. Every
+    /// step here is either a write to a fresh temporary name or a rename, and a rename
+    /// is the one thing the file system promises not to leave half done.
+    nonisolated private static func write(_ data: Data, into folder: URL) throws {
+        let destination = folder.appendingPathComponent(Self.projectFileName)
+        let temporary = folder.appendingPathComponent(".project.\(UUID().uuidString).json")
         try data.write(to: temporary, options: .atomic)
         if FileManager.default.fileExists(atPath: destination.path(percentEncoded: false)) {
             _ = try FileManager.default.replaceItemAt(destination, withItemAt: temporary)
         } else {
             try FileManager.default.moveItem(at: temporary, to: destination)
         }
-        savedTimeline = timeline
     }
 
     // MARK: - Telemetry
@@ -304,6 +338,19 @@ public final class EditorDocument {
     }
 
     @ObservationIgnored private var cachedFocusSamples: [FocusSample]?
+
+    /// The markers dropped while this was recorded, in recording time — see `MarkerLog`.
+    /// Empty for a take with none, and for every recording made before they could be.
+    public var recordedMarkers: [MarkerSample] {
+        if let cachedMarkers { return cachedMarkers }
+        let samples = manifest.telemetry.markers.map {
+            TelemetryFile.read(MarkerSample.self, at: package.url.appendingPathComponent($0))
+        } ?? []
+        cachedMarkers = samples
+        return samples
+    }
+
+    @ObservationIgnored private var cachedMarkers: [MarkerSample]?
 
     private static let encoder: JSONEncoder = {
         let encoder = JSONEncoder()

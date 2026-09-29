@@ -16,9 +16,19 @@ public struct SceneDescriptor: Equatable, Sendable {
     public var backgroundBlur: Double
     /// Where the recording sits in the output, before the camera moves.
     public var videoFrame: CGRect
+    /// How much of the recording is on show, 0…1: less than 1 only while a camera layout
+    /// that hides the screen — Camera Only — is arriving, staying or leaving. The pointer
+    /// and the click marks fade with it, because they are part of the screen.
+    ///
+    /// 1 for every frame of every project without a camera layout, which is the frame it
+    /// always was.
+    public var videoOpacity: Double
     public var cornerRadius: Double
     public var shadowRadius: Double
     public var shadowOpacity: Double
+    /// The line round the picture, or `nil` for none — which is what every project with
+    /// no border describes, so its frame is the frame it always was. See `BorderLayer`.
+    public var border: BorderLayer?
     /// The camera: how far in, and about which point of the *video* (0…1).
     public var zoom: Double
     public var zoomCenter: CGPoint
@@ -31,6 +41,9 @@ public struct SceneDescriptor: Equatable, Sendable {
     public var annotations: [AnnotationLayer]
     /// The line being spoken, if any is.
     public var caption: CaptionLayer?
+    /// The keys being pressed, if any are. `nil` draws nothing, which is what every
+    /// project with an empty Keys lane describes.
+    public var keys: KeyLayer?
     /// The camera bubble, when the recording has one and it is turned on.
     ///
     /// `nil` is load-bearing: a timeline whose webcam is off must describe a frame that is
@@ -38,19 +51,51 @@ public struct SceneDescriptor: Equatable, Sendable {
     /// sure of that is for the absent case to be the absence of a layer rather than a
     /// layer with `isEnabled: false` in it that the renderer then has to remember to skip.
     public var webcam: WebcamLayer?
-    /// Where in the recording this frame comes from.
+    /// Where in the recording this frame comes from — or, when `sourceMedia` names a
+    /// movie brought into the project, where in that movie.
     public var sourceTime: CMTime
+    /// The package-relative path of the movie this frame's picture comes from, or `nil`
+    /// for the recording — which is every frame of every project made before a project
+    /// could hold more than one take. Whatever reads frames for the renderer reads them
+    /// from this file at `sourceTime`. See `Clip.source`.
+    public var sourceMedia: String? = nil
+    /// The words of a title slide, when this frame is one. A title shows no recording:
+    /// the renderer draws the background — or a panel in the picture's place — and these.
+    /// `nil` for every frame of footage, which is every frame a project made before titles
+    /// describes.
+    public var title: TitleLayer? = nil
+    /// How this frame is mixed with another at a transition between two clips, or `nil`
+    /// for a frame that is not in one. See `SceneBlend`.
+    public var blend: SceneBlend? = nil
     /// The part of the source that is shown, normalised, top-left origin.
     /// The unit rect means no crop.
     public var sourceCrop: CGRect
+    /// The window drawn round the picture, or `nil` for none — which is what every project
+    /// without one describes, so its frame is the frame it always was. See `ChromeLayer`.
+    ///
+    /// Set after `init` rather than passed to it, like `cameraMotion`: both are added by
+    /// the builder once the rest of the frame is known, and neither changes what any
+    /// existing caller of the initialiser gets.
+    public var chrome: ChromeLayer? = nil
+    /// How far the camera travels while this frame's shutter is open, or `nil` when it is
+    /// still or motion blur is off. See `CameraMotionLayer`.
+    public var cameraMotion: CameraMotionLayer? = nil
+    /// The picture turned in space, or `nil` for square-on — which is what every project
+    /// without a perspective describes, so its frame is the frame it always was. See
+    /// `PerspectiveLayer`.
+    public var perspective: PerspectiveLayer? = nil
+    /// Colour correction for the recording's picture, or `nil` for none. See `GradeLayer`.
+    public var grade: GradeLayer? = nil
 
     public init(outputSize: CGSize,
                 background: BackgroundLayer,
                 backgroundBlur: Double = 0,
                 videoFrame: CGRect,
+                videoOpacity: Double = 1,
                 cornerRadius: Double = 0,
                 shadowRadius: Double = 0,
                 shadowOpacity: Double = 0,
+                border: BorderLayer? = nil,
                 zoom: Double = 1,
                 zoomCenter: CGPoint = CGPoint(x: 0.5, y: 0.5),
                 zoomsWholeFrame: Bool = false,
@@ -59,16 +104,20 @@ public struct SceneDescriptor: Equatable, Sendable {
                 clicks: [ClickLayer] = [],
                 annotations: [AnnotationLayer] = [],
                 caption: CaptionLayer? = nil,
+                keys: KeyLayer? = nil,
                 webcam: WebcamLayer? = nil,
                 sourceTime: CMTime = .zero,
-                sourceCrop: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1)) {
+                sourceCrop: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1),
+                sourceMedia: String? = nil) {
         self.outputSize = outputSize
         self.background = background
         self.backgroundBlur = backgroundBlur
         self.videoFrame = videoFrame
+        self.videoOpacity = videoOpacity
         self.cornerRadius = cornerRadius
         self.shadowRadius = shadowRadius
         self.shadowOpacity = shadowOpacity
+        self.border = border
         self.zoom = zoom
         self.zoomCenter = zoomCenter
         self.zoomsWholeFrame = zoomsWholeFrame
@@ -77,9 +126,11 @@ public struct SceneDescriptor: Equatable, Sendable {
         self.clicks = clicks
         self.annotations = annotations
         self.caption = caption
+        self.keys = keys
         self.webcam = webcam
         self.sourceTime = sourceTime
         self.sourceCrop = sourceCrop
+        self.sourceMedia = sourceMedia
     }
 
     /// Where the video ends up once the camera has moved.
@@ -110,6 +161,12 @@ public struct SceneDescriptor: Equatable, Sendable {
     /// Whether the zoom magnifies the framed picture as a whole rather than only its
     /// contents. See `CameraStyle.zoomsWholeFrame`.
     public var zoomsWholeFrame: Bool = false
+
+    /// The picture darkened except round the pointer, and a lens on the recording there.
+    /// `nil` for every project that asks for neither, so its frame is the one it always
+    /// was. See `PointerSpotlightLayer` and `PointerMagnifierLayer`.
+    public var pointerSpotlight: PointerSpotlightLayer?
+    public var pointerMagnifier: PointerMagnifierLayer?
 
     /// The rectangle the picture is actually allowed to occupy.
     ///
@@ -170,28 +227,77 @@ public struct SceneDescriptor: Equatable, Sendable {
         copy.videoFrame = videoFrame.applying(CGAffineTransform(scaleX: factor, y: factor))
         copy.cornerRadius = cornerRadius * factor
         copy.shadowRadius = shadowRadius * factor
+        // In output pixels like the two above, so it is the fourth field that has to
+        // follow the size — a border left at full width on a third-size frame is a mat.
+        copy.border?.width = (border?.width ?? 0) * factor
         // The bubble's `rect` is normalised, so it follows `outputSize` without help — but
         // its corner radius is already resolved into output pixels, and a radius left at
         // full size against a third-size bubble is a circle where a rounded square belongs.
         // It would have shown only while the picture moved, and corrected itself the moment
         // playback stopped, which is the most confusing way for a bug to appear.
         copy.webcam?.cornerRadius = webcam.map { $0.cornerRadius * factor } ?? 0
+        // The window's bar and the camera's travel are in output pixels too, and a bar
+        // left at full height on a third-size frame would be most of the picture.
+        copy.chrome?.barHeight = (chrome?.barHeight ?? 0) * factor
+        copy.cameraMotion = cameraMotion?.scaled(by: factor)
+        // The bubble's border is in output pixels for the same reason, and would have come
+        // out three times as heavy on a third-size frame.
+        copy.webcam?.border?.width = (webcam?.border?.width ?? 0) * factor
+        // The other side of a crossfade is a frame too, and has to come out the same size
+        // as this one to be mixed with it.
+        copy.blend = blend?.scaled(by: factor)
         return copy
     }
 }
 
-/// Something hidden in this frame.
+/// Something hidden in this frame — or, for a spotlight, the one thing that is not.
 public struct BlurLayer: Equatable, Sendable {
     /// Normalised to the video, not the output, so it stays on the thing it was put over
     /// when the camera moves.
     public var rect: CGRect
     public var style: BlurRegion.Style
     public var radius: Double
+    /// A cover's colour.
+    public var color: ColorValue
+    /// How dark a spotlight makes the rest of the picture, 0…1.
+    public var dimming: Double
+    /// A spotlight's feather, as a fraction of the shorter side of the recording.
+    public var softness: Double
+    /// The corners, as a fraction of the region's own shorter side. See
+    /// `BlurRegion.cornerRadius`.
+    public var cornerRadius: Double
 
-    public init(rect: CGRect, style: BlurRegion.Style, radius: Double) {
+    /// The last four are defaulted so every description written before they existed —
+    /// and every test — still reads as the plain blur it was.
+    public init(rect: CGRect, style: BlurRegion.Style, radius: Double,
+                color: ColorValue = .black,
+                dimming: Double = BlurRegion.defaultDimming,
+                softness: Double = BlurRegion.defaultSoftness,
+                cornerRadius: Double = 0) {
         self.rect = rect
         self.style = style
         self.radius = radius
+        self.color = color
+        self.dimming = dimming
+        self.softness = softness
+        self.cornerRadius = cornerRadius
+    }
+}
+
+/// The line round the recording's picture.
+///
+/// Drawn *inside* the picture's edge, over its outermost pixels, so that turning it on
+/// moves nothing: `videoFrame`, the shadow and the corners are exactly what they were
+/// without it. Its outer edge is the picture's own edge — rounded corners included,
+/// because it is clipped by the same mask the picture is.
+public struct BorderLayer: Equatable, Sendable {
+    /// In output pixels, like `cornerRadius`, before the camera moves.
+    public var width: Double
+    public var color: ColorValue
+
+    public init(width: Double, color: ColorValue) {
+        self.width = width
+        self.color = color
     }
 }
 
@@ -210,14 +316,19 @@ public struct ClickLayer: Equatable, Sendable {
     /// How big the ring grows, as a fraction of the shorter side of the output.
     public var size: Double
     public var isSecondary: Bool
+    /// What the mark looks like. A ring unless the project says otherwise, which is what
+    /// every project made before there was a choice draws.
+    public var style: CursorStyle.ClickStyle
 
     public init(position: CGPoint, progress: Double, color: ColorValue,
-                size: Double, isSecondary: Bool) {
+                size: Double, isSecondary: Bool,
+                style: CursorStyle.ClickStyle = .ring) {
         self.position = position
         self.progress = progress
         self.color = color
         self.size = size
         self.isSecondary = isSecondary
+        self.style = style
     }
 }
 
@@ -243,6 +354,11 @@ public struct CursorLayer: Equatable, Sendable {
     /// made before the real pointer was saved has — and what a project gets when the
     /// person turns the real one off.
     public var artwork: RecordedCursor?
+    /// Which drawing, when it is not the recorded one. `asRecorded` draws `artwork` or
+    /// `shape`, which is what every description written before there was a choice meant.
+    public var appearance: CursorStyle.Appearance = .asRecorded
+    /// The `dot` style's colour.
+    public var dotColor: ColorValue = CursorStyle.defaultDotColor
 
     public init(position: CGPoint,
                 shape: CursorShapeKind,
@@ -308,9 +424,12 @@ public struct AnnotationLayer: Equatable, Sendable {
     /// From the entrance or exit: `dx` a fraction of the output's width, `dy` of its
     /// height, top-left origin like `rect`.
     public var offset: CGVector
+    /// Thickness, fill, type and shadow — part of the drawing, so part of its cache key.
+    public var style: AnnotationStyle
 
     public init(kind: AnnotationItem.Kind, rect: CGRect, color: ColorValue, fontSize: Double, opacity: Double,
-                rotation: Double = 0, scale: Double = 1, offset: CGVector = .zero) {
+                rotation: Double = 0, scale: Double = 1, offset: CGVector = .zero,
+                style: AnnotationStyle = AnnotationStyle()) {
         self.kind = kind
         self.rect = rect
         self.color = color
@@ -319,6 +438,7 @@ public struct AnnotationLayer: Equatable, Sendable {
         self.rotation = rotation
         self.scale = scale
         self.offset = offset
+        self.style = style
     }
 }
 
@@ -336,6 +456,19 @@ public struct CaptionLayer: Equatable, Sendable {
     public var position: CaptionStyle.Position
     public var margin: Double
     public var opacity: Double
+    public var typeface: CaptionStyle.Typeface
+    /// A family by name, in place of `typeface`; empty for the system's type. See
+    /// `CaptionStyle.fontFamily`.
+    public var fontFamily: String
+    /// Which word of the line is being said, counting from nought, when the project lights
+    /// words up as they are said. `nil` draws the line in one colour.
+    public var spokenWord: Int?
+    public var highlightColor: ColorValue
+    /// How big the plate is drawn, 1 being its own size. Only ever other than 1 while a
+    /// line is arriving.
+    public var scale: Double
+    /// How far below its place the plate is drawn, as a fraction of the output's height.
+    public var drop: Double
 
     public init(text: String,
                 fontSize: Double,
@@ -343,7 +476,13 @@ public struct CaptionLayer: Equatable, Sendable {
                 backgroundOpacity: Double,
                 position: CaptionStyle.Position,
                 margin: Double,
-                opacity: Double = 1) {
+                opacity: Double = 1,
+                typeface: CaptionStyle.Typeface = .standard,
+                spokenWord: Int? = nil,
+                highlightColor: ColorValue = ColorValue(r: 1, g: 0.84, b: 0.2),
+                scale: Double = 1,
+                drop: Double = 0,
+                fontFamily: String = "") {
         self.text = text
         self.fontSize = fontSize
         self.color = color
@@ -351,10 +490,17 @@ public struct CaptionLayer: Equatable, Sendable {
         self.position = position
         self.margin = margin
         self.opacity = opacity
+        self.typeface = typeface
+        self.fontFamily = fontFamily
+        self.spokenWord = spokenWord
+        self.highlightColor = highlightColor
+        self.scale = scale
+        self.drop = drop
     }
 }
 
-/// The camera bubble: the webcam recording, over the picture.
+/// The camera: the webcam recording, over the picture — in its bubble, or wherever the
+/// camera layout in force has put it.
 ///
 /// Placed by the builder rather than by the renderer, and that split is the same one the
 /// annotation layer makes for the same reason: corner, size and zoom reaction are
@@ -381,12 +527,47 @@ public struct WebcamLayer: Equatable, Sendable {
     /// default in the model, because a face that raises the wrong hand is unsettling.
     public var isMirrored: Bool
     public var shadowOpacity: Double
+    /// How much of the camera is on show, 0…1. Less than 1 only while a layout change is
+    /// fading it in or out — see `CameraLayout.hidden`.
+    public var opacity: Double
+    /// Which part of the camera's picture is shown, already held to what can be drawn.
+    public var crop: WebcamCrop
+    /// The line round the camera, in output pixels, or `nil` for none — which is what every
+    /// project written before there was one describes. Drawn inside the edge, like the
+    /// picture's own border, so turning it on moves nothing and `rect` stays the whole of
+    /// what is drawn.
+    public var border: BorderLayer?
+    /// What happens to the room behind the person.
+    public var background: WebcamSettings.Background
+    /// How soft a blurred background is, 0…1. The renderer turns it into a radius against
+    /// the camera frame's own size, so the same setting reads the same at any resolution.
+    public var backgroundBlur: Double
+    /// Whether this is the bubble — a small thing in a corner — rather than the camera
+    /// filling the frame or a pane of it.
+    ///
+    /// What the keys ask before stepping out of its way, and what the preview asks before
+    /// offering a handle to drag it by: keys moved clear of a camera that fills the frame
+    /// would be pushed off the picture, and dragging a pane would park a bubble somewhere
+    /// nobody asked for one.
+    public var isBubble: Bool
 
-    public init(rect: CGRect, cornerRadius: Double, isMirrored: Bool, shadowOpacity: Double) {
+    public init(rect: CGRect, cornerRadius: Double, isMirrored: Bool, shadowOpacity: Double,
+                opacity: Double = 1,
+                crop: WebcamCrop = WebcamCrop(),
+                border: BorderLayer? = nil,
+                background: WebcamSettings.Background = .keep,
+                backgroundBlur: Double = 0.5,
+                isBubble: Bool = true) {
         self.rect = rect
         self.cornerRadius = cornerRadius
         self.isMirrored = isMirrored
         self.shadowOpacity = shadowOpacity
+        self.opacity = opacity
+        self.crop = crop
+        self.border = border
+        self.background = background
+        self.backgroundBlur = backgroundBlur
+        self.isBubble = isBubble
     }
 
     /// The bubble in output pixels with a bottom-left origin — Core Image's space, and the

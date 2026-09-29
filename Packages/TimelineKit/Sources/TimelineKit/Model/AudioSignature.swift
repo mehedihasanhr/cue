@@ -19,6 +19,26 @@ extension Timeline {
             public let sourceStart: CMTime
             public let sourceDuration: CMTime
             public let speed: Double
+            /// How long the clip is silent for, when it is a freeze frame or a title. The
+            /// three above are the same for every hold, so without this a two-second
+            /// still made five would not rebuild the sound, and everything after it would
+            /// be heard three seconds early.
+            public let hold: CMTime?
+            /// How the clip arrives, as far as the sound is concerned: a dip fades the
+            /// sound with the picture, and a crossfade blends it.
+            public let transition: ClipTransition?
+            /// Which file the clip plays. Two clips at the same times of different files
+            /// are two different sounds.
+            public let source: String?
+
+            init(_ clip: Clip) {
+                sourceStart = clip.sourceStart
+                sourceDuration = clip.sourceDuration
+                speed = clip.speed
+                hold = clip.hold
+                transition = clip.transition
+                source = clip.source
+            }
         }
 
         /// One run of a *detached* sound lane: the recording's own sound, laid where the
@@ -37,6 +57,8 @@ extension Timeline {
             public let duration: CMTime
             public let sourceStart: CMTime
             public let gain: Double
+            public let fadeIn: Double
+            public let fadeOut: Double
         }
 
         /// Empty once the lane is detached, and that emptiness is doing work: the
@@ -67,6 +89,31 @@ extension Timeline {
         /// file, which is a different mix from one with no audible sources — hence the
         /// paths, which are never empty when there is something to hear.
         public let sources: [Source]
+
+        /// What the click sounds depend on, or `nil` when there are none.
+        ///
+        /// Clicks follow the picture rather than the sound lane, so the picture's cuts
+        /// are here even when `cuts` is empty because the sound has been detached. And a
+        /// stretch that hides the pointer silences the clicks inside it, so those are here
+        /// too.
+        public struct Clicks: Equatable, Sendable {
+            public let kind: CursorStyle.ClickSound
+            public let volume: Double
+            public let picture: [Cut]
+            public let hiding: [CursorRegion]
+            /// Clicks outside the crop are not heard — see `visibleClicks` — so cropping
+            /// changes which ones are.
+            public let crop: CGRect?
+        }
+
+        public let clicks: Clicks?
+
+        /// The voice switches and the music's dips under speech. See `VoiceSignature`.
+        public var voice: VoiceSignature = VoiceSignature()
+        /// The imported clips, which lay their own sound down whether or not the
+        /// recording's lane is detached — so they are here in both states, where `cuts`
+        /// is empty once the lane is detached.
+        public var imported: [Cut] = []
     }
 
     /// What the sound of this edit depends on.
@@ -76,9 +123,7 @@ extension Timeline {
     /// decode the recording again.
     public var audioSignature: AudioSignature {
         AudioSignature(
-            cuts: detachedSound == nil ? clips.map {
-                .init(sourceStart: $0.sourceStart, sourceDuration: $0.sourceDuration, speed: $0.speed)
-            } : [],
+            cuts: detachedSound == nil ? clips.map(AudioSignature.Cut.init) : [],
             runs: detachedSound.map { runs in
                 runs.map {
                     .init(start: $0.start, duration: $0.duration,
@@ -87,10 +132,20 @@ extension Timeline {
             },
             sounds: audio.map {
                 .init(path: $0.path, start: $0.start, duration: $0.duration,
-                      sourceStart: $0.sourceStart, gain: $0.gain)
+                      sourceStart: $0.sourceStart, gain: $0.gain,
+                      fadeIn: $0.heardFades.fadeIn, fadeOut: $0.heardFades.fadeOut)
             },
             recorded: sound,
-            sources: soundTracks.map { .init(path: $0.path, level: level(of: $0)) }
+            sources: soundTracks.map { .init(path: $0.path, level: level(of: $0)) },
+            clicks: cursor.isVisible && cursor.clickSound
+                ? .init(kind: cursor.clickSoundKind,
+                        volume: cursor.clickSoundVolume,
+                        picture: clips.map(AudioSignature.Cut.init),
+                        hiding: cursorRegions,
+                        crop: style.crop?.rect)
+                : nil,
+            voice: voiceSignature,
+            imported: clips.contains(where: \.isImported) ? clips.map(AudioSignature.Cut.init) : []
         )
     }
 }

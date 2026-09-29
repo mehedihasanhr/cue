@@ -1,4 +1,6 @@
-import AVFoundation
+// `@preconcurrency`: `AVCaptureSession` is not marked `Sendable`, and starting one off the
+// queue the encoder runs on is what Apple's own documentation says to do.
+@preconcurrency import AVFoundation
 import CoreMedia
 import Foundation
 import os

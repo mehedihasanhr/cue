@@ -43,6 +43,8 @@ struct RecorderBar: View {
         case take
         /// It went wrong, and the reason has to be readable.
         case failure
+        /// Restart was asked for a take long enough to be worth asking about.
+        case confirmRestart
     }
 
     /// The bar travels between its shapes rather than cutting between them.
@@ -64,6 +66,7 @@ struct RecorderBar: View {
             // the stack — and then animate down from it. The message block is a fixed width
             // by design, so the stand-in measures within a few points of the real thing.
             layer(.failure) { failureControls(studio.session.state.failure ?? .targetDisappeared) }
+            layer(.confirmRestart) { confirmRestartControls }
         }
         .frame(width: barWidth, height: StudioPalette.barHeight)
         .background {
@@ -105,7 +108,9 @@ struct RecorderBar: View {
     /// `.countdown` and `.failed` all ended up drawing the setup bar. A switch with no
     /// `default` makes a new state a build error here rather than a wrong layout.
     private var shape: Shape {
-        switch studio.session.state {
+        // Asked over the take it would throw away, which is paused while it asks.
+        if studio.restartPending, studio.session.state.isTaking { return .confirmRestart }
+        return switch studio.session.state {
         case .preparing, .countdown: .starting
         case .recording, .paused, .finishing: .take
         case .failed: .failure
@@ -192,6 +197,14 @@ struct RecorderBar: View {
                           label: model.microphoneLabel) {
                 microphoneMenu
             }
+            // Only once a microphone is on and allowed: the meter listens to it, and this
+            // bar never opens a microphone nobody chose.
+            if let meter = RecorderCenter.shared?.meter, meter.isListening, !studio.session.state.isTaking {
+                MicrophoneMeterView(source: meter, length: 24, thickness: 5, vertical: true)
+                    .padding(.trailing, 6)
+                    .help("Microphone level")
+                    .transition(.opacity)
+            }
 
             InputChip(symbol: "music.note.tv",
                       onSymbol: "music.note.tv.fill",
@@ -214,7 +227,8 @@ struct RecorderBar: View {
     ///
     /// The toggle goes through `model.setCamera` rather than binding straight at the
     /// setting, because turning the camera on is the moment to ask for permission — and the
-    /// only moment, since nothing in this app opens a camera to preview it.
+    /// only moment: the preview beside the bar shows a camera already allowed, and asks
+    /// nothing itself.
     @ViewBuilder
     private var cameraMenu: some View {
         @Bindable var settings = settings
@@ -259,6 +273,11 @@ struct RecorderBar: View {
             Button("Recordings…") { showLibrary() }
             Button("Settings…") { openSettings() }
             Divider()
+            Toggle("Speaker Notes", isOn: Binding { settings.recorder.showsSpeakerNotes }
+                   set: { settings.recorder.showsSpeakerNotes = $0 })
+            Toggle("Hide Desktop Icons", isOn: Binding { settings.recorder.hidesDesktopIcons }
+                   set: { settings.recorder.hidesDesktopIcons = $0 })
+            Divider()
             Picker("Countdown", selection: countdown) {
                 Text("No countdown").tag(0)
                 ForEach([3, 5, 10], id: \.self) { Text("\($0) seconds").tag($0) }
@@ -285,6 +304,7 @@ struct RecorderBar: View {
     private var recordingControls: some View {
         HStack(spacing: 10) {
             timer
+            takeMeter
             cameraLive
             diskWarning
             separator
@@ -299,7 +319,7 @@ struct RecorderBar: View {
             }
             .buttonStyle(BarButtonStyle())
             .disabled(!studio.session.state.isTaking)
-            .help(studio.session.isPaused ? "Resume" : "Pause")
+            .help(settings.recorder.help(studio.session.isPaused ? "Resume" : "Pause", .pause))
 
             Button { studio.stop() } label: {
                 RoundedRectangle(cornerRadius: 3, style: .continuous)
@@ -313,7 +333,10 @@ struct RecorderBar: View {
             // it having a name. These two used to disagree about `.paused`: the button was
             // live, the guard refused, and the take went to the bin.
             .disabled(!studio.session.state.isTaking)
-            .help("Stop and keep this recording")
+            .help(settings.recorder.help("Stop and keep this recording", .record))
+
+            markerButton
+            restartButton
 
             Button { studio.cancel() } label: {
                 Image(systemName: "trash")
@@ -593,6 +616,103 @@ extension RecorderBar {
                 .background(.white.opacity(0.14), in: Capsule())
         }
         .buttonStyle(BarButtonStyle(pressedScale: 0.96))
+    }
+}
+
+// MARK: - Markers, restart and the meter
+
+extension RecorderBar {
+    /// Drops a marker, and says how many this take has.
+    fileprivate var markerButton: some View {
+        Button { studio.addMarker() } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "flag.fill")
+                    .font(.system(size: 12, weight: .medium))
+                if studio.session.markerCount > 0 {
+                    Text("\(studio.session.markerCount)")
+                        .font(.system(size: 11.5, weight: .semibold).monospacedDigit())
+                        .contentTransition(.numericText())
+                }
+            }
+            .foregroundStyle(.white.opacity(0.85))
+            .frame(minWidth: 36, minHeight: 36)
+            .padding(.horizontal, studio.session.markerCount > 0 ? 6 : 0)
+            .background(.white.opacity(0.08), in: Capsule())
+            .animation(StudioMotion.state, value: studio.session.markerCount)
+        }
+        .buttonStyle(BarButtonStyle())
+        .disabled(!studio.session.state.isTaking)
+        .help(settings.recorder.help("Add a marker here, to find this moment in the editor", .marker))
+    }
+
+    /// Throws this take away and starts again with the same target and settings.
+    fileprivate var restartButton: some View {
+        Button { studio.requestRestart() } label: {
+            Image(systemName: "arrow.counterclockwise")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.85))
+                .frame(width: 36, height: 36)
+                .background(.white.opacity(0.08), in: Circle())
+        }
+        .buttonStyle(BarButtonStyle())
+        .disabled(!studio.session.state.isTaking)
+        .help(settings.recorder.help("Start this take again", .restart))
+    }
+
+    /// The microphone, while it is being recorded: the same meter the setup bar shows,
+    /// read off the take itself.
+    @ViewBuilder
+    fileprivate var takeMeter: some View {
+        if let meter = RecorderCenter.shared?.meter, meter.source == .take, studio.session.state.isTaking {
+            HStack(spacing: 5) {
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(studio.session.isPaused ? Color.orange : .white.opacity(0.75))
+                MicrophoneMeterView(source: meter, length: 40, thickness: 5)
+                    .opacity(studio.session.isPaused ? 0.4 : 1)
+            }
+            .help(studio.session.isPaused ? "Microphone level \u{2014} not recorded while paused" : "Microphone level")
+            .transition(.opacity)
+        }
+    }
+
+    /// Asked before a take longer than ten seconds is thrown away. The take is paused
+    /// while this is up, so the time spent deciding is not in it if it is kept.
+    fileprivate var confirmRestartControls: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "arrow.counterclockwise.circle.fill")
+                .font(.system(size: 19))
+                .foregroundStyle(.orange)
+                .padding(.leading, 6)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Start this take again?")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(.white)
+                Text("The \(RecorderModel.length(studio.session.state.recordedSeconds(at: .now))) recorded so far will be thrown away.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(StudioPalette.offered)
+            }
+            .lineLimit(1)
+            .frame(width: 250, alignment: .leading)
+
+            separator
+
+            pill("Keep Recording") { studio.keepTake() }
+                .help("Carry on with this take")
+            Button { studio.restart() } label: {
+                Text("Restart")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .frame(height: 34)
+                    .background(.red.opacity(0.85), in: Capsule())
+            }
+            .buttonStyle(BarButtonStyle(pressedScale: 0.96))
+            .help(settings.recorder.help("Throw this take away and count down again", .restart))
+            .padding(.trailing, 2)
+        }
+        .padding(.horizontal, 6)
     }
 }
 

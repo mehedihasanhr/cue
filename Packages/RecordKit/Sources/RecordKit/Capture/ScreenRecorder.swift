@@ -71,6 +71,17 @@ public final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @
         stream = nil
     }
 
+    /// Swaps what the running stream leaves out, without stopping it — see
+    /// `DesktopIconsWatcher`. A refusal is logged and the old filter kept: a Finder window
+    /// missing from the picture is a smaller loss than a take that stops.
+    public func update(_ filter: SCContentFilter) async {
+        do {
+            try await stream?.updateContentFilter(filter)
+        } catch {
+            Self.log.error("Couldn't update the filter: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     // MARK: - SCStreamOutput
 
     public func stream(_ stream: SCStream, didOutputSampleBuffer buffer: CMSampleBuffer, of type: SCStreamOutputType) {
@@ -78,9 +89,14 @@ public final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @
         case .screen:
             // A frame arrives for every change *and* for several non-changes: `.idle`
             // means "identical to the last one", `.blank` means the display went dark.
-            // Writing those as frames would encode the same picture repeatedly; the
-            // writer's pacer fills that time far more cheaply.
-            guard buffer.screenFrameStatus == .complete else { return }
+            // Neither carries a picture. An idle one still carries the *time*, which is
+            // what the writer needs to keep a still screen in step with the clock.
+            let status = buffer.screenFrameStatus
+            if status == .idle {
+                writer.appendStill(at: buffer.presentationTimeStamp)
+                return
+            }
+            guard status == .complete else { return }
             if let cursorMapper, let geometry = buffer.frameGeometry {
                 cursorMapper.place(geometry)
             }

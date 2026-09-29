@@ -180,6 +180,38 @@ struct SoundTrackTests {
         #expect(edit.soundTrackForSpeech?.path == "live.m4a")
     }
 
+    // MARK: - Voice defaults for a new recording
+
+    @Test func voiceDefaultsLandOnMicrophonesAndNotOnSystemAudio() {
+        var edit = timeline([
+            SoundTrack(source: .systemAudio, path: "media/system-audio.m4a"),
+            SoundTrack(source: .microphone, path: "media/microphone-1.m4a"),
+            SoundTrack(source: .microphone, path: "media/microphone-2.m4a"),
+        ])
+        edit.treatVoices(cleansVoice: true, evensVolume: true)
+
+        #expect(!edit.soundTracks[0].style.isTreated, "music is not a voice")
+        #expect(edit.soundTracks[1].style.cleansVoice && edit.soundTracks[1].style.evensVolume)
+        #expect(edit.soundTracks[2].style.cleansVoice && edit.soundTracks[2].style.evensVolume)
+        #expect(!edit.sound.isTreated, "the master is not a microphone")
+    }
+
+    @Test func voiceDefaultsThatAreOffChangeNothing() {
+        var treated = SoundStyle()
+        treated.evensVolume = true
+        var edit = timeline([SoundTrack(source: .microphone, path: "media/microphone-1.m4a", style: treated)])
+        let before = edit
+        edit.treatVoices(cleansVoice: false, evensVolume: false)
+        #expect(edit == before)
+    }
+
+    @Test func voiceDefaultsLeaveARecordingWithoutLanesAlone() {
+        var edit = timeline([])
+        edit.treatVoices(cleansVoice: true, evensVolume: true)
+        #expect(edit.soundTracks.isEmpty)
+        #expect(!edit.sound.isTreated)
+    }
+
     // MARK: - Round trip
 
     @Test func lanesSurviveBeingWrittenAndReadBack() throws {

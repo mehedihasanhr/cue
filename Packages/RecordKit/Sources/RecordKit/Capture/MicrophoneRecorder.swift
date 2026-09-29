@@ -1,4 +1,6 @@
-import AVFoundation
+// `@preconcurrency`: `AVCaptureSession` is not marked `Sendable`, and starting one off the
+// queue the encoder runs on is what Apple's own documentation says to do.
+@preconcurrency import AVFoundation
 import Foundation
 import os
 
@@ -85,6 +87,11 @@ public final class MicrophoneRecorder: NSObject, AVCaptureAudioDataOutputSampleB
         session.stopRunning()
         NotificationCenter.default.removeObserver(self)
     }
+
+    /// How loud this microphone is right now, in decibels below full scale — the loudest
+    /// of its channels. Read off the take's own capture rather than a second session on
+    /// the same device, so the bar's meter shows exactly what is being written.
+    public var power: Float? { MicrophoneLevelMonitor.power(of: output) }
 
     public func captureOutput(_ output: AVCaptureOutput,
                               didOutput buffer: CMSampleBuffer,

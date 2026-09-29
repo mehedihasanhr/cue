@@ -136,10 +136,11 @@ final class TimelineDrag {
                 // a move skip the length clamp entirely.
                 duration: grip == .body ? nil : wanted.duration,
                 isSoundRun: item.isSoundRun,
-                // A head drag on a sound run trims it: the recording stays put underneath
-                // and the run shows less of it. A body drag slides the whole thing and must
-                // not re-cut it.
-                trimsHead: item.isSoundRun && grip == .head)
+                // A head drag trims: what plays afterwards stays put and the front edge
+                // shows less of it. True of a run of the recording and of a sound that was
+                // brought in alike; every other kind of region ignores it. A body drag
+                // slides the whole thing and must not re-cut it.
+                trimsHead: grip == .head)
         }
     }
 

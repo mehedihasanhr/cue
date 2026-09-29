@@ -131,6 +131,11 @@ public final class RecordingSession {
     private var webcamFrameRate: Int?
     private var cursor: CursorTracker?
     private var cursorArtwork: CursorArtworkWriter?
+    /// The keyboard, when this take asked for it. `nil` is the state in which no key
+    /// monitor is ever installed — the same bargain `webcam` makes with the camera.
+    private var keys: KeyTracker?
+    /// How the keyboard is reached: the real grant and monitor, or a test's stand-in.
+    private let keyEnvironment: KeyTracker.Environment
     private var focus: FocusTracker?
     private var cursorWriter: JSONLWriter?
     private var inputWriter: JSONLWriter?
@@ -152,7 +157,11 @@ public final class RecordingSession {
         let writer: AudioTrackWriter
     }
 
-    public init() {}
+    /// - Parameter keys: how the keyboard is watched. The default is the real Mac; a test
+    ///   hands in one that neither asks macOS for a grant nor installs a monitor.
+    public init(keys: KeyTracker.Environment = .system) {
+        keyEnvironment = keys
+    }
 
     // MARK: - Starting
 
@@ -218,8 +227,10 @@ public final class RecordingSession {
         // drop frames until the screen caught up — starting it here wastes none.
         webcam?.start()
         cursor?.start()
+        keys?.start()
         focus?.start()
         watchDisk()
+        watchDesktopIcons(configuration)
 
         startedAt = .now
         state = .recording(startedAt: .now)
@@ -230,7 +241,8 @@ public final class RecordingSession {
     /// it to work.
     private func prepare(_ configuration: RecordingConfiguration) async throws {
         let shareable = try await content.content()
-        let filter = try content.filter(for: configuration.target, in: shareable)
+        let filter = try content.filter(for: configuration.target, in: shareable,
+                                        hidingDesktopIcons: configuration.hidesDesktopIcons)
         let streamConfiguration = configuration.streamConfiguration(for: filter)
         pixelSize = CGSize(width: streamConfiguration.width, height: streamConfiguration.height)
         displayScale = Double(filter.pointPixelScale)
@@ -263,6 +275,9 @@ public final class RecordingSession {
                                        clock: clock,
                                        queue: queue)
         self.writer = writer
+        writer.onFailure = { [weak self] error in
+            Task { @MainActor in self?.writerFailed(error) }
+        }
 
         var lanes: [AudioLane] = []
         var systemAudioWriter: AudioTrackWriter?
@@ -298,6 +313,7 @@ public final class RecordingSession {
 
         try await prepareWebcam(configuration, package: package, clock: clock)
         startTelemetry(for: configuration, shareable: shareable, package: package)
+        try markInProgress(configuration, package: package)
     }
 
     /// A file for one sound, and the manifest entry that will point at it.
@@ -379,17 +395,25 @@ public final class RecordingSession {
                                 shareable: SCShareableContent,
                                 package: RecordingPackage) {
         let cursorWriter = JSONLWriter(url: package.telemetryFolder.appendingPathComponent("cursor.jsonl"), queue: queue)
-        let inputWriter = configuration.capturesClicks
+        // One file for the mouse and the keyboard: they interleave in time, and reading
+        // them back in order is what the editor wants. Opened for either.
+        let inputWriter = configuration.capturesClicks || configuration.capturesKeystrokes
             ? JSONLWriter(url: package.telemetryFolder.appendingPathComponent("input.jsonl"), queue: queue)
             : nil
         let focusWriter = configuration.capturesFocus
             ? JSONLWriter(url: package.telemetryFolder.appendingPathComponent("focus.jsonl"), queue: queue)
             : nil
+        // Always opened: a marker can be dropped in any take, and a log nobody wrote to is
+        // deleted when it closes, so the manifest only names one that has markers in it.
+        let markerWriter = JSONLWriter(url: package.url.appendingPathComponent(MarkerLog.path), queue: queue)
         queue.sync {
             try? cursorWriter.open()
             try? inputWriter?.open()
             try? focusWriter?.open()
+            try? markerWriter.open()
         }
+        self.markerWriter = markerWriter
+        markerLog = MarkerLog(writer: markerWriter, queue: queue, clock: clock)
         self.cursorWriter = cursorWriter
         self.inputWriter = inputWriter
         self.focusWriter = focusWriter
@@ -419,14 +443,30 @@ public final class RecordingSession {
                                   relativeFolder: "telemetry/cursors")
             : nil
         cursorArtwork = artwork
+        // Which display the picture is of, for how long that display takes to show the
+        // pointer. A window is wherever its corner is.
+        let display = configuration.target.displayID
+            ?? Self.display(containing: content.origin(of: configuration.target, in: shareable))
+        pointerLatency = PointerLatency.seconds(for: display)
         cursor = CursorTracker(cursorWriter: cursorWriter,
-                               inputWriter: inputWriter,
+                               // The file may be open for the keyboard alone, in which
+                               // case the mouse must not write into it.
+                               inputWriter: configuration.capturesClicks ? inputWriter : nil,
                                queue: queue,
                                clock: clock,
                                mapper: mapper,
                                sampleRate: configuration.cursorSampleRate,
-                               capturesKeystrokes: configuration.capturesKeystrokes,
+                               latency: pointerLatency,
                                artwork: artwork)
+        // Only when asked for. The tracker checks the grant itself and records nothing
+        // without it; the manifest says which of the two happened.
+        if configuration.capturesKeystrokes, let inputWriter {
+            keys = KeyTracker(writer: inputWriter,
+                              queue: queue,
+                              clock: clock,
+                              latency: pointerLatency,
+                              environment: keyEnvironment)
+        }
         if let focusWriter {
             focus = FocusTracker(writer: focusWriter,
                                  queue: queue,
@@ -434,6 +474,17 @@ public final class RecordingSession {
                                  mapper: mapper,
                                  tracksFields: configuration.capturesKeystrokes)
         }
+    }
+
+    /// How far every pointer sample in this take was moved to meet the picture.
+    private var pointerLatency: Double = 0
+
+    /// The display a point on the desk is on, in the space the pointer is read in.
+    private static func display(containing point: CGPoint) -> CGDirectDisplayID? {
+        var display = CGDirectDisplayID()
+        var count: UInt32 = 0
+        guard CGGetDisplaysWithPoint(point, 1, &display, &count) == .success, count > 0 else { return nil }
+        return display
     }
 
     // MARK: - Stopping
@@ -451,12 +502,16 @@ public final class RecordingSession {
         // the two drifting apart by however long the pause lasted.
         let webcamWriter = webcamWriter
         let audioWriters = audioLanes.map(\.writer)
+        // The clock first, and once: it is what every file and every sample takes the
+        // length of the hold from, so none of them can disagree about it.
+        clock.hold()
         queue.async {
             writer.setPaused(true)
             webcamWriter?.setPaused(true)
             for audio in audioWriters { audio.setPaused(true) }
         }
         cursor?.stop()
+        keys?.stop()
         focus?.stop()
         state = held
         Self.log.notice("Paused")
@@ -466,12 +521,14 @@ public final class RecordingSession {
         guard let released = state.released(at: .now), let writer else { return }
         let webcamWriter = webcamWriter
         let audioWriters = audioLanes.map(\.writer)
+        clock.release()
         queue.async {
             writer.setPaused(false)
             webcamWriter?.setPaused(false)
             for audio in audioWriters { audio.setPaused(false) }
         }
         cursor?.start()
+        keys?.start()
         focus?.start()
         state = released
         Self.log.notice("Resumed")
@@ -491,6 +548,10 @@ public final class RecordingSession {
     /// claiming to be filming somebody when it is not, which teaches the user to stop
     /// believing it in the case that matters.
     public var isRecordingCamera: Bool { webcam != nil }
+
+    /// The package this take is being written into, while there is one — so the library
+    /// can leave the take being recorded out of its interrupted ones.
+    public var packageURL: URL? { package?.url }
 
     @discardableResult
     public func stop() async -> Result<URL, RecordingError> {
@@ -517,8 +578,10 @@ public final class RecordingSession {
                     _ = try await webcamWriter.finish()
                     hasWebcam = true
                 } catch {
-                    Self.log.error("The camera's file wouldn't finish; keeping the screen without it.")
-                    webcamWriter.cancel()
+                    // Not deleted: a file that would not close still plays up to its last
+                    // fragment, and a camera that stopped short beats no camera.
+                    hasWebcam = await TakeRecovery.isPlayable(webcamWriter.videoURL, kind: .webcam)
+                    Self.log.error("The camera's file wouldn't finish; \(hasWebcam ? "kept as it was" : "left out", privacy: .public).")
                 }
             }
             // Each sound's own file, closed before the picture's. A sound file that will
@@ -532,8 +595,12 @@ public final class RecordingSession {
                                                name: lane.name,
                                                deviceID: lane.deviceID))
                 } catch {
-                    Self.log.error("\(lane.path, privacy: .public) wouldn't finish; keeping the take without it.")
-                    lane.writer.cancel()
+                    // Kept for the reason the camera's is.
+                    guard await TakeRecovery.isPlayable(lane.writer.url, kind: lane.kind) else {
+                        Self.log.error("\(lane.path, privacy: .public) wouldn't finish; keeping the take without it.")
+                        continue
+                    }
+                    recordedAudio.append(.init(kind: lane.kind, path: lane.path, name: lane.name, deviceID: lane.deviceID))
                 }
             }
 
@@ -541,16 +608,18 @@ public final class RecordingSession {
             let manifest = manifest(for: configuration, package: package,
                                     duration: duration.seconds, webcam: hasWebcam)
             try package.write(manifest)
+            package.removeMarker()
             state = .finished(package.url)
             Self.log.notice("Finished \(package.url.lastPathComponent, privacy: .public) (\(duration.seconds, format: .fixed(precision: 1))s)")
             reset()
             return .success(package.url)
-        } catch let error as RecordingError {
-            fail(error)
-            return .failure(error)
         } catch {
-            let failure = RecordingError.writerFailed(error.localizedDescription)
-            fail(failure)
+            // The take happened; it is the closing that failed. The package stays, marker
+            // and all, for Recordings to recover — it used to be deleted here, which on a
+            // full disk was every second of the take.
+            let reason = if case .writerFailed(let reason)? = error as? RecordingError { reason } else { error.localizedDescription }
+            let failure = RecordingError.unfinished(reason)
+            fail(failure, keepingPackage: true)
             return .failure(failure)
         }
     }
@@ -573,6 +642,10 @@ public final class RecordingSession {
         writer?.cancel()
         webcamWriter?.cancel()
         for lane in audioLanes { lane.writer.cancel() }
+        // The cancels above run on the capture queue. Waiting for it to drain means no
+        // writer is left holding a file inside the package when it is deleted, so nothing
+        // can put a folder back afterwards — a restart must not leave the old take behind.
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in queue.async { done.resume() } }
         package?.discard()
         reset()
     }
@@ -591,14 +664,16 @@ public final class RecordingSession {
     /// finishes the file rather than discarding it.
     private func interrupted(by error: RecordingError) {
         guard state.isBusy else { return }
-        Self.log.error("Interrupted: \(error.localizedDescription ?? "unknown", privacy: .public)")
+        Self.log.error("Interrupted: \(error.localizedDescription, privacy: .public)")
         Task {
             // The same predicate as the bar's Stop button, for the same reason: a take
             // interrupted while it was paused is still a take with seconds in it, and
             // matching `.recording` alone here threw those away — the opposite of what the
             // comment above promises.
             if state.isTaking {
-                _ = await stop()
+                // A take that could not even be closed says so itself, and that is the
+                // more useful thing to show: where to find what was kept.
+                if case .failure(.unfinished) = await stop() { return }
             } else {
                 await cancel()
             }
@@ -609,7 +684,10 @@ public final class RecordingSession {
     private func teardown() async {
         diskTimer?.invalidate()
         diskTimer = nil
+        desktopIcons?.stop()
+        desktopIcons = nil
         cursor?.stop()
+        keys?.stop()
         focus?.stop()
         for microphone in microphones { microphone.stop() }
         // Before the screen, and unconditionally. A camera session left running is a camera
@@ -630,6 +708,7 @@ public final class RecordingSession {
             _ = inputWriter?.close()
             return focusWriter?.close() ?? false
         }
+        markersWritten = queue.sync { [markerWriter] in markerWriter?.close() ?? false }
     }
 
     /// The audio files that ended up with sound in them, as the manifest will name them.
@@ -649,6 +728,8 @@ public final class RecordingSession {
     private var focusTrackWritten = false
 
     private func reset() {
+        takeSync?.stop()
+        takeSync = nil
         writer = nil
         screen = nil
         microphones = []
@@ -661,16 +742,21 @@ public final class RecordingSession {
         cursor = nil
         cursorArtwork = nil
         cursorArtworkPath = nil
+        keys = nil
         focus = nil
         focusTrackWritten = false
+        markerWriter = nil
+        markerLog = nil
+        markersWritten = false
+        markerCount = 0
         package = nil
         configuration = nil
         startedAt = nil
     }
 
-    private func fail(_ error: RecordingError) {
-        Self.log.error("Failed: \(error.localizedDescription ?? "unknown", privacy: .public)")
-        package?.discard()
+    private func fail(_ error: RecordingError, keepingPackage: Bool = false) {
+        Self.log.error("Failed: \(error.localizedDescription, privacy: .public)")
+        if !keepingPackage { package?.discard() }
         reset()
         state = .failed(error)
     }
@@ -716,9 +802,16 @@ public final class RecordingSession {
                                  sourceRect: sourceRect,
                                  tracks: tracks,
                                  telemetry: .init(cursor: "telemetry/cursor.jsonl",
-                                                  input: configuration.capturesClicks ? "telemetry/input.jsonl" : nil,
+                                                  input: configuration.capturesClicks || configuration.capturesKeystrokes
+                                                      ? "telemetry/input.jsonl" : nil,
                                                   focus: focusTrackWritten ? "telemetry/focus.jsonl" : nil,
-                                                  cursorArtwork: cursorArtworkPath))
+                                                  cursorArtwork: cursorArtworkPath,
+                                                  pointerLatency: pointerLatency,
+                                                  // What actually happened, read off the
+                                                  // tracker: asked for and watched, asked
+                                                  // for and refused, or not asked for.
+                                                  keys: keys?.capture,
+                                                  markers: markersWritten ? MarkerLog.path : nil))
     }
 
     // MARK: - Disk
@@ -743,4 +836,92 @@ public final class RecordingSession {
         RunLoop.main.add(timer, forMode: .common)
         diskTimer = timer
     }
+
+    // MARK: - Surviving a crash
+
+    /// Flushes this take's files to the disk while it records. See `TakeSync`.
+    private var takeSync: TakeSync?
+
+    /// Says, inside the package, that this take is being recorded and what it will be.
+    ///
+    /// Before the countdown, so there is never a moment with frames on disk and no marker
+    /// beside them. The manifest it carries is the one `stop()` would write, with every
+    /// sound it was asked for rather than the ones that turned out to have samples —
+    /// recovery checks each file for itself.
+    private func markInProgress(_ configuration: RecordingConfiguration, package: RecordingPackage) throws {
+        var draft = manifest(for: configuration, package: package, duration: 0, webcam: webcamWriter != nil)
+        draft.tracks.insert(contentsOf: audioLanes.map {
+            RecordingManifest.Track(kind: $0.kind, path: $0.path, name: $0.name, deviceID: $0.deviceID)
+        }, at: 1)
+        if focusWriter != nil { draft.telemetry.focus = "telemetry/focus.jsonl" }
+        if markerWriter != nil { draft.telemetry.markers = MarkerLog.path }
+        do {
+            try package.writeMarker(TakeMarker(manifest: draft))
+        } catch {
+            // A package that will not take a small file will not take a video either.
+            throw RecordingError.writerFailed(error.localizedDescription)
+        }
+
+        let sync = TakeSync(folders: [package.mediaFolder, package.telemetryFolder])
+        sync.start()
+        takeSync = sync
+    }
+
+    /// The screen's file stopped taking frames. A full disk is said as one, because it is
+    /// the one the user can do something about.
+    private func writerFailed(_ error: any Error) {
+        guard state.isTaking, let package else { return }
+        if case .stop(let bytes) = disk.verdict(for: package.url) {
+            interrupted(by: .lowDiskSpace(bytesAvailable: bytes))
+        } else {
+            interrupted(by: .unfinished(error.localizedDescription))
+        }
+    }
+
+    // MARK: - Markers
+
+    /// The markers sidecar and what writes into it. See `MarkerLog`.
+    private var markerWriter: JSONLWriter?
+    private var markerLog: MarkerLog?
+    /// Whether any marker reached the file, so the manifest names it only then.
+    private var markersWritten = false
+
+    /// How many markers this take has, for the bar to count.
+    public private(set) var markerCount = 0
+
+    /// Drops a marker at this moment of the take — on the recording's clock, so a marker
+    /// dropped while paused lands where the pause began. `nil` when there is no take, or
+    /// the last marker was a moment ago.
+    @discardableResult
+    public func addMarker() -> MarkerSample? {
+        guard state.isTaking, let sample = markerLog?.add() else { return nil }
+        markerCount += 1
+        Self.log.notice("Marker at \(sample.t, format: .fixed(precision: 2))s")
+        return sample
+    }
+
+    // MARK: - Desktop icons
+
+    /// Rebuilds the filter when a Finder window comes or goes, while the desktop's icons
+    /// are being left out. See `CaptureExclusion` for why that needs doing at all.
+    private var desktopIcons: DesktopIconsWatcher?
+
+    private func watchDesktopIcons(_ configuration: RecordingConfiguration) {
+        guard configuration.hidesDesktopIcons, configuration.target.displayID != nil else { return }
+        desktopIcons = DesktopIconsWatcher { [weak self] in await self?.refreshDesktopFilter() }
+    }
+
+    private func refreshDesktopFilter() async {
+        guard state.isTaking, let target = configuration?.target, let screen,
+              let shareable = try? await content.content(),
+              let filter = try? content.filter(for: target, in: shareable, hidingDesktopIcons: true)
+        else { return }
+        await screen.update(filter)
+    }
+
+    // MARK: - Microphone level
+
+    /// How loud the first microphone of the take is right now, in decibels, for the bar's
+    /// meter. Read off the take's own capture; `nil` without a microphone.
+    public var microphonePower: Float? { microphones.first?.power }
 }

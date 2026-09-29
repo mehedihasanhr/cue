@@ -28,6 +28,12 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
     /// A lane's own right-click menu, for a kind with more to do than cut, copy and delete.
     /// `nil` keeps the menu every lane has.
     var menu: ((Region) -> AnyView)?
+    /// Whether a chip's words are shortened to fit it. For a lane whose chips say a
+    /// sentence — see `TimelineChipLabel.truncates`.
+    var fitsWords = false
+    /// How long a chip's sound takes to rise and fall, in seconds, drawn as a slope at
+    /// each end. Only the added-sound lane has them.
+    var fades: ((Region) -> (fadeIn: Double, fadeOut: Double))?
     @ViewBuilder let badge: (Region) -> Badge
 
     /// Which grip the pointer is over, as "<region id>-<side>".
@@ -67,6 +73,7 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
 
         return TimelineChipBackground(tint: tint, isSelected: isSelected(region))
             .overlay { shape(of: region, width: width, left: left) }
+            .overlay { slopes(of: region, width: width) }
             .frame(width: width, height: height)
             .overlay { label(region, width: width) }
             .overlay(alignment: .leading) { edge(region, leading: true, width: width) }
@@ -131,7 +138,9 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
     /// of a line of text rearranging itself.
     private func label(_ region: Region, width: CGFloat) -> some View {
         TimelineChipLabel(title: title, height: height, width: width,
-                          minimumWidth: TimelineHandle.target * 2 + 20) {
+                          minimumWidth: TimelineHandle.target * 2 + 20,
+                          truncates: fitsWords,
+                          inset: TimelineHandle.target + 2) {
             HStack(spacing: 5) {
                 // Empty for a lane whose chips name their own kind — see the annotation
                 // lane, where each chip is a different kind of thing.
@@ -144,6 +153,39 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
         .allowsHitTesting(false)
     }
 
+    /// The fades, as the slopes an editor has always drawn them with: the corner above a
+    /// slope is the part that is quieter, and it is shaded.
+    @ViewBuilder
+    private func slopes(of region: Region, width: CGFloat) -> some View {
+        if let fades = fades?(region), fades.fadeIn > 0 || fades.fadeOut > 0 {
+            let rise = min(width, CGFloat(fades.fadeIn) * viewport.pointsPerSecond)
+            let fall = min(width - rise, CGFloat(fades.fadeOut) * viewport.pointsPerSecond)
+            Canvas { context, size in
+                var shade = Path()
+                var line = Path()
+                if rise > 0 {
+                    shade.move(to: .zero)
+                    shade.addLine(to: CGPoint(x: rise, y: 0))
+                    shade.addLine(to: CGPoint(x: 0, y: size.height))
+                    shade.closeSubpath()
+                    line.move(to: CGPoint(x: 0, y: size.height))
+                    line.addLine(to: CGPoint(x: rise, y: 0))
+                }
+                if fall > 0 {
+                    shade.move(to: CGPoint(x: size.width, y: 0))
+                    shade.addLine(to: CGPoint(x: size.width - fall, y: 0))
+                    shade.addLine(to: CGPoint(x: size.width, y: size.height))
+                    shade.closeSubpath()
+                    line.move(to: CGPoint(x: size.width - fall, y: 0))
+                    line.addLine(to: CGPoint(x: size.width, y: size.height))
+                }
+                context.fill(shade, with: .color(.black.opacity(0.28)))
+                context.stroke(line, with: .color(.white.opacity(0.85)), lineWidth: 1.25)
+            }
+            .allowsHitTesting(false)
+        }
+    }
+
     /// The waveform, drawn across the row and then masked down to this chip.
     ///
     /// Masked rather than drawn to fit, for the reason `TimelineSoundRow` does the same: the
@@ -152,16 +194,21 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
     @ViewBuilder
     private func shape(of region: Region, width: CGFloat, left: CGFloat) -> some View {
         if let drawn = waveform(region) {
+            // Drawn in the lane's coordinates — 0 is the left edge of what is on screen —
+            // so it is given the lane from there to this chip's right-hand edge, and then
+            // slid back onto the chip. It used to be given only the chip's own width (an
+            // overlay is offered the size of what it overlays), so its canvas stopped long
+            // before the sound it was meant to draw: any sound further along the timeline
+            // than it was long had no waveform.
+            //
+            // Never wider than the screen: past it there is nothing to see, and a canvas
+            // the length of a ten-minute song at full zoom is a picture too big to draw.
             TimelineWaveform(viewport: viewport, spans: drawn.spans, peaks: drawn.peaks,
                              height: height, opacity: 0.38)
-                .mask {
-                    RoundedRectangle(cornerRadius: radius, style: .continuous)
-                        .frame(width: width)
-                        .offset(x: left)
-                }
+                .frame(width: max(0, min(viewport.width, left + width)), alignment: .leading)
                 .offset(x: -left)
                 .frame(width: width, alignment: .leading)
-                .clipped()
+                .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
         }
     }
 

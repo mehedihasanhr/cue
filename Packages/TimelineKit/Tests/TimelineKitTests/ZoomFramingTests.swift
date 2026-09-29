@@ -530,3 +530,65 @@ struct PictureMappingTests {
         #expect(isClose(box.width / box.height, ratio, 1e-6))
     }
 }
+
+
+/// Things attached to the footage, drawn over a picture that has been cropped.
+///
+/// A blur covers something *in the recording*. The renderer applies it to the whole
+/// recording and crops afterwards, so its outline on the preview has to go through the crop
+/// too. It did not: with a crop in force the outline was drawn as though the cropped
+/// picture were the whole recording, and the blur landed somewhere the outline was not.
+struct FootageMappingTests {
+    private let stage = CGRect(x: 0, y: 0, width: 800, height: 450)
+    private let full = CGRect(x: 0, y: 0, width: 1, height: 1)
+
+    /// The right half of the recording, filling the frame.
+    private var rightHalf: PictureMapping {
+        PictureMapping(stage: stage, video: full, crop: CGRect(x: 0.5, y: 0, width: 0.5, height: 1))
+    }
+
+    @Test func withNoCropTheFootageIsThePicture() {
+        let mapping = PictureMapping(stage: stage, video: full)
+        let rect = CGRect(x: 0.25, y: 0.5, width: 0.1, height: 0.2)
+        #expect(mapping.view(footage: rect) == mapping.view(recording: rect))
+    }
+
+    /// Something three-quarters of the way across the recording is halfway across a
+    /// picture that shows only the right half of it.
+    @Test func aBlurIsDrawnWhereTheCropLeavesIt() {
+        let drawn = rightHalf.view(footage: CGRect(x: 0.75, y: 0.4, width: 0.1, height: 0.2))
+        #expect(abs(drawn.minX - 400) < 0.001)
+        #expect(abs(drawn.width - 160) < 0.001, "and it is twice as wide, because the picture is")
+        #expect(abs(drawn.minY - 180) < 0.001)
+        #expect(abs(drawn.height - 90) < 0.001)
+    }
+
+    @Test func drawingOneOnACroppedPictureStoresItAgainstTheRecording() {
+        let stored = rightHalf.footage(view: CGRect(x: 400, y: 180, width: 160, height: 90))
+        #expect(abs(stored.minX - 0.75) < 0.0001)
+        #expect(abs(stored.width - 0.1) < 0.0001)
+        #expect(abs(stored.minY - 0.4) < 0.0001)
+        #expect(abs(stored.height - 0.2) < 0.0001)
+    }
+
+    @Test(arguments: [CGRect(x: 0.5, y: 0, width: 0.5, height: 1),
+                      CGRect(x: 0.1, y: 0.2, width: 0.6, height: 0.5),
+                      CGRect(x: 0, y: 0, width: 1, height: 1)])
+    func thereAndBackIsWhereItStarted(_ crop: CGRect) {
+        let mapping = PictureMapping(stage: CGRect(x: 30, y: 20, width: 640, height: 360),
+                                     video: CGRect(x: 0.1, y: 0.1, width: 0.8, height: 0.8),
+                                     crop: crop)
+        let rect = CGRect(x: 0.42, y: 0.37, width: 0.13, height: 0.21)
+        let back = mapping.footage(view: mapping.view(footage: rect))
+        #expect(abs(back.minX - rect.minX) < 0.0001)
+        #expect(abs(back.minY - rect.minY) < 0.0001)
+        #expect(abs(back.width - rect.width) < 0.0001)
+        #expect(abs(back.height - rect.height) < 0.0001)
+    }
+
+    /// A crop that cannot be one is treated as none, rather than dividing by it.
+    @Test func anEmptyCropIsNoCrop() {
+        let mapping = PictureMapping(stage: stage, video: full, crop: .zero)
+        #expect(mapping.crop == PictureMapping.wholeRecording)
+    }
+}

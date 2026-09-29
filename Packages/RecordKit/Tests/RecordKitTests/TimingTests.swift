@@ -105,6 +105,88 @@ struct TimingTests {
         #expect(clock.elapsed(at: origin - CMTime(seconds: 1, preferredTimescale: 600)) == 0)
     }
 
+    // MARK: - Holds
+
+    /// The whole reason the clock owns the pause: a sample taken after a hold has to land
+    /// where the picture is, and the picture has had the hold taken out of it.
+    @Test func aHoldComesOutOfEverythingAfterIt() {
+        let clock = RecordingClock()
+        let origin = RecordingClock.now
+        clock.start(at: origin)
+        clock.hold(at: origin + seconds(10))
+        clock.release(at: origin + seconds(12))
+
+        #expect(clock.elapsed(at: origin + seconds(9)) == 9)
+        #expect(abs(clock.elapsed(at: origin + seconds(13)) - 11) < 0.0001,
+                "a second after a two-second hold is eleven seconds into the recording, not thirteen")
+        #expect(clock.recordingTime(forHost: origin + seconds(13)) == origin + seconds(11))
+    }
+
+    @Test func holdsAddUp() {
+        let clock = RecordingClock()
+        let origin = RecordingClock.now
+        clock.start(at: origin)
+        clock.hold(at: origin + seconds(2))
+        clock.release(at: origin + seconds(3))
+        clock.hold(at: origin + seconds(5))
+        clock.release(at: origin + seconds(8))
+
+        #expect(abs(clock.elapsed(at: origin + seconds(4)) - 3) < 0.0001)
+        #expect(abs(clock.elapsed(at: origin + seconds(9)) - 5) < 0.0001)
+    }
+
+    /// A buffer stamped inside a hold was captured while the recording was not running.
+    /// It has no time in the file, and saying so is what stops it being written.
+    @Test func aMomentInsideAHoldHasNoPlaceInTheFile() {
+        let clock = RecordingClock()
+        let origin = RecordingClock.now
+        clock.start(at: origin)
+        clock.hold(at: origin + seconds(4))
+        #expect(clock.isHeld)
+        #expect(clock.recordingTime(forHost: origin + seconds(5)) == nil, "still held")
+
+        clock.release(at: origin + seconds(6))
+        #expect(!clock.isHeld)
+        #expect(clock.recordingTime(forHost: origin + seconds(5)) == nil, "held then, even though not now")
+        #expect(clock.recordingTime(forHost: origin + seconds(3)) == origin + seconds(3))
+    }
+
+    /// The pointer's clock stands still through a hold rather than running on.
+    @Test func theClockStandsStillWhileHeld() {
+        let clock = RecordingClock()
+        let origin = RecordingClock.now
+        clock.start(at: origin)
+        clock.hold(at: origin + seconds(4))
+        #expect(abs(clock.elapsed(at: origin + seconds(7)) - 4) < 0.0001)
+    }
+
+    @Test func releasingWithoutHoldingChangesNothing() {
+        let clock = RecordingClock()
+        let origin = RecordingClock.now
+        clock.start(at: origin)
+        clock.release(at: origin + seconds(3))
+        #expect(clock.elapsed(at: origin + seconds(5)) == 5)
+    }
+
+    // MARK: - When an event happened
+
+    /// A click is stamped with the moment it happened, which is a little before the
+    /// moment anybody was told about it.
+    @Test func anEventKeepsItsOwnTime() {
+        let now = seconds(1_000)
+        let stamped = CursorTracker.hostTime(forEventTimestamp: 999.96, now: now)
+        #expect(abs(stamped.seconds - 999.96) < 0.000_001)
+    }
+
+    /// A timestamp that cannot be right is not used: a clock error of a minute in a click
+    /// would put its ring in a different scene.
+    @Test func anEventWithAnImpossibleTimeIsStampedNow() {
+        let now = seconds(1_000)
+        #expect(CursorTracker.hostTime(forEventTimestamp: 1_030, now: now) == now, "from the future")
+        #expect(CursorTracker.hostTime(forEventTimestamp: 940, now: now) == now, "a minute old")
+        #expect(CursorTracker.hostTime(forEventTimestamp: 0, now: now) == now)
+    }
+
     // MARK: - Quality
 
     @Test func bitrateRisesWithQualityAndPixels() {
@@ -119,5 +201,20 @@ struct TimingTests {
     @Test func bitrateStaysSaneAtTheExtremes() {
         #expect(CaptureQuality.good.bitrate(forPixels: 100) >= 2_000_000)
         #expect(CaptureQuality.best.bitrate(forPixels: 7_680 * 4_320) <= 120_000_000)
+    }
+}
+
+/// How far the pointer's clock is moved to meet the picture.
+struct PointerLatencyTests {
+    @Test func itIsOneRefreshOfTheDisplay() {
+        #expect(abs(PointerLatency.seconds(refreshRate: 120) - 1.0 / 120) < 0.000_001)
+        #expect(abs(PointerLatency.seconds(refreshRate: 60) - 1.0 / 60) < 0.000_001)
+    }
+
+    /// A display that reports nothing, or nonsense, gets the common answer rather than
+    /// none or an enormous one.
+    @Test(arguments: [0.0, -1, 5, 10_000, .nan, .infinity])
+    func aRateThatCannotBeRightIsTreatedAsSixty(_ rate: Double) {
+        #expect(abs(PointerLatency.seconds(refreshRate: rate) - 1.0 / 60) < 0.000_001)
     }
 }

@@ -26,6 +26,9 @@ final class ExportFrameReader {
     /// When the next frame begins, so we know whether `current` still stands.
     private var nextTime: CMTime = .negativeInfinity
     private var isFinished = false
+    /// The frame after `current`, read ahead. Its start is when `current` stops standing:
+    /// decoded samples come back without a duration, so there is no other way to know.
+    private var upcoming: (image: CIImage, time: CMTime)?
     /// The track's rotation, applied to every frame so the export is the same way up as
     /// the preview — which gets it free from `AVAssetImageGenerator`.
     private var transform: CGAffineTransform = .identity
@@ -48,6 +51,16 @@ final class ExportFrameReader {
         } catch {
             throw ExportError.unreadableSource(error.localizedDescription)
         }
+    }
+
+    /// A reader over a track that is already loaded, with its rotation already known.
+    ///
+    /// For a caller that cannot wait — the renderer, reading a background movie in the
+    /// middle of drawing a frame — and has opened the file once, beforehand.
+    init(asset: AVAsset, track: AVAssetTrack, transform: CGAffineTransform) {
+        self.asset = asset
+        self.track = track
+        self.transform = transform
     }
 
     /// The recording's size in pixels, rotation applied.
@@ -84,6 +97,7 @@ final class ExportFrameReader {
         currentTime = .negativeInfinity
         nextTime = .negativeInfinity
         isFinished = false
+        upcoming = nil
 
         let reader: AVAssetReader
         do {
@@ -113,25 +127,89 @@ final class ExportFrameReader {
         _ = try advance()
     }
 
-    /// Takes the next sample. `false` once the file has run out.
+    /// Takes the next frame. `false` once the file has run out.
+    ///
+    /// The frame after it is read too, because that frame's start is the only honest
+    /// answer to when this one ends. It used to be this frame's start plus its duration —
+    /// but a *decoded* sample has no duration, so that came out as this frame's own start,
+    /// and `frame(at:)` walked on to the first frame starting *after* the time asked for:
+    /// every exported frame was the next one, a frame ahead of the preview and the pointer.
     @discardableResult
     private func advance() throws(ExportError) -> Bool {
-        guard let reader, let output else { return false }
-        guard let sample = output.copyNextSampleBuffer() else {
-            if reader.status == .failed {
-                throw ExportError.unreadableSource(reader.error?.localizedDescription ?? "The recording stopped decoding.")
-            }
+        if upcoming == nil { upcoming = try nextFrame() }
+        guard let frame = upcoming else {
             isFinished = true
             return false
         }
-        guard let buffer = CMSampleBufferGetImageBuffer(sample) else { return true }
-
-        let start = CMSampleBufferGetPresentationTimeStamp(sample)
-        let duration = CMSampleBufferGetDuration(sample)
-        current = rotated(CIImage(cvPixelBuffer: buffer))
-        currentTime = start
-        nextTime = duration.isNumeric ? start + duration : start
+        current = frame.image
+        currentTime = frame.time
+        upcoming = try nextFrame()
+        nextTime = upcoming?.time ?? .positiveInfinity
         return true
+    }
+
+    /// Frames of our own, the same size and kind as the decoder's, for `detached(_:)`.
+    private var pool: CVPixelBufferPool?
+
+    /// A copy of a decoded frame in a buffer this reader owns, so the decoder's goes back
+    /// to it at once. `nil` if a buffer could not be had, and the caller keeps the original.
+    private func detached(_ buffer: CVPixelBuffer) -> CVPixelBuffer? {
+        let width = CVPixelBufferGetWidth(buffer), height = CVPixelBufferGetHeight(buffer)
+        let format = CVPixelBufferGetPixelFormatType(buffer)
+        guard !CVPixelBufferIsPlanar(buffer) else { return nil }
+        if let pool, let attributes = CVPixelBufferPoolGetPixelBufferAttributes(pool) as? [String: Any],
+           attributes[kCVPixelBufferWidthKey as String] as? Int != width
+            || attributes[kCVPixelBufferHeightKey as String] as? Int != height {
+            self.pool = nil
+        }
+        if pool == nil {
+            let attributes: [String: Any] = [
+                kCVPixelBufferPixelFormatTypeKey as String: format,
+                kCVPixelBufferWidthKey as String: width,
+                kCVPixelBufferHeightKey as String: height,
+                kCVPixelBufferIOSurfacePropertiesKey as String: [String: Any](),
+            ]
+            CVPixelBufferPoolCreate(kCFAllocatorDefault, nil, attributes as CFDictionary, &pool)
+        }
+        guard let pool else { return nil }
+        var copy: CVPixelBuffer?
+        guard CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &copy) == kCVReturnSuccess,
+              let copy else { return nil }
+        CVPixelBufferLockBaseAddress(buffer, .readOnly)
+        CVPixelBufferLockBaseAddress(copy, [])
+        defer {
+            CVPixelBufferUnlockBaseAddress(copy, [])
+            CVPixelBufferUnlockBaseAddress(buffer, .readOnly)
+        }
+        guard let from = CVPixelBufferGetBaseAddress(buffer), let to = CVPixelBufferGetBaseAddress(copy) else { return nil }
+        let fromRow = CVPixelBufferGetBytesPerRow(buffer), toRow = CVPixelBufferGetBytesPerRow(copy)
+        let row = min(fromRow, toRow)
+        for line in 0..<height {
+            memcpy(to + line * toRow, from + line * fromRow, row)
+        }
+        CVBufferPropagateAttachments(buffer, copy)
+        return copy
+    }
+
+    /// The next decodable frame in the file, and when it starts.
+    private func nextFrame() throws(ExportError) -> (image: CIImage, time: CMTime)? {
+        guard let reader, let output else { return nil }
+        while let sample = output.copyNextSampleBuffer() {
+            guard let buffer = CMSampleBufferGetImageBuffer(sample) else { continue }
+            let start = CMSampleBufferGetPresentationTimeStamp(sample)
+            guard start.isNumeric else { continue }
+            // Copied out of the decoder's own buffers before it is held. The decoder has only
+            // a handful, and this reader keeps two frames (the one showing and the next),
+            // while a render still queued on the GPU keeps others: once every one is held,
+            // `copyNextSampleBuffer` waits for one to come back — for ever, since the thing
+            // holding them is waiting on it. Exports and test runs hung that way.
+            let owned = detached(buffer) ?? buffer
+            return (rotated(CIImage(cvPixelBuffer: owned)), start)
+        }
+        if reader.status == .failed {
+            throw ExportError.unreadableSource(reader.error?.localizedDescription ?? "The recording stopped decoding.")
+        }
+        return nil
     }
 
     /// Puts a frame the way up the preview shows it.
@@ -154,5 +232,6 @@ final class ExportFrameReader {
         reader = nil
         output = nil
         current = nil
+        upcoming = nil
     }
 }

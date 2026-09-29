@@ -115,16 +115,37 @@ public struct ZoomSuggester: Sendable {
     public var tuning: Tuning
     /// The recorded frame in points, so a click position becomes a normalised centre.
     public var frameSize: CGSize
+    /// The part of the recording the picture shows, as a fraction of it. The whole of it
+    /// unless the project has been cropped.
+    ///
+    /// A zoom's centre is a fraction of the *picture*, which is what the renderer reads it
+    /// as. Suggestions used to be worked out against the whole recording regardless, so on
+    /// a cropped project every one of them was aimed beside the click it came from — and
+    /// clicks in the part that had been cropped away still produced zooms.
+    public var crop: CGRect
 
-    public init(frameSize: CGSize, tuning: Tuning = Tuning()) {
+    public init(frameSize: CGSize,
+                crop: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1),
+                tuning: Tuning = Tuning()) {
         self.frameSize = frameSize
+        self.crop = crop.width > 0 && crop.height > 0 ? crop : CGRect(x: 0, y: 0, width: 1, height: 1)
         self.tuning = tuning
     }
 
-    /// What was recorded, as a rectangle in the same points the sidecars hold. Everything
-    /// outside it happened, but was not filmed.
+    /// What the viewer will see, as a rectangle in the same points the sidecars hold.
+    /// Everything outside it happened, but is not in the picture.
     private var recorded: CGRect {
-        CGRect(origin: .zero, size: frameSize)
+        CGRect(x: crop.minX * frameSize.width,
+               y: crop.minY * frameSize.height,
+               width: crop.width * frameSize.width,
+               height: crop.height * frameSize.height)
+    }
+
+    /// A place in the recording as a fraction of the picture.
+    private func centre(of point: CGPoint) -> CGPoint {
+        let shown = recorded
+        return CGPoint(x: (point.x - shown.minX) / shown.width,
+                       y: (point.y - shown.minY) / shown.height)
     }
 
     /// Zoom regions for a recording, in order, none overlapping.
@@ -189,8 +210,8 @@ public struct ZoomSuggester: Sendable {
             let length = min(max(end - start, tuning.minimumDuration), tuning.maximumDuration)
             guard length > 0, start < duration.seconds else { return }
 
-            let centre = CGPoint(x: (xs.reduce(0, +) / Double(xs.count)) / frameSize.width,
-                                 y: (ys.reduce(0, +) / Double(ys.count)) / frameSize.height)
+            let centre = centre(of: CGPoint(x: xs.reduce(0, +) / Double(xs.count),
+                                            y: ys.reduce(0, +) / Double(ys.count)))
 
             regions.append(ZoomRegion(start: CMTime(seconds: start, preferredTimescale: 600),
                                       duration: CMTime(seconds: min(length, duration.seconds - start),
@@ -249,7 +270,13 @@ public struct ZoomSuggester: Sendable {
         }.sorted { $0.t < $1.t }
         guard !events.isEmpty else { return [] }
 
-        let typing = typingRuns(input: input)
+        // Every change of focus, whether or not it is worth a zoom of its own. Another
+        // app coming forward is not a place to zoom to, but it is the end of the field
+        // that had the caret: what is typed after it is typed somewhere else, and a
+        // camera left on the field would be watching an empty box. So focus changes of
+        // every kind end a hold, and cut the typing.
+        let changes = focus.map(\.t).sorted()
+        let typing = typingRuns(input: input, splitAt: changes)
         var regions: [ZoomRegion] = []
 
         for (index, event) in events.enumerated() {
@@ -268,8 +295,9 @@ public struct ZoomSuggester: Sendable {
             // next event's own lead-in, so one focus zoom never runs into the start of
             // the next. Two of them overlapping would be merged into a single zoom
             // aimed between the two things, which is a zoom onto neither.
-            let nextEvent = index + 1 < events.count ? events[index + 1].t : duration.seconds
-            let nextStart = index + 1 < events.count ? nextEvent - tuning.focusLeadIn : duration.seconds
+            let nextEvent = changes.first { $0 > event.t } ?? duration.seconds
+            let nextStart = min(nextEvent,
+                                index + 1 < events.count ? events[index + 1].t - tuning.focusLeadIn : duration.seconds)
             // Typing that started while this had focus keeps the camera until it stops.
             let typedUntil = typing
                 .filter { $0.start >= event.t && $0.start < nextEvent }
@@ -283,8 +311,7 @@ public struct ZoomSuggester: Sendable {
             // this is somewhere focus passed through rather than somewhere it went.
             guard length >= tuning.minimumFocusDwell else { continue }
 
-            let centre = CGPoint(x: visible.midX / frameSize.width,
-                                 y: visible.midY / frameSize.height)
+            let centre = centre(of: CGPoint(x: visible.midX, y: visible.midY))
             let source: ZoomRegion.Source = switch event.kind {
             case .field: typedUntil != nil ? .typing : .field
             case .window: .window
@@ -313,43 +340,27 @@ public struct ZoomSuggester: Sendable {
     /// too small to be worth making.
     private func scale(toFit rect: CGRect) -> Double? {
         guard rect.width > 1, rect.height > 1 else { return nil }
-        let coverage = max(rect.width / frameSize.width, rect.height / frameSize.height)
+        let shown = recorded.size
+        let coverage = max(rect.width / shown.width, rect.height / shown.height)
         guard coverage <= tuning.focusCoverageLimit else { return nil }
 
-        let fit = min((frameSize.width * tuning.focusFill) / rect.width,
-                      (frameSize.height * tuning.focusFill) / rect.height)
+        let fit = min((shown.width * tuning.focusFill) / rect.width,
+                      (shown.height * tuning.focusFill) / rect.height)
         let scale = min(fit, tuning.maximumFocusScale)
         return scale >= tuning.minimumFocusScale ? scale : nil
     }
 
     /// Stretches of continuous typing, as start and end times.
-    private func typingRuns(input: [InputSample]) -> [(start: Double, end: Double)] {
-        let keys = input.compactMap { sample -> Double? in
-            if case .key(let t, _) = sample { return t }
-            return nil
-        }.sorted()
-        guard !keys.isEmpty else { return [] }
-
-        var runs: [(start: Double, end: Double)] = []
-        var first = keys[0]
-        var last = keys[0]
-        var count = 1
-
-        func flush() {
-            if count >= tuning.minimumKeystrokes { runs.append((first, last)) }
-        }
-
-        for key in keys.dropFirst() {
-            if key - last > tuning.typingGap {
-                flush()
-                first = key
-                count = 0
-            }
-            last = key
-            count += 1
-        }
-        flush()
-        return runs
+    ///
+    /// `Typing.bursts` is the rule; this only puts it in the suggester's units. Read from
+    /// the identity-less presses, which is all that typing ever is in a recording — a
+    /// shortcut is someone operating the app, not writing in it.
+    private func typingRuns(input: [InputSample], splitAt boundaries: [Double] = []) -> [(start: Double, end: Double)] {
+        Typing.bursts(in: input,
+                      gap: tuning.typingGap,
+                      minimumPresses: tuning.minimumKeystrokes,
+                      splitAt: boundaries)
+            .map { ($0.start, $0.end) }
     }
 
     // MARK: - Reconciling
@@ -467,5 +478,26 @@ public struct ZoomSuggester: Sendable {
             result[result.count - 1] = last
         }
         return result
+    }
+}
+
+public extension Timeline {
+    /// Suggested zooms, read off the recording, put where their moments now are in the edit.
+    ///
+    /// The suggester reads the recording, so what it proposes is in the recording's time.
+    /// Placed as it came, every zoom after a cut, a speed change, a freeze frame or a title
+    /// landed on the wrong moment. Each goes to the longest piece of footage that shows its
+    /// moment — one zoom per moment, as the suggester meant, even where footage is shown
+    /// twice or a cut splits it — and one whose moment was cut down to a sliver goes.
+    func placedOnTimeline(_ zooms: [ZoomRegion], shortest: Double = 0.5) -> [ZoomRegion] {
+        zooms.compactMap { zoom in
+            let pieces = timelineRanges(ofSource: zoom.start.seconds...zoom.end.seconds)
+            guard let piece = pieces.max(by: { $0.duration < $1.duration }),
+                  piece.duration.seconds >= shortest else { return nil }
+            var placed = zoom
+            placed.start = piece.start
+            placed.duration = piece.duration
+            return placed
+        }
     }
 }

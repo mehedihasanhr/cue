@@ -7,15 +7,28 @@ import TimelineKit
 public enum ExportFormat: String, Sendable, CaseIterable, Codable {
     case mp4
     case mov
+    /// Apple ProRes 422 in a MOV: what an editing application wants to be handed.
+    case proRes422
+    /// Apple ProRes 4444 in a MOV, which keeps an alpha channel — the one to choose when
+    /// the background is transparent and the video is going over something else.
+    case proRes4444
     case gif
 
-    public var fileExtension: String { rawValue }
+    /// Both ProRes formats are movies like any other MOV: the codec is what differs, and
+    /// it is the file's contents rather than its name that says so.
+    public var fileExtension: String {
+        switch self {
+        case .mp4: "mp4"
+        case .mov, .proRes422, .proRes4444: "mov"
+        case .gif: "gif"
+        }
+    }
 
     /// `nil` for GIF, which is written by Image I/O rather than by AVFoundation.
     public var fileType: AVFileType? {
         switch self {
         case .mp4: .mp4
-        case .mov: .mov
+        case .mov, .proRes422, .proRes4444: .mov
         case .gif: nil
         }
     }
@@ -24,6 +37,8 @@ public enum ExportFormat: String, Sendable, CaseIterable, Codable {
         switch self {
         case .mp4: "MP4"
         case .mov: "MOV"
+        case .proRes422: "ProRes 422"
+        case .proRes4444: "ProRes 4444"
         case .gif: "GIF"
         }
     }
@@ -31,12 +46,21 @@ public enum ExportFormat: String, Sendable, CaseIterable, Codable {
     public var detail: String {
         switch self {
         case .mp4: "Plays everywhere. The one to send."
-        case .mov: "ProRes-friendly container for editing on."
+        case .mov: "HEVC or H.264 in a QuickTime movie. Can keep a transparent background."
+        case .proRes422: "For editing in Final Cut Pro, Premiere or Resolve. Large files."
+        case .proRes4444: "For editing, and keeps a transparent background. The largest files."
         case .gif: "No sound, big files, plays in a chat window."
         }
     }
 
     public var carriesAudio: Bool { self != .gif }
+
+    /// Whether this is one of the ProRes formats, whose codec is part of the format and
+    /// whose quality is the codec's own rather than a bitrate we choose.
+    public var isProRes: Bool { self == .proRes422 || self == .proRes4444 }
+
+    /// Whether the codec can be chosen: only for the two ordinary movie formats.
+    public var offersCodecChoice: Bool { self == .mp4 || self == .mov }
 }
 
 /// Which encoder writes the file.
@@ -46,12 +70,26 @@ public enum ExportCodec: String, Sendable, CaseIterable, Codable {
     case automatic
     case h264
     case hevc
+    /// HEVC carrying an alpha channel, so a transparent background stays transparent.
+    /// Only a MOV can hold it — AVFoundation refuses it in an MP4 — so in an MP4 it is
+    /// written as plain HEVC.
+    case hevcWithAlpha
 
+    /// The encoder that actually writes the file.
+    ///
+    /// A ProRes format decides for itself, whatever codec was last chosen for an MP4:
+    /// the choice is only offered where there is one to make.
     public func resolved(for format: ExportFormat) -> AVVideoCodecType {
+        switch format {
+        case .proRes422: return .proRes422
+        case .proRes4444: return .proRes4444
+        case .mp4, .mov, .gif: break
+        }
         switch self {
-        case .h264: .h264
-        case .hevc: .hevc
-        case .automatic: format == .mov ? .hevc : .h264
+        case .h264: return .h264
+        case .hevc: return .hevc
+        case .hevcWithAlpha: return format == .mov ? .hevcWithAlpha : .hevc
+        case .automatic: return format == .mov ? .hevc : .h264
         }
     }
 
@@ -60,12 +98,23 @@ public enum ExportCodec: String, Sendable, CaseIterable, Codable {
         case .automatic: "Automatic"
         case .h264: "H.264"
         case .hevc: "HEVC"
+        case .hevcWithAlpha: "HEVC with transparency"
         }
+    }
+
+    /// The codecs worth offering for a format: all of them for a MOV, and none that could
+    /// only be written as something else for an MP4.
+    public static func choices(for format: ExportFormat) -> [ExportCodec] {
+        format == .mov ? allCases : allCases.filter { $0 != .hevcWithAlpha }
     }
 }
 
 /// How good the file should look, as the one dial anybody wants to touch.
 public enum ExportQuality: String, Sendable, CaseIterable, Codable {
+    /// Size first: HEVC, whatever the container, at about half of Good's bitrate. HEVC
+    /// keeps a screen recording's text sharp at a bitrate where H.264 smears it, which is
+    /// the whole trick — the same picture in roughly half the bytes.
+    case smaller
     case good, better, best
 
     /// Bits per second for a pixel count and a frame rate.
@@ -75,16 +124,18 @@ public enum ExportQuality: String, Sendable, CaseIterable, Codable {
     /// 60, which is what these recordings usually are.
     public func bitrate(forPixels pixels: Int, frameRate: Int) -> Int {
         let perPixel: Double = switch self {
+        case .smaller: 0.022
         case .good: 0.05
         case .better: 0.09
         case .best: 0.15
         }
         let raw = Double(pixels) * perPixel * Double(max(1, frameRate)) / 8
-        return max(1_000_000, min(Int(raw), 120_000_000))
+        return max(self == .smaller ? ExportSettings.minimumBitrate : 1_000_000, min(Int(raw), 120_000_000))
     }
 
     public var title: String {
         switch self {
+        case .smaller: "Smaller File"
         case .good: "Good"
         case .better: "Better"
         case .best: "Best"
@@ -107,6 +158,9 @@ public struct ExportSettings: Sendable, Equatable {
     public var includesAudio: Bool
     /// GIFs loop forever unless told otherwise, which is what everyone expects of them.
     public var loops: Bool
+    /// The most the file may weigh, in bytes, or `nil` for no limit. A movie is held to it
+    /// by its bitrate; a GIF can only be aimed at it, by its size. See `ExportTarget`.
+    public var targetByteCount: Int?
 
     public init(format: ExportFormat = .mp4,
                 frameRate: Int = 60,
@@ -114,7 +168,8 @@ public struct ExportSettings: Sendable, Equatable {
                 codec: ExportCodec = .automatic,
                 maximumDimension: Double? = nil,
                 includesAudio: Bool = true,
-                loops: Bool = true) {
+                loops: Bool = true,
+                targetByteCount: Int? = nil) {
         self.format = format
         self.frameRate = frameRate
         self.quality = quality
@@ -122,6 +177,7 @@ public struct ExportSettings: Sendable, Equatable {
         self.maximumDimension = maximumDimension
         self.includesAudio = includesAudio
         self.loops = loops
+        self.targetByteCount = targetByteCount
     }
 
     /// A GIF at 60 fps is a file nobody can send. Capped here rather than in the UI, so
@@ -133,6 +189,15 @@ public struct ExportSettings: Sendable, Equatable {
     }
 
     public var writesAudio: Bool { includesAudio && format.carriesAudio }
+
+    /// Whether the file keeps an alpha channel, so a transparent background is still
+    /// transparent in it. Every other format has nowhere to put one, and the encoder
+    /// writes black where the frame was see-through.
+    public var keepsTransparency: Bool {
+        guard format != .gif else { return false }
+        let codec = videoCodec
+        return codec == .proRes4444 || codec == .hevcWithAlpha
+    }
 
     /// The finished frame's size: the project's own, brought down under the cap.
     ///

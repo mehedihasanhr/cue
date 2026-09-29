@@ -15,7 +15,15 @@ import UniformTypeIdentifiers
 @Observable
 final class ExportModel {
     var settings: ExportSettings {
-        didSet { store() }
+        didSet {
+            // A codec the format cannot hold — HEVC with transparency left over from a
+            // MOV when MP4 is chosen — goes back to Automatic rather than leaving the
+            // codec pop-up showing a choice that is not in it.
+            if !ExportCodec.choices(for: settings.format).contains(settings.codec) {
+                settings.codec = .automatic
+            }
+            store()
+        }
     }
 
     /// The job this sheet started, so it can show progress for it and hand it back if the
@@ -26,11 +34,31 @@ final class ExportModel {
     /// video file in it, which the exporter never gets a chance to complain about.
     var failure: String?
 
+    /// How much of the edit to write: all of it, or the selected stretch.
+    ///
+    /// Not remembered between opens, unlike the settings: which stretch is selected is a
+    /// fact about this moment, and a sheet that quietly exported last week's choice of
+    /// "the selection" would write the wrong file.
+    var scope: ExportScope = .whole
+
+    /// The stretch the export covers, or `nil` for the whole edit. A scope of `selection`
+    /// with nothing selected means the whole edit, so a stale choice cannot export nothing.
+    func range(for editor: EditorModel) -> CMTimeRange? {
+        scope == .selection ? editor.selectedRange : nil
+    }
+
+    /// How long the file will be.
+    func duration(for editor: EditorModel) -> CMTime {
+        range(for: editor)?.duration ?? editor.duration
+    }
+
     private let defaults = UserDefaults.standard
 
     private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "export")
 
-    private enum Key {
+    /// Not private: Settings › Export edits the same keys, so the sheet and the pane are
+    /// one set of choices rather than two that drift apart.
+    enum Key {
         static let format = "export.format"
         static let frameRate = "export.frameRate"
         static let quality = "export.quality"
@@ -38,6 +66,7 @@ final class ExportModel {
         static let dimension = "export.dimension"
         static let audio = "export.audio"
         static let loops = "export.loops"
+        static let target = "export.targetBytes"
         static let folder = "export.folder"
     }
 
@@ -67,6 +96,10 @@ final class ExportModel {
         }
         if let audio = defaults.object(forKey: Key.audio) as? Bool { settings.includesAudio = audio }
         if let loops = defaults.object(forKey: Key.loops) as? Bool { settings.loops = loops }
+        // Zero for no limit, as the size cap above stores "none".
+        if let target = defaults.object(forKey: Key.target) as? Int {
+            settings.targetByteCount = target > 0 ? target : nil
+        }
         self.settings = settings
     }
 
@@ -78,6 +111,7 @@ final class ExportModel {
         defaults.set(settings.maximumDimension ?? 0, forKey: Key.dimension)
         defaults.set(settings.includesAudio, forKey: Key.audio)
         defaults.set(settings.loops, forKey: Key.loops)
+        defaults.set(settings.targetByteCount ?? 0, forKey: Key.target)
     }
 
     // MARK: - Presets
@@ -109,13 +143,17 @@ final class ExportModel {
     @discardableResult
     func begin(from editor: EditorModel, into jobs: ExportJobs) -> ExportJob? {
         failure = nil
-        guard let exporter = editor.exporter(settings: settings) else {
+        let range = range(for: editor)
+        guard let exporter = editor.exporter(settings: settings, range: range) else {
             failure = "This recording's video file is missing."
             return nil
         }
 
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = "\(editor.name).\(settings.format.fileExtension)"
+        // A part of the video is named as one, so it does not overwrite — or get mistaken
+        // for — the export of the whole thing.
+        let name = range == nil ? editor.name : "\(editor.name) (part)"
+        panel.nameFieldStringValue = "\(name).\(settings.format.fileExtension)"
         panel.allowedContentTypes = settings.format.contentTypes
         panel.canCreateDirectories = true
         panel.isExtensionHidden = false
@@ -127,9 +165,13 @@ final class ExportModel {
             panel.directoryURL = folder
         }
         guard panel.runModal() == .OK, let destination = panel.url else { return nil }
-        defaults.set(destination.deletingLastPathComponent(), forKey: Key.folder)
+        // Unless Settings pins the folder, in which case the panel keeps opening there
+        // however often a file is saved somewhere else.
+        if defaults.object(forKey: StudioAppPreferences.Key.remembersExportFolder) as? Bool ?? true {
+            defaults.set(destination.deletingLastPathComponent(), forKey: Key.folder)
+        }
 
-        let job = ExportJob(name: editor.name,
+        let job = ExportJob(name: name,
                             destination: destination,
                             settings: settings,
                             estimate: estimate(for: editor),
@@ -140,10 +182,11 @@ final class ExportModel {
         return job
     }
 
-    /// What the file will be, before a byte of it is written.
+    /// What the file will be, before a byte of it is written. Follows the scope, so the
+    /// size quoted for a ten-second excerpt is a ten-second file's.
     func estimate(for editor: EditorModel) -> ExportEstimate {
         settings.estimate(projectSize: editor.exportSize(for: ExportSettings(maximumDimension: nil)),
-                          duration: editor.duration.seconds)
+                          duration: duration(for: editor).seconds)
     }
 
     /// Lets go of a finished job so the sheet opens on the options again next time.
@@ -153,13 +196,19 @@ final class ExportModel {
     }
 }
 
+/// Whole edit, or the selected stretch of it.
+enum ExportScope: Hashable {
+    case whole
+    case selection
+}
+
 extension ExportFormat {
     /// What the save panel will accept. Kept here rather than in `RenderKit` so the
     /// package stays free of anything UI-shaped.
     var contentTypes: [UTType] {
         switch self {
         case .mp4: [.mpeg4Movie]
-        case .mov: [.quickTimeMovie]
+        case .mov, .proRes422, .proRes4444: [.quickTimeMovie]
         case .gif: [.gif]
         }
     }

@@ -32,6 +32,14 @@ struct PreviewPane: View {
                         .interpolation(.high)
                         .antialiased(true)
                         .aspectRatio(contentMode: .fit)
+                        // Behind the frame, not in it: with a transparent background the
+                        // rendered frame really is see-through there — that is what the
+                        // export writes — and the squares are how the stage says so.
+                        .background {
+                            if model.hasTransparentBackground {
+                                Checkerboard()
+                            }
+                        }
                         .clipShape(RoundedRectangle(cornerRadius: model.tool.flattensPreview ? 0 : 10, style: .continuous))
                         .shadow(color: .black.opacity(model.tool.flattensPreview ? 0 : 0.5), radius: 18, y: 8)
                         .padding(inset)
@@ -58,6 +66,12 @@ struct PreviewPane: View {
                         ZoomFramingOverlay(model: model, stage: stage(in: proxy.size))
                         ZoomFramingHint(model: model)
                     }
+                }
+
+                // Where a vertical-video app's buttons will sit. Over the picture and never in
+                // it: see `SafeZoneOverlay`.
+                if SafeZonePreference.shared.isShown, model.preview != nil {
+                    SafeZoneOverlay(model: model, stage: stage(in: proxy.size))
                 }
 
                 // The one control that says which question this surface is answering. It

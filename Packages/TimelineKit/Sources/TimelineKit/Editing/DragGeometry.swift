@@ -41,7 +41,10 @@ public enum DragGeometry {
             // Read off the far end rather than adjusted alongside it: working out the start
             // and the length separately is how an edge ends up a frame from where it was
             // dropped.
-            let settled = min(start + offset, end - floor)
+            // And never before the start of the edit. Left negative, the command clamped
+            // the start to zero afterwards but kept the length it had been given — so a
+            // head dragged past the beginning pulled the far end along with it.
+            let settled = max(.zero, min(start + offset, end - floor))
             return (settled, end - settled)
         case .tail:
             return (start, max(floor, duration + offset))
@@ -62,6 +65,8 @@ public extension Timeline {
         if let found = captions.first(where: { $0.id == id }) { return found.range }
         if let found = audio.first(where: { $0.id == id }) { return found.range }
         if let found = cursorRegions.first(where: { $0.id == id }) { return found.range }
+        if let found = keyCues.first(where: { $0.id == id }) { return found.range }
+        if let found = cameraLayouts.first(where: { $0.id == id }) { return found.range }
         if let found = detachedSound?.first(where: { $0.id == id }) { return found.range }
         return nil
     }

@@ -14,7 +14,7 @@ struct AnnotationMenu: View {
     var edit: (() -> Void)?
 
     var body: some View {
-        if let edit, case .text = item.kind {
+        if let edit, item.kind.hasWords {
             Button("Edit Text") { edit() }
             Divider()
         }

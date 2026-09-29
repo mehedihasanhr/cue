@@ -19,6 +19,10 @@ let package = Package(
         // Left `nonisolated` by default: frames arrive on the system's queues and must
         // never touch an actor on their way to the encoder.
         .target(name: "RecordKit", dependencies: ["AddOnKit"]),
-        .testTarget(name: "RecordKitTests", dependencies: ["RecordKit"]),
+        // Writes a made-up take the way the recorder does, until it is told to stop or is
+        // killed. The tests run it as a child process and kill it mid-take, which is the
+        // only honest way to show a take surviving a crash. Not a product: nothing ships it.
+        .executableTarget(name: "RecordKitCrashProbe", dependencies: ["RecordKit"]),
+        .testTarget(name: "RecordKitTests", dependencies: ["RecordKit", "RecordKitCrashProbe"]),
     ]
 )

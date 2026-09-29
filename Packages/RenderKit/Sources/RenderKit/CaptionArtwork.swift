@@ -33,12 +33,19 @@ enum CaptionArtwork {
         let backgroundOpacity: Double
         let width: Int
         let height: Int
+        let typeface: CaptionStyle.Typeface
+        let fontFamily: String
+        /// Which word is lit, and in what colour. A line with a word lit is a different
+        /// picture for every word of it.
+        let spokenWord: Int?
+        /// The highlight's colour, as numbers: `ColorValue` is not something to hash by.
+        let hr: Double, hg: Double, hb: Double, ha: Double
     }
 
-    /// Four lines' worth. A caption is one line at a time and the only reason to hold more
-    /// than one is the moment two cues abut; the extra entries cover the preview and an
-    /// export running at different sizes at once.
-    private static let plates = ArtworkCache<Key, CGImage>(capacity: 4)
+    /// A line's worth of words, twice over. With a word lit up a line is one picture per
+    /// word, and scrubbing back and forth across it asks for all of them again; the second
+    /// line's worth covers the preview and an export running at different sizes at once.
+    private static let plates = ArtworkCache<Key, CGImage>(capacity: 32)
 
     static func image(_ caption: CaptionLayer, outputSize: CGSize) -> CIImage? {
         let trimmed = caption.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -50,7 +57,16 @@ enum CaptionArtwork {
                       r: caption.color.r, g: caption.color.g, b: caption.color.b, a: caption.color.a,
                       backgroundOpacity: caption.backgroundOpacity,
                       width: Int(outputSize.width.rounded()),
-                      height: Int(outputSize.height.rounded()))
+                      height: Int(outputSize.height.rounded()),
+                      typeface: caption.typeface,
+                      fontFamily: caption.fontFamily,
+                      spokenWord: caption.spokenWord,
+                      // Only part of what the picture is when a word is lit; otherwise
+                      // changing the colour would redraw lines it does not appear in.
+                      hr: caption.spokenWord == nil ? 0 : caption.highlightColor.r,
+                      hg: caption.spokenWord == nil ? 0 : caption.highlightColor.g,
+                      hb: caption.spokenWord == nil ? 0 : caption.highlightColor.b,
+                      ha: caption.spokenWord == nil ? 0 : caption.highlightColor.a)
         guard let cgImage = plates.value(for: key, make: {
             plate(trimmed, caption: caption, outputSize: outputSize, fontSize: fontSize)
         }) else { return nil }
@@ -59,13 +75,22 @@ enum CaptionArtwork {
         // renderer's.
         let margin = outputSize.height * caption.margin
         let x = (outputSize.width - Double(cgImage.width)) / 2
-        let y = switch caption.position {
+        let rest = switch caption.position {
         case .bottom: margin
         case .top: outputSize.height - margin - Double(cgImage.height)
         }
+        // Lower while it is arriving, when the project has it rise into place.
+        let y = max(0, rest) - caption.drop * outputSize.height
 
         var image = CIImage(cgImage: cgImage)
-            .transformed(by: CGAffineTransform(translationX: x, y: max(0, y)))
+        if caption.scale != 1 {
+            // About its own middle, so a line that swells stays where it is.
+            let middle = CGPoint(x: Double(cgImage.width) / 2, y: Double(cgImage.height) / 2)
+            image = image.transformed(by: CGAffineTransform(translationX: middle.x, y: middle.y)
+                .scaledBy(x: caption.scale, y: caption.scale)
+                .translatedBy(x: -middle.x, y: -middle.y), highQualityDownsample: true)
+        }
+        image = image.transformed(by: CGAffineTransform(translationX: x, y: y))
         if caption.opacity < 1 {
             image = image.applyingFilter("CIColorMatrix", parameters: [
                 "inputAVector": CIVector(x: 0, y: 0, z: 0, w: caption.opacity),
@@ -77,6 +102,40 @@ enum CaptionArtwork {
     /// Empties the plate cache, so a test can draw one cold.
     static func clearCache() { plates.removeAll() }
 
+    /// The type a caption is set in: the family it names, when this Mac has it, and
+    /// otherwise the system's type in the design the caption asked for, at the weight
+    /// captions are set in. A design this Mac cannot supply falls back to the standard one
+    /// rather than to no caption.
+    static func font(_ typeface: CaptionStyle.Typeface, family: String = "", size: Double) -> NSFont {
+        if let chosen = FontFamilies.font(family: family, size: size, weight: .semibold) { return chosen }
+        let base = NSFont.systemFont(ofSize: size, weight: .semibold)
+        let design: NSFontDescriptor.SystemDesign = switch typeface {
+        case .standard: .default
+        case .rounded: .rounded
+        case .serif: .serif
+        case .monospaced: .monospaced
+        }
+        guard let descriptor = base.fontDescriptor.withDesign(design),
+              let font = NSFont(descriptor: descriptor, size: size) else { return base }
+        return font
+    }
+
+    /// Where the word at a position is in a line, counting words the way `CaptionCue`
+    /// does: whatever is between two stretches of white space.
+    static func wordRange(_ index: Int, in text: String) -> Range<String.Index>? {
+        guard index >= 0 else { return nil }
+        var count = 0
+        var cursor = text.startIndex
+        while cursor < text.endIndex {
+            guard let start = text[cursor...].firstIndex(where: { !$0.isWhitespace }) else { return nil }
+            let end = text[start...].firstIndex(where: \.isWhitespace) ?? text.endIndex
+            if count == index { return start..<end }
+            count += 1
+            cursor = end
+        }
+        return nil
+    }
+
     private static func plate(_ trimmed: String,
                               caption: CaptionLayer,
                               outputSize: CGSize,
@@ -87,12 +146,22 @@ enum CaptionArtwork {
         paragraph.alignment = .center
         paragraph.lineBreakMode = .byWordWrapping
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: fontSize, weight: .semibold),
+            .font: font(caption.typeface, family: caption.fontFamily, size: fontSize),
             .foregroundColor: NSColor(srgbRed: caption.color.r, green: caption.color.g,
                                       blue: caption.color.b, alpha: caption.color.a),
             .paragraphStyle: paragraph,
         ]
-        let text = NSAttributedString(string: trimmed, attributes: attributes)
+        let text = NSMutableAttributedString(string: trimmed, attributes: attributes)
+        // The word being said, in the colour that says so. The colour alone changes — not
+        // the weight and not the size — so the line is the same width whichever word is
+        // lit and nothing in it moves as the highlight goes along.
+        if let spoken = caption.spokenWord, let range = wordRange(spoken, in: trimmed) {
+            let highlight = caption.highlightColor
+            text.addAttribute(.foregroundColor,
+                              value: NSColor(srgbRed: highlight.r, green: highlight.g,
+                                             blue: highlight.b, alpha: highlight.a),
+                              range: NSRange(range, in: trimmed))
+        }
 
         // Measured before anything is drawn: the plate is sized to the words, so the
         // words have to be laid out first.
@@ -102,8 +171,15 @@ enum CaptionArtwork {
         guard textSize.width > 1, textSize.height > 1 else { return nil }
 
         let plate = CGSize(width: textSize.width + inset * 2, height: textSize.height + inset * 2)
-        let width = Int(min(outputSize.width, plate.width).rounded())
-        let height = Int(min(outputSize.height, plate.height).rounded())
+        // Rounded up, never to the nearest: the words are drawn into the plate less its
+        // inset, and a plate rounded *down* leaves that a fraction of a pixel narrower than
+        // the words were measured at. Text laid out in less room than it measured wraps, and
+        // the line it wraps onto falls below the plate and is never drawn. At the default
+        // size a 360p, 720p or 4K plate rounds down, so any line whose width fell close
+        // enough below a whole pixel lost its last word; a one-line caption at 360p and 6%
+        // of the height lost "step 2." off the end of "…the button that says step 2.".
+        let width = Int(min(outputSize.width, plate.width).rounded(.up))
+        let height = Int(min(outputSize.height, plate.height).rounded(.up))
 
         guard let context = CGContext(data: nil,
                                       width: width,
