@@ -90,4 +90,101 @@ struct CursorMappingTests {
         mapper.refresh()
         #expect(mapper.origin == CGPoint(x: 1_920, y: 0))
     }
+
+    // MARK: - A window the frame had to shrink
+
+    /// The take that found this: a full-screen browser, 1512 × 950 points, recorded into a
+    /// file sized for 1512 × 861. ScreenCaptureKit shrank the picture to 0.906 of itself to
+    /// fit, and the pointer was written down as though it had not — so a click on a link
+    /// 400 points down the page was drawn 40 points below it.
+    private let shrunk = FrameGeometry(screenRect: CGRect(x: 0, y: 32, width: 1_512, height: 950),
+                                       contentRect: CGRect(x: 0, y: 0, width: 1_371, height: 861),
+                                       contentScale: 861.0 / 950.0,
+                                       scaleFactor: 2)
+
+    @Test func aShrunkWindowShrinksThePointerWithIt() {
+        let mapper = CursorMapper(origin: .zero, following: 7, outputScale: 2)
+        mapper.place(shrunk)
+        let mapped = mapper.map(CGPoint(x: 400, y: 32 + 400))
+        #expect(abs(mapped.x - 400 * 861 / 950) < 0.001)
+        #expect(abs(mapped.y - 400 * 861 / 950) < 0.001)
+        #expect(mapper.map(CGPoint(x: 0, y: 32)) == .zero, "the window's corner is still the frame's corner")
+    }
+
+    /// The window server's origin for that window was the one it had before it went full
+    /// screen, 90 points lower. The frame knows better, and a refresh must not undo it.
+    @Test func theFramesSayWhereTheWindowIsAndARefreshDoesNotOverruleThem() {
+        let mapper = CursorMapper(origin: CGPoint(x: 0, y: 121), following: 7, outputScale: 2)
+        mapper.place(shrunk)
+        mapper.refresh()
+        #expect(mapper.origin == CGPoint(x: 0, y: 32))
+    }
+
+    /// A frame from a standard-density display, into a file made at 2×: one point of the
+    /// window is one pixel, and so half a point of the frame.
+    @Test func aOneXFrameInATwoXFileMapsAtHalfScale() {
+        let mapper = CursorMapper(origin: .zero, following: 7, outputScale: 2)
+        mapper.place(FrameGeometry(screenRect: CGRect(x: -1_600, y: 0, width: 800, height: 600),
+                                   contentRect: CGRect(x: 0, y: 0, width: 800, height: 600),
+                                   contentScale: 1, scaleFactor: 1))
+        #expect(mapper.map(CGPoint(x: -1_200, y: 300)) == CGPoint(x: 200, y: 150))
+    }
+
+    /// Letterboxed content is placed away from the corner; the pointer follows it there.
+    @Test func contentPlacedAwayFromTheCornerCarriesThePointerWithIt() {
+        let mapper = CursorMapper(origin: .zero, following: 7, outputScale: 2)
+        mapper.place(FrameGeometry(screenRect: CGRect(x: 0, y: 0, width: 1_000, height: 500),
+                                   contentRect: CGRect(x: 20, y: 0, width: 1_000, height: 500),
+                                   contentScale: 1, scaleFactor: 2))
+        #expect(mapper.map(CGPoint(x: 100, y: 100)) == CGPoint(x: 120, y: 100))
+    }
+
+    /// A frame that cannot place itself leaves the last good answer alone.
+    @Test func aFrameWithNoSizeIsIgnored() {
+        let mapper = CursorMapper(origin: CGPoint(x: 50, y: 50), following: 7, outputScale: 2)
+        mapper.place(FrameGeometry(screenRect: .zero, contentRect: .zero, contentScale: 1, scaleFactor: 2))
+        #expect(mapper.map(CGPoint(x: 60, y: 60)) == CGPoint(x: 10, y: 10))
+    }
+
+    /// Focus rectangles are sizes as well as corners; a shrunk picture shrinks them too.
+    @Test func aRectangleIsScaledAsWellAsMoved() {
+        let mapper = CursorMapper(origin: .zero, following: 7, outputScale: 2)
+        mapper.place(FrameGeometry(screenRect: CGRect(x: 0, y: 0, width: 1_000, height: 1_000),
+                                   contentRect: CGRect(x: 0, y: 0, width: 500, height: 500),
+                                   contentScale: 0.5, scaleFactor: 2))
+        #expect(mapper.map(CGRect(x: 100, y: 100, width: 200, height: 80))
+                == CGRect(x: 50, y: 50, width: 100, height: 40))
+    }
+
+    /// Chrome in full screen, as it was when this was found. The window that is picked is
+    /// only the page, 1512 × 861 at y = 121; the tab strip and toolbar are separate windows
+    /// above it from y = 33, and the capture takes them too. Measured from the page's own
+    /// corner every pointer was 88 points too high — a click on a link drawn a line above
+    /// it. Measured from where the frame says the picture starts, it lands on the link.
+    @Test func aFullScreenWindowIsMeasuredFromWhereItsPictureStarts() {
+        let mapper = CursorMapper(origin: CGPoint(x: 0, y: 121), following: 112, outputScale: 2)
+        let scale = 861.0 / 949.0
+        mapper.place(FrameGeometry(screenRect: CGRect(x: 0, y: 33, width: 1_512, height: 949),
+                                   contentRect: CGRect(x: 0, y: 0, width: 1_512 * scale, height: 861),
+                                   contentScale: scale,
+                                   scaleFactor: 2))
+        // A link 500 points down the page, which is 588 down the picture.
+        let mapped = mapper.map(CGPoint(x: 612, y: 121 + 500))
+        #expect(abs(mapped.x - 612 * scale) < 0.001)
+        #expect(abs(mapped.y - (88 + 500) * scale) < 0.001)
+    }
+
+    /// The same take, if the frame reports only the page's own rectangle: the content is
+    /// 88 points taller than that, and the extra is the toolbar above it.
+    @Test func contentTallerThanTheReportedWindowStartsAboveIt() {
+        let mapper = CursorMapper(origin: CGPoint(x: 0, y: 121), following: 112, outputScale: 2)
+        let scale = 861.0 / 949.0
+        mapper.place(FrameGeometry(screenRect: CGRect(x: 0, y: 121, width: 1_512, height: 861),
+                                   contentRect: CGRect(x: 0, y: 0, width: 1_512 * scale, height: 861),
+                                   contentScale: scale,
+                                   scaleFactor: 2))
+        #expect(abs(mapper.origin.y - 33) < 0.001)
+        let mapped = mapper.map(CGPoint(x: 612, y: 121 + 500))
+        #expect(abs(mapped.y - (88 + 500) * scale) < 0.001)
+    }
 }

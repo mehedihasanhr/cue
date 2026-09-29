@@ -25,21 +25,55 @@ import os
 /// start would put the drawn pointer further from the truth with every inch of the drag.
 /// `refresh()` re-reads it; the caller decides how often.
 public final class CursorMapper: @unchecked Sendable {
+    /// How a point on the desk becomes a point in the frame: take the recorded corner
+    /// away, scale by however much the picture was scaled on its way into the file, and
+    /// add wherever in the file the picture was put.
+    ///
+    /// Scale and offset are one and zero for a display and an area, where the picture fills
+    /// the file point for point. A window is where they stop being: the file's size is
+    /// fixed when the take starts, and a window that is bigger than that by the time frames
+    /// arrive — resized, gone full screen, or simply reported smaller than it was — is
+    /// shrunk to fit. The pointer used to be written down as though it had not been, so
+    /// every sample landed further from the truth the further it was from the corner.
+    struct Placement: Equatable {
+        var origin: CGPoint
+        var scale: CGFloat = 1
+        var offset: CGPoint = .zero
+        /// Set once a frame has said where the window is. From then on the frames are the
+        /// authority and the window server's answer is no longer asked for.
+        var isFromFrames = false
+    }
+
     /// The window being followed, when the recording is of a window.
     private let window: CGWindowID?
-    private let state: OSAllocatedUnfairLock<CGPoint>
+    /// Pixels in the file per point of the frame the editor draws on — the recording's
+    /// `displayScale`. What a frame reports is in pixels; what the samples are in is points.
+    private let outputScale: CGFloat
+    private let state: OSAllocatedUnfairLock<Placement>
 
-    public init(origin: CGPoint, following window: CGWindowID? = nil) {
+    public init(origin: CGPoint, following window: CGWindowID? = nil, outputScale: CGFloat = 1) {
         self.window = window
-        state = OSAllocatedUnfairLock(initialState: origin)
+        self.outputScale = max(outputScale, 0.01)
+        state = OSAllocatedUnfairLock(initialState: Placement(origin: origin))
     }
 
     /// The recorded area's origin in global screen points, top-left.
-    public var origin: CGPoint { state.withLock { $0 } }
+    public var origin: CGPoint { state.withLock { $0.origin } }
+
+    var placement: Placement { state.withLock { $0 } }
 
     public func map(_ point: CGPoint) -> CGPoint {
-        let origin = self.origin
-        return CGPoint(x: point.x - origin.x, y: point.y - origin.y)
+        let placed = placement
+        return CGPoint(x: (point.x - placed.origin.x) * placed.scale + placed.offset.x,
+                       y: (point.y - placed.origin.y) * placed.scale + placed.offset.y)
+    }
+
+    /// A rectangle on the desk as a rectangle in the frame — its size scaled with the
+    /// picture, not only its corner moved.
+    public func map(_ rect: CGRect) -> CGRect {
+        let scale = placement.scale
+        return CGRect(origin: map(rect.origin),
+                      size: CGSize(width: rect.width * scale, height: rect.height * scale))
     }
 
     /// Re-reads where the recorded window is now. Nothing to do for a display or an area:
@@ -48,15 +82,76 @@ public final class CursorMapper: @unchecked Sendable {
     /// Cheap enough to call at the rate a pointer changes shape — one window's entry from
     /// the window server — and deliberately not called per sample, which is 120 times a
     /// second for something that moves at the speed of a hand.
+    ///
+    /// Only until the first frame arrives. After that each frame says where the window is,
+    /// which is better than asking: the window server's answer for a window that has gone
+    /// full screen on its own Space can be the frame it had before, and trusting it put
+    /// every pointer a title bar's height and more away from where it was.
     public func refresh() {
-        guard let window else { return }
+        guard let window, !placement.isFromFrames else { return }
         Self.frame(of: window).map { move(to: $0.origin) }
     }
 
     /// Puts the recorded corner somewhere else. Separate from `refresh()` so the
     /// translation can be checked without a window server.
     func move(to origin: CGPoint) {
-        state.withLock { $0 = origin }
+        state.withLock { $0.origin = origin }
+    }
+
+    /// Where a captured frame says the window was, and what was done to it on its way in.
+    ///
+    /// Frames are the one source that cannot disagree with the picture, because they are
+    /// the picture. Called from the capture queue for every complete frame; a frame that
+    /// does not say where it is leaves the last answer in place.
+    public func place(_ frame: FrameGeometry) {
+        guard let placed = Self.placement(for: frame, outputScale: outputScale) else { return }
+        let previous = state.withLock { current in
+            defer { current = placed }
+            return current
+        }
+        // Said once per change rather than per frame: this is the number every pointer in
+        // the take is measured from, and when it is wrong the log is the only place that
+        // can show by how much without a screen recording of the screen recording.
+        guard previous.isFromFrames == false
+                || abs(previous.origin.x - placed.origin.x) > 0.5
+                || abs(previous.origin.y - placed.origin.y) > 0.5
+                || abs(previous.scale - placed.scale) > 0.001 else { return }
+        Self.log.notice("""
+            Pointer placed from frames: window at \(frame.screenRect.debugDescription, privacy: .public), \
+            content \(frame.contentRect.debugDescription, privacy: .public) × \(frame.contentScale, privacy: .public) \
+            @\(frame.scaleFactor, privacy: .public)x; was origin \(previous.origin.debugDescription, privacy: .public) \
+            scale \(previous.scale, privacy: .public)
+            """)
+    }
+
+    private static let log = Logger(subsystem: "com.stackrover.klik.recordkit", category: "cursor")
+
+    /// The arithmetic of `place(_:)`, on its own so it can be checked without a stream.
+    ///
+    /// `contentScale × scaleFactor` is pixels in the file per point of the window (it is
+    /// what Apple's own capture sample sets as the layer's `contentsScale`); dividing by
+    /// the file's own scale turns that into points of the frame. The content rect is in
+    /// the surface's points, so its corner goes through the same scale factor.
+    static func placement(for frame: FrameGeometry, outputScale: CGFloat) -> Placement? {
+        guard frame.screenRect.width > 1, frame.screenRect.height > 1,
+              frame.contentScale > 0, frame.scaleFactor > 0 else { return nil }
+        let scale = frame.contentScale * frame.scaleFactor / outputScale
+        let offset = CGPoint(x: frame.contentRect.origin.x * frame.scaleFactor / outputScale,
+                             y: frame.contentRect.origin.y * frame.scaleFactor / outputScale)
+        // The picture can be taller than the window that was picked. A full-screen Chrome is
+        // three windows — the page, and the tab strip and toolbar stacked above it — and the
+        // capture takes all three while the picked one is only the page. When the content is
+        // taller than the rectangle the frame reports, what is missing is what is attached
+        // above, so the picture starts that much higher. Nothing changes when the rectangle
+        // already covers the whole picture.
+        let contentHeight = frame.contentRect.height / frame.contentScale
+        var origin = frame.screenRect.origin
+        // Bounded: a toolbar is a fraction of a window. Content twice the window's height
+        // is a number read in the wrong unit, not a window with another stacked on it.
+        if contentHeight > frame.screenRect.height + 2, contentHeight < frame.screenRect.height * 1.5 {
+            origin.y = frame.screenRect.maxY - contentHeight
+        }
+        return Placement(origin: origin, scale: scale, offset: offset, isFromFrames: true)
     }
 
     /// Where a window is now, according to the window server.
@@ -68,6 +163,28 @@ public final class CursorMapper: @unchecked Sendable {
         // snapping every later sample to the corner of the screen.
         else { return nil }
         return rect
+    }
+}
+
+/// What ScreenCaptureKit says about where one frame's picture came from and where it put it.
+///
+/// Read off the frame's attachments. A value of its own so the mapper can be given one
+/// without a sample buffer, which a test cannot make.
+public struct FrameGeometry: Sendable, Equatable {
+    /// Where the captured content was on the desk, in global points.
+    public var screenRect: CGRect
+    /// Where the content sits in the frame, in the frame's points.
+    public var contentRect: CGRect
+    /// How much the content was scaled to fit the frame. Below one when it was shrunk.
+    public var contentScale: CGFloat
+    /// Pixels per point of the display the content was on.
+    public var scaleFactor: CGFloat
+
+    public init(screenRect: CGRect, contentRect: CGRect, contentScale: CGFloat, scaleFactor: CGFloat) {
+        self.screenRect = screenRect
+        self.contentRect = contentRect
+        self.contentScale = contentScale
+        self.scaleFactor = scaleFactor
     }
 }
 
@@ -251,26 +368,141 @@ public final class CursorTracker: @unchecked Sendable {
 }
 
 extension CursorShape {
-    /// Names the system cursor. Compared by identity because `NSCursor` has no other
-    /// way to say which one it is, and an unrecognised cursor is recorded as `other`
-    /// rather than mislabelled as an arrow.
+    /// Names the system cursor.
+    ///
+    /// Identity first, because it is free and right for Klik's own windows. It is almost
+    /// never the answer while recording, though: the pointer over another app's window —
+    /// the browser being recorded — comes back from `currentSystem` as a fresh `NSCursor`
+    /// every time, never `===` to `NSCursor.pointingHand` even when it is that hand. So
+    /// every pointer in a recording of Chrome used to be `.other`, and `.other` kept the
+    /// first picture it saw — an arrow — for the rest of the take: a hand over every link
+    /// drawn as an arrow.
+    ///
+    /// The picture is the answer instead. See `CursorFingerprint`.
     @MainActor
     init(_ cursor: NSCursor) {
-        switch cursor {
-        case NSCursor.arrow: self = .arrow
-        case NSCursor.iBeam, NSCursor.iBeamCursorForVerticalLayout: self = .iBeam
-        case NSCursor.pointingHand: self = .pointingHand
-        case NSCursor.openHand: self = .openHand
-        case NSCursor.closedHand: self = .closedHand
-        case NSCursor.crosshair: self = .crosshair
-        case NSCursor.resizeLeftRight, NSCursor.resizeLeft, NSCursor.resizeRight: self = .resizeLeftRight
-        case NSCursor.resizeUpDown, NSCursor.resizeUp, NSCursor.resizeDown: self = .resizeUpDown
-        case NSCursor.disappearingItem: self = .disappearingItem
-        case NSCursor.operationNotAllowed: self = .operationNotAllowed
-        case NSCursor.dragCopy: self = .dragCopy
-        case NSCursor.dragLink: self = .dragLink
-        case NSCursor.contextualMenu: self = .contextualMenu
-        default: self = .other
+        if let known = Self.byIdentity(cursor) {
+            self = known
+        } else {
+            self = CursorFingerprint.recognise(cursor) ?? .other
         }
     }
+
+    @MainActor
+    private static func byIdentity(_ cursor: NSCursor) -> CursorShape? {
+        switch cursor {
+        case NSCursor.arrow: .arrow
+        case NSCursor.iBeam, NSCursor.iBeamCursorForVerticalLayout: .iBeam
+        case NSCursor.pointingHand: .pointingHand
+        case NSCursor.openHand: .openHand
+        case NSCursor.closedHand: .closedHand
+        case NSCursor.crosshair: .crosshair
+        case NSCursor.resizeLeftRight, NSCursor.resizeLeft, NSCursor.resizeRight: .resizeLeftRight
+        case NSCursor.resizeUpDown, NSCursor.resizeUp, NSCursor.resizeDown: .resizeUpDown
+        case NSCursor.disappearingItem: .disappearingItem
+        case NSCursor.operationNotAllowed: .operationNotAllowed
+        case NSCursor.dragCopy: .dragCopy
+        case NSCursor.dragLink: .dragLink
+        case NSCursor.contextualMenu: .contextualMenu
+        default: nil
+        }
+    }
+}
+
+/// A cursor, reduced to something two cursors can be compared by.
+///
+/// Size and hotspot are not enough: the arrow, "not allowed", "copy", "contextual menu"
+/// and "disappearing item" are all 28 × 40 with the point at (5, 5) — they are the arrow
+/// with a badge. So the picture itself is compared, drawn down to a small grid. The grid is
+/// the same whatever size the cursor is, which keeps a pointer that has been made larger in
+/// Accessibility settings recognisable as the shape it is.
+struct CursorFingerprint {
+    static let side = 24
+
+    /// The hotspot as a fraction of the image.
+    let hotspot: CGPoint
+    /// Width over height.
+    let aspect: CGFloat
+    /// Alpha and luminance per cell, `side × side × 2`.
+    let cells: [UInt8]
+
+    @MainActor
+    init?(_ cursor: NSCursor) {
+        let image = cursor.image
+        let size = image.size
+        guard size.width > 0, size.height > 0,
+              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        else { return nil }
+        hotspot = CGPoint(x: cursor.hotSpot.x / size.width, y: cursor.hotSpot.y / size.height)
+        aspect = size.width / size.height
+
+        let side = Self.side
+        var rgba = [UInt8](repeating: 0, count: side * side * 4)
+        let drawn: Bool = rgba.withUnsafeMutableBytes { buffer in
+            guard let context = CGContext(data: buffer.baseAddress, width: side, height: side,
+                                          bitsPerComponent: 8, bytesPerRow: side * 4,
+                                          space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+            else { return false }
+            context.interpolationQuality = .medium
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: side, height: side))
+            return true
+        }
+        guard drawn else { return nil }
+        var cells = [UInt8](repeating: 0, count: side * side * 2)
+        for index in 0..<(side * side) {
+            let r = Int(rgba[index * 4]), g = Int(rgba[index * 4 + 1]), b = Int(rgba[index * 4 + 2])
+            cells[index * 2] = rgba[index * 4 + 3]
+            cells[index * 2 + 1] = UInt8((r * 299 + g * 587 + b * 114) / 1000)
+        }
+        self.cells = cells
+    }
+
+    /// How far apart two cursors are: zero for the same picture, one for nothing alike.
+    /// `nil` when their shape or point alone rules them out.
+    func distance(to other: CursorFingerprint) -> Double? {
+        guard abs(aspect - other.aspect) < 0.06,
+              abs(hotspot.x - other.hotspot.x) < 0.06,
+              abs(hotspot.y - other.hotspot.y) < 0.06 else { return nil }
+        var total = 0
+        for index in cells.indices {
+            total += abs(Int(cells[index]) - Int(other.cells[index]))
+        }
+        return Double(total) / Double(cells.count * 255)
+    }
+
+    /// Close enough to be the same cursor redrawn — scaled, or on another display — and
+    /// far enough from the arrow that the arrow with a small badge on it is still told apart.
+    static let threshold = 0.04
+
+    /// Which standard cursor this is, or `nil` for one that is none of them.
+    @MainActor
+    static func recognise(_ cursor: NSCursor) -> CursorShape? {
+        guard let print = CursorFingerprint(cursor) else { return nil }
+        var best: (shape: CursorShape, distance: Double)?
+        for (shape, known) in standard {
+            guard let distance = print.distance(to: known), distance < threshold else { continue }
+            if best == nil || distance < best!.distance { best = (shape, distance) }
+        }
+        return best?.shape
+    }
+
+    /// The system's own cursors, drawn once. Built lazily and on the main actor, where
+    /// `NSCursor`'s images can be read; a cursor that has no picture to read is left out
+    /// rather than matched against nothing.
+    @MainActor
+    static let standard: [(CursorShape, CursorFingerprint)] = {
+        let cursors: [(CursorShape, NSCursor)] = [
+            (.arrow, .arrow), (.iBeam, .iBeam), (.iBeam, .iBeamCursorForVerticalLayout),
+            (.pointingHand, .pointingHand), (.openHand, .openHand), (.closedHand, .closedHand),
+            (.crosshair, .crosshair),
+            (.resizeLeftRight, .resizeLeftRight), (.resizeLeftRight, .resizeLeft), (.resizeLeftRight, .resizeRight),
+            (.resizeUpDown, .resizeUpDown), (.resizeUpDown, .resizeUp), (.resizeUpDown, .resizeDown),
+            (.disappearingItem, .disappearingItem), (.operationNotAllowed, .operationNotAllowed),
+            (.dragCopy, .dragCopy), (.dragLink, .dragLink), (.contextualMenu, .contextualMenu),
+        ]
+        return cursors.compactMap { shape, cursor in
+            CursorFingerprint(cursor).map { (shape, $0) }
+        }
+    }()
 }

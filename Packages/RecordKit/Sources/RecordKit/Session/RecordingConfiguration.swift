@@ -151,6 +151,11 @@ public struct RecordingConfiguration: Sendable {
         configuration.width = max(2, width - width % 2)
         configuration.height = max(2, height - height % 2)
 
+        // Scaled up as well as down. The default only shrinks, so a window that reached the
+        // stream at 1× — on a standard-density display, or in the first frames after it
+        // was picked — was drawn at half size in the top-left corner of a 2× file, with
+        // black where the rest of it should have been.
+        configuration.scalesToFit = true
         configuration.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(max(1, frameRate)))
         configuration.showsCursor = capturesCursorInVideo
         configuration.capturesAudio = systemAudio

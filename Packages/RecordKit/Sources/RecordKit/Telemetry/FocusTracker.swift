@@ -108,7 +108,7 @@ public final class FocusTracker: @unchecked Sendable {
         // Accessibility API knows about but cannot place. Neither is somewhere to point
         // a camera.
         guard rect.width > 1, rect.height > 1 else { return }
-        let mapped = CGRect(origin: mapper.map(rect.origin), size: rect.size)
+        let mapped = mapper.map(rect)
         let sample = FocusSample(t: clock.elapsed(), kind: kind, rect: mapped, app: app)
         queue.async { [writer] in writer.append(sample) }
     }
