@@ -25,6 +25,9 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
     /// no filename says that. The peaks and the mapping arrive together because a waveform
     /// is meaningless without the spans that say which second each point stands for.
     var waveform: (Region) -> (peaks: WaveformPeaks, spans: [TimelineWaveform.Span])? = { _ in nil }
+    /// A lane's own right-click menu, for a kind with more to do than cut, copy and delete.
+    /// `nil` keeps the menu every lane has.
+    var menu: ((Region) -> AnyView)?
     @ViewBuilder let badge: (Region) -> Badge
 
     /// Which grip the pointer is over, as "<region id>-<side>".
@@ -35,11 +38,11 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
     @State private var hoveredGrip: String?
 
     private var viewport: TimelineViewport { model.viewport }
-    private let radius: CGFloat = 5
+    private let radius: CGFloat = TimelineChipBackground.radius
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
                 .fill(Color.secondary.opacity(0.08))
                 .frame(height: height)
 
@@ -62,15 +65,10 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
         let left = viewport.x(for: live.start)
         let width = max(6, live.duration.seconds * viewport.pointsPerSecond)
 
-        return RoundedRectangle(cornerRadius: radius, style: .continuous)
-            .fill(tint.opacity(isSelected(region) ? 0.85 : 0.5))
+        return TimelineChipBackground(tint: tint, isSelected: isSelected(region))
             .overlay { shape(of: region, width: width, left: left) }
-            .overlay {
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .strokeBorder(.white.opacity(isSelected(region) ? 0.9 : 0), lineWidth: 1.5)
-            }
             .frame(width: width, height: height)
-            .overlay(alignment: .leading) { label(region, width: width) }
+            .overlay { label(region, width: width) }
             .overlay(alignment: .leading) { edge(region, leading: true, width: width) }
             .overlay(alignment: .trailing) { edge(region, leading: false, width: width) }
             // Anything that no longer fits is cut off by the chip rather than reflowed
@@ -85,19 +83,11 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
             }
             .gesture(move(region))
             .contextMenu {
-                // Acting on the region under the pointer rather than on `model.selection`,
-                // which is why these take a `Selection` — a right-click should not change
-                // what the inspector is showing on its way to copying something.
-                Button("Cut") { model.cutRegion(selection(region.id)) }
-                Button("Copy") { model.copyRegion(selection(region.id)) }
-                Button("Duplicate") { model.duplicateRegion(selection(region.id)) }
-                // Pasting is about the playhead, not about this region, but it belongs here
-                // for the same reason it belongs in a Finder window's menu: it is where the
-                // hand already is after a copy.
-                Button("Paste") { model.pasteAtPlayhead() }
-                    .disabled(!model.canPasteRegion)
-                Divider()
-                Button("Delete", role: .destructive) { model.deleteSelection(region.id) }
+                if let menu {
+                    menu(region)
+                } else {
+                    standardMenu(region)
+                }
             }
             .help("\(title) · \(Timecode.length(live.duration))")
             // Laid out at its place on the timeline, rather than drawn there.
@@ -115,31 +105,42 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
             .position(x: left + width / 2, y: height / 2)
     }
 
-    /// What the chip says, held against its leading edge.
-    ///
-    /// Centred, it slid under the pointer for the whole of a resize: the chip's middle
-    /// moves at half the speed of the edge being dragged, so the words drifted while the
-    /// thing they name stood still. Against the leading edge they are motionless while the
-    /// trailing edge is dragged, and while the leading edge is dragged they travel with the
-    /// edge under the pointer — which reads as the chip moving rather than as the text
-    /// coming loose from it.
+    /// Cut, copy, duplicate, paste and delete: what every lane offers.
+    @ViewBuilder
+    private func standardMenu(_ region: Region) -> some View {
+        // Acting on the region under the pointer rather than on `model.selection`,
+        // which is why these take a `Selection` — a right-click should not change
+        // what the inspector is showing on its way to copying something.
+        Button("Cut") { model.cutRegion(selection(region.id)) }
+        Button("Copy") { model.copyRegion(selection(region.id)) }
+        Button("Duplicate") { model.duplicateRegion(selection(region.id)) }
+        // Pasting is about the playhead, not about this region, but it belongs here
+        // for the same reason it belongs in a Finder window's menu: it is where the
+        // hand already is after a copy.
+        Button("Paste") { model.pasteAtPlayhead() }
+            .disabled(!model.canPasteRegion)
+        Divider()
+        Button("Delete", role: .destructive) { model.deleteSelection(region.id) }
+    }
+
+    /// What the chip says: the kind of thing it is, faintly, and under it the details —
+    /// centred, the way a player's timeline labels its pieces.
     ///
     /// `fixedSize` stops the words being squeezed and re-broken as the chip narrows; the
     /// chip's own clip takes off whatever no longer fits, which is one edge moving instead
     /// of a line of text rearranging itself.
     private func label(_ region: Region, width: CGFloat) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: symbol).font(.system(size: 9, weight: .semibold))
-            badge(region)
+        TimelineChipLabel(title: title, height: height, width: width,
+                          minimumWidth: TimelineHandle.target * 2 + 20) {
+            HStack(spacing: 5) {
+                // Empty for a lane whose chips name their own kind — see the annotation
+                // lane, where each chip is a different kind of thing.
+                if !symbol.isEmpty {
+                    Image(systemName: symbol).font(.system(size: 10, weight: .semibold))
+                }
+                badge(region)
+            }
         }
-        .foregroundStyle(.white)
-        .lineLimit(1)
-        .fixedSize()
-        .padding(.leading, TimelineHandle.target + 3)
-        // Faded rather than switched off: the chip is being dragged when this changes, and
-        // a label blinking out mid-drag reads as something breaking.
-        .opacity(width > TimelineHandle.target * 2 + 20 ? 1 : 0)
-        .animation(StudioMotion.state, value: width > TimelineHandle.target * 2 + 20)
         .allowsHitTesting(false)
     }
 
@@ -154,7 +155,7 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
             TimelineWaveform(viewport: viewport, spans: drawn.spans, peaks: drawn.peaks,
                              height: height, opacity: 0.38)
                 .mask {
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    RoundedRectangle(cornerRadius: radius, style: .continuous)
                         .frame(width: width)
                         .offset(x: left)
                 }

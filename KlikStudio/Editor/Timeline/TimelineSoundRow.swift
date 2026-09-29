@@ -53,6 +53,7 @@ struct TimelineSoundRow: View {
     private var runs: [SoundRun]? { model.timeline.detachedSound }
     private let radius: CGFloat = 5
     @State private var hoveredGrip: String?
+    @Environment(\.colorScheme) private var colorScheme
 
     /// What this lane selects when it is clicked as a whole: this source, or — with no
     /// sources to tell apart — the recording's sound.
@@ -159,7 +160,7 @@ struct TimelineSoundRow: View {
         let selected = model.selection == laneSelection
 
         return RoundedRectangle(cornerRadius: radius, style: .continuous)
-            .fill(tint.opacity(selected ? 0.4 : 0.26))
+            .fill(tint.chipFill(selected ? 0.4 : 0.26, in: colorScheme))
             .overlay { waveform(clippedTo: width, offsetBy: left,
                                 spans: TimelineWaveform.Span.followingClips(of: model.timeline)) }
             .overlay {
@@ -187,7 +188,7 @@ struct TimelineSoundRow: View {
         let selected = model.isSelected(.soundRun(run.id))
 
         return RoundedRectangle(cornerRadius: radius, style: .continuous)
-            .fill(tint.opacity(selected ? 0.46 : 0.3))
+            .fill(tint.chipFill(selected ? 0.46 : 0.3, in: colorScheme))
             .overlay { waveform(clippedTo: width, offsetBy: left, spans: [.init(run)]) }
             .overlay {
                 RoundedRectangle(cornerRadius: radius, style: .continuous)

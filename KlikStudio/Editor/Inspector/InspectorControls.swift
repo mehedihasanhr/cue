@@ -48,11 +48,26 @@ extension View {
     /// down, the chrome recedes and the frame is the brightest thing on screen — which
     /// is the whole arrangement this editor is built around. The same tint the title bar
     /// uses, from one number, so the four surfaces are one surface.
+    ///
+    /// Dark mode only. Under a light appearance the same third of black turned every panel,
+    /// the title bar and the stage a flat mid-grey — the whole window looked disabled, and
+    /// the light frame on the stage no longer stood out from anything. Light chrome is
+    /// already quieter than a picture, so it is left as the system draws it.
     func studioSurface() -> some View {
-        background {
+        modifier(StudioSurface())
+    }
+}
+
+private struct StudioSurface: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        content.background {
             ZStack {
                 Rectangle().fill(.bar)
-                Rectangle().fill(.black.opacity(StudioChromeTint.amount))
+                if colorScheme == .dark {
+                    Rectangle().fill(.black.opacity(StudioChromeTint.amount))
+                }
             }
         }
     }

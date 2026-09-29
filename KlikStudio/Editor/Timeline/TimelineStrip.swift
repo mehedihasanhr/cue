@@ -27,7 +27,8 @@ struct TimelineStrip: View {
     /// read rather than a chip you read the label off, and a waveform squeezed into 28
     /// points is a smear.
     private static let soundHeight: CGFloat = 38
-    private static let regionHeight: CGFloat = 28
+    /// Tall enough for a chip's two lines — what it is, and what it says.
+    private static let regionHeight: CGFloat = 36
     private static let spacing: CGFloat = 6
     private static let padding: CGFloat = 10
     /// The lanes' own coordinate space.
@@ -127,10 +128,10 @@ struct TimelineStrip: View {
         /// belonging to what is beside it rather than as a list of its own.
         func tint(in timeline: Timeline) -> Color {
             switch self {
-            case .clips: .orange
+            case .clips: TimelinePalette.clip
             case .recordedSound: .green
             case .source(let id): timeline.soundTrack(id)?.source == .systemAudio ? .blue : .green
-            case .zooms: .purple
+            case .zooms: TimelinePalette.zoom
             case .pointer: .orange
             case .addedSound: .green
             case .blurs: .teal
@@ -322,14 +323,14 @@ struct TimelineStrip: View {
                                   .map { ($0, [TimelineWaveform.Span(region)]) }
                           }) { region in
             Text((region.path as NSString).lastPathComponent)
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
         }
     }
 
     private var zoomRow: some View {
         TimelineRegionRow(model: model,
                           regions: model.timeline.zooms,
-                          tint: .purple,
+                          tint: TimelinePalette.zoom,
                           title: "Zoom",
                           symbol: "plus.magnifyingglass",
                           height: Self.regionHeight,
@@ -369,7 +370,6 @@ struct TimelineStrip: View {
                         .accessibilityLabel("Follows the pointer")
                 }
             }
-            .font(.system(size: 10, weight: .semibold))
             // Faded, not hidden: it is still a thing on the timeline you can select, move
             // and switch back on.
             .opacity(zoom.isEnabled ? 1 : 0.45)
@@ -403,7 +403,7 @@ struct TimelineStrip: View {
                           height: Self.regionHeight,
                           selection: Selection.cursorRegion) { region in
             Text(region.title)
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
         }
     }
 
@@ -416,7 +416,7 @@ struct TimelineStrip: View {
                           height: Self.regionHeight,
                           selection: Selection.blur) { blur in
             Text(blur.style == .pixelate ? "Pixelate" : "Blur")
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
         }
     }
 
@@ -425,11 +425,37 @@ struct TimelineStrip: View {
                           regions: model.timeline.annotations,
                           tint: .pink,
                           title: "Note",
-                          symbol: "textformat",
+                          // Each chip draws its own kind's glyph instead.
+                          symbol: "",
                           height: Self.regionHeight,
-                          selection: Selection.annotation) { item in
-            Text(Self.label(for: item.kind))
-                .font(.system(size: 10, weight: .semibold))
+                          selection: Selection.annotation,
+                          menu: { item in AnyView(AnnotationMenu(model: model, item: item)) }) { item in
+            HStack(spacing: 5) {
+                // What kind it is, as a glyph of its own: the lane's "Aa" says only that
+                // this row is annotations, and three chips that all read "Aa" say nothing.
+                Image(systemName: Self.symbol(for: item.kind))
+                    .font(.system(size: 9, weight: .semibold))
+                Text(Self.label(for: item.kind))
+                    .font(.system(size: 11, weight: .semibold))
+                if item.isLocked {
+                    Image(systemName: "lock.fill").font(.system(size: 9, weight: .semibold))
+                }
+                if item.isHidden {
+                    Image(systemName: "eye.slash").font(.system(size: 9, weight: .semibold))
+                }
+            }
+            // Faded, not removed, like a switched-off zoom: still on the lane to select,
+            // move and show again.
+            .opacity(item.isHidden ? 0.45 : 1)
+        }
+    }
+
+    private static func symbol(for kind: AnnotationItem.Kind) -> String {
+        switch kind {
+        case .text: "textformat"
+        case .arrow: "arrow.up.right"
+        case .rectangle: "rectangle"
+        case .image: "photo"
         }
     }
 
@@ -459,21 +485,20 @@ struct TimelineStrip: View {
                 .gesture(scrubbing)
 
             Rectangle()
-                .fill(Color.red)
+                .fill(StudioPalette.brand)
                 .frame(width: 1.5)
                 .allowsHitTesting(false)
 
-            // A grab handle at the top, inside the ruler, so the line itself can stay
-            // out of the way of everything under it.
-            Path { path in
-                path.move(to: CGPoint(x: 0, y: 0))
-                path.addLine(to: CGPoint(x: 10, y: 0))
-                path.addLine(to: CGPoint(x: 5, y: 8))
-                path.closeSubpath()
-            }
-            .fill(Color.red)
-            .frame(width: 10, height: 8)
-            .allowsHitTesting(false)
+            // A round knob at the top, inside the ruler, so the line itself can stay out
+            // of the way of everything under it. A ring of the surface colour round it
+            // lifts it off the ruler's numbers when it passes over them.
+            Circle()
+                .fill(StudioPalette.brand)
+                .frame(width: 11, height: 11)
+                .overlay(Circle().strokeBorder(.white.opacity(0.9), lineWidth: 1.5))
+                .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
+                .padding(.top, 2)
+                .allowsHitTesting(false)
         }
         // The width is stated rather than left to whichever child happens to be widest,
         // and everything in the stack centres in it — so the offset below places the *line*
