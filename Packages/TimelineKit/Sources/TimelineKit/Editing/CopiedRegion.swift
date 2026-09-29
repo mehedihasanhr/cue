@@ -183,8 +183,14 @@ public enum CopiedRegion: Equatable, Sendable {
             return .blur(BlurRegion(start: start, duration: duration,
                                     rect: r.rect, style: r.style, radius: r.radius))
         case .annotation(let r):
+            // Everything that makes it look and move the way it does comes along — a copy
+            // that lost its turn or its entrance would not be a copy. It arrives unlocked,
+            // for the zoom's reason: the first thing anybody does with a duplicate is drag it.
             return .annotation(AnnotationItem(start: start, duration: duration, kind: r.kind,
-                                              rect: r.rect, color: r.color, fontSize: r.fontSize))
+                                              rect: r.rect, color: r.color, fontSize: r.fontSize,
+                                              rotation: r.rotation, opacity: r.opacity,
+                                              animation: r.animation, isLocked: false,
+                                              isHidden: r.isHidden, attachment: r.attachment))
         case .caption(let r):
             return .caption(CaptionCue(start: start, duration: duration, text: r.text))
         case .audio(let r):

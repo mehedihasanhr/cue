@@ -84,10 +84,21 @@ public struct SceneDescriptor: Equatable, Sendable {
 
     /// Where the video ends up once the camera has moved.
     ///
-    /// Zooming scales the video about a point and keeps that point where it was, which is
-    /// what makes a zoom feel like a camera rather than a resize.
+    /// A zoom brings the *centre of the framed region to the centre of the picture*. That is
+    /// what a camera does, and it is the whole of the arithmetic below: the framing is `1/zoom`
+    /// of the recording around `zoomCenter`, so magnifying by `zoom` and putting that point in
+    /// the middle makes the region fill the frame exactly.
     ///
-    /// The anchor's y is flipped, and that flip is a fix rather than a flourish: `zoomCenter`
+    /// It used to scale about the aimed-at point and leave that point where it was, which is a
+    /// resize rather than a camera move. The source coordinate landing in the middle of the
+    /// frame came out as `c + (0.5 - c) / zoom` instead of `c`, so every shot not aimed at the
+    /// exact centre drifted towards the middle of the picture — further the harder it zoomed,
+    /// and invisible at 0.5, 0.5, which is the only centre the tests were using.
+    ///
+    /// `videoFrame` is always centred in the output (`SceneBuilder.descriptor`), so its middle
+    /// is the output's middle and this one rectangle serves both readings of `zoomsWholeFrame`.
+    ///
+    /// The y is flipped, and that flip is a fix rather than a flourish: `zoomCenter`
     /// is normalised to the picture from its *top*, like every other normalised point in the
     /// model — a blur's rect (`SceneRenderer.applyBlur`), an annotation's, the cursor's
     /// position, the crop, and the pointer positions the camera clamps itself against — while
@@ -114,11 +125,9 @@ public struct SceneDescriptor: Equatable, Sendable {
     }
 
     public var transformedVideoFrame: CGRect {
-        let anchor = CGPoint(x: videoFrame.minX + videoFrame.width * zoomCenter.x,
-                             y: videoFrame.minY + videoFrame.height * (1 - zoomCenter.y))
         let size = CGSize(width: videoFrame.width * zoom, height: videoFrame.height * zoom)
-        return CGRect(x: anchor.x - (anchor.x - videoFrame.minX) * zoom,
-                      y: anchor.y - (anchor.y - videoFrame.minY) * zoom,
+        return CGRect(x: videoFrame.midX - zoomCenter.x * size.width,
+                      y: videoFrame.midY - (1 - zoomCenter.y) * size.height,
                       width: size.width,
                       height: size.height)
     }
@@ -290,13 +299,26 @@ public struct AnnotationLayer: Equatable, Sendable {
     public var color: ColorValue
     public var fontSize: Double
     public var opacity: Double
+    /// Degrees clockwise on the picture, about the rect's centre.
+    public var rotation: Double
+    /// About the rect's centre, from the entrance or exit. Applied to the drawing rather
+    /// than to the rect, so an annotation popping in is the same artwork growing — not a
+    /// new drawing at every size along the way.
+    public var scale: Double
+    /// From the entrance or exit: `dx` a fraction of the output's width, `dy` of its
+    /// height, top-left origin like `rect`.
+    public var offset: CGVector
 
-    public init(kind: AnnotationItem.Kind, rect: CGRect, color: ColorValue, fontSize: Double, opacity: Double) {
+    public init(kind: AnnotationItem.Kind, rect: CGRect, color: ColorValue, fontSize: Double, opacity: Double,
+                rotation: Double = 0, scale: Double = 1, offset: CGVector = .zero) {
         self.kind = kind
         self.rect = rect
         self.color = color
         self.fontSize = fontSize
         self.opacity = opacity
+        self.rotation = rotation
+        self.scale = scale
+        self.offset = offset
     }
 }
 

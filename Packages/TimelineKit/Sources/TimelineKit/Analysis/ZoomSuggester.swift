@@ -368,9 +368,7 @@ public struct ZoomSuggester: Sendable {
     /// corner becomes a shot of the corner — the whole corner, pulled inside the frame —
     /// rather than a shot half off it.
     private func clamped(_ point: CGPoint, forScale scale: Double) -> CGPoint {
-        let half = 0.5 / max(1, scale)
-        return CGPoint(x: min(1 - half, max(half, point.x)),
-                       y: min(1 - half, max(half, point.y)))
+        ZoomFraming.honoured(center: point, scale: scale)
     }
 
     /// Two suggestions that overlap are one suggestion.

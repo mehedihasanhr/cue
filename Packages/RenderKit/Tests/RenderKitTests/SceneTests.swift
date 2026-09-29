@@ -104,9 +104,16 @@ struct SceneTests {
 
         #expect(scene.zoomCenter.x <= 0.75 + 0.001)
         #expect(scene.zoomCenter.y >= 0.25 - 0.001)
+        // And held there *exactly*: a camera clamped at the right-hand edge has the
+        // right-hand edge of the picture as the right-hand edge of its shot. Equality rather
+        // than containment, because containment is what let a zoom drift towards the middle
+        // of the picture for as long as it did — every rectangle that was wrong still
+        // contained the one it was supposed to be.
         let transformed = scene.transformedVideoFrame
-        #expect(transformed.minX <= scene.videoFrame.minX + 0.001)
-        #expect(transformed.maxX >= scene.videoFrame.maxX - 0.001)
+        #expect(abs(transformed.maxX - scene.videoFrame.maxX) < 1e-6)
+        // Aimed at the top, which is Core Image's high y.
+        #expect(abs(transformed.maxY - scene.videoFrame.maxY) < 1e-6)
+        #expect(transformed.minX < scene.videoFrame.minX, "and the rest hangs off the far side")
     }
 
     @Test func aZoomThatFollowsTheCursorCentresOnIt() {
@@ -735,4 +742,43 @@ struct SceneTests {
         #expect(before.zoomCenter != after.zoomCenter, "and now aimed somewhere else")
     }
 
+
+    // MARK: - Where a zoom actually points
+
+    /// The framed region ends up in the middle of the picture, not somewhere between there
+    /// and the middle of the recording.
+    ///
+    /// The arithmetic statement of the fault this rectangle had: it scaled the picture about
+    /// the aimed-at point and left that point where it was, so the source coordinate landing
+    /// in the middle of the frame came out as `c + (0.5 - c) / zoom`. Every shot not aimed at
+    /// the exact centre was pulled towards the middle, further the harder it zoomed — and
+    /// 0.5, 0.5 was the only centre any pixel test used, which is why it went unnoticed.
+    ///
+    /// Read back out of the rectangle rather than asserted as a rectangle, so the claim is
+    /// the one that matters — *this* part of the recording is what fills the frame — rather
+    /// than a transcription of whatever the formula currently says.
+    @Test(arguments: [
+        (2.0, CGPoint(x: 0.5, y: 0.5)),
+        (2.0, CGPoint(x: 0.25, y: 0.75)),
+        (4.0, CGPoint(x: 0.125, y: 0.125)),
+        (4.0, CGPoint(x: 0.875, y: 0.875)),
+        (8.0, CGPoint(x: 0.4, y: 0.6)),
+    ])
+    func anOffCentreZoomDoesNotDriftTowardTheMiddle(scale: Double, centre: CGPoint) {
+        var timeline = timeline()
+        timeline.style.padding = 0.12
+        timeline.zooms = [ZoomRegion(start: .zero, duration: time(10), scale: scale,
+                                     center: centre, easing: .linear, transition: .zero,
+                                     followsCursor: false)]
+        let scene = builder().descriptor(for: timeline, at: time(5))
+        let frame = scene.transformedVideoFrame
+
+        // Which point of the recording is drawn at the centre of the picture, back in the
+        // model's top-left space.
+        let u = (scene.videoFrame.midX - frame.minX) / frame.width
+        let v = 1 - (scene.videoFrame.midY - frame.minY) / frame.height
+
+        #expect(abs(u - scene.zoomCenter.x) < 1e-9, "\(scale)x at \(centre) points sideways")
+        #expect(abs(v - scene.zoomCenter.y) < 1e-9, "\(scale)x at \(centre) points up or down")
+    }
 }
