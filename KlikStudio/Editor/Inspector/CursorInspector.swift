@@ -50,8 +50,10 @@ struct CursorInspector: View {
             rest
             clicks
             clickSound
+            PointerSwaySection(model: model)
             PointerSpotlightSection(model: model)
             PointerMagnifierSection(model: model)
+            PointerLoopSection(model: model)
             overTime
         }
     }

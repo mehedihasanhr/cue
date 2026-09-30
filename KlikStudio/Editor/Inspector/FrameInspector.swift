@@ -27,6 +27,7 @@ struct FrameInspector: View {
 
             window
             shape
+            WholeVideoZoomSection(model: model)
             PerspectiveSection(model: model)
             ColorGradeSection(model: model)
             if model.timeline.style.crop != nil { crop }

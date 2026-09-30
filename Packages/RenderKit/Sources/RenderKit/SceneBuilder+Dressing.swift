@@ -94,9 +94,13 @@ extension SceneBuilder {
         guard timeline.camera.motionBlur, videoFrame.width > 0, videoFrame.height > 0 else { return nil }
         let earlier = max(.zero, time - Self.motionProbe)
         let later = min(timeline.duration, time + Self.motionProbe)
-        // Only near a zoom: everywhere else the camera is at rest by definition, and this
-        // costs two more framings of the frame.
-        guard timeline.zooms.contains(where: { $0.start <= later && $0.end >= earlier }) else { return nil }
+        // Only near a zoom, or while the whole video is held zoomed in and the camera pans
+        // throughout, or while a loop is bringing the camera home: everywhere else the
+        // camera is at rest by definition, and this costs two more framings of the frame.
+        let moves = timeline.camera.holdsWholeVideoZoomed
+            || (timeline.cursor.loop.bringsCameraBack && timeline.pointerLoopBlend(at: later) > 0)
+            || timeline.zooms.contains(where: { $0.start <= later && $0.end >= earlier })
+        guard moves else { return nil }
 
         func frame(_ camera: (zoom: Double, center: CGPoint)) -> CGRect {
             let size = CGSize(width: videoFrame.width * camera.zoom, height: videoFrame.height * camera.zoom)

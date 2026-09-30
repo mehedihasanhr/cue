@@ -83,6 +83,14 @@ struct CameraControls: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            // The level the whole video is held at lives with the frame's shape, where it
+            // is set; here it is only said, because it changes what every zoom's scale means.
+            if model.timeline.camera.holdsWholeVideoZoomed {
+                Text("The whole video is held at \(String(format: "%.1f×", model.timeline.camera.sanitised.wholeVideoZoom)) (Frame ▸ Zoom), so this zoom goes that much further in, and between zooms the camera pans after the pointer with these same settings.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .font(.system(size: 12))
         .accessibilityElement(children: .contain)

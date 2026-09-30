@@ -529,8 +529,17 @@ public final class SceneRenderer: @unchecked Sendable {
         // taken from the far side.
         let origin = CGPoint(x: point.x - hotspot.x * drawn.width,
                              y: point.y - (1 - hotspot.y) * drawn.height)
-        let placed = picture.transformed(by: CGAffineTransform(translationX: origin.x - picture.extent.minX,
+        var placed = picture.transformed(by: CGAffineTransform(translationX: origin.x - picture.extent.minX,
                                                                y: origin.y - picture.extent.minY))
+        // Leant about its own point, so the tip stays on what it is pointing at and the
+        // body swings. Core Image's y runs up, so a lean that is clockwise as it is seen is
+        // a negative angle here.
+        if abs(cursor.tilt) > 0.0005 {
+            let lean = CGAffineTransform(translationX: point.x, y: point.y)
+                .rotated(by: -cursor.tilt)
+                .translatedBy(x: -point.x, y: -point.y)
+            placed = placed.transformed(by: lean)
+        }
         // Smeared *after* it is in place. The smear makes the picture bigger on every side,
         // and placing a picture by the corner of its smear moved the pointer by the length
         // of it — further the faster it was going, which is exactly when it is being

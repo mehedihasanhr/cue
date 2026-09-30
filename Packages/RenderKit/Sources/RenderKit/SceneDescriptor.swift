@@ -380,6 +380,10 @@ public struct CursorLayer: Equatable, Sendable {
     public var appearance: CursorStyle.Appearance = .asRecorded
     /// The `dot` style's colour.
     public var dotColor: ColorValue = CursorStyle.defaultDotColor
+    /// How far the pointer leans, in radians, about its own point — positive clockwise as
+    /// it is seen, which is the lean of a pointer travelling to the right. Zero unless the
+    /// project asks for `PointerSway`.
+    public var tilt: Double = 0
 
     public init(position: CGPoint,
                 shape: CursorShapeKind,
