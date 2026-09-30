@@ -132,6 +132,11 @@ public final class RecordingSession {
     /// What the camera's file holds, for the manifest. `nil` when there is no camera.
     private var webcamPixelSize: CGSize?
     private var webcamFrameRate: Int?
+    /// The iPhone or iPad, for a take of one — see `DeviceRecorder`. `nil` for every take of
+    /// the Mac's own screen, which is when `screen` is the one that is set instead.
+    private var device: DeviceRecorder?
+    /// What the manifest will say about that device.
+    private var recordedDevice: RecordedDevice?
     private var cursor: CursorTracker?
     private var cursorArtwork: CursorArtworkWriter?
     /// The keyboard, when this take asked for it. `nil` is the state in which no key
@@ -217,6 +222,10 @@ public final class RecordingSession {
             guard state.countdownRemaining == remaining else { return }
         }
 
+        // A device has been running since `prepare`, so it only has to be told to write.
+        // Before the screen would have started: it is the recording's first frame, and so
+        // its clock, exactly as the screen's is for every other take.
+        device?.start()
         do {
             try await screen?.start()
         } catch {
@@ -255,6 +264,12 @@ public final class RecordingSession {
     /// Everything that can fail, before the countdown gives the user a reason to expect
     /// it to work.
     private func prepare(_ configuration: RecordingConfiguration) async throws {
+        // A device is not on this Mac's screen, so none of what follows — ScreenCaptureKit,
+        // its grant, the pointer, the Mac's own sound — has anything to do with it.
+        if let deviceID = configuration.target.deviceID {
+            try await prepareDevice(deviceID, configuration: configuration)
+            return
+        }
         let shareable = try await content.content()
         let filter = try content.filter(for: configuration.target, in: shareable,
                                         hidingDesktopIcons: configuration.hidesDesktopIcons)
@@ -269,10 +284,7 @@ public final class RecordingSession {
         clock = RecordingClock()
         // Resolved now rather than when the request was made: a microphone unplugged in
         // between has to fail here, where the user is still watching a countdown.
-        let microphoneDevices = try configuration.microphoneIDs.map { id throws(RecordingError) -> AVCaptureDevice in
-            guard let device = AVCaptureDevice(uniqueID: id) else { throw RecordingError.deviceLost(id) }
-            return device
-        }
+        let microphoneDevices = try Self.microphones(for: configuration)
         // No audio at all in `screen.mov` any more. Each source is its own file beside it,
         // for the reason `AudioTrackWriter` gives: tracks inside one file cannot be told
         // apart afterwards with any certainty, and telling them apart is the whole feature.
@@ -307,7 +319,28 @@ public final class RecordingSession {
 
         try await makeScreen(filter: filter, configuration: configuration, package: package, audio: systemAudioWriter)
 
-        for (index, device) in microphoneDevices.enumerated() {
+        lanes += try microphoneLanes(for: microphoneDevices, package: package)
+        audioLanes = lanes
+
+        try await prepareWebcam(configuration, package: package, clock: clock)
+        startTelemetry(for: configuration, shareable: shareable, package: package)
+        try markInProgress(configuration, package: package)
+    }
+
+    /// Resolves the microphones a take asked for. Resolved when the take is prepared rather
+    /// than when the request was made: a microphone unplugged in between has to fail here,
+    /// where the user is still watching a countdown.
+    private static func microphones(for configuration: RecordingConfiguration) throws(RecordingError) -> [AVCaptureDevice] {
+        try configuration.microphoneIDs.map { id throws(RecordingError) -> AVCaptureDevice in
+            guard let device = AVCaptureDevice(uniqueID: id) else { throw RecordingError.deviceLost(id) }
+            return device
+        }
+    }
+
+    /// A file and a recorder for each microphone, in the order they were chosen.
+    private func microphoneLanes(for devices: [AVCaptureDevice], package: RecordingPackage) throws(RecordingError) -> [AudioLane] {
+        var lanes: [AudioLane] = []
+        for (index, device) in devices.enumerated() {
             let lane = try audioLane(kind: .microphone,
                                      file: "microphone-\(index + 1).m4a",
                                      name: device.localizedName,
@@ -318,10 +351,97 @@ public final class RecordingSession {
                 Task { @MainActor in self?.interrupted(by: error) }
             })
         }
+        return lanes
+    }
+
+    // MARK: - A connected iPhone or iPad
+
+    /// Everything a take of a connected device needs, before the countdown.
+    ///
+    /// The device's screen takes the place the Mac's screen has in every other take: its
+    /// frames are `screen.mov`, and its first frame starts the clock. Its sound is a lane of
+    /// its own, `device-audio.m4a`, written as the Mac's system audio would be and listed
+    /// under the same kind — it *is* that device's system audio, and an editor that knows
+    /// how to mix system audio needs to learn nothing to mix it. The Mac's own sound is not
+    /// recorded: the take is of the device, and a notification chime from the Mac under a
+    /// phone demo is never what was wanted. Microphones, the camera and markers work
+    /// exactly as they do for the screen.
+    ///
+    /// No pointer, clicks, keys or focus are recorded — there is no pointer on a phone, and
+    /// the Mac's would be of another screen entirely. The manifest says so by leaving those
+    /// sidecars out and naming the device instead (`RecordingManifest.device`).
+    ///
+    /// Opening a device needs the camera grant — it is a capture device like any camera —
+    /// and not the Screen Recording one. A refusal is `.cameraDenied`, which the bar
+    /// already knows how to explain.
+    private func prepareDevice(_ deviceID: String, configuration: RecordingConfiguration) async throws {
+        if !WebcamRecorder.isAuthorized {
+            guard !WebcamRecorder.isDenied, await WebcamRecorder.requestAccess() else {
+                throw RecordingError.cameraDenied
+            }
+        }
+        DeviceScreens.allow()
+        guard let captureDevice = AVCaptureDevice(uniqueID: deviceID) else {
+            throw RecordingError.deviceLost("The iPhone or iPad")
+        }
+        let microphoneDevices = try Self.microphones(for: configuration)
+
+        let recorder = try DeviceRecorder(device: captureDevice, queue: queue) { [weak self] error in
+            Task { @MainActor in self?.interrupted(by: error) }
+        }
+        // Kept before anything can fail, so that `fail` — through `reset` — closes it: from
+        // here on the device is open, and a device left open is a camera light left on.
+        device = recorder
+        guard let first = await recorder.open() else {
+            throw RecordingError.deviceSilent(recorder.deviceName)
+        }
+
+        let package = try RecordingPackage.create(named: configuration.name, in: configuration.destination)
+        self.package = package
+        if case .stop(let bytes) = disk.verdict(for: package.url) {
+            package.discard()
+            throw RecordingError.lowDiskSpace(bytesAvailable: bytes)
+        }
+
+        clock = RecordingClock()
+        let canvas = DeviceFrameFit.canvas(for: first)
+        let family = RecordedDevice.Family.guess(name: recorder.deviceName, pixelSize: first)
+        recordedDevice = RecordedDevice(name: recorder.deviceName, family: family, deviceID: recorder.deviceID)
+        pixelSize = canvas
+        displayScale = family.displayScale
+        pointerLatency = 0
+        // No faster than a device's screen refreshes, which for every current one is 60 or
+        // 120 — and the encoder gains nothing from being asked for frames that never come.
+        let frameRate = min(configuration.frameRate, 60)
+        let writer = try SessionWriter(url: package.mediaFolder.appendingPathComponent("screen.mov"),
+                                       pixelSize: canvas,
+                                       codec: configuration.codec.resolved,
+                                       bitrate: configuration.quality.bitrate(forPixels: Int(canvas.width * canvas.height)),
+                                       frameRate: frameRate,
+                                       systemAudio: false,
+                                       microphone: false,
+                                       clock: clock,
+                                       queue: queue)
+        self.writer = writer
+        writer.onFailure = { [weak self] error in
+            Task { @MainActor in self?.writerFailed(error) }
+        }
+        Self.log.notice("\(recorder.deviceName, privacy: .public) (\(family.rawValue, privacy: .public)) sends \(Int(first.width))×\(Int(first.height)); recording at \(Int(canvas.width))×\(Int(canvas.height))")
+
+        var lanes: [AudioLane] = []
+        if recorder.hasSound {
+            lanes.append(try audioLane(kind: .systemAudio,
+                                       file: "device-audio.m4a",
+                                       name: recorder.deviceName,
+                                       deviceID: recorder.deviceID,
+                                       package: package))
+        }
+        recorder.attach(writer: writer, audio: lanes.first?.writer, canvas: canvas)
+        lanes += try microphoneLanes(for: microphoneDevices, package: package)
         audioLanes = lanes
 
         try await prepareWebcam(configuration, package: package, clock: clock)
-        startTelemetry(for: configuration, shareable: shareable, package: package)
+        startMarkers(package: package)
         try markInProgress(configuration, package: package)
     }
 
@@ -451,17 +571,12 @@ public final class RecordingSession {
         let focusWriter = configuration.capturesFocus
             ? JSONLWriter(url: package.telemetryFolder.appendingPathComponent("focus.jsonl"), queue: queue)
             : nil
-        // Always opened: a marker can be dropped in any take, and a log nobody wrote to is
-        // deleted when it closes, so the manifest only names one that has markers in it.
-        let markerWriter = JSONLWriter(url: package.url.appendingPathComponent(MarkerLog.path), queue: queue)
         queue.sync {
             try? cursorWriter.open()
             try? inputWriter?.open()
             try? focusWriter?.open()
-            try? markerWriter.open()
         }
-        self.markerWriter = markerWriter
-        markerLog = MarkerLog(writer: markerWriter, queue: queue, clock: clock)
+        startMarkers(package: package)
         self.cursorWriter = cursorWriter
         self.inputWriter = inputWriter
         self.focusWriter = focusWriter
@@ -538,6 +653,17 @@ public final class RecordingSession {
                                  mapper: mapper,
                                  tracksFields: Self.tracksTextFields(for: configuration))
         }
+    }
+
+    /// The markers sidecar, which every take has whatever it is a recording of.
+    ///
+    /// Always opened: a marker can be dropped in any take, and a log nobody wrote to is
+    /// deleted when it closes, so the manifest only names one that has markers in it.
+    private func startMarkers(package: RecordingPackage) {
+        let markerWriter = JSONLWriter(url: package.url.appendingPathComponent(MarkerLog.path), queue: queue)
+        queue.sync { try? markerWriter.open() }
+        self.markerWriter = markerWriter
+        markerLog = MarkerLog(writer: markerWriter, queue: queue, clock: clock)
     }
 
     /// Whether a take's focus tracker watches text fields: when focus is recorded and
@@ -764,6 +890,9 @@ public final class RecordingSession {
         // Before the screen, and unconditionally. A camera session left running is a camera
         // light left on, so it is the first thing let go of on every path out of a take.
         webcam?.stop()
+        // The same bargain for a device: it is a capture device like the camera, and one
+        // left open keeps its indicator lit and its screen streaming to nobody.
+        device?.stop()
         await appAudio?.stop()
         await screen?.stop()
         // The result comes back out of the closure rather than being assigned inside
@@ -818,11 +947,23 @@ public final class RecordingSession {
         webcamWriter = nil
         webcamPixelSize = nil
         webcamFrameRate = nil
+        // Stopped here as well as in `teardown`, because a device is opened in `prepare` —
+        // before the countdown — and a take that fails before it starts is reset without
+        // ever being torn down. Stopping twice is harmless; not stopping is a lit light.
+        device?.stop()
+        device = nil
+        recordedDevice = nil
         cursor = nil
         cursorArtwork = nil
         cursorArtworkPath = nil
         keys = nil
         focus = nil
+        // Let go of rather than left for the next take to overwrite: a take of a device opens
+        // none of them, and one left over from the take before would have its old file
+        // named in the new manifest.
+        cursorWriter = nil
+        inputWriter = nil
+        focusWriter = nil
         focusTrackWritten = false
         pictureWriter = nil
         pictureTrackWritten = false
@@ -876,15 +1017,18 @@ public final class RecordingSession {
         var sourceRect: CGRect?
         if case .area(_, let rect) = configuration.target { sourceRect = rect }
 
-        return RecordingManifest(name: configuration.name,
+        var manifest = RecordingManifest(name: configuration.name,
                                  createdAt: startedAt ?? .now,
                                  duration: duration,
                                  displayScale: displayScale,
                                  sourceRect: sourceRect,
                                  tracks: tracks,
-                                 telemetry: .init(cursor: "telemetry/cursor.jsonl",
-                                                  input: configuration.capturesClicks || configuration.capturesKeystrokes
-                                                      ? "telemetry/input.jsonl" : nil,
+                                 // Named for the sidecars that were opened, which for a
+                                 // device take is none of the pointer's: a manifest that
+                                 // names a pointer track there was never going to be reads
+                                 // as a take whose pointer file went missing.
+                                 telemetry: .init(cursor: cursorWriter != nil ? "telemetry/cursor.jsonl" : nil,
+                                                  input: inputWriter != nil ? "telemetry/input.jsonl" : nil,
                                                   focus: focusTrackWritten ? "telemetry/focus.jsonl" : nil,
                                                   cursorArtwork: cursorArtworkPath,
                                                   pointerLatency: pointerLatency,
@@ -894,6 +1038,8 @@ public final class RecordingSession {
                                                   keys: keys?.capture,
                                                   markers: markersWritten ? MarkerLog.path : nil,
                                                   picture: pictureTrackWritten ? "telemetry/picture.jsonl" : nil))
+        manifest.device = recordedDevice
+        return manifest
     }
 
     // MARK: - Disk

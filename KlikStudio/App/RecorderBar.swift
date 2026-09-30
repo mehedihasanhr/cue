@@ -554,7 +554,9 @@ extension RecorderBar {
 
     private var startingDetail: String {
         guard let remaining = studio.session.state.countdownRemaining else {
-            return "Setting up the screen and the encoder."
+            // A device is woken and asked for its first picture here, which can take a
+            // moment longer than the Mac's own screen — worth saying which is happening.
+            return model.mode == .device ? "Waiting for the device\u{2019}s picture." : "Setting up the screen and the encoder."
         }
         return remaining == 1 ? "Starts in 1 second" : "Starts in \(remaining) seconds"
     }

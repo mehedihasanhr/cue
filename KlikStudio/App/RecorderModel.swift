@@ -65,9 +65,9 @@ final class RecorderModel {
             }
         }
 
-        /// Device capture needs the Continuity/CoreMediaIO path, which is not built yet.
-        /// Shown but dimmed, because pretending it is not a feature is its own confusion.
-        var isAvailable: Bool { self != .device }
+        /// Every mode can be chosen. Kept as a property rather than deleted, so a mode that
+        /// is not ready on some Mac can be dimmed again without re-plumbing the bar.
+        var isAvailable: Bool { true }
     }
 
     struct Source: Identifiable, Hashable {
@@ -100,6 +100,9 @@ final class RecorderModel {
     private(set) var microphones: [AVCaptureDevice] = []
     /// The cameras this Mac can see. Listed, never opened — see `WebcamRecorder`.
     private(set) var cameras: [AVCaptureDevice] = []
+    /// The iPhones and iPads on a cable, as things to record. Empty until Device has been
+    /// chosen once — see `watchDevices()`.
+    private(set) var devices: [Source] = []
     private(set) var permissionDenied = false
     /// Said out loud when the camera has been turned on but the grant is refused, so the
     /// bar can say so before a take fails instead of after.
@@ -123,6 +126,11 @@ final class RecorderModel {
     private let settings: StudioSettings
     private let studio: StudioService
     private var areaPicker: AreaSelectionController?
+    /// Re-reads `devices` when one is plugged in or taken out. Made the first time Device is
+    /// chosen, not at launch: asking the Mac to show connected iOS devices starts it talking
+    /// to them, and an app that does that for somebody who never asked to record a phone
+    /// is doing something nobody asked it to.
+    private var deviceWatcher: DeviceScreens.Watcher?
     private var thumbnailTask: Task<Void, Never>?
     /// A picture of each window, by id, filled in after the list itself.
     private(set) var thumbnails: [CGWindowID: CGImage] = [:]
@@ -213,7 +221,69 @@ final class RecorderModel {
         case .area:
             pickArea()
         case .device:
-            break
+            watchDevices()
+            refreshDevices()
+            askForDeviceAccess()
+        }
+    }
+
+    // MARK: - Devices
+
+    private func watchDevices() {
+        guard deviceWatcher == nil else { return }
+        deviceWatcher = DeviceScreens.Watcher { [weak self] in self?.refreshDevices() }
+        // The first time, the system takes a moment to find devices that were already
+        // plugged in, and says nothing when it has — the arrival notification is for a
+        // cable plugged in afterwards. A few looks over the next seconds cover that gap.
+        Task { [weak self] in
+            for delay in [1, 2, 4] {
+                try? await Task.sleep(for: .seconds(delay))
+                self?.refreshDevices()
+            }
+        }
+    }
+
+    /// Re-reads the connected devices and keeps the choice sensible: the one already chosen
+    /// while it is still there, the first one otherwise, nothing when there is none.
+    func refreshDevices() {
+        devices = DeviceScreens.devices.map { device in
+            let family = DeviceScreens.family(of: device)
+            return Source(id: "device-\(device.uniqueID)",
+                          title: device.localizedName,
+                          subtitle: Self.subtitle(for: family),
+                          target: .device(uniqueID: device.uniqueID))
+        }
+        guard mode == .device else { return }
+        if let target, devices.contains(where: { $0.target == target }) { return }
+        select(devices.first)
+    }
+
+    private static func subtitle(for family: RecordedDevice.Family) -> String {
+        switch family {
+        case .iPhone: "iPhone on a cable"
+        case .iPad: "iPad on a cable"
+        case .other: "Connected by cable"
+        }
+    }
+
+    /// Whether the camera grant, which opening a device needs, has been refused for good.
+    private(set) var deviceAccessDenied = false
+
+    /// Asks for the camera grant when Device is chosen — the honest moment, for the reason
+    /// `setCamera` gives: somebody has just said they want to record a device, so a dialog
+    /// is expected now, and a refusal is known before the countdown rather than during it.
+    private func askForDeviceAccess() {
+        guard !WebcamRecorder.isAuthorized else {
+            deviceAccessDenied = false
+            return
+        }
+        guard !WebcamRecorder.isDenied else {
+            deviceAccessDenied = true
+            return
+        }
+        Task {
+            deviceAccessDenied = !(await WebcamRecorder.requestAccess())
+            refreshDevices()
         }
     }
 
@@ -233,6 +303,7 @@ final class RecorderModel {
         case .display: mode = .display
         case .window: mode = .window
         case .area: mode = .area
+        case .device: mode = .device
         }
     }
 

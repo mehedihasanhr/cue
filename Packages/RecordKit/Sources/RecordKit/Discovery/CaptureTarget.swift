@@ -9,13 +9,27 @@ public enum CaptureTarget: Sendable, Hashable {
     case window(CGWindowID)
     /// A rectangle of a display, in that display's points with the origin at its top left.
     case area(display: CGDirectDisplayID, rect: CGRect)
+    /// An iPhone or iPad on a cable, by its capture device's `uniqueID` — see
+    /// `DeviceScreens`. Not a thing on this Mac's screen at all: its picture comes from
+    /// AVFoundation rather than ScreenCaptureKit, and it has no pointer to follow.
+    case device(uniqueID: String)
 
     public var displayID: CGDirectDisplayID? {
         switch self {
         case .display(let id), .area(let id, _): id
-        case .window: nil
+        case .window, .device: nil
         }
     }
+
+    /// The capture device's `uniqueID` for a device target, `nil` for anything on screen.
+    public var deviceID: String? {
+        if case .device(let id) = self { id } else { nil }
+    }
+
+    /// Whether this target is one of the Mac's own screens — a display, a window or an
+    /// area — which is what decides whether ScreenCaptureKit, the Screen Recording grant
+    /// and the pointer have anything to do with the take.
+    public var isOnScreen: Bool { deviceID == nil }
 
     /// The recorded area's top-left, given where the thing it is part of sits on screen.
     ///
@@ -28,7 +42,7 @@ public enum CaptureTarget: Sendable, Hashable {
     /// number, and a sum nobody can run is how that survives.
     public func origin(inside container: CGRect) -> CGPoint {
         switch self {
-        case .display, .window:
+        case .display, .window, .device:
             return container.origin
         case .area(_, let rect):
             // The area is measured from the display's top-left, so the recorded corner is
@@ -45,6 +59,7 @@ public enum CaptureTarget: Sendable, Hashable {
         case .display(let id): self = .display(id)
         case .window(let id): self = .window(id)
         case .area(let display, let rect): self = .area(display: display, rect: rect)
+        case .device(let id): self = .device(uniqueID: id)
         case .ask: return nil
         }
     }
@@ -128,6 +143,9 @@ public struct ShareableContentStore: Sendable {
         case .window(let id):
             guard let window = content.windows.first(where: { $0.windowID == id }) else { return .zero }
             return target.origin(inside: window.frame)
+        case .device:
+            // Not on the desk at all, so there is no corner of it to find.
+            return .zero
         }
     }
 
@@ -145,6 +163,11 @@ public struct ShareableContentStore: Sendable {
                 throw .targetDisappeared
             }
             return SCContentFilter(desktopIndependentWindow: window)
+        case .device:
+            // A device's picture comes from AVFoundation, and `RecordingSession` never asks
+            // for a filter for one. Said as an error rather than trapped, because a caller
+            // that did ask is a bug worth a readable message, not a crash mid-countdown.
+            throw .contentUnavailable("an iPhone or iPad isn't on this Mac's screen")
         }
     }
 }

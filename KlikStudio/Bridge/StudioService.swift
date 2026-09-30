@@ -73,7 +73,10 @@ final class StudioService: StudioRecording {
                                canRecordWebcam: WebcamRecorder.isAuthorized,
                                canEdit: true,
                                canExportGIF: true,
-                               canCaption: true)
+                               canCaption: true,
+                               // On the camera grant, like the camera itself: a device is a
+                               // capture device, and opening one asks the same question.
+                               canRecordDevice: WebcamRecorder.isAuthorized)
         }
     }
 
@@ -347,6 +350,7 @@ final class StudioService: StudioRecording {
         case .display(let id): .display(id)
         case .window(let id): .window(id)
         case .area(let display, let rect): .area(display: display, rect: rect)
+        case .device(let id): .device(uniqueID: id)
         }
     }
 

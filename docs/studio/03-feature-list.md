@@ -14,7 +14,7 @@ Every feature found in the research, with where Klik Studio stands and when it i
 | Record a window, including ones on other Spaces | Yes | Yes | Yes | Have | Done |
 | Record an area | Yes | Cap only | Yes | Have | Done |
 | Warn about windows that would record black | No | No | No | Have | Done |
-| Record an iPhone or iPad over USB | Yes | No | ScreenFlow, FocuSee | Missing (button shown, disabled) | P3 |
+| Record an iPhone or iPad over USB | Yes | No | ScreenFlow, FocuSee | Have: Device in the bar lists connected devices (CoreMediaIO screen-capture devices through AVFoundation), picture and the device's own sound, opens in an iPhone or iPad frame; not yet run with a real device | Done (unverified on hardware) |
 | Create a project from an existing video | Yes | OpenScreen | Yes | Missing | P2 |
 | Pointer recorded as data, not burnt in | Yes | Yes | Camtasia | Have | Done |
 | Option to burn the pointer in | No | OpenScreen | Yes | Have | Done |

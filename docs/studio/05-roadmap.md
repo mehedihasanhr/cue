@@ -145,7 +145,7 @@ Fix what is wrong before adding anything. Details and measurements are in `06-qu
 
 ## Phase 3: later
 
-- [ ] iPhone and iPad recording
+- [~] iPhone and iPad recording (Device in the bar; a connected, unlocked, trusting device is recorded through CoreMediaIO's screen-capture devices, its sound into its own lane, no pointer; opens in the matching device frame. Built and tested up to the capture itself, which needs a device on a cable — see the quality log)
 - [x] System audio from chosen apps (the bar's system audio menu; a second, audio-only stream whose filter includes only those apps — see `SystemAudioRoute`)
 - [ ] 3D tilt and perspective
 - [x] Zoom out below 100% (down to 0.5×: the framed recording shrinks with its corners, shadow and border, and the background shows round it)

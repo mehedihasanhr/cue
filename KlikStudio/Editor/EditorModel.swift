@@ -163,6 +163,10 @@ final class EditorModel {
                 autoZoomOnOpen = true
             }
         }
+        // A take of an iPhone or iPad opens inside one — after the user's defaults, and over
+        // any window they chose, which was chosen for the Mac's screen. Only on a document
+        // nobody has edited, like everything else here. See `DeviceTakeLook`.
+        document.adoptDeviceLook()
         // A take recorded with the camera on opens with the bubble showing.
         //
         // `WebcamSettings.isEnabled` defaults to `false`, which is right for the model — it
@@ -2227,7 +2231,13 @@ final class EditorModel {
     func suggestZooms(quietly: Bool = false) {
         let regions = suggestedZooms()
         guard !regions.isEmpty else {
-            if !quietly { errorMessage = "Nothing in this recording looked like a moment to zoom into." }
+            if !quietly {
+                // A device take has no pointer and no clicks, which are what auto-zoom reads —
+                // saying "nothing looked like a moment" there would blame the recording.
+                errorMessage = document.isDeviceTake
+                    ? "A recording of an iPhone or iPad has no pointer or clicks to zoom in on. Add zooms by hand where they help."
+                    : "Nothing in this recording looked like a moment to zoom into."
+            }
             return
         }
         // `SuggestZooms`, not `AddZooms`: this button gets pressed more than once over a

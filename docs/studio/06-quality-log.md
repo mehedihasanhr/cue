@@ -28,6 +28,17 @@ Reviewed and found sound: the stall watchdog (a stalled reader is set aside, the
 Measured: with Loop on, the last frame's pointer is within 0.001 of the first frame's (as a fraction of the picture), and the camera's zoom and centre are too; the fastest step on a 0.5 s journey across three-quarters of the picture is under 6% a frame at 60 fps. Sway: a steady sideways speed settles within 5% of the lean it asks for, a flick never passes 1.25 × the limit, and the arrow is exactly upright 0.6 s after the pointer stops (the spring's memory). Whole-video zoom: at 2.5× the drawn pointer is inside the shot on every frame of a 12 s sweep.
 
 Window sizes are recorded pixels, not window points: 1920 × 1080 on a Retina display is a 960 × 540 point window. A size too big for the screen keeps its shape and shrinks (`WindowSizing`, 13 tests). The Accessibility call itself (`WindowResizer`) is not run by any test and has not been tried on a real window — see below.
+## Recording an iPhone or iPad (2026-09-30)
+
+| Decision or problem | What was done | Test |
+|---|---|---|
+| A device's picture size is not known until it sends a frame | The session opens the device during Getting ready, waits up to 4 s for the first frame (`DeviceRecorder.open`) and sizes `screen.mov` from it; no frame is `.deviceSilent` ("Unlock it, tap Trust…") rather than an empty take | Needs a device |
+| A device sends frames on change, so a still phone at "0" would hold the clock — and every sound and the camera — until it moved | The last frame seen during the countdown is written at the start, stamped now | Needs a device |
+| A device turned mid-take changes shape; the file cannot | Sized to the orientation the take began in; a turned picture is fitted whole, centred, black round it (`DeviceFrameFit`, which gives the three alternatives and why each lost). An odd-width screen (1179 px) is scaled a pixel to the even file rather than boxed | `DeviceCaptureTests`: 6 tests on sizing and fitting |
+| iPhone or iPad? The name is whatever the owner typed | The name when it says, else the screen's shape (1.6 splits every iPhone from every iPad); unknown stays `.other` and gets no frame | `DeviceCaptureTests.aDeviceNamedAnythingElseIsToldApartByItsShape` |
+| The manifest named `telemetry/cursor.jsonl` for every take, and left the previous take's sidecar writers in place | Named only for sidecars that were opened; the writers are let go of in `reset` | `DeviceCaptureTests.aDeviceTakesManifestRoundTrips` |
+| A host request with a target this build does not know failed to decode | `RecordingRequest.Target` decodes an unknown target as `.ask`, with the old wire format kept exactly; `StudioCapabilities.canRecordDevice` decodes as false when absent | `DeviceTargetTests` (AddOnKit) |
+| A device's screen would have been offered as a camera | `WebcamRecorder.devices` leaves muxed devices out | Traced |
 
 ## Shortcuts, zooming out and app audio (2026-09-30)
 
@@ -293,6 +304,8 @@ The sheet opened in the running app (a 460 × 336 window). It could not be photo
 | A zoom's framing box on the preview shows the zoom's own scale | With the whole video held zoomed in, a zoom is that much further in than its box shows. The render is right; the box is not multiplied |
 | The Sway, Loop and whole-video Zoom sections and the window Size menu have not been looked at on screen | Built; the logic under them is tested |
 | Several recordings in one project, importing a video, iPhone and iPad recording, freehand annotations | Not built |
+| Several recordings in one project, importing a video, freehand annotations | Not built |
+| iPhone and iPad recording has not been run with a real device | Everything about the frames is tested — the file's size, a turned device fitted whole, which family a device is, the manifest, old packages and requests, the frame a take opens in, and the editor, renderer and auto-zoom with no pointer track (`DeviceCaptureTests`, `DeviceTargetTests`, `DeviceTakeTests`, `DeviceTakeSceneTests`). The capture itself cannot be: CoreMediaIO showing the device, the camera grant covering it, the first frame arriving within four seconds, BGRA from a muxed device, its sound through a second output, host-clock timestamps and the device-lost notification all need an unlocked iPhone or iPad on a cable. Also unchecked on screen: the device picker in the overlay |
 | The transcript's word picking, the font pickers, the export sheet's Target size and the safe-zone overlay have not been looked at on screen | Built and compiled with tests for the logic and the drawing; the views still need checking by eye, in light and dark |
 | Text-field zooms only exist when keyboard shortcuts are recorded — **fixed** | Field focus now follows Record what has focus on its own. See Bug hunt (2026-09-30) |
 | Results are never sent back to Klik | The helper service does not exist yet |

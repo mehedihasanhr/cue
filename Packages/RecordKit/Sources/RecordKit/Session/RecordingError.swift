@@ -27,6 +27,10 @@ public enum RecordingError: Error, LocalizedError, Equatable, Sendable {
     /// recover. Not `.writerFailed`, which is a take that never started and has nothing to
     /// keep.
     case unfinished(String)
+    /// An iPhone or iPad was opened and sent no picture. Almost always a locked device, or
+    /// one that has not been told to trust this Mac — both of which are on the device, not
+    /// the Mac, so it is its own case with its own sentence rather than a lost device.
+    case deviceSilent(String)
 
     public var errorDescription: String? {
         switch self {
@@ -54,6 +58,8 @@ public enum RecordingError: Error, LocalizedError, Equatable, Sendable {
             "The recording was cancelled."
         case .unfinished(let reason):
             "The recording stopped before it could be saved (\(reason))."
+        case .deviceSilent(let name):
+            "\(name) didn\u{2019}t send a picture."
         }
     }
 
@@ -69,6 +75,8 @@ public enum RecordingError: Error, LocalizedError, Equatable, Sendable {
             "The part that was recorded has been kept."
         case .unfinished:
             "What was recorded is kept. Open Recordings to recover it."
+        case .deviceSilent:
+            "Unlock it, tap Trust if it asks about this Mac, and try again."
         default:
             nil
         }

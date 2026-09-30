@@ -93,10 +93,15 @@ public final class WebcamRecorder: NSObject, AVCaptureVideoDataOutputSampleBuffe
     /// Read rather than remembered, because the answer changes when somebody plugs in a
     /// webcam or closes their laptop lid — and because a list held from launch is a list
     /// that offers a device which is no longer there.
+    ///
+    /// A connected iPhone's or iPad's *screen* is never one of them, even though it is an
+    /// external capture device too: it is offered as a thing to record (`DeviceScreens`),
+    /// and a phone's home screen in the camera bubble is not a face.
     public static var devices: [AVCaptureDevice] {
         AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera, .external, .continuityCamera],
                                          mediaType: .video,
                                          position: .unspecified).devices
+            .filter { !$0.hasMediaType(.muxed) }
     }
 
     /// The camera's picture size in pixels, for the writer and for the manifest.

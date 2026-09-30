@@ -49,6 +49,7 @@ struct BridgeStatusView: View {
         case .display(let id): "display \(id)"
         case .window(let id): "window \(id)"
         case .area(let display, let rect): "area \(Int(rect.width))×\(Int(rect.height)) on display \(display)"
+        case .device(let id): "device \(id)"
         case .ask: "ask me"
         }
         var parts = [target]
