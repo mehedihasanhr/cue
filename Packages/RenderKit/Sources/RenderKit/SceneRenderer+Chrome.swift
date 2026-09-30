@@ -17,6 +17,10 @@ extension SceneRenderer {
     /// With a window round the picture only the bottom corners are rounded: the top ones
     /// meet the bar, which takes the rounding instead.
     func roundedPicture(_ image: CIImage, in scene: SceneDescriptor) -> CIImage {
+        // On a device the screen is the edge, and its corners are the device's.
+        if let device = scene.deviceGeometry {
+            return deviceScreenPicture(image, device: device)
+        }
         let edge = scene.pictureEdge
         guard scene.cornerRadius > 0, scene.videoFrame.width > 0, edge.width > 1, edge.height > 1 else {
             return image
@@ -37,8 +41,10 @@ extension SceneRenderer {
         return blend.outputImage ?? image
     }
 
-    /// The window's bar, laid over the top of the picture layer.
+    /// The window's bar, laid over the top of the picture layer — or the device the picture
+    /// is on, laid round it. See `deviced(_:in:)`.
     func chromed(_ video: CIImage, in scene: SceneDescriptor) -> CIImage {
+        if scene.device != nil { return deviced(video, in: scene) }
         guard let chrome = scene.chrome, let bar = scene.chromeBarFrame,
               bar.width > 1, bar.height > 0.5 else { return video }
         let output = CGRect(origin: .zero, size: scene.outputSize)
@@ -119,7 +125,8 @@ extension SceneRenderer {
 
     static func barFraction(for kind: WindowChrome.Kind) -> Double {
         switch kind {
-        case .none: 0
+        // A device goes round the picture rather than above it: see `DeviceGeometry`.
+        case .none, .iPhone, .iPad: 0
         case .window: windowBarFraction
         case .browser: browserBarFraction
         }

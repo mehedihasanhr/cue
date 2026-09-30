@@ -77,6 +77,13 @@ public struct SceneDescriptor: Equatable, Sendable {
     /// the builder once the rest of the frame is known, and neither changes what any
     /// existing caller of the initialiser gets.
     public var chrome: ChromeLayer? = nil
+    /// The phone or tablet drawn round the picture, or `nil` for none — which is what every
+    /// project without one describes. Never set together with `chrome`: the two are kinds
+    /// of the one frame. See `DeviceLayer`.
+    ///
+    /// Nothing in it is in pixels — the handset is measured off the picture's edge — so,
+    /// unlike the bar, `scaled(by:)` has nothing to do for it.
+    public var device: DeviceLayer? = nil
     /// How far the camera travels while this frame's shutter is open, or `nil` when it is
     /// still or motion blur is off. See `CameraMotionLayer`.
     public var cameraMotion: CameraMotionLayer? = nil

@@ -690,6 +690,12 @@ final class EditorModel {
         draft.style.cornerRadius = 0
         draft.style.shadowOpacity = 0
         draft.style.borderWidth = 0
+        // Square-on and bare, too. The crop overlay maps the stage straight onto the
+        // recording, which is only true of a picture with nothing round it and nothing
+        // turning it: a window's bar or a phone round it shrank the picture under the
+        // handles, and a perspective turned it out from under them.
+        draft.style.chrome.kind = .none
+        draft.style.perspective = FramePerspective()
         draft.style.background = .color(ColorValue(r: 0.06, g: 0.06, b: 0.07))
         draft.zooms = []
         return draft

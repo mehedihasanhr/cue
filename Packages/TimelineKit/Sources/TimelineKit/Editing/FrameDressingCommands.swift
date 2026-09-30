@@ -6,12 +6,28 @@ public extension Commands {
     /// Named here rather than at each call site, because the panel and the Frame menu both
     /// make this change and the Undo menu has to say the same thing whichever was used.
     static func setWindowChrome(_ kind: WindowChrome.Kind) -> Restyle {
-        Restyle(kind == .none ? "Remove Window Frame" : "Window Frame") { $0.style.chrome.kind = kind }
+        let name = kind == .none ? "Remove Window Frame" : kind.isDevice ? "Device Frame" : "Window Frame"
+        return Restyle(name) { $0.style.chrome.kind = kind }
     }
 
     /// Light or dark title bar.
     static func setWindowAppearance(_ appearance: WindowChrome.Appearance) -> Restyle {
         Restyle("Window Appearance") { $0.style.chrome.appearance = appearance }
+    }
+
+    /// The colour of a device's rim.
+    static func setDeviceFinish(_ finish: WindowChrome.Finish) -> Restyle {
+        Restyle("Device Finish") { $0.style.chrome.finish = finish }
+    }
+
+    /// Which way up a device is held.
+    static func setDeviceOrientation(_ orientation: WindowChrome.Orientation) -> Restyle {
+        Restyle("Device Orientation") { $0.style.chrome.orientation = orientation }
+    }
+
+    /// The pill at the top of a phone's screen, or the dot in a tablet's bezel.
+    static func setDeviceCamera(_ isShown: Bool) -> Restyle {
+        Restyle(isShown ? "Show Device Camera" : "Hide Device Camera") { $0.style.chrome.showsCamera = isShown }
     }
 
     /// Nothing behind the picture at all.

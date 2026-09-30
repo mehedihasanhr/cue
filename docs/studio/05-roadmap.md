@@ -133,7 +133,7 @@ Fix what is wrong before adding anything. Details and measurements are in `06-qu
 - [x] Motion blur on zoom and pan
 - [x] Camera background blur and removal; camera crop; border (removal still to check on a real face)
 - [x] Music ducking
-- [~] Device and browser frames (macOS window and browser done; iPhone and iPad open)
+- [x] Device and browser frames: macOS window, browser, iPhone and iPad (Frame › Window; black, silver or natural rim; portrait, landscape or held the way the recording is shaped; camera pill or dot optional)
 - [x] Custom gradients
 - [x] ProRes export; transparent export
 - [x] Smaller File export (HEVC) and a target size for MP4, MOV and GIF

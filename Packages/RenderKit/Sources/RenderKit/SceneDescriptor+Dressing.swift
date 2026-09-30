@@ -74,8 +74,13 @@ public extension SceneDescriptor {
         return CGRect(x: edge.minX, y: edge.maxY, width: edge.width, height: chrome.barHeight * grown)
     }
 
-    /// What casts the shadow: the picture, and the bar above it when there is one.
+    /// What casts the shadow: the picture, and the bar above it when there is one — or the
+    /// whole handset, when the picture is on a device.
+    ///
+    /// Also the plane a perspective turns (`perspectiveProjection`), so a phone is tilted
+    /// as one piece, rim and all, and the overlay's handles are mapped through it too.
     var shadowCaster: CGRect {
+        if let device = deviceGeometry { return device.body }
         let picture = transformedVideoFrame.intersection(visibleVideoFrame)
         guard let bar = chromeBarFrame else { return picture }
         let shown = bar.intersection(CGRect(origin: .zero, size: outputSize))

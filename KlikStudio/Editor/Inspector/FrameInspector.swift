@@ -69,13 +69,17 @@ struct FrameInspector: View {
 
     // MARK: - Window
 
-    /// A window drawn round the picture: which kind, and whether its bar is light or dark.
+    /// A window drawn round the picture: which kind, and whether its bar is light or dark —
+    /// or a phone or tablet, and its finish, which way up it is held and its camera.
     ///
-    /// The kind is on the heading, like the shape is on Shape's. The appearance is only
-    /// shown once there is a window to be light or dark.
+    /// The kind is on the heading, like the shape is on Shape's. What is under it is only
+    /// what that kind has: a device has no title bar to be light or dark, and a window no
+    /// rim to be silver.
     private var window: some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-            if model.windowChrome.isVisible {
+            if model.windowChrome.kind.isDevice {
+                device
+            } else if model.windowChrome.isVisible {
                 InspectorTabs(selection: Binding(get: { model.windowChrome.appearance },
                                                  set: { model.setWindowAppearance($0) }),
                               items: WindowChrome.Appearance.allCases) { $0.title }
@@ -85,7 +89,7 @@ struct FrameInspector: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                Text("No window. Choose one to draw a title bar above the picture.")
+                Text("No window. Choose one to draw a title bar above the picture, or an iPhone or iPad round it.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -97,6 +101,31 @@ struct FrameInspector: View {
                             options: WindowChrome.Kind.allCases) { $0.title }
                 .accessibilityLabel("Window frame")
         }
+    }
+
+    /// A phone's or a tablet's settings: its rim, which way up, and its camera.
+    @ViewBuilder
+    private var device: some View {
+        let chrome = model.windowChrome
+        InspectorTabs(selection: Binding(get: { model.windowChrome.finish },
+                                         set: { model.setDeviceFinish($0) }),
+                      items: WindowChrome.Finish.allCases) { $0.title }
+            .accessibilityLabel("Device finish")
+        InspectorTabs(selection: Binding(get: { model.windowChrome.orientation },
+                                         set: { model.setDeviceOrientation($0) }),
+                      items: WindowChrome.Orientation.allCases) { $0.title }
+            .accessibilityLabel("Device orientation")
+            .help("Auto holds the device the way the recording is shaped")
+        Toggle(chrome.kind == .iPhone ? "Camera cut-out" : "Camera", isOn: Binding(
+            get: { model.windowChrome.showsCamera },
+            set: { model.setDeviceCamera($0) }
+        ))
+        .help(chrome.kind == .iPhone ? "The pill across the top of the screen, over the picture"
+                                     : "The lens in the bezel")
+        Text("The recording is fitted to the screen, with black either side where its shape differs. The border is not drawn on a device.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     // MARK: - Border

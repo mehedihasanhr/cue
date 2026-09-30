@@ -103,7 +103,7 @@ extension EditorCommands {
                     get: { front?.windowChrome.appearance == .dark },
                     set: { front?.setWindowAppearance($0 ? .dark : .light) }
                 ))
-                .disabled(front?.windowChrome.isVisible != true)
+                .disabled(front?.windowChrome.isVisible != true || front?.windowChrome.kind.isDevice == true)
             }
             .disabled(front == nil)
             Menu("Perspective") {
