@@ -55,7 +55,12 @@ public enum PaceSuggester {
         let end = timeline.duration
         guard end > .zero else { return [] }
         let onTimeline = { (ranges: [ClosedRange<Double>]) in ranges.flatMap { timeline.timelineRanges(ofSource: $0) } }
-        let spedUp = spedUpRanges(in: timeline)
+        // Title slides, freeze frames and movies brought in are left out along with what
+        // is already sped up. Nothing was recorded over them, so they read as still time —
+        // but a title is still on purpose, a freeze frame is a pause somebody made, and a
+        // movie's own activity was never measured. `setSpeed` will not speed a hold up
+        // either, so offering one promised a saving the edit could never make.
+        let spedUp = spedUpRanges(in: timeline) + unmeasuredRanges(in: timeline)
         let margin = CMTime(seconds: tuning.margin, preferredTimescale: 60_000)
 
         // Idle: whatever is left when everything busy is taken away.
@@ -90,6 +95,19 @@ public enum PaceSuggester {
         var elapsed = CMTime.zero
         for clip in timeline.clips {
             if clip.speed != 1 { ranges.append(CMTimeRange(start: elapsed, duration: clip.duration)) }
+            elapsed = elapsed + clip.duration
+        }
+        return ranges
+    }
+
+    /// The clips that do not play the recording: holds, titles and imported movies.
+    static func unmeasuredRanges(in timeline: Timeline) -> [CMTimeRange] {
+        var ranges: [CMTimeRange] = []
+        var elapsed = CMTime.zero
+        for clip in timeline.clips {
+            if !clip.isFootage || clip.source != nil {
+                ranges.append(CMTimeRange(start: elapsed, duration: clip.duration))
+            }
             elapsed = elapsed + clip.duration
         }
         return ranges

@@ -141,9 +141,16 @@ final class StudioService: StudioRecording {
         var configuration = configuration
         if request.microphone, settings.recordsMicrophone, !MicrophoneRecorder.isAuthorized {
             _ = await MicrophoneRecorder.requestAccess()
-            configuration.microphoneIDs = MicrophoneRecorder.isAuthorized
-                ? [MicrophoneRecorder.defaultDevice?.uniqueID].compactMap { $0 }
-                : []
+            // The microphones chosen in Settings, as `settings.configuration` already put
+            // them — not the system's default in their place. Swapping in the default
+            // meant the very first take after granting access recorded the built-in
+            // microphone instead of the headset (or the two voices) somebody had picked.
+            // The default only stands in where nothing could be named before the grant.
+            if !MicrophoneRecorder.isAuthorized {
+                configuration.microphoneIDs = []
+            } else if configuration.microphoneIDs.isEmpty {
+                configuration.microphoneIDs = [MicrophoneRecorder.defaultDevice?.uniqueID].compactMap { $0 }
+            }
         }
         await session.start(configuration, countdown: max(0, request.countdownSeconds))
         if case .failed(let error) = session.state {

@@ -318,6 +318,9 @@ final class StudioSettings {
         configuration.systemAudio = recordsSystemAudio
         configuration.capturesClicks = recordsClicks
         configuration.capturesFocus = recordsFocus
+        // Text fields with the rest of focus, on this switch alone — not only while the
+        // keyboard is recorded, which is what used to decide it.
+        configuration.capturesFieldFocus = recordsFocus
         configuration.capturesCursorInVideo = burnsCursorIntoVideo
         configuration.capturesKeystrokes = recordsKeys
         // Nothing chosen means the system's default input, which is what somebody who

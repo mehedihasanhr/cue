@@ -128,7 +128,11 @@ public enum SubtitleImport {
             }
             defer { atBlockStart = false }
 
-            if trimmed.contains("-->") {
+            // An arrow in a line that is not two times, inside a cue, is the cue's words:
+            // "Open File --> Export" is how half of all tutorials say where to click. Read
+            // as a broken timing line it ended the cue there, lost every line after it,
+            // and was counted as a time that could not be read.
+            if trimmed.contains("-->"), current == nil || looksTimed(trimmed) {
                 sawTiming = true
                 // A SubRip file with no blank line before the next number has read that
                 // number as the last line of the cue before. It is the next cue's, and not
@@ -194,6 +198,18 @@ public enum SubtitleImport {
               let start = seconds(String(startWord)),
               let end = seconds(String(endWord)) else { return nil }
         return (start, end)
+    }
+
+    /// Whether a line with an arrow in it is meant as a timing line, read or not: a time,
+    /// or something shaped like one, just before the arrow. A timing line with a typo in it
+    /// is still a timing line — the cue it starts is skipped, and counted — while
+    /// "Settings --> Privacy" is somebody's words.
+    static func looksTimed(_ line: String) -> Bool {
+        if timing(line) != nil { return true }
+        guard let arrow = line.range(of: "-->") else { return false }
+        let left = line[..<arrow.lowerBound].trimmingCharacters(in: .whitespaces)
+        guard let stamp = left.split(separator: " ").last else { return false }
+        return stamp.contains(":") && stamp.first?.isNumber == true
     }
 
     /// `01:02:03,456`, `02:03.456`, `1:02:03.4` — hours optional, either separator, any

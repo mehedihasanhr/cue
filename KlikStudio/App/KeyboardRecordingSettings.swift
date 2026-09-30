@@ -54,7 +54,7 @@ struct KeyboardRecordingRows: View {
             if settings.recordsKeys {
                 if isGranted {
                     SettingsStatusRow("Klik Studio has Accessibility access",
-                                      subtitle: "Which is what lets it see the keys, and notice text fields taking focus.",
+                                      subtitle: "Which is what lets it see the keys.",
                                       isGood: true) {
                         RevealButton(help: "Open in System Settings") { AccessibilityAccess.openSystemSettings() }
                     }

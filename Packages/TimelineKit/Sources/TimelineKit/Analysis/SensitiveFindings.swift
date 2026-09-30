@@ -376,6 +376,11 @@ extension Timeline {
         var elapsed = CMTime.zero
         for clip in clips {
             defer { elapsed = elapsed + clip.duration }
+            // An imported movie's source times — and a freeze frame of one — are another
+            // file's, so nothing read off the recording lands on it. Counted as the
+            // recording, a password found at 0:05 was masked over whatever an added video
+            // shows five seconds in, as `timelineTime(atSource:)` already knew not to do.
+            guard clip.source == nil else { continue }
             if clip.isStill {
                 let held = clip.sourceStart.seconds
                 guard source.contains(held) else { continue }

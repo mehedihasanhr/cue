@@ -507,8 +507,15 @@ public final class RecordingSession {
                                  queue: queue,
                                  clock: clock,
                                  mapper: mapper,
-                                 tracksFields: configuration.capturesKeystrokes)
+                                 tracksFields: Self.tracksTextFields(for: configuration))
         }
+    }
+
+    /// Whether a take's focus tracker watches text fields: when focus is recorded and
+    /// fields were asked for, whatever the keyboard switch says. See
+    /// `RecordingConfiguration.capturesFieldFocus`.
+    nonisolated static func tracksTextFields(for configuration: RecordingConfiguration) -> Bool {
+        configuration.capturesFocus && configuration.capturesFieldFocus
     }
 
     /// How far every pointer sample in this take was moved to meet the picture.

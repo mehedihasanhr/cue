@@ -4,6 +4,24 @@ Every bug found, how it was measured, and what fixed it. Newest work first.
 
 Measurements come from `Tools/studio-lab`, which records a scripted pointer over a blank stage with the real pointer burnt into the picture, then compares what was written down with what is in the frames. Mac used: MacBook Pro, built-in display at 1512 × 982 points, 120 Hz.
 
+## Bug hunt (2026-09-30)
+
+A review of the features added in the last days — transcript cuts, subtitles, captions, clips, pacing, privacy, media, settings — each finding shown by a test that failed before the fix where the logic lives in a package, and traced through the code where it lives in the app.
+
+| Problem | Cause and fix | Test |
+|---|---|---|
+| Adding a caption over the end of a spoken line moved that line's words: "um" heard at 3 s was then placed at 2.25 s, so cutting it by the transcript (or Remove Filler Words) took the wrong sound | `AddCaption` shortened the line it landed on by setting its length, and recorded words are fractions of the line, so every word was squeezed towards its start. Both shortenings now go through `carryingWords(to:)`, the rule dragging an edge keeps: words stay where they are heard and a word left mostly outside the line leaves it | `BugHuntTests.addCaptionKeepsWordTimes`; `aNewCaptionMakesRoomForItself` updated |
+| Merging a caption with one lying inside it cut the rest of the longer line off | `MergeCaptions` ended the joined line at the second line's end. It now ends at whichever ends later | `BugHuntTests.mergeKeepsTheLongerEnd` |
+| Speed Up Waiting offered title slides, freeze frames and added movies as "nothing happening", with a saving `setSpeed` would never make (it leaves holds alone) and, for a movie, speeding footage whose activity was never measured | Nothing recorded lies over those clips, so they read as idle. `PaceSuggester` now counts every clip that does not play the recording as not to be touched (`unmeasuredRanges`) | `BugHuntTests.paceLeavesHoldsAlone` |
+| A subtitle line such as "Open File --> Export" ended its cue there, lost every line after it, and was counted as an unreadable time | The reader took any line with `-->` in it as a timing line. Inside a cue, an arrow line only starts a new cue when it is shaped like one — a time just before the arrow (`looksTimed`) | `BugHuntTests.arrowInText` |
+| Text-field zooms only existed when keyboard shortcuts were recorded (from "Known and not yet fixed") | The focus tracker was handed `capturesKeystrokes` as its field switch. `RecordingConfiguration.capturesFieldFocus` is now its own switch, set from Record what has focus; `RecordingSession.tracksTextFields(for:)` decides. The Settings copy that said to turn the keyboard on is gone | `FieldFocusTests` (RecordKit) |
+| The first take after granting microphone access recorded the system's default microphone, not the one (or two) chosen in Settings | `StudioService.begin` replaced the configured microphones with the default after the grant. It now keeps them, and only falls back to the default when none could be named | App; traced |
+| Find Sensitive Information put masks over an added movie — and a freeze frame of one — at the seconds the text was read in the recording | `Timeline.pieces(ofSource:)` walked every clip, and an imported clip's source times are its own file's. Imported clips are now skipped, as `timelineTime(atSource:)` already did | `BugHuntTests.sensitiveSkipsImportedClips` |
+| Shorten Pauses cut the middle out of a title slide (or freeze frame, or added movie) put between two spoken lines | To the transcript the slide is just a long silence. Gaps that touch a clip which does not play the recording are left alone | `BugHuntTests.pausesLeaveTitlesAlone` |
+| Picking the last word before a title slide and the first after it, then pressing Delete, cut the title slide too; Remove Line from Video did the same for a caption stretched over a slide | Neighbouring picked words are one cut, silence between included. Cuts made from what was said now have the clips that are not the recording taken back out (`TranscriptEditing.keepingHolds`), in word cuts and in Remove Line | `BugHuntTests.wordCutsLeaveTitlesAlone` |
+| File › Add Recording… could not pick a recording: every `.klikrec` was greyed out | The panel allowed folders only, on the belief that no type was declared — but `StudioInfo.plist` exports `com.stackrover.klik.recording` as a package, which the panel shows as a file. Files of that type are now allowed, folders still are | App; traced (not yet seen on screen) |
+| Translate Captions sent empty lines for translation, and could apply a translation that finished just after Cancel | Empty and whitespace-only captions are left out of the batch (with no source language set, a line with no words has no language to find); the task checks for cancellation before applying | App; not run end to end |
+
 ## Finding sensitive text (2026-09-29)
 
 Measured on synthetic H.264 footage at 1280 × 720 (`SensitiveScannerTests`), against where and when each line was drawn:
@@ -222,6 +240,6 @@ The sheet opened in the running app (a 460 × 336 window). It could not be photo
 | Caption translation has not been run end to end | The first use of a language can open the system's download sheet |
 | Several recordings in one project, importing a video, iPhone and iPad recording, freehand annotations | Not built |
 | The transcript's word picking, the font pickers, the export sheet's Target size and the safe-zone overlay have not been looked at on screen | Built and compiled with tests for the logic and the drawing; the views still need checking by eye, in light and dark |
-| Text-field zooms only exist when keyboard shortcuts are recorded | Focus tracking of text fields is switched on with key capture. Worth separating |
+| Text-field zooms only exist when keyboard shortcuts are recorded — **fixed** | Field focus now follows Record what has focus on its own. See Bug hunt (2026-09-30) |
 | Results are never sent back to Klik | The helper service does not exist yet |
 | One fidelity test failed once in about 20 full runs and has not failed since | Watching. It compares exact bytes while other tests render in parallel |

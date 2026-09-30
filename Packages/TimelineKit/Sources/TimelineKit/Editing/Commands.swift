@@ -392,13 +392,24 @@ public enum Commands {
             // the later one, so a new line dropped onto an old one would hide it; the
             // line it lands on is shortened to end where this begins, and this one ends
             // where the next begins.
+            //
+            // Both shortenings go through `carryingWords(to:)`, as dragging an edge does. A
+            // line's recorded words are fractions of it, so setting its length alone
+            // squeezed every word towards its start: "um" heard at 3 s in a line cut from
+            // four seconds to three was then placed at 2.25 s, and cutting it by the
+            // transcript took the wrong sound.
             if let next = timeline.captions.first(where: { $0.start > placed.start && $0.start < placed.end }) {
-                placed.duration = next.start - placed.start
+                var shorter = placed
+                shorter.duration = next.start - placed.start
+                placed = placed.carryingWords(to: shorter)
             }
             guard placed.duration >= Clip.minimumDuration else { return false }
             for index in timeline.captions.indices
             where timeline.captions[index].contains(placed.start) && timeline.captions[index].start < placed.start {
-                timeline.captions[index].duration = placed.start - timeline.captions[index].start
+                let before = timeline.captions[index]
+                var shorter = before
+                shorter.duration = placed.start - before.start
+                timeline.captions[index] = before.carryingWords(to: shorter)
             }
             timeline.captions.append(placed)
             timeline.captions.sort { $0.start < $1.start }
@@ -469,7 +480,11 @@ public enum Commands {
                 return false
             }
             let first = ordered[position], second = ordered[position + 1]
-            let length = (second.end - first.start).seconds
+            // To whichever ends later. Ordered by start, the second can still end first —
+            // a line lying inside a longer one — and ending at its end cut the rest of the
+            // longer line off.
+            let end = max(first.end, second.end)
+            let length = (end - first.start).seconds
             guard length > 0 else { return false }
 
             // Both lines' words on the new line's clock, including the silence between
@@ -489,7 +504,7 @@ public enum Commands {
                 && first.words == first.timedWords && second.words == second.timedWords
             let joined = CaptionCue(id: first.id,
                                     start: first.start,
-                                    duration: second.end - first.start,
+                                    duration: end - first.start,
                                     text: [first.text, second.text]
                                         .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                                         .filter { !$0.isEmpty }

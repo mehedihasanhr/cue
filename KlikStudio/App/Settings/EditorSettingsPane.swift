@@ -125,11 +125,12 @@ struct EditorSettingsPane: View {
         guard settings.zoomsOnFocus else {
             return "Zooms are suggested from the recorded clicks alone."
         }
-        // Text fields are only watched while the keyboard is — see `RecordingSession`,
-        // which hands the focus tracker `capturesKeystrokes`. Saying "which Klik Studio
-        // has" with the keyboard switch off promised a zoom that could never arrive.
-        guard settings.recordsKeys else {
-            return "Windows and apps are tracked with the permission recording already has. Text fields are only noticed while keyboard shortcuts are recorded — turn that on under Recording."
+        // Focus is recorded by Recording's "Record what has focus", fields included —
+        // no longer only while keyboard shortcuts are recorded, see
+        // `RecordingConfiguration.capturesFieldFocus`. With that switch off there is
+        // nothing for these zooms to follow, and saying so beats promising one.
+        guard settings.recordsFocus else {
+            return "Focus isn't being recorded, so zooms come from clicks alone. Turn on Record what has focus under Recording."
         }
         return AccessibilityAccess.isGranted
             ? "Windows and apps are tracked with the permission recording already has. Text fields need Accessibility, which Klik Studio has."

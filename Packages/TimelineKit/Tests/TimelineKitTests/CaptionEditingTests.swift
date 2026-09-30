@@ -107,7 +107,10 @@ struct CaptionCommandTests {
         var timeline = timeline
         Commands.AddCaption(CaptionCue(start: time(7), duration: time(5), text: "In between")).apply(to: &timeline)
         let cues = timeline.captions
-        #expect(cues.map(\.text) == ["First line here", "In between", "Second line"])
+        // The line it lands on is shortened the way dragging its end would shorten it:
+        // "here", said at 7.8 s, after the new line begins, leaves it rather than being
+        // squeezed in before 7 s.
+        #expect(cues.map(\.text) == ["First line", "In between", "Second line"])
         #expect(cues[0].end == time(7), "the line it landed on stops where it begins")
         #expect(cues[1].end == time(10), "and it stops where the next begins")
         #expect(zip(cues, cues.dropFirst()).allSatisfy { $0.end <= $1.start })

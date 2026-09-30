@@ -51,9 +51,13 @@ enum MovieImport {
 
     /// Asks for another recording, and where in the edit its screen goes.
     ///
-    /// A `.klikrec` is a folder to the open panel, since the app declares no document type
-    /// for it; so folders are what can be chosen, and anything that turns out not to be a
-    /// recording is refused after, with a reason.
+    /// A `.klikrec` is a *package* to the open panel: the app exports its type as one (see
+    /// `StudioInfo.plist`), so the panel shows it as a single file. Asking for folders only
+    /// — as this once did, on the belief that no type was declared — greyed out every
+    /// recording, and Add Recording could never add one. Files of the recording's type are
+    /// what can be chosen; folders stay choosable too, for a Mac where Launch Services has
+    /// not registered the type and a recording is still a plain folder. Anything that turns
+    /// out not to be a recording is refused after, with a reason.
     @MainActor
     static func chooseRecording(near package: URL) -> Choice? {
         let panel = NSOpenPanel()
@@ -61,7 +65,10 @@ enum MovieImport {
         panel.message = "Another take, to play in this one. Its screen and sound are copied into the project; its pointer and clicks stay behind."
         panel.prompt = "Add"
         panel.canChooseDirectories = true
-        panel.canChooseFiles = false
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = [UTType("com.stackrover.klik.recording")
+            ?? UTType(filenameExtension: RecordingPackage.fileExtension, conformingTo: .package)
+            ?? .package]
         panel.allowsMultipleSelection = false
         panel.directoryURL = package.deletingLastPathComponent()
         return run(panel)

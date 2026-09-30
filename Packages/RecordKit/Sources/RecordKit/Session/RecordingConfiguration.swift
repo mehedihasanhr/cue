@@ -111,6 +111,16 @@ public struct RecordingConfiguration: Sendable {
     /// a recording already holds. Only the text-field half needs Accessibility, and it
     /// is left out rather than prompted for when the grant is missing.
     public var capturesFocus: Bool
+    /// Whether focus tracking includes the text field that has the caret, not only the
+    /// window and app. Only read while `capturesFocus` is on.
+    ///
+    /// Its own switch rather than a side effect of `capturesKeystrokes`, which it used to
+    /// be: a text field's frame says where somebody is typing, never what, so it has no
+    /// business depending on whether their shortcuts are written down — and tied to them,
+    /// the editor's "zoom to text fields" had nothing to work with in every recording made
+    /// with the keyboard off, which is the default. Both need the Accessibility grant, and
+    /// the tracker records no fields without it rather than asking mid-take.
+    public var capturesFieldFocus: Bool
     /// Keep a picture of what the pointer actually looked like, one per shape.
     ///
     /// On by default and cheap: a handful of small PNGs per recording, written the first
@@ -136,6 +146,7 @@ public struct RecordingConfiguration: Sendable {
                 capturesClicks: Bool = true,
                 capturesKeystrokes: Bool = false,
                 capturesFocus: Bool = true,
+                capturesFieldFocus: Bool = true,
                 capturesCursorArtwork: Bool = true) {
         self.target = target
         self.destination = destination
@@ -151,6 +162,7 @@ public struct RecordingConfiguration: Sendable {
         self.capturesClicks = capturesClicks
         self.capturesKeystrokes = capturesKeystrokes
         self.capturesFocus = capturesFocus
+        self.capturesFieldFocus = capturesFieldFocus
         self.capturesCursorArtwork = capturesCursorArtwork
     }
 

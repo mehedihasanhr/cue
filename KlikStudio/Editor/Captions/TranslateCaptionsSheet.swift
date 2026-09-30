@@ -84,9 +84,19 @@ struct TranslateCaptionsSheet: View {
         // something that can cross actors. Only the captions' words go in and only the
         // translations come back.
         .translationTask(configuration) { @concurrent [model] session in
-            let cues = await MainActor.run { model.timeline.captions.map { Cue(id: $0.id, text: $0.text) } }
+            // Only lines with words in them. An empty caption — the editor has a placeholder
+            // for them — has nothing to translate, and handed over with no source language
+            // set it is a line whose language cannot be told, which can fail the whole batch.
+            let cues = await MainActor.run {
+                model.timeline.captions
+                    .filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                    .map { Cue(id: $0.id, text: $0.text) }
+            }
             do {
                 let texts = try await Self.translate(cues, with: session)
+                // Cancel pressed while the last of it was coming back: the sheet has gone,
+                // and the captions must stay as they were.
+                try Task.checkCancellation()
                 await MainActor.run {
                     model.applyCaptionTranslation(texts)
                     model.isTranslatingCaptions = false

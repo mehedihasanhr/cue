@@ -66,6 +66,10 @@ public enum TranscriptEditing {
                                    busy: [CMTimeRange] = []) -> [CMTimeRange] {
         let words = spokenWords(in: timeline)
         guard words.count > 1, limit > kept, kept >= 0 else { return [] }
+        // A title slide, a freeze frame or an added movie between two lines is a silence
+        // to the transcript, and one somebody put there. Shortened as a pause, the middle
+        // of it — usually the whole slide — was cut out.
+        let busy = busy + PaceSuggester.unmeasuredRanges(in: timeline)
         var cuts: [CMTimeRange] = []
         for (before, after) in zip(words, words.dropFirst()) {
             let gap = CMTimeRange(start: before.range.end, end: after.range.start)
