@@ -123,11 +123,22 @@ public struct ZoomSuggester: Sendable {
     /// a cropped project every one of them was aimed beside the click it came from — and
     /// clicks in the part that had been cropped away still produced zooms.
     public var crop: CGRect
+    /// Where a resized window's picture sat inside the frame — see `PictureTrack`.
+    ///
+    /// The renderer crops the black round a shrunk picture away and scales what is left up
+    /// to fill the frame, so a click is not drawn where it was recorded but where that
+    /// scaling puts it. Every click and focus rectangle goes through the same placement
+    /// before it becomes a centre, or a zoom suggested during a resized stretch would be
+    /// aimed at where the thing clicked *would* have been had the window not changed.
+    /// Empty, it places nothing anywhere, which is every recording but those.
+    public var picture: PictureTrack
 
     public init(frameSize: CGSize,
                 crop: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1),
+                picture: PictureTrack = PictureTrack(),
                 tuning: Tuning = Tuning()) {
         self.frameSize = frameSize
+        self.picture = picture
         self.crop = crop.width > 0 && crop.height > 0 ? crop : CGRect(x: 0, y: 0, width: 1, height: 1)
         self.tuning = tuning
     }
@@ -180,7 +191,7 @@ public struct ZoomSuggester: Sendable {
     private func clickRegions(input: [InputSample], duration: CMTime) -> [ZoomRegion] {
         let clicks: [(t: Double, point: CGPoint)] = input.compactMap { sample in
             guard case .mouseDown(let t, _, let x, let y) = sample else { return nil }
-            let point = CGPoint(x: x, y: y)
+            let point = picture.place(CGPoint(x: x, y: y), at: t, in: frameSize)
             // Only what happened inside the recording.
             //
             // The pointer is watched wherever it goes, because it has to be: a recording of
@@ -284,7 +295,7 @@ public struct ZoomSuggester: Sendable {
             // filtered. A window recording watches the frontmost window, which is not
             // always the window being recorded: focus landing in another app reports a
             // rectangle somewhere else entirely, and aiming at it frames nothing.
-            let visible = event.rect.intersection(recorded)
+            let visible = picture.place(event.rect, at: event.t, in: frameSize).intersection(recorded)
             guard !visible.isNull, visible.width > 1, visible.height > 1,
                   let scale = scale(toFit: visible) else { continue }
 

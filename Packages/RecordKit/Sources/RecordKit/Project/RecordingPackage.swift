@@ -76,6 +76,12 @@ public struct RecordingManifest: Codable, Equatable, Sendable {
         /// The markers dropped while recording — see `MarkerLog`. Absent when none were,
         /// and from every recording made before they could be.
         public var markers: String? = nil
+        /// Where a window recording's picture sat inside its frame, each time that changed
+        /// — see `PictureTracker`. Absent when the picture filled the frame throughout,
+        /// which is every take of a display or an area, most takes of a window, and every
+        /// recording made before it was written down. Optional and defaulted, so a manifest
+        /// that never heard of it decodes exactly as it always did.
+        public var picture: String? = nil
 
         public init(cursor: String? = nil,
                     input: String? = nil,
@@ -84,7 +90,8 @@ public struct RecordingManifest: Codable, Equatable, Sendable {
                     cursorArtwork: String? = nil,
                     pointerLatency: Double? = nil,
                     keys: KeyCapture? = nil,
-                    markers: String? = nil) {
+                    markers: String? = nil,
+                    picture: String? = nil) {
             self.cursor = cursor
             self.input = input
             self.windowBounds = windowBounds
@@ -93,6 +100,7 @@ public struct RecordingManifest: Codable, Equatable, Sendable {
             self.pointerLatency = pointerLatency
             self.keys = keys
             self.markers = markers
+            self.picture = picture
         }
     }
 

@@ -330,7 +330,8 @@ public final class SceneRenderer: @unchecked Sendable {
         // everything that is *not* in its rectangle. See `spotlit(_:by:)`.
         image = spotlit(image, by: scene.blurs)
 
-        if scene.sourceCrop != Self.unitRect {
+        let isCropped = scene.sourceCrop != Self.unitRect
+        if isCropped {
             let extent = image.extent
             image = image.cropped(to: CGRect(x: extent.minX + scene.sourceCrop.minX * extent.width,
                                              y: extent.minY + (1 - scene.sourceCrop.maxY) * extent.height,
@@ -342,11 +343,24 @@ public final class SceneRenderer: @unchecked Sendable {
         // Measured against `image`, not `source`: after a crop those are different sizes,
         // and scaling the cropped picture by the uncropped ratio is the mistake this
         // line exists to not make.
-        let scale = CGAffineTransform(scaleX: target.width / image.extent.width,
-                                      y: target.height / image.extent.height)
-        image = image.transformed(by: scale)
-        image = image.transformed(by: CGAffineTransform(translationX: target.minX - image.extent.minX,
-                                                        y: target.minY - image.extent.minY))
+        let region = image.extent
+        let sx = target.width / region.width
+        let sy = target.height / region.height
+        let placement = CGAffineTransform(a: sx, b: 0, c: 0, d: sy,
+                                          tx: target.minX - region.minX * sx,
+                                          ty: target.minY - region.minY * sy)
+        if isCropped {
+            // A cropped picture is scaled up, and its outermost pixels are filtered with
+            // whatever lies past them. Past a crop's edge that is nothing — transparency — so
+            // the edge came out half see-through, a faint line of the background round the
+            // picture; and a crop that is there to cut away a resized window's black band
+            // (`SceneBuilder.pictureCrop(at:)`) must not bring a trace of it back. Its own
+            // edge pixels, repeated outwards, are what the filter should see, and the result
+            // is cut back to exactly where the picture goes.
+            image = image.clampedToExtent().transformed(by: placement).cropped(to: target)
+        } else {
+            image = image.transformed(by: placement)
+        }
 
         // The colour correction: on the recording, placed, and on nothing laid over it
         // afterwards. Not on a title's panel, which is a colour somebody chose.

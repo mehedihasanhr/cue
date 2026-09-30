@@ -139,7 +139,10 @@ final class EditorModel {
                                displayScale: document.manifest.displayScale,
                                backgrounds: StudioBackgroundResolver(),
                                packageURL: package.url,
-                               cursorArtwork: document.cursorArtwork)
+                               cursorArtwork: document.cursorArtwork,
+                               // Where a resized window's picture went, so the black it
+                               // left is cropped away in the preview and the export alike.
+                               picture: document.pictureTrack)
         waveform = WaveformStore(package: package, manifest: document.manifest)
         regionWaveforms = RegionWaveformStore(package: package)
         thumbnails = ClipThumbnails(videoURL: document.videoURL,
@@ -233,7 +236,8 @@ final class EditorModel {
                                    displayScale: document.manifest.displayScale,
                                    backgrounds: StudioBackgroundResolver(),
                                    packageURL: document.package.url,
-                                   cursorArtwork: document.cursorArtwork)
+                                   cursorArtwork: document.cursorArtwork,
+                                   picture: document.pictureTrack)
             if autoZoomOnOpen {
                 autoZoomOnOpen = false
                 adoptSuggestedZooms()
@@ -2178,6 +2182,9 @@ final class EditorModel {
                                       // Against the picture as it is cropped, which is what
                                       // a zoom's centre is a fraction of.
                                       crop: timeline.style.crop?.rect ?? CropRect.full.rect,
+                                      // And through the picture's own crop, for a window
+                                      // resized while it was recorded — see `PictureTrack`.
+                                      picture: document.pictureTrack,
                                       tuning: zoomTuning)
         // The suggester reads the recording, so what it proposes is in the recording's
         // time, over the whole recording. Placed as it came, every zoom after a cut, a

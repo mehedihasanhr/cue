@@ -25,17 +25,23 @@ public struct SceneBuilder: Sendable {
     /// What each pointer in this recording actually looked like. Empty for a recording
     /// that did not keep it, which is every recording made before it could.
     public let cursorArtwork: CursorArtworkIndex
+    /// Where a resized window's picture sat inside the recorded frame over the take — see
+    /// `PictureTrack` and `pictureCrop(at:)`. Empty for every other recording, which leaves
+    /// every frame exactly as it was built before this existed.
+    public let picture: PictureTrack
 
     public init(videoSize: CGSize,
                 displayScale: Double = 2,
                 backgrounds: any BackgroundResolving = DefaultBackgroundResolver(),
                 packageURL: URL? = nil,
-                cursorArtwork: CursorArtworkIndex = CursorArtworkIndex()) {
+                cursorArtwork: CursorArtworkIndex = CursorArtworkIndex(),
+                picture: PictureTrack = PictureTrack()) {
         self.videoSize = videoSize
         self.displayScale = max(0.1, displayScale)
         self.backgrounds = backgrounds
         self.packageURL = packageURL
         self.cursorArtwork = cursorArtwork
+        self.picture = picture
     }
 
     /// The same builder, measured against a different source size.
@@ -50,7 +56,8 @@ public struct SceneBuilder: Sendable {
                             displayScale: displayScale,
                             backgrounds: backgrounds,
                             packageURL: packageURL,
-                            cursorArtwork: cursorArtwork)
+                            cursorArtwork: cursorArtwork,
+                            picture: picture)
     }
 
     /// How big the picture is once the crop has been taken off it.
@@ -125,9 +132,22 @@ public struct SceneBuilder: Sendable {
         let track = isImported ? nil : track
         // The recording's crop is a crop *of the recording*; an imported picture is shown
         // whole.
-        let crop = isImported ? Self.unitRect : (style.crop?.rect ?? Self.unitRect)
-        let camera = self.camera(for: timeline, at: time, cursor: track, crop: crop)
+        //
+        // And the crop is taken of the part of the recording that is picture at this moment.
+        // For a window resized after recording began that is less than the whole frame —
+        // see `pictureCrop(at:)` — and folding it in here, into the one rectangle every
+        // layer below already measures itself against, is what keeps them all on the
+        // picture: the renderer crops the source by it, and the pointer, its clicks, the
+        // camera's following and the pointer's dressing are all normalised through it, so
+        // they are moved and scaled by exactly what the picture was. A zoom's centre and the
+        // crop tool's rectangle are fractions of the picture as it is shown, and stay so.
+        // Masks and blurs are stored against the whole recording and applied before the
+        // crop, so they stay on the footage they were drawn over.
         let sourceTime = moment?.time ?? .zero
+        let crop = isImported
+            ? Self.unitRect
+            : Self.composed(style.crop?.rect ?? Self.unitRect, within: pictureCrop(at: sourceTime))
+        let camera = self.camera(for: timeline, at: time, cursor: track, crop: crop)
         // Where the picture and the camera go at this moment — the bubble, or a camera
         // layout moving them about. Everything below that is measured off the picture's
         // frame is measured off the one this decides, so the corners, the border, the
@@ -189,6 +209,57 @@ public struct SceneBuilder: Sendable {
         let fitted = CGSize(width: size.width * scale, height: size.height * scale)
         return CGRect(x: frame.midX - fitted.width / 2, y: frame.midY - fitted.height / 2,
                       width: fitted.width, height: fitted.height)
+    }
+
+    // MARK: - The picture inside the frame
+
+    /// The part of the recording that is picture at a moment of it, as a fraction of the
+    /// recording, top-left origin — the whole of it unless a window was resized while it
+    /// was recorded.
+    ///
+    /// A window's file is sized before the countdown; resized afterwards, the window is
+    /// scaled to fit and the rest of the frame is black. `PictureTrack` knows where the
+    /// picture went and cuts it to the frame's own shape, so this rectangle scaled to the
+    /// output fills it with no black and no stretching.
+    ///
+    /// Measured in the recording's pixels, and rounded *inwards* to whole ones before it is
+    /// cut to shape: a picture that ends two-fifths of the way across a pixel shares that
+    /// pixel with the black beside it, and a crop that kept it would draw a faint dark line
+    /// down the edge. The frame's points are the pointer's — `displayScale` over
+    /// `videoSize`, the arithmetic `normalised(_:crop:)` uses — so a pointer and the picture
+    /// under it are put through one conversion, not two that could disagree.
+    func pictureCrop(at sourceTime: CMTime) -> CGRect {
+        guard !picture.isEmpty, videoSize.width > 0, videoSize.height > 0,
+              let points = picture.picture(at: sourceTime.seconds) else { return Self.unitRect }
+        let pixels = CGRect(x: points.minX * displayScale, y: points.minY * displayScale,
+                            width: points.width * displayScale, height: points.height * displayScale)
+        // A hundredth of a pixel's grace, so a corner that is at zero give or take the
+        // floating point is not rounded a whole pixel in.
+        let minX = (pixels.minX - 0.01).rounded(.up), minY = (pixels.minY - 0.01).rounded(.up)
+        let maxX = (pixels.maxX + 0.01).rounded(.down), maxY = (pixels.maxY + 0.01).rounded(.down)
+        let kept = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+            .intersection(CGRect(origin: .zero, size: videoSize))
+        // Within a pixel of the whole frame is the whole frame: the ordinary take, built
+        // exactly as it always was.
+        guard !kept.isNull, kept.width >= 1, kept.height >= 1,
+              kept.width < videoSize.width - 1 || kept.height < videoSize.height - 1
+        else { return Self.unitRect }
+        let shown = PictureTrack.filling(kept, frame: videoSize)
+        return CGRect(x: shown.minX / videoSize.width, y: shown.minY / videoSize.height,
+                      width: shown.width / videoSize.width, height: shown.height / videoSize.height)
+    }
+
+    /// A crop taken of a part of the recording, as a crop of the whole of it.
+    ///
+    /// The style's crop is a fraction of the picture as it is shown; the picture is a
+    /// fraction of the recording. Composed, the renderer and everything that normalises a
+    /// point go on working with one rectangle, as they always have.
+    static func composed(_ crop: CGRect, within part: CGRect) -> CGRect {
+        guard part != unitRect else { return crop }
+        return CGRect(x: part.minX + crop.minX * part.width,
+                      y: part.minY + crop.minY * part.height,
+                      width: crop.width * part.width,
+                      height: crop.height * part.height)
     }
 
     // MARK: - Camera

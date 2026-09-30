@@ -31,6 +31,12 @@ public final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @
     /// A window is the one target whose picture can be moved and resized inside the file
     /// while the take runs, and the frame is the only thing that knows by how much.
     public var cursorMapper: CursorMapper?
+    /// Told where each frame's picture sits inside the frame, for a recording of a window.
+    /// Set before `start()` and not after, like `cursorMapper`, and for the same reason.
+    ///
+    /// The file's size is fixed when the take starts; a window resized after that is scaled
+    /// to fit and the rest of the frame is black. This is how the editor learns which part.
+    public var pictureTracker: PictureTracker?
 
     private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "screen")
 
@@ -97,8 +103,9 @@ public final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @
                 return
             }
             guard status == .complete else { return }
-            if let cursorMapper, let geometry = buffer.frameGeometry {
-                cursorMapper.place(geometry)
+            if cursorMapper != nil || pictureTracker != nil, let geometry = buffer.frameGeometry {
+                cursorMapper?.place(geometry)
+                pictureTracker?.place(geometry, at: buffer.presentationTimeStamp)
             }
             writer.append(video: buffer)
         case .audio:

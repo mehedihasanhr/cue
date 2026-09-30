@@ -101,6 +101,39 @@ public struct WindowBoundsSample: Codable, Equatable, Sendable {
     public var rect: CGRect { CGRect(x: x, y: y, width: width, height: height) }
 }
 
+/// Where the recorded picture sat inside the frame, from `t` until the next sample.
+///
+/// A window recording's file is sized once, before the countdown, and a window is the one
+/// target that can change size after that. ScreenCaptureKit keeps the whole window in the
+/// frame by scaling it — `scalesToFit` — so a window that grows is shrunk to fit and one
+/// that shrinks is left smaller, and either way the rest of the frame is black. Nothing in
+/// the pixels says which part is picture and which is padding; the frame's attachments do,
+/// and this is them written down so the editor can show the picture and never the black.
+///
+/// In the frame's points, origin top left — the space `CursorSample` is in, so a pointer
+/// and the picture it is over can be put through the same arithmetic. A take whose
+/// picture always filled its frame writes none of these at all: "no sample" means "the
+/// whole frame is picture", which is also what every recording made before this said.
+public struct PictureSample: Codable, Equatable, Sendable {
+    /// Seconds since the recording's clock started — the frame's own timestamp, so the
+    /// change is dated to the first frame that showed it rather than to when it was noticed.
+    public var t: Double
+    public var x: Double
+    public var y: Double
+    public var width: Double
+    public var height: Double
+
+    public init(t: Double, rect: CGRect) {
+        self.t = t
+        x = rect.origin.x
+        y = rect.origin.y
+        width = rect.width
+        height = rect.height
+    }
+
+    public var rect: CGRect { CGRect(x: x, y: y, width: width, height: height) }
+}
+
 /// What had the user's attention, and where it was on screen.
 ///
 /// The other half of "zoom where the work is". Clicks say where someone pointed;

@@ -339,6 +339,20 @@ public final class EditorDocument {
 
     @ObservationIgnored private var cachedFocusSamples: [FocusSample]?
 
+    /// Where a window's picture sat inside its frame, for a take whose window was resized
+    /// after recording began — see `PictureTrack`. Empty for everything else, which the
+    /// renderer reads as "the whole frame is picture", exactly as it always did.
+    public var pictureTrack: PictureTrack {
+        if let cachedPictureTrack { return cachedPictureTrack }
+        let track = PictureTrack(samples: manifest.telemetry.picture.map {
+            TelemetryFile.read(PictureSample.self, at: package.url.appendingPathComponent($0))
+        } ?? [])
+        cachedPictureTrack = track
+        return track
+    }
+
+    @ObservationIgnored private var cachedPictureTrack: PictureTrack?
+
     /// The markers dropped while this was recorded, in recording time — see `MarkerLog`.
     /// Empty for a take with none, and for every recording made before they could be.
     public var recordedMarkers: [MarkerSample] {

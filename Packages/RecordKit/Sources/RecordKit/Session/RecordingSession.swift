@@ -140,6 +140,9 @@ public final class RecordingSession {
     private var cursorWriter: JSONLWriter?
     private var inputWriter: JSONLWriter?
     private var focusWriter: JSONLWriter?
+    /// Where a window's picture sat in its frame — see `PictureTracker`. `nil` for a
+    /// display or an area, whose picture fills the frame by construction.
+    private var pictureWriter: JSONLWriter?
     private var diskTimer: Timer?
     private var startedAt: Date?
     private var pixelSize: CGSize = .zero
@@ -450,6 +453,22 @@ public final class RecordingSession {
         // A window's frames say where it is and how much it was scaled to fit; a display's
         // and an area's never move or scale, and their origin is already exact.
         if followedWindow != nil { screen?.cursorMapper = mapper }
+        // And, from the same frames, where in the file the window's picture landed. The
+        // file's size is settled now and cannot follow the window if it is resized, so the
+        // part it no longer covers is black; this is what lets the editor crop that away.
+        // Only for a window: a display and an area fill their frame by construction.
+        if followedWindow != nil, let screen {
+            let pictureWriter = JSONLWriter(url: package.telemetryFolder.appendingPathComponent("picture.jsonl"),
+                                            queue: queue)
+            queue.sync { try? pictureWriter.open() }
+            self.pictureWriter = pictureWriter
+            let scale = max(displayScale, 0.01)
+            screen.pictureTracker = PictureTracker(writer: pictureWriter,
+                                                   clock: clock,
+                                                   frameSize: CGSize(width: pixelSize.width / scale,
+                                                                     height: pixelSize.height / scale),
+                                                   outputScale: CGFloat(scale))
+        }
         // Only when the pointer is being recorded as data. A take that burns the system
         // cursor into the video already has the real artwork in the pixels, and saving it
         // twice would be saving it for nobody.
@@ -725,6 +744,8 @@ public final class RecordingSession {
             return focusWriter?.close() ?? false
         }
         markersWritten = queue.sync { [markerWriter] in markerWriter?.close() ?? false }
+        // Empty — and so deleted — for a window that was never resized, which is most.
+        pictureTrackWritten = queue.sync { [pictureWriter] in pictureWriter?.close() ?? false }
     }
 
     /// The audio files that ended up with sound in them, as the manifest will name them.
@@ -742,6 +763,10 @@ public final class RecordingSession {
     /// Whether the focus track ended up with anything in it. An empty sidecar is
     /// deleted on close, so the manifest must not point at it.
     private var focusTrackWritten = false
+
+    /// Whether the picture ever left the frame it was sized for, so that the sidecar saying
+    /// where it went has anything in it. See `focusTrackWritten`.
+    private var pictureTrackWritten = false
 
     private func reset() {
         takeSync?.stop()
@@ -761,6 +786,8 @@ public final class RecordingSession {
         keys = nil
         focus = nil
         focusTrackWritten = false
+        pictureWriter = nil
+        pictureTrackWritten = false
         markerWriter = nil
         markerLog = nil
         markersWritten = false
@@ -827,7 +854,8 @@ public final class RecordingSession {
                                                   // tracker: asked for and watched, asked
                                                   // for and refused, or not asked for.
                                                   keys: keys?.capture,
-                                                  markers: markersWritten ? MarkerLog.path : nil))
+                                                  markers: markersWritten ? MarkerLog.path : nil,
+                                                  picture: pictureTrackWritten ? "telemetry/picture.jsonl" : nil))
     }
 
     // MARK: - Disk
@@ -871,6 +899,7 @@ public final class RecordingSession {
         }, at: 1)
         if focusWriter != nil { draft.telemetry.focus = "telemetry/focus.jsonl" }
         if markerWriter != nil { draft.telemetry.markers = MarkerLog.path }
+        if pictureWriter != nil { draft.telemetry.picture = "telemetry/picture.jsonl" }
         do {
             try package.writeMarker(TakeMarker(manifest: draft))
         } catch {
