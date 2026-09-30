@@ -156,12 +156,15 @@ public struct RecordingConfiguration: Sendable {
 
     /// The stream configuration for a filter, in pixels.
     ///
+    /// `pictureSize`, in points, is what a window's frames were measured to hold when that
+    /// is more than the window says it is — see `WindowPicture`.
+    ///
     /// `queueDepth` is 8 rather than the default 3: an encoder that stalls for a moment
     /// then drops frames it never saw is worse than one that catches up from a queue.
-    public func streamConfiguration(for filter: SCContentFilter) -> SCStreamConfiguration {
+    public func streamConfiguration(for filter: SCContentFilter, pictureSize: CGSize? = nil) -> SCStreamConfiguration {
         let configuration = SCStreamConfiguration()
         let scale = filter.pointPixelScale
-        let size = filter.contentRect.size
+        let size = pictureSize ?? filter.contentRect.size
 
         var width = Int((size.width * CGFloat(scale)).rounded())
         var height = Int((size.height * CGFloat(scale)).rounded())

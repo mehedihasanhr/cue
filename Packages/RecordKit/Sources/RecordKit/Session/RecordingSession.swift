@@ -243,10 +243,6 @@ public final class RecordingSession {
         let shareable = try await content.content()
         let filter = try content.filter(for: configuration.target, in: shareable,
                                         hidingDesktopIcons: configuration.hidesDesktopIcons)
-        let streamConfiguration = configuration.streamConfiguration(for: filter)
-        pixelSize = CGSize(width: streamConfiguration.width, height: streamConfiguration.height)
-        displayScale = Double(filter.pointPixelScale)
-
         let package = try RecordingPackage.create(named: configuration.name, in: configuration.destination)
         self.package = package
 
@@ -265,20 +261,6 @@ public final class RecordingSession {
         // No audio at all in `screen.mov` any more. Each source is its own file beside it,
         // for the reason `AudioTrackWriter` gives: tracks inside one file cannot be told
         // apart afterwards with any certainty, and telling them apart is the whole feature.
-        let writer = try SessionWriter(url: package.mediaFolder.appendingPathComponent("screen.mov"),
-                                       pixelSize: pixelSize,
-                                       codec: configuration.codec.resolved,
-                                       bitrate: configuration.quality.bitrate(forPixels: Int(pixelSize.width * pixelSize.height)),
-                                       frameRate: configuration.frameRate,
-                                       systemAudio: false,
-                                       microphone: false,
-                                       clock: clock,
-                                       queue: queue)
-        self.writer = writer
-        writer.onFailure = { [weak self] error in
-            Task { @MainActor in self?.writerFailed(error) }
-        }
-
         var lanes: [AudioLane] = []
         var systemAudioWriter: AudioTrackWriter?
         if configuration.systemAudio {
@@ -291,12 +273,7 @@ public final class RecordingSession {
             lanes.append(lane)
         }
 
-        screen = ScreenRecorder(filter: filter,
-                                configuration: streamConfiguration,
-                                writer: writer,
-                                audio: systemAudioWriter) { [weak self] error in
-            Task { @MainActor in self?.interrupted(by: error) }
-        }
+        try await makeScreen(filter: filter, configuration: configuration, package: package, audio: systemAudioWriter)
 
         for (index, device) in microphoneDevices.enumerated() {
             let lane = try audioLane(kind: .microphone,
@@ -314,6 +291,45 @@ public final class RecordingSession {
         try await prepareWebcam(configuration, package: package, clock: clock)
         startTelemetry(for: configuration, shareable: shareable, package: package)
         try markInProgress(configuration, package: package)
+    }
+
+    /// The screen's file and the stream that fills it.
+    ///
+    /// A window is measured first, from a frame of it: what it reports can be less than
+    /// what is captured, and a file sized from the report records the difference as a
+    /// black band down one side. See `WindowPicture`.
+    private func makeScreen(filter: SCContentFilter,
+                            configuration: RecordingConfiguration,
+                            package: RecordingPackage,
+                            audio systemAudioWriter: AudioTrackWriter?) async throws(RecordingError) {
+        var streamConfiguration = configuration.streamConfiguration(for: filter)
+        if case .window = configuration.target,
+           let measured = await WindowPicture.size(of: filter, configuration: streamConfiguration),
+           abs(measured.width - filter.contentRect.width) > 1 || abs(measured.height - filter.contentRect.height) > 1 {
+            Self.log.notice("Window's picture is \(measured.debugDescription, privacy: .public), not \(filter.contentRect.size.debugDescription, privacy: .public): sized to the picture")
+            streamConfiguration = configuration.streamConfiguration(for: filter, pictureSize: measured)
+        }
+        pixelSize = CGSize(width: streamConfiguration.width, height: streamConfiguration.height)
+        displayScale = Double(filter.pointPixelScale)
+        let writer = try SessionWriter(url: package.mediaFolder.appendingPathComponent("screen.mov"),
+                                       pixelSize: pixelSize,
+                                       codec: configuration.codec.resolved,
+                                       bitrate: configuration.quality.bitrate(forPixels: Int(pixelSize.width * pixelSize.height)),
+                                       frameRate: configuration.frameRate,
+                                       systemAudio: false,
+                                       microphone: false,
+                                       clock: clock,
+                                       queue: queue)
+        self.writer = writer
+        writer.onFailure = { [weak self] error in
+            Task { @MainActor in self?.writerFailed(error) }
+        }
+        screen = ScreenRecorder(filter: filter,
+                                configuration: streamConfiguration,
+                                writer: writer,
+                                audio: systemAudioWriter) { [weak self] error in
+            Task { @MainActor in self?.interrupted(by: error) }
+        }
     }
 
     /// A file for one sound, and the manifest entry that will point at it.

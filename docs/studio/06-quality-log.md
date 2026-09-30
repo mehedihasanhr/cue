@@ -206,6 +206,13 @@ The sheet opened in the running app (a 460 × 336 window). It could not be photo
 | 4 s MP4, Best, 400 KB limit | 729 kb/s | 372 KB, 739 kb/s in the track |
 | 4 s MOV, Best, 400 KB limit | 729 kb/s | 375 KB, 745 kb/s in the track |
 
+## Window recordings with a black band (2026-09-30)
+
+| Problem | Cause and fix |
+|---|---|
+| A full-screen Chrome recorded with 140 points of black down the right for the whole take | The picked window was only the page (1512 × 861); the capture also takes the tab strip and toolbar stacked above it, so the picture was 1512 × 949 and was shrunk into a file sized for the page. Window recordings are now measured from a real frame before the countdown (`WindowPicture`, about 130 ms) and the file is sized to the picture. Test: `WindowPictureTests`. A live check found a Safari window reporting 723 × 353 whose picture was 1362 × 830 |
+| A window resized after recording starts still gets bars | Not fixed: the file's size is fixed once it starts. Would need the picture's outline per frame and a crop in the editor |
+
 ## Known and not yet fixed
 
 | Item | Notes |
