@@ -110,9 +110,20 @@ struct ChapterTests {
         #expect(Chapters.stamp(seconds) == stamp)
     }
 
-    @Test func aListThatRunsPastAnHourWritesHoursOnEveryLine() {
-        let chapters = [Chapter(time: .zero, title: "Intro"), Chapter(time: time(3_700), title: "Late")]
-        #expect(Chapters.text(chapters) == "0:00:00 Intro\n1:01:40 Late")
+    /// YouTube switches chapters on with a first timestamp of `0:00`; a `0:00:00` there
+    /// (what a list past the hour used to start with) is the one it is known to miss.
+    /// Every other line is as short as it can be, hours only past the hour.
+    @Test func aListThatRunsPastAnHourStillStartsAtZeroZero() {
+        let chapters = [Chapter(time: .zero, title: "Intro"), Chapter(time: time(605), title: "Middle"),
+                        Chapter(time: time(3_700), title: "Late"), Chapter(time: time(36_005), title: "Very late")]
+        #expect(Chapters.text(chapters) == "0:00 Intro\n10:05 Middle\n1:01:40 Late\n10:00:05 Very late")
+    }
+
+    /// The first line is `0:00` whatever time the list gives it.
+    @Test func theFirstLineIsAlwaysZeroZero() {
+        let chapters = [Chapter(time: CMTime(seconds: 0.4, preferredTimescale: 600), title: "Intro"),
+                        Chapter(time: time(59), title: "Next")]
+        #expect(Chapters.text(chapters) == "0:00 Intro\n0:59 Next")
     }
 
     @Test func aLongCaptionIsCutAtAWord() {

@@ -146,8 +146,10 @@ public struct SceneBuilder: Sendable {
         // camera's following and the pointer's dressing are all normalised through it, so
         // they are moved and scaled by exactly what the picture was. A zoom's centre and the
         // crop tool's rectangle are fractions of the picture as it is shown, and stay so.
-        // Masks and blurs are stored against the whole recording and applied before the
-        // crop, so they stay on the footage they were drawn over.
+        // Masks and blurs are applied to the whole recording before the crop, so they stay
+        // on the footage they were drawn over; a still one is stored as a fraction of the
+        // picture and carried through a resize's rescale by `blurLayers` — see
+        // `BlurRegion.recordingRect(at:source:picture:frame:)`.
         let sourceTime = moment?.time ?? .zero
         let crop = isImported
             ? Self.unitRect
@@ -187,7 +189,7 @@ public struct SceneBuilder: Sendable {
                                zoom: camera.zoom,
                                zoomCenter: camera.center,
                                zoomsWholeFrame: timeline.camera.zoomsWholeFrame,
-                               blurs: blurLayers(timeline, at: time),
+                               blurs: blurLayers(timeline, at: time, sourceSeconds: isImported ? nil : sourceTime.seconds),
                                cursor: faded(cursorLayer(timeline, at: time, sourceTime: sourceTime,
                                                          track: track, crop: crop),
                                              by: stage.videoOpacity),
@@ -233,6 +235,12 @@ public struct SceneBuilder: Sendable {
     /// down the edge. The frame's points are the pointer's — `displayScale` over
     /// `videoSize`, the arithmetic `normalised(_:crop:)` uses — so a pointer and the picture
     /// under it are put through one conversion, not two that could disagree.
+    /// The recording's size in the points the pointer and `picture` are measured in.
+    public var pointFrame: CGSize {
+        displayScale > 0 ? CGSize(width: videoSize.width / displayScale, height: videoSize.height / displayScale)
+                         : videoSize
+    }
+
     func pictureCrop(at sourceTime: CMTime) -> CGRect {
         guard !picture.isEmpty, videoSize.width > 0, videoSize.height > 0,
               let points = picture.picture(at: sourceTime.seconds) else { return Self.unitRect }
@@ -615,12 +623,15 @@ public struct SceneBuilder: Sendable {
 
     // MARK: - Layers
 
-    private func blurLayers(_ timeline: Timeline, at time: CMTime) -> [BlurLayer] {
-        timeline.blurs
+    private func blurLayers(_ timeline: Timeline, at time: CMTime, sourceSeconds: Double?) -> [BlurLayer] {
+        let frame = pointFrame
+        return timeline.blurs
             .filter { $0.contains(time) }
             // Where the mask is at this moment: a following mask moves, a still one is its
-            // `rect`. Asked here so the preview and the export cannot disagree about it.
-            .map { BlurLayer(rect: $0.rect(at: time), style: $0.style, radius: $0.radius,
+            // `rect` — carried with the picture when a resized window's content moved.
+            // Asked here so the preview and the export cannot disagree about it.
+            .map { BlurLayer(rect: $0.recordingRect(at: time, source: sourceSeconds, picture: picture, frame: frame),
+                             style: $0.style, radius: $0.radius,
                              color: $0.color, dimming: $0.dimming, softness: $0.softness,
                              cornerRadius: $0.cornerRadius) }
     }

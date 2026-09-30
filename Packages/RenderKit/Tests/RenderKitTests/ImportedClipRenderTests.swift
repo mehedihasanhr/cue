@@ -126,6 +126,31 @@ struct ImportedClipRenderTests {
         #expect(lent.sourceTime == .zero)
     }
 
+    /// An imported clip's sound crossfades the way the recording's does: each side lends
+    /// its file from past its own end, and a side at the very edge of its file lends none.
+    @Test func anImportedClipsSoundIsLentThroughACrossfade() {
+        var timeline = timeline()                                        // recording 0–10, square 10–14
+        ClipSequence.split(&timeline, at: time(12))
+        ClipSequence.split(&timeline, at: time(13))
+        timeline.clips.remove(at: 2)                                     // square 0–2, then 3–4
+        ClipSequence.setTransition(&timeline, clipID: timeline.clips[2].id,
+                                   to: ClipTransition(.crossfade, duration: time(1)))
+        let loans = AudioMixdown.crossfadeLoans(from: square.path, of: timeline, fileEnd: time(4))
+        #expect(loans.count == 2)
+        let incoming = loans.first { $0.at < time(12) }
+        #expect(incoming.map { abs($0.source.start.seconds - 2.5) < 0.01 } == true, "from just before 3 s")
+        #expect(incoming.map { abs($0.at.seconds - 11.5) < 0.01 } == true, "laid before the cut")
+        let outgoing = loans.first { $0.at == time(12) }
+        #expect(outgoing.map { abs($0.source.start.seconds - 2) < 0.01 && abs($0.source.end.seconds - 2.5) < 0.01 } == true,
+                "from just after 2 s")
+
+        // Out of the recording into the file's first frame: nothing before it to lend.
+        var edge = self.timeline()
+        ClipSequence.setTransition(&edge, clipID: edge.clips[1].id, to: ClipTransition(.crossfade, duration: time(1)))
+        #expect(AudioMixdown.crossfadeLoans(from: square.path, of: edge, fileEnd: time(4)).isEmpty)
+        #expect(AudioMixdown.crossfadeLoans(from: "Movies/other.mov", of: timeline, fileEnd: time(4)).isEmpty)
+    }
+
     private func pixel(_ image: CGImage, x: Double, y: Double) -> (r: Int, g: Int, b: Int)? {
         let column = Int(x.rounded(.down)), row = image.height - 1 - Int(y.rounded(.down))
         guard let data = image.dataProvider?.data, let bytes = CFDataGetBytePtr(data),

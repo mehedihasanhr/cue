@@ -138,8 +138,11 @@ extension EditorModel {
     func hideSensitiveInformation() {
         guard let review = sensitive.review else { return }
         let timeline = timeline
+        let picture = document.pictureTrack
+        let frame = recordedFrame ?? .zero
         let masks = review.items.filter(\.isChosen).flatMap { item in
-            item.finding.masks(in: timeline, padding: review.padding.rawValue, videoSize: videoSize, style: review.style)
+            item.finding.masks(in: timeline, padding: review.padding.rawValue, videoSize: videoSize, style: review.style,
+                               picture: picture, frame: frame)
         }
         sensitive.review = nil
         guard !masks.isEmpty else { return }
@@ -156,15 +159,19 @@ extension EditorModel {
         var review = SensitiveReview()
         review.state = .ready
         let timeline = timeline
+        // Where a resized window's picture sat, so the crop and the masks are measured
+        // against what was on screen at each sighting — see `PictureTrack`.
+        let picture = document.pictureTrack
+        let frame = recordedFrame ?? .zero
         for finding in findings {
-            guard finding.isShown(in: timeline), let range = finding.timelineRange(in: timeline) else {
+            guard finding.isShown(in: timeline, picture: picture, frame: frame), let range = finding.timelineRange(in: timeline) else {
                 review.notShown += 1
                 continue
             }
             let firstSeen = finding.sightings.lazy
                 .compactMap { timeline.timelineTime(atSource: CMTime(seconds: $0.time, preferredTimescale: 600_000)) }
                 .first ?? range.start
-            let hidden = finding.isHidden(by: timeline.blurs, in: timeline)
+            let hidden = finding.isHidden(by: timeline.blurs, in: timeline, picture: picture, frame: frame)
             review.items.append(SensitiveReview.Item(finding: finding, range: range, firstSeen: firstSeen,
                                                      isHidden: hidden, isChosen: !hidden))
         }

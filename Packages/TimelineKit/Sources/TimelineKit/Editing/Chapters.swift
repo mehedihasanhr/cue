@@ -163,21 +163,30 @@ public enum Chapters {
     // MARK: - Words
 
     /// The chapters as a video description lists them: `0:00 Intro`, one to a line.
+    ///
+    /// Each timestamp in its shortest form — `0:00`, `9:59`, `1:02:03` — and the first
+    /// always exactly `0:00`. YouTube's help asks for the first to be `00:00`, and reads
+    /// `0:00` the same; it is the start that switches the list on, and a `0:00:00` there
+    /// (which this once wrote whenever a chapter came after the hour, so the column lined
+    /// up) is the form reported as leaving a long video with no chapters. Hours are written
+    /// only on the chapters that start past one, as YouTube itself writes them.
     public static func text(_ chapters: [Chapter]) -> String {
-        let long = chapters.contains { $0.time.seconds >= 3_600 }
-        return chapters
-            .map { "\(stamp(Int($0.time.seconds.rounded(.down)), withHours: long)) \($0.title)" }
+        chapters.enumerated()
+            .map { index, chapter in
+                let stamp = index == 0 ? "0:00" : stamp(Int(chapter.time.seconds.rounded(.down)))
+                return "\(stamp) \(chapter.title)"
+            }
             .joined(separator: "\n")
     }
 
-    /// `0:00`, `1:23`, `12:05`, and `1:02:03` past the hour. `withHours` writes `0:01:23`
-    /// so a list that runs past an hour lines up.
-    public static func stamp(_ seconds: Int, withHours: Bool = false) -> String {
+    /// `0:00`, `1:23`, `12:05`, and `1:02:03` past the hour: the shortest form YouTube
+    /// reads, minutes unpadded below the hour and seconds always two digits.
+    public static func stamp(_ seconds: Int) -> String {
         let seconds = max(0, seconds)
         let hours = seconds / 3_600
         let minutes = (seconds / 60) % 60
         let rest = seconds % 60
-        if hours > 0 || withHours {
+        if hours > 0 {
             return String(format: "%d:%02d:%02d", hours, minutes, rest)
         }
         return String(format: "%d:%02d", minutes, rest)

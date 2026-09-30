@@ -37,6 +37,27 @@ struct ExportTargetTests {
         #expect(ExportQuality.allCases.first == .smaller, "first in the picker, where the smallest belongs")
     }
 
+    /// The per-pixel figures are bits already. Divided by eight, as they once were, Good,
+    /// Better and Best all landed on the 1 Mb/s floor at 1080p and looked the same.
+    @Test("The qualities work out to real, distinct bitrates at 1080p")
+    func qualityBitrates() {
+        let pixels = Int(hd.width * hd.height)
+        func mbps(_ quality: ExportQuality, _ rate: Int) -> Double {
+            Double(quality.bitrate(forPixels: pixels, frameRate: rate)) / 1_000_000
+        }
+        #expect((2.5...3.0).contains(mbps(.smaller, 60)), "\(mbps(.smaller, 60))")
+        #expect((6.0...6.5).contains(mbps(.good, 60)), "\(mbps(.good, 60))")
+        #expect((11.0...11.5).contains(mbps(.better, 60)), "\(mbps(.better, 60))")
+        #expect((18.5...19.0).contains(mbps(.best, 60)), "\(mbps(.best, 60))")
+        #expect((3.0...3.2).contains(mbps(.good, 30)), "half the frames, half the bits: \(mbps(.good, 30))")
+        // None of them is sitting on a floor at 1080p30, which is what the bug looked like.
+        for quality in ExportQuality.allCases {
+            #expect(quality.bitrate(forPixels: pixels, frameRate: 30) > 1_000_000, "\(quality)")
+        }
+        let rates = ExportQuality.allCases.map { $0.bitrate(forPixels: pixels, frameRate: 30) }
+        #expect(rates == rates.sorted() && Set(rates).count == rates.count, "each quality above the last")
+    }
+
     // MARK: - A size limit on a movie
 
     @Test("A limit lowers the bitrate until the file fits, sound and all")

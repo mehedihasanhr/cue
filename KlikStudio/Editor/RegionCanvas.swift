@@ -65,7 +65,7 @@ struct RegionCanvas: View {
 
             ForEach(model.blursAtPlayhead) { blur in
                 // Where the mask is now: a following one moves. See `BlurRegion.rect(at:)`.
-                let rect = geometry.view(blur: blur.rect(at: model.playhead))
+                let rect = geometry.view(blur: model.coveredRect(of: blur))
                 box(id: blur.id,
                     rect: rect,
                     kind: .blur,
@@ -245,7 +245,7 @@ struct RegionCanvas: View {
     /// Every other box showing now, in canvas points.
     private func otherBoxes(than id: UUID) -> [CGRect] {
         model.annotationsAtPlayhead.filter { $0.id != id }.map { geometry.view(annotation: $0.rect) }
-            + model.blursAtPlayhead.filter { $0.id != id }.map { geometry.view(blur: $0.rect(at: model.playhead)) }
+            + model.blursAtPlayhead.filter { $0.id != id }.map { geometry.view(blur: model.coveredRect(of: $0)) }
     }
 
     /// Whether a side's pill has room on a box this size. Corners always do.
@@ -790,7 +790,7 @@ struct RegionCanvas: View {
         if let gestureOrigin { return gestureOrigin }
         let rect: CGRect = switch kind {
         case .blur:
-            geometry.view(blur: model.timeline.blurs.first { $0.id == id }?.rect(at: model.playhead) ?? .zero)
+            geometry.view(blur: model.timeline.blurs.first { $0.id == id }.map(model.coveredRect(of:)) ?? .zero)
         case .annotation:
             geometry.view(annotation: model.timeline.annotations.first { $0.id == id }?.rect ?? .zero)
         }

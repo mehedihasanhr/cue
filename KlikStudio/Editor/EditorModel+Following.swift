@@ -51,9 +51,14 @@ extension EditorModel {
 
     /// Follows the selected mask's content from the playhead to both of its ends.
     func followSelectedMask() {
-        guard canFollowSelectedMask, let mask = selectedMask, let url = document.videoURL else { return }
+        guard canFollowSelectedMask, let selected = selectedMask, let url = document.videoURL else { return }
         let timeline = timeline
         let from = playhead
+        // The follower works in the recording's own frames, so a still mask — a fraction of
+        // a resized window's picture — is handed over where it covers the recording now.
+        var handed = selected
+        if !handed.follows { handed.rect = coveredRect(of: selected) }
+        let mask = handed
         let rate = 1 / frameDuration
         let job = following
 
@@ -92,7 +97,9 @@ extension EditorModel {
                                  with result: MaskFollower.Result) {
         guard let now = timeline.blurs.first(where: { $0.id == mask.id }) else { return }
         guard now.start == mask.start, now.duration == mask.duration,
-              now.rect(at: from) == result.rect, timeline.clips == followed.clips else {
+              now.recordingRect(at: from, source: followed.mediaTime(at: from).flatMap { $0.source == nil ? $0.time.seconds : nil },
+                                picture: document.pictureTrack, frame: recordedFrame ?? .zero) == result.rect,
+              timeline.clips == followed.clips else {
             report(EditorProblem("The mask or the footage under it changed while it was being followed. "
                                  + "Choose Follow Content again."))
             return
@@ -108,7 +115,8 @@ extension EditorModel {
     /// Makes the selected mask still again, where it is at the playhead.
     func stopFollowingSelectedMask() {
         guard let mask = selectedMask, mask.follows else { return }
-        apply(Commands.StopFollowing(id: mask.id, at: playhead))
+        apply(Commands.StopFollowing(id: mask.id, at: playhead,
+                                     picture: document.pictureTrack, frame: recordedFrame ?? .zero))
     }
 
     /// Where the selected mask's following gave up, on the timeline's clock.
@@ -132,7 +140,24 @@ extension EditorModel {
     /// Moves or resizes a mask by where it is on the picture now. A following mask takes
     /// its whole path along — see `BlurRegion.rect(showing:at:)`.
     func setMaskRect(_ id: UUID, shown: CGRect) {
-        apply(Commands.PlaceMask(id: id, shown: shown, at: playhead))
+        guard let mask = timeline.blurs.first(where: { $0.id == id }) else { return }
+        let stored = mask.shownRect(covering: shown, source: recordingSecondsAtPlayhead,
+                                    picture: document.pictureTrack, frame: recordedFrame ?? .zero)
+        apply(Commands.PlaceMask(id: id, shown: stored, at: playhead))
+    }
+
+    /// Where a mask covers the recording at the playhead, as a fraction of the whole frame
+    /// — what the canvas outlines. A still mask is stored as a fraction of a resized
+    /// window's picture and carried with it; see `BlurRegion.recordingRect`.
+    func coveredRect(of mask: BlurRegion) -> CGRect {
+        mask.recordingRect(at: playhead, source: recordingSecondsAtPlayhead,
+                           picture: document.pictureTrack, frame: recordedFrame ?? .zero)
+    }
+
+    /// The playhead's moment in the recording, or `nil` over an imported clip.
+    var recordingSecondsAtPlayhead: Double? {
+        guard let moment = timeline.mediaTime(at: playhead), moment.source == nil else { return nil }
+        return moment.time.seconds
     }
 
     var canSplitMask: Bool {

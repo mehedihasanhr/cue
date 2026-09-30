@@ -160,4 +160,23 @@ struct PictureCropTests {
                                  crop: CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5))
         #expect(abs(middle.x - 0.5) < 1e-6 && abs(middle.y - 0.5) < 1e-6)
     }
+
+    /// A still mask is a fraction of the picture, so the blur the renderer is handed moves
+    /// and shrinks with the window's content: over the whole frame before the resize, over
+    /// the top-left quarter after it. A following mask is left where its path puts it.
+    @Test func aStillMasksBlurIsCarriedWithThePicture() throws {
+        var timeline = timeline()
+        let rect = CGRect(x: 0.2, y: 0.2, width: 0.4, height: 0.4)
+        timeline.blurs = [BlurRegion(start: time(0), duration: time(10), rect: rect, style: .cover)]
+        let resized = builder(half, from: 5)
+        let before = try #require(resized.descriptor(for: timeline, at: time(2)).blurs.first)
+        #expect(before.rect == rect)
+        let after = try #require(resized.descriptor(for: timeline, at: time(6)).blurs.first)
+        #expect(abs(after.rect.minX - 0.1) < 1e-9 && abs(after.rect.width - 0.2) < 1e-9)
+        #expect(abs(after.rect.minY - 0.1) < 1e-9 && abs(after.rect.height - 0.2) < 1e-9)
+
+        timeline.blurs[0].path = MaskPath(keys: [MaskPath.Key(time: 0, offset: .zero),
+                                                 MaskPath.Key(time: 10, offset: .zero)])
+        #expect(resized.descriptor(for: timeline, at: time(6)).blurs.first?.rect == rect)
+    }
 }

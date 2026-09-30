@@ -152,6 +152,29 @@ struct CameraLayoutRenderTests {
         #expect(abs(pane.midY - scene.videoFrame.midY) < 0.01)
     }
 
+    /// The same for both handsets, wide and stacked: inside the frame, clear of the camera,
+    /// and the picture still in the middle of the handset's screen.
+    @Test("Either handset stays in its half of a split, wide or tall", arguments: [
+        WindowChrome.Kind.iPhone, .iPad,
+    ])
+    func sideBySideFitsEitherDevice(kind: WindowChrome.Kind) throws {
+        let wide = timeline(.sideBySide) { $0.style.chrome = WindowChrome(kind: kind) }
+        var tall = wide
+        tall.style.aspect = .vertical9x16
+        for timeline in [wide, tall] {
+            let scene = builder().descriptor(for: timeline, at: time(middle))
+            // Both in output pixels with Core Image's bottom-left origin.
+            let camera = try #require(scene.webcam).pixelRect(in: scene.outputSize)
+            let device = try #require(scene.deviceGeometry)
+            let output = CGRect(origin: .zero, size: scene.outputSize)
+            let size = scene.outputSize
+            #expect(output.insetBy(dx: -0.01, dy: -0.01).contains(device.body), "\(kind) inside the frame at \(size)")
+            #expect(!device.body.insetBy(dx: 1, dy: 1).intersects(camera), "\(kind) clear of the camera at \(size)")
+            #expect(abs(device.screen.midX - scene.videoFrame.midX) < 0.5)
+            #expect(abs(device.screen.midY - scene.videoFrame.midY) < 0.5)
+        }
+    }
+
     @Test("Stacked, a window's bar above the screen stays clear of a camera above it")
     func sideBySideTallFitsTheBar() throws {
         let edit = timeline(.sideBySide) {

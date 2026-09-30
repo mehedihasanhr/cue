@@ -1,3 +1,4 @@
+import AppKit
 import AVFoundation
 import Foundation
 import Observation
@@ -245,6 +246,7 @@ public final class RecordingSession {
             Self.log.error("Couldn't listen to the chosen apps: \(String(describing: error), privacy: .public)")
             appAudio = nil
         }
+        watchAppLaunches()
         for microphone in microphones { microphone.start() }
         // After the screen, deliberately. The camera's writer takes its time zero from the
         // clock the screen's first frame starts, so a camera that opened first would simply
@@ -297,19 +299,22 @@ public final class RecordingSession {
                                           running: shareable.applications.map(\.bundleIdentifier),
                                           ownBundleIDs: content.excludedBundleIDs)
         if route == .nothingRunning {
-            Self.log.notice("None of the apps chosen for system audio is running; recording without it")
+            Self.log.notice("None of the apps chosen for system audio is running; listening for one to launch")
         }
-        if route.recordsAudio {
+        if route.recordsAudio || route.listensForLaunches {
             let lane = try audioLane(kind: .systemAudio,
                                      file: "system-audio.m4a",
                                      name: "System Audio",
                                      deviceID: nil,
                                      package: package)
             lanes.append(lane)
-            if case .applications(let bundleIDs) = route {
-                appAudio = AppAudioRecorder(filter: try content.audioFilter(including: bundleIDs,
-                                                                            near: configuration.target,
-                                                                            in: shareable),
+            if route.listensForLaunches {
+                // With no filter when nothing chosen is running yet: it waits for a launch.
+                var filter: SCContentFilter?
+                if case .applications(let bundleIDs) = route {
+                    filter = try content.audioFilter(including: bundleIDs, near: configuration.target, in: shareable)
+                }
+                appAudio = AppAudioRecorder(filter: filter,
                                             configuration: RecordingConfiguration.audioOnlyStreamConfiguration(),
                                             writer: lane.writer)
             } else {
@@ -893,6 +898,10 @@ public final class RecordingSession {
         // The same bargain for a device: it is a capture device like the camera, and one
         // left open keeps its indicator lit and its screen streaming to nobody.
         device?.stop()
+        if let appLaunchObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(appLaunchObserver)
+            self.appLaunchObserver = nil
+        }
         await appAudio?.stop()
         await screen?.stop()
         // The result comes back out of the closure rather than being assigned inside
@@ -1138,6 +1147,80 @@ public final class RecordingSession {
     private func watchDesktopIcons(_ configuration: RecordingConfiguration) {
         guard configuration.hidesDesktopIcons, configuration.target.displayID != nil else { return }
         desktopIcons = DesktopIconsWatcher { [weak self] in await self?.refreshDesktopFilter() }
+    }
+
+    // MARK: - Apps launched during a take
+
+    /// The observer for app launches, while a take that hears only some apps is running.
+    private var appLaunchObserver: NSObjectProtocol?
+
+    /// Listens for the chosen apps being opened during the take.
+    ///
+    /// ScreenCaptureKit hears the apps a filter names, and a filter can only name apps that
+    /// are running when it is made — so an app opened after the take started was never
+    /// heard. A launch of a chosen app rebuilds the audio stream's filter from what is
+    /// running now (`SystemAudioRoute.launchChangesFilter`), which also catches an app
+    /// quit and reopened: the filter held the old process.
+    private func watchAppLaunches() {
+        // Only a take with an app audio stream, which is only made when the route listens
+        // for launches.
+        guard appAudio != nil, appLaunchObserver == nil else { return }
+        appLaunchObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            let bundleID = app?.bundleIdentifier
+            MainActor.assumeIsolated {
+                guard let self, let configuration = self.configuration,
+                      SystemAudioRoute.launchChangesFilter(launched: bundleID,
+                                                           chosen: configuration.systemAudioApps,
+                                                           ownBundleIDs: self.content.excludedBundleIDs)
+                else { return }
+                Task { await self.relistenToChosenApps(after: bundleID) }
+            }
+        }
+    }
+
+    /// Rebuilds the audio stream's filter once the launched app shows up in
+    /// ScreenCaptureKit's list, which lags the launch notification by a moment. Asked a
+    /// few times, a second apart; an app that never shows up is logged and left out.
+    private func relistenToChosenApps(after bundleID: String?) async {
+        for attempt in 0..<5 {
+            if attempt > 0 { try? await Task.sleep(for: .seconds(1)) }
+            guard state.isTaking, appAudio != nil, let configuration else { return }
+            switch await chosenAppsFilter(for: configuration, waitingFor: bundleID) {
+            case .notYet:
+                continue
+            case .none:
+                return
+            case .some(let filter, let bundleIDs):
+                await appAudio?.listen(to: filter)
+                Self.log.notice("Now hearing \(bundleIDs.joined(separator: ", "), privacy: .public)")
+                return
+            }
+        }
+        Self.log.notice("\(bundleID ?? "?", privacy: .public) launched but never became capturable")
+    }
+
+    private enum ChosenAppsFilter {
+        case notYet
+        case none
+        case some(SCContentFilter, [String])
+    }
+
+    /// The filter that hears the chosen apps running now, once `bundleID` is among them.
+    nonisolated private func chosenAppsFilter(for configuration: RecordingConfiguration,
+                                              waitingFor bundleID: String?) async -> sending ChosenAppsFilter {
+        guard let shareable = try? await content.content() else { return .notYet }
+        let running = shareable.applications.map(\.bundleIdentifier)
+        if let bundleID, !running.contains(bundleID) { return .notYet }
+        let route = SystemAudioRoute.plan(systemAudio: configuration.systemAudio,
+                                          chosen: configuration.systemAudioApps,
+                                          running: running, ownBundleIDs: content.excludedBundleIDs)
+        guard case .applications(let bundleIDs) = route,
+              let filter = try? content.audioFilter(including: bundleIDs, near: configuration.target, in: shareable)
+        else { return .none }
+        return .some(filter, bundleIDs)
     }
 
     private func refreshDesktopFilter() async {

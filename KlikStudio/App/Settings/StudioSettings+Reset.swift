@@ -3,9 +3,15 @@ import Foundation
 /// Reset All Settings, from Settings › Storage.
 extension StudioSettings {
     /// The key families this app's settings are stored under. Anything else in the app's
-    /// defaults — the library's bookmark, which takes offered at launch — is state, not a
-    /// setting, and a reset must not touch it.
-    private static let settingPrefixes = ["recording.", "editor.", "recorder.", "export.", "app.", "captions.", "audio."]
+    /// defaults — the library's bookmark, which takes offered at launch, the Settings
+    /// pane last open (`settings.section`) — is state, not a setting, and a reset must not
+    /// touch it.
+    ///
+    /// `preview.` is the preview's safe-zone guides (`SafeZonePreference`): a preference
+    /// like any other, and once missed here, so a reset left the guides showing. A new
+    /// family of keys belongs in this list the day it is added.
+    private static let settingPrefixes = ["recording.", "editor.", "recorder.", "export.", "app.", "captions.",
+                                          "audio.", "preview."]
 
     /// Keys inside those families that are the user's *content* or a window's layout
     /// rather than a preference: the speaker notes someone typed, how wide they dragged
@@ -76,6 +82,7 @@ extension StudioSettings {
 
         app.load()
         newProjects.load()
+        SafeZonePreference.shared.load()
     }
 
     private static func forgetStoredSettings(in defaults: UserDefaults) {
