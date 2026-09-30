@@ -646,7 +646,7 @@ private struct WindowPickerPanel: View {
             }
             Spacer(minLength: 16)
 
-            if selected != nil { sizeMenu }
+            if selected != nil, WindowResizer.isAvailable { sizeMenu }
 
             ActionChip(title: "Record Window", key: "↩", isPrimary: true, action: start)
                 .disabled(selected == nil)

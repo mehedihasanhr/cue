@@ -312,6 +312,8 @@ The sheet opened in the running app (a 460 × 336 window). It could not be photo
 
 ## Known and not yet fixed
 
+- **Resizing a window before recording is hidden while the app is sandboxed.** Klik Studio (and Klik) ship with the App Sandbox, which does not let an app drive another app's windows through Accessibility even with the grant. The presets and the resize code are built and the fitting logic is tested (`WindowSizingTests`); the menu appears only in a build without the sandbox. Offering it for real needs either dropping the sandbox or a helper allowed to do it.
+
 | Item | Notes |
 |---|---|
 | RenderKit's video-reading tests could stall, even run alone — **fixed** | Stuck in `copyNextSampleBuffer`: the export reader held decoded frames in the decoder's own few buffers (the frame showing, the next one, and any still queued for the GPU), so the decoder ran out and waited for ever. The reader now copies each frame into a buffer of its own. Test: `framesHeldDoNotStallTheDecoder`. A real export could hang the same way |

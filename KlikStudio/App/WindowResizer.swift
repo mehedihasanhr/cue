@@ -16,6 +16,16 @@ import RecordKit
 /// app's windows and setting one's position and size.
 @MainActor
 enum WindowResizer {
+    /// Whether another app's window can be resized from here at all.
+    ///
+    /// Not while Klik Studio is sandboxed, as it ships: the App Sandbox does not let an app
+    /// drive another app's windows through Accessibility, grant or no grant, so the menu
+    /// would only ever end in "couldn't". The code is kept for a build that isn't sandboxed
+    /// — or for doing the resize from a helper that is allowed to.
+    static var isAvailable: Bool {
+        ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] == nil
+    }
+
     enum Outcome: Equatable {
         /// The window is the size asked for — in points, and the pixels it will record at.
         case resized(points: CGSize, pixels: CGSize, isShrunk: Bool)
