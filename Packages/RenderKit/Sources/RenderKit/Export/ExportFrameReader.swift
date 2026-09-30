@@ -230,15 +230,27 @@ final class ExportFrameReader {
         var sample: CMSampleBuffer?
     }
 
+    /// Readers given up on while a pull was still waiting inside them. Never cancelled and
+    /// never freed: cancelling a reader from one thread while another waits in its
+    /// `copyNextSampleBuffer` crashes inside AVFoundation, and so does freeing it. Kept
+    /// here instead, one per stall — a small leak, against a crash or an export that never
+    /// ends.
+    private static let abandoned = Abandoned()
+
+    private final class Abandoned: @unchecked Sendable {
+        private let lock = NSLock()
+        private var kept: [AnyObject] = []
+        func keep(_ objects: [AnyObject]) { lock.withLock { kept.append(contentsOf: objects) } }
+    }
+
     /// The next sample, waited for no longer than `stallLimit`.
     ///
-    /// A stalled decoder is cancelled, which is what brings the waiting
-    /// `copyNextSampleBuffer` back; the caller then opens a fresh reader.
+    /// A stalled reader is set aside, still waiting, and the caller opens a fresh one.
     private func pull() -> Pull {
         guard let reader, let output else { return .end }
         if simulatedStalls > 0 {
             simulatedStalls -= 1
-            reader.cancelReading()
+            abandonReader()
             return .stalled
         }
         let box = SampleBox()
@@ -248,13 +260,19 @@ final class ExportFrameReader {
             done.signal()
         }
         guard done.wait(timeout: .now() + Self.stallLimit) == .success else {
-            reader.cancelReading()
-            // Given a moment to let go after the cancel. If it doesn't, it is left behind
-            // on its own queue; the next reader gets a queue of its own.
-            _ = done.wait(timeout: .now() + .seconds(2))
+            abandonReader()
             return .stalled
         }
         return box.sample.map(Pull.sample) ?? .end
+    }
+
+    /// Lets go of the current reader without cancelling it — see `abandoned`.
+    private func abandonReader() {
+        if let reader, let output {
+            Self.abandoned.keep([reader, output])
+        }
+        reader = nil
+        output = nil
     }
 
     /// The next decodable frame in the file, and when it starts.
