@@ -48,6 +48,16 @@ final class ExportFrameReader {
     /// waits for ever is worse than one that fails.
     static let stallLimit: DispatchTimeInterval = .seconds(20)
 
+    /// How long a slow decoder is waited for in all before it is replaced.
+    ///
+    /// Measured: when the Mac's video hardware is swamped — several exports and test runs
+    /// in several processes at once — every decoder on it pauses together, for up to a
+    /// couple of minutes, and then carries on. Most frames waited for past `stallLimit`
+    /// arrived 15 to 40 seconds later. Replacing the decoder at the first pause made it
+    /// worse: another decoder joined the queue for the same hardware. So the same frame
+    /// is waited for, in `stallLimit` steps, until this much has gone by.
+    static let patience: DispatchTimeInterval = .seconds(120)
+
     /// Where the current reader was asked to begin, and the start of the last frame it
     /// handed over — what a reader opened again after a stall carries on from.
     private var openedFrom: CMTime = .zero
@@ -272,13 +282,32 @@ final class ExportFrameReader {
             }
             done.signal()
         }
-        guard done.wait(timeout: .now() + Self.stallLimit) == .success else {
+        let began = Date()
+        var arrived = done.wait(timeout: .now() + Self.stallLimit) == .success
+        while !arrived, Date().timeIntervalSince(began) < Self.seconds(Self.patience) {
+            Self.log.notice("The video decoder is slow: nothing for \(Int(Date().timeIntervalSince(began)), privacy: .public) s; still waiting")
+            arrived = done.wait(timeout: .now() + Self.stallLimit) == .success
+        }
+        if arrived, Date().timeIntervalSince(began) > Self.seconds(Self.stallLimit) {
+            Self.log.notice("The video decoder carried on after \(Date().timeIntervalSince(began), privacy: .public) s")
+        }
+        guard arrived else {
             lock.withLock { box.abandonedAt = Date() }
-            Self.log.error("The video decoder gave nothing for \(String(describing: Self.stallLimit), privacy: .public); reading on with a fresh reader")
+            Self.log.error("The video decoder gave nothing for \(Int(Date().timeIntervalSince(began)), privacy: .public) s; reading on with a fresh reader")
             abandonReader()
             return .stalled
         }
         return box.sample.map(Pull.sample) ?? .end
+    }
+
+    private static func seconds(_ interval: DispatchTimeInterval) -> TimeInterval {
+        switch interval {
+        case .seconds(let n): TimeInterval(n)
+        case .milliseconds(let n): TimeInterval(n) / 1_000
+        case .microseconds(let n): TimeInterval(n) / 1_000_000
+        case .nanoseconds(let n): TimeInterval(n) / 1_000_000_000
+        default: .infinity
+        }
     }
 
     /// Lets go of the current reader without cancelling it — see `abandoned`.
