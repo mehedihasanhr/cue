@@ -303,6 +303,13 @@ The sheet opened in the running app (a 460 × 336 window). It could not be photo
 | A device frame round half of a split camera layout reached into the other half — **fixed** | Fixed in Bug hunt 2 above (the split fits the picture as it is framed). Checked again for both handsets, wide and 9 : 16: inside the frame, clear of the camera, the picture centred on the screen. Test: `sideBySideFitsEitherDevice` |
 | The feature list and roadmap still called 3D tilt, moving backgrounds and several clips in one project missing | All three are built; the rows now say what there is and where |
 
+## Recording quality and the export decoder (2026-09-30)
+
+| Problem | Cause and fix |
+|---|---|
+| Recordings were written at an eighth of the intended bitrate: a 47 s take of a 3024 × 1722 Retina screen at 60 fps was 18 MB, about 3 Mb/s, and the editor's 2–3× zooms enlarged the blur round every letter | `CaptureQuality.bitrate` divided a figure already in bits by 8, and assumed 60 fps. It now gives bits per second at the take's real frame rate: about 25 Mb/s at Good on that screen (about 190 MB a minute). Test: `CaptureBitrateTests` |
+| Export and test runs could stop for good inside `copyNextSampleBuffer` | Measured with logging: the waits are not dead decoders. With several processes exporting at once, every decoder on the Mac pauses until another export lets go of the video hardware, and then all carry on together. Solo runs are clean (6 of 6); three full RenderKit runs at once hang in some. The reader now waits in 20 s steps for up to two minutes, then sets the reader aside (never cancelled from another thread, which crashes) and opens a fresh one; the set-aside reader is cancelled by its own pull when it returns. A second stall is an error, never a hang. Tests: `carriesOnAfterTheDecoderStalls`, `secondStallInARowIsAnError` |
+
 ## Known and not yet fixed
 
 | Item | Notes |

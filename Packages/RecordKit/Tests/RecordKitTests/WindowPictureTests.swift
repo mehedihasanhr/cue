@@ -37,3 +37,26 @@ struct WindowPictureTests {
         #expect(WindowPicture.size(of: frame) == nil)
     }
 }
+
+/// How many bits a second a recording is written at.
+struct CaptureBitrateTests {
+    /// A Retina MacBook screen at 60 fps. It used to come out at about 3 Mb/s — the
+    /// formula divided a figure already in bits by eight — and a real 47 s take of this
+    /// screen was 18 MB. Good is now about 25 Mb/s.
+    @Test func retinaScreenAtSixtyIsRecordedAtTheIntendedRate() {
+        let pixels = 3024 * 1722
+        let good = CaptureQuality.good.bitrate(forPixels: pixels, frameRate: 60)
+        #expect(good > 24_000_000 && good < 26_000_000)
+        #expect(CaptureQuality.better.bitrate(forPixels: pixels, frameRate: 60) > good)
+        #expect(CaptureQuality.best.bitrate(forPixels: pixels, frameRate: 60) > CaptureQuality.better.bitrate(forPixels: pixels, frameRate: 60))
+    }
+
+    /// Half the frames, half the bits; and never below the floor nor above the ceiling.
+    @Test func followsTheFrameRateWithinItsLimits() {
+        let pixels = 1920 * 1080
+        #expect(CaptureQuality.good.bitrate(forPixels: pixels, frameRate: 30) * 2
+                == CaptureQuality.good.bitrate(forPixels: pixels, frameRate: 60))
+        #expect(CaptureQuality.good.bitrate(forPixels: 100, frameRate: 30) == 2_000_000)
+        #expect(CaptureQuality.best.bitrate(forPixels: 7680 * 4320, frameRate: 120) == 120_000_000)
+    }
+}

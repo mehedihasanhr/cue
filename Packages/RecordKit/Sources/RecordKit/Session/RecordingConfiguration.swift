@@ -52,13 +52,19 @@ public enum CaptureQuality: String, Sendable, Codable, CaseIterable {
 
     /// Bits per second for a given pixel count, tuned for screen content: large flat
     /// areas, hard edges, occasional full-frame scrolls.
-    public func bitrate(forPixels pixels: Int) -> Int {
+    ///
+    /// `perPixel` is bits per pixel per frame, so pixels × it × frames a second is already
+    /// bits a second. It used to be divided by eight on top, as if it were bytes: a
+    /// Retina screen at 60 fps was recorded at about 3 Mb/s rather than 25, and the
+    /// editor's zooms — which enlarge the recording two and three times — enlarged the
+    /// blur round every letter with it.
+    public func bitrate(forPixels pixels: Int, frameRate: Int = 60) -> Int {
         let perPixel: Double = switch self {
         case .good: 0.08
         case .better: 0.13
         case .best: 0.2
         }
-        let raw = Double(pixels) * perPixel * 60 / 8
+        let raw = Double(pixels) * perPixel * Double(max(1, frameRate))
         return max(2_000_000, min(Int(raw), 120_000_000))
     }
 }
