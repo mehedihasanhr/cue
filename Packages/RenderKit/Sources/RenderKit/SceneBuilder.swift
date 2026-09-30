@@ -243,7 +243,9 @@ public struct SceneBuilder: Sendable {
 
     func pictureCrop(at sourceTime: CMTime) -> CGRect {
         guard !picture.isEmpty, videoSize.width > 0, videoSize.height > 0,
-              let points = picture.picture(at: sourceTime.seconds) else { return Self.unitRect }
+              let points = picture.picture(at: sourceTime.seconds),
+              // Filling the frame give or take rounding is filling it — see `fillsFrame`.
+              !PictureTrack.fillsFrame(points, frame: pointFrame) else { return Self.unitRect }
         let pixels = CGRect(x: points.minX * displayScale, y: points.minY * displayScale,
                             width: points.width * displayScale, height: points.height * displayScale)
         // A hundredth of a pixel's grace, so a corner that is at zero give or take the
@@ -315,8 +317,10 @@ public struct SceneBuilder: Sendable {
     /// - Parameter held: a zoom to frame as if it were fully in right now, whatever the
     ///   time says — the shot it *would* be holding. What a glide asks of each of its two
     ///   ends; see `ZoomGlide`. Left `nil`, the strongest zoom at this moment decides.
+    /// - Parameter following: how much of the pointer's pull on the shot to allow, 0…1 —
+    ///   faded across a glide so its ends do not slide about under the move.
     func framedCamera(for timeline: Timeline, at time: CMTime, cursor track: CursorTrack?, crop: CGRect,
-                      holding held: ZoomRegion? = nil) -> (zoom: Double, center: CGPoint) {
+                      holding held: ZoomRegion? = nil, following: Double = 1) -> (zoom: Double, center: CGPoint) {
         // The level the whole video is held at: 1 for every project that does not ask,
         // which leaves every line below doing exactly what it always did.
         let base = timeline.camera.sanitised.wholeVideoZoom
@@ -326,13 +330,31 @@ public struct SceneBuilder: Sendable {
         // the path is the shot that zoom would be holding at this very moment, pointer
         // following included, so the path joins what came before and what comes after
         // without a step. `ZoomGlide` is the rule; this is only the blend.
+        //
+        // The pointer's pull on each end fades across the move: in full on the shot being
+        // left as the glide sets off, in full on the shot being arrived at as it lands, and
+        // weak on both in between. Pulled in full throughout, the ends slid about under the
+        // move while the hand crossed the screen towards the next thing, and the pan
+        // stalled and lurched on its way — measured, a step twice its neighbours' and then
+        // a near stop. Faded, the move is one clean eased travel that still joins the
+        // following camera exactly at either end, and each end is still worked out at this
+        // moment — so an excerpt that starts mid-glide shows the same frames the whole
+        // video does. The pointer is kept in shot on the way by the clamp every shot ends
+        // with.
         if held == nil, let glide = timeline.zoomGlide(at: time) {
-            let leaving = framedCamera(for: timeline, at: time, cursor: track, crop: crop, holding: glide.from)
-            let arriving = framedCamera(for: timeline, at: time, cursor: track, crop: crop, holding: glide.to)
             let progress = glide.progress(at: time)
-            let center = CGPoint(x: leaving.center.x + (arriving.center.x - leaving.center.x) * progress,
-                                 y: leaving.center.y + (arriving.center.y - leaving.center.y) * progress)
-            return settled(center, scale: glide.scale(at: time) * base, timeline: timeline,
+            let leaving = framedCamera(for: timeline, at: time, cursor: track, crop: crop, holding: glide.from,
+                                       following: 1 - progress)
+            let arriving = framedCamera(for: timeline, at: time, cursor: track, crop: crop, holding: glide.to,
+                                        following: progress)
+            let scale = glide.scale(at: time) * base
+            // Straight from one shot to the other — see `ZoomFraming.dolly`: between two
+            // zooms of different depth one point holds still while the picture grows or
+            // shrinks round it; between two of the same depth it is a pan.
+            let center = ZoomFraming.dolly(from: (glide.from.scale * base, leaving.center),
+                                           to: (glide.to.scale * base, arriving.center),
+                                           atScale: scale, progress: progress)
+            return settled(center, scale: scale, timeline: timeline,
                            at: time, cursor: track, crop: crop)
         }
 
@@ -357,11 +379,16 @@ public struct SceneBuilder: Sendable {
         // Inside a video held zoomed in, a zoom goes further in from there rather than
         // starting again from the whole picture.
         let scale = best.scale * base
+        // Where this zoom is going: its own depth, all the way in.
+        let target = best.region.scale * base
+        // How far it has got there, 0 at the start of its ramp in (and the end of its ramp
+        // out) and 1 while it holds. What lets the pointer steer only once it has arrived.
+        let arrived = abs(target - base) > 0.000_1 ? min(1, max(0, (scale - base) / (target - base))) : 1
 
         // Where this zoom was aimed, and where the camera stays unless the pointer makes
-        // it move.
+        // it move — worked out for the shot it is going to, at its full depth.
         var center = best.region.center
-        let half = ZoomFraming.halfSide(forScale: scale)
+        let half = ZoomFraming.halfSide(forScale: target)
         let override = timeline.cursorOverride(at: time)
 
         // Following the pointer is a *dead zone*, not a leash.
@@ -369,27 +396,26 @@ public struct SceneBuilder: Sendable {
         // It used to be a leash: the centre was blended straight onto the pointer's
         // averaged position, so the picture slid continuously for every movement of the
         // hand — including all the movement that happens *inside* the shot, which is most
-        // of it. Clicking three things inside one zoomed area produced three slides to
-        // frame things that were already framed, and the limit below, which exists exactly
-        // to stop that, never got a chance to bind because the centre was already sitting
-        // on the pointer.
+        // of it. So the camera holds the shot it was given and moves only when the pointer
+        // would otherwise leave it, and then only by as much as it has to. Work inside the
+        // shot costs no movement at all; walking out of it brings the camera along.
         //
-        // So the camera holds the shot it was given and moves only when the pointer would
-        // otherwise leave it, and then only by as much as it has to. Work inside the shot
-        // costs no movement at all; walking out of it brings the camera along.
+        // And only once the zoom has arrived. It used to steer from the first frame of the
+        // ramp, while the shot was still the whole picture shrinking towards the zoom's:
+        // every movement of the hand in those frames pushed the camera sideways, and the
+        // zoom arrived by way of a wobble. Now the pointer's claim grows with `arrived`, so
+        // the camera goes straight in and takes up the pointer as it lands — and lets go of
+        // it the same way on the way out.
         //
         // A pointer nobody can see has no claim on the framing: keeping a hidden cursor in
-        // shot would drag the camera for something the viewer is not being shown, which is
-        // the opposite of why the pointer was hidden. Faded with the region rather than
-        // switched off at its edge, so the camera does not lurch as the pointer goes.
-        //
-        // Only while pushed in. Pulled back, the whole recording is in shot by definition,
-        // so there is nothing for the pointer to leave and no reason for the picture to
-        // slide about after it.
-        if scale > 1, best.region.followsCursor, camera.follow > 0, timeline.cursor.isVisible,
+        // shot would drag the camera for something the viewer is not being shown. Faded
+        // with the region rather than switched off at its edge, so the camera does not
+        // lurch as the pointer goes. Only while pushed in: pulled back, the whole
+        // recording is in shot and there is nothing for the pointer to leave.
+        if target > 1, best.region.followsCursor, camera.follow > 0, timeline.cursor.isVisible,
            override.hiding < 1, let track, !track.isEmpty,
            let sourceTime = timeline.sourceTime(at: time) {
-            let claim = (1 - override.hiding) * camera.follow
+            let claim = (1 - override.hiding) * camera.follow * arrived * min(1, max(0, following))
 
             // The dead zone itself, measured on the *averaged* pointer: a twitch of the
             // hand at the boundary would otherwise nudge the picture, and `steadiness` is
@@ -400,32 +426,31 @@ public struct SceneBuilder: Sendable {
             }
 
             // And the same limit on the pointer as it is actually *drawn*, which is what
-            // makes `safeArea` mean what it says: measured on `pointerPoint` — the same
-            // point `cursorLayer` uses, held and smoothed the same way — so the frame
-            // cannot be right about a cursor that is somewhere else.
-            //
-            // Both clamps, not one. The averaged one is the calmer of the two and leads on
-            // the way back, so the camera does not snap home the instant a fast pointer
-            // turns around; this one keeps the comfortable framing honest.
+            // makes `safeArea` mean what it says — the same point `cursorLayer` uses.
+            // Both clamps, not one: the averaged one is the calmer and leads on the way
+            // back; this one keeps the comfortable framing honest.
             if let live = drawnPointer(timeline, at: time, sourceTime: sourceTime,
                                        track: track, override: override, crop: crop) {
                 center = nudged(center, toKeep: live, within: half * camera.safeArea, by: claim)
             }
         }
+        // The shot it is going to, kept on the picture at its own depth.
+        let aim = ZoomFraming.cameraCenter(center, scale: target)
 
-        // A zoom arriving inside a video held zoomed in starts from where the held camera
-        // was looking, not from the middle: at the whole picture the centre did not matter
-        // and a ramp could begin anywhere, but at 1.5× it is a shot the viewer is watching,
-        // and it must not jump. Carried over the ramp by how far in the zoom has got, so
-        // the shot is the held one as the zoom begins and the zoom's own once it is in.
-        if base > 1, held == nil, best.region.scale != 1 {
-            let arrived = min(1, max(0, (best.scale - 1) / (best.region.scale - 1)))
-            if arrived < 1 {
-                let from = heldShot(timeline, at: time, cursor: track, crop: crop, scale: scale)
-                center = CGPoint(x: from.x + (center.x - from.x) * arrived,
-                                 y: from.y + (center.y - from.y) * arrived)
-            }
+        // Pulled back below 1× the whole recording is in shot, and where the camera looks
+        // is only where the shrunken picture sits: straight to the aim.
+        guard scale >= 1, target >= 1 else {
+            return settled(aim, scale: scale, timeline: timeline, at: time, cursor: track, crop: crop)
         }
+
+        // From the shot before the zoom — the whole picture, or the held camera's inside a
+        // video held zoomed in — straight to this one: see `ZoomFraming.dolly`.
+        let before = base > 1
+            ? (scale: base, center: ZoomFraming.cameraCenter(heldShot(timeline, at: time, cursor: track,
+                                                                      crop: crop, scale: base),
+                                                             scale: base))
+            : (scale: 1.0, center: CGPoint(x: 0.5, y: 0.5))
+        center = ZoomFraming.dolly(from: before, to: (target, aim), atScale: scale, progress: arrived)
 
         return settled(center, scale: scale, timeline: timeline, at: time, cursor: track, crop: crop)
     }
@@ -541,6 +566,9 @@ public struct SceneBuilder: Sendable {
            let live = pointerPoint(timeline, at: time, sourceTime: sourceTime,
                                    track: track, override: override)
                .map({ normalisedClamped($0, crop: crop) }) {
+            // In full even on the way in. It binds only when the pointer would otherwise be
+            // cut off — a pointer inside the shot costs the straight move nothing — and a
+            // move bent for a frame is a better fault than a pointer that vanishes.
             center = nudged(center, toKeep: live, within: half * 0.98, by: 1 - override.hiding)
         }
 

@@ -58,9 +58,9 @@ public struct ZoomGlide: Equatable, Sendable {
     /// How far along the move the camera is at `time`, eased.
     ///
     /// Eased with the *arriving* zoom's curve, because arriving is what the eye judges.
-    /// A spring overshoots by a few per cent, and that overshoot is deliberately left in
-    /// the centre's path — it is the same settle a zoom arriving from the whole picture
-    /// has — while `scale(at:)` clamps it out of the magnification.
+    /// The curve never passes 1, so the centre never swings past the next shot and back —
+    /// which it used to, when the spring overshot, as a sideways wobble before each glide
+    /// settled.
     public func progress(at time: CMTime) -> Double {
         let moving = (end - moveStart).seconds
         guard moving > 0 else { return time < end ? 0 : 1 }

@@ -30,7 +30,7 @@ public extension TimelineRegion {
 public enum Easing: String, Codable, Sendable, CaseIterable {
     case linear
     /// The default: a spring, because a zoom that arrives without settling reads as a
-    /// jump cut, however long it takes.
+    /// jump cut, however long it takes. Critically damped — see `apply(_:)`.
     case spring
     case easeInOut
 
@@ -42,13 +42,45 @@ public enum Easing: String, Codable, Sendable, CaseIterable {
         case .easeInOut:
             return t < 0.5 ? 2 * t * t : 1 - pow(-2 * t + 2, 2) / 2
         case .spring:
-            // A critically-damped-looking curve with a touch of overshoot, evaluated
-            // rather than simulated so scrubbing to a time gives the same answer as
-            // playing to it.
-            let overshoot = 1.70158 * 0.6
-            let shifted = t - 1
-            return 1 + (overshoot + 1) * pow(shifted, 3) + overshoot * pow(shifted, 2)
+            // A critically damped spring, in closed form — x(t) = 1 − (1 + ωt)e^(−ωt) —
+            // stretched so it arrives exactly at t = 1. Evaluated rather than simulated,
+            // so scrubbing to a time gives the same answer as playing to it.
+            //
+            // It used to be an ease-out with overshoot wearing this name. That left at
+            // about four times its average speed, so a zoom snapped in; went some ten per
+            // cent past where it was going and came back, which the camera's centre
+            // followed as a sideways wobble; and, played backwards for a zoom out, landed
+            // at full speed. A critically damped spring starts from rest, never passes its
+            // target, and settles softly. The bounce survives where a bounce is wanted:
+            // `Easing.overshoot(_:)`, for an annotation's pop.
+            let omega = Self.springStiffness
+            let raw = 1 - (1 + omega * t) * exp(-omega * t)
+            let whole = 1 - (1 + omega) * exp(-omega)
+            return min(1, raw / whole)
         }
+    }
+
+    /// How quickly the spring settles: ω in `apply(_:)`. At 6 it is at its fastest a
+    /// sixth of the way through and has done 98 % of its travel by the end.
+    static let springStiffness = 6.0
+
+    /// The curve a region *leaves* by, as time runs on from its held part to its end.
+    ///
+    /// The arriving curve played backwards would leave slowly and land at full speed,
+    /// which is a drop rather than a move; mirrored, it leaves as it arrived — from rest,
+    /// quickly into its stride — and settles softly at the other end. Symmetric curves are
+    /// their own mirror, so only the spring differs.
+    public func applyLeaving(_ progress: Double) -> Double {
+        1 - apply(1 - min(1, max(0, progress)))
+    }
+
+    /// A curve that goes a little past 1 and comes back: a pop's bounce. Not a zoom
+    /// curve — a camera that overshoots is a camera that wobbles.
+    public static func overshoot(_ t: Double) -> Double {
+        let t = min(1, max(0, t))
+        let overshoot = 1.70158 * 0.6
+        let shifted = t - 1
+        return 1 + (overshoot + 1) * pow(shifted, 3) + overshoot * pow(shifted, 2)
     }
 }
 
@@ -219,7 +251,9 @@ public struct ZoomRegion: TimelineRegion {
     /// Whether this zoom pulls back rather than pushing in.
     public var zoomsOut: Bool { scale < 1 }
     public static let defaultEasing = Easing.spring
-    public static let defaultTransition = CMTime(value: 1, timescale: 2)
+    /// Medium zoom speed: long enough to be a camera move rather than a cut. It was half a
+    /// second, which with the old overshooting curve made a zoom snap in.
+    public static let defaultTransition = CMTime(value: 9, timescale: 10)
 
     public init(id: UUID = UUID(),
                 start: CMTime,
@@ -338,8 +372,12 @@ public struct ZoomRegion: TimelineRegion {
         // is 1 everywhere inside the region, so the other end alone decides the curve.
         let rising = ramps.in.seconds > 0 ? (time - start).seconds / ramps.in.seconds : 1
         let falling = ramps.out.seconds > 0 ? (end - time).seconds / ramps.out.seconds : 1
-        let progress = min(1, max(0, min(rising, falling)))
-        return 1 + (scale - 1) * easing.apply(progress)
+        // On the way in, the arriving curve; on the way out, the leaving one — see
+        // `Easing.applyLeaving(_:)`. Whichever end is nearer decides, as before.
+        let eased = rising <= falling
+            ? easing.apply(min(1, max(0, rising)))
+            : easing.applyLeaving(min(1, max(0, falling)))
+        return 1 + (scale - 1) * eased
     }
 }
 

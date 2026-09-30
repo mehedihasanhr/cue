@@ -310,6 +310,19 @@ The sheet opened in the running app (a 460 × 336 window). It could not be photo
 | Recordings were written at an eighth of the intended bitrate: a 47 s take of a 3024 × 1722 Retina screen at 60 fps was 18 MB, about 3 Mb/s, and the editor's 2–3× zooms enlarged the blur round every letter | `CaptureQuality.bitrate` divided a figure already in bits by 8, and assumed 60 fps. It now gives bits per second at the take's real frame rate: about 25 Mb/s at Good on that screen (about 190 MB a minute). Test: `CaptureBitrateTests` |
 | Export and test runs could stop for good inside `copyNextSampleBuffer` | Measured with logging: the waits are not dead decoders. With several processes exporting at once, every decoder on the Mac pauses until another export lets go of the video hardware, and then all carry on together. Solo runs are clean (6 of 6); three full RenderKit runs at once hang in some. The reader now waits in 20 s steps for up to two minutes, then sets the reader aside (never cancelled from another thread, which crashes) and opens a fresh one; the set-aside reader is cancelled by its own pull when it returns. A second stall is an error, never a hang. Tests: `carriesOnAfterTheDecoderStalls`, `secondStallInARowIsAnError` |
 
+## Zooms that move like a camera (2026-09-30)
+
+Measured on a real take (34 s, 8 auto zooms at 1.8×) with `studiolab camera <package>`, which samples the camera per frame and scores every ramp.
+
+| Problem | Cause and fix | Before → after |
+|---|---|---|
+| Zooms snapped in, too fast | The "spring" curve was an overshooting ease-out that left at about 4× its average speed, over 0.5 s ramps | Now a critically damped spring (starts from rest, never overshoots, settles softly); the way out is its mirror. New zooms take 0.9 s; Camera Motion › Zoom speed (Slow 1.2 / Medium 0.9 / Fast 0.6 s) retimes every zoom not timed by hand. First-frame speed 3.6× → 0.8× the average |
+| The scale went past its depth and came back | The same overshoot | 3.9 % → 0 % |
+| A zoom wobbled sideways before settling on its target | The centre was the aim clamped at each intermediate scale, and the pointer steered from the first frame of the ramp | Zooms travel on a fixed-point path (`ZoomFraming.dolly`): one point holds still while the picture grows round it, so the aimed point goes straight to the middle; the pointer's pull grows as the zoom arrives. Sideways drift 51 pt → 0 pt, reversals 2 → 0 |
+| Glides between zooms stalled and lurched | Each end of the glide followed the pointer in full, so the ends slid under the move | The pull fades across the glide (full on the shot being left, full on the shot being arrived at) |
+| The whole picture shivered twenty times in a take | ScreenCaptureKit's content rect flickered between 1511.4 and 1512 pt; the picture track treated every flicker as a resize | A change must move an edge by 2 pt (or 0.25 %); within that of the whole frame is the whole frame — in the recorder and when reading old recordings. Crop changes 20 → 0 |
+| Export test runs deadlocked in `copyNextSampleBuffer` | Several exports at once in one process each held an encoder while waiting for a decoder | `ExportGate`: one export at a time per process (the editor already queued them). Three concurrent full RenderKit runs now pass |
+
 ## Known and not yet fixed
 
 - **Resizing a window before recording is hidden while the app is sandboxed.** Klik Studio (and Klik) ship with the App Sandbox, which does not let an app drive another app's windows through Accessibility even with the grant. The presets and the resize code are built and the fitting logic is tested (`WindowSizingTests`); the menu appears only in a build without the sandbox. Offering it for real needs either dropping the sandbox or a helper allowed to do it.

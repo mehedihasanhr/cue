@@ -154,3 +154,29 @@ struct PictureTrackingTests {
         #expect(decoded.telemetry.cursor == "telemetry/cursor.jsonl")
     }
 }
+
+/// The recorder's side of the same noise: a frame whose content rect shimmers by a rounding
+/// error is not a resize, and writes nothing.
+struct PictureNoiseTests {
+    private let frame = CGRect(x: 0, y: 0, width: 1_512, height: 949)
+
+    private func geometry(width: CGFloat) -> FrameGeometry {
+        FrameGeometry(screenRect: frame, contentRect: CGRect(x: 0, y: 0, width: width, height: 949),
+                      contentScale: 1, scaleFactor: 2)
+    }
+
+    @Test func aWindowThatNeverChangedWritesNothing() {
+        var rule = PictureRule(frame: frame, outputScale: 2)
+        var written = 0
+        for index in 0..<40 where rule.change(for: geometry(width: index % 2 == 0 ? 1_511.4073889255524 : 1_512)) != nil {
+            written += 1
+        }
+        #expect(written == 0)
+    }
+
+    @Test func aRealResizeIsStillWritten() {
+        var rule = PictureRule(frame: frame, outputScale: 2)
+        #expect(rule.change(for: geometry(width: 1_300)) != nil)
+        #expect(rule.change(for: geometry(width: 1_512)) == frame, "and so is going back to the whole frame")
+    }
+}

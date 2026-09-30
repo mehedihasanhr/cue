@@ -27,6 +27,21 @@ struct CameraControls: View {
             Text("Camera Motion")
                 .font(.system(size: 12.5))
                 .foregroundStyle(Color.primary.opacity(0.82))
+
+            // First, because "too quick" is the first thing anyone says about a zoom. For
+            // every zoom in the project that has not been timed by hand.
+            Picker("Zoom speed", selection: Binding(
+                get: { model.timeline.camera.zoomSpeed },
+                set: { model.setZoomSpeed($0) }
+            )) {
+                ForEach(ZoomSpeed.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            Text("How long every zoom takes to go in and come out — \(String(format: "%.1f", model.timeline.camera.zoomSpeed.transition)) s each way. Zooms you have timed by hand keep their own.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
             Group {
                 InspectorSlider(model: model, "Steadiness", systemImage: "hand.raised",
                                 value: style.binding(\.camera.steadiness, "Steadiness"), range: 0...2)

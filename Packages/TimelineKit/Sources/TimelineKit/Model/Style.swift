@@ -605,6 +605,10 @@ public struct CameraStyle: Codable, Equatable, Sendable {
 
     public static let wholeVideoZoomRange: ClosedRange<Double> = 1...4
 
+    /// How long a zoom takes to go in and to come out — the ramp new zooms get, and the
+    /// one the Zoom speed control gives every zoom not set by hand.
+    public var zoomSpeed: ZoomSpeed
+
     /// Whether the whole video is held zoomed in.
     public var holdsWholeVideoZoomed: Bool { sanitised.wholeVideoZoom > 1.001 }
 
@@ -615,7 +619,8 @@ public struct CameraStyle: Codable, Equatable, Sendable {
                 glidesBetweenZooms: Bool = true,
                 keepsZoomedInFor: Double = 0,
                 motionBlur: Bool = true,
-                wholeVideoZoom: Double = 1) {
+                wholeVideoZoom: Double = 1,
+                zoomSpeed: ZoomSpeed = .medium) {
         self.steadiness = steadiness
         self.follow = follow
         self.safeArea = safeArea
@@ -624,6 +629,7 @@ public struct CameraStyle: Codable, Equatable, Sendable {
         self.keepsZoomedInFor = keepsZoomedInFor
         self.motionBlur = motionBlur
         self.wholeVideoZoom = wholeVideoZoom
+        self.zoomSpeed = zoomSpeed
     }
 
     /// What a project saved before gliding existed decodes to when it carries no camera
@@ -663,11 +669,14 @@ public struct CameraStyle: Codable, Equatable, Sendable {
         // Not held for a project written before it existed: the zooms it has are the
         // whole of what it asked for.
         wholeVideoZoom = value(.wholeVideoZoom, default: 1)
+        // Only decides what new zooms get: the zooms a project already has keep the ramps
+        // they were saved with, so an old project plays as it did.
+        zoomSpeed = value(.zoomSpeed, default: .medium)
     }
 
     enum CodingKeys: String, CodingKey {
         case steadiness, follow, safeArea, zoomsWholeFrame, glidesBetweenZooms, keepsZoomedInFor, motionBlur
-        case wholeVideoZoom
+        case wholeVideoZoom, zoomSpeed
     }
 
     /// The same values, clamped to what the renderer can act on.
@@ -686,7 +695,34 @@ public struct CameraStyle: Codable, Equatable, Sendable {
                     wholeVideoZoom: wholeVideoZoom.isFinite
                         ? min(max(wholeVideoZoom, Self.wholeVideoZoomRange.lowerBound),
                               Self.wholeVideoZoomRange.upperBound)
-                        : 1)
+                        : 1,
+                    zoomSpeed: zoomSpeed)
+    }
+}
+
+/// How quickly zooms go in and come out.
+///
+/// Three speeds rather than a slider in seconds: what people judge is "too quick" or "too
+/// slow", and three well-chosen ramps cover that without anyone having to know that 0.9 s
+/// is what they wanted.
+public enum ZoomSpeed: String, Codable, Sendable, CaseIterable {
+    case slow, medium, fast
+
+    /// The ramp in, and the ramp out, in seconds.
+    public var transition: Double {
+        switch self {
+        case .slow: 1.2
+        case .medium: 0.9
+        case .fast: 0.6
+        }
+    }
+
+    public var title: String {
+        switch self {
+        case .slow: "Slow"
+        case .medium: "Medium"
+        case .fast: "Fast"
+        }
     }
 }
 

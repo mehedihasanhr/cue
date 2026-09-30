@@ -457,6 +457,7 @@ public extension Look {
         public var keepsZoomedInFor: Double?
         public var motionBlur: Bool?
         public var wholeVideoZoom: Double?
+        public var zoomSpeed: ZoomSpeed?
 
         public init() {}
 
@@ -469,6 +470,7 @@ public extension Look {
             keepsZoomedInFor = style.keepsZoomedInFor
             motionBlur = style.motionBlur
             wholeVideoZoom = style.wholeVideoZoom
+            zoomSpeed = style.zoomSpeed
         }
 
         public init(from decoder: any Decoder) throws {
@@ -481,17 +483,18 @@ public extension Look {
             keepsZoomedInFor = field(c, .keepsZoomedInFor)
             motionBlur = field(c, .motionBlur)
             wholeVideoZoom = field(c, .wholeVideoZoom)
+            zoomSpeed = field(c, .zoomSpeed)
         }
 
         enum CodingKeys: String, CodingKey {
             case steadiness, follow, safeArea, zoomsWholeFrame, glidesBetweenZooms, keepsZoomedInFor, motionBlur
-            case wholeVideoZoom
+            case wholeVideoZoom, zoomSpeed
         }
 
         public var isEmpty: Bool {
             steadiness == nil && follow == nil && safeArea == nil && zoomsWholeFrame == nil
                 && glidesBetweenZooms == nil && keepsZoomedInFor == nil && motionBlur == nil
-                && wholeVideoZoom == nil
+                && wholeVideoZoom == nil && zoomSpeed == nil
         }
 
         public func apply(to style: inout CameraStyle) {
@@ -502,6 +505,7 @@ public extension Look {
             set(&style.glidesBetweenZooms, glidesBetweenZooms)
             set(&style.keepsZoomedInFor, keepsZoomedInFor)
             set(&style.motionBlur, motionBlur)
+            set(&style.zoomSpeed, zoomSpeed)
             // Through the same clamp the renderer reads it by, so a file cannot hold a
             // project at 40×.
             if let wholeVideoZoom, wholeVideoZoom.isFinite {

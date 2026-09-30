@@ -64,6 +64,11 @@ extension EditorModel {
     var blursCameraMotion: Bool { timeline.camera.motionBlur }
 
     /// For every zoom in the project, like gliding: the camera is one camera.
+    /// How quickly every zoom not set by hand goes in and out, and new ones too.
+    func setZoomSpeed(_ speed: ZoomSpeed) {
+        apply(Commands.setZoomSpeed(speed))
+    }
+
     func setZoomMotionBlur(_ isOn: Bool) {
         guard isOn != timeline.camera.motionBlur else { return }
         apply(Commands.setZoomMotionBlur(isOn))

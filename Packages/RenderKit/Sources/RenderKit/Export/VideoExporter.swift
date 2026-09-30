@@ -64,6 +64,18 @@ public actor VideoExporter {
     public func export(to destination: URL,
                        onProgress: @Sendable @escaping (ExportProgress) -> Void = { _ in }) async throws(ExportError) {
         guard timeline.duration.seconds > 0 else { throw ExportError.emptyTimeline }
+        // One at a time in the process — see `ExportGate`.
+        do {
+            try await ExportGate.shared.run { try await self.exportNow(to: destination, onProgress: onProgress) }
+        } catch let error as ExportError {
+            throw error
+        } catch {
+            throw ExportError.writerFailed(error.localizedDescription)
+        }
+    }
+
+    private func exportNow(to destination: URL,
+                           onProgress: @Sendable @escaping (ExportProgress) -> Void) async throws(ExportError) {
         // Not reset here: one exporter writes one file, and a job cancelled while it was
         // still queued must stay cancelled when its turn comes round.
 

@@ -61,8 +61,14 @@ struct PictureRule {
     /// The rectangle last written — or the whole frame, before anything has been.
     private(set) var last: CGRect
 
-    /// How far an edge has to move before it is a change, in points.
-    static let tolerance: CGFloat = 0.5
+    /// How far an edge has to move before it is a change, in points: 2, or a quarter of a
+    /// percent of the frame's longer side if that is more.
+    ///
+    /// It was half a point, and ScreenCaptureKit's content rect is not that steady: a real
+    /// take of a window that never changed flipped between 1511.4 and 1512 points wide
+    /// twenty times, and each flip re-cropped the picture — the whole video shivering by a
+    /// fraction of a pixel. No resize anyone makes is that small.
+    var tolerance: CGFloat { max(2, max(frame.width, frame.height) * 0.002_5) }
 
     init(frame: CGRect, outputScale: CGFloat) {
         self.frame = frame
@@ -72,8 +78,11 @@ struct PictureRule {
 
     /// The rectangle to write for this frame, or `nil` when nothing needs writing.
     mutating func change(for geometry: FrameGeometry) -> CGRect? {
-        guard let rect = Self.picture(of: geometry, outputScale: outputScale, in: frame),
-              Self.differs(rect, from: last) else { return nil }
+        guard var rect = Self.picture(of: geometry, outputScale: outputScale, in: frame) else { return nil }
+        // Within the tolerance of filling the frame is filling it: the rounding above is
+        // the only thing that says otherwise.
+        if !Self.differs(rect, from: frame, by: tolerance) { rect = frame }
+        guard Self.differs(rect, from: last, by: tolerance) else { return nil }
         last = rect
         return rect
     }
@@ -96,8 +105,8 @@ struct PictureRule {
         return kept
     }
 
-    static func differs(_ a: CGRect, from b: CGRect) -> Bool {
-        abs(a.minX - b.minX) > tolerance || abs(a.minY - b.minY) > tolerance
-            || abs(a.maxX - b.maxX) > tolerance || abs(a.maxY - b.maxY) > tolerance
+    static func differs(_ a: CGRect, from b: CGRect, by tolerance: CGFloat) -> Bool {
+        abs(a.minX - b.minX) >= tolerance || abs(a.minY - b.minY) >= tolerance
+            || abs(a.maxX - b.maxX) >= tolerance || abs(a.maxY - b.maxY) >= tolerance
     }
 }

@@ -207,10 +207,15 @@ struct CameraFollowTests {
 
     /// And it gives way by the *least* it can: a following zoom keeps the pointer well
     /// inside the shot, a holding one lets it right out to the edge before moving at all.
+    ///
+    /// Measured while the zoom holds (2–8 s). On its ramps a following zoom lets go of the
+    /// pointer as it leaves — the camera heads straight out rather than veering after the
+    /// hand — and only the never-lost rule applies there, which the tests above check
+    /// over the ramp too.
     @Test func aHoldingZoomGivesWayLaterThanAFollowingOne() {
         let roam = track([(0, middle), (3, CGPoint(x: 700, y: 400)), (6, CGPoint(x: 120, y: 90))])
-        let following = worstReach(timeline(follows: true), roam, from: 2.0, to: 8.5)
-        let holding = worstReach(timeline(follows: false), roam, from: 2.0, to: 8.5)
+        let following = worstReach(timeline(follows: true), roam, from: 2.0, to: 8.0)
+        let holding = worstReach(timeline(follows: false), roam, from: 2.0, to: 8.0)
         #expect(holding > following, "holding: \(holding), following: \(following)")
         #expect(following <= 0.87, "a following camera keeps it comfortably inside")
     }

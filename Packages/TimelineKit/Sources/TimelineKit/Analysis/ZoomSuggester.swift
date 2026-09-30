@@ -33,6 +33,8 @@ public struct ZoomSuggester: Sendable {
         public var holdAfter: Double
         public var minimumDuration: Double
         public var maximumDuration: Double
+        /// How long each zoom takes to go in and to come out — the project's zoom speed.
+        public var transition: Double
         /// How far in to go for a click. Bigger than 2 starts to look like a magnifying
         /// glass.
         public var scale: Double
@@ -78,6 +80,7 @@ public struct ZoomSuggester: Sendable {
                     holdAfter: Double = 1.2,
                     minimumDuration: Double = 1.5,
                     maximumDuration: Double = 12,
+                    transition: Double = ZoomRegion.defaultTransition.seconds,
                     scale: Double = 1.8,
                     spreadLimit: Double = 900,
                     followsFocus: Bool = true,
@@ -96,6 +99,7 @@ public struct ZoomSuggester: Sendable {
             self.holdAfter = holdAfter
             self.minimumDuration = minimumDuration
             self.maximumDuration = maximumDuration
+            self.transition = max(0, transition)
             self.scale = scale
             self.spreadLimit = spreadLimit
             self.followsFocus = followsFocus
@@ -216,9 +220,13 @@ public struct ZoomSuggester: Sendable {
             let xs = cluster.map(\.point.x)
             let ys = cluster.map(\.point.y)
 
-            let start = max(0, first.t - tuning.leadIn)
+            // Started early enough that the zoom has all but arrived when the click
+            // happens, and long enough to go in, be seen, and come out: a zoom that is two
+            // ramps and nothing between them is a flick, not a shot.
+            let start = max(0, first.t - max(tuning.leadIn, tuning.transition * 0.9))
             let end = min(duration.seconds, last.t + tuning.holdAfter)
-            let length = min(max(end - start, tuning.minimumDuration), tuning.maximumDuration)
+            let shortest = max(tuning.minimumDuration, tuning.transition * 2 + 0.8)
+            let length = min(max(end - start, shortest), tuning.maximumDuration)
             guard length > 0, start < duration.seconds else { return }
 
             let centre = centre(of: CGPoint(x: xs.reduce(0, +) / Double(xs.count),
@@ -229,6 +237,7 @@ public struct ZoomSuggester: Sendable {
                                                        preferredTimescale: 600),
                                       scale: tuning.scale,
                                       center: clamped(centre, forScale: tuning.scale),
+                                      transition: CMTime(seconds: tuning.transition, preferredTimescale: 600),
                                       source: .click))
         }
 
@@ -334,6 +343,7 @@ public struct ZoomSuggester: Sendable {
                                                        preferredTimescale: 600),
                                       scale: scale,
                                       center: clamped(centre, forScale: scale),
+                                      transition: CMTime(seconds: tuning.transition, preferredTimescale: 600),
                                       // A field does not move while it has focus, and a
                                       // camera drifting after the pointer while someone
                                       // types is seasickness.
@@ -423,14 +433,19 @@ public struct ZoomSuggester: Sendable {
     /// The earlier region, ending where the later one begins — or `nil` when that would
     /// leave too little of it to be worth going to.
     ///
-    /// "Worth going to" is a zoom long enough to arrive: its two ramps, and no less. A
+    /// "Worth going to" is a zoom long enough to arrive: its ramp in and a moment held. A
     /// region shorter than that spends the whole of itself moving and never reaches the
     /// thing it was pointed at, so the camera would visit a place it never actually
     /// showed. That is the difference between two moments and a flail — clicks half a
     /// second apart at opposite corners cannot be split into anything watchable, and a
     /// camera that visits three places in a second is worse than one that visits none.
     /// Below the floor they merge instead.
-    private var shortestWorthGoingTo: Double { ZoomRegion.defaultTransition.seconds * 2 + 0.25 }
+    ///
+    /// One ramp and a moment held, not two ramps: the zoom it is trimmed against starts
+    /// straight after, and the camera glides on to it rather than pulling all the way out.
+    /// Counted as two ramps it grew with the zoom speed until clicks two seconds apart at
+    /// opposite ends of the screen merged into one shot of neither.
+    private var shortestWorthGoingTo: Double { tuning.transition + 0.8 }
 
     private func abutted(_ region: ZoomRegion, before next: ZoomRegion) -> ZoomRegion? {
         var trimmed = region

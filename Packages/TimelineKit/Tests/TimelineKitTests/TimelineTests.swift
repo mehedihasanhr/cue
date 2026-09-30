@@ -610,8 +610,14 @@ struct TimelineTests {
             guard region.contains(at) else { return 1 }
             let ramp = min(region.transition, CMTimeMultiplyByFloat64(region.duration, multiplier: 0.5))
             guard ramp.seconds > 0 else { return region.scale }
-            let progress = min((at - region.start).seconds, (region.end - at).seconds) / ramp.seconds
-            return 1 + (region.scale - 1) * region.easing.apply(min(1, max(0, progress)))
+            let rising = (at - region.start).seconds / ramp.seconds
+            let falling = (region.end - at).seconds / ramp.seconds
+            // The ramp out leaves by the mirrored curve (`Easing.applyLeaving`) since the
+            // spring stopped overshooting; the ramps' timing is what this pins.
+            let eased = rising <= falling
+                ? region.easing.apply(min(1, max(0, rising)))
+                : region.easing.applyLeaving(min(1, max(0, falling)))
+            return 1 + (region.scale - 1) * eased
         }
         for step in 0...800 {
             let at = time(1 + Double(step) / 100)

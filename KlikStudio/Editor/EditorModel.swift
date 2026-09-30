@@ -2355,8 +2355,11 @@ final class EditorModel {
     /// The user's auto-zoom preferences, or the suggester's own defaults when the editor
     /// was opened without settings — a preview window, a test.
     private var zoomTuning: ZoomSuggester.Tuning {
-        guard let settings else { return ZoomSuggester.Tuning() }
+        guard let settings else { return ZoomSuggester.Tuning(transition: timeline.camera.zoomSpeed.transition) }
         return ZoomSuggester.Tuning(holdAfter: settings.zoomHoldSeconds,
+                                    // The project's zoom speed, so a zoom suggested now
+                                    // moves like the ones the speed control already set.
+                                    transition: timeline.camera.zoomSpeed.transition,
                                     scale: settings.zoomScale,
                                     followsFocus: settings.zoomsOnFocus,
                                     followsWindows: settings.zoomsOnWindowChange)

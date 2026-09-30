@@ -135,7 +135,7 @@ public struct AnnotationAnimation: Codable, Equatable, Sendable {
             // Always springy, whatever the chosen curve: a pop without the overshoot is
             // just a scale.
             pose.opacity *= min(1, t * 3)
-            pose.scale *= 0.5 + 0.5 * Easing.spring.apply(t)
+            pose.scale *= 0.5 + 0.5 * Easing.overshoot(t)
         case .slideUp:
             pose.opacity *= eased
             pose.offset.dy += Self.slideDistance * (1 - eased)

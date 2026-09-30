@@ -104,6 +104,36 @@ public enum ZoomFraming {
                        y: min(high, max(low, center.y)))
     }
 
+    /// Where the camera looks, at `scale`, on the straight move from one shot to another.
+    ///
+    /// A zoom used to aim at its centre at every scale on the way in, clamped to the
+    /// picture at each one. The clamp tightens as the scale grows, so the centre slid as the
+    /// zoom went in, and the thing being zoomed at wandered sideways across the screen before
+    /// settling — measured at up to 50 points on a real take. A camera pushing in on
+    /// something does not do that: one point of the picture holds still on the screen and
+    /// everything grows away from it. That point is where the two shots put the same place
+    /// of the picture at the same place on the screen, and every shot in between is the
+    /// first one scaled about it — so the move is straight, never overshoots, and stays on
+    /// the picture if both ends do.
+    ///
+    /// Shots of (nearly) the same scale have no such point — the move is a pan — and are
+    /// blended by `progress` instead.
+    public static func dolly(from: (scale: Double, center: CGPoint),
+                             to: (scale: Double, center: CGPoint),
+                             atScale scale: Double, progress: Double) -> CGPoint {
+        let progress = min(1, max(0, progress))
+        guard abs(to.scale - from.scale) > 0.05, scale > 0 else {
+            return CGPoint(x: from.center.x + (to.center.x - from.center.x) * progress,
+                           y: from.center.y + (to.center.y - from.center.y) * progress)
+        }
+        func axis(_ c0: Double, _ c1: Double) -> Double {
+            // The fixed point: (p − c0)·s0 = (p − c1)·s1 on the screen.
+            let fixed = (c1 * to.scale - c0 * from.scale) / (to.scale - from.scale)
+            return fixed - (fixed - c0) * from.scale / scale
+        }
+        return CGPoint(x: axis(from.center.x, to.center.x), y: axis(from.center.y, to.center.y))
+    }
+
     /// The framing a zoom at this scale, aimed here, works out to.
     public static func honoured(scale: Double, center: CGPoint) -> CGRect {
         let half = halfSide(forScale: scale)

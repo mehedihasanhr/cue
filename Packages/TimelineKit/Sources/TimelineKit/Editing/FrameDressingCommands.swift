@@ -1,3 +1,4 @@
+import CoreMedia
 import Foundation
 
 public extension Commands {
@@ -42,6 +43,21 @@ public extension Commands {
     }
 
     /// Softening the picture while the camera moves fast, for every zoom in the project.
+    /// How quickly zooms go in and out: the speed new zooms get, and the ramp of every
+    /// zoom already there that was not set by hand. One undoable step.
+    ///
+    /// A ramp never takes more than half of a short zoom, so a zoom always arrives before
+    /// it leaves.
+    static func setZoomSpeed(_ speed: ZoomSpeed) -> Restyle {
+        Restyle("Zoom Speed") { timeline in
+            timeline.camera.zoomSpeed = speed
+            for index in timeline.zooms.indices where !timeline.zooms[index].isEdited && !timeline.zooms[index].isInstant {
+                let half = timeline.zooms[index].duration.seconds / 2
+                timeline.zooms[index].transition = CMTime(seconds: min(speed.transition, half), preferredTimescale: 600)
+            }
+        }
+    }
+
     static func setZoomMotionBlur(_ isOn: Bool) -> Restyle {
         Restyle(isOn ? "Turn On Zoom Motion Blur" : "Turn Off Zoom Motion Blur") { $0.camera.motionBlur = isOn }
     }

@@ -113,6 +113,8 @@ enum Lab {
             return await analyze(URL(fileURLWithPath: arguments[1]))
         case "stream":
             return await StreamProbe.run()
+        case "camera":
+            return await CameraCheck.run(Array(arguments.dropFirst()))
         case "pace":
             return await PaceCheck.run(Array(arguments.dropFirst()))
         case "everything":

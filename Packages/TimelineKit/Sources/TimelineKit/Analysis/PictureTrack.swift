@@ -24,7 +24,33 @@ public struct PictureTrack: Sendable, Equatable {
     public let samples: [PictureSample]
 
     public init(samples: [PictureSample] = []) {
-        self.samples = samples.sorted { $0.t < $1.t }
+        // A sample that moves no edge by `noise` or more is the one before it, measured
+        // again: kept, it re-crops the picture by a sliver and the whole video shivers.
+        // Recordings made before the recorder learnt this are full of them — a window
+        // that never changed, flipping between 1511.4 and 1512 points wide.
+        var kept: [PictureSample] = []
+        for sample in samples.sorted(by: { $0.t < $1.t }) {
+            if let last = kept.last, !Self.differs(sample.rect, from: last.rect, by: Self.noise) { continue }
+            kept.append(sample)
+        }
+        self.samples = kept
+    }
+
+    /// The smallest move of an edge, in points, that is a resize rather than rounding.
+    static let noise: CGFloat = 2
+
+    /// Whether a picture fills its frame, give or take rounding: within 2 points, or a
+    /// quarter of a percent of the frame's longer side, on every edge. The one rule the
+    /// renderer, the pointer and the masks all go by, so none of them crops for a sliver
+    /// the others ignore.
+    public static func fillsFrame(_ picture: CGRect, frame: CGSize) -> Bool {
+        let noise = max(Self.noise, max(frame.width, frame.height) * 0.002_5)
+        return !differs(picture, from: CGRect(origin: .zero, size: frame), by: noise)
+    }
+
+    static func differs(_ a: CGRect, from b: CGRect, by tolerance: CGFloat) -> Bool {
+        abs(a.minX - b.minX) >= tolerance || abs(a.minY - b.minY) >= tolerance
+            || abs(a.maxX - b.maxX) >= tolerance || abs(a.maxY - b.maxY) >= tolerance
     }
 
     public var isEmpty: Bool { samples.isEmpty }
@@ -53,6 +79,9 @@ public struct PictureTrack: Sendable, Equatable {
     public func shown(at seconds: Double, in frame: CGSize) -> CGRect {
         let whole = CGRect(origin: .zero, size: frame)
         guard let picture = picture(at: seconds) else { return whole }
+        // A picture within rounding of the whole frame fills it; cropping to it would
+        // enlarge the video by a fraction of a percent, and back, each time it flickers.
+        guard !Self.fillsFrame(picture, frame: frame) else { return whole }
         return Self.filling(picture, frame: frame)
     }
 
@@ -125,7 +154,8 @@ public struct PictureTrack: Sendable, Equatable {
     /// What a still mask is measured against: see `BlurRegion.recordingRect(at:source:picture:frame:)`.
     public func pictureFraction(at seconds: Double, in frame: CGSize) -> CGRect {
         let unit = CGRect(x: 0, y: 0, width: 1, height: 1)
-        guard frame.width > 0, frame.height > 0, let points = picture(at: seconds) else { return unit }
+        guard frame.width > 0, frame.height > 0, let points = picture(at: seconds),
+              !Self.fillsFrame(points, frame: frame) else { return unit }
         let picture = points.intersection(CGRect(origin: .zero, size: frame))
         guard !picture.isNull, picture.width > 0, picture.height > 0 else { return unit }
         return CGRect(x: picture.minX / frame.width, y: picture.minY / frame.height,
