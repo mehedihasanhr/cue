@@ -1,4 +1,5 @@
 import CoreMedia
+import RecordKit
 import SwiftUI
 import TimelineKit
 
@@ -13,8 +14,15 @@ import TimelineKit
 /// it is an `NSWindow` this app owns, which knows when it becomes main and says so. That
 /// is a fact rather than an inference, and it is the same object the recorder bar asks
 /// whether any editor is open.
+///
+/// Every shortcut comes from `shortcuts` rather than being written here, so Settings can
+/// change it: `EditorCommand.defaultShortcut` holds the keys these items always had, and
+/// the comments below still say why each was chosen. Reading it inside `body` is what makes
+/// a change reach the menu bar at once — SwiftUI rebuilds the menus when what they read
+/// changes, exactly as it does for an item's title or enabled state.
 struct EditorCommands: SwiftUI.Commands {
     let windows: EditorWindows
+    let shortcuts: EditorShortcutPreferences
 
     private var editor: EditorModel? { windows.front?.model }
 
@@ -43,14 +51,14 @@ struct EditorCommands: SwiftUI.Commands {
             // shortcut that stopped answering whenever the toolbar was not in the key
             // window's view.
             Button("Save") { editor?.save() }
-                .keyboardShortcut("s")
+                .editorShortcut(.save, shortcuts)
                 .disabled(editor?.isDirty != true)
             Divider()
             Button("Export…") {
                 windows.front?.exportsSelection = false
                 windows.front?.isExporting = true
             }
-            .keyboardShortcut("e")
+            .editorShortcut(.export, shortcuts)
             .disabled(editor == nil)
             // The same sheet, opened on the selected stretch. Only when there is one:
             // exporting "the selection" of an edit with nothing selected has no meaning
@@ -59,12 +67,14 @@ struct EditorCommands: SwiftUI.Commands {
                 windows.front?.exportsSelection = true
                 windows.front?.isExporting = true
             }
+            .editorShortcut(.exportSelection, shortcuts)
             .disabled(editor?.selectedRange == nil)
             .help(editor?.selectedRange == nil
                   ? "Mark a stretch of the timeline first — I and O set its start and end at the playhead."
                   : "Export only the selected stretch of the timeline.")
             Divider()
             Button("Save Frame As…") { editor?.saveFrameAs() }
+                .editorShortcut(.saveFrame, shortcuts)
                 .disabled(editor == nil)
             Divider()
             mediaItems
@@ -79,10 +89,10 @@ struct EditorCommands: SwiftUI.Commands {
     private var edit: some SwiftUI.Commands {
         CommandGroup(replacing: .undoRedo) {
             Button(editor?.document.undoName.map { "Undo \($0)" } ?? "Undo") { editor?.undo() }
-                .keyboardShortcut("z")
+                .editorShortcut(.undo, shortcuts)
                 .disabled(editor?.document.canUndo != true)
             Button(editor?.document.redoName.map { "Redo \($0)" } ?? "Redo") { editor?.redo() }
-                .keyboardShortcut("z", modifiers: [.command, .shift])
+                .editorShortcut(.redo, shortcuts)
                 .disabled(editor?.document.canRedo != true)
         }
 
@@ -100,46 +110,46 @@ struct EditorCommands: SwiftUI.Commands {
             // them and one Edit menu must not list the same word twice. "Delete" and
             // "Select All" used to, each directly under the system's own.
             Button("Cut Selection") { editor?.cutSelection() }
-                .keyboardShortcut("x")
+                .editorShortcut(.cutSelection, shortcuts)
                 .disabled(editor?.canCopySelection != true)
             Button("Copy Selection") { editor?.copySelection() }
-                .keyboardShortcut("c")
+                .editorShortcut(.copySelection, shortcuts)
                 .disabled(editor?.canCopySelection != true)
             // The frame at the playhead, as the export would draw it. ⇧⌘C beside ⌘C;
             // ⌥⌘C is Add Caption's.
             Button("Copy Frame") { editor?.copyFrame() }
-                .keyboardShortcut("c", modifiers: [.command, .shift])
+                .editorShortcut(.copyFrame, shortcuts)
                 .disabled(editor == nil)
             Button("Paste at Playhead") { editor?.pasteAtPlayhead() }
-                .keyboardShortcut("v")
+                .editorShortcut(.paste, shortcuts)
                 .disabled(editor?.canPasteRegion != true)
             Button("Duplicate") { editor?.duplicateSelection() }
-                .keyboardShortcut("d")
+                .editorShortcut(.duplicate, shortcuts)
                 .disabled(editor?.canCopySelection != true)
             Button("Delete Selection") { editor?.deleteSelection() }
-                .keyboardShortcut(.delete, modifiers: [])
+                .editorShortcut(.deleteSelection, shortcuts)
                 .disabled(editor?.canDeleteSelection != true)
             Button("Select Whole Timeline") { editor?.selectAll() }
-                .keyboardShortcut("a")
+                .editorShortcut(.selectAll, shortcuts)
                 .disabled(editor == nil)
             // A stretch marked from the playhead, with the keys every editor uses for it.
             // Plain letters, like Space and the arrows: a letter typed into a caption never
             // reaches a menu item, because the field is asked first — see `TypingGuard`.
             Button("Mark Selection Start") {
-                guard !TypingGuard.consumed("i") else { return }
+                guard !TypingGuard.consumed(shortcuts[.markStart]) else { return }
                 editor?.markSelectionStart()
             }
-            .keyboardShortcut("i", modifiers: [])
+            .editorShortcut(.markStart, shortcuts)
             .disabled(editor == nil)
             Button("Mark Selection End") {
-                guard !TypingGuard.consumed("o") else { return }
+                guard !TypingGuard.consumed(shortcuts[.markEnd]) else { return }
                 editor?.markSelectionEnd()
             }
-            .keyboardShortcut("o", modifiers: [])
+            .editorShortcut(.markEnd, shortcuts)
             .disabled(editor == nil)
             Divider()
             Button("Split at Playhead") { editor?.splitAtPlayhead() }
-                .keyboardShortcut("b")
+                .editorShortcut(.splitAtPlayhead, shortcuts)
                 .disabled(editor == nil)
             markerSplit
             clipItems
@@ -158,6 +168,7 @@ struct EditorCommands: SwiftUI.Commands {
             // The waiting in a recording — still stretches and typing — offered for
             // speeding up, one line at a time, in a sheet. See `PacingSheet`.
             Button("Speed Up Waiting…") { editor?.reviewPacing() }
+                .editorShortcut(.speedUpWaiting, shortcuts)
                 .disabled(editor?.canReviewPacing != true)
             Divider()
             // Every kind the inspector's + offers, reachable without the Annotate tool
@@ -183,11 +194,13 @@ struct EditorCommands: SwiftUI.Commands {
     private var zoom: some SwiftUI.Commands {
         CommandMenu("Zoom") {
             Button("Add Zoom at Playhead") { editor?.addZoomAtPlayhead() }
-                .keyboardShortcut("k")
+                .editorShortcut(.addZoom, shortcuts)
                 .disabled(editor == nil)
             Button("Auto-Zoom from Clicks and Focus") { editor?.suggestZooms() }
+                .editorShortcut(.autoZoom, shortcuts)
                 .disabled(editor == nil)
             Button("Remove All Zooms") { editor?.removeAllZooms() }
+                .editorShortcut(.removeAllZooms, shortcuts)
                 .disabled(editor?.hasRemovableZooms != true)
             Divider()
             // The second-pass verbs. They act on the selected zoom, or — with nothing
@@ -200,13 +213,15 @@ struct EditorCommands: SwiftUI.Commands {
             // enough to be worth a shortcut somebody has to remember, and they are all in the
             // zoom inspector where the hand already is.
             Button("Split Zoom at Playhead") { editor?.splitZoomAtPlayhead() }
-                .keyboardShortcut("b", modifiers: [.command, .option])
+                .editorShortcut(.splitZoom, shortcuts)
                 .disabled(editor?.canSplitZoom != true)
             Button("Merge Zoom with Next") { editor?.mergeZoomWithNext() }
+                .editorShortcut(.mergeZoom, shortcuts)
                 .disabled(editor?.zoomToMergeInto == nil)
             // Lengthens the zoom to touch the next, so the two glide. The reason it is off
             // is in the tooltip here and beside the button in the inspector.
             Button("Extend to Next Zoom") { editor?.extendZoomToNext() }
+                .editorShortcut(.extendZoom, shortcuts)
                 .disabled(editor?.canExtendZoomToNext != true)
                 .help(editor?.extendToNextZoomReason
                       ?? "Make this zoom end exactly where the next one begins, so the camera glides from one to the other.")
@@ -216,24 +231,28 @@ struct EditorCommands: SwiftUI.Commands {
             Button(editor?.isActiveZoomEnabled == false ? "Turn Zoom On" : "Turn Zoom Off") {
                 editor?.setZoomsEnabled()
             }
-            .keyboardShortcut("e", modifiers: [.command, .shift])
+            .editorShortcut(.toggleZoom, shortcuts)
             .disabled(editor?.activeZoom == nil)
             Button(editor?.activeZoom?.isLocked == true ? "Unlock Zoom" : "Lock Zoom") {
                 editor?.toggleZoomLock()
             }
+            .editorShortcut(.lockZoom, shortcuts)
             .disabled(editor?.activeZoom == nil)
             // A cut instead of a movement, and back. One item that flips, like Lock above.
             Button(editor?.isActiveZoomInstant == true ? "Make Zoom Smooth" : "Make Zoom Instant") {
                 editor?.toggleZoomInstant()
             }
+            .editorShortcut(.instantZoom, shortcuts)
             .disabled(editor?.activeZoom == nil)
             Divider()
             Button("Frame Zoom on the Picture") { editor?.frameSelectedZoom() }
+                .editorShortcut(.frameZoom, shortcuts)
                 .disabled(editor?.activeZoom == nil)
             Button("Preview Zoom Result") { editor?.previewZoomResult() }
-                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .editorShortcut(.previewZoom, shortcuts)
                 .disabled(editor?.activeZoom == nil)
             Button("Reset Zoom") { editor?.resetZoom() }
+                .editorShortcut(.resetZoom, shortcuts)
                 .disabled(editor?.activeZoom == nil)
             Divider()
             // For the whole project, so a ticked item rather than one that flips its name.
@@ -256,18 +275,19 @@ struct EditorCommands: SwiftUI.Commands {
     private var audio: some SwiftUI.Commands {
         CommandMenu("Audio") {
             Button("Add Sound…") { editor?.addSound() }
-                .keyboardShortcut("a", modifiers: [.command, .shift])
+                .editorShortcut(.addSound, shortcuts)
                 .disabled(editor == nil)
             // ⇧⌘V, beside Add Sound…: the two are the same idea — sound laid over the
             // recording — and one of them is a file you already have while the other is
             // one you are about to make.
             Button(editor?.isRecordingVoiceover == true
                    ? "Stop Recording Voiceover" : "Record Voiceover…") { editor?.toggleVoiceover() }
-                .keyboardShortcut("v", modifiers: [.command, .shift])
+                .editorShortcut(.voiceover, shortcuts)
                 .disabled(editor == nil)
             Divider()
             Button(editor?.timeline.sound.isMuted == true
                    ? "Unmute the Recording" : "Mute the Recording") { editor?.toggleRecordedSound() }
+                .editorShortcut(.muteRecording, shortcuts)
                 .disabled(editor == nil)
             // One item that flips rather than two that can be pressed at the wrong time,
             // which is how Mute above reads too. Re-attaching asks first when it would
@@ -276,6 +296,7 @@ struct EditorCommands: SwiftUI.Commands {
                 guard let editor else { return }
                 editor.isSoundDetached ? editor.requestSoundReattach() : editor.detachSound()
             }
+            .editorShortcut(.detachAudio, shortcuts)
             .disabled(editor == nil)
             voiceFinish
         }
@@ -300,21 +321,25 @@ struct EditorCommands: SwiftUI.Commands {
             Button(editor?.timeline.captions.isEmpty == false ? "Listen Again" : "Generate Captions") {
                 editor?.generateCaptions()
             }
+            .editorShortcut(.generateCaptions, shortcuts)
             .disabled(editor == nil || editor?.isGeneratingCaptions == true)
             Button("Add Caption at Playhead") { editor?.addCaptionAtPlayhead() }
-                .keyboardShortcut("c", modifiers: [.command, .option])
+                .editorShortcut(.addCaption, shortcuts)
                 .disabled(editor == nil)
             Divider()
             Button("Split Caption at Playhead") {
                 if let caption { editor?.splitCaptionAtPlayhead(caption.id) }
             }
+            .editorShortcut(.splitCaption, shortcuts)
             .disabled(caption.map { editor?.canSplitCaption($0) != true } ?? true)
             Button("Join Caption to Next") {
                 if let caption { editor?.mergeCaptionWithNext(caption.id) }
             }
+            .editorShortcut(.joinCaption, shortcuts)
             .disabled(caption.map { editor?.captionAfter($0.id) == nil } ?? true)
             Divider()
             Button("Remove Filler Words") { editor?.removeFillerWords() }
+                .editorShortcut(.removeFillers, shortcuts)
                 .disabled(editor?.fillerRanges.isEmpty != false)
             Button("Shorten Pauses Over a Second") { editor?.shortenPauses(longerThan: 1) }
                 .disabled(editor?.pauseRanges(longerThan: 1).isEmpty != false)
@@ -325,6 +350,7 @@ struct EditorCommands: SwiftUI.Commands {
             Button(editor?.timeline.captionStyle.isVisible == false ? "Show Captions" : "Hide Captions") {
                 editor?.toggleCaptions()
             }
+            .editorShortcut(.toggleCaptions, shortcuts)
             .disabled(editor?.timeline.captions.isEmpty != false)
             Button("Translate Captions…") { editor?.isTranslatingCaptions = true }
                 .disabled(editor?.timeline.captions.isEmpty != false)
@@ -346,55 +372,55 @@ struct EditorCommands: SwiftUI.Commands {
     private var playback: some SwiftUI.Commands {
         CommandMenu("Playback") {
             Button(editor?.isPlaying == true ? "Pause" : "Play") { editor?.togglePlayback() }
-                .keyboardShortcut(.space, modifiers: [])
+                .editorShortcut(.playPause, shortcuts)
                 .disabled(editor == nil)
             // J, K, L. Plain letters, as Space is: a letter typed into a caption or a label
             // never reaches these, because the field is asked before the menu — and should
             // one ever get here anyway, `TypingGuard` hands it back to the field.
             Button("Play Backward") {
-                guard !TypingGuard.consumed("j") else { return }
+                guard !TypingGuard.consumed(shortcuts[.playBackward]) else { return }
                 editor?.shuttle(.backward)
             }
-            .keyboardShortcut("j", modifiers: [])
+            .editorShortcut(.playBackward, shortcuts)
             .disabled(editor == nil || editor?.isRecordingVoiceover == true)
             Button("Stop") {
-                guard !TypingGuard.consumed("k") else { return }
+                guard !TypingGuard.consumed(shortcuts[.stopShuttle]) else { return }
                 editor?.shuttle(.stop)
             }
-            .keyboardShortcut("k", modifiers: [])
+            .editorShortcut(.stopShuttle, shortcuts)
             .disabled(editor == nil)
             Button("Play Forward") {
-                guard !TypingGuard.consumed("l") else { return }
+                guard !TypingGuard.consumed(shortcuts[.playForward]) else { return }
                 editor?.shuttle(.forward)
             }
-            .keyboardShortcut("l", modifiers: [])
+            .editorShortcut(.playForward, shortcuts)
             .disabled(editor == nil || editor?.isRecordingVoiceover == true)
             Divider()
             Button("Previous Frame") { editor?.stepFrame(forward: false) }
-                .keyboardShortcut(.leftArrow, modifiers: [])
+                .editorShortcut(.previousFrame, shortcuts)
                 .disabled(editor == nil)
             Button("Next Frame") { editor?.stepFrame(forward: true) }
-                .keyboardShortcut(.rightArrow, modifiers: [])
+                .editorShortcut(.nextFrame, shortcuts)
                 .disabled(editor == nil)
             Button("Back a Second") { editor?.step(-1) }
-                .keyboardShortcut(.leftArrow, modifiers: .shift)
+                .editorShortcut(.backSecond, shortcuts)
                 .disabled(editor == nil)
             Button("Forward a Second") { editor?.step(1) }
-                .keyboardShortcut(.rightArrow, modifiers: .shift)
+                .editorShortcut(.forwardSecond, shortcuts)
                 .disabled(editor == nil)
             Button("Previous Cut") { editor?.stepToBoundary(forward: false) }
-                .keyboardShortcut(.leftArrow, modifiers: .option)
+                .editorShortcut(.previousCut, shortcuts)
                 .disabled(editor == nil)
             Button("Next Cut") { editor?.stepToBoundary(forward: true) }
-                .keyboardShortcut(.rightArrow, modifiers: .option)
+                .editorShortcut(.nextCut, shortcuts)
                 .disabled(editor == nil)
             markerNavigation
             Divider()
             Button("Go to Start") { editor?.scrub(to: .zero) }
-                .keyboardShortcut(.home, modifiers: [])
+                .editorShortcut(.goToStart, shortcuts)
                 .disabled(editor == nil)
             Button("Go to End") { editor?.scrub(to: editor?.duration ?? .zero) }
-                .keyboardShortcut(.end, modifiers: [])
+                .editorShortcut(.goToEnd, shortcuts)
                 .disabled(editor == nil)
         }
     }
@@ -409,7 +435,7 @@ struct EditorCommands: SwiftUI.Commands {
             // so it answers whatever has the keyboard.
             ForEach(EditorTool.allCases) { tool in
                 Button(tool.title) { editor?.choose(tool) }
-                    .keyboardShortcut(tool.shortcut, modifiers: .command)
+                    .editorShortcut(tool.command, shortcuts)
                     .disabled(editor == nil || !tool.isAvailable)
             }
             Divider()
@@ -417,19 +443,19 @@ struct EditorCommands: SwiftUI.Commands {
                 guard let editor else { return }
                 editor.viewport.zoom(by: 2, anchoring: editor.playhead, duration: editor.duration)
             }
-            .keyboardShortcut("=")
+            .editorShortcut(.zoomTimelineIn, shortcuts)
             .disabled(editor == nil)
             Button("Zoom Timeline Out") {
                 guard let editor else { return }
                 editor.viewport.zoom(by: 0.5, anchoring: editor.playhead, duration: editor.duration)
             }
-            .keyboardShortcut("-")
+            .editorShortcut(.zoomTimelineOut, shortcuts)
             .disabled(editor == nil)
             Button("Fit Timeline") {
                 guard let editor else { return }
                 editor.viewport.fit(editor.duration)
             }
-            .keyboardShortcut("0")
+            .editorShortcut(.fitTimeline, shortcuts)
             .disabled(editor == nil)
             Divider()
             // Guides over the preview for vertical video, never exported. See

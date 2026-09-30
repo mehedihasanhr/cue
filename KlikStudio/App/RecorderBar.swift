@@ -206,13 +206,13 @@ struct RecorderBar: View {
                     .transition(.opacity)
             }
 
-            InputChip(symbol: "music.note.tv",
-                      onSymbol: "music.note.tv.fill",
-                      size: 16,
-                      isOn: settings.recordsSystemAudio,
-                      isAvailable: true,
-                      label: settings.recordsSystemAudio ? "System audio" : "No system audio") {
-                settings.recordsSystemAudio.toggle()
+            InputChipMenu(symbol: "music.note.tv",
+                          onSymbol: "music.note.tv.fill",
+                          size: 16,
+                          isOn: settings.recordsSystemAudio,
+                          label: SystemAudioApps.label(isOn: settings.recordsSystemAudio,
+                                                       chosen: settings.systemAudioAppIDs)) {
+                systemAudioMenu
             }
         }
         .padding(.horizontal, 2)
@@ -266,6 +266,34 @@ struct RecorderBar: View {
             }
             .disabled(!settings.recordsMicrophone)
         }
+    }
+
+    /// On or off, and whose sound.
+    ///
+    /// A menu for the reason the microphone's is one: "system audio" is everything the Mac
+    /// plays, and the take that wants the demo's sound usually does not want the chat
+    /// app's notification or the music in the background. Ticking apps narrows it to
+    /// them; "Every App" puts it back. An app that is not running is still listed once
+    /// chosen, marked as such, so it can be unticked — it is not heard in a take that
+    /// starts without it, because ScreenCaptureKit can only listen to an app that exists.
+    @ViewBuilder
+    private var systemAudioMenu: some View {
+        @Bindable var settings = settings
+        Toggle("Record system audio", isOn: $settings.recordsSystemAudio)
+        Divider()
+        Section("Hear") {
+            Toggle("Every App", isOn: Binding(
+                get: { settings.systemAudioAppIDs.isEmpty },
+                set: { if $0 { settings.systemAudioAppIDs = [] } }
+            ))
+            ForEach(SystemAudioApps.entries(chosen: settings.systemAudioAppIDs)) { app in
+                Toggle(app.isRunning ? app.name : "\(app.name) (not running)", isOn: Binding(
+                    get: { settings.systemAudioAppIDs.contains(app.bundleID) },
+                    set: { settings.setSystemAudioApp(app.bundleID, isOn: $0) }
+                ))
+            }
+        }
+        .disabled(!settings.recordsSystemAudio)
     }
 
     private var settingsMenu: some View {
@@ -763,32 +791,8 @@ private struct ModeButton: View {
     }
 }
 
-/// Camera / microphone / system audio: an icon, and what it is doing.
-private struct InputChip: View {
-    let symbol: String
-    let onSymbol: String
-    let size: CGFloat
-    let isOn: Bool
-    let isAvailable: Bool
-    let label: String
-    let action: () -> Void
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: action) {
-            InputChipLabel(symbol: isOn ? onSymbol : symbol, size: size,
-                           isOn: isOn, isAvailable: isAvailable, isHovering: isHovering, label: label)
-        }
-        .buttonStyle(BarButtonStyle(pressedScale: 0.97))
-        .disabled(!isAvailable)
-        .onHover { hovering in
-            withAnimation(StudioMotion.hover) { isHovering = hovering }
-        }
-        .help(isAvailable ? label : "\(label) — not built yet")
-    }
-}
-
-/// The same chip, where the choice is a device rather than on/off.
+/// Camera / microphone / system audio: an icon, what it is doing, and a menu of which
+/// device — or, for system audio, which apps.
 private struct InputChipMenu<Content: View>: View {
     let symbol: String
     let onSymbol: String

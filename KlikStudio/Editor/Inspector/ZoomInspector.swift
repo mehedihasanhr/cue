@@ -62,9 +62,20 @@ struct ZoomInspector: View {
         ))
         .help("Keeps its framing and its timing, and takes it out of the picture")
 
+        // Down to half as well as up to eight: below 1× the zoom pulls back, and the framed
+        // recording shrinks inside the frame with the background showing round it — the
+        // opening or closing shot, or a step back from a close-up. Said under the slider
+        // while it is there, because a "zoom" that makes the picture smaller is the one
+        // thing on this panel nobody would guess.
         InspectorSlider(model: model, "Scale", systemImage: "plus.magnifyingglass",
-                        value: scale, range: 1...ZoomRegion.maximumScale,
+                        value: scale, range: ZoomRegion.minimumScale...ZoomRegion.maximumScale,
                         format: { String(format: "%.1f×", $0) })
+        if zoom.zoomsOut {
+            Text("Below 1×, so this zooms out: the recording shrinks inside the frame and more of the background shows.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
 
         InspectorSlider(model: model, "Duration", systemImage: "ruler",
                         value: duration(zoom), range: 0.3...12,

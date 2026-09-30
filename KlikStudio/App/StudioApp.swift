@@ -59,7 +59,7 @@ struct StudioApp: App {
         // nothing says what they do, and ⌘Z had nowhere to live at all. Attached to this
         // scene because `.commands` builds the app's one menu bar wherever it is written,
         // and the editor is no longer a scene to hang it on.
-        .commands { EditorCommands(windows: delegate.editors) }
+        .commands { EditorCommands(windows: delegate.editors, shortcuts: settings.editorShortcuts) }
         // Start, hold, restart, mark and stop, with the global shortcuts written beside
         // them — the same verbs as the menu bar icon, for when that is turned off.
         .commands { RecorderCommands(studio: studio, settings: settings) }

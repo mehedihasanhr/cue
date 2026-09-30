@@ -1,3 +1,4 @@
+import RecordKit
 import SwiftUI
 import TimelineKit
 
@@ -15,7 +16,7 @@ extension EditorCommands {
             // ⌥⌘K beside Add Zoom's ⌘K and Add Caption's ⌥⌘C: the same "put one here" aimed
             // at a different lane. ⌥⌘K is otherwise unused in this app.
             Button("Add Shortcut at Playhead") { frontEditor?.addKeyCueAtPlayhead() }
-                .keyboardShortcut("k", modifiers: [.command, .option])
+                .editorShortcut(.addKeyCue, shortcuts)
                 .disabled(frontEditor == nil)
             // Acts on the selected shortcut, or — with nothing selected — the one under
             // the playhead, which is why it is enabled by `activeKeyCue`.
@@ -27,6 +28,7 @@ extension EditorCommands {
             Button(frontEditor?.timeline.keyStyle.isVisible == false ? "Show Keys in the Video" : "Hide Keys in the Video") {
                 frontEditor?.toggleKeysOverlay()
             }
+            .editorShortcut(.toggleKeysOverlay, shortcuts)
             .disabled(frontEditor?.timeline.keyCues.isEmpty != false)
             Divider()
             // Only for a recording that has shortcuts to give back: greyed for one made

@@ -143,14 +143,14 @@ Fix what is wrong before adding anything. Details and measurements are in `06-qu
 ## Phase 3: later
 
 - [ ] iPhone and iPad recording
-- [ ] System audio from chosen apps
+- [x] System audio from chosen apps (the bar's system audio menu; a second, audio-only stream whose filter includes only those apps — see `SystemAudioRoute`)
 - [ ] 3D tilt and perspective
-- [ ] Zoom out below 100%
+- [x] Zoom out below 100% (down to 0.5×: the framed recording shrinks with its corners, shadow and border, and the background shows round it)
 - [ ] Animated backgrounds
 - [~] Caption translation (Captions › Translate Captions…; built and compiles, not yet run end to end because a first translation can open the system download sheet)
 - [ ] Music library
 - [ ] Shareable links
-- [~] Rebindable shortcuts; command menu (the command menu is done: Window › Command Menu…, ⇧⌘P; rebinding is open)
+- [x] Rebindable shortcuts; command menu (Settings › Shortcuts: every editor menu command and the recorder's global keys, with conflict checks both ways and reset per row or all; the command menu shows whatever is set)
 - [ ] Translations of the app
 
 ## Order of work inside a phase

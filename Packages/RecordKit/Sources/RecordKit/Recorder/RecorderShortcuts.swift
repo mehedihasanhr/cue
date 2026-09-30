@@ -87,10 +87,15 @@ public struct KeyCombo: Hashable, Codable, Sendable {
         return name.count == 1 ? name.lowercased() : ""
     }
 
-    private static let functionKeys: Set<Int> = [
+    /// F1 to F20, in that order. An array, because the order is the name: the key codes
+    /// themselves are scattered — F3 is 99, F17 is 64 — and naming them by sorting the codes
+    /// called F3 "F8" and F17 "F1".
+    public static let functionKeyOrder: [Int] = [
         kVK_F1, kVK_F2, kVK_F3, kVK_F4, kVK_F5, kVK_F6, kVK_F7, kVK_F8, kVK_F9, kVK_F10,
         kVK_F11, kVK_F12, kVK_F13, kVK_F14, kVK_F15, kVK_F16, kVK_F17, kVK_F18, kVK_F19, kVK_F20,
     ]
+
+    private static let functionKeys = Set(functionKeyOrder)
 
     private static let names: [Int: String] = {
         var names: [Int: String] = [
@@ -109,7 +114,7 @@ public struct KeyCombo: Hashable, Codable, Sendable {
             kVK_Escape: "⎋", kVK_LeftArrow: "←", kVK_RightArrow: "→", kVK_UpArrow: "↑", kVK_DownArrow: "↓",
             kVK_Home: "↖", kVK_End: "↘", kVK_PageUp: "⇞", kVK_PageDown: "⇟",
         ]
-        for (index, key) in functionKeys.sorted().enumerated() { names[key] = "F\(index + 1)" }
+        for (index, key) in functionKeyOrder.enumerated() { names[key] = "F\(index + 1)" }
         return names
     }()
 
@@ -132,6 +137,9 @@ public enum ShortcutProblem: Equatable, Sendable {
     case usedBy(RecorderAction)
     /// One of Klik's, which is usually running beside this app.
     case klik(String)
+    /// One of the editor's menu shortcuts. A global shortcut takes the key before any menu
+    /// sees it, so the editor would lose it for as long as the shortcut is registered.
+    case editor(EditorCommand)
 
     public var message: String {
         switch self {
@@ -141,6 +149,7 @@ public enum ShortcutProblem: Equatable, Sendable {
         case .system(let name): "macOS uses this for \(name)."
         case .usedBy(let action): "Already used for \u{201C}\(action.title)\u{201D}."
         case .klik(let name): "Klik uses this for \(name)."
+        case .editor(let command): "The editor uses this for \u{201C}\(command.title)\u{201D}."
         }
     }
 }
@@ -177,6 +186,16 @@ public struct RecorderShortcuts: Codable, Equatable, Sendable {
         if combo.hasCommand, !combo.hasOption, !combo.hasControl { return .commonInApps }
         if combo.hasOption, !combo.hasCommand, !combo.hasControl { return .typesCharacter }
         return nil
+    }
+
+    /// The same question, asked with the editor's shortcuts in view as well — what
+    /// Settings asks before it takes a new key. Kept apart from the one above because that
+    /// one also decides what is registered, and a clash with a menu is a reason to refuse a
+    /// change, not to take away a shortcut somebody already relies on.
+    public func problem(with combo: KeyCombo, for action: RecorderAction,
+                        editor: EditorShortcuts) -> ShortcutProblem? {
+        if let problem = problem(with: combo, for: action) { return problem }
+        return editor.command(using: combo).map { .editor($0) }
     }
 
     /// Every binding that has a problem as things stand — what Settings flags on opening.

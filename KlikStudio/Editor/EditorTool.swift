@@ -1,3 +1,4 @@
+import RecordKit
 import SwiftUI
 
 /// What the editor is set up to do, and therefore what the inspector shows.
@@ -99,18 +100,19 @@ enum EditorTool: String, CaseIterable, Identifiable, Hashable {
 
     var isAvailable: Bool { unavailableReason == nil }
 
-    /// ⌘1 … ⌘6, in rail order.
-    var shortcut: KeyEquivalent {
+    /// The menu command that chooses this tool, whose shortcut — ⌘1 to ⌘9 in rail order
+    /// unless somebody changed it — is looked up in `EditorShortcutPreferences`.
+    var command: EditorCommand {
         switch self {
-        case .frame: "1"
-        case .crop: "2"
-        case .blur: "3"
-        case .annotate: "4"
-        case .cursor: "5"
-        case .webcam: "6"
-        case .captions: "7"
-        case .audio: "8"
-        case .keyboard: "9"
+        case .frame: .toolFrame
+        case .crop: .toolCrop
+        case .blur: .toolMask
+        case .annotate: .toolAnnotate
+        case .cursor: .toolPointer
+        case .webcam: .toolWebcam
+        case .captions: .toolCaptions
+        case .audio: .toolAudio
+        case .keyboard: .toolKeyboard
         }
     }
 

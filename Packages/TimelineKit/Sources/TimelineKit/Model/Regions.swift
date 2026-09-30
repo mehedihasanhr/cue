@@ -192,6 +192,32 @@ public struct ZoomRegion: TimelineRegion {
     /// dragged small. They must agree, or a box drawn tighter than the slider allows would
     /// snap somewhere the user did not draw.
     public static let maximumScale = 8.0
+    /// As far out as a zoom will go: the recording at half its size, with the background
+    /// showing all round it.
+    ///
+    /// Below 1 a zoom stops being a push in and becomes a pull back — the framed picture
+    /// shrinks inside the frame, corners, shadow and border with it, and more of the
+    /// background shows. It is the move for an opening or closing shot, or for stepping
+    /// back from a close-up so the viewer sees the whole screen again with room around it.
+    /// Half is where the picture is still readable on a laptop; much further and it is a
+    /// thumbnail on a wallpaper.
+    ///
+    /// Projects written before this existed only ever hold 1 or more, and decode exactly
+    /// as they did: the decoder reads `scale` as it was stored and clamps nothing.
+    public static let minimumScale = 0.5
+
+    /// How strongly a camera at this scale departs from the whole picture.
+    ///
+    /// When zooms overlap the strongest decides the shot. Measured in doublings rather than
+    /// as the raw number, so a pull back to 0.5× and a push in to 2× count as equally
+    /// strong: both are one doubling away from 1×. Comparing the raw scales would let any
+    /// push in, however slight, beat any pull back, however deep.
+    public static func strength(ofScale scale: Double) -> Double {
+        abs(log2(max(scale, 1e-6)))
+    }
+
+    /// Whether this zoom pulls back rather than pushing in.
+    public var zoomsOut: Bool { scale < 1 }
     public static let defaultEasing = Easing.spring
     public static let defaultTransition = CMTime(value: 1, timescale: 2)
 
@@ -213,7 +239,7 @@ public struct ZoomRegion: TimelineRegion {
         self.id = id
         self.start = start
         self.duration = duration
-        self.scale = max(1, min(scale, 8))
+        self.scale = max(ZoomRegion.minimumScale, min(scale, ZoomRegion.maximumScale))
         self.center = center
         self.easing = easing
         self.transition = transition
@@ -298,7 +324,8 @@ public struct ZoomRegion: TimelineRegion {
     /// How far in the camera is at `time`, 1 being not at all.
     ///
     /// Eased in at the start and out at the end, so a region is a movement rather than a
-    /// switch. Outside the region it is exactly 1, which is what lets several zooms be
+    /// switch. The same curve serves a pull back: below 1 it eases from 1 down to `scale`
+    /// and back up again, so a zoom out arrives and leaves exactly as a zoom in does. Outside the region it is exactly 1, which is what lets several zooms be
     /// summed without them fighting. A ramp of zero at either end means the camera is
     /// already there on the first frame it covers — the seam a split leaves.
     public func scale(at time: CMTime) -> Double {

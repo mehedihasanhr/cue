@@ -74,9 +74,21 @@ struct RecordingSettingsPane: View {
 
             SettingsGroup("Sound", footer: microphoneFooter) {
                 SettingsToggleRow("Record system audio",
-                                  subtitle: "Everything the Mac plays — the app being demonstrated, a video, an alert.",
+                                  subtitle: "Everything the Mac plays — the app being demonstrated, a video, an alert. The bar\u{2019}s system audio menu can narrow it to the apps you choose.",
                                   symbol: "speaker.wave.2.fill", tint: .pink,
                                   isOn: $settings.recordsSystemAudio)
+                // Only once apps have been chosen, where the choice is made from the bar: it
+                // is said here too so a take that is missing the chat app's ping is not a
+                // mystery, and so there is a way back to everything from Settings.
+                if !settings.systemAudioAppIDs.isEmpty {
+                    SettingsRow("Only these apps",
+                                subtitle: settings.systemAudioAppIDs.map(SystemAudioApps.name(of:)).formatted(.list(type: .and))
+                                    + ". An app that isn\u{2019}t running when a take starts isn\u{2019}t heard in it.") {
+                        Button("Hear Every App") { settings.systemAudioAppIDs = [] }
+                    }
+                    .padding(.leading, 42)
+                    .disabled(!settings.recordsSystemAudio)
+                }
                 SettingsToggleRow("Record microphone", symbol: "mic.fill", tint: .red, isOn: $settings.recordsMicrophone)
                 // One row per microphone, ticked or not, rather than one picker: a take
                 // records every microphone that is ticked, each to its own file, and each

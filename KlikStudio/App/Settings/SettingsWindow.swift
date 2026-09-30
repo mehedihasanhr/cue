@@ -38,7 +38,7 @@ enum StudioSettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .general: "Where recordings go, the Dock, the menu bar and the theme"
         case .recording: "What a take records, and what is on screen while it does"
-        case .shortcuts: "The keys that reach the recorder from any app"
+        case .shortcuts: "The recorder\u{2019}s keys from any app, and the editor\u{2019}s menu shortcuts"
         case .editor: "Saving, auto-zoom, and how a new recording looks"
         case .captions: "The language listened for, and how new captions look"
         case .audio: "Voice clean-up, click sounds and the preview"
@@ -81,7 +81,7 @@ enum StudioSettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .general: ["folder", "library", "save", "location", "dock", "menu bar", "icon", "appearance", "theme", "dark", "light", "login", "launch", "startup", "open editor"]
         case .recording: ["countdown", "frame rate", "fps", "quality", "encoder", "hevc", "h.264", "codec", "pointer", "cursor", "clicks", "focus", "keyboard", "keys", "keystrokes", "accessibility", "privacy", "microphone", "mic", "system audio", "camera", "webcam", "desktop icons", "speaker notes", "restart", "confirm"]
-        case .shortcuts: ["hotkey", "keyboard", "global", "record", "pause", "restart", "marker", "conflict"]
+        case .shortcuts: ["hotkey", "keyboard", "global", "record", "pause", "restart", "marker", "conflict", "editor", "menu", "key equivalent", "rebind", "undo", "play", "split", "zoom"]
         case .editor: ["autosave", "save", "look", "background", "padding", "corners", "shadow", "blur", "zoom", "auto-zoom", "scale", "pointer", "cursor", "size", "smoothing", "click", "ring", "ripple", "idle", "motion blur"]
         case .captions: ["language", "transcribe", "subtitles", "position", "typeface", "font", "animation", "highlight", "backdrop"]
         case .audio: ["voice", "clean up", "noise", "even out", "loudness", "volume", "click sound", "preview", "voiceover", "count in", "mute"]

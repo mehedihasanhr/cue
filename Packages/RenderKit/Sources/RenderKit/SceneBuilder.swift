@@ -268,7 +268,9 @@ public struct SceneBuilder: Sendable {
     ///
     /// Zooms do not stack: the strongest one at this moment wins. Two overlapping zooms
     /// multiplying into 4× is never what the user drew, and the timeline already merges
-    /// suggestions for the same reason.
+    /// suggestions for the same reason. "Strongest" is the furthest from 1× in doublings,
+    /// so a pull back to 0.5× holds its own against a push in to 2× — see
+    /// `ZoomRegion.strength(ofScale:)`.
     ///
     /// - Parameter held: a zoom to frame as if it were fully in right now, whatever the
     ///   time says — the shot it *would* be holding. What a glide asks of each of its two
@@ -293,8 +295,10 @@ public struct SceneBuilder: Sendable {
         var best: (scale: Double, region: ZoomRegion)? = held.map { ($0.scale, $0) }
         for region in timeline.zooms where held == nil {
             let scale = region.scale(at: time)
-            guard scale > 1 else { continue }
-            if best == nil || scale > best!.scale { best = (scale, region) }
+            guard scale != 1 else { continue }
+            if best == nil || ZoomRegion.strength(ofScale: scale) > ZoomRegion.strength(ofScale: best!.scale) {
+                best = (scale, region)
+            }
         }
         guard let best else { return (1, CGPoint(x: 0.5, y: 0.5)) }
 
@@ -326,7 +330,11 @@ public struct SceneBuilder: Sendable {
         // shot would drag the camera for something the viewer is not being shown, which is
         // the opposite of why the pointer was hidden. Faded with the region rather than
         // switched off at its edge, so the camera does not lurch as the pointer goes.
-        if best.region.followsCursor, camera.follow > 0, timeline.cursor.isVisible,
+        //
+        // Only while pushed in. Pulled back, the whole recording is in shot by definition,
+        // so there is nothing for the pointer to leave and no reason for the picture to
+        // slide about after it.
+        if best.scale > 1, best.region.followsCursor, camera.follow > 0, timeline.cursor.isVisible,
            override.hiding < 1, let track, !track.isEmpty,
            let sourceTime = timeline.sourceTime(at: time) {
             let claim = (1 - override.hiding) * camera.follow
@@ -393,7 +401,11 @@ public struct SceneBuilder: Sendable {
         // left by, so the viewer is looking at the part of the picture the action moved
         // towards. Holding the old framing instead leaves the shot pointed at whatever the
         // person has stopped doing.
-        if camera.follow > 0, timeline.cursor.isVisible, override.hiding < 1,
+        //
+        // Not below 1×, where the whole recording is on screen and no pointer can leave it.
+        // The clamp would still move the centre there — and a pulled-back picture moves
+        // with its centre — so it has to be skipped, not merely trusted to do nothing.
+        if scale > 1, camera.follow > 0, timeline.cursor.isVisible, override.hiding < 1,
            let track, !track.isEmpty,
            let sourceTime = timeline.sourceTime(at: time),
            let live = pointerPoint(timeline, at: time, sourceTime: sourceTime,
@@ -405,8 +417,10 @@ public struct SceneBuilder: Sendable {
         // Keep the camera inside the picture. Last, so it always wins — a pointer in the
         // corner is kept in shot by the frame reaching the corner, not by the frame sliding
         // off the picture to centre on it. Through `ZoomFraming`, which is also what the
-        // framing box on the preview is drawn from, so the two cannot disagree.
-        return (scale, ZoomFraming.honoured(center: center, scale: scale))
+        // framing box on the preview is drawn from, so the two cannot disagree. Below 1×
+        // the same function keeps the shrunken picture inside the hole instead — see
+        // `ZoomFraming.cameraCenter(_:scale:)`.
+        return (scale, ZoomFraming.cameraCenter(center, scale: scale))
     }
 
     /// A point in recorded points as a fraction of the cropped frame, held inside it.

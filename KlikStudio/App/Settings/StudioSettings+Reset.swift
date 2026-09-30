@@ -32,6 +32,7 @@ extension StudioSettings {
         recordsMicrophone = fresh.recordsMicrophone
         recordsCamera = fresh.recordsCamera
         microphoneIDs = fresh.microphoneIDs
+        systemAudioAppIDs = fresh.systemAudioAppIDs
         cameraID = fresh.cameraID
         recordsClicks = fresh.recordsClicks
         recordsFocus = fresh.recordsFocus
@@ -67,6 +68,7 @@ extension StudioSettings {
         recorder.hidesDesktopIcons = recorderDefaults.hidesDesktopIcons
         recorder.showsCameraPreview = recorderDefaults.showsCameraPreview
         recorder.keepsCameraPreviewWhileRecording = recorderDefaults.keepsCameraPreviewWhileRecording
+        editorShortcuts.shortcuts = fresh.editorShortcuts.shortcuts
 
         // Each assignment above wrote its value back. Taken away again, so the file is
         // left as a fresh install's — empty — and a later build's defaults still apply.

@@ -54,11 +54,12 @@ public struct CameraMotionLayer: Equatable, Sendable {
 public extension SceneDescriptor {
     /// The edge of the picture as it is drawn: the rectangle its corners are rounded on.
     ///
-    /// When the whole frame zooms that is the picture grown and moved; when only its
-    /// contents zoom it is the hole the padding left, which never moves. The same choice
+    /// When the whole frame zooms — or the camera pulls back, which always takes the frame
+    /// with it — that is the picture grown or shrunk and moved; when only its contents zoom
+    /// it is the hole the padding left, which never moves. The same choice
     /// the border makes, and for the same reason: the frame is where the styling lives.
     var pictureEdge: CGRect {
-        zoomsWholeFrame ? transformedVideoFrame : videoFrame
+        frameFollowsCamera ? transformedVideoFrame : videoFrame
     }
 
     /// Where the window's bar is drawn, in output pixels with Core Image's origin, or
@@ -70,7 +71,7 @@ public extension SceneDescriptor {
     var chromeBarFrame: CGRect? {
         guard let chrome, chrome.kind != .none, chrome.barHeight > 0 else { return nil }
         let edge = pictureEdge
-        let grown = zoomsWholeFrame && videoFrame.width > 0 ? edge.width / videoFrame.width : 1
+        let grown = frameFollowsCamera && videoFrame.width > 0 ? edge.width / videoFrame.width : 1
         return CGRect(x: edge.minX, y: edge.maxY, width: edge.width, height: chrome.barHeight * grown)
     }
 

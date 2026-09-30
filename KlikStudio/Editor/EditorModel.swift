@@ -1483,11 +1483,17 @@ final class EditorModel {
     /// rectangle whose proportions differ from the picture's cannot be honoured as drawn;
     /// taking the width and letting the height follow is the version where the thing the
     /// user framed is never cropped tighter than they drew it.
+    ///
+    /// A zoom out is framed as the whole recording, and a box the whole recording wide
+    /// says nothing about how far out it is — so it leaves a zoom out's scale alone rather
+    /// than quietly turning it into 1×. Drawing the box smaller is a push in, and says so.
     func setZoomArea(_ id: UUID, to rect: CGRect, name: String = "Frame Zoom") {
         guard rect.width > 0 else { return }
         let area = ZoomFraming.honoured(rect)
+        let scale = ZoomFraming.scale(forSide: area.width)
         apply(Commands.RestyleZoom(id: id, name: name) {
-            $0.scale = ZoomFraming.scale(forSide: area.width)
+            guard !($0.zoomsOut && scale <= 1) else { return }
+            $0.scale = scale
             $0.center = CGPoint(x: area.midX, y: area.midY)
             $0.followsCursor = false
             $0.isEdited = true
