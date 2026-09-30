@@ -78,8 +78,7 @@ final class PreviewAudio {
     private let clicks: [CursorTrack.Click]
     /// The recording's size in points. See `AudioMixdown.build(clickFrame:)`.
     private let clickFrame: CGSize?
-    /// Where a resized window's picture sat, so the clicks heard are the ones drawn. See
-    /// `Timeline.visibleClicks(_:frame:picture:)`.
+    /// Where a resized window's picture sat, which the clicks follow as the picture does.
     private let picture: PictureTrack
     private let settings: StudioSettings?
 

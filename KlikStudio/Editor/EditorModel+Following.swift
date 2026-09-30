@@ -51,12 +51,14 @@ extension EditorModel {
 
     /// Follows the selected mask's content from the playhead to both of its ends.
     func followSelectedMask() {
-        guard canFollowSelectedMask, var mask = selectedMask, let url = document.videoURL else { return }
+        guard canFollowSelectedMask, let selected = selectedMask, let url = document.videoURL else { return }
         let timeline = timeline
         let from = playhead
         // The follower works in the recording's own frames, so a still mask — a fraction of
         // a resized window's picture — is handed over where it covers the recording now.
-        if !mask.follows { mask.rect = coveredRect(of: mask) }
+        var handed = selected
+        if !handed.follows { handed.rect = coveredRect(of: selected) }
+        let mask = handed
         let rate = 1 / frameDuration
         let job = following
 

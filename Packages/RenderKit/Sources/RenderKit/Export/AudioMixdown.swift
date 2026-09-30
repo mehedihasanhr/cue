@@ -43,9 +43,8 @@ public enum AudioMixdown {
     ///     the exporter alike, so the clicks you hear while editing are the ones exported.
     ///   - clickFrame: the recording's size in points, so clicks outside the crop — which
     ///     are not drawn — are not heard either. `nil` hears them all.
-    ///   - picture: where a resized window's picture sat, so a click is tested against the
-    ///     part of the frame that was picture at its moment, as the renderer draws it. See
-    ///     `Timeline.visibleClicks(_:frame:picture:)`.
+    ///   - picture: where a resized window's picture sat in the frame, which moves the
+    ///     clicks exactly as it moves the picture — see `Timeline.visibleClicks`.
     public static func build(timeline: Timeline,
                              videoURL: URL,
                              packageURL: URL?,

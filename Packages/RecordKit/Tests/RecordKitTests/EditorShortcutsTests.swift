@@ -142,6 +142,25 @@ struct EditorShortcutsTests {
         #expect(shortcuts.problem(with: combo(kVK_ANSI_G, cmdKey), for: .lockZoom) == nil)
     }
 
+    /// A key a menu item cannot be given — one on the numeric keypad, say — is refused
+    /// rather than stored. The menu has no key equivalent for it, so the command would have
+    /// shown a shortcut in Settings, with a tick beside it, that nothing ever answered.
+    @Test func aKeyNoMenuCanShowIsRefused() {
+        var shortcuts = EditorShortcuts.defaults
+        let keypad = combo(kVK_ANSI_Keypad1, cmdKey)
+        #expect(!keypad.isMenuKey)
+        #expect(shortcuts.problem(with: keypad, for: .lockZoom) == .notAMenuKey)
+        // One stored by hand, or by an older build, is flagged on opening.
+        shortcuts[.lockZoom] = keypad
+        #expect(shortcuts.problems()[.lockZoom] == .notAMenuKey)
+        // Every key a menu does show is still allowed.
+        #expect(combo(kVK_ANSI_G, cmdKey).isMenuKey)
+        #expect(combo(kVK_F5).isMenuKey)
+        #expect(combo(kVK_PageDown).isMenuKey)
+        let defaults = EditorCommand.allCases.compactMap { $0.defaultShortcut }
+        #expect(defaults.allSatisfy { $0.isMenuKey })
+    }
+
     /// Two commands made to share a key are both flagged.
     @Test func aClashIsFlaggedOnBothSides() {
         var shortcuts = EditorShortcuts.defaults
