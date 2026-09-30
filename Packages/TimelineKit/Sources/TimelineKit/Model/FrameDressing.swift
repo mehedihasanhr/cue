@@ -114,13 +114,20 @@ public struct BackgroundGradient: Codable, Equatable, Sendable {
     }
 }
 
-/// A window drawn around the recording: a title bar with three dots, or a browser's bar
-/// with an address field in it.
+/// A window drawn round the picture — a title bar with three dots, or a browser's bar with
+/// an address field in it — or the phone or tablet the picture is shown on.
 ///
 /// Drawn by the renderer out of rounded rectangles rather than shipped as pictures, so it
-/// is sharp at any export size and carries nobody's brand. The bar sits *above* the
+/// is sharp at any export size and carries nobody's brand. A window's bar sits *above* the
 /// picture and inside the padding: turning it on shrinks the picture a little so the
-/// window as a whole still fits where the picture used to.
+/// window as a whole still fits where the picture used to. A device goes *all the way
+/// round* it, the same way: the picture is shrunk until the whole handset fits.
+///
+/// The devices live here, as more kinds of the one frame, rather than in a style field of
+/// their own, because they are the same decision — what the picture is standing in — and a
+/// project with a browser *and* a phone round the same picture is not one anybody could
+/// want. One picker, one field, and a project from an older build still reads as it did;
+/// a project with a phone in it, opened by a build from before phones, reads as no window.
 public struct WindowChrome: Codable, Equatable, Sendable {
     public enum Kind: String, Codable, Sendable, CaseIterable, Identifiable {
         /// No window — the picture on its own, as every project before this had it.
@@ -129,16 +136,26 @@ public struct WindowChrome: Codable, Equatable, Sendable {
         case window
         /// A title bar with the dots and an address field.
         case browser
+        /// A phone: a thin rounded body, a screen with deeply rounded corners, and the
+        /// pill-shaped camera cut-out at its top.
+        case iPhone
+        /// A tablet: a wider bezel, gently rounded corners and a camera dot in the bezel.
+        case iPad
 
         public var title: String {
             switch self {
             case .none: "None"
             case .window: "macOS Window"
             case .browser: "Browser"
+            case .iPhone: "iPhone"
+            case .iPad: "iPad"
             }
         }
 
         public var id: String { rawValue }
+
+        /// Whether this is a handset drawn all round the picture rather than a bar above it.
+        public var isDevice: Bool { self == .iPhone || self == .iPad }
     }
 
     public enum Appearance: String, Codable, Sendable, CaseIterable, Identifiable {
@@ -154,26 +171,96 @@ public struct WindowChrome: Codable, Equatable, Sendable {
         }
     }
 
-    public var kind: Kind
-    public var appearance: Appearance
+    /// The colour of a device's metal band. The glass in front of the screen is black on
+    /// every one of them, as it is on the real things; the finish is the rim round it.
+    public enum Finish: String, Codable, Sendable, CaseIterable, Identifiable {
+        case black, silver, natural
 
-    public init(kind: Kind = .none, appearance: Appearance = .light) {
+        public var id: String { rawValue }
+
+        public var title: String {
+            switch self {
+            case .black: "Black"
+            case .silver: "Silver"
+            case .natural: "Natural"
+            }
+        }
+    }
+
+    /// Which way up a device is held.
+    ///
+    /// Automatic, the default, turns it to match the recording — a wide recording on its
+    /// side, a tall one upright — because a landscape screen recording in an upright phone
+    /// is a thin strip in a sea of black, which is never what the button was pressed for.
+    public enum Orientation: String, Codable, Sendable, CaseIterable, Identifiable {
+        case automatic, portrait, landscape
+
+        public var id: String { rawValue }
+
+        public var title: String {
+            switch self {
+            case .automatic: "Auto"
+            case .portrait: "Portrait"
+            case .landscape: "Landscape"
+            }
+        }
+
+        /// Whether a device held this way round a picture `width` by `height` lies on its
+        /// side. A square picture stands upright, which is how a device is usually shown.
+        public func isLandscape(width: Double, height: Double) -> Bool {
+            switch self {
+            case .automatic: width > height
+            case .portrait: false
+            case .landscape: true
+            }
+        }
+    }
+
+    public var kind: Kind
+    /// A window's bar: light or dark. Means nothing to a device.
+    public var appearance: Appearance
+    /// A device's rim. Means nothing to a window.
+    public var finish: Finish
+    /// Which way up a device is held. Means nothing to a window.
+    public var orientation: Orientation
+    /// Whether a device shows its camera: the pill at the top of a phone's screen, the dot
+    /// in a tablet's bezel. On by default, because that is what makes the thing read as
+    /// the device; off for a recording with something along its top edge the pill would
+    /// sit on.
+    public var showsCamera: Bool
+
+    public init(kind: Kind = .none,
+                appearance: Appearance = .light,
+                finish: Finish = .black,
+                orientation: Orientation = .automatic,
+                showsCamera: Bool = true) {
         self.kind = kind
         self.appearance = appearance
+        self.finish = finish
+        self.orientation = orientation
+        self.showsCamera = showsCamera
     }
 
     /// Whether anything is drawn at all.
     public var isVisible: Bool { kind != .none }
 
     /// Field by field: a window kind a newer build wrote is drawn as no window rather than
-    /// costing the frame its whole style.
+    /// costing the frame its whole style — and a project written before the devices has no
+    /// finish, orientation or camera in it at all, and reads as the defaults, which change
+    /// nothing until a device is chosen.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        kind = ((try? container.decodeIfPresent(Kind.self, forKey: .kind)) ?? nil) ?? .none
-        appearance = ((try? container.decodeIfPresent(Appearance.self, forKey: .appearance)) ?? nil) ?? .light
+        func value<T: Decodable>(_ key: CodingKeys, _ fallback: T) -> T {
+            ((try? container.decodeIfPresent(T.self, forKey: key)) ?? nil) ?? fallback
+        }
+        kind = value(.kind, Kind.none)
+        appearance = value(.appearance, Appearance.light)
+        finish = value(.finish, Finish.black)
+        orientation = value(.orientation, Orientation.automatic)
+        showsCamera = value(.showsCamera, true)
     }
 
     enum CodingKeys: String, CodingKey {
-        case kind, appearance
+        case kind, appearance, finish, orientation, showsCamera
     }
 }

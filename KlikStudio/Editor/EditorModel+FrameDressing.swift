@@ -18,6 +18,23 @@ extension EditorModel {
         apply(Commands.setWindowAppearance(appearance))
     }
 
+    // MARK: - Device frame
+
+    func setDeviceFinish(_ finish: WindowChrome.Finish) {
+        guard finish != timeline.style.chrome.finish else { return }
+        apply(Commands.setDeviceFinish(finish))
+    }
+
+    func setDeviceOrientation(_ orientation: WindowChrome.Orientation) {
+        guard orientation != timeline.style.chrome.orientation else { return }
+        apply(Commands.setDeviceOrientation(orientation))
+    }
+
+    func setDeviceCamera(_ isShown: Bool) {
+        guard isShown != timeline.style.chrome.showsCamera else { return }
+        apply(Commands.setDeviceCamera(isShown))
+    }
+
     // MARK: - Background
 
     var hasTransparentBackground: Bool { timeline.style.background.isTransparent }

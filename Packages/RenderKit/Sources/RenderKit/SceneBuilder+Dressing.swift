@@ -22,6 +22,15 @@ extension SceneBuilder {
         let picture = min(scene.videoFrame.width, scene.videoFrame.height)
         scene.chrome = chromeLayer(timeline.style,
                                    barHeight: SceneRenderer.barFraction(for: timeline.style.chrome.kind) * picture)
+        // Held the way the framing held it — against the recording's cropped shape, not
+        // this frame's picture — so a clip imported at another shape sits in the same
+        // handset rather than turning it on its side mid-video.
+        scene.device = DeviceLayer(timeline.style.chrome, pictureSize: croppedVideoSize(for: timeline.style))
+        if scene.device != nil {
+            // The handset is the frame. A line drawn inside the picture's edge, inside the
+            // screen, would be a second frame round nothing.
+            scene.border = nil
+        }
         scene.cameraMotion = cameraMotion(timeline, at: time, cursor: track, crop: scene.sourceCrop,
                                           current: (scene.zoom, scene.zoomCenter),
                                           videoFrame: scene.videoFrame, output: scene.outputSize)
@@ -35,7 +44,7 @@ extension SceneBuilder {
     /// `barHeight` is the room `framingDescriptor(for:at:cursor:)` has already made above
     /// the picture, so the bar is drawn into exactly that space.
     func chromeLayer(_ style: FrameStyle, barHeight: Double) -> ChromeLayer? {
-        guard style.chrome.isVisible, barHeight > 0 else { return nil }
+        guard style.chrome.isVisible, !style.chrome.kind.isDevice, barHeight > 0 else { return nil }
         return ChromeLayer(kind: style.chrome.kind, appearance: style.chrome.appearance, barHeight: barHeight)
     }
 

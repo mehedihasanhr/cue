@@ -57,6 +57,21 @@ struct ZoomFramingOverlay: View {
         CanvasGeometry(stage: stage, scene: model.scene)
     }
 
+    /// The picture's perspective, in this view's points. Framing renders the timeline with
+    /// its zooms taken out, so nothing straightens the picture: when the project has a
+    /// perspective, the picture the box is drawn over is turned, and the box is drawn turned
+    /// with it — its outline the turned quadrilateral, its handles on the turned corners —
+    /// while every drag is brought back to the flat picture, where the framing is worked
+    /// out exactly as it always was. See `CanvasTilt`.
+    private var tilt: CanvasTilt {
+        CanvasTilt(stage: stage, scene: model.scene)
+    }
+
+    /// A space that stays put while the box moves in it, for the drags to be measured in.
+    /// Only a translation away from the window's, so a flat picture's drag is measured
+    /// exactly as it was; and it is this view's own space, which is the one `tilt` maps.
+    private static let space = "zoom-framing"
+
     /// The zoom being framed. A delete or an undo can take it away while the box is up.
     private var zoom: ZoomRegion? { model.framedZoom }
 
@@ -77,6 +92,7 @@ struct ZoomFramingOverlay: View {
                 box(rect, zoom: zoom)
             }
         }
+        .coordinateSpace(.named(Self.space))
         // Escape hands the picture back without dropping the selection, so the inspector is
         // still showing the zoom that was just framed.
         .onExitCommand { model.zoomPreview = .result }
@@ -108,7 +124,12 @@ struct ZoomFramingOverlay: View {
     private func shade(around rect: CGRect) -> some View {
         Canvas { context, size in
             var path = Path(CGRect(origin: .zero, size: size))
-            path.addRect(rect)
+            // The hole is the box as it is drawn: turned with the picture when it is.
+            if tilt.isTilted {
+                path.addPath(tilt.outline(of: rect))
+            } else {
+                path.addRect(rect)
+            }
             context.fill(path, with: .color(.black.opacity(isDragging ? 0.4 : 0.28)),
                          style: FillStyle(eoFill: true))
         }
@@ -130,10 +151,7 @@ struct ZoomFramingOverlay: View {
             // `Color.clear` rather than the stroked rectangle for the same reason the camera
             // bubble uses one: a stroke is hit only along the stroke, and the thing being
             // dragged here is the area, not the line around it.
-            Color.clear
-                .frame(width: rect.width, height: rect.height)
-                .contentShape(Rectangle())
-                .offset(x: rect.minX, y: rect.minY)
+            moveTarget(rect)
                 .gesture(move(from: zoom))
                 .onHover { inside in
                     guard !model.isGesturing || isDragging else { return }
@@ -141,10 +159,7 @@ struct ZoomFramingOverlay: View {
                     if inside { NSCursor.openHand.set() } else { NSCursor.arrow.set() }
                 }
 
-            Rectangle()
-                .strokeBorder(.white.opacity(isDragging || isInside ? 0.95 : 0.72), lineWidth: 1)
-                .frame(width: rect.width, height: rect.height)
-                .offset(x: rect.minX, y: rect.minY)
+            outline(rect)
                 .allowsHitTesting(false)
 
             scaleChip(zoom, rect: rect)
@@ -153,6 +168,42 @@ struct ZoomFramingOverlay: View {
                 grip(handle, of: rect, zoom: zoom)
             }
         }
+    }
+
+    /// The area a drag on the box's body lands in. Flat, a clear rectangle the box's size,
+    /// shaped *before* it is moved into place — see `box(_:zoom:)`. Turned, the clear canvas
+    /// shaped to the box's turned outline: a view the size of the canvas at the canvas's
+    /// origin, so the outline's points are its own and nothing has to be moved.
+    @ViewBuilder
+    private func moveTarget(_ rect: CGRect) -> some View {
+        if tilt.isTilted {
+            Color.clear.contentShape(tilt.outline(of: rect))
+        } else {
+            Color.clear
+                .frame(width: rect.width, height: rect.height)
+                .contentShape(Rectangle())
+                .offset(x: rect.minX, y: rect.minY)
+        }
+    }
+
+    @ViewBuilder
+    private func outline(_ rect: CGRect) -> some View {
+        let colour = Color.white.opacity(isDragging || isInside ? 0.95 : 0.72)
+        if tilt.isTilted {
+            tilt.outline(of: rect).stroke(colour, lineWidth: 1)
+        } else {
+            Rectangle()
+                .strokeBorder(colour, lineWidth: 1)
+                .frame(width: rect.width, height: rect.height)
+                .offset(x: rect.minX, y: rect.minY)
+        }
+    }
+
+    /// How far a view laid out at `point` of the flat picture has to move to sit where the
+    /// turned picture draws that point. Nothing when the picture is flat.
+    private func turnedShift(at point: CGPoint) -> CGSize {
+        let drawn = tilt.drawn(point)
+        return CGSize(width: drawn.x - point.x, height: drawn.y - point.y)
     }
 
     /// The magnification the box stands for, on the box.
@@ -178,7 +229,8 @@ struct ZoomFramingOverlay: View {
         .padding(.vertical, 2)
         .background(.black.opacity(0.62), in: Capsule())
         .fixedSize()
-        .offset(x: rect.minX + (inside ? 8 : 0), y: rect.minY + (inside ? 8 : -24))
+        .offset(x: rect.minX + (inside ? 8 : 0) + turnedShift(at: rect.origin).width,
+                y: rect.minY + (inside ? 8 : -24) + turnedShift(at: rect.origin).height)
         .allowsHitTesting(false)
     }
 
@@ -243,7 +295,12 @@ struct ZoomFramingOverlay: View {
         // A corner's arms run *inward* from its vertex; an edge's bar straddles its middle.
         // `ZoomFraming.Handle` works that out, and is where the claim that no handle covers
         // the middle of the box is actually checked.
-        let frame = handle.frame(in: rect, size: size)
+        // Worked out on the flat picture, then carried to where the turned picture draws the
+        // handle's middle — which puts a corner's bracket on the turned corner and an edge's
+        // bar on the middle of the turned edge.
+        let flatFrame = handle.frame(in: rect, size: size)
+        let shift = turnedShift(at: CGPoint(x: flatFrame.midX, y: flatFrame.midY))
+        let frame = flatFrame.offsetBy(dx: shift.width, dy: shift.height)
         // Edge handles go away on a box too small to hold them and its corners both: eight
         // targets crowded into ninety points is four of them unhittable. Hidden means gone,
         // not merely invisible — an untouchable target that still takes the click is the
@@ -305,12 +362,14 @@ struct ZoomFramingOverlay: View {
 
     /// Dragging the box moves what the zoom looks at, at the magnification it already has.
     private func move(from zoom: ZoomRegion) -> some Gesture {
-        // The window's coordinates: the box moves as it is dragged, so its own local space
-        // would move under the gesture driving it. See `TimelineRegionRow.drag(_:grip:)`.
-        DragGesture(minimumDistance: 1, coordinateSpace: .global)
+        // The overlay's own coordinates, which stay put: the box moves as it is dragged, so
+        // its own local space would move under the gesture driving it. See
+        // `TimelineRegionRow.drag(_:grip:)`.
+        DragGesture(minimumDistance: 1, coordinateSpace: .named(Self.space))
             .onChanged { value in
+                guard let travel = flatTravel(value) else { return }
                 let start = begin(zoom, name: "Move Zoom")
-                let delta = normalisedDelta(value.translation)
+                let delta = normalisedDelta(travel)
                 frame(zoom, to: start.offsetBy(dx: delta.width, dy: delta.height), name: "Move Zoom")
             }
             .onEnded { _ in end() }
@@ -323,10 +382,11 @@ struct ZoomFramingOverlay: View {
     /// The box stays the picture's shape throughout — a zoom scales both axes by one
     /// number, so an output that was never stretched cannot be stretched from here.
     private func resize(_ handle: Handle, from zoom: ZoomRegion) -> some Gesture {
-        DragGesture(minimumDistance: 1, coordinateSpace: .global)
+        DragGesture(minimumDistance: 1, coordinateSpace: .named(Self.space))
             .onChanged { value in
+                guard let travel = flatTravel(value) else { return }
                 let start = begin(zoom, name: "Frame Zoom")
-                let delta = normalisedDelta(value.translation)
+                let delta = normalisedDelta(travel)
                 frame(zoom, to: ZoomFraming.resized(start, by: delta, handle: handle),
                       name: "Frame Zoom")
             }
@@ -341,6 +401,15 @@ struct ZoomFramingOverlay: View {
     private func frame(_ zoom: ZoomRegion, to rect: CGRect, name: String) {
         draft = EditorModel.honouredZoomArea(rect)
         model.setZoomArea(zoom.id, to: rect, name: name)
+    }
+
+    /// How far a drag has gone on the flat picture, in view points: the translation itself
+    /// when the picture is flat, and the distance between the flat points under where it
+    /// started and where it is when the picture is turned. `nil` past the turned picture's
+    /// horizon, where the drag has nowhere on the picture to be.
+    private func flatTravel(_ value: DragGesture.Value) -> CGSize? {
+        guard tilt.isTilted else { return value.translation }
+        return tilt.flatTranslation(from: value.startLocation, to: value.location)
     }
 
     /// A drag's travel in view points, as a fraction of the recording.

@@ -192,7 +192,7 @@ Every feature found in the research, with where Klik Studio stands and when it i
 | Aspect: 4:5, 3:4, 16:10, custom | Yes | Yes | Yes | Have | Done |
 | Crop | Yes | Yes | Yes | Have | Done |
 | Custom gradient colours and angle | No | OpenScreen | No | Have (2–3 colours, linear or radial) | Done |
-| Device frames (iPhone, iPad, Mac, browser) | iPhone, iPad | OpenScreen, Cap | Rotato | Partly: macOS window and browser; iPhone and iPad missing | P2 (devices) |
+| Device frames (iPhone, iPad, Mac, browser) | iPhone, iPad | OpenScreen, Cap | Rotato | Have: macOS window, browser, iPhone and iPad, drawn (no bitmaps), portrait and landscape | Done |
 | Animated or video backgrounds | No | Recordly, Cap | No | Missing | P3 |
 | Saved style presets, shareable as files | Yes | Yes | Yes | Have (`.klikstyle` files, six built in) | Done |
 

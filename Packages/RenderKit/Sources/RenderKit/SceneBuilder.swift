@@ -110,8 +110,13 @@ public struct SceneBuilder: Sendable {
         // picture's own shorter side — so the picture and its bar are fitted together.
         // Zero without a window, which leaves this exactly the arithmetic it always was.
         let bar = SceneRenderer.barFraction(for: style.chrome.kind)
-        let fit = min(available.width / source.width,
-                      available.height / (source.height + bar * min(source.width, source.height)))
+        // A device goes all the way round instead. The handset is a fixed multiple of the
+        // picture's size, so the scale that fits it is one division too — and the picture
+        // sits in the middle of its screen, so centring the picture centres the device.
+        let device = DeviceLayer(style.chrome, pictureSize: source)
+        let whole = device.map { DeviceGeometry.bodySize($0, picture: source) }
+            ?? CGSize(width: source.width, height: source.height + bar * min(source.width, source.height))
+        let fit = min(available.width / whole.width, available.height / whole.height)
         let frame = CGSize(width: source.width * fit, height: source.height * fit)
         let barHeight = bar * min(frame.width, frame.height)
         // The window as a whole is centred, so the picture sits half a bar below the middle.

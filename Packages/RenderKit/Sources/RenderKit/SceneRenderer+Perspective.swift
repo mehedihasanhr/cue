@@ -45,7 +45,7 @@ extension SceneRenderer {
     func tiltedShadow(_ scene: SceneDescriptor, projection: PerspectiveProjection) -> CIImage {
         let rect = projection.plane
         let shape = Self.roundedRectangle(rect,
-                                          radius: max(1, min(scene.cornerRadius, min(rect.width, rect.height) / 2)),
+                                          radius: max(1, min(scene.shadowCornerRadius, min(rect.width, rect.height) / 2)),
                                           color: CIColor(red: 0, green: 0, blue: 0, alpha: 1))
             .cropped(to: rect)
         let turned = Self.warp(shape, by: projection)

@@ -39,6 +39,13 @@ struct RegionCanvas: View {
         CanvasGeometry(stage: stage, scene: model.scene)
     }
 
+    /// The picture's perspective, in canvas points. Every rectangle below is worked out on
+    /// the flat picture, as it always was; this moves what is drawn onto the turned one and
+    /// brings every drag back off it. See `CanvasTilt`.
+    private var tilt: CanvasTilt {
+        CanvasTilt(stage: stage, scene: model.scene)
+    }
+
     private var isBlurring: Bool { model.tool == .blur }
 
     /// A space that does not move with the things being dragged in it.
@@ -65,7 +72,7 @@ struct RegionCanvas: View {
                     isSelected: model.selection == .blur(blur.id))
                 if blur.follows {
                     MaskFollowBadge(isLost: model.hasLostContent(blur, at: model.playhead))
-                        .position(x: rect.minX + 12, y: rect.minY - 11)
+                        .position(tilt.drawn(CGPoint(x: rect.minX + 12, y: rect.minY - 11)))
                 }
             }
             ForEach(model.annotationsAtPlayhead) { item in
@@ -75,28 +82,29 @@ struct RegionCanvas: View {
                     isSelected: model.selection == .annotation(item.id))
             }
 
+            // Lined up on the flat picture, and drawn on the turned one: a straight line stays
+            // straight through a perspective, so its two ends are all it takes.
             ForEach(Array(guides.enumerated()), id: \.offset) { _, guide in
-                Path { path in
-                    switch guide.axis {
-                    case .vertical:
-                        path.move(to: CGPoint(x: guide.position, y: guide.from))
-                        path.addLine(to: CGPoint(x: guide.position, y: guide.to))
-                    case .horizontal:
-                        path.move(to: CGPoint(x: guide.from, y: guide.position))
-                        path.addLine(to: CGPoint(x: guide.to, y: guide.position))
-                    }
-                }
-                .stroke(Self.guideColour, lineWidth: 1)
-                .allowsHitTesting(false)
+                let ends = Self.ends(of: guide)
+                tilt.line(from: ends.start, to: ends.end)
+                    .stroke(Self.guideColour, lineWidth: 1)
+                    .allowsHitTesting(false)
             }
 
             if let draft {
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
-                    .background(Color.accentColor.opacity(0.12))
-                    .frame(width: draft.width, height: draft.height)
-                    .offset(x: draft.minX, y: draft.minY)
-                    .allowsHitTesting(false)
+                if tilt.isTilted {
+                    let outline = tilt.outline(of: draft)
+                    outline.fill(Color.accentColor.opacity(0.12))
+                        .overlay(outline.stroke(Color.accentColor, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])))
+                        .allowsHitTesting(false)
+                } else {
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                        .background(Color.accentColor.opacity(0.12))
+                        .frame(width: draft.width, height: draft.height)
+                        .offset(x: draft.minX, y: draft.minY)
+                        .allowsHitTesting(false)
+                }
             }
 
             hint
@@ -133,13 +141,7 @@ struct RegionCanvas: View {
         let rotation = Self.rotation(of: kind)
         let isLocked = Self.isLocked(kind)
         return ZStack(alignment: .topLeading) {
-            outline(kind: kind, isSelected: isSelected)
-                .frame(width: rect.width, height: rect.height)
-                .contentShape(Rectangle())
-                // Turned about its own centre, as the renderer turns it — so the outline sits
-                // on the drawing, and a click on the drawing lands on the outline.
-                .rotationEffect(.degrees(rotation))
-                .offset(x: rect.minX, y: rect.minY)
+            placedOutline(kind: kind, isSelected: isSelected, rect: rect, rotation: rotation)
                 // Double-click to type has to come first: registered after the single
                 // tap, SwiftUI hands the first click to selection and the second never
                 // arrives as a pair.
@@ -222,6 +224,16 @@ struct RegionCanvas: View {
     /// Guides in the colour layout tools use for them, which no picture is likely to be.
     private static let guideColour = Color(red: 1, green: 0.22, blue: 0.62)
 
+    /// A guide's two ends, on the flat picture.
+    private static func ends(of guide: CanvasSnapping.Guide) -> (start: CGPoint, end: CGPoint) {
+        switch guide.axis {
+        case .vertical:
+            (CGPoint(x: guide.position, y: guide.from), CGPoint(x: guide.position, y: guide.to))
+        case .horizontal:
+            (CGPoint(x: guide.from, y: guide.position), CGPoint(x: guide.to, y: guide.position))
+        }
+    }
+
     /// Where the frame is on the canvas, for lining a box up with its edges and middle.
     private func snapStage(for kind: Kind) -> CGRect {
         switch kind {
@@ -270,7 +282,7 @@ struct RegionCanvas: View {
             .frame(width: 18, height: 18)
             .background(Color.accentColor, in: Circle())
             .shadow(color: .black.opacity(0.4), radius: 2)
-            .position(corner)
+            .position(tilt.drawn(corner))
             .allowsHitTesting(false)
             .accessibilityLabel("Locked")
     }
@@ -290,6 +302,70 @@ struct RegionCanvas: View {
         case .annotation(let item):
             AnnotationMenu(model: model, item: item) { beginEditing(id) }
         }
+    }
+
+    /// A box's outline where the picture has it, and the area a click on it lands in.
+    ///
+    /// Flat, a rectangle turned about its own centre, as the renderer turns an annotation —
+    /// so the outline sits on the drawing, and a click on the drawing lands on the outline.
+    /// On a picture the Perspective look has turned, the same rectangle's corners carried
+    /// through the turn: a quadrilateral, drawn as lines, and the quadrilateral is what
+    /// takes the click.
+    @ViewBuilder
+    private func placedOutline(kind: Kind, isSelected: Bool, rect: CGRect, rotation: Double) -> some View {
+        if tilt.isTilted {
+            let shape = tilt.outline(of: rect, rotation: rotation)
+            tiltedOutline(kind: kind, isSelected: isSelected, shape: shape, rect: rect)
+                .contentShape(shape)
+        } else {
+            outline(kind: kind, isSelected: isSelected)
+                .frame(width: rect.width, height: rect.height)
+                .contentShape(Rectangle())
+                .rotationEffect(.degrees(rotation))
+                .offset(x: rect.minX, y: rect.minY)
+        }
+    }
+
+    /// `outline(kind:isSelected:)` on a turned picture: the same lines, in the same colours,
+    /// along the four sides of `shape` rather than round a rounded rectangle.
+    @ViewBuilder
+    private func tiltedOutline(kind: Kind, isSelected: Bool, shape: Path, rect: CGRect) -> some View {
+        switch kind {
+        case .blur:
+            shape.stroke(isSelected ? Color.accentColor : .white.opacity(0.7),
+                         style: StrokeStyle(lineWidth: isSelected ? 1.5 : 1, dash: [5, 4]))
+        case .annotation(let item):
+            let dash: [CGFloat] = item.isHidden ? [4, 4] : []
+            ZStack(alignment: .topLeading) {
+                if isSelected {
+                    ZStack {
+                        shape.stroke(Color.white.opacity(0.55), lineWidth: 2.5)
+                        shape.stroke(Color.accentColor,
+                                     style: StrokeStyle(lineWidth: 1.25, dash: item.isHidden ? [4, 3] : []))
+                    }
+                    .opacity(item.kind.ends != nil ? 0.35 : 1)
+                } else {
+                    shape.stroke(Color.black.opacity(item.isHidden ? 0.35 : 0.2), style: StrokeStyle(lineWidth: 2.5, dash: dash))
+                    shape.stroke(Color.white.opacity(item.isHidden ? 0.5 : 0.35), style: StrokeStyle(lineWidth: 1, dash: dash))
+                }
+                if case .text(let string) = item.kind, string.isEmpty, editingID != item.id {
+                    Self.clickToType
+                        .fixedSize()
+                        .position(tilt.drawn(CGPoint(x: rect.midX, y: rect.minY + min(14, rect.height / 2))))
+                }
+            }
+        }
+    }
+
+    /// The hint in an empty label, on a plate of its own: white words on a white page were
+    /// the one hint nobody could read.
+    private static var clickToType: some View {
+        Text("Click to type")
+            .font(.system(size: 10))
+            .foregroundStyle(.white.opacity(0.85))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(.black.opacity(0.45), in: Capsule())
     }
 
     @ViewBuilder
@@ -389,6 +465,10 @@ struct RegionCanvas: View {
             }
             .rotationEffect(.degrees(item.rotation))
             .offset(x: rect.minX, y: rect.minY)
+            // Laid out on the flat picture like everything else here, and then *drawn* turned
+            // with it, so the words being typed sit on the plate the export will draw them on.
+            // Nothing at all when the picture is square-on.
+            .projectionEffect(tilt.projection)
             .focused($isTyping)
             .onSubmit { endEditing() }
             .onExitCommand { endEditing() }
@@ -471,7 +551,8 @@ struct RegionCanvas: View {
         return CanvasGrip(shape: handle.isCorner ? .corner : .side(vertical: handle.direction.x != 0),
                           cursor: Self.cursor(for: handle, rotation: rotation))
             .rotationEffect(.degrees(rotation))
-            .position(point)
+            // At the corner as the picture is turned; the drag is brought back off it.
+            .position(tilt.drawn(point))
             .gesture(resizeDrag(handle, id: id, kind: kind))
             .help(label ? (handle.isCorner ? "Drag to scale the text" : "Drag to set where the text wraps")
                         : (handle.isCorner ? "Drag to resize · ⇧ keeps the shape" : "Drag to resize"))
@@ -494,15 +575,12 @@ struct RegionCanvas: View {
         let top = AnnotationGeometry.point(of: .top, in: rect, rotation: rotation)
         return ZStack {
             // The stalk, from the top edge to the knob, so the knob reads as part of the box.
-            Path { path in
-                path.move(to: top)
-                path.addLine(to: point)
-            }
-            .stroke(Color.accentColor.opacity(0.8), lineWidth: 1)
-            .allowsHitTesting(false)
+            tilt.line(from: top, to: point)
+                .stroke(Color.accentColor.opacity(0.8), lineWidth: 1)
+                .allowsHitTesting(false)
 
             RotationKnob()
-                .position(point)
+                .position(tilt.drawn(point))
                 .gesture(rotateDrag(id: id))
                 .help("Drag to turn · ⇧ snaps to 15°")
         }
@@ -514,10 +592,13 @@ struct RegionCanvas: View {
     private var createDrag: some Gesture {
         DragGesture(minimumDistance: 4, coordinateSpace: .named(Self.space))
             .onChanged { value in
-                draft = CGRect(x: min(value.startLocation.x, value.location.x),
-                               y: min(value.startLocation.y, value.location.y),
-                               width: abs(value.location.x - value.startLocation.x),
-                               height: abs(value.location.y - value.startLocation.y))
+                // Both ends taken back to the flat picture, where the box is stored: dragged
+                // across a turned picture, what is drawn is the box's turned outline.
+                guard let start = tilt.flat(value.startLocation), let end = tilt.flat(value.location) else { return }
+                draft = CGRect(x: min(start.x, end.x),
+                               y: min(start.y, end.y),
+                               width: abs(end.x - start.x),
+                               height: abs(end.y - start.y))
                     .intersection(stage)
             }
             .onEnded { _ in
@@ -537,9 +618,12 @@ struct RegionCanvas: View {
         DragGesture(minimumDistance: 2, coordinateSpace: .named(Self.space))
             .onChanged { value in
                 let start = begin(id: id, kind: kind)
+                // Measured on the flat picture: on a turned one the same distance on screen
+                // is further on the far side than on the near one. See `CanvasTilt`.
+                guard let travel = tilt.flatTranslation(from: value.startLocation, to: value.location) else { return }
                 var moved = start
-                moved.origin.x += value.translation.width
-                moved.origin.y += value.translation.height
+                moved.origin.x += travel.width
+                moved.origin.y += travel.height
                 // Lined up with the frame and the other boxes on screen, unless ⌘ is held
                 // for a free move. See `CanvasSnapping`.
                 if NSEvent.modifierFlags.contains(.command) {
@@ -560,6 +644,7 @@ struct RegionCanvas: View {
     private func resizeDrag(_ handle: AnnotationGeometry.Handle, id: UUID, kind: Kind) -> some Gesture {
         DragGesture(minimumDistance: 1, coordinateSpace: .named(Self.space))
             .onChanged { value in
+                guard let location = tilt.flat(value.location) else { return }
                 let start = begin(id: id, kind: kind, name: "Resize")
                 // In view points, which are square — so the turned box is resized along its
                 // own sides. See `AnnotationGeometry`.
@@ -567,7 +652,7 @@ struct RegionCanvas: View {
                 let rect = AnnotationGeometry.resize(start,
                                                      rotation: Self.rotation(of: kind),
                                                      dragging: handle,
-                                                     to: value.location,
+                                                     to: location,
                                                      minimumSide: 8,
                                                      keepingAspect: NSEvent.modifierFlags.contains(.shift)
                                                          || Self.keepsShape(kind)
@@ -588,8 +673,9 @@ struct RegionCanvas: View {
     private func rotateDrag(id: UUID) -> some Gesture {
         DragGesture(minimumDistance: 1, coordinateSpace: .named(Self.space))
             .onChanged { value in
+                guard let location = tilt.flat(value.location) else { return }
                 let start = begin(id: id, kind: .annotation(model.annotation(id) ?? placeholder), name: "Rotate")
-                let degrees = AnnotationGeometry.rotation(of: start, toward: value.location,
+                let degrees = AnnotationGeometry.rotation(of: start, toward: location,
                                                           snapping: NSEvent.modifierFlags.contains(.shift))
                 model.restyleAnnotation(id, "Rotate") { $0.rotation = degrees }
             }
@@ -635,15 +721,14 @@ struct RegionCanvas: View {
             .frame(width: 11, height: 11)
             .shadow(color: .black.opacity(0.28), radius: 1.5, y: 0.5)
             .contentShape(Circle().inset(by: -8))
-            .position(point)
+            .position(tilt.drawn(point))
     }
 
     /// Moving one end of a line, the other held where it is on the picture.
     private func endDrag(_ end: End, id: UUID) -> some Gesture {
         DragGesture(minimumDistance: 1, coordinateSpace: .named(Self.space))
             .onChanged { value in
-                guard let held = beginEnd(end, id: id) else { return }
-                var moving = value.location
+                guard let held = beginEnd(end, id: id), var moving = tilt.flat(value.location) else { return }
                 if NSEvent.modifierFlags.contains(.shift) {
                     let angle = atan2(moving.y - held.y, moving.x - held.x)
                     let step = Double.pi / 12
@@ -678,14 +763,14 @@ struct RegionCanvas: View {
     private func tailDrag(id: UUID) -> some Gesture {
         DragGesture(minimumDistance: 1, coordinateSpace: .named(Self.space))
             .onChanged { value in
-                guard let item = model.annotation(id) else { return }
+                guard let item = model.annotation(id), let location = tilt.flat(value.location) else { return }
                 if !isPointing {
                     isPointing = true
                     model.select(.annotation(id))
                     model.document.beginInteraction("Move Tail")
                 }
                 let rect = geometry.view(annotation: item.rect)
-                model.setTail(ofAnnotation: id, to: AnnotationGeometry.local(value.location, in: rect,
+                model.setTail(ofAnnotation: id, to: AnnotationGeometry.local(location, in: rect,
                                                                              rotation: item.rotation))
             }
             .onEnded { _ in

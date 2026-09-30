@@ -459,7 +459,7 @@ public final class SceneRenderer: @unchecked Sendable {
         // Core Image folds "a block of colour, blurred, cropped" into a colour with no edges
         // at all: a square frame with a shadow came out with the whole background black.
         // A pixel of rounding is invisible under a blur and keeps the shape a shape.
-        filter.radius = Float(max(1, min(scene.cornerRadius, min(rect.width, rect.height) / 2)))
+        filter.radius = Float(max(1, min(scene.shadowCornerRadius, min(rect.width, rect.height) / 2)))
         filter.color = CIColor(red: 0, green: 0, blue: 0, alpha: scene.shadowOpacity)
         guard let shape = filter.outputImage else { return CIImage.empty() }
 

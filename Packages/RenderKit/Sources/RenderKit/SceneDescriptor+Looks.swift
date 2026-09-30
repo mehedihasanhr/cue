@@ -116,6 +116,55 @@ public struct PerspectiveProjection: Equatable, Sendable {
                        y: plane.midY + (turned.y - middle.y) * fit)
     }
 
+    /// Where a drawn point came from on the flat frame: `project(_:)` run backwards, for
+    /// turning a drag on the turned picture into a move on the flat one.
+    ///
+    /// Exact rather than searched for, because the map is a projective one — a rotation
+    /// followed by a divide by depth, then a scale and a shift — which is a single 3×3
+    /// matrix acting on the point, and a matrix has an inverse. `nil` for a point on or past
+    /// the turned plane's horizon, which no point of the flat frame is drawn at: a pointer
+    /// dragged out there has nowhere on the picture to be, and the caller keeps what it had.
+    public func unproject(_ point: CGPoint) -> CGPoint? {
+        let h = homography
+        // The adjugate over the determinant, written out.
+        let a = h[0], b = h[1], c = h[2], d = h[3], e = h[4], f = h[5], g = h[6], k = h[7], l = h[8]
+        let inverse = [e * l - f * k, c * k - b * l, b * f - c * e,
+                       f * g - d * l, a * l - c * g, c * d - a * f,
+                       d * k - e * g, b * g - a * k, a * e - b * d]
+        let determinant = a * inverse[0] + b * inverse[3] + c * inverse[6]
+        guard abs(determinant) > 1e-12 else { return nil }
+        let x = point.x, y = point.y
+        let u = inverse[0] * x + inverse[1] * y + inverse[2]
+        let v = inverse[3] * x + inverse[4] * y + inverse[5]
+        let w = inverse[6] * x + inverse[7] * y + inverse[8]
+        guard abs(w) > 1e-12 else { return nil }
+        let flat = CGPoint(x: plane.midX + u / w, y: plane.midY + v / w)
+        // In front of the camera, and on the side of the horizon the plane is drawn on: the
+        // depth the forward map divides by has to be the positive one it would have used.
+        let depth = focal - (matrix[6] * (flat.x - plane.midX) + matrix[7] * (flat.y - plane.midY))
+        guard depth > focal * 0.1, flat.x.isFinite, flat.y.isFinite else { return nil }
+        return flat
+    }
+
+    /// `project(_:)` as one projective matrix, row by row, acting on a point measured from
+    /// the plane's middle, `(x − midX, y − midY, 1)`, and giving a drawn point once divided
+    /// through by its third term.
+    ///
+    /// Worked from `raw(_:)`: the turned point is `(rx, ry, rz)`, drawn `focal / (focal −
+    /// rz)` times larger, and then scaled by `fit` about `middle` and put back on the plane's
+    /// middle. Multiplying every term through by `focal − rz` leaves nothing but sums of
+    /// `x` and `y`, which is what makes it a matrix. The floor on the depth in `raw(_:)` is
+    /// never reached at the angles the model allows, so it is not part of it.
+    var homography: [Double] {
+        let m = matrix
+        let ax = plane.midX + (plane.midX - middle.x) * fit
+        let ay = plane.midY + (plane.midY - middle.y) * fit
+        let scale = fit * focal
+        return [scale * m[0] - ax * m[6], scale * m[1] - ax * m[7], ax * focal,
+                scale * m[3] - ay * m[6], scale * m[4] - ay * m[7], ay * focal,
+                -m[6], -m[7], focal]
+    }
+
     /// The plane's four corners, turned, in the order Core Image's perspective filters name
     /// them.
     public var corners: (topLeft: CGPoint, topRight: CGPoint, bottomRight: CGPoint, bottomLeft: CGPoint) {
