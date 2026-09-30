@@ -133,7 +133,7 @@ Each is an addition to one of the layers above. None needs a second renderer or 
 | **Crash-safe recording** | — | Fragmented movie writing; rebuild a manifest from what is on disk | — | Offer to recover at launch |
 | **Markers, restart, global shortcuts, menu bar icon** | `Timeline.markers` | `telemetry/markers.jsonl` | — | Bar, status item, hot keys |
 | **Speaker notes** | — | Window left out of the capture | — | Notes panel |
-| **iPhone and iPad recording** | Device frame in `FrameStyle` | `AVCaptureDevice` for a connected device | Frame artwork | Device mode in the bar |
+| **iPhone and iPad recording** | `Timeline.dressed(for:)` puts a device take in its `WindowChrome` frame on first open | `CaptureTarget.device`, `DeviceScreens` (CoreMediaIO allow-flag, discovery), `DeviceRecorder` into `screen.mov` + `device-audio.m4a`, `DeviceFrameFit` for a turned device, `RecordingManifest.device` | The existing device frames; an empty pointer track draws nothing | Device mode in the bar; the device picker in the target overlay |
 
 ## As built (2026-09-29)
 

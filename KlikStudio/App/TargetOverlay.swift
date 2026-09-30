@@ -175,6 +175,8 @@ private struct TargetOverlayView: View {
                 Group {
                     if model.mode == .window {
                         windowPicker
+                    } else if model.mode == .device {
+                        devicePicker
                     } else {
                         card
                     }
@@ -266,6 +268,205 @@ private struct TargetOverlayView: View {
             // Clear of the menu bar and of the recorder bar, which stays usable under this.
             .padding(insets)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Naming a connected iPhone or iPad — usually one, sometimes none, rarely more.
+    private var devicePicker: some View {
+        DevicePickerPanel(model: model, start: start, cancel: cancel)
+            .padding(insets)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// The device picker: the iPhones and iPads on a cable, and the choice.
+///
+/// The window picker's shape, smaller, because the list is short — and because what it
+/// most often has to say is why the list is empty. A device only appears once it is
+/// unlocked and trusts this Mac, both of which happen on the device, so the empty state
+/// says exactly that rather than "no devices", which would send somebody looking for a
+/// setting on the Mac that does not exist.
+private struct DevicePickerPanel: View {
+    let model: RecorderModel
+    let start: () -> Void
+    let cancel: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var selected: RecorderModel.Source? {
+        model.devices.first { $0.target == model.target }
+    }
+
+    private let radius: CGFloat = 20
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            content
+            actionBar
+        }
+        .frame(maxWidth: 560)
+        .background {
+            let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+            ZStack {
+                shape.fill(.regularMaterial)
+                shape.fill(colorScheme == .dark ? Color(white: 0.13).opacity(0.95)
+                                                : Color(white: 0.985).opacity(0.97))
+            }
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.5 : 0.3), radius: 44, y: 20)
+        }
+        .animation(StudioMotion.selection, value: model.devices.map(\.id))
+    }
+
+    private var header: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "apps.iphone")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(.secondary)
+            Text("Record an iPhone or iPad")
+                .font(.system(size: 19))
+                .foregroundStyle(.primary)
+            Spacer()
+            if !model.devices.isEmpty {
+                Text(model.devices.count == 1 ? "1 device" : "\(model.devices.count) devices")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.horizontal, 22)
+        .frame(height: 64)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if model.deviceAccessDenied {
+            message(symbol: "video.slash",
+                    title: "Klik Studio isn\u{2019}t allowed to use the camera",
+                    detail: "A connected iPhone or iPad is recorded the way a camera is, so it needs the same permission.") {
+                Button("Allow Camera in Settings\u{2026}") { model.openCameraSettings() }
+                    .padding(.top, 6)
+            }
+        } else if model.devices.isEmpty {
+            message(symbol: "cable.connector",
+                    title: "No iPhone or iPad connected",
+                    detail: "Connect an iPhone or iPad with a cable, unlock it and trust this Mac.") {
+                EmptyView()
+            }
+        } else {
+            VStack(spacing: 4) {
+                ForEach(model.devices) { source in
+                    DeviceRow(source: source, isSelected: model.target == source.target) {
+                        model.select(source)
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 12)
+        }
+    }
+
+    private func message<Extra: View>(symbol: String, title: String, detail: String,
+                                      @ViewBuilder extra: () -> Extra) -> some View {
+        VStack(spacing: 8) {
+            Image(systemName: symbol)
+                .font(.system(size: 26, weight: .light))
+                .foregroundStyle(.primary.opacity(0.35))
+                .padding(.bottom, 4)
+            Text(title)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.primary.opacity(0.85))
+            Text(detail)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 360)
+            extra()
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 44)
+    }
+
+    private var actionBar: some View {
+        HStack(spacing: 10) {
+            if let selected {
+                Text(selected.title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.primary.opacity(0.9))
+                    .lineLimit(1)
+            } else {
+                Text(model.devices.isEmpty ? "Waiting for a device\u{2026}" : "Select a device to record it")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 16)
+
+            ActionChip(title: "Record Device", key: "\u{21A9}", isPrimary: true, action: start)
+                .disabled(selected == nil || model.deviceAccessDenied)
+                .opacity(selected == nil || model.deviceAccessDenied ? 0.4 : 1)
+            Rectangle()
+                .fill(.primary.opacity(0.12))
+                .frame(width: 1, height: 16)
+            ActionChip(title: "Cancel", key: "esc", isPrimary: false, action: cancel)
+        }
+        .padding(.leading, 22)
+        .padding(.trailing, 12)
+        .frame(height: 56)
+    }
+}
+
+/// One connected device on offer.
+private struct DeviceRow: View {
+    let source: RecorderModel.Source
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var isHovering = false
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var symbol: String {
+        source.subtitle.hasPrefix("iPad") ? "ipad" : "iphone"
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: symbol)
+                    .font(.system(size: 22, weight: .light))
+                    .foregroundStyle(.primary.opacity(0.75))
+                    .frame(width: 32, height: 32)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(source.title)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(source.subtitle)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 17, weight: .semibold))
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.white, StudioPalette.brand)
+                        .transition(.scale(scale: 0.5).combined(with: .opacity))
+                }
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 52)
+            .background(.primary.opacity(highlight),
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(BarButtonStyle(pressedScale: 0.98))
+        .onHover { hovering in
+            withAnimation(StudioMotion.hover) { isHovering = hovering }
+        }
+        .animation(StudioMotion.selection, value: isSelected)
+    }
+
+    private var highlight: Double {
+        let dark = colorScheme == .dark
+        if isSelected { return dark ? 0.12 : 0.07 }
+        return isHovering ? (dark ? 0.06 : 0.035) : 0
     }
 }
 

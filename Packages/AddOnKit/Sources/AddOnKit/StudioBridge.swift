@@ -44,6 +44,9 @@ public struct StudioCapabilities: Sendable, Codable, Equatable {
     public var canEdit: Bool
     public var canExportGIF: Bool
     public var canCaption: Bool
+    /// Records an iPhone or iPad plugged in with a cable. Decoded as `false` when absent,
+    /// so an add-on built before devices could be recorded still describes itself.
+    public var canRecordDevice: Bool
 
     public init(contract: Int = StudioCapabilities.currentContract,
                 version: String,
@@ -55,7 +58,8 @@ public struct StudioCapabilities: Sendable, Codable, Equatable {
                 canRecordWebcam: Bool = false,
                 canEdit: Bool = false,
                 canExportGIF: Bool = false,
-                canCaption: Bool = false) {
+                canCaption: Bool = false,
+                canRecordDevice: Bool = false) {
         self.contract = contract
         self.version = version
         self.canRecordDisplay = canRecordDisplay
@@ -67,6 +71,32 @@ public struct StudioCapabilities: Sendable, Codable, Equatable {
         self.canEdit = canEdit
         self.canExportGIF = canExportGIF
         self.canCaption = canCaption
+        self.canRecordDevice = canRecordDevice
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case contract, version, canRecordDisplay, canRecordWindow, canRecordArea,
+             canRecordSystemAudio, canRecordMicrophone, canRecordWebcam, canEdit,
+             canExportGIF, canCaption, canRecordDevice
+    }
+
+    /// Written out rather than synthesised for one field: a synthesised decoder demands
+    /// every key, so the first capability added after release would have made every older
+    /// add-on's answer unreadable — the opposite of "adding a capability is a new field".
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        contract = try container.decode(Int.self, forKey: .contract)
+        version = try container.decode(String.self, forKey: .version)
+        canRecordDisplay = try container.decode(Bool.self, forKey: .canRecordDisplay)
+        canRecordWindow = try container.decode(Bool.self, forKey: .canRecordWindow)
+        canRecordArea = try container.decode(Bool.self, forKey: .canRecordArea)
+        canRecordSystemAudio = try container.decode(Bool.self, forKey: .canRecordSystemAudio)
+        canRecordMicrophone = try container.decode(Bool.self, forKey: .canRecordMicrophone)
+        canRecordWebcam = try container.decode(Bool.self, forKey: .canRecordWebcam)
+        canEdit = try container.decode(Bool.self, forKey: .canEdit)
+        canExportGIF = try container.decode(Bool.self, forKey: .canExportGIF)
+        canCaption = try container.decode(Bool.self, forKey: .canCaption)
+        canRecordDevice = try container.decodeIfPresent(Bool.self, forKey: .canRecordDevice) ?? false
     }
 
     /// Whether a host speaking `contract` can talk to this add-on at all.
@@ -78,6 +108,7 @@ public struct StudioCapabilities: Sendable, Codable, Equatable {
         case .display: canRecordDisplay
         case .window: canRecordWindow
         case .area: canRecordArea
+        case .device: canRecordDevice
         case .ask: canRecordDisplay || canRecordWindow || canRecordArea
         }
         if !targetSupported { return false }

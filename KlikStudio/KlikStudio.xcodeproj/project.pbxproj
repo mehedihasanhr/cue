@@ -319,7 +319,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ../Config/StudioInfo.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_NSCameraUsageDescription = "Klik Studio records your camera when you add a webcam overlay.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Klik Studio records your camera when you add a webcam overlay, and the screen of an iPhone or iPad connected by cable when you choose to record one.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Klik Studio records your microphone when you narrate a recording.";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -347,7 +347,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ../Config/StudioInfo.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_NSCameraUsageDescription = "Klik Studio records your camera when you add a webcam overlay.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Klik Studio records your camera when you add a webcam overlay, and the screen of an iPhone or iPad connected by cable when you choose to record one.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Klik Studio records your microphone when you narrate a recording.";
 				LD_RUNPATH_SEARCH_PATHS = (

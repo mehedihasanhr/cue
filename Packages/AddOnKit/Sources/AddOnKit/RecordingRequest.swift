@@ -12,8 +12,50 @@ public struct RecordingRequest: Sendable, Codable, Equatable {
         case display(CGDirectDisplayID)
         case window(CGWindowID)
         case area(display: CGDirectDisplayID, rect: CGRect)
+        /// An iPhone or iPad on a cable, by its capture device's `uniqueID`.
+        case device(uniqueID: String)
         /// Let the add-on ask, which is what the menu bar item does.
         case ask
+
+        /// The shape the compiler would have written for these cases, kept as a type of
+        /// its own so the wire format is exactly the one every request has always had.
+        private enum Wire: Codable {
+            case display(CGDirectDisplayID)
+            case window(CGWindowID)
+            case area(display: CGDirectDisplayID, rect: CGRect)
+            case device(uniqueID: String)
+            case ask
+        }
+
+        /// Leniently: a target this build does not recognise — one a newer host added —
+        /// reads as `.ask` rather than failing the whole request. "Ask me" is the one
+        /// target that is always safe to fall back on, because it puts a picker up
+        /// instead of recording something nobody chose; failing to decode would have
+        /// dropped the request on the floor, which is the one outcome nobody asked for.
+        public init(from decoder: any Decoder) throws {
+            guard let wire = try? Wire(from: decoder) else {
+                self = .ask
+                return
+            }
+            self = switch wire {
+            case .display(let id): .display(id)
+            case .window(let id): .window(id)
+            case .area(let display, let rect): .area(display: display, rect: rect)
+            case .device(let id): .device(uniqueID: id)
+            case .ask: .ask
+            }
+        }
+
+        public func encode(to encoder: any Encoder) throws {
+            let wire: Wire = switch self {
+            case .display(let id): .display(id)
+            case .window(let id): .window(id)
+            case .area(let display, let rect): .area(display: display, rect: rect)
+            case .device(let id): .device(uniqueID: id)
+            case .ask: .ask
+            }
+            try wire.encode(to: encoder)
+        }
     }
 
     public var target: Target

@@ -120,6 +120,12 @@ public struct RecordingManifest: Codable, Equatable, Sendable {
     /// Set when the take was rebuilt from what an interrupted recording left on disk — see
     /// `TakeRecovery`. Absent from every take that finished normally.
     public var recovery: Recovery? = nil
+    /// The iPhone or iPad this take is a recording of, when it is one — see
+    /// `RecordedDevice`. Absent from every take of the Mac's own screen, and from every
+    /// recording made before a device could be recorded, which is what lets the editor
+    /// tell "a phone's screen, with no pointer in it" from "a screen whose pointer was not
+    /// kept".
+    public var device: RecordedDevice? = nil
 
     public init(name: String,
                 createdAt: Date = .now,
