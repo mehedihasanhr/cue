@@ -70,4 +70,49 @@ struct ExportFrameReaderTests {
         let whole = LumaPatch(width: last.width, height: last.height, pixels: last.pixels)
         #expect((first.difference(whole, at: (0, 0), rowStep: 4) ?? 0) > 0)
     }
+
+    /// A decoder that stalls is replaced by a reader opened just after the last frame, and
+    /// the frames carry on in order with none repeated or skipped. It used to wait for
+    /// ever: an export stuck at a percentage, a test run that never finished.
+    @Test func carriesOnAfterTheDecoderStalls() async throws {
+        let footage = FollowingFootage.moving(frames: 12) { CGPoint(x: 100 + 40 * $0, y: 300) }
+        let folder = try ExportTests.scratch()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appendingPathComponent("footage.mov")
+        try await footage.write(to: url)
+
+        let reader = try await ExportFrameReader(url: url)
+        _ = await reader.naturalSize()
+        let context = CIContext()
+        let drawn = try (0..<12).map { try #require(LumaPlane(footage.image($0), scale: 1, context: context)) }
+        for frame in 0..<12 {
+            // A stall in the middle of the file, then one right after it.
+            if frame == 5 || frame == 6 { reader.simulatedStalls = 1 }
+            let image = try #require(try reader.frame(at: CMTime(value: CMTimeValue(2 * frame), timescale: 60)))
+            let plane = try #require(LumaPlane(image, scale: 1, context: context))
+            let whole = LumaPatch(width: plane.width, height: plane.height, pixels: plane.pixels)
+            let nearest = drawn.indices.min { a, b in
+                (drawn[a].difference(whole, at: (0, 0), rowStep: 4) ?? .infinity)
+                    < (drawn[b].difference(whole, at: (0, 0), rowStep: 4) ?? .infinity)
+            }
+            #expect(nearest == frame, "frame \(frame)")
+        }
+    }
+
+    /// A decoder that stalls again straight after being replaced is reported, not waited on.
+    @Test func secondStallInARowIsAnError() async throws {
+        let footage = FollowingFootage.moving(frames: 12) { CGPoint(x: 100 + 40 * $0, y: 300) }
+        let folder = try ExportTests.scratch()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appendingPathComponent("footage.mov")
+        try await footage.write(to: url)
+
+        let reader = try await ExportFrameReader(url: url)
+        _ = await reader.naturalSize()
+        _ = try reader.frame(at: .zero)
+        reader.simulatedStalls = 2
+        #expect(throws: ExportError.self) {
+            _ = try reader.frame(at: CMTime(value: 10, timescale: 60))
+        }
+    }
 }

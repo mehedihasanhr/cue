@@ -38,6 +38,26 @@ final class ExportFrameReader {
     /// and a source time; anything more is a real jump.
     private static let rewindTolerance = CMTime(value: 1, timescale: 30)
 
+    /// How long one frame may take to decode before the decoder is taken to have stalled.
+    ///
+    /// Far longer than any real frame takes — a 4K HEVC frame decodes in milliseconds — so
+    /// it only ever fires on a decoder that has stopped. That happens: with several
+    /// decoders busy at once (exports beside a video background, or test runs side by
+    /// side), `copyNextSampleBuffer` has been seen to wait for ever, and an export that
+    /// waits for ever is worse than one that fails.
+    static let stallLimit: DispatchTimeInterval = .seconds(20)
+
+    /// Where the current reader was asked to begin, and the start of the last frame it
+    /// handed over — what a reader opened again after a stall carries on from.
+    private var openedFrom: CMTime = .zero
+    private var lastDelivered: CMTime = .negativeInfinity
+    /// Where each sample is waited for: a queue per reader, so a pull that never came back
+    /// from a stalled decoder cannot hold up the reader that replaces it.
+    private var pulls = DispatchQueue(label: "com.stackrover.klik.export-frame-reader")
+    /// Stalls to pretend, for the tests: each pull while this is above zero behaves as a
+    /// stalled one.
+    var simulatedStalls = 0
+
     init(url: URL) async throws(ExportError) {
         let asset = AVURLAsset(url: url)
         self.asset = asset
@@ -99,6 +119,16 @@ final class ExportFrameReader {
         isFinished = false
         upcoming = nil
 
+        lastDelivered = .negativeInfinity
+        try open(from: max(.zero, time))
+        // Prime the first frame, so a request landing before any sample still has a
+        // picture to give back.
+        _ = try advance()
+    }
+
+    /// A reader and its output, from `time` to the end of the file.
+    private func open(from time: CMTime) throws(ExportError) {
+        reader?.cancelReading()
         let reader: AVAssetReader
         do {
             reader = try AVAssetReader(asset: asset)
@@ -107,7 +137,7 @@ final class ExportFrameReader {
         }
         // From the start of the request to the end. The decoder still has to begin at
         // the keyframe before `time`, but it does that once here rather than per frame.
-        reader.timeRange = CMTimeRange(start: max(.zero, time), end: .positiveInfinity)
+        reader.timeRange = CMTimeRange(start: time, end: .positiveInfinity)
 
         let output = AVAssetReaderTrackOutput(
             track: track,
@@ -122,9 +152,8 @@ final class ExportFrameReader {
 
         self.reader = reader
         self.output = output
-        // Prime the first frame, so a request landing before any sample still has a
-        // picture to give back.
-        _ = try advance()
+        openedFrom = time
+        pulls = DispatchQueue(label: "com.stackrover.klik.export-frame-reader")
     }
 
     /// Takes the next frame. `false` once the file has run out.
@@ -191,13 +220,74 @@ final class ExportFrameReader {
         return copy
     }
 
+    private enum Pull {
+        case sample(CMSampleBuffer)
+        case end
+        case stalled
+    }
+
+    private final class SampleBox: @unchecked Sendable {
+        var sample: CMSampleBuffer?
+    }
+
+    /// The next sample, waited for no longer than `stallLimit`.
+    ///
+    /// A stalled decoder is cancelled, which is what brings the waiting
+    /// `copyNextSampleBuffer` back; the caller then opens a fresh reader.
+    private func pull() -> Pull {
+        guard let reader, let output else { return .end }
+        if simulatedStalls > 0 {
+            simulatedStalls -= 1
+            reader.cancelReading()
+            return .stalled
+        }
+        let box = SampleBox()
+        let done = DispatchSemaphore(value: 0)
+        pulls.async {
+            box.sample = output.copyNextSampleBuffer()
+            done.signal()
+        }
+        guard done.wait(timeout: .now() + Self.stallLimit) == .success else {
+            reader.cancelReading()
+            // Given a moment to let go after the cancel. If it doesn't, it is left behind
+            // on its own queue; the next reader gets a queue of its own.
+            _ = done.wait(timeout: .now() + .seconds(2))
+            return .stalled
+        }
+        return box.sample.map(Pull.sample) ?? .end
+    }
+
     /// The next decodable frame in the file, and when it starts.
+    ///
+    /// A decoder that stalls is replaced once, by a reader opened again just after the
+    /// last frame handed over — frames it repeats are skipped, so the export carries on
+    /// where it was. A second stall is reported rather than waited out.
     private func nextFrame() throws(ExportError) -> (image: CIImage, time: CMTime)? {
-        guard let reader, let output else { return nil }
-        while let sample = output.copyNextSampleBuffer() {
+        var hasReopened = false
+        while true {
+            let sample: CMSampleBuffer
+            switch pull() {
+            case .sample(let next):
+                sample = next
+            case .end:
+                if let reader, reader.status == .failed {
+                    throw ExportError.unreadableSource(reader.error?.localizedDescription ?? "The recording stopped decoding.")
+                }
+                return nil
+            case .stalled:
+                guard !hasReopened else {
+                    throw ExportError.unreadableSource("The recording's video stopped decoding.")
+                }
+                hasReopened = true
+                try open(from: lastDelivered.isNumeric ? lastDelivered : openedFrom)
+                continue
+            }
             guard let buffer = CMSampleBufferGetImageBuffer(sample) else { continue }
             let start = CMSampleBufferGetPresentationTimeStamp(sample)
             guard start.isNumeric else { continue }
+            // Already handed over, by the reader this one replaced.
+            if lastDelivered.isNumeric, start <= lastDelivered { continue }
+            lastDelivered = start
             // Copied out of the decoder's own buffers before it is held. The decoder has only
             // a handful, and this reader keeps two frames (the one showing and the next),
             // while a render still queued on the GPU keeps others: once every one is held,
@@ -206,10 +296,6 @@ final class ExportFrameReader {
             let owned = detached(buffer) ?? buffer
             return (rotated(CIImage(cvPixelBuffer: owned)), start)
         }
-        if reader.status == .failed {
-            throw ExportError.unreadableSource(reader.error?.localizedDescription ?? "The recording stopped decoding.")
-        }
-        return nil
     }
 
     /// Puts a frame the way up the preview shows it.
