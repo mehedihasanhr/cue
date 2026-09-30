@@ -182,10 +182,24 @@ public struct SceneDescriptor: Equatable, Sendable {
     /// the whole frame zooms it is the hole itself, grown and moved — held to the output,
     /// because nothing is drawn off the edge of the video being written.
     public var visibleVideoFrame: CGRect {
-        guard zoomsWholeFrame else { return videoFrame }
+        guard frameFollowsCamera else { return videoFrame }
         let bounds = CGRect(origin: .zero, size: outputSize)
         let grown = transformedVideoFrame.intersection(bounds)
         return grown.isNull ? videoFrame : grown
+    }
+
+    /// Whether the picture's frame — its corners, shadow, border and window bar — moves and
+    /// scales with the camera rather than staying in the hole the padding left.
+    ///
+    /// Always true for a pull back, whatever `zoomsWholeFrame` says. Magnifying only the
+    /// contents is a choice about pushing in: the picture fills its hole and the camera
+    /// looks closer inside it. Pulled back there is nothing to fill the hole with — the
+    /// recording has run out — so the only honest picture is the framed recording itself,
+    /// smaller, with its corners and shadow, and the background showing round it. At
+    /// exactly 1× the transformed frame *is* the hole, so switching rule as the camera
+    /// crosses 1× moves nothing.
+    public var frameFollowsCamera: Bool {
+        zoomsWholeFrame || zoom < 1
     }
 
     public var transformedVideoFrame: CGRect {

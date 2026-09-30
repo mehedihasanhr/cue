@@ -3,9 +3,16 @@ import Carbon.HIToolbox
 import RecordKit
 import SwiftUI
 
-/// The recorder's global shortcuts: start and stop, pause, restart, marker.
+/// Every shortcut the app has that can be changed: the recorder's global ones — start and
+/// stop, pause, restart, marker — and the editor's menu shortcuts, menu by menu.
+///
+/// One page for both because they are one keyboard. A global shortcut takes its key before
+/// any menu sees it, so the two lists can only be kept apart by a page that checks each
+/// against the other: a key the recorder has is refused for the editor, and the other way
+/// about.
 struct ShortcutSettingsPane: View {
     @Environment(StudioSettings.self) private var settings
+    @State private var filter = ""
 
     var body: some View {
         @Bindable var preferences = settings.recorder
@@ -21,7 +28,7 @@ struct ShortcutSettingsPane: View {
 
             SettingsGroup("Recorder shortcuts", footer: "Click a shortcut and press the new keys. Escape keeps the old one; Delete removes it.") {
                 ForEach(RecorderAction.allCases) { action in
-                    ShortcutRow(action: action, preferences: preferences)
+                    ShortcutRow(action: action, preferences: preferences, editor: settings.editorShortcuts)
                 }
             }
             .disabled(!preferences.usesGlobalShortcuts)
@@ -33,6 +40,144 @@ struct ShortcutSettingsPane: View {
                 }
             }
             .disabled(!preferences.usesGlobalShortcuts)
+
+            editorShortcuts(recorder: preferences)
+        }
+    }
+
+    // MARK: - The editor's
+
+    /// The editor's menu shortcuts, a card per menu, in menu bar order.
+    ///
+    /// Seventy commands is a long page, so a field above them narrows it by name or by menu
+    /// — "zoom" finds the Zoom menu and every command with zoom in its name.
+    @ViewBuilder
+    private func editorShortcuts(recorder: RecorderPreferences) -> some View {
+        let shortcuts = settings.editorShortcuts
+        SettingsGroup("Editor shortcuts",
+                      footer: "The editor\u{2019}s menu shortcuts, answered while an editor window is in front. Click one and press the new keys: Escape keeps the old one, and the \u{2715} beside it removes it. A key macOS, this app\u{2019}s own menus or the recorder already uses is refused.") {
+            SettingsCell(vertical: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField("Find a command", text: $filter)
+                        .textFieldStyle(.plain)
+                        .accessibilityLabel("Find an editor command")
+                    if !filter.isEmpty {
+                        Button { filter = "" } label: {
+                            Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("Clear the search")
+                    }
+                }
+            }
+            SettingsRow("Editor defaults",
+                        subtitle: shortcuts.shortcuts.isDefault
+                            ? "Every editor shortcut is as it shipped."
+                            : "\(shortcuts.shortcuts.overrides.count) changed.") {
+                Button("Restore Editor Defaults") { shortcuts.shortcuts = .defaults }
+                    .disabled(shortcuts.shortcuts.isDefault)
+            }
+        }
+
+        ForEach(EditorCommand.Menu.allCases) { menu in
+            let commands = menu.commands.filter { matches($0) }
+            if !commands.isEmpty {
+                SettingsGroup(menu.title) {
+                    ForEach(commands) { command in
+                        EditorShortcutRow(command: command, shortcuts: shortcuts, recorder: recorder)
+                    }
+                }
+            }
+        }
+        if EditorCommand.allCases.allSatisfy({ !matches($0) }) {
+            Text("No editor command called \u{201C}\(filter)\u{201D}.")
+                .font(SettingsFont.note)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+        }
+    }
+
+    private func matches(_ command: EditorCommand) -> Bool {
+        let needle = filter.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !needle.isEmpty else { return true }
+        return command.title.lowercased().contains(needle)
+            || command.menu.title.lowercased().contains(needle)
+            || (settings.editorShortcuts[command]?.displayString.lowercased().contains(needle) ?? false)
+    }
+}
+
+/// One editor command, its shortcut, a way back to the default, and what is wrong with the
+/// shortcut if anything is.
+private struct EditorShortcutRow: View {
+    let command: EditorCommand
+    @Bindable var shortcuts: EditorShortcutPreferences
+    let recorder: RecorderPreferences
+    @State private var rejected: EditorShortcutProblem?
+
+    /// The recorder's shortcuts while they are on — the only time they take a key.
+    private var liveRecorderShortcuts: RecorderShortcuts? {
+        recorder.usesGlobalShortcuts ? recorder.shortcuts : nil
+    }
+
+    var body: some View {
+        SettingsRow(command.title, subtitle: note) {
+            HStack(spacing: 10) {
+                ShortcutField(title: command.title, combo: shortcuts[command], clearsOnDelete: false) { combo in
+                    guard let combo else {
+                        shortcuts[command] = nil
+                        rejected = nil
+                        return
+                    }
+                    if let problem = shortcuts.shortcuts.problem(with: combo, for: command,
+                                                                 recorder: liveRecorderShortcuts) {
+                        rejected = problem
+                    } else {
+                        rejected = nil
+                        shortcuts[command] = combo
+                    }
+                }
+                Button {
+                    shortcuts.shortcuts.reset(command)
+                    rejected = nil
+                } label: {
+                    Image(systemName: "arrow.uturn.backward.circle")
+                }
+                .buttonStyle(.borderless)
+                .help(resetHelp)
+                .accessibilityLabel("Restore the default for \(command.title)")
+                .opacity(shortcuts.shortcuts.isCustomised(command) ? 1 : 0)
+                .disabled(!shortcuts.shortcuts.isCustomised(command))
+                statusIcon.frame(width: 18)
+            }
+        }
+    }
+
+    private var resetHelp: String {
+        guard let original = command.defaultShortcut else { return "Back to no shortcut, as it shipped" }
+        return "Back to \(original.displayString)"
+    }
+
+    private var storedProblem: EditorShortcutProblem? {
+        guard let combo = shortcuts[command] else { return nil }
+        return shortcuts.shortcuts.problem(with: combo, for: command, recorder: liveRecorderShortcuts)
+    }
+
+    private var note: String? {
+        rejected?.message ?? storedProblem?.message
+    }
+
+    @ViewBuilder
+    private var statusIcon: some View {
+        if rejected != nil || storedProblem != nil {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                .help(note ?? "This shortcut has a problem")
+        } else if shortcuts[command] == nil {
+            Image(systemName: "minus.circle").foregroundStyle(.tertiary)
+                .help("No shortcut")
+        } else {
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                .help("Ready")
         }
     }
 }
@@ -41,6 +186,9 @@ struct ShortcutSettingsPane: View {
 private struct ShortcutRow: View {
     let action: RecorderAction
     @Bindable var preferences: RecorderPreferences
+    /// Asked before a new key is taken, so a global shortcut never lands on a key an editor
+    /// menu has — it would take that key away from the editor for as long as it is set.
+    let editor: EditorShortcutPreferences
     @State private var rejected: ShortcutProblem?
 
     var body: some View {
@@ -52,17 +200,31 @@ private struct ShortcutRow: View {
                         rejected = nil
                         return
                     }
-                    if let problem = preferences.shortcuts.problem(with: combo, for: action) {
+                    if let problem = preferences.shortcuts.problem(with: combo, for: action,
+                                                                   editor: editor.shortcuts) {
                         rejected = problem
                     } else {
                         rejected = nil
                         preferences.shortcuts[action] = combo
                     }
                 }
+                Button {
+                    preferences.shortcuts[action] = action.defaultShortcut
+                    rejected = nil
+                } label: {
+                    Image(systemName: "arrow.uturn.backward.circle")
+                }
+                .buttonStyle(.borderless)
+                .help("Back to \(action.defaultShortcut.displayString)")
+                .accessibilityLabel("Restore the default for \(action.title)")
+                .opacity(isCustomised ? 1 : 0)
+                .disabled(!isCustomised)
                 statusIcon.frame(width: 18)
             }
         }
     }
+
+    private var isCustomised: Bool { preferences.shortcuts[action] != action.defaultShortcut }
 
     private var symbol: String {
         switch action {
@@ -117,6 +279,10 @@ private struct ShortcutRow: View {
 struct ShortcutField: View {
     let title: String
     let combo: KeyCombo?
+    /// Whether Delete clears the shortcut rather than becoming it. On for the recorder,
+    /// whose shortcuts always need a modifier; off for the editor, where plain Delete is
+    /// Delete Selection's and has to be something a row can be given.
+    var clearsOnDelete = true
     let change: (KeyCombo?) -> Void
     @State private var isRecording = false
     @State private var monitor: Any?
@@ -152,7 +318,7 @@ struct ShortcutField: View {
             switch Int(event.keyCode) {
             case kVK_Escape:
                 stop()
-            case kVK_Delete, kVK_ForwardDelete:
+            case kVK_Delete where clearsOnDelete, kVK_ForwardDelete where clearsOnDelete:
                 change(nil)
                 stop()
             default:

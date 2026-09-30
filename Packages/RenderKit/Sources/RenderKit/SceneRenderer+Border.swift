@@ -20,9 +20,9 @@ extension SceneRenderer {
     /// when only the contents zoom it is the hole the padding left, which is where the
     /// picture's edge stays.
     func bordered(_ picture: CIImage, by border: BorderLayer, in scene: SceneDescriptor) -> CIImage {
-        let frame = scene.zoomsWholeFrame ? scene.transformedVideoFrame : scene.videoFrame
+        let frame = scene.pictureEdge
         guard frame.width > 1, frame.height > 1 else { return picture }
-        let grown = scene.zoomsWholeFrame && scene.videoFrame.width > 0
+        let grown = scene.frameFollowsCamera && scene.videoFrame.width > 0
             ? frame.width / scene.videoFrame.width : 1
         let width = min(border.width * grown, min(frame.width, frame.height) / 2)
         guard width > 0.25, border.color.a > 0 else { return picture }

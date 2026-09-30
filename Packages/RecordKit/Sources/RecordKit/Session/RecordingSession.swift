@@ -109,6 +109,9 @@ public final class RecordingSession {
     private var configuration: RecordingConfiguration?
     private var writer: SessionWriter?
     private var screen: ScreenRecorder?
+    /// The chosen apps' sound, when the take records only some apps — `nil` for a take that
+    /// hears everything, or nothing. See `SystemAudioRoute`.
+    private var appAudio: AppAudioRecorder?
     /// One per microphone this take was asked for, in the order they were asked for.
     private var microphones: [MicrophoneRecorder] = []
     /// Every sound this take is writing, each into its own file.
@@ -224,6 +227,15 @@ public final class RecordingSession {
             fail(error)
             return
         }
+        // After the screen, whose first frame starts the clock every sound is timed from.
+        // A failure here costs the take its chosen apps' sound and not the take: the
+        // screen is already recording, and the lane simply ends up empty and unlisted.
+        do {
+            try await appAudio?.start()
+        } catch {
+            Self.log.error("Couldn't listen to the chosen apps: \(String(describing: error), privacy: .public)")
+            appAudio = nil
+        }
         for microphone in microphones { microphone.start() }
         // After the screen, deliberately. The camera's writer takes its time zero from the
         // clock the screen's first frame starts, so a camera that opened first would simply
@@ -266,14 +278,31 @@ public final class RecordingSession {
         // apart afterwards with any certainty, and telling them apart is the whole feature.
         var lanes: [AudioLane] = []
         var systemAudioWriter: AudioTrackWriter?
-        if configuration.systemAudio {
+        // Everything, some apps, or nothing — decided against what is running now, because
+        // an app can only be listened to if it exists when the filter is made.
+        let route = SystemAudioRoute.plan(systemAudio: configuration.systemAudio,
+                                          chosen: configuration.systemAudioApps,
+                                          running: shareable.applications.map(\.bundleIdentifier),
+                                          ownBundleIDs: content.excludedBundleIDs)
+        if route == .nothingRunning {
+            Self.log.notice("None of the apps chosen for system audio is running; recording without it")
+        }
+        if route.recordsAudio {
             let lane = try audioLane(kind: .systemAudio,
                                      file: "system-audio.m4a",
                                      name: "System Audio",
                                      deviceID: nil,
                                      package: package)
-            systemAudioWriter = lane.writer
             lanes.append(lane)
+            if case .applications(let bundleIDs) = route {
+                appAudio = AppAudioRecorder(filter: try content.audioFilter(including: bundleIDs,
+                                                                            near: configuration.target,
+                                                                            in: shareable),
+                                            configuration: RecordingConfiguration.audioOnlyStreamConfiguration(),
+                                            writer: lane.writer)
+            } else {
+                systemAudioWriter = lane.writer
+            }
         }
 
         try await makeScreen(filter: filter, configuration: configuration, package: package, audio: systemAudioWriter)
@@ -507,8 +536,15 @@ public final class RecordingSession {
                                  queue: queue,
                                  clock: clock,
                                  mapper: mapper,
-                                 tracksFields: configuration.capturesKeystrokes)
+                                 tracksFields: Self.tracksTextFields(for: configuration))
         }
+    }
+
+    /// Whether a take's focus tracker watches text fields: when focus is recorded and
+    /// fields were asked for, whatever the keyboard switch says. See
+    /// `RecordingConfiguration.capturesFieldFocus`.
+    nonisolated static func tracksTextFields(for configuration: RecordingConfiguration) -> Bool {
+        configuration.capturesFocus && configuration.capturesFieldFocus
     }
 
     /// How far every pointer sample in this take was moved to meet the picture.
@@ -728,6 +764,7 @@ public final class RecordingSession {
         // Before the screen, and unconditionally. A camera session left running is a camera
         // light left on, so it is the first thing let go of on every path out of a take.
         webcam?.stop()
+        await appAudio?.stop()
         await screen?.stop()
         // The result comes back out of the closure rather than being assigned inside
         // it: `queue.sync` runs its body on the capture queue, and this object is on the
@@ -773,6 +810,7 @@ public final class RecordingSession {
         takeSync = nil
         writer = nil
         screen = nil
+        appAudio = nil
         microphones = []
         audioLanes = []
         recordedAudio = []

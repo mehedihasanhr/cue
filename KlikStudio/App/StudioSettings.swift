@@ -24,6 +24,7 @@ final class StudioSettings {
         static let camera = "recording.camera"
         static let microphoneID = "recording.microphoneID"
         static let microphoneIDs = "recording.microphoneIDs"
+        static let systemAudioApps = "recording.systemAudioApps"
         static let cameraID = "recording.cameraID"
         static let capturesClicks = "recording.clicks"
         static let capturesFocus = "recording.focus"
@@ -89,6 +90,25 @@ final class StudioSettings {
     /// setting this replaced meant when it was empty, and is why an upgrade needs no
     /// migration beyond reading the old key once.
     var microphoneIDs: [String] { didSet { defaults.set(microphoneIDs, forKey: Key.microphoneIDs) } }
+
+    /// The apps whose sound "system audio" means, by bundle identifier. Empty — the
+    /// default — is every app, which is what system audio meant before apps could be
+    /// chosen.
+    ///
+    /// Kept by bundle identifier rather than by process, so the choice outlives the app
+    /// being quit and reopened between takes; an app chosen but not running when a take
+    /// starts is simply not heard in it. See `SystemAudioRoute`.
+    var systemAudioAppIDs: [String] { didSet { defaults.set(systemAudioAppIDs, forKey: Key.systemAudioApps) } }
+
+    /// Adds or removes one app from the ones system audio listens to, in the order chosen.
+    func setSystemAudioApp(_ bundleID: String, isOn: Bool) {
+        if isOn {
+            guard !systemAudioAppIDs.contains(bundleID) else { return }
+            systemAudioAppIDs.append(bundleID)
+        } else {
+            systemAudioAppIDs.removeAll { $0 == bundleID }
+        }
+    }
 
     /// The first microphone, for the places that can only use one — the voiceover
     /// recorder, and the bar's label when it names the input.
@@ -192,6 +212,10 @@ final class StudioSettings {
     /// see `RecorderPreferences`.
     let recorder = RecorderPreferences()
 
+    /// The editor's menu shortcuts, as changed in Settings — see
+    /// `EditorShortcutPreferences`.
+    let editorShortcuts = EditorShortcutPreferences()
+
     /// Appearance, the Dock, the restart question and what a finished export does — see
     /// `StudioAppPreferences`.
     let app = StudioAppPreferences()
@@ -216,6 +240,7 @@ final class StudioSettings {
         // who picked a headset last month still has it selected after the upgrade.
         microphoneIDs = defaults.object(forKey: Key.microphoneIDs) as? [String]
             ?? [defaults.string(forKey: Key.microphoneID)].compactMap { $0 }.filter { !$0.isEmpty }
+        systemAudioAppIDs = defaults.object(forKey: Key.systemAudioApps) as? [String] ?? []
         cameraID = defaults.string(forKey: Key.cameraID) ?? ""
         recordsClicks = defaults.object(forKey: Key.capturesClicks) as? Bool ?? true
         recordsFocus = defaults.object(forKey: Key.capturesFocus) as? Bool ?? true
@@ -316,8 +341,12 @@ final class StudioSettings {
         configuration.quality = quality
         configuration.codec = codec
         configuration.systemAudio = recordsSystemAudio
+        configuration.systemAudioApps = systemAudioAppIDs
         configuration.capturesClicks = recordsClicks
         configuration.capturesFocus = recordsFocus
+        // Text fields with the rest of focus, on this switch alone — not only while the
+        // keyboard is recorded, which is what used to decide it.
+        configuration.capturesFieldFocus = recordsFocus
         configuration.capturesCursorInVideo = burnsCursorIntoVideo
         configuration.capturesKeystrokes = recordsKeys
         // Nothing chosen means the system's default input, which is what somebody who

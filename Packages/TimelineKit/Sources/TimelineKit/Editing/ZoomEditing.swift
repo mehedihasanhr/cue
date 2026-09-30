@@ -50,7 +50,7 @@ public enum ZoomLane {
                                 source: region.source,
                                 isLocked: region.isLocked,
                                 isInstant: region.isInstant)
-        // Assigned rather than passed because the initialiser clamps `scale` into 1…8, and
+        // Assigned rather than passed because the initialiser clamps `scale` into 0.5…8, and
         // this has to come through untouched: a split must not quietly restyle a zoom that
         // a hand edit or a newer build put outside that range.
         second.scale = region.scale

@@ -44,8 +44,12 @@ extension EditorModel {
     /// line itself.
     func removeCaptionFromVideo(_ id: UUID) {
         guard let cue = timeline.captions.first(where: { $0.id == id }) else { return }
+        // Only the recording under the line: a caption that spans a title slide put in
+        // under it (an insert stretches it across) must not take the slide with it.
+        let ranges = TranscriptEditing.keepingHolds([CMTimeRange(start: cue.start, end: cue.end)], in: timeline)
+        guard !ranges.isEmpty else { return }
         clearSelection()
-        apply(Commands.DeleteRanges([CMTimeRange(start: cue.start, end: cue.end)], name: "Remove Line from Video"))
+        apply(Commands.DeleteRanges(ranges, name: "Remove Line from Video"))
     }
 }
 

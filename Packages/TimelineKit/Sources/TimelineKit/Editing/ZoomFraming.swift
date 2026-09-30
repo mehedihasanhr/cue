@@ -81,6 +81,29 @@ public enum ZoomFraming {
                        y: min(1 - half, max(half, center.y)))
     }
 
+    /// Where the camera may look at any scale, pull backs included — what the renderer
+    /// settles every shot with.
+    ///
+    /// At 1× and above this is `honoured(center:scale:)`, unchanged: the shot stays on the
+    /// picture. Below 1× the rule turns inside out. The picture is now *smaller* than the
+    /// hole it is shown through, so it is the picture that must stay inside the hole rather
+    /// than the hole inside the picture: aimed at a point, the camera puts that point in the
+    /// middle of the frame only as far as it can without pushing an edge of the shrunken
+    /// picture past the padding. At 0.5× that is anywhere at all — half a picture either
+    /// side of the middle is exactly the hole — and at 1× it is the middle and nowhere
+    /// else, which is where the rule above leaves off, so the two meet without a step.
+    ///
+    /// Kept apart from `honoured(center:scale:)` on purpose. That one is also the framing
+    /// box's arithmetic, and a pull back has no box smaller than the recording to draw:
+    /// its framing is the whole recording, which `area(of:)` goes on saying.
+    public static func cameraCenter(_ center: CGPoint, scale: Double) -> CGPoint {
+        guard scale < 1 else { return honoured(center: center, scale: scale) }
+        let reach = 0.5 / max(scale, ZoomRegion.minimumScale)
+        let low = max(0, 1 - reach), high = min(1, reach)
+        return CGPoint(x: min(high, max(low, center.x)),
+                       y: min(high, max(low, center.y)))
+    }
+
     /// The framing a zoom at this scale, aimed here, works out to.
     public static func honoured(scale: Double, center: CGPoint) -> CGRect {
         let half = halfSide(forScale: scale)

@@ -1,3 +1,4 @@
+import RecordKit
 import SwiftUI
 import TimelineKit
 
@@ -11,11 +12,11 @@ extension EditorCommands {
     @ViewBuilder
     var markerNavigation: some View {
         Button("Previous Marker") { markerEditor?.goToPreviousMarker() }
-            .keyboardShortcut(";", modifiers: .control)
+            .editorShortcut(.previousMarker, shortcuts)
             .disabled(markerEditor?.previousMarker == nil)
             .help(markerHelp)
         Button("Next Marker") { markerEditor?.goToNextMarker() }
-            .keyboardShortcut("'", modifiers: .control)
+            .editorShortcut(.nextMarker, shortcuts)
             .disabled(markerEditor?.nextMarker == nil)
             .help(markerHelp)
     }
@@ -24,6 +25,7 @@ extension EditorCommands {
     @ViewBuilder
     var markerSplit: some View {
         Button("Split at Markers") { markerEditor?.splitAtMarkers() }
+            .editorShortcut(.splitAtMarkers, shortcuts)
             .disabled(markerEditor?.hasMarkers != true)
             .help(markerHelp)
     }

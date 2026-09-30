@@ -72,6 +72,14 @@ public struct RecordingConfiguration: Sendable {
     /// Turning it on bakes the system cursor into the pixels instead.
     public var capturesCursorInVideo: Bool
     public var systemAudio: Bool
+    /// The apps whose sound is recorded, by bundle identifier — or empty, for everything
+    /// the Mac plays, which is the default and how every take was recorded before apps
+    /// could be chosen.
+    ///
+    /// Only read while `systemAudio` is on. Chosen apps are heard through a second,
+    /// audio-only stream rather than the screen's own, because ScreenCaptureKit takes a
+    /// stream's sound from the same filter as its picture — see `SystemAudioRoute`.
+    public var systemAudioApps: [String] = []
     /// The microphones' `uniqueID`s, not the devices: a configuration is a value that
     /// crosses threads and outlives the moment, and a device that was unplugged in
     /// between should fail when the recording starts, not silently record nothing.
@@ -111,6 +119,16 @@ public struct RecordingConfiguration: Sendable {
     /// a recording already holds. Only the text-field half needs Accessibility, and it
     /// is left out rather than prompted for when the grant is missing.
     public var capturesFocus: Bool
+    /// Whether focus tracking includes the text field that has the caret, not only the
+    /// window and app. Only read while `capturesFocus` is on.
+    ///
+    /// Its own switch rather than a side effect of `capturesKeystrokes`, which it used to
+    /// be: a text field's frame says where somebody is typing, never what, so it has no
+    /// business depending on whether their shortcuts are written down — and tied to them,
+    /// the editor's "zoom to text fields" had nothing to work with in every recording made
+    /// with the keyboard off, which is the default. Both need the Accessibility grant, and
+    /// the tracker records no fields without it rather than asking mid-take.
+    public var capturesFieldFocus: Bool
     /// Keep a picture of what the pointer actually looked like, one per shape.
     ///
     /// On by default and cheap: a handful of small PNGs per recording, written the first
@@ -136,6 +154,7 @@ public struct RecordingConfiguration: Sendable {
                 capturesClicks: Bool = true,
                 capturesKeystrokes: Bool = false,
                 capturesFocus: Bool = true,
+                capturesFieldFocus: Bool = true,
                 capturesCursorArtwork: Bool = true) {
         self.target = target
         self.destination = destination
@@ -151,7 +170,16 @@ public struct RecordingConfiguration: Sendable {
         self.capturesClicks = capturesClicks
         self.capturesKeystrokes = capturesKeystrokes
         self.capturesFocus = capturesFocus
+        self.capturesFieldFocus = capturesFieldFocus
         self.capturesCursorArtwork = capturesCursorArtwork
+    }
+
+    /// Whether the screen's own stream carries the system audio.
+    ///
+    /// Off when apps were chosen: their sound comes through a stream of its own, and the
+    /// screen's stream would otherwise be hearing everything for nothing.
+    public var screenStreamCapturesAudio: Bool {
+        systemAudio && systemAudioApps.isEmpty
     }
 
     /// The stream configuration for a filter, in pixels.
@@ -185,7 +213,7 @@ public struct RecordingConfiguration: Sendable {
         configuration.scalesToFit = true
         configuration.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(max(1, frameRate)))
         configuration.showsCursor = capturesCursorInVideo
-        configuration.capturesAudio = systemAudio
+        configuration.capturesAudio = screenStreamCapturesAudio
         configuration.queueDepth = 8
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
         configuration.colorSpaceName = CGColorSpace.sRGB

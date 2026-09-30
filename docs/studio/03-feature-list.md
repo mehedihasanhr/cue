@@ -21,7 +21,7 @@ Every feature found in the research, with where Klik Studio stands and when it i
 | 30 or 60 fps | 60 only | Yes | Yes | Have | Done |
 | HEVC or H.264 | Unknown | OpenScreen | Yes | Have | Done |
 | System audio | Yes | Yes | Yes | Have | Done |
-| System audio from chosen apps only | Yes | No | ScreenFlow | Missing | P3 |
+| System audio from chosen apps only | Yes | No | ScreenFlow | Have: ticked in the bar's system audio menu | Done |
 | Microphone | Yes | Yes | Yes | Have | Done |
 | Several microphones, each in its own file | No | No | No | Have | Done |
 | Microphone level meter before and during a take | Yes | OpenScreen | Yes | Have (first microphone) | Done |
@@ -87,7 +87,7 @@ Every feature found in the research, with where Klik Studio stands and when it i
 | Glide between consecutive zooms | No | Recordly | No | Have | Done |
 | Keep zoomed in (crop to the aspect and pan) | Yes | No | No | Partly: stays zoomed across gaps up to 2, 4 or 8 s and travels to the next zoom; a whole-video crop-and-pan is still missing | P2 (whole video) |
 | Motion blur on zoom and pan | Yes | Yes | No | Have (from the camera's speed; scrubbing equals playing) | Done |
-| Zoom out below 100% | No (62 votes) | No | No | Missing | P3 |
+| Zoom out below 100% | No (62 votes) | No | No | Have: down to 0.5×, gliding to and from zooms in | Done |
 | 3D tilt and perspective | No (107 votes) | OpenScreen, Cap | FocuSee | Missing | P3 |
 
 ## Camera bubble
@@ -223,7 +223,7 @@ Every feature found in the research, with where Klik Studio stands and when it i
 | Library: thumbnails, search, sort, rename, duplicate, trash | Basic | Basic | Yes | Have | Done |
 | Defaults for new projects | Yes | Yes | Yes | Have | Done |
 | One editor window, replaced on open | — | — | — | Have | Done |
-| Rebindable shortcuts | Yes | Recordly | Yes | Missing | P3 |
+| Rebindable shortcuts | Yes | Recordly | Yes | Have: every editor menu command and the recorder's global keys | Done |
 | Light and dark appearance | Dark only | Both | Both | Have | Done |
 | Translations | No | 11–15 languages | Yes | Missing | P3 |
 

@@ -1,3 +1,4 @@
+import RecordKit
 import SwiftUI
 import TimelineKit
 
@@ -14,7 +15,7 @@ extension EditorCommands {
         // ⌥⌘F: F for freeze. ⌘F is Find everywhere else on the Mac, and nothing here
         // searches, but taking it would be one more surprise than this needs.
         Button("Freeze Frame at Playhead") { clipEditor?.freezeFrameAtPlayhead() }
-            .keyboardShortcut("f", modifiers: [.command, .option])
+            .editorShortcut(.freezeFrame, shortcuts)
             .disabled(clipEditor?.canFreezeFrame != true)
             .help(clipEditor?.freezeFrameReason
                   ?? "Hold the frame under the playhead for two seconds, silently.")
@@ -27,13 +28,13 @@ extension EditorCommands {
         // ⌥⌘← and ⌥⌘→, the arrows the clip goes along. Plain ⌥ and the arrows are the
         // playhead's, to the previous and next cut.
         Button("Move Clip Earlier") { clipEditor?.moveSelectedClip(by: -1) }
-            .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
+            .editorShortcut(.moveClipEarlier, shortcuts)
             .disabled(clipEditor?.canMoveSelectedClip(by: -1) != true)
             .help(clipEditor?.selectedClip == nil
                   ? "Select a clip on the timeline first."
                   : "Swap this clip with the one before it. What is placed on it goes with it.")
         Button("Move Clip Later") { clipEditor?.moveSelectedClip(by: 1) }
-            .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+            .editorShortcut(.moveClipLater, shortcuts)
             .disabled(clipEditor?.canMoveSelectedClip(by: 1) != true)
             .help(clipEditor?.selectedClip == nil
                   ? "Select a clip on the timeline first."

@@ -37,7 +37,22 @@ extension TranscriptEditing {
     public static func wordCutRanges(_ chosen: Set<WordID>,
                                      in timeline: Timeline,
                                      padding: Double = wordPadding) -> [CMTimeRange] {
-        wordCutRanges(chosen, among: spokenWords(in: timeline), padding: padding, end: timeline.duration)
+        let cuts = wordCutRanges(chosen, among: spokenWords(in: timeline), padding: padding, end: timeline.duration)
+        return keepingHolds(cuts, in: timeline)
+    }
+
+    /// Cuts with the clips that are not the recording taken back out of them.
+    ///
+    /// A cut worked out from what was said reaches across the silence between words, and
+    /// a title slide, a freeze frame or an added movie put in between two lines is exactly
+    /// such a silence to the transcript — nobody speaks over it. Picking the last word
+    /// before a title and the first after it made one run of them, and the cut took the
+    /// title with it. What was said can only ever cut what was recorded.
+    public static func keepingHolds(_ cuts: [CMTimeRange], in timeline: Timeline) -> [CMTimeRange] {
+        let unrecorded = PaceSuggester.unmeasuredRanges(in: timeline)
+        guard !unrecorded.isEmpty else { return cuts }
+        return cuts.flatMap { PaceSuggester.subtract(unrecorded, from: $0) }
+            .filter { $0.duration > .zero }
     }
 
     /// The same, over words already worked out — `words` in the order they are heard.

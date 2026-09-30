@@ -4,6 +4,39 @@ Every bug found, how it was measured, and what fixed it. Newest work first.
 
 Measurements come from `Tools/studio-lab`, which records a scripted pointer over a blank stage with the real pointer burnt into the picture, then compares what was written down with what is in the frames. Mac used: MacBook Pro, built-in display at 1512 × 982 points, 120 Hz.
 
+## Shortcuts, zooming out and app audio (2026-09-30)
+
+| # | Bug | Effect | Fix | Test |
+|---|---|---|---|---|
+| 93 | Function keys were named by sorting their key codes, which macOS scatters | F3 showed as "F8" and F17 as "F1" in Settings and on menus | Named from an explicit F1…F20 order | `EditorShortcutsTests.functionKeysAreNamedInOrder` |
+| 94 | The shuttle and mark keys handed a hard-coded letter back to a text field | Once rebindable, a field would have been typed the old letter, not the one pressed | `TypingGuard` asks the shortcut what it types, and hands back nothing for one held with ⌘, ⌃ or ⌥ | Built; the character rule is `KeyCombo.typedCharacter` |
+| 95 | A zoom below 1× would have clipped a shrunken picture inside the padding's hole, with its corners and shadow left at the hole's size | Background showing inside a rounded frame, around a picture with square corners | Below 1× the frame always follows the camera (`SceneDescriptor.frameFollowsCamera`), so corners, shadow, border and window bar shrink with the picture | `ZoomOutRenderTests`: 8 tests, pixels included |
+| 96 | Overlapping zooms picked the larger scale | Any push in, however slight, beat any pull back, however deep | The strongest is the one furthest from 1× in doublings: 0.5× and 2× are equal | `ZoomOutTests`, `ZoomOutRenderTests.aDeepPullBackBeatsAGentlePushIn` |
+| 97 | Following the pointer and keeping it in shot moved the camera's centre at any scale | Pulled back, the whole picture would have slid about after the pointer | Both only apply above 1×; below it the whole recording is in shot | `ZoomOutRenderTests.theMoveInAndOutIsContinuous` |
+| 98 | Dragging a zoom out's framing box set its scale from the box | A box the width of the recording turned a 0.5× zoom into 1× | A box the whole recording wide leaves a zoom out's scale alone; drawing it smaller is a push in | Built; `ZoomOutTests.aPullBacksFramingIsTheWholeRecording` pins the box |
+
+Measured: zooming out to 0.5× and back over a 0.5 s ease-in-out ramp changes the picture's width by at most 3.3% of the frame between 60 fps frames, and gliding from 2× to 0.5× crosses 1× with no step in scale or position (`ZoomOutRenderTests`). Old projects decode unchanged: the decoder clamps nothing, and a zoom written with only the first seven fields renders identically at every probe (`ZoomOutTests.anOldProjectsZoomDecodesUnchanged`).
+
+System audio from chosen apps is decided by `SystemAudioRoute` (8 tests): nothing chosen is everything on the screen's own stream, as before; chosen apps are heard through a second stream whose filter includes only them, since ScreenCaptureKit takes a stream's sound from the same filter as its picture. Not yet heard on a real take — see below.
+
+## Bug hunt (2026-09-30)
+
+A review of the features added in the last days — transcript cuts, subtitles, captions, clips, pacing, privacy, media, settings — each finding shown by a test that failed before the fix where the logic lives in a package, and traced through the code where it lives in the app.
+
+| Problem | Cause and fix | Test |
+|---|---|---|
+| Adding a caption over the end of a spoken line moved that line's words: "um" heard at 3 s was then placed at 2.25 s, so cutting it by the transcript (or Remove Filler Words) took the wrong sound | `AddCaption` shortened the line it landed on by setting its length, and recorded words are fractions of the line, so every word was squeezed towards its start. Both shortenings now go through `carryingWords(to:)`, the rule dragging an edge keeps: words stay where they are heard and a word left mostly outside the line leaves it | `BugHuntTests.addCaptionKeepsWordTimes`; `aNewCaptionMakesRoomForItself` updated |
+| Merging a caption with one lying inside it cut the rest of the longer line off | `MergeCaptions` ended the joined line at the second line's end. It now ends at whichever ends later | `BugHuntTests.mergeKeepsTheLongerEnd` |
+| Speed Up Waiting offered title slides, freeze frames and added movies as "nothing happening", with a saving `setSpeed` would never make (it leaves holds alone) and, for a movie, speeding footage whose activity was never measured | Nothing recorded lies over those clips, so they read as idle. `PaceSuggester` now counts every clip that does not play the recording as not to be touched (`unmeasuredRanges`) | `BugHuntTests.paceLeavesHoldsAlone` |
+| A subtitle line such as "Open File --> Export" ended its cue there, lost every line after it, and was counted as an unreadable time | The reader took any line with `-->` in it as a timing line. Inside a cue, an arrow line only starts a new cue when it is shaped like one — a time just before the arrow (`looksTimed`) | `BugHuntTests.arrowInText` |
+| Text-field zooms only existed when keyboard shortcuts were recorded (from "Known and not yet fixed") | The focus tracker was handed `capturesKeystrokes` as its field switch. `RecordingConfiguration.capturesFieldFocus` is now its own switch, set from Record what has focus; `RecordingSession.tracksTextFields(for:)` decides. The Settings copy that said to turn the keyboard on is gone | `FieldFocusTests` (RecordKit) |
+| The first take after granting microphone access recorded the system's default microphone, not the one (or two) chosen in Settings | `StudioService.begin` replaced the configured microphones with the default after the grant. It now keeps them, and only falls back to the default when none could be named | App; traced |
+| Find Sensitive Information put masks over an added movie — and a freeze frame of one — at the seconds the text was read in the recording | `Timeline.pieces(ofSource:)` walked every clip, and an imported clip's source times are its own file's. Imported clips are now skipped, as `timelineTime(atSource:)` already did | `BugHuntTests.sensitiveSkipsImportedClips` |
+| Shorten Pauses cut the middle out of a title slide (or freeze frame, or added movie) put between two spoken lines | To the transcript the slide is just a long silence. Gaps that touch a clip which does not play the recording are left alone | `BugHuntTests.pausesLeaveTitlesAlone` |
+| Picking the last word before a title slide and the first after it, then pressing Delete, cut the title slide too; Remove Line from Video did the same for a caption stretched over a slide | Neighbouring picked words are one cut, silence between included. Cuts made from what was said now have the clips that are not the recording taken back out (`TranscriptEditing.keepingHolds`), in word cuts and in Remove Line | `BugHuntTests.wordCutsLeaveTitlesAlone` |
+| File › Add Recording… could not pick a recording: every `.klikrec` was greyed out | The panel allowed folders only, on the belief that no type was declared — but `StudioInfo.plist` exports `com.stackrover.klik.recording` as a package, which the panel shows as a file. Files of that type are now allowed, folders still are | App; traced (not yet seen on screen) |
+| Translate Captions sent empty lines for translation, and could apply a translation that finished just after Cancel | Empty and whitespace-only captions are left out of the batch (with no source language set, a line with no words has no language to find); the task checks for cancellation before applying | App; not run end to end |
+
 ## Finding sensitive text (2026-09-29)
 
 Measured on synthetic H.264 footage at 1280 × 720 (`SensitiveScannerTests`), against where and when each line was drawn:
@@ -229,8 +262,10 @@ The sheet opened in the running app (a 460 × 336 window). It could not be photo
 | RenderKit's video-reading tests could stall, even run alone — **fixed** | Stuck in `copyNextSampleBuffer`: the export reader held decoded frames in the decoder's own few buffers (the frame showing, the next one, and any still queued for the GPU), so the decoder ran out and waited for ever. The reader now copies each frame into a buffer of its own. Test: `framesHeldDoNotStallTheDecoder`. A real export could hang the same way |
 | Camera background removal has not been checked on a real face | Only on synthetic frames |
 | Caption translation has not been run end to end | The first use of a language can open the system's download sheet |
+| System audio from chosen apps has not been recorded on a real take | The route and both stream configurations are tested; the second, audio-only stream has not been run against real apps on this Mac, because tests here must not capture the screen. An app that starts after the take began is not heard, because ScreenCaptureKit can only include an app that exists when the filter is made |
+| The Shortcuts page and the bar's system audio menu have not been looked at on screen | Built; the rules behind them are tested. Seventy editor rows are behind a filter field, which needs checking by eye |
 | Several recordings in one project, importing a video, iPhone and iPad recording, freehand annotations | Not built |
 | The transcript's word picking, the font pickers, the export sheet's Target size and the safe-zone overlay have not been looked at on screen | Built and compiled with tests for the logic and the drawing; the views still need checking by eye, in light and dark |
-| Text-field zooms only exist when keyboard shortcuts are recorded | Focus tracking of text fields is switched on with key capture. Worth separating |
+| Text-field zooms only exist when keyboard shortcuts are recorded — **fixed** | Field focus now follows Record what has focus on its own. See Bug hunt (2026-09-30) |
 | Results are never sent back to Klik | The helper service does not exist yet |
 | One fidelity test failed once in about 20 full runs and has not failed since | Watching. It compares exact bytes while other tests render in parallel |

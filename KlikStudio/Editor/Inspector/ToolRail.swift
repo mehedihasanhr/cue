@@ -1,3 +1,4 @@
+import RecordKit
 import SwiftUI
 
 /// The strip of tools down the left edge of the editor.
@@ -15,6 +16,7 @@ import SwiftUI
 /// grouping from the space just as well.
 struct ToolRail: View {
     let model: EditorModel
+    @Environment(StudioSettings.self) private var settings
     @Namespace private var chip
 
     private static let groups: [[EditorTool]] = [
@@ -104,7 +106,10 @@ struct ToolRail: View {
         .animation(StudioMotion.selection, value: model.tool)
         // The shortcut is on the tip because the rail is where somebody looks for it:
         // the menu bar has the same eight commands, and nobody finds them there twice.
-        .help(tool.unavailableReason ?? "\(tool.title) (⌘\(tool.shortcut.character))")
+        // The shortcut as it is set now, which Settings can change, or none.
+        .help(tool.unavailableReason
+              ?? settings.editorShortcuts[tool.command].map { "\(tool.title) (\($0.displayString))" }
+              ?? tool.title)
         .accessibilityLabel(tool.title)
         .accessibilityHint(tool.unavailableReason ?? "")
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
