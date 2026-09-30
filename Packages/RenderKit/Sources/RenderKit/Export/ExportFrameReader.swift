@@ -237,6 +237,17 @@ final class ExportFrameReader {
         case stalled
     }
 
+    /// A reader and its output, carried into the pull that waits in them — which keeps
+    /// them alive for as long as it waits, however long that is.
+    private final class Held: @unchecked Sendable {
+        let reader: AVAssetReader
+        let output: AVAssetReaderTrackOutput
+        init(reader: AVAssetReader, output: AVAssetReaderTrackOutput) {
+            self.reader = reader
+            self.output = output
+        }
+    }
+
     private final class SampleBox: @unchecked Sendable {
         var sample: CMSampleBuffer?
         /// Set when the wait for this sample was given up, so its late arrival — or its
@@ -246,19 +257,6 @@ final class ExportFrameReader {
 
     private static let log = Logger(subsystem: "com.stackrover.klik.renderkit", category: "export-reader")
 
-    /// Readers given up on while a pull was still waiting inside them. Never cancelled and
-    /// never freed: cancelling a reader from one thread while another waits in its
-    /// `copyNextSampleBuffer` crashes inside AVFoundation, and so does freeing it. Kept
-    /// here instead, one per stall — a small leak, against a crash or an export that never
-    /// ends.
-    private static let abandoned = Abandoned()
-
-    private final class Abandoned: @unchecked Sendable {
-        private let lock = NSLock()
-        private var kept: [AnyObject] = []
-        func keep(_ objects: [AnyObject]) { lock.withLock { kept.append(contentsOf: objects) } }
-    }
-
     /// The next sample, waited for no longer than `stallLimit`.
     ///
     /// A stalled reader is set aside, still waiting, and the caller opens a fresh one.
@@ -266,20 +264,29 @@ final class ExportFrameReader {
         guard let reader, let output else { return .end }
         if simulatedStalls > 0 {
             simulatedStalls -= 1
+            // No pull is waiting in it, so it can be let go properly.
+            reader.cancelReading()
             abandonReader()
             return .stalled
         }
         let box = SampleBox()
         let done = DispatchSemaphore(value: 0)
         let lock = NSLock()
+        let held = Held(reader: reader, output: output)
         pulls.async {
-            let sample = output.copyNextSampleBuffer()
-            lock.withLock {
+            let sample = held.output.copyNextSampleBuffer()
+            let wasAbandoned = lock.withLock {
                 box.sample = sample
                 if let abandonedAt = box.abandonedAt {
                     Self.log.notice("A pull given up on came back \(Date().timeIntervalSince(abandonedAt), privacy: .public) s later")
                 }
+                return box.abandonedAt != nil
             }
+            // Cancelled here, on the thread that was waiting in it, now that it is not:
+            // the one place it is safe to. Until then the reader holds one of the video
+            // hardware's few decoding sessions, and readers set aside and never let go
+            // left the next ones queueing for sessions that never came free.
+            if wasAbandoned { held.reader.cancelReading() }
             done.signal()
         }
         let began = Date()
@@ -310,11 +317,10 @@ final class ExportFrameReader {
         }
     }
 
-    /// Lets go of the current reader without cancelling it — see `abandoned`.
+    /// Lets go of the current reader without cancelling it. Cancelling it here, while a
+    /// pull may still be waiting inside it on another thread, crashes in AVFoundation; the
+    /// pull holds it and cancels it itself when the wait ends.
     private func abandonReader() {
-        if let reader, let output {
-            Self.abandoned.keep([reader, output])
-        }
         reader = nil
         output = nil
     }
