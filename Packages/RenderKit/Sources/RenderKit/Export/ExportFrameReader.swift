@@ -2,6 +2,7 @@ import AVFoundation
 import CoreImage
 import CoreMedia
 import Foundation
+import os
 
 /// Frames out of the recording, in order, as fast as they decode.
 ///
@@ -228,7 +229,12 @@ final class ExportFrameReader {
 
     private final class SampleBox: @unchecked Sendable {
         var sample: CMSampleBuffer?
+        /// Set when the wait for this sample was given up, so its late arrival — or its
+        /// never arriving — can be told apart in the log.
+        var abandonedAt: Date?
     }
+
+    private static let log = Logger(subsystem: "com.stackrover.klik.renderkit", category: "export-reader")
 
     /// Readers given up on while a pull was still waiting inside them. Never cancelled and
     /// never freed: cancelling a reader from one thread while another waits in its
@@ -255,11 +261,20 @@ final class ExportFrameReader {
         }
         let box = SampleBox()
         let done = DispatchSemaphore(value: 0)
+        let lock = NSLock()
         pulls.async {
-            box.sample = output.copyNextSampleBuffer()
+            let sample = output.copyNextSampleBuffer()
+            lock.withLock {
+                box.sample = sample
+                if let abandonedAt = box.abandonedAt {
+                    Self.log.notice("A pull given up on came back \(Date().timeIntervalSince(abandonedAt), privacy: .public) s later")
+                }
+            }
             done.signal()
         }
         guard done.wait(timeout: .now() + Self.stallLimit) == .success else {
+            lock.withLock { box.abandonedAt = Date() }
+            Self.log.error("The video decoder gave nothing for \(String(describing: Self.stallLimit), privacy: .public); reading on with a fresh reader")
             abandonReader()
             return .stalled
         }
