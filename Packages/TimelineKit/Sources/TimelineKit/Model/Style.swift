@@ -381,6 +381,10 @@ public struct CursorStyle: Codable, Equatable, Sendable {
     public var spotlight: PointerSpotlight
     /// A magnified view of the recording round the pointer.
     public var magnifier: PointerMagnifier
+    /// The pointer eased home over the last moments, for a video played on a loop.
+    public var loop: PointerLoop
+    /// The arrow leaning into its travel.
+    public var sway: PointerSway
 
     /// A bright red, the colour of a laser pointer: it reads on a white page and on a dark
     /// editor alike, which is where screen recordings spend their time.
@@ -407,7 +411,9 @@ public struct CursorStyle: Codable, Equatable, Sendable {
                 appearance: Appearance = .asRecorded,
                 dotColor: ColorValue = CursorStyle.defaultDotColor,
                 spotlight: PointerSpotlight = PointerSpotlight(),
-                magnifier: PointerMagnifier = PointerMagnifier()) {
+                magnifier: PointerMagnifier = PointerMagnifier(),
+                loop: PointerLoop = PointerLoop(),
+                sway: PointerSway = PointerSway()) {
         self.isVisible = isVisible
         self.scale = scale
         self.smoothing = smoothing
@@ -430,6 +436,8 @@ public struct CursorStyle: Codable, Equatable, Sendable {
         self.dotColor = dotColor
         self.spotlight = spotlight
         self.magnifier = magnifier
+        self.loop = loop
+        self.sway = sway
     }
 
     /// Decoded field by field, for the reason `Timeline.init(from:)` gives — and here it
@@ -473,6 +481,10 @@ public struct CursorStyle: Codable, Equatable, Sendable {
         dotColor = value(.dotColor, default: CursorStyle.defaultDotColor)
         spotlight = value(.spotlight, default: PointerSpotlight())
         magnifier = value(.magnifier, default: PointerMagnifier())
+        // Both off for a project written before they existed, like every new pointer
+        // setting: that project's film was approved without them.
+        loop = value(.loop, default: PointerLoop())
+        sway = value(.sway, default: PointerSway())
     }
 
     enum CodingKeys: String, CodingKey {
@@ -480,7 +492,7 @@ public struct CursorStyle: Codable, Equatable, Sendable {
         case clickHighlight, clickColor, clickSize, usesRecordedArtwork
         case hidesWhenIdle, idleDelay, alwaysArrow, steadiesShape, clickStyle
         case clickSound, clickSoundKind, clickSoundVolume
-        case appearance, dotColor, spotlight, magnifier
+        case appearance, dotColor, spotlight, magnifier, loop, sway
     }
 }
 
@@ -577,13 +589,33 @@ public struct CameraStyle: Codable, Equatable, Sendable {
     /// On for a new project.
     public var motionBlur: Bool
 
+    /// How far in the camera stays for the whole video, 1 for not at all.
+    ///
+    /// "Stay zoomed in" across gaps joins zooms that are near each other; this is the
+    /// other end of the same idea — the camera never pulls back to the whole recording at
+    /// all. The picture is held at this magnification from the first frame to the last and
+    /// the camera pans after the pointer throughout, the way it does inside a zoom that
+    /// follows. What it is for: a vertical 9:16 cut of a 16:9 recording, or a close crop of
+    /// a big display, where the whole picture is never what should be on screen.
+    ///
+    /// Zooms still work inside it, and multiply: a 2× zoom in a video held at 1.5× goes to
+    /// 3×, so a zoom means "closer than now" whatever the level. Its framing is arrived at
+    /// from wherever the held camera was looking, over the zoom's own ramp.
+    public var wholeVideoZoom: Double
+
+    public static let wholeVideoZoomRange: ClosedRange<Double> = 1...4
+
+    /// Whether the whole video is held zoomed in.
+    public var holdsWholeVideoZoomed: Bool { sanitised.wholeVideoZoom > 1.001 }
+
     public init(steadiness: Double = 0.7,
                 follow: Double = 1,
                 safeArea: Double = 0.85,
                 zoomsWholeFrame: Bool = true,
                 glidesBetweenZooms: Bool = true,
                 keepsZoomedInFor: Double = 0,
-                motionBlur: Bool = true) {
+                motionBlur: Bool = true,
+                wholeVideoZoom: Double = 1) {
         self.steadiness = steadiness
         self.follow = follow
         self.safeArea = safeArea
@@ -591,6 +623,7 @@ public struct CameraStyle: Codable, Equatable, Sendable {
         self.glidesBetweenZooms = glidesBetweenZooms
         self.keepsZoomedInFor = keepsZoomedInFor
         self.motionBlur = motionBlur
+        self.wholeVideoZoom = wholeVideoZoom
     }
 
     /// What a project saved before gliding existed decodes to when it carries no camera
@@ -627,10 +660,14 @@ public struct CameraStyle: Codable, Equatable, Sendable {
         // was watched and approved without it, and must look the same when it is opened
         // again. The switch is in the Zoom panel for anyone who wants it.
         motionBlur = value(.motionBlur, default: false)
+        // Not held for a project written before it existed: the zooms it has are the
+        // whole of what it asked for.
+        wholeVideoZoom = value(.wholeVideoZoom, default: 1)
     }
 
     enum CodingKeys: String, CodingKey {
         case steadiness, follow, safeArea, zoomsWholeFrame, glidesBetweenZooms, keepsZoomedInFor, motionBlur
+        case wholeVideoZoom
     }
 
     /// The same values, clamped to what the renderer can act on.
@@ -645,7 +682,11 @@ public struct CameraStyle: Codable, Equatable, Sendable {
                     zoomsWholeFrame: zoomsWholeFrame,
                     glidesBetweenZooms: glidesBetweenZooms,
                     keepsZoomedInFor: keepsZoomedInFor.isFinite ? min(max(keepsZoomedInFor, 0), 30) : 0,
-                    motionBlur: motionBlur)
+                    motionBlur: motionBlur,
+                    wholeVideoZoom: wholeVideoZoom.isFinite
+                        ? min(max(wholeVideoZoom, Self.wholeVideoZoomRange.lowerBound),
+                              Self.wholeVideoZoomRange.upperBound)
+                        : 1)
     }
 }
 

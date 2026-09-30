@@ -4,6 +4,20 @@ Every bug found, how it was measured, and what fixed it. Newest work first.
 
 Measurements come from `Tools/studio-lab`, which records a scripted pointer over a blank stage with the real pointer burnt into the picture, then compares what was written down with what is in the frames. Mac used: MacBook Pro, built-in display at 1512 × 982 points, 120 Hz.
 
+## Looping pointer, sway, whole-video zoom and window sizes (2026-09-30)
+
+| # | Bug | Effect | Fix | Test |
+|---|---|---|---|---|
+| 99 | A zoom starting inside a video held zoomed in took its own aim on the ramp's first frame | The picture jumped about a tenth of its width the moment the zoom began, where before (from the whole picture) the centre did not matter | The zoom's centre is carried from the held camera's shot over its ramp, by how far in the zoom has got | `WholeVideoZoomTests.aZoomArrivesFromTheHeldShotWithoutAJump` fails with the carry removed |
+| 100 | The held camera, aimed with `averagePosition`, would have stepped as samples left its window | That average never weights a sample below 0.05, so every sample leaving the window moves the aim a little at once; over a long pan it reads as a shimmer | The held aim uses its own kernel, (1 − age / window)², read at fixed distances behind now, which leaves with no weight | `WholeVideoZoomTests.thePanIsSmooth`: under 1% of the picture per 60 fps frame over a four-second sweep |
+| 101 | Sway speeds measured between `CMTime`s at a 600 timescale | Each end of a 1/120 s step rounds by up to 1/1200 s: a tenth of the step, so the lean would have flickered with the frame's timestamp | Sampled at microsecond timescale | `PointerLoopSwayTests.theLeanIsTheSameHoweverTheMomentIsReached` |
+| 102 | A cut in the footage is a jump on the drawn path | Read as speed, it would throw the arrow over at every cut | A step faster than 8 frame widths a second is left out of the sway | `LoopSwayModelTests.aJumpIsNotAFlick` |
+| 103 | A loop that brought back only the position | A pointer hidden (or a different shape) on the first frame blinked at the seam | Opacity blends home with the position, and past halfway home the pointer takes its first-frame shape | `PointerLoopSwayTests.aPointerHiddenAtTheStartFadesOutOnTheWayHome` |
+
+Measured: with Loop on, the last frame's pointer is within 0.001 of the first frame's (as a fraction of the picture), and the camera's zoom and centre are too; the fastest step on a 0.5 s journey across three-quarters of the picture is under 6% a frame at 60 fps. Sway: a steady sideways speed settles within 5% of the lean it asks for, a flick never passes 1.25 × the limit, and the arrow is exactly upright 0.6 s after the pointer stops (the spring's memory). Whole-video zoom: at 2.5× the drawn pointer is inside the shot on every frame of a 12 s sweep.
+
+Window sizes are recorded pixels, not window points: 1920 × 1080 on a Retina display is a 960 × 540 point window. A size too big for the screen keeps its shape and shrinks (`WindowSizing`, 13 tests). The Accessibility call itself (`WindowResizer`) is not run by any test and has not been tried on a real window — see below.
+
 ## Shortcuts, zooming out and app audio (2026-09-30)
 
 | # | Bug | Effect | Fix | Test |
@@ -264,6 +278,9 @@ The sheet opened in the running app (a 460 × 336 window). It could not be photo
 | Caption translation has not been run end to end | The first use of a language can open the system's download sheet |
 | System audio from chosen apps has not been recorded on a real take | The route and both stream configurations are tested; the second, audio-only stream has not been run against real apps on this Mac, because tests here must not capture the screen. An app that starts after the take began is not heard, because ScreenCaptureKit can only include an app that exists when the filter is made |
 | The Shortcuts page and the bar's system audio menu have not been looked at on screen | Built; the rules behind them are tested. Seventy editor rows are behind a filter field, which needs checking by eye |
+| Resizing a window before recording has not been run on a real window | `WindowResizer` is built and compiles; the rules it follows are tested, but tests here must never move somebody's windows. Klik Studio is sandboxed, and whether macOS lets a sandboxed app set another app's window size once Accessibility is granted still has to be checked on a real take — keyboard capture reads through the same grant, but reading is not writing |
+| A zoom's framing box on the preview shows the zoom's own scale | With the whole video held zoomed in, a zoom is that much further in than its box shows. The render is right; the box is not multiplied |
+| The Sway, Loop and whole-video Zoom sections and the window Size menu have not been looked at on screen | Built; the logic under them is tested |
 | Several recordings in one project, importing a video, iPhone and iPad recording, freehand annotations | Not built |
 | The transcript's word picking, the font pickers, the export sheet's Target size and the safe-zone overlay have not been looked at on screen | Built and compiled with tests for the logic and the drawing; the views still need checking by eye, in light and dark |
 | Text-field zooms only exist when keyboard shortcuts are recorded — **fixed** | Field focus now follows Record what has focus on its own. See Bug hunt (2026-09-30) |

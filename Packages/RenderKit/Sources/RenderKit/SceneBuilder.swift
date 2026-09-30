@@ -277,23 +277,54 @@ public struct SceneBuilder: Sendable {
     /// so a pull back to 0.5× holds its own against a push in to 2× — see
     /// `ZoomRegion.strength(ofScale:)`.
     ///
+    /// The shot at this moment, brought home to the first frame's over the last moments of
+    /// a video that loops — see `PointerLoop.bringsCameraBack`.
+    ///
+    /// The journey is the pointer's own, the same eased blend over the same stretch, so the
+    /// pointer and the picture under it arrive together: the last frame of the video is
+    /// the first frame's shot with the first frame's pointer in it, and the seam of the
+    /// loop has nothing in it to jump. Blended from the two shots rather than steered, so
+    /// it is a function of the time like every other framing rule.
+    func camera(for timeline: Timeline, at time: CMTime, cursor track: CursorTrack?,
+                crop: CGRect) -> (zoom: Double, center: CGPoint) {
+        let shot = framedCamera(for: timeline, at: time, cursor: track, crop: crop)
+        guard timeline.cursor.loop.bringsCameraBack else { return shot }
+        let home = timeline.pointerLoopBlend(at: time)
+        guard home > 0 else { return shot }
+        let first = framedCamera(for: timeline, at: .zero, cursor: track, crop: crop)
+        let zoom = shot.zoom + (first.zoom - shot.zoom) * home
+        let center = CGPoint(x: shot.center.x + (first.center.x - shot.center.x) * home,
+                             y: shot.center.y + (first.center.y - shot.center.y) * home)
+        // Kept on the picture at the blended scale: two shots that each are may still put
+        // the blend a hair over the edge, because the room a centre has shrinks faster than
+        // the scale grows.
+        return (zoom, ZoomFraming.cameraCenter(center, scale: zoom))
+    }
+
+    /// The shot the zooms — and the whole-video zoom, when there is one — ask for at this
+    /// moment, before a loop brings it home.
+    ///
     /// - Parameter held: a zoom to frame as if it were fully in right now, whatever the
     ///   time says — the shot it *would* be holding. What a glide asks of each of its two
     ///   ends; see `ZoomGlide`. Left `nil`, the strongest zoom at this moment decides.
-    func camera(for timeline: Timeline, at time: CMTime, cursor track: CursorTrack?, crop: CGRect,
-                holding held: ZoomRegion? = nil) -> (zoom: Double, center: CGPoint) {
+    func framedCamera(for timeline: Timeline, at time: CMTime, cursor track: CursorTrack?, crop: CGRect,
+                      holding held: ZoomRegion? = nil) -> (zoom: Double, center: CGPoint) {
+        // The level the whole video is held at: 1 for every project that does not ask,
+        // which leaves every line below doing exactly what it always did.
+        let base = timeline.camera.sanitised.wholeVideoZoom
+
         // Between two zooms that are close together the camera travels straight from one
         // shot to the other rather than out to the whole picture and back. Each end of
         // the path is the shot that zoom would be holding at this very moment, pointer
         // following included, so the path joins what came before and what comes after
         // without a step. `ZoomGlide` is the rule; this is only the blend.
         if held == nil, let glide = timeline.zoomGlide(at: time) {
-            let leaving = camera(for: timeline, at: time, cursor: track, crop: crop, holding: glide.from)
-            let arriving = camera(for: timeline, at: time, cursor: track, crop: crop, holding: glide.to)
+            let leaving = framedCamera(for: timeline, at: time, cursor: track, crop: crop, holding: glide.from)
+            let arriving = framedCamera(for: timeline, at: time, cursor: track, crop: crop, holding: glide.to)
             let progress = glide.progress(at: time)
             let center = CGPoint(x: leaving.center.x + (arriving.center.x - leaving.center.x) * progress,
                                  y: leaving.center.y + (arriving.center.y - leaving.center.y) * progress)
-            return settled(center, scale: glide.scale(at: time), timeline: timeline,
+            return settled(center, scale: glide.scale(at: time) * base, timeline: timeline,
                            at: time, cursor: track, crop: crop)
         }
 
@@ -305,16 +336,24 @@ public struct SceneBuilder: Sendable {
                 best = (scale, region)
             }
         }
-        guard let best else { return (1, CGPoint(x: 0.5, y: 0.5)) }
+        guard let best else {
+            guard base > 1 else { return (1, CGPoint(x: 0.5, y: 0.5)) }
+            let center = heldShot(timeline, at: time, cursor: track, crop: crop, scale: base)
+            return settled(center, scale: base, timeline: timeline, at: time, cursor: track, crop: crop)
+        }
 
         // Read once, and clamped: a project is a file, and a file can ask for a safe area
         // of 40 or a negative window.
         let camera = timeline.camera.sanitised
 
+        // Inside a video held zoomed in, a zoom goes further in from there rather than
+        // starting again from the whole picture.
+        let scale = best.scale * base
+
         // Where this zoom was aimed, and where the camera stays unless the pointer makes
         // it move.
         var center = best.region.center
-        let half = ZoomFraming.halfSide(forScale: best.scale)
+        let half = ZoomFraming.halfSide(forScale: scale)
         let override = timeline.cursorOverride(at: time)
 
         // Following the pointer is a *dead zone*, not a leash.
@@ -339,7 +378,7 @@ public struct SceneBuilder: Sendable {
         // Only while pushed in. Pulled back, the whole recording is in shot by definition,
         // so there is nothing for the pointer to leave and no reason for the picture to
         // slide about after it.
-        if best.scale > 1, best.region.followsCursor, camera.follow > 0, timeline.cursor.isVisible,
+        if scale > 1, best.region.followsCursor, camera.follow > 0, timeline.cursor.isVisible,
            override.hiding < 1, let track, !track.isEmpty,
            let sourceTime = timeline.sourceTime(at: time) {
             let claim = (1 - override.hiding) * camera.follow
@@ -366,8 +405,86 @@ public struct SceneBuilder: Sendable {
             }
         }
 
-        return settled(center, scale: best.scale, timeline: timeline, at: time, cursor: track, crop: crop)
+        // A zoom arriving inside a video held zoomed in starts from where the held camera
+        // was looking, not from the middle: at the whole picture the centre did not matter
+        // and a ramp could begin anywhere, but at 1.5× it is a shot the viewer is watching,
+        // and it must not jump. Carried over the ramp by how far in the zoom has got, so
+        // the shot is the held one as the zoom begins and the zoom's own once it is in.
+        if base > 1, held == nil, best.region.scale != 1 {
+            let arrived = min(1, max(0, (best.scale - 1) / (best.region.scale - 1)))
+            if arrived < 1 {
+                let from = heldShot(timeline, at: time, cursor: track, crop: crop, scale: scale)
+                center = CGPoint(x: from.x + (center.x - from.x) * arrived,
+                                 y: from.y + (center.y - from.y) * arrived)
+            }
+        }
+
+        return settled(center, scale: scale, timeline: timeline, at: time, cursor: track, crop: crop)
     }
+
+    /// Where the camera looks while the whole video is held zoomed in and no zoom is
+    /// deciding the shot.
+    ///
+    /// A zoom has a shot it was aimed at, and follows the pointer out of a dead zone round
+    /// it. A held video has no shot of its own — the level is for the whole take — so what
+    /// it aims at is where the pointer has *been* over the last second and a half, averaged
+    /// with a kernel that falls to nothing at its far end. That is a camera operator
+    /// panning after the action, a beat behind it, and it is continuous by construction:
+    /// every term is a position on the path at a fixed distance behind now, and the ones
+    /// leaving the window leave with no weight. Then the dead zone, exactly as a following
+    /// zoom has it, so a fast pointer is kept in shot while the aim catches up.
+    ///
+    /// The same dials as a zoom's: `follow` scales how much the pointer may move the
+    /// camera, `steadiness` how calm the aim is, `safeArea` how far the pointer may stray.
+    /// A pointer nobody can see has no claim on the shot, so a hidden one leaves the
+    /// camera in the middle.
+    func heldShot(_ timeline: Timeline, at time: CMTime, cursor track: CursorTrack?,
+                  crop: CGRect, scale: Double) -> CGPoint {
+        let middle = CGPoint(x: 0.5, y: 0.5)
+        let camera = timeline.camera.sanitised
+        let override = timeline.cursorOverride(at: time)
+        guard scale > 1, camera.follow > 0, timeline.cursor.isVisible, override.hiding < 1,
+              let track, !track.isEmpty,
+              let sourceTime = timeline.sourceTime(at: time) else { return middle }
+        let claim = (1 - override.hiding) * camera.follow
+        let half = ZoomFraming.halfSide(forScale: scale)
+
+        var center = middle
+        let window = max(Self.heldAimWindow, camera.steadiness * 2)
+        var total = CGPoint.zero
+        var weights = 0.0
+        var age = 0.0
+        while age < window {
+            if let point = track.position(at: sourceTime.seconds - age) {
+                let clamped = normalisedClamped(point, crop: crop)
+                let weight = (1 - age / window) * (1 - age / window)
+                total.x += clamped.x * weight
+                total.y += clamped.y * weight
+                weights += weight
+            }
+            age += Self.heldAimStep
+        }
+        if weights > 0 {
+            let aim = CGPoint(x: total.x / weights, y: total.y / weights)
+            center = CGPoint(x: middle.x + (aim.x - middle.x) * claim,
+                             y: middle.y + (aim.y - middle.y) * claim)
+        }
+
+        if let averaged = track.averagePosition(at: sourceTime.seconds, window: camera.steadiness)
+            .flatMap({ normalised($0, crop: crop) }) {
+            center = nudged(center, toKeep: averaged, within: half * camera.safeArea, by: claim)
+        }
+        if let live = drawnPointer(timeline, at: time, sourceTime: sourceTime,
+                                   track: track, override: override, crop: crop) {
+            center = nudged(center, toKeep: live, within: half * camera.safeArea, by: claim)
+        }
+        return center
+    }
+
+    /// How far back a held camera looks for where to aim, in seconds, at the least.
+    static let heldAimWindow = 1.5
+    /// How finely it reads the path over that stretch.
+    static let heldAimStep = 1.0 / 60
 
     /// The two rules every shot ends with, whatever decided it: a drawn pointer stays in
     /// the shot, and the shot stays on the picture.
@@ -698,11 +815,40 @@ public struct SceneBuilder: Sendable {
     /// must not disagree about where the pointer is, or the frame is kept around a cursor
     /// that is somewhere else. With no cursor regions this is `track.position(at:)` and
     /// nothing more, so an old project gets exactly the pixels it always did.
+    ///
+    /// A video that loops brings the pointer home over its last moments — see
+    /// `PointerLoop` — and that is decided here too, so the pointer, the camera keeping it
+    /// in shot and its motion blur all see the pointer travelling home rather than one of
+    /// them seeing the recorded hand.
     func pointerPoint(_ timeline: Timeline,
-                              at time: CMTime,
-                              sourceTime: CMTime,
-                              track: CursorTrack,
-                              override: CursorOverride) -> CGPoint? {
+                      at time: CMTime,
+                      sourceTime: CMTime,
+                      track: CursorTrack,
+                      override: CursorOverride) -> CGPoint? {
+        guard let point = recordedPointerPoint(timeline, at: time, sourceTime: sourceTime,
+                                               track: track, override: override) else { return nil }
+        let home = timeline.pointerLoopBlend(at: time)
+        guard home > 0, let first = loopHome(timeline, track: track) else { return point }
+        return CGPoint(x: point.x + (first.x - point.x) * home,
+                       y: point.y + (first.y - point.y) * home)
+    }
+
+    /// Where the pointer is drawn on the video's first frame: where a loop brings it back
+    /// to. `nil` when the video does not open on the recording — a title, or somebody
+    /// else's footage — and there is no pointer to go back to.
+    func loopHome(_ timeline: Timeline, track: CursorTrack) -> CGPoint? {
+        guard let moment = timeline.mediaTime(at: .zero), moment.source == nil,
+              let source = timeline.sourceTime(at: .zero) else { return nil }
+        return recordedPointerPoint(timeline, at: .zero, sourceTime: source, track: track,
+                                    override: timeline.cursorOverride(at: .zero))
+    }
+
+    /// The pointer as the recording and the Pointer lane put it, before a loop has any say.
+    private func recordedPointerPoint(_ timeline: Timeline,
+                                      at time: CMTime,
+                                      sourceTime: CMTime,
+                                      track: CursorTrack,
+                                      override: CursorOverride) -> CGPoint? {
         guard var point = track.position(at: sourceTime.seconds) else { return nil }
         guard !override.isNothing else { return point }
 
@@ -783,12 +929,16 @@ public struct SceneBuilder: Sendable {
         // Fully faded out means no layer at all rather than a transparent one: everything
         // downstream — the renderer's filter chain, a test asking "is the pointer drawn?" —
         // should get one answer, and an invisible pointer is not drawn.
-        var opacity = 1 - min(1, max(0, override.hiding))
-        // Gone while it is left alone, when the project asks for that. Multiplied rather
-        // than chosen between, so a stretch that hides the pointer and a pointer that has
-        // gone to rest cannot argue about which of them is in charge.
-        if timeline.cursor.hidesWhenIdle {
-            opacity *= track.idleOpacity(at: sourceTime.seconds, after: timeline.cursor.idleDelay)
+        var opacity = pointerOpacity(timeline, at: time, sourceTime: sourceTime, track: track)
+        // A looping video brings the pointer's *presence* home as well as its place: a
+        // pointer resting out of sight on the first frame and in view on the last would
+        // blink at the seam however carefully it was walked back.
+        let home = timeline.pointerLoopBlend(at: time)
+        let firstSource = home > 0 && loopHome(timeline, track: track) != nil
+            ? timeline.sourceTime(at: .zero) : nil
+        if let firstSource {
+            let first = pointerOpacity(timeline, at: .zero, sourceTime: firstSource, track: track)
+            opacity += (first - opacity) * home
         }
         guard opacity > 0.001 else { return nil }
 
@@ -807,8 +957,11 @@ public struct SceneBuilder: Sendable {
         let velocity = timeline.cursor.motionBlur
             ? pointerVelocity(timeline, at: time, sourceTime: sourceTime, track: track)
             : .zero
-        let shape = pointerShape(timeline.cursor, at: sourceTime.seconds, track: track)
-        return CursorLayer(position: position,
+        // Past halfway home, the shape it will be on the first frame, for the reason the
+        // opacity above is blended: the seam must not change what the pointer is.
+        let shapeTime = firstSource.map { home >= 0.5 ? $0 : sourceTime } ?? sourceTime
+        let shape = pointerShape(timeline.cursor, at: shapeTime.seconds, track: track)
+        var layer = CursorLayer(position: position,
                            shape: CursorShapeKind(shape),
                            scale: scale,
                            opacity: opacity,
@@ -822,6 +975,58 @@ public struct SceneBuilder: Sendable {
                                    RecordedCursor(url: $0.url, hotspot: $0.hotspot, aspect: $0.aspect)
                                  }
                                : nil)
+        if leans(timeline.cursor.appearance, shape: shape) {
+            layer.tilt = swayTilt(timeline, at: time, track: track, crop: crop)
+        }
+        return layer
+    }
+
+    /// How much of the pointer is shown at a moment, before a loop has its say: faded by a
+    /// stretch that hides it, and by resting, when the project asks for that.
+    ///
+    /// Multiplied rather than chosen between, so a stretch that hides the pointer and a
+    /// pointer that has gone to rest cannot argue about which of them is in charge.
+    private func pointerOpacity(_ timeline: Timeline, at time: CMTime, sourceTime: CMTime,
+                                track: CursorTrack) -> Double {
+        var opacity = 1 - min(1, max(0, timeline.cursorOverride(at: time).hiding))
+        if timeline.cursor.hidesWhenIdle {
+            opacity *= track.idleOpacity(at: sourceTime.seconds, after: timeline.cursor.idleDelay)
+        }
+        return opacity
+    }
+
+    /// Whether the pointer being drawn is one that can lean.
+    ///
+    /// An arrow and a hand are things with a point and a body, and leaning reads on them.
+    /// An I-beam or a crosshair is a mark on the page; tilted, it looks like a different
+    /// mark. The dot is round, and there is nothing to lean.
+    private func leans(_ appearance: CursorStyle.Appearance, shape: CursorShape) -> Bool {
+        switch appearance {
+        case .largeArrow, .minimal: true
+        case .dot, .clicksOnly: false
+        case .asRecorded: CursorShapeKind(shape) == .arrow || CursorShapeKind(shape) == .pointingHand
+        }
+    }
+
+    /// How far the arrow leans at this moment — see `PointerSway`.
+    ///
+    /// Read off the pointer *as drawn*, through `pointerPoint`, at moments of the edited
+    /// video rather than of the recording: a hold stands the arrow up, a loop's journey
+    /// home leans it, and a cut in the footage — a jump on the path — is recognised by
+    /// `PointerSway` as a jump rather than as a flick. Timed to the microsecond, because
+    /// the sway measures speed over steps of a 120th of a second and rounding each end of
+    /// a step to a 600th would put a tenth of it in error.
+    private func swayTilt(_ timeline: Timeline, at time: CMTime, track: CursorTrack, crop: CGRect) -> Double {
+        let sway = timeline.cursor.sway
+        guard sway.isEnabled, videoSize.width > 0 else { return 0 }
+        let width = videoSize.width / displayScale * crop.width
+        return sway.angle(at: time.seconds, position: { seconds in
+            guard seconds >= 0 else { return nil }
+            let moment = CMTime(seconds: seconds, preferredTimescale: 1_000_000)
+            guard let source = timeline.sourceTime(at: moment) else { return nil }
+            return pointerPoint(timeline, at: moment, sourceTime: source, track: track,
+                                override: timeline.cursorOverride(at: moment))
+        }, frameWidth: width)
     }
 
     /// What the pointer looks like at a moment, as the project wants it drawn.

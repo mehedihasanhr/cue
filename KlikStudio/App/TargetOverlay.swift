@@ -295,6 +295,7 @@ private struct WindowPickerPanel: View {
         VStack(spacing: 0) {
             searchBar
             content
+            if let note = model.resizeNote { resizeNote(note) }
             actionBar
         }
         .frame(maxWidth: 880)
@@ -444,6 +445,8 @@ private struct WindowPickerPanel: View {
             }
             Spacer(minLength: 16)
 
+            if selected != nil { sizeMenu }
+
             ActionChip(title: "Record Window", key: "↩", isPrimary: true, action: start)
                 .disabled(selected == nil)
                 .opacity(selected == nil ? 0.4 : 1)
@@ -456,6 +459,58 @@ private struct WindowPickerPanel: View {
         .padding(.trailing, 12)
         .frame(height: 56)
         .animation(StudioMotion.selection, value: selected?.id)
+    }
+}
+
+extension WindowPickerPanel {
+    /// The sizes the chosen window can be put at before it is recorded.
+    ///
+    /// Beside the button that records it, because it is the last thing decided about the
+    /// window and the first thing the recording's shape depends on. Greyed for a window on
+    /// another Space, which Accessibility cannot reach.
+    var sizeMenu: some View {
+        Menu {
+            Section("Resize the window to record at") {
+                ForEach(WindowSizePreset.allCases) { preset in
+                    Button {
+                        model.resizeWindow(to: preset)
+                    } label: {
+                        Text(preset.title)
+                        Text(preset.subtitle)
+                    }
+                }
+            }
+        } label: {
+            Label("Size", systemImage: "arrow.up.left.and.arrow.down.right")
+                .font(.system(size: 12, weight: .medium))
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .disabled(model.resizableWindow == nil)
+        .help(model.resizableWindow == nil
+              ? "Only a window on this desktop can be resized"
+              : "Put the window at a preset size, so the recording is that shape")
+    }
+
+    /// What the last resize did, or why it could not, with the way to the grant when that
+    /// is what is missing.
+    func resizeNote(_ note: RecorderModel.ResizeNote) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: note.isGood ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                .foregroundStyle(note.isGood ? Color.green : Color.orange)
+            Text(note.text)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            if note.needsAccess {
+                Button("Allow in System Settings…") { model.requestAccessibility() }
+                    .controlSize(.small)
+            }
+        }
+        .padding(.horizontal, 22)
+        .padding(.vertical, 8)
+        .transition(.opacity)
     }
 }
 

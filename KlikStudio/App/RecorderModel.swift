@@ -218,6 +218,8 @@ final class RecorderModel {
     }
 
     func select(_ source: Source?) {
+        // A note about resizing one window says nothing about the next one picked.
+        resizeNote = nil
         guard let source else {
             target = nil
             targetLabel = ""
@@ -289,6 +291,72 @@ final class RecorderModel {
     func record() {
         guard let target else { return }
         studio.record(target: target)
+    }
+
+    // MARK: - Resizing the window
+
+    /// What the last resize did, in a sentence for the picker — or that it could not.
+    struct ResizeNote: Equatable {
+        let text: String
+        /// Whether it worked; a note that did not is drawn as a warning.
+        let isGood: Bool
+        /// Whether what is missing is the Accessibility grant, so the note offers to ask.
+        let needsAccess: Bool
+    }
+
+    private(set) var resizeNote: ResizeNote?
+
+    /// The chosen window, when the choice is a window that can be sized: one on a Space you
+    /// are looking at, since Accessibility cannot reach a window on another.
+    var resizableWindow: Source? {
+        guard case .window = target,
+              let source = windows.first(where: { $0.target == target }),
+              source.isOnScreen, source.processID > 0 else { return nil }
+        return source
+    }
+
+    /// Puts the chosen window at a preset size before it is recorded.
+    ///
+    /// The window is the person's and so is the decision: this runs only from the picker's
+    /// menu, never on its own, and says what happened either way — including that the app
+    /// kept a size of its own, which some do, and that the grant is missing, which the
+    /// note then offers to fix. The list is read again afterwards, so the tile's picture
+    /// and the size under the name are the window's new ones.
+    func resizeWindow(to preset: WindowSizePreset) {
+        guard let source = resizableWindow else { return }
+        let outcome = WindowResizer.resize(processID: source.processID, windowFrame: source.frame,
+                                           title: source.subtitle.isEmpty ? nil : source.subtitle, to: preset)
+        resizeNote = Self.note(for: outcome)
+        Task { await refreshSources() }
+    }
+
+    /// Asks macOS for the Accessibility grant, and opens the list it lives in: under App
+    /// Sandbox the system may add nothing by itself, and the person has to add the app.
+    func requestAccessibility() {
+        if !AccessibilityAccess.request() { AccessibilityAccess.openSystemSettings() }
+    }
+
+    private static func note(for outcome: WindowResizer.Outcome) -> ResizeNote {
+        func size(_ pixels: CGSize) -> String { "\(Int(pixels.width)) × \(Int(pixels.height))" }
+        switch outcome {
+        case .resized(_, let pixels, let isShrunk):
+            return ResizeNote(text: isShrunk
+                                  ? "Made smaller to fit the screen, same shape: it will record at \(size(pixels))."
+                                  : "Resized. It will record at \(size(pixels)).",
+                              isGood: true, needsAccess: false)
+        case .keptItsOwnSize(_, let pixels):
+            return ResizeNote(text: "The app kept this window at \(size(pixels)) — it has a smallest or largest size of its own.",
+                              isGood: false, needsAccess: false)
+        case .needsAccess:
+            return ResizeNote(text: "Resizing another app's window needs Accessibility access for Klik Studio.",
+                              isGood: false, needsAccess: true)
+        case .windowNotFound:
+            return ResizeNote(text: "Couldn't find that window to resize. It may have moved or closed — choose it again.",
+                              isGood: false, needsAccess: false)
+        case .failed:
+            return ResizeNote(text: "The app didn't let its window be resized.",
+                              isGood: false, needsAccess: false)
+        }
     }
 
     // MARK: - Sources

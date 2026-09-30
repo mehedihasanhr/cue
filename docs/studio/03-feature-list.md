@@ -37,7 +37,7 @@ Every feature found in the research, with where Klik Studio stands and when it i
 | Menu bar icon | Yes | Yes | Yes | Have (state, countdown, elapsed time) | Done |
 | Speaker notes (teleprompter), hidden from the recording | Yes | OpenScreen, Cap | Tella, FocuSee | Have (never recorded, hidden from sharing) | Done |
 | Hide desktop icons while recording | Yes | No | ScreenFlow | Have (in the capture filter; Finder untouched) | Done |
-| Resize the window to a preset size before recording | Yes | No | No | Missing | P3 |
+| Resize the window to a preset size before recording | Yes | No | No | Have (window picker › Size: 1280 × 720, 1920 × 1080, 1080 × 1080, 1080 × 1920 in recorded pixels, or fit to display; shrinks to fit keeping the shape; needs Accessibility and says so) | Done |
 | Low-disk warning and clean stop | Yes | Cap | Yes | Have | Done |
 | Crash-safe recording (file usable after a crash) | Recovery | OpenScreen, Cap | OBS | Have (an unfinished take is recovered) | Done |
 | Picture answers a click on the right frame after a still screen | Unknown | Unknown | Unknown | Have, measured | P0, done |
@@ -63,8 +63,8 @@ Every feature found in the research, with where Klik Studio stands and when it i
 | Other click effects (ripple, spotlight) | Yes | Recordly | Camtasia | Have (ring, ripple, glow) | Done |
 | Click sounds | Yes | Extension | ScreenFlow | Have (soft, crisp; volume) | Done |
 | Motion blur on the pointer | Yes | Yes | Camtasia | Have | P0, done |
-| Loop pointer position for looping videos | Yes | Recordly | No | Missing | P3 |
-| Rotate or sway while moving | Yes | Recordly | No | Missing | P3 |
+| Loop pointer position for looping videos | Yes | Recordly | No | Have (Pointer › Loop: eased home over the last 0.5–2 s; the zoom and pan come home too unless turned off) | Done |
+| Rotate or sway while moving | Yes | Recordly | No | Have (Pointer › Sway: a spring's lean into sideways travel, up to 20°, worked out from the drawn path so scrubbing matches playing; arrows and hands only) | Done |
 | Pointer spotlight, highlight, magnify | No | Recordly | Camtasia, FocuSee | Have: spotlight and magnifier, whole video or marked stretches | Done |
 
 ## Zoom and camera moves
@@ -85,7 +85,7 @@ Every feature found in the research, with where Klik Studio stands and when it i
 | Copy, paste, duplicate, multi-select | Yes | Cap | Yes | Have | P0, done |
 | Remove all zooms | Yes | No | No | Have | Done |
 | Glide between consecutive zooms | No | Recordly | No | Have | Done |
-| Keep zoomed in (crop to the aspect and pan) | Yes | No | No | Partly: stays zoomed across gaps up to 2, 4 or 8 s and travels to the next zoom; a whole-video crop-and-pan is still missing | P2 (whole video) |
+| Keep zoomed in (crop to the aspect and pan) | Yes | No | No | Have: across gaps up to 2, 4 or 8 s, or the whole video (Frame › Zoom, 1.1–4×) with the camera panning after the pointer; zooms inside multiply | Done |
 | Motion blur on zoom and pan | Yes | Yes | No | Have (from the camera's speed; scrubbing equals playing) | Done |
 | Zoom out below 100% | No (62 votes) | No | No | Have: down to 0.5×, gliding to and from zooms in | Done |
 | 3D tilt and perspective | No (107 votes) | OpenScreen, Cap | FocuSee | Missing | P3 |

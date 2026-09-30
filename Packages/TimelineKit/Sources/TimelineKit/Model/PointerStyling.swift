@@ -171,3 +171,190 @@ public extension Timeline {
                 presence(cursor.magnifier.isEnabled, cursor.magnifier.scope) { $0.magnifies })
     }
 }
+
+/// The pointer brought back to where it started over the last moments of the video, so
+/// the video can be played on a loop without the pointer jumping at the seam.
+///
+/// For the videos that *are* played on a loop: a GIF in a README, a muted hero video on a
+/// landing page. A recording ends wherever the hand happened to stop, and the frame after
+/// the last one is the first one, so without this the pointer teleports once a loop — the
+/// one fault a looping video cannot hide, because the viewer sees it every few seconds.
+///
+/// Eased rather than slid: the pointer leaves the recorded path gently, travels home and
+/// arrives at rest, so the last frame and the first are the same place. Worked out from
+/// the time alone, like every other pointer rule, so scrubbing to the end shows what
+/// playing to it shows.
+public struct PointerLoop: Codable, Equatable, Sendable {
+    public var isEnabled: Bool
+    /// How long the journey home takes, in seconds, ending at the end of the video.
+    public var duration: Double
+    /// Whether the camera comes home too — the zoom and the pan it had on the first frame.
+    ///
+    /// On by default: a pointer that loops inside a picture that jumps from 2× to the whole
+    /// recording at the seam has not made the video loop. Off for somebody who wants the
+    /// last zoom to hold to the very end and is happy with a cut.
+    public var bringsCameraBack: Bool
+
+    public static let durationRange: ClosedRange<Double> = 0.5...2
+
+    public init(isEnabled: Bool = false, duration: Double = 1, bringsCameraBack: Bool = true) {
+        self.isEnabled = isEnabled
+        self.duration = PointerSpotlight.clamp(duration, Self.durationRange, fallback: 1)
+        self.bringsCameraBack = bringsCameraBack
+    }
+
+    /// Field by field, for the reason `CursorStyle.init(from:)` gives.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        func value<T: Decodable>(_ key: CodingKeys, default fallback: @autoclosure () -> T) -> T {
+            ((try? container.decodeIfPresent(T.self, forKey: key)) ?? nil) ?? fallback()
+        }
+        self.init(isEnabled: value(.isEnabled, default: false),
+                  duration: value(.duration, default: 1),
+                  bringsCameraBack: value(.bringsCameraBack, default: true))
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case isEnabled, duration, bringsCameraBack
+    }
+
+    /// How far home the pointer is at `time` in a video `length` long: 0 until the journey
+    /// begins, 1 at the very end, eased in and out between.
+    ///
+    /// A video shorter than two journeys gives half of itself to the journey instead, so a
+    /// three-second GIF with a two-second loop still shows the pointer doing something
+    /// before it starts home — and a journey never begins before the first frame, where it
+    /// would be travelling to where it already is.
+    ///
+    /// Smootherstep rather than smoothstep: its speed *and* its acceleration are zero at
+    /// both ends, so neither the departure from the recorded path nor the arrival shows a
+    /// kink, even with motion blur measuring the pointer's speed across it.
+    public func blend(at time: Double, length: Double) -> Double {
+        guard isEnabled, length > 0, time.isFinite else { return 0 }
+        let journey = min(duration, length / 2)
+        guard journey > 0 else { return 0 }
+        let start = length - journey
+        let t = min(1, max(0, (time - start) / journey))
+        return t * t * t * (t * (t * 6 - 15) + 10)
+    }
+}
+
+/// The arrow leaning into its travel while it moves, and standing up again when it stops.
+///
+/// A drawn pointer that glides about bolt upright reads as a sprite; one that tilts a few
+/// degrees into a fast move reads as a thing with weight being moved by a hand. The tilt
+/// is a spring's: it builds as the pointer picks up speed, overshoots a touch when it
+/// stops, and settles upright.
+///
+/// **Stateless.** A spring is normally simulated a frame at a time, which would make the
+/// tilt at a moment depend on how the player got there — scrubbing and playing would show
+/// different pointers. Here the spring's answer is worked out directly: the tilt at a
+/// moment is the pointer's recent speed passed through the spring's impulse response, a
+/// weighted sum over the last fraction of a second of the path. The same arithmetic, the
+/// same answer, however the moment was reached. See `angle(at:position:frameWidth:)`.
+public struct PointerSway: Codable, Equatable, Sendable {
+    public var isEnabled: Bool
+    /// 0 to 1: how far the arrow may lean, as a share of `maximumAngle`.
+    public var strength: Double
+
+    public static let strengthRange: ClosedRange<Double> = 0.1...1
+    /// The furthest the arrow ever leans, in degrees, at full strength and full speed.
+    /// Past twenty the arrow stops reading as leaning and starts reading as pointing
+    /// somewhere else.
+    public static let maximumAngle = 20.0
+
+    public init(isEnabled: Bool = false, strength: Double = 0.6) {
+        self.isEnabled = isEnabled
+        self.strength = PointerSpotlight.clamp(strength, Self.strengthRange, fallback: 0.6)
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        func value<T: Decodable>(_ key: CodingKeys, default fallback: @autoclosure () -> T) -> T {
+            ((try? container.decodeIfPresent(T.self, forKey: key)) ?? nil) ?? fallback()
+        }
+        self.init(isEnabled: value(.isEnabled, default: false),
+                  strength: value(.strength, default: 0.6))
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case isEnabled, strength
+    }
+
+    // MARK: - The spring
+
+    /// The spring's natural frequency, in hertz. About two swings a second: quick enough to
+    /// follow a flick, slow enough that the lean is seen rather than felt as jitter.
+    static let frequency = 2.2
+    /// Under-damped a little, so a stop gives one small overshoot and no more.
+    static let damping = 0.6
+    /// How far back the sum reaches. By then the spring's envelope has fallen below one
+    /// per cent and nothing older can move the arrow.
+    static let memory = 0.6
+    /// How finely the path is read over that stretch.
+    static let step = 1.0 / 120
+    /// The speed, in frame widths per second, at which the lean is most of the way to its
+    /// limit. A deliberate move across a screen is about this; a flick is well past it and
+    /// only nudges the lean further, because the curve flattens.
+    static let referenceSpeed = 0.8
+    /// A step faster than this — several frame widths a second — is a cut in the footage or
+    /// a jump to another screen, not a movement, and must not throw the arrow over.
+    static let teleportSpeed = 8.0
+
+    /// The spring's impulse response at `age` seconds: how much a push that long ago still
+    /// moves the arrow now. Integrates to one, so a pointer moving steadily leans by exactly
+    /// the angle its speed asks for.
+    static func response(_ age: Double) -> Double {
+        let omega = 2 * Double.pi * frequency
+        let zeta = damping
+        let damped = omega * (1 - zeta * zeta).squareRoot()
+        return omega * omega / damped * exp(-zeta * omega * age) * sin(damped * age)
+    }
+
+    /// The lean the arrow is asked for by a speed across the frame: signed, saturating
+    /// smoothly towards `maximumAngle × strength`, in radians.
+    func target(forSpeed speed: Double) -> Double {
+        let limit = Self.maximumAngle * strength * .pi / 180
+        return limit * tanh(speed / Self.referenceSpeed)
+    }
+
+    /// How far the arrow leans at `time`, in radians — positive when it is travelling to
+    /// the right, which swings its tail back to the left.
+    ///
+    /// - Parameters:
+    ///   - position: where the pointer is drawn at a moment, in any units, or `nil` where
+    ///     it is not drawn at all. Called at a fixed spacing back through `memory`.
+    ///   - frameWidth: how wide the frame is in the same units, so a speed means the same at
+    ///     every recording size.
+    ///
+    /// Only the sideways speed leans the arrow. A pointer moving straight up or down has no
+    /// side to lean to, and tilting it anyway reads as a wobble.
+    public func angle(at time: Double, position: (Double) -> CGPoint?, frameWidth: Double) -> Double {
+        guard isEnabled, frameWidth > 0, time.isFinite else { return 0 }
+        let steps = Int((Self.memory / Self.step).rounded())
+        var points: [CGPoint?] = []
+        points.reserveCapacity(steps + 2)
+        for index in 0...(steps + 1) {
+            points.append(position(time - Double(index) * Self.step))
+        }
+        var total = 0.0
+        for index in 0...steps {
+            guard let now = points[index], let before = points[index + 1] else { continue }
+            let speed = (now.x - before.x) / Self.step / frameWidth
+            guard abs(speed) < Self.teleportSpeed else { continue }
+            // Sampled at the middle of the step, which is where that speed was measured.
+            let age = (Double(index) + 0.5) * Self.step
+            total += target(forSpeed: speed) * Self.response(age) * Self.step
+        }
+        let limit = Self.maximumAngle * strength * .pi / 180 * 1.25
+        return min(max(total, -limit), limit)
+    }
+}
+
+public extension Timeline {
+    /// How far the looping pointer — and, when it asks, the camera — has come home at
+    /// `time`, 0 to 1. Always 0 while the project does not loop.
+    func pointerLoopBlend(at time: CMTime) -> Double {
+        cursor.loop.blend(at: time.seconds, length: duration.seconds)
+    }
+}

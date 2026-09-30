@@ -262,6 +262,8 @@ public extension Look {
         public var dotColor: ColorValue?
         public var spotlight: PointerSpotlight?
         public var magnifier: PointerMagnifier?
+        public var loop: PointerLoop?
+        public var sway: PointerSway?
 
         public init() {}
 
@@ -288,6 +290,8 @@ public extension Look {
             dotColor = style.dotColor
             spotlight = style.spotlight
             magnifier = style.magnifier
+            loop = style.loop
+            sway = style.sway
         }
 
         public init(from decoder: any Decoder) throws {
@@ -314,6 +318,8 @@ public extension Look {
             dotColor = field(c, .dotColor)
             spotlight = field(c, .spotlight)
             magnifier = field(c, .magnifier)
+            loop = field(c, .loop)
+            sway = field(c, .sway)
         }
 
         enum CodingKeys: String, CodingKey {
@@ -321,7 +327,7 @@ public extension Look {
             case clickHighlight, clickColor, clickSize, usesRecordedArtwork
             case hidesWhenIdle, idleDelay, alwaysArrow, steadiesShape, clickStyle
             case clickSound, clickSoundKind, clickSoundVolume
-            case appearance, dotColor, spotlight, magnifier
+            case appearance, dotColor, spotlight, magnifier, loop, sway
         }
 
         public var isEmpty: Bool {
@@ -332,6 +338,7 @@ public extension Look {
                 && steadiesShape == nil && clickStyle == nil
                 && clickSound == nil && clickSoundKind == nil && clickSoundVolume == nil
                 && appearance == nil && dotColor == nil && spotlight == nil && magnifier == nil
+                && loop == nil && sway == nil
         }
 
         public func apply(to style: inout CursorStyle) {
@@ -364,6 +371,8 @@ public extension Look {
             set(&style.dotColor, dotColor)
             set(&style.spotlight, spotlight)
             set(&style.magnifier, magnifier)
+            set(&style.loop, loop)
+            set(&style.sway, sway)
         }
     }
 
@@ -447,6 +456,7 @@ public extension Look {
         public var glidesBetweenZooms: Bool?
         public var keepsZoomedInFor: Double?
         public var motionBlur: Bool?
+        public var wholeVideoZoom: Double?
 
         public init() {}
 
@@ -458,6 +468,7 @@ public extension Look {
             glidesBetweenZooms = style.glidesBetweenZooms
             keepsZoomedInFor = style.keepsZoomedInFor
             motionBlur = style.motionBlur
+            wholeVideoZoom = style.wholeVideoZoom
         }
 
         public init(from decoder: any Decoder) throws {
@@ -469,15 +480,18 @@ public extension Look {
             glidesBetweenZooms = field(c, .glidesBetweenZooms)
             keepsZoomedInFor = field(c, .keepsZoomedInFor)
             motionBlur = field(c, .motionBlur)
+            wholeVideoZoom = field(c, .wholeVideoZoom)
         }
 
         enum CodingKeys: String, CodingKey {
             case steadiness, follow, safeArea, zoomsWholeFrame, glidesBetweenZooms, keepsZoomedInFor, motionBlur
+            case wholeVideoZoom
         }
 
         public var isEmpty: Bool {
             steadiness == nil && follow == nil && safeArea == nil && zoomsWholeFrame == nil
                 && glidesBetweenZooms == nil && keepsZoomedInFor == nil && motionBlur == nil
+                && wholeVideoZoom == nil
         }
 
         public func apply(to style: inout CameraStyle) {
@@ -488,6 +502,12 @@ public extension Look {
             set(&style.glidesBetweenZooms, glidesBetweenZooms)
             set(&style.keepsZoomedInFor, keepsZoomedInFor)
             set(&style.motionBlur, motionBlur)
+            // Through the same clamp the renderer reads it by, so a file cannot hold a
+            // project at 40×.
+            if let wholeVideoZoom, wholeVideoZoom.isFinite {
+                style.wholeVideoZoom = min(max(wholeVideoZoom, CameraStyle.wholeVideoZoomRange.lowerBound),
+                                           CameraStyle.wholeVideoZoomRange.upperBound)
+            }
         }
     }
 

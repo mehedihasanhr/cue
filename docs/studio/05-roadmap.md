@@ -129,7 +129,7 @@ Fix what is wrong before adding anything. Details and measurements are in `06-qu
 - [x] Title slides
 - [x] Edit by transcript: remove a line, or pick single words and cut them (recorded timings only)
 - [x] Remove filler words; shorten pauses (not during clicks)
-- [x] Keep zoomed in across gaps between zooms (Camera Motion › Stay zoomed in). A whole-video crop-and-pan is still open
+- [x] Keep zoomed in across gaps between zooms (Camera Motion › Stay zoomed in), or for the whole video with the camera panning after the pointer (Frame › Zoom)
 - [x] Motion blur on zoom and pan
 - [x] Camera background blur and removal; camera crop; border (removal still to check on a real face)
 - [x] Music ducking
@@ -139,6 +139,9 @@ Fix what is wrong before adding anything. Details and measurements are in `06-qu
 - [x] Smaller File export (HEVC) and a target size for MP4, MOV and GIF
 - [x] Safe zones for Shorts, TikTok and Reels over a 9 : 16 preview (View › Show Safe Zones; never exported)
 - [x] Pointer spotlight and magnify
+- [x] Loop the pointer position for looping videos, camera included (Pointer › Loop)
+- [x] Pointer sway while moving (Pointer › Sway)
+- [x] Resize a window to a preset size before recording it (window picker › Size; Accessibility)
 
 ## Phase 3: later
 
