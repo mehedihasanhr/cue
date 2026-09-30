@@ -249,6 +249,7 @@ final class EditorModel {
             let audio = PreviewAudio(videoURL: url, packageURL: document.package.url,
                                      clicks: document.cursorTrack.clicks,
                                      clickFrame: recordedFrame,
+                                     picture: document.pictureTrack,
                                      settings: settings)
             audio.prepare(for: timeline)
             self.audio = audio

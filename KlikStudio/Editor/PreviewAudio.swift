@@ -78,6 +78,8 @@ final class PreviewAudio {
     private let clicks: [CursorTrack.Click]
     /// The recording's size in points. See `AudioMixdown.build(clickFrame:)`.
     private let clickFrame: CGSize?
+    /// Where a resized window's picture sat, which the clicks follow as the picture does.
+    private let picture: PictureTrack
     private let settings: StudioSettings?
 
     private var player: AVPlayer?
@@ -92,8 +94,9 @@ final class PreviewAudio {
     private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "audio")
 
     init(videoURL: URL, packageURL: URL, clicks: [CursorTrack.Click] = [], clickFrame: CGSize? = nil,
-         settings: StudioSettings?) {
+         picture: PictureTrack = PictureTrack(), settings: StudioSettings?) {
         self.clickFrame = clickFrame
+        self.picture = picture
         self.videoURL = videoURL
         self.packageURL = packageURL
         self.clicks = clicks
@@ -132,12 +135,14 @@ final class PreviewAudio {
         let packageURL = packageURL
         let clicks = clicks
         let clickFrame = clickFrame
+        let picture = picture
         building = Task { [weak self] in
             let result = await AudioMixdown.build(timeline: timeline,
                                                   videoURL: videoURL,
                                                   packageURL: packageURL,
                                                   clicks: clicks,
-                                                  clickFrame: clickFrame)
+                                                  clickFrame: clickFrame,
+                                                  picture: picture)
             guard !Task.isCancelled, let self else { return }
             self.adopt(result, for: signature)
         }

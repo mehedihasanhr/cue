@@ -139,6 +139,32 @@ struct CameraLayoutRenderTests {
         #expect(!camera.isBubble)
     }
 
+    @Test("Side by side leaves room for a phone round the screen: the handset stays in its share")
+    func sideBySideFitsTheDevice() throws {
+        let edit = timeline(.sideBySide) { $0.style.chrome.kind = .iPhone }
+        let scene = builder().descriptor(for: edit, at: time(middle))
+        let pane = try #require(scene.webcam).pixelRect(in: scene.outputSize)
+        let body = try #require(scene.deviceGeometry).body
+        #expect(body.maxX <= pane.minX + 0.01, "the handset stops short of the camera")
+        #expect(body.minX >= -0.01 && body.minY >= -0.01, "and inside the frame")
+        #expect(body.maxY <= scene.outputSize.height + 0.01)
+        #expect(abs(pane.height - body.height) < 0.01, "the camera as tall as the handset")
+        #expect(abs(pane.midY - scene.videoFrame.midY) < 0.01)
+    }
+
+    @Test("Stacked, a window's bar above the screen stays clear of a camera above it")
+    func sideBySideTallFitsTheBar() throws {
+        let edit = timeline(.sideBySide) {
+            $0.style.aspect = .vertical9x16
+            $0.style.chrome.kind = .window
+            $0.webcam.corner = .topLeft
+        }
+        let scene = builder().descriptor(for: edit, at: time(middle))
+        let pane = try #require(scene.webcam).pixelRect(in: scene.outputSize)
+        let bar = try #require(scene.chromeBarFrame)
+        #expect(bar.maxY <= pane.minY + 0.01, "the bar is below the camera, not under it")
+    }
+
     @Test("A bubble parked on the left goes side by side on the left")
     func sideBySideFollowsTheBubble() throws {
         let scene = builder().descriptor(for: timeline(.sideBySide) { $0.webcam.corner = .topLeft },

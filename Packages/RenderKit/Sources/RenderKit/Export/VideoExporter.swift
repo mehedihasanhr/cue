@@ -150,7 +150,8 @@ public actor VideoExporter {
             let mixdown = await AudioMixdown.build(timeline: timeline, videoURL: videoURL, packageURL: packageURL,
                                                    clicks: cursor?.clicks ?? [],
                                                    clickFrame: CGSize(width: builder.videoSize.width / builder.displayScale,
-                                                                      height: builder.videoSize.height / builder.displayScale))
+                                                                      height: builder.videoSize.height / builder.displayScale),
+                                                   picture: builder.picture)
             if !mixdown.isEmpty,
                let (input, source, output) = try audioPath(for: mixdown, into: writer) {
                 guard writer.canAdd(input) else { throw ExportError.writerFailed("The encoder refused the audio.") }

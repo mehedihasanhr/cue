@@ -64,13 +64,21 @@ extension Timeline {
     /// nowhere. The same test the renderer makes, so the two cannot disagree about which
     /// clicks are in the picture.
     ///
-    /// - Parameter frame: the recording's size in the points the clicks are measured in.
-    public func visibleClicks(_ clicks: [CursorTrack.Click], frame: CGSize) -> [CursorTrack.Click] {
+    /// - Parameters:
+    ///   - frame: the recording's size in the points the clicks are measured in.
+    ///   - picture: where a resized window's picture sat in the frame. The renderer crops
+    ///     the black round it away and scales the picture up, so a click out on the black
+    ///     is not drawn — and each click is put through that placement first, at its own
+    ///     moment, as `SceneBuilder` puts it before the crop decides. Empty for every
+    ///     other recording, which leaves every click where it was.
+    public func visibleClicks(_ clicks: [CursorTrack.Click], frame: CGSize,
+                              picture: PictureTrack = PictureTrack()) -> [CursorTrack.Click] {
         let crop = style.crop?.rect ?? CropRect.full.rect
         guard frame.width > 0, frame.height > 0, crop.width > 0, crop.height > 0 else { return clicks }
         return clicks.filter { click in
-            let u = (click.point.x / frame.width - crop.minX) / crop.width
-            let v = (click.point.y / frame.height - crop.minY) / crop.height
+            let point = picture.place(click.point, at: click.t, in: frame)
+            let u = (point.x / frame.width - crop.minX) / crop.width
+            let v = (point.y / frame.height - crop.minY) / crop.height
             return (0...1).contains(u) && (0...1).contains(v)
         }
     }

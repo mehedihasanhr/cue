@@ -4,6 +4,18 @@ Every bug found, how it was measured, and what fixed it. Newest work first.
 
 Measurements come from `Tools/studio-lab`, which records a scripted pointer over a blank stage with the real pointer burnt into the picture, then compares what was written down with what is in the frames. Mac used: MacBook Pro, built-in display at 1512 × 982 points, 120 Hz.
 
+## Bug hunt 2 (2026-09-30)
+
+A second review, of the newest work: window recordings sized from a measured frame, the crop that follows a resized window, the stalled-decoder watchdog, rebindable shortcuts, zooming out, app audio, device frames and the canvas on a turned picture. Each finding was shown by a test that failed before the fix.
+
+| Problem | Cause and fix | Test |
+|---|---|---|
+| An editor shortcut could be set to a key no menu can carry — one on the numeric keypad, say. Settings showed it with a green tick; the menu showed nothing and the key did nothing | `EditorShortcuts.problem` checked who else had the key, never whether a menu could take it at all, and the app turns only named keys into a key equivalent. A key with no name is now refused, and one already stored is flagged (`EditorShortcutProblem.notAMenuKey`, `KeyCombo.isMenuKey`) | `EditorShortcutsTests.aKeyNoMenuCanShowIsRefused` |
+| On a window resized mid-take, a click out on the black the window left was heard although it is never drawn — and the click sounds and the rings disagreed about which clicks were in the picture | `visibleClicks` tested each click against the crop alone, while the renderer puts clicks through the picture's own crop first (`SceneBuilder.pictureCrop`). It now places each click through the `PictureTrack` at its own moment, and the preview's and the export's mixdowns pass the track in | `BugHunt2Tests.clickSoundsFollowThePictureTrack` |
+| Side by side with an iPhone or iPad frame, the handset spilled across the gap and under the camera's pane, and past the edge of the frame; stacked, a window's bar ran up under a camera placed above | The split fitted the bare picture into the screen's share, and the dressing was then drawn round it. It now fits the picture as it is framed — handset or bar included, by the arithmetic the padding already uses — places the picture inside that, and lines the camera's pane up with the whole | `CameraLayoutRenderTests.sideBySideFitsTheDevice`, `sideBySideTallFitsTheBar` |
+
+Reviewed and found sound: the stall watchdog (a stalled reader is set aside, the reopened one skips what was already delivered, `start(at:)` resets that mark, and a rewind cancels only a reader with no pull in flight); the window measurement and the picture sidecar (dated on the recording's clock, the same point conversion as the pointer); zooming out (the camera centre, glides through 1×, motion blur, pointer following and the pointer clamp); the perspective's inverse and the canvas's matrix; device frames with a crop, a zoom in either scope and a pull back; and the previous bug hunt's fixes.
+
 ## Shortcuts, zooming out and app audio (2026-09-30)
 
 | # | Bug | Effect | Fix | Test |

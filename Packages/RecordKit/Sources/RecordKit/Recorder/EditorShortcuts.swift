@@ -244,6 +244,9 @@ public enum EditorShortcutProblem: Equatable, Sendable {
     case usedBy(EditorCommand)
     /// ⌥ with a letter or a digit types a character.
     case typesCharacter
+    /// A key a menu item cannot be given — one on the numeric keypad, say — so the command
+    /// would show the shortcut here and never answer it.
+    case notAMenuKey
 
     public var message: String {
         switch self {
@@ -252,6 +255,7 @@ public enum EditorShortcutProblem: Equatable, Sendable {
         case .recorder(let action): "The recorder uses this from any app for \u{201C}\(action.title)\u{201D}."
         case .usedBy(let command): "Already used for \u{201C}\(command.title)\u{201D}."
         case .typesCharacter: "⌥ with a key types a character. Add ⌘ or ⌃."
+        case .notAMenuKey: "A menu can\u{2019}t use this key. Choose another."
         }
     }
 }
@@ -313,6 +317,8 @@ public struct EditorShortcuts: Codable, Equatable, Sendable {
     /// has, and ⌥ with a character, which would stop that character being typed.
     public func problem(with combo: KeyCombo, for command: EditorCommand,
                         recorder: RecorderShortcuts? = nil) -> EditorShortcutProblem? {
+        // First: a key no menu item can carry is no shortcut at all, whoever else has it.
+        guard combo.isMenuKey else { return .notAMenuKey }
         if let name = RecorderShortcuts.system[combo] { return .system(name) }
         if let name = Self.reserved[combo] { return .app(name) }
         if let recorder, let action = RecorderAction.allCases.first(where: { recorder[$0] == combo }) {
@@ -384,6 +390,13 @@ public struct EditorShortcuts: Codable, Equatable, Sendable {
 }
 
 public extension KeyCombo {
+    /// Whether a menu item can be given this key: every key with a name here — letters,
+    /// digits, punctuation, Return, Tab, Space, the two Deletes, Escape, the arrows, Home,
+    /// End, Page Up and Down, F1 to F20. The app turns exactly those into a menu's key
+    /// equivalent; anything else, the numeric keypad's keys among them, has none, and a
+    /// menu given one shows no shortcut and answers none.
+    var isMenuKey: Bool { keyName.hasPrefix("Key ") == false }
+
     /// Whether the key types text when pressed with ⌥ or on its own: a letter, a digit or
     /// punctuation — not an arrow, a function key or Space.
     var typesText: Bool { Self.textKeys.contains(Int(keyCode)) }
