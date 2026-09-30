@@ -60,6 +60,40 @@ struct SystemAudioRouteTests {
         #expect(route == .nothingRunning)
     }
 
+    // MARK: - Apps launched during a take
+
+    /// A take hearing some apps listens for launches — even one where none of them was
+    /// running yet, which is when it matters most. One hearing everything or nothing does not.
+    @Test func onlyATakeOfChosenAppsListensForLaunches() {
+        #expect(SystemAudioRoute.applications(["com.apple.Music"]).listensForLaunches)
+        #expect(SystemAudioRoute.nothingRunning.listensForLaunches)
+        #expect(!SystemAudioRoute.everything.listensForLaunches)
+        #expect(!SystemAudioRoute.off.listensForLaunches)
+    }
+
+    /// Music opened a minute in, having been chosen, is heard from then on; an app nobody
+    /// chose, the recorder itself, and a launch with no bundle ID change nothing.
+    @Test func aChosenAppLaunchedMidTakeChangesTheFilter() {
+        let chosen = ["com.apple.Safari", "com.apple.Music"]
+        #expect(SystemAudioRoute.launchChangesFilter(launched: "com.apple.Music", chosen: chosen, ownBundleIDs: own))
+        #expect(!SystemAudioRoute.launchChangesFilter(launched: "com.spotify.client", chosen: chosen, ownBundleIDs: own))
+        #expect(!SystemAudioRoute.launchChangesFilter(launched: nil, chosen: chosen, ownBundleIDs: own))
+        #expect(!SystemAudioRoute.launchChangesFilter(launched: "com.stackrover.klik.studio",
+                                                      chosen: chosen + ["com.stackrover.klik.studio"],
+                                                      ownBundleIDs: own))
+        // The rebuilt filter is the plan against what runs now: both, in the chosen order.
+        let now = SystemAudioRoute.plan(systemAudio: true, chosen: chosen,
+                                        running: running, ownBundleIDs: own)
+        #expect(now == .applications(["com.apple.Safari", "com.apple.Music"]))
+    }
+
+    /// Quit and opened again, a chosen app is a new process the old filter does not name,
+    /// so its launch rebuilds the filter even though it was already being heard.
+    @Test func aChosenAppReopenedMidTakeRebuildsTheFilter() {
+        #expect(SystemAudioRoute.launchChangesFilter(launched: "com.apple.Safari",
+                                                     chosen: ["com.apple.Safari"], ownBundleIDs: own))
+    }
+
     // MARK: - Stream configurations
 
     /// With apps chosen the screen's stream stops asking for sound; with none it asks, as

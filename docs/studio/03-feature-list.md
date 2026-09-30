@@ -2,7 +2,7 @@
 
 Every feature found in the research, with where Klik Studio stands and when it is planned.
 
-**Klik Studio column:** Have, Partial, or Missing, as of branch `feat/studio` on 2026-09-29.
+**Klik Studio column:** Have, Partial, or Missing, as of branch `feat/studio` on 2026-09-30.
 **Phase column:** P0 = correctness (now), P1 = parity with Screen Studio, P2 = the market's gaps, P3 = later. "Done" means shipped before this plan. Phases are described in `05-roadmap.md`.
 **Competitor columns:** SS = Screen Studio, OSS = best of Recordly / OpenScreen / Cap, Pro = Camtasia / ScreenFlow / FocuSee / Descript / Tella.
 
@@ -88,7 +88,7 @@ Every feature found in the research, with where Klik Studio stands and when it i
 | Keep zoomed in (crop to the aspect and pan) | Yes | No | No | Partly: stays zoomed across gaps up to 2, 4 or 8 s and travels to the next zoom; a whole-video crop-and-pan is still missing | P2 (whole video) |
 | Motion blur on zoom and pan | Yes | Yes | No | Have (from the camera's speed; scrubbing equals playing) | Done |
 | Zoom out below 100% | No (62 votes) | No | No | Have: down to 0.5×, gliding to and from zooms in | Done |
-| 3D tilt and perspective | No (107 votes) | OpenScreen, Cap | FocuSee | Missing | P3 |
+| 3D tilt and perspective | No (107 votes) | OpenScreen, Cap | FocuSee | Have: Frame › Perspective (turn, lean and roll, or Tilt Left, Tilt Right, Lean Back, Isometric); the pointer, clicks, annotations and a device frame turn with the picture, and the canvas handles follow (`FramePerspective`, `SceneRenderer+Perspective`) | Done |
 
 ## Camera bubble
 
@@ -147,7 +147,7 @@ Every feature found in the research, with where Klik Studio stands and when it i
 | Lanes stay in time order after a drag | — | — | — | Have | P0, done |
 | Step by one frame at the recording's frame rate | Yes | Yes | Yes | Have | P0, done |
 | Reorder clips | No | Yes | Yes | Have (drag, menu, inspector; regions travel with the clip) | Done |
-| Several recordings or imported clips in one project | No (525 votes) | OpenScreen, Cap | Yes | Missing | P2 |
+| Several recordings or imported clips in one project | No (525 votes) | OpenScreen, Cap | Yes | Have: File › Add Video… and Add Recording… copy the movie into the project and add it as a clip (at the start, the playhead or the end); its sound plays under it, crossfades with its neighbours, and it is fitted into the recording's place (`Commands.AddMedia`, `AudioMixdown+Imported`) | Done |
 | Transitions | No (124 votes) | Cap | Yes | Have (crossfade, dip to black or background; sound follows) | Done |
 | Freeze frame | No (58 votes) | No | Yes | Have | Done |
 | Title and text slides | No (479 votes) | Cap | Yes | Have (three layouts, two backdrops, entrances) | Done |
@@ -193,7 +193,7 @@ Every feature found in the research, with where Klik Studio stands and when it i
 | Crop | Yes | Yes | Yes | Have | Done |
 | Custom gradient colours and angle | No | OpenScreen | No | Have (2–3 colours, linear or radial) | Done |
 | Device frames (iPhone, iPad, Mac, browser) | iPhone, iPad | OpenScreen, Cap | Rotato | Have: macOS window, browser, iPhone and iPad, drawn (no bitmaps), portrait and landscape | Done |
-| Animated or video backgrounds | No | Recordly, Cap | No | Missing | P3 |
+| Animated or video backgrounds | No | Recordly, Cap | No | Have: moving backgrounds (drift, aurora, grain; drawn fresh each frame) and a looping background video, silent (Frame › Background Video…; `Style.Background.animated`, `.video`) | Done |
 | Saved style presets, shareable as files | Yes | Yes | Yes | Have (`.klikstyle` files, six built in) | Done |
 
 ## Export and sharing

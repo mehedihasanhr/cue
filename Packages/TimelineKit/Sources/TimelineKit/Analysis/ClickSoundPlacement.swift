@@ -64,11 +64,22 @@ extension Timeline {
     /// nowhere. The same test the renderer makes, so the two cannot disagree about which
     /// clicks are in the picture.
     ///
-    /// - Parameter frame: the recording's size in the points the clicks are measured in.
-    public func visibleClicks(_ clicks: [CursorTrack.Click], frame: CGSize) -> [CursorTrack.Click] {
-        let crop = style.crop?.rect ?? CropRect.full.rect
-        guard frame.width > 0, frame.height > 0, crop.width > 0, crop.height > 0 else { return clicks }
+    /// For a window resized while it was recorded, the crop is taken of the part of the
+    /// frame that was picture at the click's moment — as `SceneBuilder` composes it — so a
+    /// click is tested against what was on screen then, not against the whole frame. A
+    /// click in the black a resize left, or on a strip the fill cut away, is not seen and
+    /// not heard.
+    ///
+    /// - Parameters:
+    ///   - frame: the recording's size in the points the clicks are measured in.
+    ///   - picture: where a resized window's picture sat — see `PictureTrack`. Empty for
+    ///     every other recording, which tests against the crop alone, as before.
+    public func visibleClicks(_ clicks: [CursorTrack.Click], frame: CGSize,
+                              picture: PictureTrack = PictureTrack()) -> [CursorTrack.Click] {
+        let styleCrop = style.crop?.rect ?? CropRect.full.rect
+        guard frame.width > 0, frame.height > 0, styleCrop.width > 0, styleCrop.height > 0 else { return clicks }
         return clicks.filter { click in
+            let crop = PictureTrack.within(styleCrop, of: picture.shownFraction(at: click.t, in: frame))
             let u = (click.point.x / frame.width - crop.minX) / crop.width
             let v = (click.point.y / frame.height - crop.minY) / crop.height
             return (0...1).contains(u) && (0...1).contains(v)

@@ -43,12 +43,16 @@ public enum AudioMixdown {
     ///     the exporter alike, so the clicks you hear while editing are the ones exported.
     ///   - clickFrame: the recording's size in points, so clicks outside the crop — which
     ///     are not drawn — are not heard either. `nil` hears them all.
+    ///   - picture: where a resized window's picture sat, so a click is tested against the
+    ///     part of the frame that was picture at its moment, as the renderer draws it. See
+    ///     `Timeline.visibleClicks(_:frame:picture:)`.
     public static func build(timeline: Timeline,
                              videoURL: URL,
                              packageURL: URL?,
                              clicks: [CursorTrack.Click] = [],
-                             clickFrame: CGSize? = nil) async -> Result {
-        let clicks = clickFrame.map { timeline.visibleClicks(clicks, frame: $0) } ?? clicks
+                             clickFrame: CGSize? = nil,
+                             picture: PictureTrack = PictureTrack()) async -> Result {
+        let clicks = clickFrame.map { timeline.visibleClicks(clicks, frame: $0, picture: picture) } ?? clicks
         let composition = AVMutableComposition()
         var parameters = await appendRecordedAudio(of: timeline, from: videoURL,
                                                    packageURL: packageURL, into: composition)

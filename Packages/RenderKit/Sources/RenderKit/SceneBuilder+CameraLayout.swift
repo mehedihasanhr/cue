@@ -126,7 +126,8 @@ extension SceneBuilder {
 
         case .sideBySide:
             let split = sideBySide(available: available, output: output, source: source,
-                                   cameraFirst: cameraGoesFirst(timeline.webcam, output: output))
+                                   cameraFirst: cameraGoesFirst(timeline.webcam, output: output),
+                                   device: DeviceLayer(timeline.style.chrome, pictureSize: source))
             let radius = Double(min(split.screen.width, split.screen.height)) * corners
             return CameraArrangement(videoFrame: flipped(split.screen, in: output), videoOpacity: 1,
                                      camera: normalised(split.camera, in: output),
@@ -142,36 +143,58 @@ extension SceneBuilder {
     /// its share keeping its shape; the camera takes the rest of the row, as tall as the
     /// screen (or, stacked, as wide), and never wider than it is tall — a camera pane
     /// stretched into a letterbox is mostly wall. The pair is centred together.
+    ///
+    /// With a device frame it is the whole handset that is fitted into the screen's share,
+    /// not the bare picture: the handset is drawn round the picture wherever the layout
+    /// puts it, so a picture sized for its half with a phone then drawn round it reached
+    /// across the gap into the camera's half. The handset is a fixed multiple of the
+    /// picture's size (`DeviceGeometry.bodySize`), so the same one division fits it, the
+    /// camera is sized and spaced against the handset, and the picture is placed in the
+    /// middle of the handset's slot — where its screen is. Without a device the slot is the
+    /// picture, which is this exactly as it was.
     func sideBySide(available: CGRect, output: CGSize, source: CGSize,
-                    cameraFirst: Bool) -> (screen: CGRect, camera: CGRect) {
+                    cameraFirst: Bool, device: DeviceLayer? = nil) -> (screen: CGRect, camera: CGRect) {
         let shorter = min(output.width, output.height)
         let gap = shorter * Self.splitGap
         let source = CGSize(width: max(1, source.width), height: max(1, source.height))
+        let whole = device.map { DeviceGeometry.bodySize($0, picture: source) } ?? source
+
+        /// The picture, centred in the slot the handset (or the bare picture) takes.
+        func picture(in slot: CGRect, fit: Double) -> CGRect {
+            let size = CGSize(width: source.width * fit, height: source.height * fit)
+            return CGRect(x: slot.midX - size.width / 2, y: slot.midY - size.height / 2,
+                          width: size.width, height: size.height)
+        }
 
         if available.width >= available.height {
             let budget = (available.width - gap) * Self.splitScreenShare
-            let fit = min(budget / source.width, available.height / source.height)
-            let screen = CGSize(width: source.width * fit, height: source.height * fit)
-            let cameraWidth = max(1, min(available.width - gap - screen.width, screen.height))
-            let total = screen.width + gap + cameraWidth
+            let fit = min(budget / whole.width, available.height / whole.height)
+            let slot = CGSize(width: whole.width * fit, height: whole.height * fit)
+            let cameraWidth = max(1, min(available.width - gap - slot.width, slot.height))
+            let total = slot.width + gap + cameraWidth
             let left = available.minX + (available.width - total) / 2
-            let top = available.minY + (available.height - screen.height) / 2
-            let screenX = cameraFirst ? left + cameraWidth + gap : left
-            let cameraX = cameraFirst ? left : left + screen.width + gap
-            return (CGRect(x: screenX, y: top, width: screen.width, height: screen.height),
-                    CGRect(x: cameraX, y: top, width: cameraWidth, height: screen.height))
+            let top = available.minY + (available.height - slot.height) / 2
+            let slotX = cameraFirst ? left + cameraWidth + gap : left
+            let cameraX = cameraFirst ? left : left + slot.width + gap
+            let screen = picture(in: CGRect(x: slotX, y: top, width: slot.width, height: slot.height), fit: fit)
+            // As tall as the picture, as it always was; with a handset, as tall as the handset.
+            let cameraHeight = device == nil ? screen.height : slot.height
+            return (screen, CGRect(x: cameraX, y: available.minY + (available.height - cameraHeight) / 2,
+                                   width: cameraWidth, height: cameraHeight))
         } else {
             let budget = (available.height - gap) * Self.splitScreenShare
-            let fit = min(available.width / source.width, budget / source.height)
-            let screen = CGSize(width: source.width * fit, height: source.height * fit)
-            let cameraHeight = max(1, min(available.height - gap - screen.height, screen.width))
-            let total = screen.height + gap + cameraHeight
+            let fit = min(available.width / whole.width, budget / whole.height)
+            let slot = CGSize(width: whole.width * fit, height: whole.height * fit)
+            let cameraHeight = max(1, min(available.height - gap - slot.height, slot.width))
+            let total = slot.height + gap + cameraHeight
             let top = available.minY + (available.height - total) / 2
-            let left = available.minX + (available.width - screen.width) / 2
-            let screenY = cameraFirst ? top + cameraHeight + gap : top
-            let cameraY = cameraFirst ? top : top + screen.height + gap
-            return (CGRect(x: left, y: screenY, width: screen.width, height: screen.height),
-                    CGRect(x: left, y: cameraY, width: screen.width, height: cameraHeight))
+            let left = available.minX + (available.width - slot.width) / 2
+            let slotY = cameraFirst ? top + cameraHeight + gap : top
+            let cameraY = cameraFirst ? top : top + slot.height + gap
+            let screen = picture(in: CGRect(x: left, y: slotY, width: slot.width, height: slot.height), fit: fit)
+            let cameraWidth = device == nil ? screen.width : slot.width
+            return (screen, CGRect(x: available.minX + (available.width - cameraWidth) / 2, y: cameraY,
+                                   width: cameraWidth, height: cameraHeight))
         }
     }
 

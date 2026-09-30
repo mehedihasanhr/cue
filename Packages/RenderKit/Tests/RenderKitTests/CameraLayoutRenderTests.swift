@@ -139,6 +139,32 @@ struct CameraLayoutRenderTests {
         #expect(!camera.isBubble)
     }
 
+    /// The handset is drawn round the picture wherever the layout puts it, so it is the
+    /// handset that is fitted into the screen's half: it stays inside the space, clear of
+    /// the gap, and the camera sits beside it rather than under its edge.
+    @Test("A device frame round half a split stays in its half", arguments: [
+        WindowChrome.Kind.iPhone, .iPad,
+    ])
+    func sideBySideFitsTheDevice(kind: WindowChrome.Kind) throws {
+        let wide = timeline(.sideBySide) { $0.style.chrome = WindowChrome(kind: kind) }
+        var tall = wide
+        tall.style.aspect = .vertical9x16
+        for timeline in [wide, tall] {
+            let scene = builder().descriptor(for: timeline, at: time(middle))
+            // Both in output pixels with Core Image's bottom-left origin.
+            let camera = try #require(scene.webcam).pixelRect(in: scene.outputSize)
+            let device = try #require(scene.deviceGeometry)
+            let body = device.body
+            let output = CGRect(origin: .zero, size: scene.outputSize)
+            let size = scene.outputSize
+            #expect(output.insetBy(dx: -0.01, dy: -0.01).contains(body), "\(kind) inside the frame at \(size)")
+            #expect(!body.insetBy(dx: 1, dy: 1).intersects(camera), "\(kind) clear of the camera at \(size)")
+            // The picture is still in the middle of its screen.
+            #expect(abs(device.screen.midX - scene.videoFrame.midX) < 0.5)
+            #expect(abs(device.screen.midY - scene.videoFrame.midY) < 0.5)
+        }
+    }
+
     @Test("A bubble parked on the left goes side by side on the left")
     func sideBySideFollowsTheBubble() throws {
         let scene = builder().descriptor(for: timeline(.sideBySide) { $0.webcam.corner = .topLeft },

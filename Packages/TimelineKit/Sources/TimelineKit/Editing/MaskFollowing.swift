@@ -33,6 +33,60 @@ public extension BlurRegion {
         return shown.offsetBy(dx: -offset.dx, dy: -offset.dy)
     }
 
+    // MARK: A window resized while it was recorded
+
+    /// Where the mask covers the recording at a moment, as a fraction of the whole frame —
+    /// the rectangle the renderer blurs, before it crops.
+    ///
+    /// # What a mask's `rect` is measured against
+    ///
+    /// A window resized after recording began is scaled by ScreenCaptureKit to fit its
+    /// frame, so the window's content moves and shrinks inside the recording while the
+    /// resize lasts and after it (see `PictureTrack`). A mask is meant to stay on what it
+    /// was drawn over, so:
+    ///
+    /// - A **still** mask's `rect` is a fraction of the *picture* — the window's content as
+    ///   it sat in the frame at that moment (`PictureTrack.pictureFraction`) — and is
+    ///   carried through the picture's rescale here. For every recording whose picture
+    ///   filled its frame, which is all but resized windows, the picture is the whole frame
+    ///   and this is `rect` exactly as it always was.
+    /// - A **following** mask's `rect` and path stay fractions of the whole frame: the path
+    ///   was measured off the recording's own frames, so it already moves with the content
+    ///   wherever a resize put it, and carrying it again would move it twice.
+    ///
+    /// Measured against the picture rather than against the picture at some chosen moment,
+    /// so no edit — a trim of the mask's front, a split, a paste somewhere else — changes
+    /// which content a mask is on.
+    ///
+    /// - Parameters:
+    ///   - time: the moment on the timeline.
+    ///   - seconds: the same moment in the recording, or `nil` over footage that is not
+    ///     the recording (an imported clip), where the picture track means nothing.
+    ///   - picture: where the picture sat; empty for every recording but a resized window.
+    ///   - frame: the recording's size in the points `picture` is measured in.
+    func recordingRect(at time: CMTime, source seconds: Double?, picture: PictureTrack, frame: CGSize) -> CGRect {
+        let placed = rect(at: time)
+        guard !follows, let seconds, !picture.isEmpty else { return placed }
+        return PictureTrack.within(placed, of: picture.pictureFraction(at: seconds, in: frame))
+    }
+
+    /// The rectangle to hand `rect(showing:at:)` so the mask covers `covered` — a fraction
+    /// of the whole frame, as the canvas measures it — at this moment. The inverse of
+    /// `recordingRect(at:source:picture:frame:)`: a following mask is given it as it is, a
+    /// still one has it turned into a fraction of the picture.
+    func shownRect(covering covered: CGRect, source seconds: Double?, picture: PictureTrack, frame: CGSize) -> CGRect {
+        guard !follows else { return covered }
+        return Self.stillRect(covering: covered, source: seconds, picture: picture, frame: frame)
+    }
+
+    /// A new still mask's `rect`, for one drawn over `covered` — a fraction of the whole
+    /// frame — at `seconds` into the recording.
+    static func stillRect(covering covered: CGRect, source seconds: Double?, picture: PictureTrack,
+                          frame: CGSize) -> CGRect {
+        guard let seconds, !picture.isEmpty else { return covered }
+        return PictureTrack.inside(covered, of: picture.pictureFraction(at: seconds, in: frame))
+    }
+
     /// Shifted back into the unit square, keeping its size.
     private static func keptInside(_ rect: CGRect) -> CGRect {
         var rect = rect
@@ -328,18 +382,29 @@ public extension Commands {
     struct StopFollowing: TimelineCommand {
         public let id: UUID
         public let time: CMTime
+        /// Where a resized window's picture sat, and the frame it is measured in: a still
+        /// mask is a fraction of the picture, a following one of the whole frame, so the
+        /// place the mask had stopped at is turned from one into the other. See
+        /// `BlurRegion.recordingRect(at:source:picture:frame:)`.
+        public let picture: PictureTrack
+        public let frame: CGSize
         public var name: String { "Stop Following" }
 
-        public init(id: UUID, at time: CMTime) {
+        public init(id: UUID, at time: CMTime, picture: PictureTrack = PictureTrack(), frame: CGSize = .zero) {
             self.id = id
             self.time = time
+            self.picture = picture
+            self.frame = frame
         }
 
         public func apply(to timeline: inout Timeline) -> Bool {
             guard let index = timeline.blurs.firstIndex(where: { $0.id == id }),
                   timeline.blurs[index].path != nil else { return false }
             let clamped = min(max(time, timeline.blurs[index].start), timeline.blurs[index].end)
-            timeline.blurs[index].rect = timeline.blurs[index].rect(at: clamped)
+            let moment = timeline.mediaTime(at: clamped)
+            let seconds = moment?.source == nil ? moment?.time.seconds : nil
+            timeline.blurs[index].rect = BlurRegion.stillRect(covering: timeline.blurs[index].rect(at: clamped),
+                                                             source: seconds, picture: picture, frame: frame)
             timeline.blurs[index].path = nil
             return true
         }

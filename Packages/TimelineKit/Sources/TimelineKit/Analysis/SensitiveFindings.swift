@@ -284,10 +284,27 @@ public struct SensitiveFinding: Codable, Equatable, Sendable, Identifiable {
 
     /// Whether any of it is in the edit: footage cut away, or only ever outside the crop,
     /// has nothing to hide.
-    public func isShown(in timeline: Timeline) -> Bool {
+    ///
+    /// The crop is a fraction of the picture as it is shown; for a window resized while it
+    /// was recorded that is only part of the frame, and a different part at different
+    /// moments (`PictureTrack`). So each sighting is tested against the crop composed
+    /// inside the part shown *at that sighting's moment* — the rectangle the renderer
+    /// crops to — and not against the crop as though the picture filled the frame, which
+    /// put the crop over the wrong part of the recording.
+    ///
+    /// - Parameters:
+    ///   - picture: where a resized window's picture sat; empty for every other recording.
+    ///   - frame: the recording's size in the points `picture` is measured in.
+    public func isShown(in timeline: Timeline, picture: PictureTrack = PictureTrack(),
+                        frame: CGSize = .zero) -> Bool {
         guard !timeline.pieces(ofSource: start...end).isEmpty else { return false }
-        guard let crop = timeline.style.crop?.rect else { return true }
-        return sightings.contains { $0.rect.intersects(crop) } || rect.intersects(crop)
+        let styleCrop = timeline.style.crop?.rect
+        guard styleCrop != nil || !picture.isEmpty else { return true }
+        func crop(at seconds: Double) -> CGRect {
+            PictureTrack.within(styleCrop ?? CGRect(x: 0, y: 0, width: 1, height: 1),
+                                of: picture.shownFraction(at: seconds, in: frame))
+        }
+        return sightings.contains { $0.rect.intersects(crop(at: $0.time)) } || rect.intersects(crop(at: start))
     }
 
     /// Where it is on the timeline: from the first moment it is shown to the last.
@@ -300,8 +317,11 @@ public struct SensitiveFinding: Codable, Equatable, Sendable, Identifiable {
     /// Whether masks already on the timeline cover it everywhere it was read — so scanning
     /// again after hiding what was found does not offer the same things twice.
     ///
-    /// A spotlight does not count: it shows what it is over.
-    public func isHidden(by masks: [BlurRegion], in timeline: Timeline) -> Bool {
+    /// A spotlight does not count: it shows what it is over. A mask is compared where it
+    /// covers the recording at the sighting's moment — carried with a resized window's
+    /// picture, as the renderer draws it (`BlurRegion.recordingRect`).
+    public func isHidden(by masks: [BlurRegion], in timeline: Timeline, picture: PictureTrack = PictureTrack(),
+                         frame: CGSize = .zero) -> Bool {
         let hiding = masks.filter { $0.style != .spotlight }
         var checked = 0
         for sighting in sightings {
@@ -309,7 +329,9 @@ public struct SensitiveFinding: Codable, Equatable, Sendable, Identifiable {
             else { continue }
             checked += 1
             let covered = hiding.contains { mask in
-                mask.contains(time) && mask.rect(at: time).insetBy(dx: -0.002, dy: -0.002).contains(sighting.rect)
+                mask.contains(time)
+                    && mask.recordingRect(at: time, source: sighting.time, picture: picture, frame: frame)
+                        .insetBy(dx: -0.002, dy: -0.002).contains(sighting.rect)
             }
             if !covered { return false }
         }
@@ -324,8 +346,14 @@ public struct SensitiveFinding: Codable, Equatable, Sendable, Identifiable {
     ///     same margin in pixels across and down, so a padded mask round a line of text is
     ///     as much wider as it is taller.
     ///   - videoSize: the recording's size, which turns that margin into fractions.
+    ///   - picture: where a resized window's picture sat. A still mask is stored as a
+    ///     fraction of the picture (`BlurRegion.recordingRect`), so the place the text was
+    ///     read is turned into one, at the moment the piece begins; a following mask is
+    ///     kept in the recording's fractions, as its path is.
+    ///   - frame: the recording's size in the points `picture` is measured in.
     public func masks(in timeline: Timeline, padding: Double, videoSize: CGSize,
-                      style: BlurRegion.Style) -> [BlurRegion] {
+                      style: BlurRegion.Style, picture: PictureTrack = PictureTrack(),
+                      frame: CGSize = .zero) -> [BlurRegion] {
         let pad = max(0, padding) * rect.height
         let padX = videoSize.width > 0 ? pad * videoSize.height / videoSize.width : pad
         let padded = rect.insetBy(dx: -padX, dy: -pad)
@@ -338,7 +366,9 @@ public struct SensitiveFinding: Codable, Equatable, Sendable, Identifiable {
                 let offset = path?.offset(at: piece.source.lowerBound - start) ?? .zero
                 let placed = padded.offsetBy(dx: offset.dx, dy: offset.dy).intersection(unit)
                 guard !placed.isNull, placed.width > 0, placed.height > 0 else { return nil }
-                return BlurRegion(start: piece.range.start, duration: piece.range.duration, rect: placed, style: style)
+                let stored = BlurRegion.stillRect(covering: placed, source: piece.source.lowerBound,
+                                                  picture: picture, frame: frame)
+                return BlurRegion(start: piece.range.start, duration: piece.range.duration, rect: stored, style: style)
             }
             // The path's clock is the recording's from `start`; the mask's is the timeline's
             // from where this piece begins, at this clip's speed.

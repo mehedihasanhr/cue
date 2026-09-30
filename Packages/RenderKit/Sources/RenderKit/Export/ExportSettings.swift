@@ -119,9 +119,16 @@ public enum ExportQuality: String, Sendable, CaseIterable, Codable {
 
     /// Bits per second for a pixel count and a frame rate.
     ///
+    /// The figures below are bits for each pixel of each frame, so the bitrate is simply
+    /// pixels × frames × bits — already bits, and not to be divided by eight. (It once
+    /// was, which put Good, Better and Best at an eighth of what was meant: nearly every
+    /// 1080p export landed on the 1 Mb/s floor, and the three qualities came out alike.)
+    ///
     /// Scaled by frame rate rather than fixed, because the same picture at 60 fps needs
-    /// roughly twice what it needs at 30 — the per-pixel figures below are per frame at
-    /// 60, which is what these recordings usually are.
+    /// roughly twice what it needs at 30. At 1080p60 the four come to about 2.7 Mb/s
+    /// (Smaller File, HEVC), 6.2 (Good), 11 (Better) and 19 (Best): screen recordings are
+    /// mostly still, flat and sharp-edged, so this is well under what camera footage of
+    /// the same size would want, and still enough that text survives a scroll.
     public func bitrate(forPixels pixels: Int, frameRate: Int) -> Int {
         let perPixel: Double = switch self {
         case .smaller: 0.022
@@ -129,7 +136,7 @@ public enum ExportQuality: String, Sendable, CaseIterable, Codable {
         case .better: 0.09
         case .best: 0.15
         }
-        let raw = Double(pixels) * perPixel * Double(max(1, frameRate)) / 8
+        let raw = Double(pixels) * perPixel * Double(max(1, frameRate))
         return max(self == .smaller ? ExportSettings.minimumBitrate : 1_000_000, min(Int(raw), 120_000_000))
     }
 

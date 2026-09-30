@@ -249,6 +249,7 @@ final class EditorModel {
             let audio = PreviewAudio(videoURL: url, packageURL: document.package.url,
                                      clicks: document.cursorTrack.clicks,
                                      clickFrame: recordedFrame,
+                                     picture: document.pictureTrack,
                                      settings: settings)
             audio.prepare(for: timeline)
             self.audio = audio
@@ -2017,7 +2018,11 @@ final class EditorModel {
     @discardableResult
     func addBlur(rect: CGRect) -> UUID {
         let range = drawnRange
-        let region = BlurRegion(start: range.start, duration: range.duration, rect: rect, style: newMaskStyle)
+        // Drawn over the picture as it is at the playhead; stored as a fraction of a
+        // resized window's picture so it stays on that content. See `BlurRegion.recordingRect`.
+        let stored = BlurRegion.stillRect(covering: rect, source: recordingSecondsAtPlayhead,
+                                          picture: document.pictureTrack, frame: recordedFrame ?? .zero)
+        let region = BlurRegion(start: range.start, duration: range.duration, rect: stored, style: newMaskStyle)
         apply(Commands.AddBlur(region))
         select(.blur(region.id))
         return region.id

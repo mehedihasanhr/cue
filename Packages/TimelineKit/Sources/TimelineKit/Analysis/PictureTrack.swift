@@ -106,6 +106,46 @@ public struct PictureTrack: Sendable, Equatable {
                        y: (point.y - shown.minY) * frame.height / shown.height)
     }
 
+    /// The part of the frame shown at `seconds`, as a fraction of the frame — the unit
+    /// square when the picture fills it. `SceneBuilder.pictureCrop(at:)` is the renderer's
+    /// version of the same rectangle, rounded inwards to whole pixels; this one is for the
+    /// questions asked without pixels to hand (is a click in the picture, is a sighting in
+    /// the crop), where a pixel's difference cannot change the answer that matters.
+    public func shownFraction(at seconds: Double, in frame: CGSize) -> CGRect {
+        let unit = CGRect(x: 0, y: 0, width: 1, height: 1)
+        guard !isEmpty, frame.width > 0, frame.height > 0 else { return unit }
+        let shown = shown(at: seconds, in: frame)
+        return CGRect(x: shown.minX / frame.width, y: shown.minY / frame.height,
+                      width: shown.width / frame.width, height: shown.height / frame.height)
+    }
+
+    /// The picture itself at `seconds` — where the window's content sat, uncut — as a
+    /// fraction of the frame; the unit square when it filled the frame.
+    ///
+    /// What a still mask is measured against: see `BlurRegion.recordingRect(at:source:picture:frame:)`.
+    public func pictureFraction(at seconds: Double, in frame: CGSize) -> CGRect {
+        let unit = CGRect(x: 0, y: 0, width: 1, height: 1)
+        guard frame.width > 0, frame.height > 0, let points = picture(at: seconds) else { return unit }
+        let picture = points.intersection(CGRect(origin: .zero, size: frame))
+        guard !picture.isNull, picture.width > 0, picture.height > 0 else { return unit }
+        return CGRect(x: picture.minX / frame.width, y: picture.minY / frame.height,
+                      width: picture.width / frame.width, height: picture.height / frame.height)
+    }
+
+    /// A rectangle given as a fraction of `part`, as a fraction of the whole — or, the other
+    /// way, `inside(_:of:)`. With `part` the unit square both are the rectangle as it is.
+    public static func within(_ rect: CGRect, of part: CGRect) -> CGRect {
+        CGRect(x: part.minX + rect.minX * part.width, y: part.minY + rect.minY * part.height,
+               width: rect.width * part.width, height: rect.height * part.height)
+    }
+
+    /// A rectangle of the whole, as a fraction of `part`. See `within(_:of:)`.
+    public static func inside(_ rect: CGRect, of part: CGRect) -> CGRect {
+        guard part.width > 0, part.height > 0 else { return rect }
+        return CGRect(x: (rect.minX - part.minX) / part.width, y: (rect.minY - part.minY) / part.height,
+                      width: rect.width / part.width, height: rect.height / part.height)
+    }
+
     /// A rectangle in the recorded frame, placed as `place(_:at:in:)` places a point: its
     /// corner moved and its size scaled with the picture.
     public func place(_ rect: CGRect, at seconds: Double, in frame: CGSize) -> CGRect {

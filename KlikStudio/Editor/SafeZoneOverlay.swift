@@ -31,6 +31,19 @@ final class SafeZonePreference {
         isShown = defaults.bool(forKey: Key.shown)
         platform = defaults.string(forKey: Key.platform).flatMap(SafeZonePlatform.init) ?? .tikTok
     }
+
+    /// Reads the stored values again: after Reset All Settings has taken them away, which
+    /// puts the guides back to a fresh install's — hidden, TikTok's — without writing
+    /// those defaults back into the file.
+    func load() {
+        let defaults = UserDefaults.standard
+        let shown = defaults.bool(forKey: Key.shown)
+        let chosen = defaults.string(forKey: Key.platform).flatMap(SafeZonePlatform.init) ?? .tikTok
+        // Each assignment writes itself back through `didSet`; taken away again so the
+        // file stays as empty as the reset left it.
+        if isShown != shown { isShown = shown; defaults.removeObject(forKey: Key.shown) }
+        if platform != chosen { platform = chosen; defaults.removeObject(forKey: Key.platform) }
+    }
 }
 
 /// The areas an app covers, drawn over the preview.
