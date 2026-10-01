@@ -5,62 +5,86 @@ public extension CursorStyle {
     /// What the pointer is drawn as.
     ///
     /// `asRecorded` is everything that came before there was a choice: the picture the
-    /// recording kept, or Klik's drawing of the shape the pointer had. The others are
-    /// drawings of Klik's own, made at the size of the frame being written, so they are
-    /// as sharp in a 4K export as in the preview — and each one is placed by its own
-    /// point, which for the dot is its middle.
+    /// recording kept, or Klik's drawing of the shape the pointer had. The others — the
+    /// system's own pointers, of macOS 26 and before it, and a few drawings of Klik's —
+    /// are made at the size of the frame being written, so they are as sharp in a 4K
+    /// export as in the preview, and each one is placed by its own point, which for the
+    /// dot is its middle.
     enum Appearance: String, Codable, Sendable, CaseIterable {
         case asRecorded
+        /// The pointer macOS 26 draws: the rounded arrow, black with a white outline, and
+        /// the system's own hand, I-beam and the rest when the pointer changes shape.
+        case macOS26
+        /// The pointer macOS drew from 10.0 to 15 — the sharp arrow and the upright hand —
+        /// black with a white outline.
+        case macOS14
+        /// macOS 26's pointer with the colours swapped: white with a black outline, as
+        /// Accessibility's pointer colours can set it. Reads best on dark pages.
+        case macOS26White
+        /// The classic pointer, white with a black outline.
+        case macOS14White
+        /// macOS 26's pointer filled with the chosen colour and outlined in white, the way
+        /// Accessibility's pointer fill colour draws it.
+        case macOS26Colour
         /// The drawn arrow, a size up, whatever the pointer turned into.
         case largeArrow
+        /// A small arrow, outline only, with a light shadow.
+        case minimal
         /// A filled circle with a soft ring round it, the way a presentation tool shows a
         /// pointer.
         case dot
-        /// A small arrow, outline only, with a light shadow.
-        case minimal
         /// No pointer at all. The click marks and sounds stay.
         case clicksOnly
-        /// The large arrow inverted: black, with a white outline. Reads best on light pages.
-        case blackArrow
-        /// A modern arrow with rounded corners and a soft outline.
-        case softArrow
-        /// The large arrow filled with the chosen colour, outlined in white.
-        case colourArrow
-        /// A large pointing hand, placed by the tip of its finger.
-        case hand
-        /// A translucent grey disc, the way a phone simulator shows a touch.
-        case touch
-        /// A hollow ring in the chosen colour.
-        case ring
-        /// A thin crosshair, for precise work on a busy picture.
-        case crosshair
 
         public var title: String {
             switch self {
             case .asRecorded: "As recorded"
+            case .macOS26: "macOS 26"
+            case .macOS14: "macOS 14"
+            case .macOS26White: "macOS 26 white"
+            case .macOS14White: "macOS 14 white"
+            case .macOS26Colour: "macOS 26 colour"
             case .largeArrow: "Large arrow"
-            case .dot: "Dot"
             case .minimal: "Minimal"
+            case .dot: "Dot"
             case .clicksOnly: "Invisible but clicks"
-            case .blackArrow: "Black arrow"
-            case .softArrow: "Soft arrow"
-            case .colourArrow: "Colour arrow"
-            case .hand: "Hand"
-            case .touch: "Touch"
-            case .ring: "Ring"
-            case .crosshair: "Crosshair"
             }
         }
 
+        /// Styles from a build that drew its own arrows and discs, read as the system
+        /// pointer nearest to each, so a project saved with one still opens.
+        private static let retired: [String: Appearance] = [
+            "blackArrow": .macOS14, "softArrow": .macOS26, "colourArrow": .macOS26Colour,
+            "hand": .macOS26, "touch": .dot, "ring": .dot, "crosshair": .asRecorded,
+        ]
+
+        public init(from decoder: Decoder) throws {
+            let raw = try decoder.singleValueContainer().decode(String.self)
+            guard let appearance = Appearance(rawValue: raw) ?? Self.retired[raw] else {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+                                                        debugDescription: "No pointer style called \(raw)"))
+            }
+            self = appearance
+        }
+
         /// Whether the style is drawn in the chosen pointer colour (`CursorStyle.dotColor`).
-        public var usesColour: Bool { self == .dot || self == .colourArrow || self == .ring }
+        public var usesColour: Bool { self == .dot || self == .macOS26Colour }
+
+        /// Whether the style is one of the system's own pointers.
+        public var isSystemPointer: Bool {
+            switch self {
+            case .macOS26, .macOS14, .macOS26White, .macOS14White, .macOS26Colour: true
+            case .asRecorded, .largeArrow, .minimal, .dot, .clicksOnly: false
+            }
+        }
 
         /// Whether anything is drawn where the pointer is.
         public var drawsPointer: Bool { self != .clicksOnly }
 
         /// Whether the pointer's recorded shape — arrow, I-beam, hand — decides what is
-        /// drawn. Only for `asRecorded`; every other style is one drawing throughout.
-        public var followsRecordedShape: Bool { self == .asRecorded }
+        /// drawn: the recorded pointer and the system's, which have a drawing for each.
+        /// Every other style is one drawing throughout.
+        public var followsRecordedShape: Bool { self == .asRecorded || isSystemPointer }
     }
 }
 

@@ -1041,9 +1041,10 @@ public struct SceneBuilder: Sendable {
     /// mark. The dot is round, and there is nothing to lean.
     private func leans(_ appearance: CursorStyle.Appearance, shape: CursorShape) -> Bool {
         switch appearance {
-        case .largeArrow, .minimal, .blackArrow, .softArrow, .colourArrow, .hand: true
-        case .dot, .clicksOnly, .touch, .ring, .crosshair: false
-        case .asRecorded: CursorShapeKind(shape) == .arrow || CursorShapeKind(shape) == .pointingHand
+        case .largeArrow, .minimal: true
+        case .dot, .clicksOnly: false
+        case .asRecorded, .macOS26, .macOS14, .macOS26White, .macOS14White, .macOS26Colour:
+            CursorShapeKind(shape) == .arrow || CursorShapeKind(shape) == .pointingHand
         }
     }
 

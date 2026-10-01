@@ -143,4 +143,20 @@ struct PointerStylingModelTests {
         #expect(style.appearance == .minimal)
         #expect(style.scale == 2)
     }
+
+    /// A project saved with one of the drawn styles that the system pointers replaced
+    /// opens on the system pointer nearest to it.
+    @Test func aRetiredStyleOpensAsTheNearestSystemPointer() throws {
+        let expected: [String: CursorStyle.Appearance] = [
+            "blackArrow": .macOS14, "softArrow": .macOS26, "colourArrow": .macOS26Colour,
+            "hand": .macOS26, "touch": .dot, "ring": .dot, "crosshair": .asRecorded,
+        ]
+        for (raw, appearance) in expected {
+            let style = try decode(CursorStyle.self, #"{"appearance": "\#(raw)"}"#)
+            #expect(style.appearance == appearance, "\(raw)")
+        }
+        // And the system pointers follow the pointer's shape, as the recorded one does.
+        #expect(CursorStyle.Appearance.allCases.filter(\.followsRecordedShape)
+                == [.asRecorded, .macOS26, .macOS14, .macOS26White, .macOS14White, .macOS26Colour])
+    }
 }

@@ -503,7 +503,8 @@ public final class SceneRenderer: @unchecked Sendable {
         // A style of Klik's own is drawn at this frame's size, so it is as sharp in a 4K
         // export as in the preview, and carries its own point.
         if cursor.appearance != .asRecorded,
-           let styled = PointerStyleArtwork.drawing(cursor.appearance, size: size, color: cursor.dotColor) {
+           let styled = PointerStyleArtwork.drawing(cursor.appearance, shape: cursor.shape,
+                                                    size: size, color: cursor.dotColor) {
             picture = styled.image
             drawn = styled.image.extent.size
             hotspot = styled.hotspot

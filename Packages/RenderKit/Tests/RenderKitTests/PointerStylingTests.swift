@@ -93,7 +93,7 @@ struct PointerStylingTests {
 
     /// The arrows point with their tips: the top-left of what is drawn is the point, to a
     /// pixel, at 1080p and at 4K.
-    @Test(arguments: [CursorStyle.Appearance.largeArrow, .minimal, .softArrow])
+    @Test(arguments: [CursorStyle.Appearance.largeArrow, .minimal])
     func anArrowStyleHasItsTipOnThePoint(_ appearance: CursorStyle.Appearance) throws {
         for size in Self.sizes {
             let point = CGPoint(x: Self.spot.x * size.width, y: Self.spot.y * size.height)
@@ -120,8 +120,8 @@ struct PointerStylingTests {
     /// The styles are drawn at the size of the frame, not scaled up: at 4K the drawing is
     /// twice the size it is at 1080p, and its edges are harder than the 1080p drawing
     /// enlarged to the same size would be.
-    @Test(arguments: [CursorStyle.Appearance.largeArrow, .dot, .minimal, .softArrow, .blackArrow,
-                      .colourArrow, .touch, .ring, .crosshair])
+    @Test(arguments: [CursorStyle.Appearance.largeArrow, .dot, .minimal, .macOS26, .macOS14,
+                      .macOS26White, .macOS26Colour])
     func aStyleIsSharpAtFourK(_ appearance: CursorStyle.Appearance) throws {
         let small = try #require(try render(frame(Self.sizes[0], cursor: pointer(appearance, at: Self.spot))).light())
         let large = try #require(try render(frame(Self.sizes[1], cursor: pointer(appearance, at: Self.spot))).light())
@@ -457,33 +457,70 @@ struct PointerStylingTests {
         #expect(builder.descriptor(for: timeline(), at: time(3), cursor: track).pointerMagnifier == nil)
     }
 
-    // MARK: - The newer styles
+    // MARK: - The system's pointers
 
-    /// The round styles point with their middles, at 1080p and at 4K.
-    @Test(arguments: [CursorStyle.Appearance.touch, .ring, .crosshair])
-    func aRoundStylesMiddleIsThePointer(_ appearance: CursorStyle.Appearance) throws {
+    /// The white system pointers on a black frame show only their bodies — the outline is
+    /// black, and so is the shadow — so the top-left of what is lit is the tip of the
+    /// arrow's body, which is where the system puts its hotspot. At 1080p and at 4K.
+    @Test(arguments: [CursorStyle.Appearance.macOS26White, .macOS14White])
+    func aSystemArrowHasItsTipOnThePoint(_ appearance: CursorStyle.Appearance) throws {
+        try #require(SystemPointerArtwork.isAvailable(.current) && SystemPointerArtwork.isAvailable(.classic))
         for size in Self.sizes {
             let point = CGPoint(x: Self.spot.x * size.width, y: Self.spot.y * size.height)
-            let drawn = try #require(try render(frame(size, cursor: pointer(appearance, at: Self.spot))).light())
-            #expect(abs(drawn.box.midX - point.x) <= 1, "\(appearance) at \(size): middle x \(drawn.box.midX), point \(point.x)")
-            #expect(abs(drawn.box.midY - point.y) <= 1, "\(appearance) at \(size): middle y \(drawn.box.midY), point \(point.y)")
+            let drawn = try #require(try render(frame(size, cursor: pointer(appearance, at: Self.spot))).light(above: 60))
+            // To a point of the system's artwork: the classic arrow's tip is a sliver of
+            // body that the outline drawn over it mostly covers.
+            let unit = min(size.width, size.height) * 0.035 * 1.4 / SystemPointerArtwork.pointsAcross
+            let tolerance = max(1.5, unit)
+            #expect(abs(drawn.box.minX - point.x) <= tolerance, "\(appearance) at \(size): tip x \(drawn.box.minX), point \(point.x)")
+            #expect(abs(drawn.box.minY - point.y) <= tolerance, "\(appearance) at \(size): tip y \(drawn.box.minY), point \(point.y)")
+            #expect(drawn.box.width > 10 && drawn.box.height > 20)
         }
     }
 
-    /// The inverted and coloured arrows point with the tip of their white outline, which is
-    /// what shows of them on a dark page.
-    @Test(arguments: [CursorStyle.Appearance.blackArrow, .colourArrow])
-    func aFilledArrowHasItsTipOnThePoint(_ appearance: CursorStyle.Appearance) throws {
-        for size in Self.sizes {
-            let point = CGPoint(x: Self.spot.x * size.width, y: Self.spot.y * size.height)
-            let drawn = try #require(try render(frame(size, cursor: pointer(appearance, at: Self.spot))).light())
-            // A pixel and a half: the outline's round tip is anti-aliased across a pixel more
-            // than a straight corner is, which at 4K is under a point.
-            let outline = 1.5
-            #expect(abs(drawn.box.minX - point.x) <= outline, "\(appearance) at \(size): x \(drawn.box.minX), point \(point.x)")
-            #expect(abs(drawn.box.minY - point.y) <= outline, "\(appearance) at \(size): y \(drawn.box.minY), point \(point.y)")
-            #expect(drawn.box.width > 10 && drawn.box.height > 10)
+    /// Black or white, a generation's pointer is the same drawing, placed by the same point.
+    @Test func aSystemPointersColoursDoNotMoveIt() throws {
+        try #require(SystemPointerArtwork.isAvailable(.current))
+        for shape in [CursorShapeKind.arrow, .pointingHand, .iBeam] {
+            let black = try #require(PointerStyleArtwork.drawing(.macOS26, shape: shape, size: 48, color: CursorStyle.defaultDotColor))
+            let white = try #require(PointerStyleArtwork.drawing(.macOS26White, shape: shape, size: 48, color: CursorStyle.defaultDotColor))
+            #expect(black.image.extent == white.image.extent)
+            #expect(black.hotspot == white.hotspot)
         }
+    }
+
+    /// The system pointers change shape with the pointer — a hand over a link, an I-beam
+    /// over text — and each shape is placed by its own point: the arrow by its tip, the
+    /// hand by its fingertip, near the top, and the I-beam by its middle.
+    @Test func aSystemPointerFollowsTheShape() throws {
+        try #require(SystemPointerArtwork.isAvailable(.current) && SystemPointerArtwork.isAvailable(.classic))
+        for appearance in [CursorStyle.Appearance.macOS26, .macOS14] {
+            let arrow = try #require(PointerStyleArtwork.drawing(appearance, shape: .arrow, size: 48, color: .white))
+            let hand = try #require(PointerStyleArtwork.drawing(appearance, shape: .pointingHand, size: 48, color: .white))
+            let iBeam = try #require(PointerStyleArtwork.drawing(appearance, shape: .iBeam, size: 48, color: .white))
+            #expect(arrow.image.extent != hand.image.extent)
+            #expect(arrow.hotspot.x < 0.4 && arrow.hotspot.y < 0.3, "\(appearance) arrow \(arrow.hotspot)")
+            #expect(hand.hotspot.y < 0.4 && (0.25...0.6).contains(hand.hotspot.x), "\(appearance) hand \(hand.hotspot)")
+            #expect(abs(iBeam.hotspot.y - 0.5) < 0.15, "\(appearance) I-beam \(iBeam.hotspot)")
+        }
+        // Klik's own drawings are one drawing whatever the shape.
+        let large = try #require(PointerStyleArtwork.drawing(.largeArrow, shape: .iBeam, size: 48, color: .white))
+        let largeArrow = try #require(PointerStyleArtwork.drawing(.largeArrow, shape: .arrow, size: 48, color: .white))
+        #expect(large.image.extent == largeArrow.image.extent)
+    }
+
+    /// The colour pointer's body is the colour chosen; its outline stays white.
+    @Test func theColourSystemPointerIsInTheColour() throws {
+        try #require(SystemPointerArtwork.isAvailable(.current))
+        let red = ColorValue(r: 1, g: 0, b: 0, a: 1)
+        let size = CGSize(width: 1_920, height: 1_080)
+        let pixels = try render(frame(size, cursor: pointer(.macOS26Colour, at: Self.spot, color: red)))
+        let point = CGPoint(x: Self.spot.x * size.width, y: Self.spot.y * size.height)
+        // Inside the arrow's body: a little right of the tip and well down it.
+        let unit = min(size.width, size.height) * 0.035 * 1.4 / SystemPointerArtwork.pointsAcross
+        let inside = (x: Int(point.x + 2.5 * unit), y: Int(point.y + 6 * unit))
+        #expect(pixels.value(inside.x, inside.y, 0) > 200, "red \(pixels.value(inside.x, inside.y, 0))")
+        #expect(pixels.value(inside.x, inside.y, 1) < 60 && pixels.value(inside.x, inside.y, 2) < 60)
     }
 
     /// Every style Klik draws has a drawing at every pointer size worth drawing, with its
@@ -491,17 +528,22 @@ struct PointerStylingTests {
     /// the invisible one — have none.
     @Test func everyDrawnStyleHasADrawingWithItsPointInside() {
         PointerStyleArtwork.clearCache()
+        let shapes: [CursorShapeKind] = [.arrow, .iBeam, .pointingHand, .openHand, .crosshair,
+                                         .resizeHorizontal, .resizeVertical]
         for appearance in CursorStyle.Appearance.allCases {
             for size in [8.0, 24, 64, 160] {
-                let drawing = PointerStyleArtwork.drawing(appearance, size: size, color: CursorStyle.defaultDotColor)
-                if appearance == .asRecorded || appearance == .clicksOnly {
-                    #expect(drawing == nil)
-                    continue
+                for shape in shapes {
+                    let drawing = PointerStyleArtwork.drawing(appearance, shape: shape, size: size,
+                                                              color: CursorStyle.defaultDotColor)
+                    if appearance == .asRecorded || appearance == .clicksOnly {
+                        #expect(drawing == nil)
+                        continue
+                    }
+                    guard let drawing else { Issue.record("\(appearance) \(shape) at \(size) drew nothing"); continue }
+                    #expect(!drawing.image.extent.isEmpty)
+                    #expect((0...1).contains(drawing.hotspot.x) && (0...1).contains(drawing.hotspot.y),
+                            "\(appearance) \(shape)'s point \(drawing.hotspot) is outside its drawing")
                 }
-                guard let drawing else { Issue.record("\(appearance) at \(size) drew nothing"); continue }
-                #expect(!drawing.image.extent.isEmpty)
-                #expect((0...1).contains(drawing.hotspot.x) && (0...1).contains(drawing.hotspot.y),
-                        "\(appearance)'s point \(drawing.hotspot) is outside its drawing")
             }
         }
     }
@@ -509,7 +551,7 @@ struct PointerStylingTests {
     /// The colour styles take the chosen colour; the others do not change with it.
     @Test func onlyTheColourStylesUseTheColour() {
         let colour = CursorStyle.Appearance.allCases.filter(\.usesColour)
-        #expect(Set(colour) == [.dot, .colourArrow, .ring])
+        #expect(Set(colour) == [.dot, .macOS26Colour])
     }
 }
 

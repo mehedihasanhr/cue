@@ -8,7 +8,7 @@ import TimelineKit
 ///
 /// Tiles rather than a pop-up because the choice is a picture — small ones, four to a row
 /// at the panel's width, with the chosen style's name on the heading. One fixed row of
-/// five ran off the right edge of the panel, and there are twelve styles now. The
+/// five ran off the right edge of the panel, and there are ten styles now. The
 /// previews come from the renderer's own drawings, so a tile shows what the export will;
 /// what each style does is its tooltip.
 struct PointerStyleSection: View {
@@ -77,13 +77,11 @@ struct PointerStyleSection: View {
         case .dot: "A dot with a soft ring, like a presentation pointer. Its size is the Size above."
         case .minimal: "A small outlined arrow that stays out of the way."
         case .clicksOnly: "No pointer. Clicks are still marked, and still heard if click sounds are on."
-        case .blackArrow: "A large black arrow with a white outline — clearest on light pages."
-        case .softArrow: "A modern arrow with rounded corners and a soft outline."
-        case .colourArrow: "A large arrow in the colour you choose, outlined in white."
-        case .hand: "A large pointing hand throughout, placed by its fingertip."
-        case .touch: "A translucent grey disc, the way a phone simulator shows a touch."
-        case .ring: "A hollow ring in the colour you choose."
-        case .crosshair: "A thin crosshair, for precise work on a busy picture."
+        case .macOS26: "The pointer macOS 26 draws — and its hand, I-beam and the rest when the pointer changes shape — sharp at any size."
+        case .macOS14: "The classic macOS pointer, as drawn up to macOS 15, in each of its shapes."
+        case .macOS26White: "macOS 26's pointer in white with a black outline. Clearest on dark pages."
+        case .macOS14White: "The classic pointer in white with a black outline. Clearest on dark pages."
+        case .macOS26Colour: "macOS 26's pointer filled with the colour you choose and outlined in white, as Accessibility can set it."
         }
     }
 
