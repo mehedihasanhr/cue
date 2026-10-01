@@ -744,8 +744,10 @@ struct SwatchTile<Content: View>: View {
                 .overlay { content }
                 .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .overlay {
+                    // Strong enough to outline a black swatch on the dark panel, which at
+                    // eight per cent simply vanished.
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .strokeBorder(.primary.opacity(0.08))
+                        .strokeBorder(.primary.opacity(0.18))
                 }
                 .overlay {
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
