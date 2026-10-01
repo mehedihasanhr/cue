@@ -893,24 +893,20 @@ private struct InputChipMenu<Content: View>: View {
     @State private var isHovering = false
 
     var body: some View {
-        // The chip is drawn here, and the menu laid over it, invisible, to take the click.
-        // A menu's own label is drawn by AppKit, which keeps only a glyph and a title out
-        // of whatever it is given — the lit pane, the live light and the dimmed "off" all
-        // went missing when the chip was the label.
-        InputChipLabel(accent: accent, symbol: isOn ? onSymbol : symbol,
-                       isOn: isOn, isAvailable: true, isHovering: isHovering, label: label)
-            .fixedSize()
-            .overlay {
-                Menu {
-                    content
-                } label: {
-                    Color.clear
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .opacity(0.011)
-            }
+        // The button menu style with a plain button: the label is drawn by SwiftUI, as
+        // written. The borderless menu style hands its label to AppKit, which keeps only a
+        // glyph and a title — the lit pane and the dimmed "off" went missing — and an
+        // invisible menu laid over the chip instead never took the click.
+        Menu {
+            content
+        } label: {
+            InputChipLabel(accent: accent, symbol: isOn ? onSymbol : symbol,
+                           isOn: isOn, isAvailable: true, isHovering: isHovering, label: label)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
         .onHover { hovering in
             withAnimation(StudioMotion.hover) { isHovering = hovering }
         }
