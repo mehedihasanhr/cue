@@ -14,13 +14,17 @@ import SwiftUI
 @MainActor
 final class LibraryWindowController: NSWindowController {
     init(model: RecorderModel?, studio: StudioService, settings: StudioSettings) {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 620),
-                              styleMask: [.titled, .closable, .miniaturizable, .resizable],
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 640),
+                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                               backing: .buffered,
                               defer: false)
         window.title = "Recordings"
+        // The title is written large in the window itself, under a bar that is part of the
+        // page rather than a grey strip above it.
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false
-        window.contentMinSize = CGSize(width: 440, height: 420)
+        window.contentMinSize = CGSize(width: 520, height: 440)
         // macOS must not bring this back by itself.
         //
         // An AppKit window is restorable by default, so having taken Recordings out of
@@ -35,7 +39,7 @@ final class LibraryWindowController: NSWindowController {
         // The window's size is the window's business — the same reason the editor says so.
         hosting.sizingOptions = []
         window.contentViewController = hosting
-        window.setContentSize(CGSize(width: 520, height: 620))
+        window.setContentSize(CGSize(width: 760, height: 640))
         window.setFrameAutosaveName("KlikStudioRecordings")
 
         super.init(window: window)

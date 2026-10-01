@@ -22,10 +22,13 @@ import UniformTypeIdentifiers
 /// `CGImage` from another isolation domain — it becomes JPEG bytes inside the same
 /// function that decoded it, and only the file it was written to leaves.
 nonisolated struct RecordingPoster: Sendable {
-    /// How big the cached picture is. The row draws it at 58 × 36, and the cache is sized
-    /// for a Retina row with a little room rather than for the recording: a 4K poster
+    /// How big the cached picture is. The library's cards draw it up to 300 points wide,
+    /// and the cache is sized for a Retina card rather than for the recording: a 4K poster
     /// frame would cost more to read back than to decode again.
-    private static let maximumSize = CGSize(width: 320, height: 320)
+    private static let maximumSize = CGSize(width: 640, height: 640)
+    /// Named for its size, so the smaller pictures cached for the old rows are not read
+    /// back into cards twice their size.
+    private static let cacheName = "poster-640.jpg"
 
     private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "library")
 
@@ -36,7 +39,7 @@ nonisolated struct RecordingPoster: Sendable {
     /// compiler can prove is safe.
     static func jpeg(for packageURL: URL) async -> Data? {
         let package = RecordingPackage(url: packageURL)
-        let cache = package.derivedFolder.appendingPathComponent("poster.jpg")
+        let cache = package.derivedFolder.appendingPathComponent(cacheName)
         if let cached = try? Data(contentsOf: cache), !cached.isEmpty { return cached }
 
         guard let manifest = try? package.readManifest(),

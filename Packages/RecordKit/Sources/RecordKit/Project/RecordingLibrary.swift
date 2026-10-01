@@ -335,3 +335,48 @@ extension RecordingPackage {
         try write(manifest)
     }
 }
+
+/// A run of recordings under one heading — Today, Yesterday, Previous 7 Days, a month — as
+/// the library shows them.
+public struct RecordingSection: Identifiable, Sendable {
+    /// `nil` for the one plain run a non-date order makes.
+    public let title: String?
+    public let entries: [RecordingEntry]
+    public var id: String { title ?? "all" }
+
+    /// Grouped by when they were made while the list is in date order — the way anyone
+    /// remembers a take, "the one from yesterday" — and one plain run in any other order,
+    /// where headings by date would scatter the sort. Consecutive, so the sort's own order
+    /// is kept whichever way round it runs.
+    public static func group(_ entries: [RecordingEntry], by order: RecordingOrder,
+                             now: Date = .now, calendar: Calendar = .current) -> [RecordingSection] {
+        guard order == .date else {
+            return entries.isEmpty ? [] : [RecordingSection(title: nil, entries: entries)]
+        }
+        var sections: [RecordingSection] = []
+        for entry in entries {
+            let title = heading(for: entry.createdAt, now: now, calendar: calendar)
+            if let last = sections.last, last.title == title {
+                sections[sections.count - 1] = RecordingSection(title: title, entries: last.entries + [entry])
+            } else {
+                sections.append(RecordingSection(title: title, entries: [entry]))
+            }
+        }
+        return sections
+    }
+
+    /// The heading a recording made at `date` goes under.
+    public static func heading(for date: Date, now: Date, calendar: Calendar) -> String {
+        if calendar.isDate(date, inSameDayAs: now) { return "Today" }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
+           calendar.isDate(date, inSameDayAs: yesterday) { return "Yesterday" }
+        let startOfToday = calendar.startOfDay(for: now)
+        if let weekAgo = calendar.date(byAdding: .day, value: -7, to: startOfToday), date >= weekAgo, date <= now {
+            return "Previous 7 Days"
+        }
+        var style = Date.FormatStyle.dateTime.month(.wide).year()
+        style.calendar = calendar
+        style.timeZone = calendar.timeZone
+        return date.formatted(style)
+    }
+}

@@ -33,6 +33,17 @@ enum StudioAutomation {
         #endif
     }
 
+    /// The Recordings layout a test asked for — `grid` or `list` — for this process only,
+    /// because a tool cannot press a segment it cannot see and the preference lives in the
+    /// app's own container.
+    static var libraryLayout: String? {
+        #if DEBUG
+        ProcessInfo.processInfo.environment["KLIK_STUDIO_LIBRARY_LAYOUT"]
+        #else
+        nil
+        #endif
+    }
+
     /// Shows a window the way the moment calls for: in front and active for a person,
     /// behind everything and inactive for a test.
     @MainActor

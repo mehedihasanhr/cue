@@ -19,6 +19,8 @@ struct LibraryWindow: View {
     /// Built here rather than handed in, because it is this window's own state: it exists
     /// while the window does, and the bar has no use for it.
     @State private var catalog: LibraryCatalog?
+    /// Cards or rows. Remembered, because it is a way of working rather than a passing view.
+    @AppStorage("libraryLayout") private var layout: LibraryLayout = .grid
 
     var body: some View {
         VStack(spacing: 0) {
@@ -26,10 +28,12 @@ struct LibraryWindow: View {
                 PermissionBanner(model: model)
             }
 
+            header
+
             if let catalog {
                 if !catalog.entries.isEmpty || !catalog.interrupted.isEmpty {
-                    LibraryToolbar(catalog: catalog)
-                    list(catalog)
+                    LibraryToolbar(catalog: catalog, layout: $layout)
+                    content(catalog)
                 } else if catalog.isLoading {
                     // Deliberately nothing: a spinner that flashes for the 20 ms a local
                     // folder takes to read is worse than a frame of empty window.
@@ -40,13 +44,12 @@ struct LibraryWindow: View {
             } else {
                 Spacer()
             }
-
-            footer
         }
-        .frame(minWidth: 440, minHeight: 420)
-        .background(.background)
+        .frame(minWidth: 520, minHeight: 440)
+        .background(Color(nsColor: .windowBackgroundColor))
         .navigationTitle("Recordings")
         .task {
+            if let asked = StudioAutomation.libraryLayout.flatMap(LibraryLayout.init(rawValue:)) { layout = asked }
             let catalog = catalog ?? LibraryCatalog(folder: settings.library)
             self.catalog = catalog
             await model?.refreshSources()
@@ -65,101 +68,186 @@ struct LibraryWindow: View {
         .modifier(LibraryDialogs(catalog: catalog))
     }
 
-    /// One scrolling list, and only one: the overlapping mess this window used to be came
-    /// from stacking fixed-height lists inside a scroll view, where anything taller than
-    /// its frame simply drew over its neighbours.
-    private func list(_ catalog: LibraryCatalog) -> some View {
+    /// The window's name, how much is in it and where, and the way to make another.
+    ///
+    /// The count and the folder used to sit in a footer under the list, where nobody
+    /// reads; under the title is where a window says what it holds. "Recorder Bar" became
+    /// New Recording, because that is what anybody pressing it wants.
+    private var header: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Recordings")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(StudioTheme.Palette.textPrimary)
+                    .accessibilityAddTraits(.isHeader)
+                Text(summary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(StudioTheme.Palette.textSecondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 12)
+            StudioButton("New Recording", systemImage: "record.circle", variant: .primary) {
+                StudioAppDelegate.showBar()
+            }
+            .help("Bring up the recorder bar")
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 6)
+        .padding(.bottom, 12)
+    }
+
+    @ViewBuilder
+    private func content(_ catalog: LibraryCatalog) -> some View {
+        let interrupted = catalog.interrupted.filter {
+            catalog.search.isEmpty || $0.name.localizedCaseInsensitiveContains(catalog.search)
+        }
+        let sections = RecordingSection.group(catalog.visible, by: catalog.order)
         ScrollView {
-            LazyVStack(spacing: 2) {
+            VStack(alignment: .leading, spacing: 22) {
                 // Above everything else, whatever the sort: these need something doing.
-                ForEach(catalog.interrupted.filter { catalog.search.isEmpty || $0.name.localizedCaseInsensitiveContains(catalog.search) }) { take in
-                    InterruptedTakeRow(take: take)
+                if !interrupted.isEmpty {
+                    LibrarySectionView(title: "Needs attention") {
+                        VStack(spacing: 6) {
+                            ForEach(interrupted) { take in
+                                InterruptedTakeRow(take: take)
+                                    .background(StudioTheme.Palette.fill,
+                                                in: StudioTheme.squircle(12))
+                            }
+                        }
+                    }
                 }
-                ForEach(catalog.visible) { entry in
-                    RecordingRow(entry: entry, catalog: catalog)
+                ForEach(sections) { section in
+                    LibrarySectionView(title: section.title) {
+                        switch layout {
+                        case .grid:
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 196, maximum: 300), spacing: 16)],
+                                      alignment: .leading, spacing: 18) {
+                                ForEach(section.entries) { entry in
+                                    RecordingCard(entry: entry, catalog: catalog)
+                                }
+                            }
+                        case .list:
+                            LazyVStack(spacing: 2) {
+                                ForEach(section.entries) { entry in
+                                    RecordingRow(entry: entry, catalog: catalog)
+                                }
+                            }
+                        }
+                    }
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 20)
+            .padding(.top, 6)
+            .padding(.bottom, 20)
         }
         .studioScrollEdges()
         .overlay {
             // A search that matches nothing must say so. An empty list under a search
             // field somebody has typed into reads as a library that lost everything.
-            if catalog.visible.isEmpty, !catalog.search.isEmpty {
+            if catalog.visible.isEmpty, interrupted.isEmpty, !catalog.search.isEmpty {
                 ContentUnavailableView.search(text: catalog.search)
             }
         }
+        .animation(.snappy(duration: 0.25), value: layout)
     }
 
     private var empty: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 14) {
             Spacer()
-            Image(systemName: "film.stack")
-                .font(.system(size: 40))
-                .foregroundStyle(.tertiary)
-            Text("No recordings yet").font(.title3.weight(.medium))
-            Text("Press Record on the bar. What you record lands here.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+            ZStack {
+                Circle()
+                    .fill(StudioTheme.Palette.accentSoft)
+                    .frame(width: 88, height: 88)
+                Image(systemName: "film.stack")
+                    .font(.system(size: 34, weight: .regular))
+                    .foregroundStyle(StudioTheme.Palette.accent)
+            }
+            .accessibilityHidden(true)
+            Text("No recordings yet")
+                .font(.system(size: 17, weight: .semibold))
+            Text("Record your screen, a window or an area. What you record lands here, ready to edit.")
+                .font(.system(size: 13))
+                .foregroundStyle(StudioTheme.Palette.textSecondary)
                 .multilineTextAlignment(.center)
+                .frame(maxWidth: 320)
+            StudioButton("New Recording", systemImage: "record.circle", variant: .primary) {
+                StudioAppDelegate.showBar()
+            }
+            .padding(.top, 4)
             Spacer()
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 30)
     }
 
-    /// How many there are and where they are kept. The folder's name alone read as the
-    /// app signing its own window.
+    /// How many there are and where they are kept, with the folder a click away.
     private var summary: String {
         let folder = settings.library.lastPathComponent
         switch catalog?.entries.count ?? 0 {
-        case 0: return folder
-        case 1: return "1 recording in \(folder)"
-        case let count: return "\(count) recordings in \(folder)"
+        case 0: return "Kept in \(folder)"
+        case 1: return "1 recording \u{00B7} \(folder)"
+        case let count: return "\(count) recordings \u{00B7} \(folder)"
         }
-    }
-
-    private var footer: some View {
-        HStack(spacing: 10) {
-            Text(summary)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            Spacer(minLength: 8)
-            Button("Show in Finder") { NSWorkspace.shared.open(settings.library) }
-                .studioButton()
-            Button("Recorder Bar") { StudioAppDelegate.showBar() }
-                .studioButton()
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(.bar)
-        .overlay(alignment: .top) { Divider() }
     }
 }
 
-/// Finding one take among thirty: what to look for, and in what order.
-private struct LibraryToolbar: View {
-    @Bindable var catalog: LibraryCatalog
+/// Cards or rows.
+enum LibraryLayout: String, CaseIterable {
+    case grid, list
+
+    var title: String { self == .grid ? "Grid" : "List" }
+    var symbol: String { self == .grid ? "square.grid.2x2" : "list.bullet" }
+}
+
+/// A heading and what is under it.
+private struct LibrarySectionView<Content: View>: View {
+    let title: String?
+    @ViewBuilder let content: Content
 
     var body: some View {
-        HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 10) {
+            if let title {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(StudioTheme.Palette.textSecondary)
+                    .accessibilityAddTraits(.isHeader)
+            }
+            content
+        }
+    }
+}
+
+/// Finding one take among thirty: what to look for, in what order, and how to see them.
+private struct LibraryToolbar: View {
+    @Bindable var catalog: LibraryCatalog
+    @Binding var layout: LibraryLayout
+    @Environment(StudioSettings.self) private var settings
+    @FocusState private var isSearching: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
             HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass").font(.caption).foregroundStyle(.secondary)
-                TextField("Search", text: $catalog.search)
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(StudioTheme.Palette.textSecondary)
+                    .accessibilityHidden(true)
+                TextField("Search recordings", text: $catalog.search)
                     .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .focused($isSearching)
+                    .accessibilityLabel("Search recordings")
                 if !catalog.search.isEmpty {
                     Button { catalog.search = "" } label: {
-                        Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(StudioTheme.Palette.textTertiary)
                     }
                     .buttonStyle(.plain)
                     .help("Clear the search")
+                    .accessibilityLabel("Clear the search")
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .studioField(isFocused: isSearching, size: .regular)
+            .frame(maxWidth: .infinity)
 
             // A menu rather than a segmented control: three keys and a direction is four
             // things, and the direction only makes sense next to the key it reverses.
@@ -175,20 +263,211 @@ private struct LibraryToolbar: View {
                 }
                 .pickerStyle(.inline)
             } label: {
-                Label(catalog.order.title, systemImage: "arrow.up.arrow.down")
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.up.arrow.down")
+                        .font(.system(size: 11.5, weight: .medium))
+                    Text(catalog.order.title)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8.5, weight: .semibold))
+                        .foregroundStyle(StudioTheme.Palette.textSecondary)
+                }
             }
             .menuStyle(.button)
-            .studioButton()
+            .buttonStyle(.studio(.secondary, size: .regular))
+            .menuIndicator(.hidden)
             .fixedSize()
             .help("How the list is sorted")
+            .accessibilityLabel("Sort by \(catalog.order.title)")
+
+            StudioSegmented(selection: $layout,
+                            items: LibraryLayout.allCases,
+                            title: \.title,
+                            systemImage: \.symbol,
+                            showsTitles: false)
+                .fixedSize()
+                .accessibilityLabel("Layout")
+
+            StudioIconButton(systemImage: "folder", help: "Show the recordings folder in Finder",
+                             variant: .secondary) {
+                NSWorkspace.shared.open(settings.library)
+            }
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 10)
-        .padding(.bottom, 4)
+        .padding(.horizontal, 20)
+        .padding(.bottom, 10)
     }
 }
 
-/// One take.
+/// What every way of showing a take can do with it, in one place: the context menu, the
+/// "⋯" button and VoiceOver's actions are the same list.
+private struct RecordingActions {
+    let entry: RecordingEntry
+    let catalog: LibraryCatalog
+
+    var menuActions: [[StudioActionMenu<AnyView>.Action]] {
+        [[.init("Open", systemImage: "play.rectangle") { catalog.open(entry) }],
+         [.init("Rename\u{2026}", systemImage: "pencil") { catalog.beginRenaming(entry) },
+          .init("Duplicate", systemImage: "plus.square.on.square") { Task { await catalog.duplicate(entry) } },
+          .init("Show in Finder", systemImage: "folder") { catalog.reveal(entry) }],
+         // Named for where it goes, not for what it destroys: this is a move to the
+         // Trash, and a menu item that says Delete promises something worse.
+         [.init("Move to Trash", systemImage: "trash") { catalog.askToDelete(entry) }]]
+    }
+
+    /// "Sep 30, 2026 at 7:15 PM · 0:34 · 45 MB" — the three facts that tell two takes apart.
+    var detail: String {
+        [entry.createdAt.formatted(date: .abbreviated, time: .shortened),
+         LibraryCatalog.length(entry.duration),
+         LibraryCatalog.size(entry.byteCount)]
+            .filter { !$0.isEmpty }
+            .joined(separator: " \u{00B7} ")
+    }
+
+    /// The card's facts without the length, which the card shows on the picture.
+    var shortDetail: String {
+        [entry.createdAt.formatted(.dateTime.month(.abbreviated).day().hour().minute()),
+         LibraryCatalog.size(entry.byteCount)]
+            .filter { !$0.isEmpty }
+            .joined(separator: " \u{00B7} ")
+    }
+
+    var hasSound: Bool { entry.kinds.contains(.microphone) || entry.kinds.contains(.systemAudio) }
+}
+
+private extension View {
+    /// The same actions for VoiceOver and the right mouse button.
+    func recordingActions(_ actions: RecordingActions) -> some View {
+        self
+            .contextMenu {
+                ForEach(Array(actions.menuActions.enumerated()), id: \.offset) { index, group in
+                    if index > 0 { Divider() }
+                    ForEach(group, id: \.title) { action in
+                        Button(action.title, action: action.perform)
+                    }
+                }
+            }
+            .accessibilityActions {
+                ForEach(actions.menuActions.flatMap { $0 }.dropFirst(), id: \.title) { action in
+                    Button(action.title, action: action.perform)
+                }
+            }
+    }
+}
+
+/// One take, as a card: the picture first, because the picture is how a take is found.
+private struct RecordingCard: View {
+    let entry: RecordingEntry
+    let catalog: LibraryCatalog
+    @State private var isHovering = false
+    @State private var poster: Data?
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var actions: RecordingActions { RecordingActions(entry: entry, catalog: catalog) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button { catalog.open(entry) } label: {
+                VStack(alignment: .leading, spacing: 8) {
+                    picture
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(entry.name)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(StudioTheme.Palette.textPrimary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Text(actions.shortDetail)
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(StudioTheme.Palette.textSecondary)
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 2)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(StudioPressStyle())
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(entry.name)
+            .accessibilityValue(actions.detail)
+            .accessibilityHint("Opens in the editor")
+            .accessibilityAddTraits(.isButton)
+        }
+        .overlay(alignment: .topTrailing) { more }
+        .onHover { hovering in
+            withAnimation(StudioMotion.hover) { isHovering = hovering }
+        }
+        .task(id: entry.url) { poster = await RecordingPoster.jpeg(for: entry.url) }
+        .recordingActions(actions)
+    }
+
+    private var picture: some View {
+        let shape = StudioTheme.squircle(10)
+        return Color.clear
+            .aspectRatio(16 / 10, contentMode: .fit)
+            .background {
+                ZStack {
+                    StudioTheme.Palette.fill
+                    if let poster, let image = NSImage(data: poster) {
+                        Image(nsImage: image)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .scaleEffect(isHovering && !StudioMotion.reduceMotion ? 1.03 : 1)
+                    } else {
+                        // What a take with no readable video looks like, and what every
+                        // take looks like for the moment before its frame arrives.
+                        Image(systemName: "film")
+                            .font(.system(size: 22))
+                            .foregroundStyle(StudioTheme.Palette.textTertiary)
+                    }
+                }
+            }
+            .clipShape(shape)
+            .overlay(alignment: .bottomTrailing) { badges.padding(7) }
+            .overlay {
+                shape.strokeBorder(isHovering ? StudioTheme.Palette.accent.opacity(0.85)
+                                              : StudioTheme.Palette.stroke,
+                                   lineWidth: isHovering ? 2 : 1)
+            }
+            .shadow(color: .black.opacity(isHovering ? (colorScheme == .dark ? 0.5 : 0.18) : 0.06),
+                    radius: isHovering ? 12 : 3, y: isHovering ? 6 : 1)
+            .offset(y: isHovering && !StudioMotion.reduceMotion ? -2 : 0)
+    }
+
+    /// The length, and whether there is sound, on the picture's corner, where a video
+    /// player puts them.
+    private var badges: some View {
+        HStack(spacing: 5) {
+            if actions.hasSound {
+                Image(systemName: entry.kinds.contains(.microphone) ? "mic.fill" : "speaker.wave.2.fill")
+                    .font(.system(size: 9, weight: .semibold))
+                    .help(entry.kinds.contains(.microphone) ? "Has a microphone track" : "Has system audio")
+            }
+            if !LibraryCatalog.length(entry.duration).isEmpty {
+                Text(LibraryCatalog.length(entry.duration))
+                    .font(.system(size: 10.5, weight: .semibold).monospacedDigit())
+            }
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 6)
+        .frame(height: 18)
+        .background(.black.opacity(0.62), in: Capsule())
+        .accessibilityHidden(true)
+    }
+
+    /// Everything else that can be done to it, under the pointer — and always there for
+    /// the keyboard and VoiceOver, which have no pointer to hover with.
+    private var more: some View {
+        StudioActionMenu(groups: actions.menuActions, style: .studio(.secondary, size: .small, isIconOnly: true)) {
+            AnyView(Image(systemName: "ellipsis")
+                .font(.system(size: 11, weight: .semibold)))
+        }
+        .background(.regularMaterial, in: StudioTheme.squircle(StudioTheme.Radius.small))
+        .padding(7)
+        .opacity(isHovering ? 1 : 0)
+        .help("More actions")
+        .accessibilityLabel("More actions for \(entry.name)")
+    }
+}
+
+/// One take, as a row.
 private struct RecordingRow: View {
     let entry: RecordingEntry
     let catalog: LibraryCatalog
@@ -197,74 +476,75 @@ private struct RecordingRow: View {
     /// an `NSImage` made here, because `NSImage` is not something to send between actors.
     @State private var poster: Data?
 
-    var body: some View {
-        Button { catalog.open(entry) } label: {
-            HStack(spacing: 12) {
-                thumbnail
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(entry.name).font(.callout.weight(.medium)).lineLimit(1)
-                    Text(detail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 6)
-                if entry.kinds.contains(.microphone) || entry.kinds.contains(.systemAudio) {
-                    Image(systemName: "waveform")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                        .help(entry.kinds.contains(.microphone) ? "Has a microphone track" : "Has system audio")
-                }
-                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(isHovering ? AnyShapeStyle(.quaternary.opacity(0.5)) : AnyShapeStyle(.clear),
-                        in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
-        .task(id: entry.url) { poster = await RecordingPoster.jpeg(for: entry.url) }
-        .contextMenu {
-            Button("Open") { catalog.open(entry) }
-            Divider()
-            Button("Rename\u{2026}") { catalog.beginRenaming(entry) }
-            Button("Duplicate") { Task { await catalog.duplicate(entry) } }
-            Button("Show in Finder") { catalog.reveal(entry) }
-            Divider()
-            // Named for where it goes, not for what it destroys: this is a move to the
-            // Trash, and a menu item that says Delete promises something worse.
-            Button("Move to Trash") { catalog.askToDelete(entry) }
-        }
-    }
+    private var actions: RecordingActions { RecordingActions(entry: entry, catalog: catalog) }
 
-    /// "24 Sep 2026 at 11.06 · 4:07 · 82.1 MB" — the three facts that tell two takes apart.
-    private var detail: String {
-        [entry.createdAt.formatted(date: .abbreviated, time: .shortened),
-         LibraryCatalog.length(entry.duration),
-         LibraryCatalog.size(entry.byteCount)]
-            .filter { !$0.isEmpty }
-            .joined(separator: " \u{00B7} ")
+    var body: some View {
+        HStack(spacing: 12) {
+            Button { catalog.open(entry) } label: {
+                HStack(spacing: 12) {
+                    thumbnail
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(entry.name)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(StudioTheme.Palette.textPrimary)
+                            .lineLimit(1)
+                        Text(actions.detail)
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(StudioTheme.Palette.textSecondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 6)
+                    if actions.hasSound {
+                        Image(systemName: "waveform")
+                            .font(.system(size: 11))
+                            .foregroundStyle(StudioTheme.Palette.textTertiary)
+                            .help(entry.kinds.contains(.microphone) ? "Has a microphone track" : "Has system audio")
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(StudioPressStyle())
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(entry.name)
+            .accessibilityValue(actions.detail)
+            .accessibilityHint("Opens in the editor")
+            .accessibilityAddTraits(.isButton)
+
+            StudioActionMenu(groups: actions.menuActions, style: .studio(.ghost, size: .small, isIconOnly: true)) {
+                AnyView(Image(systemName: "ellipsis")
+                    .font(.system(size: 11, weight: .semibold)))
+            }
+            .opacity(isHovering ? 1 : 0.0)
+            .help("More actions")
+            .accessibilityLabel("More actions for \(entry.name)")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(isHovering ? StudioTheme.Palette.ghostHover : .clear, in: StudioTheme.squircle(10))
+        .onHover { hovering in
+            withAnimation(StudioMotion.hover) { isHovering = hovering }
+        }
+        .task(id: entry.url) { poster = await RecordingPoster.jpeg(for: entry.url) }
+        .recordingActions(actions)
     }
 
     private var thumbnail: some View {
-        RoundedRectangle(cornerRadius: 6, style: .continuous)
-            .fill(.quaternary)
-            .frame(width: 58, height: 36)
+        StudioTheme.squircle(6)
+            .fill(StudioTheme.Palette.fill)
+            .frame(width: 72, height: 45)
             .overlay {
                 if let poster, let image = NSImage(data: poster) {
                     Image(nsImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
-                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 } else {
-                    // What a take with no readable video looks like, and what every take
-                    // looks like for the moment before its frame arrives.
-                    Image(systemName: "film").font(.callout).foregroundStyle(.secondary)
+                    Image(systemName: "film")
+                        .font(.system(size: 13))
+                        .foregroundStyle(StudioTheme.Palette.textTertiary)
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .clipShape(StudioTheme.squircle(6))
+            .overlay(StudioTheme.squircle(6).strokeBorder(StudioTheme.Palette.stroke))
     }
 }
 

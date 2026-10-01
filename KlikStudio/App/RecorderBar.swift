@@ -909,6 +909,10 @@ private struct InputChipMenu<Content: View>: View {
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
+        // One element for VoiceOver — "No camera, menu button" — rather than the glyph and
+        // the words as two.
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(label)
         .onHover { hovering in
             withAnimation(StudioMotion.hover) { isHovering = hovering }
         }
