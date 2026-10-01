@@ -39,7 +39,13 @@ struct EditorView: View {
     var body: some View {
         Group {
             if let model = session.model {
-                loaded(model)
+                // Swapped rather than laid over: the editor underneath would keep telling
+                // the renderer its own, smaller, pane size.
+                if session.isPresenting {
+                    FullScreenPreview(model: model, session: session)
+                } else {
+                    loaded(model)
+                }
             } else if let loadError = session.loadError {
                 ContentUnavailableView("Couldn't open this recording", systemImage: "film.stack", description: Text(loadError))
             } else {
@@ -106,7 +112,7 @@ struct EditorView: View {
             .animation(StudioMotion.shape, value: session.showsInspector)
 
             StudioDivider()
-            TransportBar(model: model)
+            TransportBar(model: model) { session.present(true) }
             StudioDivider()
 
             TimelineStrip(model: model)

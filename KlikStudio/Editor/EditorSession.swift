@@ -40,6 +40,30 @@ final class EditorSession {
         UserDefaults.standard.object(forKey: showsInspectorKey) as? Bool ?? true
     }
 
+    /// Whether the picture is filling the screen on its own, with only playback controls
+    /// over it. Set through `present(_:)`, which the window answers by going full screen.
+    private(set) var isPresenting = false
+
+    /// What the window does when asked to present: wired by `EditorWindowController`,
+    /// because only the window can take the screen.
+    @ObservationIgnored var presentationHandler: ((Bool) -> Void)?
+
+    /// Asks for the full-screen preview, or out of it.
+    func present(_ on: Bool) {
+        guard on != isPresenting, model != nil || !on else { return }
+        if let presentationHandler {
+            presentationHandler(on)
+        } else {
+            presentationChanged(on)
+        }
+    }
+
+    /// Told by the window once it has done what was asked, or when the user left full
+    /// screen another way — the green button, Mission Control — so the editor comes back.
+    func presentationChanged(_ on: Bool) {
+        isPresenting = on
+    }
+
     init(packageURL: URL) {
         self.packageURL = packageURL
     }

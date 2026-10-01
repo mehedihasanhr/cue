@@ -23,6 +23,8 @@ import TimelineKit
 /// somebody has to check.
 struct TransportBar: View {
     let model: EditorModel
+    /// Plays the edit with the screen to itself. See `FullScreenPreview`.
+    var presentFullScreen: () -> Void = {}
     @Environment(StudioSettings.self) private var settings
 
     /// Tall enough for a row of 28-point glyphs with a little air, and no taller: this bar
@@ -46,6 +48,13 @@ struct TransportBar: View {
                 divider
             }
             zoom
+            divider
+            StudioIconButton(systemImage: "arrow.up.left.and.arrow.down.right",
+                             help: "Play full screen (⇧⌘F)",
+                             accessibilityName: "Full screen preview",
+                             size: .small,
+                             iconSize: 11,
+                             action: presentFullScreen)
         }
         .padding(.horizontal, SidebarMetrics.contentInset - 4)
         .frame(height: Self.height)

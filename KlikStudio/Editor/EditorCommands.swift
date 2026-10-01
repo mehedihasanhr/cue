@@ -438,6 +438,14 @@ struct EditorCommands: SwiftUI.Commands {
             }
             .keyboardShortcut("i", modifiers: [.command, .option])
             .disabled(windows.front == nil)
+            // The edit with the screen to itself. Fixed, like the inspector's: ⇧⌘F is
+            // what QuickTime and Final Cut use for full-screen playback.
+            Button(windows.front?.isPresenting == true ? "Exit Full Screen Preview" : "Full Screen Preview") {
+                guard let front = windows.front else { return }
+                front.present(!front.isPresenting)
+            }
+            .keyboardShortcut("f", modifiers: [.command, .shift])
+            .disabled(editor == nil)
             Divider()
             // The nine tools, which the tabs' tips have always said were in the menu bar.
             // The shortcut lives here and not on the tabs, so it answers whatever has the

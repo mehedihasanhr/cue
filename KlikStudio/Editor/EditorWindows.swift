@@ -219,6 +219,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
         super.init(window: window)
         window.delegate = self
+        session.presentationHandler = { [weak self] on in self?.setPresenting(on) }
     }
 
     @available(*, unavailable)
@@ -298,7 +299,62 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
+    // MARK: - Full-screen preview
+
+    /// Whether this window went full screen *for* the preview, and so should come back out
+    /// of it when the preview ends. An editor somebody had already made full screen stays
+    /// that way: leaving the preview is not asking to leave full screen.
+    private var enteredFullScreenToPresent = false
+    private var escapeMonitor: Any?
+
+    private func setPresenting(_ on: Bool) {
+        guard let window else { return }
+        let isFullScreen = window.styleMask.contains(.fullScreen)
+        session.presentationChanged(on)
+        if on {
+            watchForEscape()
+            // Quiet automation must not carry the user off to a new Space: there the
+            // preview is shown in the window as it is.
+            if !isFullScreen, !StudioAutomation.isQuiet {
+                enteredFullScreenToPresent = true
+                window.toggleFullScreen(nil)
+            }
+        } else {
+            stopWatchingForEscape()
+            if enteredFullScreenToPresent, isFullScreen { window.toggleFullScreen(nil) }
+            enteredFullScreenToPresent = false
+        }
+    }
+
+    /// Leaving full screen some other way — the green button, ⌃⌘F, Mission Control — ends
+    /// the preview too, so the window never comes back as a bare picture with no editor.
+    func windowDidExitFullScreen(_ notification: Notification) {
+        enteredFullScreenToPresent = false
+        guard session.isPresenting else { return }
+        stopWatchingForEscape()
+        session.presentationChanged(false)
+    }
+
+    /// Esc leaves the preview, as it leaves every full-screen player. A local monitor
+    /// rather than a key handler on the view, so it answers whatever in the window has the
+    /// keyboard — and only while the preview is up, so Esc keeps its other meanings.
+    private func watchForEscape() {
+        guard escapeMonitor == nil else { return }
+        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, event.keyCode == 53, event.window === self.window,
+                  self.window?.attachedSheet == nil, self.session.isPresenting else { return event }
+            self.setPresenting(false)
+            return nil
+        }
+    }
+
+    private func stopWatchingForEscape() {
+        if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }
+        escapeMonitor = nil
+    }
+
     func windowWillClose(_ notification: Notification) {
+        stopWatchingForEscape()
         // Silenced here rather than left to deallocation: a window that is closing has
         // stopped being something you are listening to, and the sound should go with the
         // picture rather than a moment after it.
