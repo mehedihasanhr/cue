@@ -28,11 +28,13 @@ struct TranslateCaptionsSheet: View {
             header
             Divider()
             VStack(alignment: .leading, spacing: 12) {
-                Picker("Translate into", selection: $target) {
-                    if languages.isEmpty { Text("Finding languages…").tag("") }
-                    ForEach(languages, id: \.minimalIdentifier) { language in
-                        Text(Self.name(of: language)).tag(language.minimalIdentifier)
-                    }
+                // Languages by identifier, and the empty identifier standing for "not yet",
+                // so the field says what it is waiting for rather than showing a blank.
+                SheetPicker("Translate into",
+                            selection: $target,
+                            options: languages.isEmpty ? [""] : languages.map(\.minimalIdentifier)) { identifier in
+                    languages.first { $0.minimalIdentifier == identifier }
+                        .map(Self.name(of:)) ?? "Finding languages…"
                 }
                 .disabled(languages.isEmpty || phase == .translating)
                 Text("Each caption keeps its timing. Word-by-word highlighting and removing filler words need the words as they were spoken, so they stop working until you undo the translation.")
@@ -61,8 +63,10 @@ struct TranslateCaptionsSheet: View {
                 Spacer()
                 Button("Cancel", role: .cancel) { model.isTranslatingCaptions = false }
                     .keyboardShortcut(.cancelAction)
+                    .buttonStyle(.studio(.secondary))
                 Button("Translate") { start() }
                     .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.studio(.primary))
                     .disabled(target.isEmpty || phase == .translating || model.timeline.captions.isEmpty)
             }
             .padding(16)
@@ -176,7 +180,9 @@ struct TranslationUnavailableSheet: View {
                 .foregroundStyle(.secondary)
             HStack {
                 Spacer()
-                Button("OK", action: close).keyboardShortcut(.defaultAction)
+                Button("OK", action: close)
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.studio(.primary))
             }
         }
         .padding(20)

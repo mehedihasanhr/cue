@@ -103,18 +103,14 @@ struct SensitiveSheet: View {
 
     private var options: some View {
         HStack(spacing: 18) {
-            Picker("Mask", selection: Binding(get: { review.style },
-                                              set: { job.review?.style = $0 })) {
-                ForEach(SensitiveReview.styles, id: \.self) { Text($0.title).tag($0) }
-            }
-            .pickerStyle(.menu)
-            .fixedSize()
-            Picker("Padding", selection: Binding(get: { review.padding },
-                                                 set: { job.review?.padding = $0 })) {
-                ForEach(SensitiveReview.Padding.allCases) { Text($0.title).tag($0) }
-            }
-            .pickerStyle(.menu)
-            .fixedSize()
+            SheetPicker("Mask",
+                        selection: Binding(get: { review.style },
+                                           set: { job.review?.style = $0 }),
+                        options: SensitiveReview.styles) { $0.title }
+            SheetPicker("Padding",
+                        selection: Binding(get: { review.padding },
+                                           set: { job.review?.padding = $0 }),
+                        options: SensitiveReview.Padding.allCases) { $0.title }
             Spacer()
         }
     }
@@ -128,8 +124,7 @@ struct SensitiveSheet: View {
         let kind = item.finding.kind
         return HStack(spacing: 10) {
             Toggle(isOn: chosen) { EmptyView() }
-                .toggleStyle(.checkbox)
-                .labelsHidden()
+                .toggleStyle(StudioCheckboxStyle(showsLabel: false))
                 .accessibilityLabel("Hide \(kind.title.lowercased()) at \(PacingSheet.time(item.firstSeen.seconds))")
             Image(systemName: kind.symbol)
                 .font(.system(size: 11))
@@ -148,14 +143,12 @@ struct SensitiveSheet: View {
             Text("\(PacingSheet.time(item.range.start.seconds)) – \(PacingSheet.time(item.range.end.seconds))")
                 .font(.caption).monospacedDigit()
                 .foregroundStyle(item.isChosen ? .primary : .secondary)
-            Button {
+            StudioIconButton(systemImage: "arrow.right.circle",
+                             help: "Go to where this is on screen",
+                             accessibilityName: "Go to \(PacingSheet.time(item.firstSeen.seconds))",
+                             size: .small) {
                 model.scrub(to: item.firstSeen)
-            } label: {
-                Image(systemName: "arrow.right.circle")
             }
-            .buttonStyle(.borderless)
-            .help("Go to where this is on screen")
-            .accessibilityLabel("Go to \(PacingSheet.time(item.firstSeen.seconds))")
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
@@ -187,10 +180,12 @@ struct SensitiveSheet: View {
             Spacer()
             Button("Cancel", role: .cancel) { model.cancelSensitiveScan() }
                 .keyboardShortcut(.cancelAction)
+                .buttonStyle(.studio(.secondary))
             Button(hideTitle) {
                 model.hideSensitiveInformation()
             }
             .keyboardShortcut(.defaultAction)
+            .buttonStyle(.studio(.primary))
             .disabled(review.state != .ready || review.chosenCount == 0)
         }
     }

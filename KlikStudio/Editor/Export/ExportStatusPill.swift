@@ -1,3 +1,4 @@
+import AppKit
 import RenderKit
 import SwiftUI
 
@@ -14,6 +15,11 @@ import SwiftUI
 struct ExportStatusPill: View {
     let jobs: ExportJobs
 
+    @State private var isPresented = false
+    /// The pill's own view, for the share picker to open from: the list Share is chosen
+    /// in has closed by the time the picker opens.
+    @State private var shareAnchor = ShareAnchor()
+
     /// The one worth showing: whatever is running, or else the most recent thing to have
     /// happened. Cancelled jobs are removed rather than reported — the person who
     /// cancelled it knows.
@@ -23,15 +29,20 @@ struct ExportStatusPill: View {
 
     var body: some View {
         if let job {
-            Menu {
-                menu(for: job)
-            } label: {
+            // The kit's list in a popover rather than a system menu: the same rows as
+            // every other list in the editor, with the file's name — or what went wrong —
+            // as the list's heading rather than a greyed-out item.
+            Button { isPresented.toggle() } label: {
                 label(for: job)
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
+            .buttonStyle(.studio(.secondary, size: .small))
+            .background { ShareAnchorView(anchor: shareAnchor) }
+            .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+                StudioMenuList(sections: sections(for: job), showsChecks: false)
+            }
             .fixedSize()
             .help(help(for: job))
+            .accessibilityHint("Shows what can be done with this export")
             .transition(.opacity)
             .animation(StudioMotion.state, value: job.phase)
         }
@@ -69,34 +80,35 @@ struct ExportStatusPill: View {
                 EmptyView()
             }
         }
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 9)
-        .frame(height: 24)
-        .background {
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(.white.opacity(0.07))
-        }
+        .foregroundStyle(StudioTheme.Palette.textSecondary)
     }
 
-    @ViewBuilder
-    private func menu(for job: ExportJob) -> some View {
+    private func sections(for job: ExportJob) -> [StudioMenuList.Section] {
+        func row(_ title: String, _ symbol: String, action: @escaping () -> Void) -> StudioMenuList.Row {
+            StudioMenuList.Row(title: title, systemImage: symbol, thumbnail: nil,
+                               isChecked: false, isEnabled: true, action: action)
+        }
+        let dismiss = row("Dismiss", "xmark") { jobs.dismiss(job) }
+
         if let url = job.finishedURL {
-            Text(job.fileName)
-            Button("Show in Finder") { job.reveal() }
-            Button("Open") { job.open() }
-            Button("Copy File") { job.copyFile() }
-            // The system sheet and nothing else: Klik Studio sends this file nowhere the
-            // user has not chosen to send it.
-            ShareLink(item: url) { Text("Share…") }
-            Divider()
-            Button("Dismiss") { jobs.dismiss(job) }
+            let anchor = shareAnchor
+            return [
+                .init(title: job.fileName, rows: [
+                    row("Show in Finder", "folder") { job.reveal() },
+                    row("Open", "play.rectangle") { job.open() },
+                    row("Copy File", "doc.on.doc") { job.copyFile() },
+                    // The system's share picker and nothing else: Klik Studio sends this
+                    // file nowhere the user has not chosen to send it.
+                    row("Share…", "square.and.arrow.up") { anchor.share(url) },
+                ]),
+                .init(title: nil, rows: [dismiss]),
+            ]
         } else if case .failed(let message) = job.phase {
-            Text(message)
-            Divider()
-            Button("Dismiss") { jobs.dismiss(job) }
+            return [.init(title: message, rows: [dismiss])]
         } else {
-            Text(job.fileName)
-            Button("Cancel Export") { jobs.dismiss(job) }
+            return [.init(title: job.fileName, rows: [
+                row("Cancel Export", "stop.circle") { jobs.dismiss(job) },
+            ])]
         }
     }
 
@@ -122,12 +134,50 @@ private struct ProgressRing: View {
     var body: some View {
         ZStack {
             Circle()
-                .stroke(.white.opacity(0.18), lineWidth: 2)
+                .stroke(StudioTheme.Palette.track, lineWidth: 2)
             Circle()
                 .trim(from: 0, to: max(0.02, min(1, fraction)))
-                .stroke(StudioPalette.brand, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .stroke(StudioTheme.Palette.accent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                 .rotationEffect(.degrees(-90))
         }
         .animation(StudioMotion.state, value: fraction)
+    }
+}
+
+/// Where the share picker opens from: the pill, which is still on screen once the list
+/// Share was chosen in has closed.
+///
+/// The system menu this replaced held a `ShareLink`, which finds its own anchor. A row in
+/// the kit's list is a plain action, so the picker is opened by hand against the pill.
+@MainActor
+private final class ShareAnchor {
+    weak var view: NSView?
+    /// Held until the next share: nothing else keeps the picker while its menu is up.
+    private var picker: NSSharingServicePicker?
+
+    func share(_ url: URL) {
+        // On the next turn of the run loop, once the popover has gone: a picker opened
+        // while the popover is still closing can go with it.
+        Task { @MainActor in
+            guard let view, view.window != nil else { return }
+            let picker = NSSharingServicePicker(items: [url])
+            self.picker = picker
+            picker.show(relativeTo: view.bounds, of: view, preferredEdge: .minY)
+        }
+    }
+}
+
+/// An empty view behind the pill that hands its `NSView` to the anchor.
+private struct ShareAnchorView: NSViewRepresentable {
+    let anchor: ShareAnchor
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        anchor.view = view
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        anchor.view = view
     }
 }

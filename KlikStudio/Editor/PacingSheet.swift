@@ -96,11 +96,7 @@ struct PacingSheet: View {
     }
 
     private func speedPicker(_ title: String, value: Binding<Double>, choices: [Double]) -> some View {
-        Picker(title, selection: value) {
-            ForEach(choices, id: \.self) { Text(Self.speed($0)).tag($0) }
-        }
-        .pickerStyle(.menu)
-        .fixedSize()
+        SheetPicker(title, selection: value, options: choices) { Self.speed($0) }
     }
 
     private func row(_ item: PacingReview.Item) -> some View {
@@ -112,8 +108,7 @@ struct PacingSheet: View {
         let speed = review.speed(for: item.reason)
         return HStack(spacing: 10) {
             Toggle(isOn: chosen) { EmptyView() }
-                .toggleStyle(.checkbox)
-                .labelsHidden()
+                .toggleStyle(StudioCheckboxStyle(showsLabel: false))
                 .accessibilityLabel("Speed up \(Self.time(item.range.start.seconds))")
             Image(systemName: item.reason == .idle ? "hourglass" : "keyboard")
                 .font(.system(size: 11))
@@ -129,14 +124,12 @@ struct PacingSheet: View {
             Text("\(Self.length(item.range.duration.seconds)) → \(Self.length(item.range.duration.seconds / speed))")
                 .font(.caption).monospacedDigit()
                 .foregroundStyle(item.isChosen ? .primary : .secondary)
-            Button {
+            StudioIconButton(systemImage: "arrow.right.circle",
+                             help: "Go to this stretch",
+                             accessibilityName: "Go to \(Self.time(item.range.start.seconds))",
+                             size: .small) {
                 model.scrub(to: item.range.start)
-            } label: {
-                Image(systemName: "arrow.right.circle")
             }
-            .buttonStyle(.borderless)
-            .help("Go to this stretch")
-            .accessibilityLabel("Go to \(Self.time(item.range.start.seconds))")
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
@@ -154,8 +147,10 @@ struct PacingSheet: View {
             Spacer()
             Button("Cancel", role: .cancel) { model.cancelPacing() }
                 .keyboardShortcut(.cancelAction)
+                .buttonStyle(.studio(.secondary))
             Button("Speed Up") { model.applyPacing() }
                 .keyboardShortcut(.defaultAction)
+                .buttonStyle(.studio(.primary))
                 .disabled(review.state != .ready || review.chosenCount == 0)
         }
     }
@@ -174,5 +169,42 @@ struct PacingSheet: View {
     static func length(_ seconds: Double) -> String {
         seconds < 60 ? String(format: "%.1f s", seconds)
                      : String(format: "%d:%02d", Int(seconds) / 60, Int(seconds.rounded()) % 60)
+    }
+}
+
+/// A named pop-up along the top of a review sheet: the speeds here, the mask and its
+/// padding in `SensitiveSheet`, the language in `TranslateCaptionsSheet`.
+///
+/// The name is a `Text` of its own beside the kit's field rather than the picker's built-in
+/// label, the way the inspector's rows do it — the system's label comes with a system
+/// pop-up attached. A value the list does not offer is added to it rather than shown as a
+/// blank, as `InspectorPicker` does.
+struct SheetPicker<Value: Hashable>: View {
+    let title: String
+    @Binding var selection: Value
+    let options: [Value]
+    let name: (Value) -> String
+
+    init(_ title: String,
+         selection: Binding<Value>,
+         options: [Value],
+         name: @escaping (Value) -> String) {
+        self.title = title
+        _selection = selection
+        self.options = options
+        self.name = name
+    }
+
+    var body: some View {
+        let shown = options.contains(selection) ? options : options + [selection]
+        HStack(spacing: StudioTheme.Spacing.regular) {
+            Text(title)
+                .font(.system(size: StudioTheme.FontSize.label))
+                .foregroundStyle(StudioTheme.Palette.textSecondary)
+                .accessibilityHidden(true)
+            StudioMenuPicker(selection: $selection, options: shown, title: name)
+                .accessibilityLabel(title)
+        }
+        .fixedSize()
     }
 }

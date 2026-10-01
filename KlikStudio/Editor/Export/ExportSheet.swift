@@ -76,21 +76,24 @@ struct ExportSheet: View {
             // edit is the only thing there is to export, and a picker with one choice
             // is a question nobody asked.
             if let range = editor.selectedRange {
-                Picker("Export", selection: $model.scope) {
-                    Text("Whole video").tag(ExportScope.whole)
-                    Text("Selection (\(Timecode.short(range.start))–\(Timecode.short(range.end)), \(Timecode.length(range.duration)))")
-                        .tag(ExportScope.selection)
+                // Two choices that are one or the other, side by side in one trough: the
+                // radio pair it used to be was the only thing in the sheet with a system
+                // bezel, and stacked it took two lines to ask a yes-or-no.
+                StudioSegmented(selection: $model.scope,
+                                items: [ExportScope.whole, .selection]) { scope in
+                    switch scope {
+                    case .whole: "Whole video"
+                    case .selection: "Selection (\(Timecode.short(range.start))–\(Timecode.short(range.end)), \(Timecode.length(range.duration)))"
+                    }
                 }
-                .pickerStyle(.radioGroup)
-                .font(.callout)
+                .accessibilityLabel("Export")
             }
             summary
             transparency
 
-            DisclosureGroup("Settings", isExpanded: $showsSettings) {
-                settings.padding(.top, 12)
+            InspectorDisclosure("Settings", isExpanded: $showsSettings) {
+                settings.padding(.top, 4)
             }
-            .font(.callout)
         }
     }
 
@@ -115,11 +118,9 @@ struct ExportSheet: View {
 
     private var settings: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Picker("", selection: $model.settings.format) {
-                ForEach(ExportFormat.allCases, id: \.self) { Text($0.title).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            StudioSegmented(selection: $model.settings.format,
+                            items: ExportFormat.allCases) { $0.title }
+                .accessibilityLabel("Format")
 
             Text(model.settings.format.detail)
                 .font(.caption)
@@ -127,72 +128,83 @@ struct ExportSheet: View {
 
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 12) {
                 GridRow {
-                    Text("Size").gridColumnAlignment(.trailing).foregroundStyle(.secondary)
-                    Picker("", selection: dimension) {
-                        ForEach(ExportSettings.dimensionChoices, id: \.title) { choice in
-                            Text(choice.title).tag(choice.value ?? 0)
-                        }
-                        // A preset may ask for a size that is not on the list — the GIF one
-                        // does — and a picker with no matching tag shows an empty box.
-                        if !ExportSettings.dimensionChoices.contains(where: { $0.value == model.settings.maximumDimension }),
-                           let cap = model.settings.maximumDimension {
-                            Text("\(Int(cap)) across").tag(cap)
-                        }
-                    }
-                    .labelsHidden()
+                    settingName("Size").gridColumnAlignment(.trailing)
+                    StudioMenuPicker(selection: dimension, sections: [StudioMenuSection(items: dimensionItems)])
+                        .accessibilityLabel("Size")
                 }
                 GridRow {
-                    Text("Frame rate").foregroundStyle(.secondary)
-                    Picker("", selection: $model.settings.frameRate) {
-                        ForEach([15, 24, 30, 60], id: \.self) { Text("\($0) fps").tag($0) }
-                    }
-                    .labelsHidden()
+                    settingName("Frame rate")
+                    StudioMenuPicker(selection: $model.settings.frameRate,
+                                     options: [15, 24, 30, 60]) { "\($0) fps" }
+                        .accessibilityLabel("Frame rate")
                 }
                 // ProRes has a quality of its own and its codec is its name, so neither
                 // question is asked of it.
                 if model.settings.format.offersCodecChoice {
                     GridRow {
-                        Text("Quality").foregroundStyle(.secondary)
-                        Picker("", selection: $model.settings.quality) {
-                            ForEach(ExportQuality.allCases, id: \.self) { Text($0.title).tag($0) }
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
+                        settingName("Quality")
+                        StudioSegmented(selection: $model.settings.quality,
+                                        items: ExportQuality.allCases) { $0.title }
+                            .accessibilityLabel("Quality")
                     }
                     GridRow {
-                        Text("Codec").foregroundStyle(.secondary)
-                        Picker("", selection: $model.settings.codec) {
-                            ForEach(ExportCodec.choices(for: model.settings.format), id: \.self) { Text($0.title).tag($0) }
-                        }
-                        .labelsHidden()
+                        settingName("Codec")
+                        StudioMenuPicker(selection: $model.settings.codec,
+                                         options: ExportCodec.choices(for: model.settings.format)) { $0.title }
+                            .accessibilityLabel("Codec")
                     }
                 }
                 if model.settings.offersTargetSize {
                     GridRow {
-                        Text("Target size").foregroundStyle(.secondary)
-                        Picker("", selection: target) {
-                            ForEach(ExportSettings.targetChoices, id: \.title) { choice in
-                                Text(choice.title).tag(choice.value ?? 0)
-                            }
-                            // A limit remembered from before that is not on the list.
-                            if let bytes = model.settings.targetByteCount,
-                               !ExportSettings.targetChoices.contains(where: { $0.value == bytes }) {
-                                Text(ExportEstimate.formatted(bytes)).tag(bytes)
-                            }
-                        }
-                        .labelsHidden()
+                        settingName("Target size")
+                        StudioMenuPicker(selection: target, sections: [StudioMenuSection(items: targetItems)])
+                            .accessibilityLabel("Target size")
                     }
                 }
             }
 
             sizeNotes
 
-            if model.settings.format == .gif {
-                Toggle("Loop forever", isOn: $model.settings.loops)
-            } else {
-                Toggle("Include sound", isOn: $model.settings.includesAudio)
+            Group {
+                if model.settings.format == .gif {
+                    Toggle("Loop forever", isOn: $model.settings.loops)
+                } else {
+                    Toggle("Include sound", isOn: $model.settings.includesAudio)
+                }
             }
+            .toggleStyle(.studio)
         }
+    }
+
+    /// A setting's name, in the column down the left of the grid.
+    private func settingName(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: StudioTheme.FontSize.label))
+            .foregroundStyle(StudioTheme.Palette.textSecondary)
+            .accessibilityHidden(true)
+    }
+
+    /// The sizes on offer, by name. Tagged by number with no limit as zero, because the
+    /// binding they write through is.
+    private var dimensionItems: [StudioMenuItem<Double>] {
+        var items = ExportSettings.dimensionChoices.map { StudioMenuItem($0.value ?? 0, title: $0.title) }
+        // A preset may ask for a size that is not on the list — the GIF one does — and a
+        // picker with no matching choice shows an empty box.
+        if !ExportSettings.dimensionChoices.contains(where: { $0.value == model.settings.maximumDimension }),
+           let cap = model.settings.maximumDimension {
+            items.append(StudioMenuItem(cap, title: "\(Int(cap)) across"))
+        }
+        return items
+    }
+
+    /// The size limits on offer, and a limit remembered from before that is not on the list.
+    private var targetItems: [StudioMenuItem<Int>] {
+        var items = ExportSettings.targetChoices.map { StudioMenuItem($0.value ?? 0, title: $0.title) }
+        if let bytes = model.settings.targetByteCount,
+           !ExportSettings.targetChoices.contains(where: { $0.value == bytes }) {
+            items.append(StudioMenuItem(bytes, title: ExportEstimate.formatted(bytes)))
+        }
+        return items
     }
 
     /// What the file will actually be. Worth saying out loud: "1080p" and "30 fps" are
@@ -356,21 +368,15 @@ struct ExportSheet: View {
             // Finder. Share is the system sheet and nothing else: no account, no upload,
             // nothing that sends this file anywhere the user did not send it.
             HStack(spacing: 8) {
+                // A `ShareLink` still, for the system's own picker, wearing the kit's
+                // button: it takes a button style like any other button.
                 ShareLink(item: url) {
                     Label("Share", systemImage: "square.and.arrow.up")
                 }
-                Button {
-                    job.copyFile()
-                } label: {
-                    Label("Copy File", systemImage: "doc.on.doc")
-                }
-                Button {
-                    job.open()
-                } label: {
-                    Label("Open", systemImage: "play.rectangle")
-                }
+                .buttonStyle(.studio(.secondary))
+                StudioButton("Copy File", systemImage: "doc.on.doc") { job.copyFile() }
+                StudioButton("Open", systemImage: "play.rectangle") { job.open() }
             }
-            .controlSize(.regular)
         }
     }
 
@@ -399,32 +405,39 @@ struct ExportSheet: View {
                 // Dismissed rather than only cancelled: a job nobody is waiting for should
                 // not sit in the app's list as a row that says it stopped.
                 Button("Cancel Export") { jobs.dismiss(job) }
+                    .buttonStyle(.studio(.secondary))
                 // Keep Editing is the default, and deliberately: the export is already
                 // safe, and the useful thing to do with the next few minutes is work.
                 Button("Keep Editing") { dismiss() }
                     .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.studio(.primary))
             } else if let job = model.job, job.finishedURL != nil {
                 Button("Show in Finder") { job.reveal() }
+                    .buttonStyle(.studio(.secondary))
                 Button("Done") {
                     jobs.dismiss(job)
                     model.forgetSettledJob()
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
+                .buttonStyle(.studio(.primary))
             } else if let job = model.job, case .failed = job.phase {
                 Button("Close") { dismiss() }
                     .keyboardShortcut(.cancelAction)
+                    .buttonStyle(.studio(.secondary))
                 Button("Try Again") {
                     jobs.dismiss(job)
                     model.forgetSettledJob()
                 }
                 .keyboardShortcut(.defaultAction)
+                .buttonStyle(.studio(.primary))
             } else {
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
+                    .buttonStyle(.studio(.secondary))
                 Button("Export…") { model.begin(from: editor, into: jobs) }
                     .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.studio(.primary))
             }
         }
     }
@@ -449,16 +462,21 @@ private struct PresetTile: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 11)
-            .foregroundStyle(isChosen ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+            .foregroundStyle(isChosen ? StudioTheme.Palette.onAccent : StudioTheme.Palette.textSecondary)
             .background {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(isChosen ? AnyShapeStyle(StudioPalette.brand)
-                                   : AnyShapeStyle(.white.opacity(isHovering ? 0.10 : 0.05)))
+                let shape = StudioTheme.squircle(StudioTheme.Radius.tab)
+                // The kit's neutrals rather than white at a few per cent, which was a tile
+                // on the dark sheet and nothing at all on the light one.
+                shape
+                    .fill(isChosen ? StudioTheme.Palette.accent
+                                   : isHovering ? StudioTheme.Palette.fillHover : StudioTheme.Palette.fill)
+                    .overlay { shape.strokeBorder(isChosen ? Color.clear : StudioTheme.Palette.stroke) }
             }
-            .contentShape(Rectangle())
+            .contentShape(StudioTheme.squircle(StudioTheme.Radius.tab))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(StudioPressStyle())
         .onHover { isHovering = $0 }
+        .animation(StudioMotion.hover, value: isHovering)
         .animation(StudioMotion.state, value: isChosen)
         .help(preset.detail)
         .accessibilityLabel("\(preset.title) preset")
