@@ -3,8 +3,8 @@ import CoreImage
 import Foundation
 import TimelineKit
 
-/// The pointer styles that are Klik's own drawings: the large arrow, the dot and the
-/// minimal arrow.
+/// The pointer styles that are Klik's own drawings: every style but the recorded pointer
+/// and the invisible one.
 ///
 /// Drawn with Core Graphics at the size the frame asks for, never scaled up from a
 /// smaller picture, so the edge is as clean at 4K as at 720p. Each drawing carries its own
@@ -23,7 +23,7 @@ enum PointerStyleArtwork {
         /// Rounded, so a click swell walking the size through a range does not miss the
         /// cache on every frame.
         let size: Int
-        /// Only the dot has a colour of its own; the rest key on a fixed one.
+        /// Only the colour styles have a colour of their own; the rest key on a fixed one.
         let r: Double, g: Double, b: Double, a: Double
     }
 
@@ -39,10 +39,10 @@ enum PointerStyleArtwork {
     /// The drawing for a style at a pointer size in output pixels — the size the drawn
     /// arrow of `asRecorded` would be — or `nil` for a style Klik does not draw.
     static func drawing(_ appearance: CursorStyle.Appearance, size: Double, color: ColorValue) -> Drawing? {
-        guard appearance == .largeArrow || appearance == .dot || appearance == .minimal else { return nil }
+        guard appearance != .asRecorded, appearance != .clicksOnly else { return nil }
         let rounded = Int(size.rounded())
         guard rounded > 1 else { return nil }
-        let ink = appearance == .dot ? color : ColorValue.white
+        let ink = appearance.usesColour ? color : ColorValue.white
         let key = Key(appearance: appearance, size: rounded, r: ink.r, g: ink.g, b: ink.b, a: ink.a)
         return cache.value(for: key) { draw(appearance, size: Double(rounded), color: ink) }
     }
@@ -69,11 +69,25 @@ enum PointerStyleArtwork {
 
     private static func draw(_ appearance: CursorStyle.Appearance, size: Double, color: ColorValue) -> Drawing? {
         switch appearance {
-        case .largeArrow: largeArrow(size: size)
+        case .largeArrow: arrow(size: size, fill: CGColor(gray: 1, alpha: 1), outline: CGColor(gray: 0, alpha: 1))
+        // A white outline is what shows of these on a dark page, so its edge is the tip.
+        case .blackArrow: arrow(size: size, fill: CGColor(gray: 0.04, alpha: 1), outline: CGColor(gray: 1, alpha: 1),
+                                pointsWithOutline: true)
+        case .colourArrow: arrow(size: size, fill: cgColour(color, 1), outline: CGColor(gray: 1, alpha: 1),
+                                 pointsWithOutline: true)
+        case .softArrow: softArrow(size: size)
         case .dot: dot(size: size, color: color)
         case .minimal: minimal(size: size)
+        case .hand: hand(size: size)
+        case .touch: touch(size: size)
+        case .ring: ring(size: size, color: color)
+        case .crosshair: crosshair(size: size)
         case .asRecorded, .clicksOnly: nil
         }
+    }
+
+    private static func cgColour(_ color: ColorValue, _ alpha: Double) -> CGColor {
+        CGColor(srgbRed: color.r, green: color.g, blue: color.b, alpha: max(0, min(1, color.a * alpha)))
     }
 
     /// The classic tilted arrow, as offsets from its tip in units of the arrow's width
@@ -100,7 +114,8 @@ enum PointerStyleArtwork {
     /// laid over its inner half, so the white reaches exactly to the path — and the
     /// path's first corner is the point. What the viewer sees as the tip of the arrow is
     /// where the pointer is.
-    private static func largeArrow(size: Double) -> Drawing? {
+    private static func arrow(size: Double, fill: CGColor, outline outlineColour: CGColor,
+                              pointsWithOutline: Bool = false) -> Drawing? {
         let unit = size * largeArrowScale
         let outline = max(1, unit * 0.045)
         let shadow = unit * 0.07
@@ -115,9 +130,48 @@ enum PointerStyleArtwork {
                           color: CGColor(gray: 0, alpha: 0.4))
         context.beginTransparencyLayer(auxiliaryInfo: nil)
         context.addPath(shape)
-        context.setStrokeColor(CGColor(gray: 0, alpha: 1))
+        context.setStrokeColor(outlineColour)
         context.setLineWidth(outline * 2)
         context.setLineJoin(.round)
+        context.strokePath()
+        context.addPath(shape)
+        context.setFillColor(fill)
+        context.fillPath()
+        context.endTransparencyLayer()
+
+        guard let image = context.makeImage() else { return nil }
+        let point = pointsWithOutline ? CGPoint(x: tip.x - outline, y: tip.y - outline) : tip
+        return Drawing(image: CIImage(cgImage: image),
+                       hotspot: CGPoint(x: point.x / Double(width), y: point.y / Double(height)))
+    }
+
+    /// The arrow with its corners rounded off and a softer, thicker outline: the shape
+    /// the newer screen-recording apps draw. The rounding is made by stroking the fill
+    /// itself with a round join, so the white grows by the same radius at every corner
+    /// and the point stays where the path's first corner is.
+    private static func softArrow(size: Double) -> Drawing? {
+        let unit = size * 1.2
+        let round = unit * 0.05
+        let outline = max(1, unit * 0.06)
+        let shadow = unit * 0.08
+        let margin = round + outline + shadow
+        let width = Int((margin * 2 + 0.66 * unit).rounded(.up))
+        let height = Int((margin * 2 + 1.232 * unit + unit * 0.03).rounded(.up))
+        guard let context = context(width: width, height: height) else { return nil }
+        let tip = CGPoint(x: margin, y: margin)
+        let shape = path(arrowOutline, unit: unit, tip: tip)
+
+        context.setShadow(offset: CGSize(width: 0, height: -unit * 0.03), blur: shadow,
+                          color: CGColor(gray: 0, alpha: 0.35))
+        context.beginTransparencyLayer(auxiliaryInfo: nil)
+        context.setLineJoin(.round)
+        context.addPath(shape)
+        context.setStrokeColor(CGColor(gray: 0.12, alpha: 1))
+        context.setLineWidth((round + outline) * 2)
+        context.strokePath()
+        context.addPath(shape)
+        context.setStrokeColor(CGColor(gray: 1, alpha: 1))
+        context.setLineWidth(round * 2)
         context.strokePath()
         context.addPath(shape)
         context.setFillColor(CGColor(gray: 1, alpha: 1))
@@ -125,8 +179,85 @@ enum PointerStyleArtwork {
         context.endTransparencyLayer()
 
         guard let image = context.makeImage() else { return nil }
+        // The outline's own tip: the round join reaches `round + outline` past the corner,
+        // up and to the left — the part a viewer reads as the point, as with the minimal
+        // arrow.
+        let point = CGPoint(x: tip.x - round - outline, y: tip.y - round - outline)
         return Drawing(image: CIImage(cgImage: image),
-                       hotspot: CGPoint(x: tip.x / Double(width), y: tip.y / Double(height)))
+                       hotspot: CGPoint(x: point.x / Double(width), y: point.y / Double(height)))
+    }
+
+    /// The system pointing hand, a size up, placed by its fingertip — the same drawing and
+    /// point the recorded pointer uses when it was a hand.
+    private static func hand(size: Double) -> Drawing? {
+        guard let image = CursorArtwork.image(.pointingHand, size: size * largeArrowScale) else { return nil }
+        return Drawing(image: image, hotspot: CursorArtwork.hotspot(of: .pointingHand))
+    }
+
+    /// A translucent grey disc with a light rim — a finger on glass. Its point is its
+    /// middle.
+    private static func touch(size: Double) -> Drawing? {
+        let radius = size * 0.42
+        let rim = max(1, size * 0.04)
+        let side = Int((radius * 2 + rim * 2 + 2).rounded(.up))
+        guard let context = context(width: side, height: side) else { return nil }
+        let middle = CGPoint(x: Double(side) / 2, y: Double(side) / 2)
+        let circle = CGRect(x: middle.x - radius, y: middle.y - radius, width: radius * 2, height: radius * 2)
+        context.setFillColor(CGColor(gray: 0.45, alpha: 0.42))
+        context.fillEllipse(in: circle)
+        context.setStrokeColor(CGColor(gray: 1, alpha: 0.75))
+        context.setLineWidth(rim)
+        context.strokeEllipse(in: circle)
+        guard let image = context.makeImage() else { return nil }
+        return Drawing(image: CIImage(cgImage: image), hotspot: CGPoint(x: 0.5, y: 0.5))
+    }
+
+    /// A hollow ring in the chosen colour on a thin white halo, so it shows on dark and
+    /// light pages alike. Its point is its middle.
+    private static func ring(size: Double, color: ColorValue) -> Drawing? {
+        let radius = size * 0.3
+        let line = max(1.5, size * 0.08)
+        let halo = line + max(1.5, size * 0.05)
+        let side = Int((radius * 2 + halo + 4).rounded(.up))
+        guard let context = context(width: side, height: side) else { return nil }
+        let middle = CGPoint(x: Double(side) / 2, y: Double(side) / 2)
+        let circle = CGRect(x: middle.x - radius, y: middle.y - radius, width: radius * 2, height: radius * 2)
+        context.setStrokeColor(CGColor(gray: 1, alpha: 0.9))
+        context.setLineWidth(halo)
+        context.strokeEllipse(in: circle)
+        context.setStrokeColor(cgColour(color, 1))
+        context.setLineWidth(line)
+        context.strokeEllipse(in: circle)
+        guard let image = context.makeImage() else { return nil }
+        return Drawing(image: CIImage(cgImage: image), hotspot: CGPoint(x: 0.5, y: 0.5))
+    }
+
+    /// Two thin dark lines with a white halo, crossing with a small gap at the middle so
+    /// the point itself is not covered. Its point is that gap.
+    private static func crosshair(size: Double) -> Drawing? {
+        let arm = size * 0.45
+        let gap = size * 0.08
+        let line = max(1, size * 0.045)
+        let halo = line + max(1.5, size * 0.05)
+        let side = Int((arm * 2 + halo + 2).rounded(.up))
+        guard let context = context(width: side, height: side) else { return nil }
+        let middle = CGPoint(x: Double(side) / 2, y: Double(side) / 2)
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: middle.x - arm, y: middle.y)); path.addLine(to: CGPoint(x: middle.x - gap, y: middle.y))
+        path.move(to: CGPoint(x: middle.x + gap, y: middle.y)); path.addLine(to: CGPoint(x: middle.x + arm, y: middle.y))
+        path.move(to: CGPoint(x: middle.x, y: middle.y - arm)); path.addLine(to: CGPoint(x: middle.x, y: middle.y - gap))
+        path.move(to: CGPoint(x: middle.x, y: middle.y + gap)); path.addLine(to: CGPoint(x: middle.x, y: middle.y + arm))
+        context.setLineCap(.round)
+        context.addPath(path)
+        context.setStrokeColor(CGColor(gray: 1, alpha: 0.95))
+        context.setLineWidth(halo)
+        context.strokePath()
+        context.addPath(path)
+        context.setStrokeColor(CGColor(gray: 0.08, alpha: 1))
+        context.setLineWidth(line)
+        context.strokePath()
+        guard let image = context.makeImage() else { return nil }
+        return Drawing(image: CIImage(cgImage: image), hotspot: CGPoint(x: 0.5, y: 0.5))
     }
 
     /// A small arrowhead, outline only: a dark line with a white one under it so it shows
@@ -226,7 +357,7 @@ public enum PointerStylePreview {
         let image: CIImage? = switch appearance {
         case .asRecorded: CursorArtwork.image(.arrow, size: size)
         case .clicksOnly: nil
-        case .largeArrow, .dot, .minimal: PointerStyleArtwork.drawing(appearance, size: size, color: color)?.image
+        default: PointerStyleArtwork.drawing(appearance, size: size, color: color)?.image
         }
         guard let image else { return nil }
         return context.createCGImage(image, from: image.extent)

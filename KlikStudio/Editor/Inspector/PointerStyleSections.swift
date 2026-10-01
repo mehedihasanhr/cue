@@ -4,13 +4,13 @@ import RenderKit
 import SwiftUI
 import TimelineKit
 
-/// What the pointer is drawn as: one row of small tiles, each showing the drawing it makes.
+/// What the pointer is drawn as: a grid of small tiles, each showing the drawing it makes.
 ///
-/// Tiles rather than a pop-up because the choice is a picture — but small ones, in a
-/// single row, with the chosen style's name on the heading. It was a three-and-two grid
-/// of large tiles with a name under each, and "Invisible but clicks" wrapped onto a
-/// second line under a tile half its width. The previews come from the renderer's own
-/// drawings, so a tile shows what the export will; what each style does is its tooltip.
+/// Tiles rather than a pop-up because the choice is a picture — small ones, four to a row
+/// at the panel's width, with the chosen style's name on the heading. One fixed row of
+/// five ran off the right edge of the panel, and there are twelve styles now. The
+/// previews come from the renderer's own drawings, so a tile shows what the export will;
+/// what each style does is its tooltip.
 struct PointerStyleSection: View {
     let model: EditorModel
 
@@ -19,14 +19,15 @@ struct PointerStyleSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-            HStack(spacing: 8) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 36, maximum: 56), spacing: 8), count: 6),
+                      spacing: 8) {
                 ForEach(CursorStyle.Appearance.allCases, id: \.self) { appearance in
                     tile(appearance)
                 }
             }
-            if cursor.appearance == .dot {
-                InspectorRow("Dot colour") {
-                    InspectorColorWell(title: "Dot colour", selection: dotColour)
+            if cursor.appearance.usesColour {
+                InspectorRow("Colour") {
+                    InspectorColorWell(title: "Pointer colour", selection: dotColour)
                 }
             }
         }
@@ -51,7 +52,7 @@ struct PointerStyleSection: View {
                 preview(appearance)
             }
         }
-        .frame(maxWidth: 48)
+        .frame(maxWidth: 56)
     }
 
     @ViewBuilder
@@ -76,6 +77,13 @@ struct PointerStyleSection: View {
         case .dot: "A dot with a soft ring, like a presentation pointer. Its size is the Size above."
         case .minimal: "A small outlined arrow that stays out of the way."
         case .clicksOnly: "No pointer. Clicks are still marked, and still heard if click sounds are on."
+        case .blackArrow: "A large black arrow with a white outline — clearest on light pages."
+        case .softArrow: "A modern arrow with rounded corners and a soft outline."
+        case .colourArrow: "A large arrow in the colour you choose, outlined in white."
+        case .hand: "A large pointing hand throughout, placed by its fingertip."
+        case .touch: "A translucent grey disc, the way a phone simulator shows a touch."
+        case .ring: "A hollow ring in the colour you choose."
+        case .crosshair: "A thin crosshair, for precise work on a busy picture."
         }
     }
 
@@ -95,7 +103,7 @@ private enum PointerTilePreviews {
 
     static func image(_ appearance: CursorStyle.Appearance, color: ColorValue) -> CGImage? {
         guard appearance.drawsPointer else { return nil }
-        let key = appearance == .dot ? "dot \(color.r) \(color.g) \(color.b)" : appearance.rawValue
+        let key = appearance.usesColour ? "\(appearance.rawValue) \(color.r) \(color.g) \(color.b)" : appearance.rawValue
         if let image = made[key] { return image }
         // The pointer size a 1080p frame draws at the default setting, halved for the tile.
         guard let image = PointerStylePreview.image(appearance, size: 34, color: color) else { return nil }

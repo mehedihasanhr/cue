@@ -93,7 +93,7 @@ struct PointerStylingTests {
 
     /// The arrows point with their tips: the top-left of what is drawn is the point, to a
     /// pixel, at 1080p and at 4K.
-    @Test(arguments: [CursorStyle.Appearance.largeArrow, .minimal])
+    @Test(arguments: [CursorStyle.Appearance.largeArrow, .minimal, .softArrow])
     func anArrowStyleHasItsTipOnThePoint(_ appearance: CursorStyle.Appearance) throws {
         for size in Self.sizes {
             let point = CGPoint(x: Self.spot.x * size.width, y: Self.spot.y * size.height)
@@ -120,7 +120,8 @@ struct PointerStylingTests {
     /// The styles are drawn at the size of the frame, not scaled up: at 4K the drawing is
     /// twice the size it is at 1080p, and its edges are harder than the 1080p drawing
     /// enlarged to the same size would be.
-    @Test(arguments: [CursorStyle.Appearance.largeArrow, .dot, .minimal])
+    @Test(arguments: [CursorStyle.Appearance.largeArrow, .dot, .minimal, .softArrow, .blackArrow,
+                      .colourArrow, .touch, .ring, .crosshair])
     func aStyleIsSharpAtFourK(_ appearance: CursorStyle.Appearance) throws {
         let small = try #require(try render(frame(Self.sizes[0], cursor: pointer(appearance, at: Self.spot))).light())
         let large = try #require(try render(frame(Self.sizes[1], cursor: pointer(appearance, at: Self.spot))).light())
@@ -454,6 +455,61 @@ struct PointerStylingTests {
         #expect(lens?.factor == 2.5)
         #expect(lens.map { abs($0.center.x - 0.5) < 0.001 && abs($0.center.y - 0.5) < 0.001 } == true)
         #expect(builder.descriptor(for: timeline(), at: time(3), cursor: track).pointerMagnifier == nil)
+    }
+
+    // MARK: - The newer styles
+
+    /// The round styles point with their middles, at 1080p and at 4K.
+    @Test(arguments: [CursorStyle.Appearance.touch, .ring, .crosshair])
+    func aRoundStylesMiddleIsThePointer(_ appearance: CursorStyle.Appearance) throws {
+        for size in Self.sizes {
+            let point = CGPoint(x: Self.spot.x * size.width, y: Self.spot.y * size.height)
+            let drawn = try #require(try render(frame(size, cursor: pointer(appearance, at: Self.spot))).light())
+            #expect(abs(drawn.box.midX - point.x) <= 1, "\(appearance) at \(size): middle x \(drawn.box.midX), point \(point.x)")
+            #expect(abs(drawn.box.midY - point.y) <= 1, "\(appearance) at \(size): middle y \(drawn.box.midY), point \(point.y)")
+        }
+    }
+
+    /// The inverted and coloured arrows point with the tip of their white outline, which is
+    /// what shows of them on a dark page.
+    @Test(arguments: [CursorStyle.Appearance.blackArrow, .colourArrow])
+    func aFilledArrowHasItsTipOnThePoint(_ appearance: CursorStyle.Appearance) throws {
+        for size in Self.sizes {
+            let point = CGPoint(x: Self.spot.x * size.width, y: Self.spot.y * size.height)
+            let drawn = try #require(try render(frame(size, cursor: pointer(appearance, at: Self.spot))).light())
+            // A pixel and a half: the outline's round tip is anti-aliased across a pixel more
+            // than a straight corner is, which at 4K is under a point.
+            let outline = 1.5
+            #expect(abs(drawn.box.minX - point.x) <= outline, "\(appearance) at \(size): x \(drawn.box.minX), point \(point.x)")
+            #expect(abs(drawn.box.minY - point.y) <= outline, "\(appearance) at \(size): y \(drawn.box.minY), point \(point.y)")
+            #expect(drawn.box.width > 10 && drawn.box.height > 10)
+        }
+    }
+
+    /// Every style Klik draws has a drawing at every pointer size worth drawing, with its
+    /// point inside it; and only the two that are not drawings — the recorded pointer and
+    /// the invisible one — have none.
+    @Test func everyDrawnStyleHasADrawingWithItsPointInside() {
+        PointerStyleArtwork.clearCache()
+        for appearance in CursorStyle.Appearance.allCases {
+            for size in [8.0, 24, 64, 160] {
+                let drawing = PointerStyleArtwork.drawing(appearance, size: size, color: CursorStyle.defaultDotColor)
+                if appearance == .asRecorded || appearance == .clicksOnly {
+                    #expect(drawing == nil)
+                    continue
+                }
+                guard let drawing else { Issue.record("\(appearance) at \(size) drew nothing"); continue }
+                #expect(!drawing.image.extent.isEmpty)
+                #expect((0...1).contains(drawing.hotspot.x) && (0...1).contains(drawing.hotspot.y),
+                        "\(appearance)'s point \(drawing.hotspot) is outside its drawing")
+            }
+        }
+    }
+
+    /// The colour styles take the chosen colour; the others do not change with it.
+    @Test func onlyTheColourStylesUseTheColour() {
+        let colour = CursorStyle.Appearance.allCases.filter(\.usesColour)
+        #expect(Set(colour) == [.dot, .colourArrow, .ring])
     }
 }
 

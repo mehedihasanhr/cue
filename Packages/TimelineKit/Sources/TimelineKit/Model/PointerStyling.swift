@@ -20,6 +20,20 @@ public extension CursorStyle {
         case minimal
         /// No pointer at all. The click marks and sounds stay.
         case clicksOnly
+        /// The large arrow inverted: black, with a white outline. Reads best on light pages.
+        case blackArrow
+        /// A modern arrow with rounded corners and a soft outline.
+        case softArrow
+        /// The large arrow filled with the chosen colour, outlined in white.
+        case colourArrow
+        /// A large pointing hand, placed by the tip of its finger.
+        case hand
+        /// A translucent grey disc, the way a phone simulator shows a touch.
+        case touch
+        /// A hollow ring in the chosen colour.
+        case ring
+        /// A thin crosshair, for precise work on a busy picture.
+        case crosshair
 
         public var title: String {
             switch self {
@@ -28,8 +42,18 @@ public extension CursorStyle {
             case .dot: "Dot"
             case .minimal: "Minimal"
             case .clicksOnly: "Invisible but clicks"
+            case .blackArrow: "Black arrow"
+            case .softArrow: "Soft arrow"
+            case .colourArrow: "Colour arrow"
+            case .hand: "Hand"
+            case .touch: "Touch"
+            case .ring: "Ring"
+            case .crosshair: "Crosshair"
             }
         }
+
+        /// Whether the style is drawn in the chosen pointer colour (`CursorStyle.dotColor`).
+        public var usesColour: Bool { self == .dot || self == .colourArrow || self == .ring }
 
         /// Whether anything is drawn where the pointer is.
         public var drawsPointer: Bool { self != .clicksOnly }
