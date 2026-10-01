@@ -52,10 +52,11 @@ extension SceneBuilder {
 
     /// How long the shutter is taken to be open, in seconds.
     ///
-    /// Half a frame at 60 fps — what a film camera's usual half-open shutter gives. Enough
-    /// to be felt in a fast push-in and to vanish in a slow one, which is the point: the
-    /// blur should read as the camera moving, never as the picture going soft.
-    static let shutter = 1.0 / 120
+    /// A quarter of a frame at 60 fps. It was half a frame, a film camera's usual shutter —
+    /// right for faces, too much for a page of text: mid-zoom the whole page smeared until
+    /// no word could be read, and the video looked out of focus rather than moving. A
+    /// quarter is still felt in a fast push-in and keeps the words legible while it moves.
+    static let shutter = 1.0 / 240
 
     /// How far either side of the frame the camera is looked at to find its speed.
     ///
@@ -68,6 +69,9 @@ extension SceneBuilder {
     /// frame's shorter side for a pan, and of the picture's size for a push. Past these a
     /// flick of the camera would smear the picture beyond reading.
     static let maximumTravel = 0.03
+    /// The least smear, in pixels of a 1080p frame, that is drawn at all. See
+    /// `cameraMotion(_:at:cursor:crop:current:videoFrame:output:)`.
+    static let leastVisibleSmear = 2.5
     static let maximumGrowth = 0.03
 
     /// How the camera is moving at `time`, as the smear a shutter would catch, or `nil`
@@ -151,10 +155,14 @@ extension SceneBuilder {
         }
         let growth = min(max(rate.dw * shutter / now.width, -Self.maximumGrowth), Self.maximumGrowth)
 
-        // Under a pixel of smear anywhere in the frame is nothing anybody could see, and
-        // drawing it would only cost a blur pass.
+        // Only a move fast enough to read as motion is smeared. A slow drift — the camera
+        // easing after the pointer inside a zoom — smeared a pixel or two, which nobody
+        // sees as movement and everybody sees as text gone soft, in exactly the stretches a
+        // zoom is there to make readable. Two and a half pixels at 1080p, in proportion at
+        // other sizes.
         let reach = hypot(now.width, now.height) / 2
-        guard hypot(travel.dx, travel.dy) >= 0.75 || abs(growth) * reach >= 0.75 else { return nil }
+        let least = Self.leastVisibleSmear * shorter / 1_080
+        guard hypot(travel.dx, travel.dy) >= least || abs(growth) * reach >= least else { return nil }
         return CameraMotionLayer(travel: travel, growth: growth, center: CGPoint(x: now.midX, y: now.midY))
     }
 }

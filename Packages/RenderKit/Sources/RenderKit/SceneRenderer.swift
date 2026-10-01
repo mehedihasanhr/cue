@@ -361,6 +361,7 @@ public final class SceneRenderer: @unchecked Sendable {
         } else {
             image = image.transformed(by: placement)
         }
+        image = sharpenedForMagnification(image, scale: max(sx, sy))
 
         // The colour correction: on the recording, placed, and on nothing laid over it
         // afterwards. Not on a title's panel, which is a colour somebody chose.
@@ -735,6 +736,26 @@ public final class SceneRenderer: @unchecked Sendable {
         filter.angle = Float(atan2(-velocity.dy, velocity.dx))
         filter.radius = Float(radius)
         return (filter.outputImage ?? image).cropped(to: image.extent.insetBy(dx: -radius, dy: -radius))
+    }
+
+    /// Puts back the edge a zoom takes off.
+    ///
+    /// Magnifying the recording — a zoom, or a crop shown larger — spreads each pixel of it
+    /// over more than one of the frame's, and Core Image's linear filter blends the edge of
+    /// every letter across the gap: at 1.5× a screen recording's text comes out visibly
+    /// soft, which is the one thing a zoom is there to make easier to read. An unsharp mask
+    /// whose strength follows the magnification restores the edge — none at all at 1×, so a
+    /// picture shown at its own size or smaller is untouched, and its full strength by 1.4×.
+    /// Its radius grows with the scale, because the blur it undoes does.
+    func sharpenedForMagnification(_ image: CIImage, scale: CGFloat) -> CIImage {
+        let start: CGFloat = 1.05, full: CGFloat = 1.4
+        guard scale > start else { return image }
+        let strength = min(1, (scale - start) / (full - start))
+        let extent = image.extent
+        return image.clampedToExtent()
+            .applyingFilter("CIUnsharpMask", parameters: [kCIInputRadiusKey: Double(scale),
+                                                          kCIInputIntensityKey: Double(0.7 * strength)])
+            .cropped(to: extent)
     }
 
     /// Turns, scales and slides the drawn annotation about its own centre.

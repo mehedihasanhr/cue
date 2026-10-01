@@ -459,12 +459,20 @@ final class EditorModel {
         if rate == 1 { audio?.play(from: playhead, timeline: timeline) } else { audio?.pause() }
     }
 
-    /// Roughly what the preview pane can show. Seeking a full-resolution 4K frame with
-    /// zero tolerance thirty times a second is the single most expensive thing the
-    /// editor used to do, and none of that detail reaches the screen while it moves.
+    /// How large a frame is decoded while the picture moves: the recording's own size, up
+    /// to 4K.
+    ///
+    /// It was a fixed 2560 × 1440, below a Retina window recording's own 3024 across — and
+    /// a zoom then magnified a frame that had already been shrunk, so the preview went soft
+    /// in exactly the stretches it was meant to show close up. What is still saved while it
+    /// moves is the exact seek: the tolerance is what made scrubbing cheap, not the size.
     private var previewPixelSize: CGSize {
-        let scale = NSScreen.main?.backingScaleFactor ?? 2
-        return CGSize(width: 1_280 * scale, height: 720 * scale)
+        let natural = frames?.naturalSize ?? CGSize(width: 3_840, height: 2_160)
+        let cap: CGFloat = 3_840
+        let longest = max(natural.width, natural.height)
+        guard longest > cap else { return natural }
+        let shrink = cap / longest
+        return CGSize(width: (natural.width * shrink).rounded(), height: (natural.height * shrink).rounded())
     }
 
     // MARK: - Rendering
