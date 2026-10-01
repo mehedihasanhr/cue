@@ -274,10 +274,36 @@ final class StudioAppDelegate: NSObject, NSApplicationDelegate {
         // activation that opened the editor would put the bar straight back in front of it.
         guard editors.isEmpty else { return }
 
-        // Clicking the Dock icon with everything closed should bring the recorder back.
-        if bar?.isVisible == false, NSApp.windows.allSatisfy({ !$0.isVisible }) {
+        // Switching to the app with everything closed should bring the recorder back.
+        if bar?.isVisible == false, !hasWindowOnScreen {
             bar?.show()
         }
+    }
+
+    /// A click on the Dock icon — which, when the app is already in front, is the only
+    /// thing that happens: there is no activation to hear.
+    ///
+    /// Without this a click did nothing at all whenever the bar had been put away. The
+    /// activation check above never ran for an app that was already active, and when it
+    /// did run, the menu bar icon's own window counts as visible, so "everything closed"
+    /// was never true.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // An editor open — perhaps minimised: AppKit brings it back, which is what the
+        // click means.
+        guard editors.isEmpty else { return true }
+        // Recordings or Settings on screen: the click brings them forward, as usual.
+        if hasWindowOnScreen { return true }
+        // Nothing else is the app's to show: the bar is the whole of it.
+        bar?.show()
+        NSApp.activate()
+        return false
+    }
+
+    /// Whether a window of the app's own — Recordings, Settings — is on screen. Counts only
+    /// titled windows: the menu bar icon and the bar are windows too, and are not what
+    /// "nothing is open" means.
+    private var hasWindowOnScreen: Bool {
+        NSApp.windows.contains { $0.isVisible && $0.styleMask.contains(.titled) && $0 !== bar?.window }
     }
 
     /// Brings the bar back from anywhere in the app.
