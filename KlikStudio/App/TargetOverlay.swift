@@ -303,6 +303,8 @@ private struct DevicePickerPanel: View {
             content
             actionBar
         }
+        // The contents kept inside the rounded corners: the action strip is square.
+        .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
         .frame(maxWidth: 560)
         .background {
             let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
@@ -398,17 +400,15 @@ private struct DevicePickerPanel: View {
             }
             Spacer(minLength: 16)
 
-            ActionChip(title: "Record Device", key: "\u{21A9}", isPrimary: true, action: start)
-                .disabled(selected == nil || model.deviceAccessDenied)
-                .opacity(selected == nil || model.deviceAccessDenied ? 0.4 : 1)
-            Rectangle()
-                .fill(.primary.opacity(0.12))
-                .frame(width: 1, height: 16)
             ActionChip(title: "Cancel", key: "esc", isPrimary: false, action: cancel)
+            ActionChip(title: selected == nil ? "Choose a device" : "Record Device", key: "\u{21A9}",
+                       isPrimary: true, systemImage: "record.circle", action: start)
+                .disabled(selected == nil || model.deviceAccessDenied)
         }
         .padding(.leading, 22)
-        .padding(.trailing, 12)
-        .frame(height: 56)
+        .padding(.trailing, 14)
+        .frame(height: 64)
+        .background(ActionBarBackground())
     }
 }
 
@@ -499,6 +499,8 @@ private struct WindowPickerPanel: View {
             if let note = model.resizeNote { resizeNote(note) }
             actionBar
         }
+        // The contents kept inside the rounded corners: the action strip is square.
+        .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
         .frame(maxWidth: 880)
         .background {
             let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
@@ -648,17 +650,17 @@ private struct WindowPickerPanel: View {
 
             if selected != nil, WindowResizer.isAvailable { sizeMenu }
 
-            ActionChip(title: "Record Window", key: "↩", isPrimary: true, action: start)
-                .disabled(selected == nil)
-                .opacity(selected == nil ? 0.4 : 1)
-            Rectangle()
-                .fill(.primary.opacity(0.12))
-                .frame(width: 1, height: 16)
+            // Cancel first and Record last, where the eye ends and the Return key points:
+            // the way round every Mac dialog puts them.
             ActionChip(title: "Cancel", key: "esc", isPrimary: false, action: cancel)
+            ActionChip(title: selected == nil ? "Choose a window" : "Record Window", key: "↩",
+                       isPrimary: true, systemImage: "record.circle", action: start)
+                .disabled(selected == nil)
         }
         .padding(.leading, 22)
-        .padding(.trailing, 12)
-        .frame(height: 56)
+        .padding(.trailing, 14)
+        .frame(height: 64)
+        .background(ActionBarBackground())
         .animation(StudioMotion.selection, value: selected?.id)
     }
 }
@@ -683,9 +685,17 @@ extension WindowPickerPanel {
             }
         } label: {
             Label("Size", systemImage: "arrow.up.left.and.arrow.down.right")
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.primary.opacity(0.85))
+                .padding(.horizontal, 12)
+                .frame(height: 36)
+                .background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.primary.opacity(0.14)))
+                .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
         .fixedSize()
         .disabled(model.resizableWindow == nil)
         .help(model.resizableWindow == nil
@@ -715,46 +725,92 @@ extension WindowPickerPanel {
     }
 }
 
-/// An action and its key, the way a launcher lists them: words, then the keycap.
+/// An action and its key: words, then the keycap — as a button that looks like one.
+///
+/// Both used to be bare words, the primary only a weight heavier than Cancel, so the one
+/// thing the panel is for was the least noticeable thing on it. The primary is a filled
+/// pill in the brand blue now, and the other a bordered one; each keeps its key, so the
+/// keyboard is still taught.
 private struct ActionChip: View {
     let title: String
     let key: String
     let isPrimary: Bool
+    var systemImage: String?
     let action: () -> Void
     @State private var isHovering = false
+    @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
         Button(action: action) {
             HStack(spacing: 8) {
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 13, weight: .semibold))
+                }
                 Text(title)
-                    .font(.system(size: 13, weight: isPrimary ? .semibold : .regular))
-                    .foregroundStyle(.primary.opacity(isPrimary ? 0.95 : 0.6))
-                KeyCap(key: key)
+                    .font(.system(size: 13, weight: isPrimary ? .semibold : .medium))
+                KeyCap(key: key, onAccent: isPrimary && isEnabled)
             }
-            .padding(.horizontal, 10)
-            .frame(height: 32)
-            .background(.primary.opacity(isHovering ? 0.08 : 0),
-                        in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .contentShape(Rectangle())
+            .foregroundStyle(foreground)
+            .padding(.leading, 14)
+            .padding(.trailing, 8)
+            .frame(height: 36)
+            .background(fill, in: shape)
+            .overlay(shape.strokeBorder(isPrimary ? Color.white.opacity(isEnabled ? 0.2 : 0)
+                                                  : Color.primary.opacity(0.14)))
+            .shadow(color: isPrimary && isEnabled ? StudioPalette.brand.opacity(isHovering ? 0.5 : 0.32) : .clear,
+                    radius: isHovering ? 12 : 8, y: 3)
+            .contentShape(shape)
         }
         .buttonStyle(BarButtonStyle(pressedScale: 0.97))
         .onHover { hovering in
-            withAnimation(StudioMotion.hover) { isHovering = hovering }
+            withAnimation(StudioMotion.hover) { isHovering = hovering && isEnabled }
         }
+        .accessibilityLabel(title)
+        .accessibilityHint(key == "esc" ? "Escape key" : "Return key")
+    }
+
+    private var foreground: Color {
+        if isPrimary { return isEnabled ? .white : .primary.opacity(0.45) }
+        return .primary.opacity(0.85)
+    }
+
+    private var fill: Color {
+        if isPrimary {
+            guard isEnabled else { return .primary.opacity(0.08) }
+            return isHovering ? Color(red: 0.2, green: 0.42, blue: 1) : StudioPalette.brand
+        }
+        return .primary.opacity(isHovering ? 0.1 : 0.06)
     }
 }
 
-/// A key, drawn as a key.
+/// A key, drawn as a key: on the blue of a primary button, a lighter key of the same blue.
 private struct KeyCap: View {
     let key: String
+    var onAccent = false
 
     var body: some View {
         Text(key)
-            .font(.system(size: 11, weight: .medium, design: .rounded))
-            .foregroundStyle(.primary.opacity(0.6))
+            .font(.system(size: 11, weight: .semibold, design: .rounded))
+            .foregroundStyle(onAccent ? Color.white.opacity(0.9) : Color.primary.opacity(0.6))
             .padding(.horizontal, 6)
             .frame(minWidth: 22, minHeight: 20)
-            .background(.primary.opacity(0.1), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .background(onAccent ? Color.white.opacity(0.2) : Color.primary.opacity(0.08),
+                        in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .accessibilityHidden(true)
+    }
+}
+
+/// The strip the actions sit on: a step apart from the windows, under a hairline, so it
+/// reads as the place where the choice is acted on.
+private struct ActionBarBackground: View {
+    var body: some View {
+        Rectangle()
+            .fill(.primary.opacity(0.035))
+            .overlay(alignment: .top) {
+                Rectangle().fill(.primary.opacity(0.1)).frame(height: 1)
+            }
     }
 }
 
@@ -821,11 +877,20 @@ private struct WindowTile: View {
                 .padding(.horizontal, 2)
             }
             .padding(10)
-            .background(.primary.opacity(highlight),
+            .background(isSelected ? AnyShapeStyle(StudioPalette.brand.opacity(colorScheme == .dark ? 0.2 : 0.09))
+                                   : AnyShapeStyle(.primary.opacity(highlight)),
                         in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            // The chosen window is outlined in the brand blue, not just washed: a grey
+            // step behind one card of nine was easy to miss.
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(StudioPalette.brand, lineWidth: 2)
+                    .opacity(isSelected ? 1 : 0)
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(BarButtonStyle(pressedScale: 0.98))
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .onHover { hovering in
             withAnimation(StudioMotion.hover) { isHovering = hovering }
         }
