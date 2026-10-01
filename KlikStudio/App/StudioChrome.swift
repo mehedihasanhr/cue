@@ -54,8 +54,8 @@ enum StudioPalette {
     /// Klik blue (#0E4FEC), the fill of the app icon and the app's one accent.
     static let brand = Color(red: 0x0E / 255, green: 0x4F / 255, blue: 0xEC / 255)
 
-    static let barRadius: CGFloat = 20
-    static let barHeight: CGFloat = 76
+    static let barRadius: CGFloat = 22
+    static let barHeight: CGFloat = 62
 
     /// Three weights of white: what is chosen, what is on offer, what cannot be had.
     static let chosen = Color.white

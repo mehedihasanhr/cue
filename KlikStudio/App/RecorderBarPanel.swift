@@ -71,6 +71,7 @@ final class RecorderBarPanel {
             }
         }
 
+        model.presentations += 1
         if let panel {
             panel.orderFrontRegardless()
             onVisibilityChange(true)

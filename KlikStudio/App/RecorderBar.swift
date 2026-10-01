@@ -30,6 +30,8 @@ struct RecorderBar: View {
     /// between them. One entry per shape rather than a property each, because the shapes
     /// are a closed set and the widths are all the same kind of thing.
     @State private var widths: [Shape: CGFloat] = [:]
+    /// Whether the bar has arrived on screen — false for the instant before it springs in.
+    @State private var hasArrived = false
 
     /// The four things the bar can be. Every state of the session maps onto exactly one of
     /// them — `SessionStateTests` holds that to be true, because a state with no shape is
@@ -70,17 +72,64 @@ struct RecorderBar: View {
         }
         .frame(width: barWidth, height: StudioPalette.barHeight)
         .background {
-            // Behind everything and hit-testable, so a drag anywhere the controls do not
-            // claim moves the panel.
-            WindowDragBackground()
+            ZStack {
+                // Behind everything and hit-testable, so a drag anywhere the controls do
+                // not claim moves the panel.
+                WindowDragBackground()
+                // Coloured smoke in the glass, saying what the bar is doing before a word
+                // of it is read.
+                BarSmoke(mood: mood)
+            }
         }
         .studioGlass(cornerRadius: StudioPalette.barRadius)
         .clipShape(RoundedRectangle(cornerRadius: StudioPalette.barRadius, style: .continuous))
+        .overlay { BarEdgeLight(mood: mood, cornerRadius: StudioPalette.barRadius) }
         .shadow(color: .black.opacity(0.4), radius: 26, y: 12)
+        // A soft light of the mood's colour under the bar, as if the smoke spilled out.
+        .shadow(color: moodShadow, radius: 22, y: 6)
         .animation(StudioMotion.shape, value: shape)
         // Also covers the quieter change: the display's name arriving from
         // ScreenCaptureKit widens the setup bar a second after it opens.
         .animation(StudioMotion.shape, value: barWidth)
+        .animation(.easeInOut(duration: 0.8), value: mood)
+        // Springs in each time it is shown, rather than being there all at once.
+        .scaleEffect(hasArrived ? 1 : 0.94, anchor: .bottom)
+        .offset(y: hasArrived ? 0 : 10)
+        .opacity(hasArrived ? 1 : 0)
+        .blur(radius: hasArrived ? 0 : 6)
+        .onAppear(perform: arrive)
+        .onChange(of: model.presentations) { _, _ in arrive() }
+    }
+
+    private func arrive() {
+        guard !StudioMotion.reduceMotion else {
+            hasArrived = true
+            return
+        }
+        var still = Transaction()
+        still.disablesAnimations = true
+        withTransaction(still) { hasArrived = false }
+        DispatchQueue.main.async {
+            withAnimation(.spring(response: 0.42, dampingFraction: 0.78)) { hasArrived = true }
+        }
+    }
+
+    /// The light's colour for what the session is doing.
+    private var mood: BarMood {
+        switch shape {
+        case .setup: .ready
+        case .starting: .live
+        case .take: studio.session.isPaused ? .held : .live
+        case .failure, .confirmRestart: .alert
+        }
+    }
+
+    private var moodShadow: Color {
+        switch mood {
+        case .ready: StudioPalette.brand.opacity(0.28)
+        case .live: Color.red.opacity(0.32)
+        case .held, .alert: Color.orange.opacity(0.28)
+        }
     }
 
     /// One layer of the stack: laid out and measured whether or not it is the one showing,
@@ -124,7 +173,7 @@ struct RecorderBar: View {
     private var separator: some View {
         Rectangle()
             .fill(.white.opacity(0.11))
-            .frame(width: 1, height: 42)
+            .frame(width: 1, height: 28)
             .padding(.horizontal, 10)
     }
 
@@ -139,24 +188,27 @@ struct RecorderBar: View {
             inputs
             separator
             settingsMenu
+            recordButton
         }
     }
 
     private var closeButton: some View {
         Button(action: close) {
             Image(systemName: "xmark")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(.black)
-                .frame(width: 22, height: 22)
-                .background(.white.opacity(0.9), in: Circle())
+                .font(.system(size: 10.5, weight: .bold))
+                .foregroundStyle(.white.opacity(0.8))
+                .frame(width: 28, height: 28)
+                .background(.white.opacity(0.1), in: Circle())
+                .overlay(Circle().strokeBorder(.white.opacity(0.08)))
         }
         .buttonStyle(BarButtonStyle(pressedScale: 0.88))
         .help("Close the recorder")
         .padding(.leading, 4)
     }
 
+    /// The four modes in one inset strip, with one glass chip that slides to the choice.
     private var modes: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 2) {
             ForEach(RecorderModel.Mode.allCases) { mode in
                 ModeButton(mode: mode,
                            isSelected: model.mode == mode,
@@ -167,6 +219,9 @@ struct RecorderBar: View {
                 }
             }
         }
+        .padding(3)
+        .background(.black.opacity(0.2), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.white.opacity(0.06)))
         // The highlight used to vanish from one tile and appear on another, which reads
         // as two events. One chip that slides says the same thing as a single move, and
         // points at where the choice went.
@@ -296,6 +351,28 @@ struct RecorderBar: View {
         .disabled(!settings.recordsSystemAudio)
     }
 
+    /// The way forward from here, always in the same place: records straight away when
+    /// there is something to record, and otherwise asks what — the same as choosing the
+    /// mode again.
+    private var recordButton: some View {
+        Button {
+            if model.canRecord {
+                model.record()
+            } else {
+                model.choose(model.mode)
+                showTargets(model.mode)
+            }
+        } label: {
+            RecordGlyph()
+        }
+        .buttonStyle(BarButtonStyle(pressedScale: 0.9))
+        .disabled(studio.session.state.isBusy)
+        .help(model.canRecord ? settings.recorder.help("Start recording", .record)
+                              : "Choose what to record")
+        .padding(.leading, 4)
+        .padding(.trailing, 4)
+    }
+
     private var settingsMenu: some View {
         Menu {
             Button("Recordings…") { showLibrary() }
@@ -313,13 +390,14 @@ struct RecorderBar: View {
             .pickerStyle(.inline)
         } label: {
             Image(systemName: "gearshape")
-                .font(.system(size: 15))
+                .font(.system(size: 14))
                 .foregroundStyle(StudioPalette.offered)
         }
         .menuStyle(.borderlessButton)
-        .menuIndicator(.visible)
-        .frame(width: 44)
-        .padding(.trailing, 6)
+        .menuIndicator(.hidden)
+        .frame(width: 36, height: 36)
+        .background(.white.opacity(0.07), in: Circle())
+        .padding(.trailing, 4)
     }
 
     private var countdown: Binding<Int> {
@@ -759,27 +837,33 @@ private struct ModeButton: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 5) {
+            HStack(spacing: 7) {
                 Image(systemName: mode.symbol)
-                    .font(.system(size: mode.symbolSize, weight: .regular))
-                    // One slot for four glyphs of four shapes. Without it each sets its
-                    // own row height and the labels beneath stop sharing a line.
-                    .frame(width: 26, height: 19)
-                Text(mode.title).font(.system(size: 10.5, weight: .medium))
+                    .font(.system(size: mode.symbolSize * 0.82, weight: .medium))
+                    // One slot for four glyphs of four shapes, so the titles beside them
+                    // start at the same distance.
+                    .frame(width: 20, height: 16)
+                Text(mode.title).font(.system(size: 12.5, weight: isSelected ? .semibold : .medium))
             }
             .foregroundStyle(isAvailable ? (isSelected ? StudioPalette.chosen : StudioPalette.offered)
                                          : StudioPalette.unavailable)
-            .frame(width: 62, height: 56)
+            .padding(.horizontal, 12)
+            .frame(height: 38)
             .background {
+                let shape = RoundedRectangle(cornerRadius: 11, style: .continuous)
                 if isSelected {
                     // The one chip, matched across the row: choosing a mode moves it
-                    // rather than extinguishing one tile and lighting another.
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .fill(.white.opacity(0.14))
+                    // rather than extinguishing one tile and lighting another. Glass on
+                    // glass — a lighter pane with a lit top edge and a little lift.
+                    shape
+                        .fill(LinearGradient(colors: [.white.opacity(0.24), .white.opacity(0.12)],
+                                             startPoint: .top, endPoint: .bottom))
+                        .overlay(shape.strokeBorder(LinearGradient(colors: [.white.opacity(0.35), .white.opacity(0.05)],
+                                                                   startPoint: .top, endPoint: .bottom)))
+                        .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
                         .matchedGeometryEffect(id: "selected", in: chip)
                 } else if isHovering, isAvailable {
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .fill(.white.opacity(0.07))
+                    shape.fill(.white.opacity(0.07))
                 }
             }
             .contentShape(Rectangle())
@@ -805,15 +889,24 @@ private struct InputChipMenu<Content: View>: View {
     @State private var isHovering = false
 
     var body: some View {
-        Menu {
-            content
-        } label: {
-            InputChipLabel(symbol: isOn ? onSymbol : symbol, size: size,
-                           isOn: isOn, isAvailable: true, isHovering: isHovering, label: label)
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        // The chip is drawn here, and the menu laid over it, invisible, to take the click.
+        // A menu's own label is drawn by AppKit, which keeps only a glyph and a title out
+        // of whatever it is given — the lit pane, the live light and the dimmed "off" all
+        // went missing when the chip was the label.
+        InputChipLabel(symbol: isOn ? onSymbol : symbol, size: size,
+                       isOn: isOn, isAvailable: true, isHovering: isHovering, label: label)
+            .fixedSize()
+            .overlay {
+                Menu {
+                    content
+                } label: {
+                    Color.clear
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .opacity(0.011)
+            }
         .onHover { hovering in
             withAnimation(StudioMotion.hover) { isHovering = hovering }
         }
@@ -835,23 +928,59 @@ private struct InputChipLabel: View {
     let label: String
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 7) {
             Image(systemName: symbol)
-                .font(.system(size: size))
+                .font(.system(size: size - 1))
                 .contentTransition(.symbolEffect(.replace))
                 .frame(width: 22)
             Text(label)
                 .font(.system(size: 12.5, weight: .medium))
                 .lineLimit(1)
+            if isOn {
+                // A small live light: green, like the system's own camera-in-use dot.
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 5, height: 5)
+                    .shadow(color: .green.opacity(0.8), radius: 3)
+                    .transition(.scale.combined(with: .opacity))
+            }
         }
         .foregroundStyle(isAvailable ? (isOn ? StudioPalette.chosen : StudioPalette.offered)
                                      : StudioPalette.unavailable)
         .padding(.horizontal, 11)
         .frame(height: 38)
-        .background(isHovering && isAvailable ? AnyShapeStyle(.white.opacity(0.08)) : AnyShapeStyle(.clear),
-                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background {
+            let shape = RoundedRectangle(cornerRadius: 11, style: .continuous)
+            // On is a lit pane, so what will be recorded is visible across the room; off
+            // is bare glass that only shows itself under the pointer.
+            shape.fill(.white.opacity(isOn ? 0.12 : (isHovering && isAvailable ? 0.07 : 0)))
+                .overlay(shape.strokeBorder(.white.opacity(isOn ? 0.12 : 0)))
+        }
         .contentShape(Rectangle())
         .animation(StudioMotion.state, value: isOn)
+    }
+}
+
+/// The red record button: a red disc in a white ring, lit from above, glowing under the
+/// pointer.
+private struct RecordGlyph: View {
+    @State private var isHovering = false
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .strokeBorder(.white.opacity(0.9), lineWidth: 2.5)
+            Circle()
+                .fill(LinearGradient(colors: [Color(red: 1, green: 0.36, blue: 0.36), Color(red: 0.88, green: 0.1, blue: 0.14)],
+                                     startPoint: .top, endPoint: .bottom))
+                .padding(isHovering ? 5 : 6)
+        }
+        .frame(width: 38, height: 38)
+        .shadow(color: .red.opacity(isHovering ? 0.75 : 0.4), radius: isHovering ? 12 : 7)
+        .contentShape(Circle())
+        .onHover { hovering in
+            withAnimation(StudioMotion.hover) { isHovering = hovering }
+        }
     }
 }
 
