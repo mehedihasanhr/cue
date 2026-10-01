@@ -51,7 +51,7 @@ struct TimelineSoundRow: View {
         return !model.timeline.sound.isAudible
     }
     private var runs: [SoundRun]? { model.timeline.detachedSound }
-    private let radius: CGFloat = 5
+    private let radius: CGFloat = TimelineChipBackground.radius
     @State private var hoveredGrip: String?
     @Environment(\.colorScheme) private var colorScheme
 
@@ -78,9 +78,7 @@ struct TimelineSoundRow: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                .fill(Color.secondary.opacity(0.08))
-                .frame(height: height)
+            TimelineLaneWell(height: height)
 
             if let runs {
                 ForEach(runs) { run in
@@ -162,22 +160,49 @@ struct TimelineSoundRow: View {
         let width = max(4, clip.duration.seconds * viewport.pointsPerSecond)
         let selected = model.selection == laneSelection
 
-        return RoundedRectangle(cornerRadius: radius, style: .continuous)
-            .fill(tint.chipFill(selected ? 0.4 : 0.26, in: colorScheme))
-            .overlay { waveform(clippedTo: width, offsetBy: left,
-                                spans: TimelineWaveform.Span.followingClips(of: model.timeline)) }
-            .overlay {
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .strokeBorder(.white.opacity(selected ? 0.9 : 0), lineWidth: 1.5)
-            }
+        return face(selected: selected, width: width, left: left,
+                    spans: TimelineWaveform.Span.followingClips(of: model.timeline))
             // Only on the first slice, so a cut-up recording gets one label rather than
-            // one per piece.
-            .overlay(alignment: .leading) {
-                if index == model.timeline.clips.firstIndex(where: \.playsRecording) { label.padding(.leading, 6) }
+            // one per piece — and only when it has something to say. See `label`.
+            .overlay(alignment: .topLeading) {
+                if index == model.timeline.clips.firstIndex(where: \.playsRecording) {
+                    badge(width: width).padding(.leading, 6)
+                }
+            }
+            .frame(width: width, height: height)
+            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .position(x: left + width / 2, y: height / 2)
+    }
+
+    /// One piece of sound as the lane draws it: a light wash of the lane's colour with the
+    /// waveform on it in the same colour, at full strength.
+    ///
+    /// It used to be a solid slab — the tint at chip strength, with a white waveform at a
+    /// quarter opacity on top — which is the right drawing for a chip you read a label off
+    /// and the wrong one for a lane you read a *shape* off. On a screen recording with no
+    /// sound the white shape was nothing at all, and the lane was a saturated blue bar that
+    /// said only "there is a lane here". Now the colour is in the waveform, where the
+    /// information is, and a silent stretch draws as the thin centre line it is.
+    private func face(selected: Bool, width: CGFloat, left: CGFloat,
+                      spans: [TimelineWaveform.Span]) -> some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        let dark = colorScheme == .dark
+        return shape
+            .fill(tint.opacity(selected ? (dark ? 0.32 : 0.24) : (dark ? 0.2 : 0.13)))
+            .overlay {
+                // The centre line, drawn whether or not there are peaks yet: a lane still
+                // reading its sound, or one with none, is a quiet lane, not an empty one.
+                Rectangle()
+                    .fill(tint.opacity(dark ? 0.5 : 0.45))
+                    .frame(height: 1)
+            }
+            .overlay { waveform(clippedTo: width, offsetBy: left, spans: spans) }
+            .overlay {
+                shape.strokeBorder(selected ? TimelineChipBackground.ring(in: colorScheme)
+                                            : tint.opacity(dark ? 0.4 : 0.35),
+                                   lineWidth: selected ? 2 : 1)
             }
             .opacity(isMuted ? 0.45 : 1)
-            .frame(width: width, height: height)
-            .position(x: left + width / 2, y: height / 2)
     }
 
     // MARK: - Detached: the sound with a life of its own
@@ -190,24 +215,13 @@ struct TimelineSoundRow: View {
         let width = max(6, live.duration.seconds * viewport.pointsPerSecond)
         let selected = model.isSelected(.soundRun(run.id))
 
-        return RoundedRectangle(cornerRadius: radius, style: .continuous)
-            .fill(tint.chipFill(selected ? 0.46 : 0.3, in: colorScheme))
-            .overlay { waveform(clippedTo: width, offsetBy: left, spans: [.init(run)]) }
-            .overlay {
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .strokeBorder(.white.opacity(selected ? 0.9 : 0), lineWidth: 1.5)
-            }
-            .opacity(isMuted ? 0.45 : 1)
+        return face(selected: selected, width: width, left: left, spans: [.init(run)])
             .frame(width: width, height: height)
-            .overlay(alignment: .leading) {
-                // Against the leading edge and never re-laid-out: a run trimmed narrower
-                // than its own badge has the badge cut off by the run rather than shrunk
-                // inside it. See `TimelineRegionRow.label(_:width:)`.
-                label
-                    .fixedSize()
-                    .padding(.leading, TimelineHandle.target + 3)
-                    .opacity(width > TimelineHandle.target * 2 + 20 ? 1 : 0)
-                    .animation(StudioMotion.state, value: width > TimelineHandle.target * 2 + 20)
+            .overlay(alignment: .topLeading) {
+                // Against the leading edge, clear of the grip, and never re-laid-out: a run
+                // trimmed narrower than its badge loses the badge rather than squeezing it.
+                badge(width: width)
+                    .padding(.leading, TimelineLayout.gripBar(forChipWidth: width) + 4)
             }
             .overlay(alignment: .leading) { edge(run, leading: true, width: width) }
             .overlay(alignment: .trailing) { edge(run, leading: false, width: width) }
@@ -306,14 +320,39 @@ struct TimelineSoundRow: View {
             // then slid back onto the piece — see `TimelineRegionRow.shape(of:width:left:)`
             // for the piece-sized canvas this replaces, which drew nothing for any piece
             // further along than it was long.
-            TimelineWaveform(viewport: viewport, spans: spans, peaks: peaks, height: height)
+            // In the lane's own colour, strong: the waveform is the thing on this lane worth
+            // reading, so it carries the colour and the fill under it stays a wash.
+            TimelineWaveform(viewport: viewport, spans: spans, peaks: peaks, height: height,
+                             opacity: colorScheme == .dark ? 0.85 : 0.75, color: tint)
                 .frame(width: max(0, min(viewport.width, left + width)), alignment: .leading)
                 .offset(x: -left)
                 .frame(width: width, alignment: .leading)
-                .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
         }
     }
 
+    /// Whether the badge has anything to say that the gutter does not.
+    ///
+    /// The lane's glyph is already in the gutter beside it; drawn again on the lane it was
+    /// the one thing on an otherwise empty bar, and read as the bar's content. The badge is
+    /// for state — muted, a level other than 100%, detached — and is absent otherwise.
+    private var hasBadge: Bool {
+        isMuted || gain != 1 || model.isSoundDetached
+    }
+
+    /// The badge, where it fits: a run too narrow for it drops it rather than clipping it.
+    @ViewBuilder
+    private func badge(width: CGFloat) -> some View {
+        if hasBadge {
+            label
+                .fixedSize()
+                .padding(.top, 4)
+                .opacity(width > 64 ? 1 : 0)
+                .animation(StudioMotion.state, value: width > 64)
+        }
+    }
+
+    /// A small pill in the same vocabulary as the clip lane's: dark glass, white type.
     private var label: some View {
         HStack(spacing: 4) {
             Image(systemName: isMuted ? "speaker.slash.fill"
@@ -325,12 +364,13 @@ struct TimelineSoundRow: View {
             if gain != 1, !isMuted {
                 Text("\(Int((gain * 100).rounded()))%")
                     .font(.system(size: 9, weight: .semibold))
+                    .monospacedDigit()
             }
         }
-        .foregroundStyle(.white.opacity(0.9))
+        .foregroundStyle(.white.opacity(0.95))
         .padding(.horizontal, 5)
         .padding(.vertical, 2)
-        .background(.black.opacity(0.28), in: Capsule())
+        .background(.black.opacity(0.42), in: Capsule())
         .allowsHitTesting(false)
     }
 

@@ -95,36 +95,46 @@ struct TimelineClipRow: View {
             .position(x: left + width / 2, y: height / 2)
     }
 
-    /// What the clip is, and its length and speed, centred on it.
+    /// The clip's length and speed, as a small pill in its top-left corner.
     ///
-    /// It used to be held against the leading edge so it would not slide during a trim.
-    /// Centred, it moves at half the speed of the edge being dragged — a small price for a
-    /// strip that reads like a player's, with the numbers where the eye lands on the chip.
-    @ViewBuilder
+    /// It was centred on the clip, a wide dark lozenge sitting in the middle of the
+    /// pictures — the one place on the lane the eye goes to *see* the footage. In the corner
+    /// it reads the way a zoom chip's scale does: a small fact about the piece, out of the
+    /// way of the piece itself, and it stays put under a trim of the far end.
+    ///
+    /// Offered longest first, like every chip's words (see `TimelineChipLabel`): the length
+    /// and the speed, then the length alone, then nothing — never a pill cut in half.
     private func badge(_ clip: Clip, width: Double) -> some View {
-        if model.thumbnails.isAvailable {
-            // Over pictures the words need a surface of their own: white on a white web
-            // page is nothing, and the faint "Clip" above them says less than the
-            // pictures already do.
-            details(clip)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 3)
-                .background(.black.opacity(0.5), in: Capsule())
-                // The speed menu is a system control, and it draws its title in the
-                // window's label colour whatever it is told: dark grey on this dark pill,
-                // in light mode. Saying the pill is dark is what makes it draw light.
-                .environment(\.colorScheme, .dark)
-                .fixedSize()
-                .frame(width: width, height: height)
-                .opacity(width > 130 ? 1 : 0)
-                .animation(StudioMotion.state, value: width > 130)
-        } else {
-            TimelineChipLabel(title: "Clip", height: height, width: width, minimumWidth: 130) {
-                details(clip)
-            }
+        let grip = TimelineLayout.gripBar(forChipWidth: width)
+        let room = max(0, TimelineLayout.labelRoom(forChipWidth: width) - 4)
+        return ViewThatFits(in: .horizontal) {
+            pill { details(clip) }
+            pill { Text(Timecode.length(clip.duration)) }
+            Color.clear.frame(width: 0, height: 0)
         }
+        .frame(width: room, alignment: .leading)
+        .padding(.leading, grip + 4)
+        .padding(.top, 4)
+        .frame(width: width, height: height, alignment: .topLeading)
+    }
+
+    /// Dark glass and white type, the same on pictures, on a plain chip, and in either
+    /// appearance — white on a white web page is nothing, so the words bring their own
+    /// surface.
+    private func pill(@ViewBuilder _ content: () -> some View) -> some View {
+        content()
+            .font(.system(size: 10, weight: .semibold))
+            .monospacedDigit()
+            .foregroundStyle(.white)
+            .lineLimit(1)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(.black.opacity(0.45), in: Capsule())
+            // The speed menu is a system control, and it draws its title in the window's
+            // label colour whatever it is told: dark grey on this dark pill, in light mode.
+            // Saying the pill is dark is what makes it draw light.
+            .environment(\.colorScheme, .dark)
+            .fixedSize()
     }
 
     /// The clip's length, and its speed as a menu — or, for a clip that holds, what it
@@ -134,22 +144,28 @@ struct TimelineClipRow: View {
         if !clip.isFootage {
             HStack(spacing: 4) {
                 Image(systemName: clip.isTitle ? "textformat" : "snowflake")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 9, weight: .semibold))
                 Text(clip.isTitle ? "Title" : "Freeze")
                 Text(Timecode.length(clip.duration))
             }
         } else {
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
                 Text(Timecode.length(clip.duration))
+                // A hairline between the two facts, so "34s" and "1×" do not run together
+                // into one number.
+                Rectangle()
+                    .fill(.white.opacity(0.35))
+                    .frame(width: 1, height: 9)
                 Menu {
                     ForEach(Self.speeds, id: \.self) { speed in
                         Button(Self.speedLabel(speed)) { model.setSpeed(speed, of: clip.id) }
                     }
                 } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "timer").font(.system(size: 10, weight: .semibold))
+                    HStack(spacing: 2) {
+                        Image(systemName: "timer").font(.system(size: 9, weight: .semibold))
                         Text(Self.speedLabel(clip.speed))
                     }
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.white)
                 }
                 .menuStyle(.borderlessButton)
