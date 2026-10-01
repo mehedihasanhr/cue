@@ -347,6 +347,7 @@ public enum TakeRecovery {
         result.cursorArtwork = kept(telemetry.cursorArtwork)
         result.markers = kept(telemetry.markers)
         result.picture = kept(telemetry.picture)
+        result.presence = kept(telemetry.presence)
         return result
     }
 

@@ -315,7 +315,11 @@ public final class SceneRenderer: @unchecked Sendable {
 
     /// The recording: scaled into place, camera applied, corners rounded, blurs applied.
     func videoLayer(_ scene: SceneDescriptor, source: CIImage) -> CIImage {
-        var image = source
+        // Black in place of the window, at the window's size, so everything placed after
+        // — the crop, the zoom, the corners — treats it exactly as it would the picture.
+        var image = scene.hidesPicture
+            ? CIImage(color: CIColor(red: 0, green: 0, blue: 0)).cropped(to: source.extent)
+            : source
         let target = scene.transformedVideoFrame
         guard source.extent.width > 0, source.extent.height > 0 else { return source }
 

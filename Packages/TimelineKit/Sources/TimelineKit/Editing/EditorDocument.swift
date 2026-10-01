@@ -346,6 +346,8 @@ public final class EditorDocument {
         if let cachedPictureTrack { return cachedPictureTrack }
         let track = PictureTrack(samples: manifest.telemetry.picture.map {
             TelemetryFile.read(PictureSample.self, at: package.url.appendingPathComponent($0))
+        } ?? [], presence: manifest.telemetry.presence.map {
+            TelemetryFile.read(PresenceSample.self, at: package.url.appendingPathComponent($0))
         } ?? [])
         cachedPictureTrack = track
         return track

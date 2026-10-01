@@ -89,12 +89,17 @@ public final class KeyTracker: @unchecked Sendable {
     private let environment: Environment
     private var monitor: AnyObject?
     private let watched = OSAllocatedUnfairLock(initialState: false)
+    /// For a window recording: a key pressed while another window is in front was typed
+    /// into that window, not the one in the picture.
+    private let presence: WindowPresence?
 
     public init(writer: JSONLWriter,
                 queue: DispatchQueue,
                 clock: RecordingClock,
                 latency: Double = 0,
-                environment: Environment = .system) {
+                environment: Environment = .system,
+                presence: WindowPresence? = nil) {
+        self.presence = presence
         self.writer = writer
         self.queue = queue
         self.clock = clock
@@ -138,6 +143,7 @@ public final class KeyTracker: @unchecked Sendable {
     /// stamped at the nearest moment that is in it.
     @MainActor
     func record(_ event: KeyEvent, now: CMTime = RecordingClock.now) {
+        if let presence, !presence.isInFront { return }
         let stamped = CursorTracker.hostTime(forEventTimestamp: event.timestamp, now: now) + latency
         guard let t = clock.moment(forHost: stamped) else { return }
         // The layout's raw character goes through the naming rule — named keys by their

@@ -175,6 +175,11 @@ public struct SceneDescriptor: Equatable, Sendable {
     public var pointerSpotlight: PointerSpotlightLayer?
     public var pointerMagnifier: PointerMagnifierLayer?
 
+    /// The recording shown as black: a window recording at a moment its window was not
+    /// the one in front. The frame round it — background, corners, shadow — is drawn as
+    /// ever, so the video does not jump; only what the window showed is withheld.
+    public var hidesPicture: Bool = false
+
     /// The rectangle the picture is actually allowed to occupy.
     ///
     /// The one question every clip in the renderer is really asking. Ordinarily it is the

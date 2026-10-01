@@ -224,6 +224,13 @@ public final class CursorTracker: @unchecked Sendable {
     private var shapeTimer: Timer?
     private var clickMonitor: Any?
     private let shape = OSAllocatedUnfairLock(initialState: CursorShape.arrow)
+    /// For a window recording: whether the window is in front, and the frame's size in
+    /// points. A click is only the recording's when it was made in the window while the
+    /// window was in front — a click in another app is somewhere the picture is not.
+    private let presence: WindowPresence?
+    private let frameSize: CGSize?
+    /// The buttons whose press was kept, so a release is kept exactly when its press was.
+    private let keptPresses = OSAllocatedUnfairLock(initialState: Set<Int>())
 
     public init(cursorWriter: JSONLWriter,
                 inputWriter: JSONLWriter?,
@@ -232,7 +239,11 @@ public final class CursorTracker: @unchecked Sendable {
                 mapper: CursorMapper,
                 sampleRate: Int,
                 latency: Double = 0,
-                artwork: CursorArtworkWriter? = nil) {
+                artwork: CursorArtworkWriter? = nil,
+                presence: WindowPresence? = nil,
+                frameSize: CGSize? = nil) {
+        self.presence = presence
+        self.frameSize = frameSize
         self.latency = CMTime(seconds: max(0, min(latency, 0.05)), preferredTimescale: 1_000_000_000)
         self.artwork = artwork
         self.cursorWriter = cursorWriter
@@ -326,18 +337,33 @@ public final class CursorTracker: @unchecked Sendable {
         let t = clock.elapsed(at: Self.hostTime(of: event) + latency)
         let location = mapper.map(Self.location(of: event))
 
-        let sample: InputSample? = switch event.type {
+        let counts = Self.counts(location, isInFront: presence?.isInFront ?? true, frameSize: frameSize)
+        let button = event.buttonNumber
+        let sample: InputSample?
+        switch event.type {
         case .leftMouseDown, .rightMouseDown, .otherMouseDown:
-            .mouseDown(t: t, button: event.buttonNumber, x: Double(location.x), y: Double(location.y))
+            guard counts else { return }
+            keptPresses.withLock { _ = $0.insert(button) }
+            sample = .mouseDown(t: t, button: button, x: Double(location.x), y: Double(location.y))
         case .leftMouseUp, .rightMouseUp, .otherMouseUp:
-            .mouseUp(t: t, button: event.buttonNumber, x: Double(location.x), y: Double(location.y))
+            guard keptPresses.withLock({ $0.remove(button) != nil }) else { return }
+            sample = .mouseUp(t: t, button: button, x: Double(location.x), y: Double(location.y))
         case .scrollWheel:
-            .scroll(t: t, dx: Double(event.scrollingDeltaX), dy: Double(event.scrollingDeltaY))
+            guard counts else { return }
+            sample = .scroll(t: t, dx: Double(event.scrollingDeltaX), dy: Double(event.scrollingDeltaY))
         default:
-            nil
+            sample = nil
         }
         guard let sample else { return }
         queue.async { inputWriter.append(sample) }
+    }
+
+    /// Whether a click or scroll at a point in the frame is the recording's: always, for a
+    /// display or an area; for a window, only inside it and only while it is in front.
+    static func counts(_ point: CGPoint, isInFront: Bool, frameSize: CGSize?) -> Bool {
+        guard isInFront else { return false }
+        guard let frameSize, frameSize.width > 0, frameSize.height > 0 else { return true }
+        return point.x >= 0 && point.y >= 0 && point.x <= frameSize.width && point.y <= frameSize.height
     }
 
     /// The moment an event happened, on the clock the frames are stamped in.

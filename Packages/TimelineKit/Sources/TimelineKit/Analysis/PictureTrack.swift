@@ -23,7 +23,14 @@ public struct PictureTrack: Sendable, Equatable {
     /// In time order. Each holds from its own `t` until the next one's.
     public let samples: [PictureSample]
 
-    public init(samples: [PictureSample] = []) {
+    /// The stretches, in recording seconds, when a window recording's window was not the
+    /// one in front — another app, or another window, had the person's attention — and
+    /// the frame shows black rather than a window left behind. See `WindowPresence`.
+    /// Empty for everything but a window recorded since that was written down.
+    public let hidden: [ClosedRange<Double>]
+
+    public init(samples: [PictureSample] = [], presence: [PresenceSample] = []) {
+        hidden = Self.hiddenStretches(presence)
         // A sample that moves no edge by `noise` or more is the one before it, measured
         // again: kept, it re-crops the picture by a sliver and the whole video shivers.
         // Recordings made before the recorder learnt this are full of them — a window
@@ -54,6 +61,28 @@ public struct PictureTrack: Sendable, Equatable {
     }
 
     public var isEmpty: Bool { samples.isEmpty }
+
+    /// Whether the window was behind something else at `seconds`, so the frame is black.
+    public func isHidden(at seconds: Double) -> Bool {
+        hidden.contains { $0.contains(seconds) }
+    }
+
+    /// The stretches between each "behind" and the next "in front". One still open at the
+    /// end of the take runs on to the end of time, which the recording ends well before.
+    static func hiddenStretches(_ presence: [PresenceSample]) -> [ClosedRange<Double>] {
+        var stretches: [ClosedRange<Double>] = []
+        var behindSince: Double?
+        for sample in presence.sorted(by: { $0.t < $1.t }) {
+            if !sample.front, behindSince == nil {
+                behindSince = sample.t
+            } else if sample.front, let since = behindSince {
+                if sample.t > since { stretches.append(since...sample.t) }
+                behindSince = nil
+            }
+        }
+        if let since = behindSince { stretches.append(since...Double.greatestFiniteMagnitude) }
+        return stretches
+    }
 
     /// How far past a sample's time a frame still counts as showing it. A sample is dated
     /// by its frame's own timestamp, which is the time that frame has in the file, so the

@@ -152,6 +152,11 @@ public final class RecordingSession {
     /// Where a window's picture sat in its frame — see `PictureTracker`. `nil` for a
     /// display or an area, whose picture fills the frame by construction.
     private var pictureWriter: JSONLWriter?
+    /// For a window recording: whether the window is in front, and its log — see
+    /// `WindowPresence`.
+    private var presence: WindowPresence?
+    private var presenceWriter: JSONLWriter?
+    private var presenceTrackWritten = false
     private var diskTimer: Timer?
     private var startedAt: Date?
     private var pixelSize: CGSize = .zero
@@ -252,6 +257,7 @@ public final class RecordingSession {
         // clock the screen's first frame starts, so a camera that opened first would simply
         // drop frames until the screen caught up — starting it here wastes none.
         webcam?.start()
+        presence?.start()
         cursor?.start()
         keys?.start()
         focus?.start()
@@ -618,6 +624,17 @@ public final class RecordingSession {
                                                                      height: pixelSize.height / scale),
                                                    outputScale: CGFloat(scale))
         }
+        // Which window is in front, for a window: clicks and keys made in another window are
+        // left out as they happen, and the editor shows black while the window was behind.
+        if let followedWindow {
+            let presenceWriter = JSONLWriter(url: package.telemetryFolder.appendingPathComponent("presence.jsonl"),
+                                             queue: queue)
+            queue.sync { try? presenceWriter.open() }
+            self.presenceWriter = presenceWriter
+            presence = WindowPresence(window: followedWindow, writer: presenceWriter, queue: queue, clock: clock)
+        }
+        let windowFrame: CGSize? = followedWindow == nil ? nil
+            : CGSize(width: pixelSize.width / max(displayScale, 0.01), height: pixelSize.height / max(displayScale, 0.01))
         // Only when the pointer is being recorded as data. A take that burns the system
         // cursor into the video already has the real artwork in the pixels, and saving it
         // twice would be saving it for nobody.
@@ -641,7 +658,9 @@ public final class RecordingSession {
                                mapper: mapper,
                                sampleRate: configuration.cursorSampleRate,
                                latency: pointerLatency,
-                               artwork: artwork)
+                               artwork: artwork,
+                               presence: presence,
+                               frameSize: windowFrame)
         // Only when asked for. The tracker checks the grant itself and records nothing
         // without it; the manifest says which of the two happened.
         if configuration.capturesKeystrokes, let inputWriter {
@@ -649,7 +668,8 @@ public final class RecordingSession {
                               queue: queue,
                               clock: clock,
                               latency: pointerLatency,
-                              environment: keyEnvironment)
+                              environment: keyEnvironment,
+                              presence: presence)
         }
         if let focusWriter {
             focus = FocusTracker(writer: focusWriter,
@@ -715,6 +735,7 @@ public final class RecordingSession {
         cursor?.stop()
         keys?.stop()
         focus?.stop()
+        presence?.stop()
         state = held
         Self.log.notice("Paused")
     }
@@ -729,6 +750,7 @@ public final class RecordingSession {
             webcamWriter?.setPaused(false)
             for audio in audioWriters { audio.setPaused(false) }
         }
+        presence?.start()
         cursor?.start()
         keys?.start()
         focus?.start()
@@ -891,6 +913,7 @@ public final class RecordingSession {
         cursor?.stop()
         keys?.stop()
         focus?.stop()
+        presence?.stop()
         for microphone in microphones { microphone.stop() }
         // Before the screen, and unconditionally. A camera session left running is a camera
         // light left on, so it is the first thing let go of on every path out of a take.
@@ -921,6 +944,7 @@ public final class RecordingSession {
         markersWritten = queue.sync { [markerWriter] in markerWriter?.close() ?? false }
         // Empty — and so deleted — for a window that was never resized, which is most.
         pictureTrackWritten = queue.sync { [pictureWriter] in pictureWriter?.close() ?? false }
+        presenceTrackWritten = queue.sync { [presenceWriter] in presenceWriter?.close() ?? false }
     }
 
     /// The audio files that ended up with sound in them, as the manifest will name them.
@@ -976,6 +1000,9 @@ public final class RecordingSession {
         focusTrackWritten = false
         pictureWriter = nil
         pictureTrackWritten = false
+        presenceWriter = nil
+        presenceTrackWritten = false
+        presence = nil
         markerWriter = nil
         markerLog = nil
         markersWritten = false
@@ -1046,7 +1073,8 @@ public final class RecordingSession {
                                                   // for and refused, or not asked for.
                                                   keys: keys?.capture,
                                                   markers: markersWritten ? MarkerLog.path : nil,
-                                                  picture: pictureTrackWritten ? "telemetry/picture.jsonl" : nil))
+                                                  picture: pictureTrackWritten ? "telemetry/picture.jsonl" : nil,
+                                                  presence: presenceTrackWritten ? "telemetry/presence.jsonl" : nil))
         manifest.device = recordedDevice
         return manifest
     }
@@ -1093,6 +1121,7 @@ public final class RecordingSession {
         if focusWriter != nil { draft.telemetry.focus = "telemetry/focus.jsonl" }
         if markerWriter != nil { draft.telemetry.markers = MarkerLog.path }
         if pictureWriter != nil { draft.telemetry.picture = "telemetry/picture.jsonl" }
+        if presenceWriter != nil { draft.telemetry.presence = "telemetry/presence.jsonl" }
         do {
             try package.writeMarker(TakeMarker(manifest: draft))
         } catch {

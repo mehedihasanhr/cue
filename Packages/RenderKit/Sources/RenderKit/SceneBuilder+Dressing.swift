@@ -36,7 +36,18 @@ extension SceneBuilder {
                                           videoFrame: scene.videoFrame, output: scene.outputSize)
         // The perspective, the colour and a moving background's moment — see
         // `dressingLook(_:_:at:)`.
-        return dressingLook(scene, timeline, at: time)
+        var dressed = dressingLook(scene, timeline, at: time)
+        // A window recording while its window was behind another: black, and nothing of
+        // the pointer, which was off doing something the picture does not show.
+        if !self.picture.hidden.isEmpty, let source = timeline.sourceTime(at: time),
+           self.picture.isHidden(at: source.seconds) {
+            dressed.hidesPicture = true
+            dressed.cursor = nil
+            dressed.clicks = []
+            dressed.pointerSpotlight = nil
+            dressed.pointerMagnifier = nil
+        }
+        return dressed
     }
 
     /// The window round the picture, or `nil` when the style has none.

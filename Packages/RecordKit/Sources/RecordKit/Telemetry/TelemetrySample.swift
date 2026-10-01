@@ -134,6 +134,23 @@ public struct PictureSample: Codable, Equatable, Sendable {
     public var rect: CGRect { CGRect(x: x, y: y, width: width, height: height) }
 }
 
+/// Whether the window being recorded was the one in front, each time that changed.
+///
+/// Written only for a window recording. While another app — or another of the app's own
+/// windows — is in front, what the window shows is not what the person is doing, and the
+/// editor shows black there rather than a window left sitting behind the action.
+public struct PresenceSample: Codable, Equatable, Sendable {
+    /// Seconds since the recording's clock started.
+    public var t: Double
+    /// Whether the recorded window was the one in front from this moment.
+    public var front: Bool
+
+    public init(t: Double, front: Bool) {
+        self.t = t
+        self.front = front
+    }
+}
+
 /// What had the user's attention, and where it was on screen.
 ///
 /// The other half of "zoom where the work is". Clicks say where someone pointed;

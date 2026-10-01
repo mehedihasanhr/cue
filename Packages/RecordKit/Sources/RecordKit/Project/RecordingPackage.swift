@@ -82,6 +82,10 @@ public struct RecordingManifest: Codable, Equatable, Sendable {
         /// recording made before it was written down. Optional and defaulted, so a manifest
         /// that never heard of it decodes exactly as it always did.
         public var picture: String? = nil
+        /// When a window recording's window was in front — see `WindowPresence`. Absent for
+        /// a display or an area, and for every recording made before it was written down,
+        /// which the editor reads as "in front throughout".
+        public var presence: String? = nil
 
         public init(cursor: String? = nil,
                     input: String? = nil,
@@ -91,7 +95,8 @@ public struct RecordingManifest: Codable, Equatable, Sendable {
                     pointerLatency: Double? = nil,
                     keys: KeyCapture? = nil,
                     markers: String? = nil,
-                    picture: String? = nil) {
+                    picture: String? = nil,
+                    presence: String? = nil) {
             self.cursor = cursor
             self.input = input
             self.windowBounds = windowBounds
@@ -101,6 +106,7 @@ public struct RecordingManifest: Codable, Equatable, Sendable {
             self.keys = keys
             self.markers = markers
             self.picture = picture
+            self.presence = presence
         }
     }
 
