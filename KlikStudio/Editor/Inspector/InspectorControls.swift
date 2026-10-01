@@ -307,7 +307,12 @@ struct InspectorRow<Control: View>: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: InspectorMetrics.labelGap) {
+            // The name keeps its one line whatever the control wants: a wide pop-up used
+            // to take its width first and break "Language" into "Langu" and "age".
             InspectorLabel(title)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .layoutPriority(2)
                 .accessibilityHidden(true)
             Spacer(minLength: 0)
             control

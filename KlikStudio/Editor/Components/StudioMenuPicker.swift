@@ -103,6 +103,7 @@ struct StudioMenuPicker<Value: Hashable>: View {
                     if sizesToLongest {
                         ForEach(allItems) { item in
                             Text(item.title)
+                                .lineLimit(1)
                                 .opacity(item.value == selection ? 1 : 0)
                                 .accessibilityHidden(item.value != selection)
                         }
@@ -120,7 +121,10 @@ struct StudioMenuPicker<Value: Hashable>: View {
             }
         }
         .buttonStyle(StudioButtonStyle(variant: .secondary, size: size, fillsWidth: fillsWidth))
-        .fixedSize(horizontal: !fillsWidth, vertical: true)
+        // Its own width when there is room, and narrower — the title cut short — when
+        // there is not. Held at its full width, a long value ("This Mac's language")
+        // pushed the whole panel wider than its column, past the window's edge.
+        .fixedSize(horizontal: false, vertical: true)
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
             StudioMenuList(sections: sections.map { section in
                 StudioMenuList.Section(title: section.title, rows: section.items.map { item in
