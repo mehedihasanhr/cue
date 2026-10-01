@@ -389,16 +389,24 @@ public actor VideoExporter {
     }
 
     private func prepare(_ destination: URL) throws(ExportError) {
-        let folder = destination.deletingLastPathComponent()
-        guard FileManager.default.isWritableFile(atPath: folder.path(percentEncoded: false)) else {
-            throw ExportError.destinationNotWritable("\(folder.lastPathComponent) can't be written to.")
-        }
         if FileManager.default.fileExists(atPath: destination.path(percentEncoded: false)) {
             do {
                 try FileManager.default.removeItem(at: destination)
             } catch {
                 throw ExportError.destinationNotWritable(error.localizedDescription)
             }
+        }
+        // Asked of the file itself, never of the folder around it. In the sandbox the save
+        // panel grants the one file that was named — not Downloads, not the Desktop — so
+        // "can this folder be written to?" answered no for every folder outside Movies,
+        // and refused exports that would have been written perfectly well. Made and
+        // removed again, because the writer wants to create the file itself.
+        do {
+            try Data().write(to: destination)
+            try FileManager.default.removeItem(at: destination)
+        } catch {
+            let folder = destination.deletingLastPathComponent()
+            throw ExportError.destinationNotWritable("\(folder.lastPathComponent) can't be written to.")
         }
     }
 
