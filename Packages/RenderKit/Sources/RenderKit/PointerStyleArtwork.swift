@@ -85,8 +85,16 @@ enum PointerStyleArtwork {
         case .largeArrow: return arrow(size: size)
         case .dot: return dot(size: size, color: color)
         case .minimal: return minimal(size: size)
+        case .dart:
+            return dart(size: size, body: CGColor(srgbRed: 0.91, green: 0.92, blue: 0.94, alpha: 1),
+                        rim: CGColor(gray: 1, alpha: 1), rimWidth: 1.6)
+        case .dartBlack:
+            return dart(size: size, body: CGColor(srgbRed: 0.06, green: 0.07, blue: 0.09, alpha: 1),
+                        rim: CGColor(gray: 1, alpha: 1), rimWidth: 1.35)
+        case .dartColour:
+            return dart(size: size, body: cgColour(color, 1), rim: CGColor(gray: 1, alpha: 1), rimWidth: 1.35)
         case .asRecorded, .clicksOnly, .macOS26, .macOS14, .macOS26White, .macOS14White, .macOS26Colour,
-             .gradient, .neon, .frost, .classicKlik:
+             .gradient, .neon, .frost, .classicKlik, .dart, .dartBlack, .dartColour:
             return nil
         }
     }
@@ -150,6 +158,85 @@ enum PointerStyleArtwork {
     /// Its point is the outer edge of the white line at the tip — the round end the line
     /// makes there reaches half a line beyond the corner, up and to the left, and that is
     /// the part of the drawing a viewer reads as its tip.
+    /// The way into the dart from its tip, halfway between its two sides: the long side
+    /// leaves the tip towards (1.1, 10.6) and the top arrives from (10.4, 1.2), and the rim's
+    /// round end reaches out from the tip the opposite way.
+    static let dartOutward: CGVector = {
+        let down = CGVector(dx: 1.1, dy: 10.6), across = CGVector(dx: 10.4, dy: 1.2)
+        func unit(_ v: CGVector) -> CGVector { let l = hypot(v.dx, v.dy); return CGVector(dx: v.dx / l, dy: v.dy / l) }
+        let a = unit(down), b = unit(across)
+        return unit(CGVector(dx: a.dx + b.dx, dy: a.dy + b.dy))
+    }()
+
+    /// The dart's outline, in units, from its tip: three soft points — the tip, the foot
+    /// and the wing — joined by gently curved sides, with a shallow notch between the foot
+    /// and the wing where an arrow's tail would be.
+    private static func dartPath(unit: Double, tip: CGPoint) -> CGPath {
+        func p(_ x: Double, _ y: Double) -> CGPoint { CGPoint(x: tip.x + x * unit, y: tip.y + y * unit) }
+        let path = CGMutablePath()
+        path.move(to: p(0, 0))
+        // Down the long side, bowed a little outward.
+        path.addQuadCurve(to: p(6.2, 18.6), control: p(1.1, 10.6))
+        // Up into the notch.
+        path.addQuadCurve(to: p(8.4, 10.9), control: p(7.3, 12.9))
+        // Out to the wing.
+        path.addQuadCurve(to: p(18.2, 7.6), control: p(12.9, 9.8))
+        // And back to the tip along the top, bowed outward.
+        path.addQuadCurve(to: p(0, 0), control: p(10.4, 1.2))
+        path.closeSubpath()
+        return path
+    }
+
+    private static func cgColour(_ color: ColorValue, _ alpha: Double) -> CGColor {
+        CGColor(srgbRed: color.r, green: color.g, blue: color.b, alpha: max(0, min(1, color.a * alpha)))
+    }
+
+    /// The modern arrowhead: a soft, tailless dart with a thick rim round a body of its own
+    /// colour, rounded at every point, with a soft shadow — the pointer the newer screen
+    /// recorders draw.
+    ///
+    /// Its point is the outer edge of the rim at the tip, which is what a viewer reads as
+    /// the tip.
+    private static func dart(size: Double, body: CGColor, rim: CGColor, rimWidth: Double) -> Drawing? {
+        // The dart stands about as tall as the drawn arrow at the same setting.
+        let unit = size * 1.08 / 18.6
+        let rimHalf = rimWidth * unit
+        let shadow = unit * 1.6
+        let margin = rimHalf + shadow + unit
+        let width = Int((margin * 2 + 18.2 * unit).rounded(.up))
+        let height = Int((margin * 2 + 18.6 * unit + unit).rounded(.up))
+        guard let context = context(width: width, height: height) else { return nil }
+        let tip = CGPoint(x: margin, y: margin)
+        let shape = dartPath(unit: unit, tip: tip)
+
+        context.setShadow(offset: CGSize(width: 0, height: -unit * 0.9), blur: shadow,
+                          color: CGColor(gray: 0, alpha: 0.4))
+        context.beginTransparencyLayer(auxiliaryInfo: nil)
+        context.setLineJoin(.round)
+        context.setLineCap(.round)
+        // The rim: the outline stroked twice its width, so half of it lies outside the
+        // body and rounds every point.
+        context.addPath(shape)
+        context.setStrokeColor(rim)
+        context.setLineWidth(rimHalf * 2)
+        context.strokePath()
+        // The body, with a thin stroke of its own colour so its points are soft inside the
+        // rim too.
+        context.addPath(shape)
+        context.setFillColor(body)
+        context.fillPath()
+        context.addPath(shape)
+        context.setStrokeColor(body)
+        context.setLineWidth(unit * 0.9)
+        context.strokePath()
+        context.endTransparencyLayer()
+
+        guard let image = context.makeImage() else { return nil }
+        let point = CGPoint(x: tip.x - rimHalf * dartOutward.dx, y: tip.y - rimHalf * dartOutward.dy)
+        return Drawing(image: CIImage(cgImage: image),
+                       hotspot: CGPoint(x: point.x / Double(width), y: point.y / Double(height)))
+    }
+
     private static func minimal(size: Double) -> Drawing? {
         let unit = size * minimalScale
         let halo = max(2, unit * 0.12)

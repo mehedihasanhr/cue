@@ -36,6 +36,12 @@ public extension CursorStyle {
         case neon
         /// A frosted, icy-white pointer with a crisp dark outline.
         case frost
+        /// A modern, tailless arrowhead with soft points: a pearl body in a thick white rim.
+        case dart
+        /// The dart, solid black in a white rim.
+        case dartBlack
+        /// The dart in the chosen colour, in a white rim.
+        case dartColour
         /// The drawn arrow, a size up, whatever the pointer turned into.
         case largeArrow
         /// A small arrow, outline only, with a light shadow.
@@ -55,6 +61,9 @@ public extension CursorStyle {
             case .macOS14White: "macOS 14 white"
             case .macOS26Colour: "macOS 26 colour"
             case .classicKlik: "Classic Klik"
+            case .dart: "Dart"
+            case .dartBlack: "Dart black"
+            case .dartColour: "Dart colour"
             case .gradient: "Gradient"
             case .neon: "Neon"
             case .frost: "Frost"
@@ -82,13 +91,14 @@ public extension CursorStyle {
         }
 
         /// Whether the style is drawn in the chosen pointer colour (`CursorStyle.dotColor`).
-        public var usesColour: Bool { self == .dot || self == .macOS26Colour || self == .gradient || self == .neon }
+        public var usesColour: Bool { self == .dot || self == .macOS26Colour || self == .gradient || self == .neon || self == .dartColour }
 
         /// Whether the style is one of the system's own pointers.
         public var isSystemPointer: Bool {
             switch self {
             case .macOS26, .macOS14, .macOS26White, .macOS14White, .macOS26Colour: true
-            case .asRecorded, .largeArrow, .minimal, .dot, .clicksOnly, .gradient, .neon, .frost, .classicKlik: false
+            case .asRecorded, .largeArrow, .minimal, .dot, .clicksOnly, .gradient, .neon, .frost, .classicKlik,
+                 .dart, .dartBlack, .dartColour: false
             }
         }
 

@@ -90,7 +90,7 @@ enum SystemPointerArtwork {
                         shadow: CGColor(srgbRed: 0.1, green: 0.15, blue: 0.35, alpha: 0.35))
         // Klik's own arrow and hand, and the classic system shapes for the rest.
         case .classicKlik: return Look(generation: .classic, body: .solid(black), outline: .solid(white))
-        case .asRecorded, .largeArrow, .minimal, .dot, .clicksOnly: return nil
+        case .asRecorded, .largeArrow, .minimal, .dot, .clicksOnly, .dart, .dartBlack, .dartColour: return nil
         }
     }
 

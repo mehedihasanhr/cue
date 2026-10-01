@@ -523,6 +523,23 @@ struct PointerStylingTests {
         #expect(pixels.value(inside.x, inside.y, 1) < 60 && pixels.value(inside.x, inside.y, 2) < 60)
     }
 
+    /// The dart's sides bow outward, so its tip is not the corner of what is drawn: it is
+    /// placed so the light ends right at the point — lit a little inside the tip, dark a
+    /// little beyond it. At 1080p and at 4K.
+    @Test(arguments: [CursorStyle.Appearance.dart, .dartColour])
+    func aDartHasItsTipOnThePoint(_ appearance: CursorStyle.Appearance) throws {
+        let into = PointerStyleArtwork.dartOutward
+        for size in Self.sizes {
+            let point = CGPoint(x: Self.spot.x * size.width, y: Self.spot.y * size.height)
+            let pixels = try render(frame(size, cursor: pointer(appearance, at: Self.spot)))
+            let scale = size.height / 1_080
+            let inside = (x: Int(point.x + into.dx * 3 * scale), y: Int(point.y + into.dy * 3 * scale))
+            let beyond = (x: Int(point.x - into.dx * 3 * scale), y: Int(point.y - into.dy * 3 * scale))
+            #expect(pixels.light(inside.x, inside.y) > 150, "\(appearance) at \(size): \(pixels.light(inside.x, inside.y)) inside the tip")
+            #expect(pixels.light(beyond.x, beyond.y) < 60, "\(appearance) at \(size): \(pixels.light(beyond.x, beyond.y)) beyond the tip")
+        }
+    }
+
     /// Every style Klik draws has a drawing at every pointer size worth drawing, with its
     /// point inside it; and only the two that are not drawings — the recorded pointer and
     /// the invisible one — have none.
@@ -551,7 +568,7 @@ struct PointerStylingTests {
     /// The colour styles take the chosen colour; the others do not change with it.
     @Test func onlyTheColourStylesUseTheColour() {
         let colour = CursorStyle.Appearance.allCases.filter(\.usesColour)
-        #expect(Set(colour) == [.dot, .macOS26Colour, .gradient, .neon])
+        #expect(Set(colour) == [.dot, .macOS26Colour, .gradient, .neon, .dartColour])
     }
 }
 
