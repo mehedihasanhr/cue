@@ -233,7 +233,18 @@ struct PointerStylingTests {
         #expect(scene.pointerMagnifier == nil)
     }
 
-    @Test(arguments: [CursorStyle.Appearance.largeArrow, .dot, .minimal])
+    /// The system's pointers, and the styles built on its shapes, turn into an I-beam over
+    /// text as the real pointer did. Every one of them used to be forced to the arrow,
+    /// so a pointer that was a hand over a link was drawn as an arrow.
+    @Test(arguments: CursorStyle.Appearance.allCases.filter { $0.followsRecordedShape && $0 != .asRecorded })
+    func aSystemStyleKeepsTheRecordedShape(_ appearance: CursorStyle.Appearance) {
+        let scene = builder.descriptor(for: timeline { $0.cursor.appearance = appearance }, at: time(3), cursor: track)
+        #expect(scene.cursor?.appearance == appearance)
+        #expect(scene.cursor?.shape == .iBeam)
+        #expect(scene.cursor?.artwork == nil)
+    }
+
+    @Test(arguments: [CursorStyle.Appearance.largeArrow, .dot, .minimal, .dart, .dartBlack, .dartColour])
     func aDrawnStyleIsOneDrawingWhateverTheShape(_ appearance: CursorStyle.Appearance) {
         let scene = builder.descriptor(for: timeline { $0.cursor.appearance = appearance }, at: time(3), cursor: track)
         #expect(scene.cursor?.appearance == appearance)

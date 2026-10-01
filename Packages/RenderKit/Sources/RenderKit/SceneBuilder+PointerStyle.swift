@@ -65,10 +65,14 @@ extension SceneBuilder {
             if style.appearance.drawsPointer {
                 cursor.appearance = style.appearance
                 cursor.dotColor = style.dotColor
-                // One drawing whatever the pointer turned into: the recorded picture and
-                // the recorded shape are both what "as recorded" means.
+                // Never the recorded picture: that is what "as recorded" means.
                 cursor.artwork = nil
-                cursor.shape = .arrow
+                // The shape stays for the styles that have one for each — the system's
+                // pointers and the ones built on them turn into a hand over a link as the
+                // real one did. The rest are one drawing whatever the pointer turned into.
+                if !style.appearance.followsRecordedShape {
+                    cursor.shape = .arrow
+                }
                 scene.cursor = cursor
             } else {
                 // No pointer; the clicks were decided separately and stay.
