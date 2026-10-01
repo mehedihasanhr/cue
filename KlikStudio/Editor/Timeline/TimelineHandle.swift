@@ -1,4 +1,5 @@
 import SwiftUI
+import TimelineKit
 
 /// The end of something on the timeline, as a thing you can take hold of.
 ///
@@ -52,8 +53,9 @@ struct TimelineHandle: View {
     }
 
     /// Never more than a quarter of the chip: at that point the two bars and the label are
-    /// competing for the same few points, and the label loses.
-    private var bar: CGFloat { max(3, min(7, chipWidth / 4)) }
+    /// competing for the same few points, and the label loses. The same arithmetic the
+    /// label uses to keep clear of it — see `TimelineLayout.labelRoom(forChipWidth:)`.
+    private var bar: CGFloat { TimelineLayout.gripBar(forChipWidth: chipWidth) }
 
     /// Room to grab, reaching inwards from the edge — but never past the middle, or the two
     /// ends would meet and the body would have nowhere left to be dragged from.

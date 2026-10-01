@@ -1,5 +1,6 @@
 import CoreMedia
 import SwiftUI
+import TimelineKit
 
 /// The times along the top, and the lane you scrub in.
 ///
@@ -31,13 +32,19 @@ struct TimelineRuler: View {
                 }
             }
 
-            let step = Self.step(forPointsPerSecond: viewport.pointsPerSecond)
+            let pointsPerSecond = viewport.pointsPerSecond
+            let step = Self.step(forPointsPerSecond: pointsPerSecond)
+            let parts = TimelineLayout.rulerSubdivisions(step: step, pointsPerSecond: pointsPerSecond)
             let visible = viewport.visibleSeconds
+            let end = model.duration.seconds
+            // Where the playhead's knob is, so the numbers can make way for it. Read here,
+            // so the ruler redraws as the playhead moves — a few dozen labels, cheaply.
+            let playheadX = viewport.x(for: model.playhead)
             var second = (visible.lowerBound / step).rounded(.down) * step
 
             while second <= visible.upperBound {
                 defer { second += step }
-                guard second >= 0, second <= model.duration.seconds + step else { continue }
+                guard second >= 0, second <= end + step else { continue }
                 let x = viewport.x(forSeconds: second)
 
                 // The time centred over its mark, and a dot under it: the mark is the
@@ -49,17 +56,35 @@ struct TimelineRuler: View {
                     .foregroundStyle(.secondary))
                 let labelWidth = label.measure(in: size).width
                 let labelX = max(x, labelWidth / 2 + 1)
-                context.draw(label, at: CGPoint(x: labelX, y: 6), anchor: .center)
+                // Faded out from under the playhead's knob, which is drawn over this
+                // ruler: "0s" with the playhead parked at the start was a number read
+                // through a blue disc. See `TimelineLayout.rulerLabelOpacity`.
+                let opacity = TimelineLayout.rulerLabelOpacity(minX: labelX - labelWidth / 2,
+                                                               maxX: labelX + labelWidth / 2,
+                                                               playheadX: playheadX)
+                if opacity > 0 {
+                    var faded = context
+                    faded.opacity = opacity
+                    faded.draw(label, at: CGPoint(x: labelX, y: 6), anchor: .center)
+                }
 
                 context.fill(Path(ellipseIn: CGRect(x: x - 1.5, y: size.height - 5, width: 3, height: 3)),
                              with: .color(.secondary.opacity(0.7)))
 
-                // A smaller, fainter dot between each pair of labels, so the eye can
-                // subdivide without another row of numbers.
-                let midway = viewport.x(forSeconds: second + step / 2)
-                if midway < size.width {
-                    context.fill(Path(ellipseIn: CGRect(x: midway - 1, y: size.height - 4.5, width: 2, height: 2)),
-                                 with: .color(.secondary.opacity(0.4)))
+                // Smaller, fainter dots between each pair of labels, so the eye can
+                // subdivide without another row of numbers — one halfway when the numbers
+                // are close, more as zooming spreads them out. None past the end.
+                for part in 1..<parts {
+                    let time = second + step * Double(part) / Double(parts)
+                    guard time <= end else { break }
+                    let between = viewport.x(forSeconds: time)
+                    guard between < size.width else { break }
+                    let isHalf = parts % 2 == 0 && part == parts / 2
+                    let diameter: CGFloat = isHalf ? 2.2 : 1.6
+                    context.fill(Path(ellipseIn: CGRect(x: between - diameter / 2,
+                                                        y: size.height - 3.5 - diameter / 2,
+                                                        width: diameter, height: diameter)),
+                                 with: .color(.secondary.opacity(isHalf ? 0.45 : 0.3)))
                 }
             }
 
@@ -94,11 +119,9 @@ struct TimelineRuler: View {
         )
     }
 
-    /// A tick every second up close, every ten when the whole thing is on screen.
+    /// A tick every second up close, every ten when the whole thing is on screen. The rule
+    /// itself is `TimelineLayout.rulerStep(forPointsPerSecond:)`, where it is tested.
     static func step(forPointsPerSecond pointsPerSecond: Double) -> Double {
-        for candidate in [0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600] where candidate * pointsPerSecond >= 56 {
-            return candidate
-        }
-        return 900
+        TimelineLayout.rulerStep(forPointsPerSecond: pointsPerSecond)
     }
 }

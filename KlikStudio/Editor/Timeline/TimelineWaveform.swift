@@ -41,10 +41,18 @@ struct TimelineWaveform: View {
     let peaks: WaveformPeaks
     let height: CGFloat
     var opacity: Double = 0.28
+    /// What the shape is filled with: white over a solid chip, the lane's own colour over
+    /// the light well the recording's sound sits in.
+    var color: Color = .white
 
     var body: some View {
         Canvas { context, size in
             let midY = size.height / 2
+            // Most of the lane's height for the loudest sound, and a hair of it for silence,
+            // so a quiet stretch is a thin line rather than nothing — the same picture of
+            // "nothing is said here" that an empty stretch of tape is.
+            let reach = midY * 0.9
+            let floor = 0.5
             var path = Path()
 
             for span in spans {
@@ -65,20 +73,23 @@ struct TimelineWaveform: View {
                 let values = peaks.columns(from: sourceFrom, to: sourceTo, count: columns,
                                            pointsPerSecond: viewport.pointsPerSecond / span.speed)
 
-                // One closed shape: out along the top, back along the bottom.
+                // One closed shape: out along the top, back along the bottom. Each peak on
+                // the curve `TimelineLayout.displayedLevel` describes, so speech reads as
+                // speech rather than as a smear along the middle.
                 for (column, value) in values.enumerated() {
                     let x = visibleLeft + Double(column)
-                    let y = midY - Double(value.max) * midY * 0.92
+                    let y = midY - max(floor, Double(TimelineLayout.displayedLevel(value.max)) * reach)
                     if column == 0 { path.move(to: CGPoint(x: x, y: y)) } else { path.addLine(to: CGPoint(x: x, y: y)) }
                 }
                 for (column, value) in values.enumerated().reversed() {
                     let x = visibleLeft + Double(column)
-                    path.addLine(to: CGPoint(x: x, y: midY - Double(value.min) * midY * 0.92))
+                    let y = midY + max(floor, Double(TimelineLayout.displayedLevel(value.min)) * reach)
+                    path.addLine(to: CGPoint(x: x, y: y))
                 }
                 path.closeSubpath()
             }
 
-            context.fill(path, with: .color(.white.opacity(opacity)))
+            context.fill(path, with: .color(color.opacity(opacity)))
         }
         .frame(height: height)
         .allowsHitTesting(false)

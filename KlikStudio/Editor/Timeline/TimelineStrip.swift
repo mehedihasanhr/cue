@@ -19,6 +19,9 @@ import TimelineKit
 struct TimelineStrip: View {
     let model: EditorModel
 
+    /// The heading under the pointer, for the ones a click selects something on.
+    @State private var hoveredLane: Lane.ID?
+
     private var viewport: TimelineViewport { model.viewport }
 
     private static let rulerHeight: CGFloat = 20
@@ -241,7 +244,7 @@ struct TimelineStrip: View {
         }
         .padding(.vertical, Self.padding)
         .padding(.leading, 9)
-        .padding(.trailing, 6)
+        .padding(.trailing, 4)
         .frame(maxHeight: .infinity, alignment: .topLeading)
         .contentShape(Rectangle())
     }
@@ -249,23 +252,42 @@ struct TimelineStrip: View {
     private func heading(_ lane: Lane) -> some View {
         let timeline = model.timeline
         let muted = isMuted(lane)
-        return HStack(spacing: 7) {
+        let selectable = selection(of: lane) != nil
+        let hovered = selectable && hoveredLane == lane.id
+        return HStack(spacing: 0) {
             // A stripe in the lane's own colour, full height: at a glance down the gutter
             // this is what says which rows are sound and which are the picture, before any
             // of the words are read.
             RoundedRectangle(cornerRadius: 1.5, style: .continuous)
                 .fill(lane.tint(in: timeline).opacity(muted ? 0.3 : 0.9))
                 .frame(width: 3)
+            // Every glyph centred in the same column, at the same size and weight, so the
+            // gutter reads as one aligned list however wide each symbol happens to be.
             Image(systemName: muted ? "speaker.slash.fill" : lane.symbol(in: timeline))
-                .font(.system(size: 12))
+                .font(.system(size: 12, weight: .medium))
+                .symbolRenderingMode(.monochrome)
+                .imageScale(.medium)
                 .foregroundStyle(muted ? AnyShapeStyle(.tertiary) : AnyShapeStyle(lane.tint(in: timeline)))
-                .frame(width: 18)
-            Spacer(minLength: 0)
+                .frame(maxWidth: .infinity)
         }
         .frame(height: lane.height)
+        .background {
+            // Only the headings a click does something on light up under the pointer; the
+            // rest are labels, and a label that reacts to the pointer promises a click.
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(Color.secondary.opacity(hovered ? 0.1 : 0))
+                .padding(.leading, 5)
+        }
         .contentShape(Rectangle())
+        .onHover { inside in
+            hoveredLane = inside ? lane.id : (hoveredLane == lane.id ? nil : hoveredLane)
+        }
         .onTapGesture { if let selection = selection(of: lane) { model.select(selection) } }
-        .help(lane.title(in: timeline))
+        .help(muted ? "\(lane.title(in: timeline)) — muted" : lane.title(in: timeline))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(lane.title(in: timeline))
+        .accessibilityValue(muted ? "Muted" : "")
+        .accessibilityAddTraits(selectable ? .isButton : [])
     }
 
     /// Whether this row's sound is off, which is the one piece of state a heading shows.
@@ -440,7 +462,14 @@ struct TimelineStrip: View {
                           title: "Zoom",
                           symbol: "plus.magnifyingglass",
                           height: Self.regionHeight,
-                          selection: Selection.zoom) { zoom in
+                          selection: Selection.zoom,
+                          // The scale on its own, for a chip too short for its glyphs: on a
+                          // fitted take most auto-zooms are, and the scale is the part worth
+                          // reading off them.
+                          compact: { zoom in
+                              AnyView(Text(Self.scale(zoom))
+                                  .opacity(zoom.isEnabled ? 1 : 0.45))
+                          }) { zoom in
             HStack(spacing: 6) {
                 // Which zooms are off, at a glance down the lane. A switched-off zoom keeps
                 // its place and its framing, so without a mark on it the lane shows a zoom
@@ -448,7 +477,7 @@ struct TimelineStrip: View {
                 if !zoom.isEnabled {
                     Image(systemName: "eye.slash").font(.system(size: 9, weight: .semibold))
                 }
-                Text("\(zoom.scale, format: .number.precision(.fractionLength(0...1)))×")
+                Text(Self.scale(zoom))
                 // What asked for this zoom. A suggestion somebody can see the reason for is
                 // one they adjust; one that appeared from nowhere is one they delete. The
                 // glyph rather than the word, because the word is on the tooltip and the
@@ -480,6 +509,11 @@ struct TimelineStrip: View {
             // and switch back on.
             .opacity(zoom.isEnabled ? 1 : 0.45)
         }
+    }
+
+    /// A zoom's scale as its chip prints it: "1.8×", "2×".
+    private static func scale(_ zoom: ZoomRegion) -> String {
+        "\(zoom.scale.formatted(.number.precision(.fractionLength(0...1))))×"
     }
 
     /// What asked for a zoom, as one glyph.

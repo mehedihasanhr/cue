@@ -1,21 +1,5 @@
 import SwiftUI
-
-extension Color {
-    /// A timeline chip's fill, strong enough for the white on top of it in either appearance.
-    ///
-    /// The lanes were tuned in dark mode, where a tint at a third of its strength over a
-    /// near-black lane is a clear, saturated colour. Over a light lane the same wash comes
-    /// out as a pastel, and every white thing drawn on it — the badges, the handles, the
-    /// waveform — all but disappears: a timeline of beige and lilac with nothing legible on
-    /// it. In light mode the chip is filled closer to the tint itself, so the white reads
-    /// the same in both.
-    ///
-    /// `darkOpacity` is the strength the chip has always had in dark mode; the ordering it
-    /// encodes — selected over resting — is kept in light mode too.
-    func chipFill(_ darkOpacity: Double, in scheme: ColorScheme) -> Color {
-        scheme == .dark ? opacity(darkOpacity) : opacity(min(1, 0.5 + darkOpacity * 0.55))
-    }
-}
+import TimelineKit
 
 /// The timeline's own colours, for the lanes that are chips rather than waveforms.
 ///
@@ -37,79 +21,165 @@ enum TimelinePalette {
 struct TimelineChipBackground: View {
     let tint: Color
     let isSelected: Bool
+    /// The pointer is over it: lifted a shade, so the chip a click will land on answers
+    /// before the click does.
+    var isHovered = false
     var radius: CGFloat = TimelineChipBackground.radius
 
-    static let radius: CGFloat = 8
+    /// One radius for every chip, run and lane well, so the strip reads as one family of
+    /// shapes rather than one per lane.
+    static let radius: CGFloat = 7
 
     @Environment(\.colorScheme) private var colorScheme
 
     /// The selection ring: white on a dark strip, dark ink on a light one. A white ring
     /// round a chip on a light strip is a ring round nothing.
-    private var ring: Color {
-        colorScheme == .dark ? .white.opacity(0.95) : Color(white: 0.08).opacity(0.85)
+    ///
+    /// Shared with the sound lane, whose runs are selected the same way and must look it.
+    static func ring(in scheme: ColorScheme) -> Color {
+        scheme == .dark ? .white.opacity(0.95) : Color(white: 0.08).opacity(0.85)
     }
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         shape
             .fill(tint.gradient)
-            .overlay(shape.fill(.white.opacity(isSelected ? 0.1 : 0)))
-            .overlay(shape.strokeBorder(isSelected ? ring : .white.opacity(0.22),
+            .overlay(shape.fill(.white.opacity(isSelected ? 0.1 : (isHovered ? 0.07 : 0))))
+            .overlay(shape.strokeBorder(isSelected ? Self.ring(in: colorScheme) : .white.opacity(0.22),
                                         lineWidth: isSelected ? 2 : 1))
+            .animation(StudioMotion.state, value: isHovered)
     }
 }
 
-/// A chip's words: the faint name of what it is, and under it what it says.
+/// A lane's empty well: the faint track its chips sit in, so a lane with one zoom on it
+/// still reads as a lane from end to end.
+struct TimelineLaneWell: View {
+    let height: CGFloat
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: TimelineChipBackground.radius, style: .continuous)
+            .fill(Color.secondary.opacity(0.07))
+            .frame(height: height)
+    }
+}
+
+/// A chip's words, in the most of them that fit.
 ///
-/// Centred, as a player's timeline centres them. The name goes when the chip is too short
-/// to hold two lines, and the whole label fades when the chip is too narrow to hold it —
-/// faded rather than removed, because this changes mid-drag and a label blinking out under
-/// the pointer reads as something breaking.
-struct TimelineChipLabel<Detail: View>: View {
+/// Laid out as a ladder rather than as one label behind a visibility gate. It used to be
+/// the latter: the whole label was faded out below a fixed width — 48 points, two grab
+/// areas and a margin — and drawn at full size above it, for the chip to clip. An auto-zoom
+/// at its minimum length on a fitted 34-second take is about 45 points wide, so every one
+/// of them fell under the gate and drew as a blank purple block, while the two that happened
+/// to be a little longer read "Zoom 1.8×". Nothing about the label needed 48 points; "1.8×"
+/// needs 24.
+///
+/// So a chip offers its words longest first — the name above the details, then the details
+/// with the lane's glyph, then the details alone, then the short form — and the first that
+/// fits in the room between the grips (`TimelineLayout.labelRoom(forChipWidth:)`) is the one
+/// drawn. A chip with no room even for the short form draws nothing, which is honest; one
+/// with room for the scale always shows it. `ViewThatFits` does the measuring, so a wider
+/// font or a longer number cannot make the rule wrong.
+struct TimelineChipLabel<Detail: View, Compact: View>: View {
     let title: String
     let height: CGFloat
     let width: CGFloat
-    var minimumWidth: CGFloat = 60
-    /// Whether what it says is shortened to fit, with an ellipsis, instead of being left
-    /// whole for the chip to clip.
+    /// The lane's glyph, drawn before the details when there is room for it. Empty for a
+    /// lane whose chips name their own kind.
+    var symbol: String = ""
+    /// Whether what it says is shortened to fit, with an ellipsis, instead of being offered
+    /// whole or not at all.
     ///
-    /// Clipping suits a label that is a fact — "1.8×" is either there or not. It does not
-    /// suit a sentence: a caption's chip is usually narrower than its words, and a line
-    /// centred and cut at both ends reads "mpty captio".
+    /// The ladder suits a label that is a fact — "1.8×" is either there or not. It does not
+    /// suit a sentence: a caption's chip is usually narrower than its words, and the first
+    /// few words of a caption are worth more than none of them.
     var truncates = false
-    /// Room kept clear at each end, for the grips, when the words are being fitted.
-    var inset: CGFloat = 0
     @ViewBuilder let detail: () -> Detail
+    /// The least the chip can usefully say — a zoom's scale, a clip's length.
+    @ViewBuilder let compact: () -> Compact
 
     /// The room the words have, once the grips have taken theirs.
-    private var room: CGFloat { max(0, width - inset * 2) }
+    private var room: CGFloat { TimelineLayout.labelRoom(forChipWidth: width) }
 
-    /// Too narrow to say anything worth reading. A sentence cut down to "E…" is noise, so
-    /// a fitted label gives up sooner than a clipped one.
-    private var isLegible: Bool {
-        truncates ? room >= 44 : width > minimumWidth
-    }
+    /// Whether there is height for the faint name above the details.
+    private var hasTwoLines: Bool { height >= 34 }
 
     var body: some View {
+        Group {
+            if truncates {
+                sentence
+            } else {
+                ladder
+            }
+        }
+        .lineLimit(1)
+        .shadow(color: .black.opacity(0.18), radius: 1, y: 0.5)
+        .frame(width: width, height: height)
+    }
+
+    /// The longest form that fits, or nothing.
+    private var ladder: some View {
+        ViewThatFits(in: .horizontal) {
+            if hasTwoLines {
+                VStack(spacing: 1) {
+                    name
+                    details(withSymbol: true)
+                }
+            }
+            details(withSymbol: true)
+            details(withSymbol: false)
+            compact()
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.white)
+                .fixedSize()
+            // Nothing, rather than a cut-off fragment: a chip too narrow for its short form
+            // is a coloured mark, and its tooltip still says what it is.
+            Color.clear.frame(width: 0, height: 0)
+        }
+        .frame(width: room)
+    }
+
+    /// A sentence shortened to the room, with the name above it while there is space.
+    private var sentence: some View {
         VStack(spacing: 1) {
             // The name is never shortened: "C…" names nothing. It goes first when room
             // runs out, and what the chip says keeps the space.
-            if height >= 34, !truncates || room >= 56 {
-                Text(title)
-                    .font(.system(size: 9.5, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.5))
-            }
+            if hasTwoLines, room >= 56 { name }
             detail()
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.white)
+                .truncationMode(.tail)
         }
-        .lineLimit(1)
-        .truncationMode(.tail)
-        .fixedSize(horizontal: !truncates, vertical: true)
-        .frame(width: truncates ? room : nil)
-        .shadow(color: .black.opacity(0.18), radius: 1, y: 0.5)
-        .frame(width: width, height: height)
-        .opacity(isLegible ? 1 : 0)
-        .animation(StudioMotion.state, value: isLegible)
+        .frame(width: room)
+        // A sentence cut down to "E…" is noise, so it gives up sooner than a fact does.
+        .opacity(room >= 44 ? 1 : 0)
+        .animation(StudioMotion.state, value: room >= 44)
+    }
+
+    private var name: some View {
+        Text(title)
+            .font(.system(size: 9.5, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.6))
+            .fixedSize()
+    }
+
+    private func details(withSymbol: Bool) -> some View {
+        HStack(spacing: 5) {
+            if withSymbol, !symbol.isEmpty {
+                Image(systemName: symbol).font(.system(size: 10, weight: .semibold))
+            }
+            detail()
+        }
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundStyle(.white)
+        .fixedSize()
+    }
+}
+
+extension TimelineChipLabel where Compact == EmptyView {
+    /// A label with no short form: the details, or nothing.
+    init(title: String, height: CGFloat, width: CGFloat, symbol: String = "",
+         truncates: Bool = false, @ViewBuilder detail: @escaping () -> Detail) {
+        self.init(title: title, height: height, width: width, symbol: symbol,
+                  truncates: truncates, detail: detail, compact: { EmptyView() })
     }
 }

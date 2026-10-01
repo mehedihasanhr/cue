@@ -34,6 +34,9 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
     /// How long a chip's sound takes to rise and fall, in seconds, drawn as a slope at
     /// each end. Only the added-sound lane has them.
     var fades: ((Region) -> (fadeIn: Double, fadeOut: Double))?
+    /// The least a chip can say when it is too narrow for its badge — a zoom's scale
+    /// without its glyphs. `nil` for a lane whose badge has no shorter form.
+    var compact: ((Region) -> AnyView)?
     @ViewBuilder let badge: (Region) -> Badge
 
     /// Which grip the pointer is over, as "<region id>-<side>".
@@ -42,15 +45,15 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
     /// be under the pointer at a time, so a single value cannot get out of step with
     /// itself the way a dictionary of booleans can.
     @State private var hoveredGrip: String?
+    /// Which chip the pointer is over, for the same reason there is one `hoveredGrip`.
+    @State private var hoveredChip: UUID?
 
     private var viewport: TimelineViewport { model.viewport }
     private let radius: CGFloat = TimelineChipBackground.radius
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: radius, style: .continuous)
-                .fill(Color.secondary.opacity(0.08))
-                .frame(height: height)
+            TimelineLaneWell(height: height)
 
             ForEach(regions) { region in
                 body(for: region)
@@ -71,7 +74,8 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
         let left = viewport.x(for: live.start)
         let width = max(6, live.duration.seconds * viewport.pointsPerSecond)
 
-        return TimelineChipBackground(tint: tint, isSelected: isSelected(region))
+        return TimelineChipBackground(tint: tint, isSelected: isSelected(region),
+                                      isHovered: hoveredChip == region.id)
             .overlay { shape(of: region, width: width, left: left) }
             .overlay { slopes(of: region, width: width) }
             .frame(width: width, height: height)
@@ -82,6 +86,11 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
             // inside it. See `label(_:width:)`.
             .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
             .contentShape(Rectangle())
+            .onHover { inside in
+                // Ignored mid-gesture, like the grips' — see `edge(_:leading:width:)`.
+                guard !model.isGesturing else { return }
+                hoveredChip = inside ? region.id : (hoveredChip == region.id ? nil : hoveredChip)
+            }
             // ⌘ adds to the selection instead of replacing it, which is what lets a drag
             // afterwards carry several chips at once.
             .onTapGesture {
@@ -131,24 +140,18 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
     }
 
     /// What the chip says: the kind of thing it is, faintly, and under it the details —
-    /// centred, the way a player's timeline labels its pieces.
-    ///
-    /// `fixedSize` stops the words being squeezed and re-broken as the chip narrows; the
-    /// chip's own clip takes off whatever no longer fits, which is one edge moving instead
-    /// of a line of text rearranging itself.
+    /// centred, the way a player's timeline labels its pieces — or as much of that as the
+    /// chip has room for. See `TimelineChipLabel` for the ladder, and for why every chip
+    /// with room for "1.8×" now shows it.
     private func label(_ region: Region, width: CGFloat) -> some View {
+        // Empty `symbol` for a lane whose chips name their own kind — see the annotation
+        // lane, where each chip is a different kind of thing.
         TimelineChipLabel(title: title, height: height, width: width,
-                          minimumWidth: TimelineHandle.target * 2 + 20,
-                          truncates: fitsWords,
-                          inset: TimelineHandle.target + 2) {
-            HStack(spacing: 5) {
-                // Empty for a lane whose chips name their own kind — see the annotation
-                // lane, where each chip is a different kind of thing.
-                if !symbol.isEmpty {
-                    Image(systemName: symbol).font(.system(size: 10, weight: .semibold))
-                }
-                badge(region)
-            }
+                          symbol: symbol,
+                          truncates: fitsWords) {
+            badge(region)
+        } compact: {
+            if let compact { compact(region) }
         }
         .allowsHitTesting(false)
     }
