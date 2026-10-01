@@ -47,7 +47,10 @@ struct BackgroundPicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenGroups) {
+            // Six kinds, every title whole and in one size of type: on as many rows as the
+            // column needs — two, at the panel's usual width. See `InspectorTabs`.
             InspectorTabs(selection: tab, items: BackgroundTab.allCases) { $0.title }
+                .accessibilityLabel("Kind of background")
 
             switch tab.wrappedValue {
             case .wallpaper: WallpaperGrid(model: model, state: state)
@@ -105,9 +108,14 @@ struct BackgroundPicker: View {
 
     // MARK: - Gradient
 
-    /// Sized rather than stretched: five tiles sharing the column's width made each one
-    /// a 44-point slab, which is a lot of panel to say "indigo". They are swatches — big
-    /// enough to read the colour off, and no bigger — and they wrap if more are added.
+    /// The stock gradients and the project's own, as one row of swatches, then what makes
+    /// the project's own.
+    ///
+    /// The own one is the last swatch rather than a second swatch beside a sentence: there
+    /// was a row of stock gradients and then, under it, another swatch with "Change
+    /// anything below to make your own" — two pictures of the same choice. Pressing it
+    /// makes the gradient the controls under it describe the background, which changes
+    /// nothing you can see until one of them is moved.
     private var gradients: some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenGroups) {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 30, maximum: 34), spacing: 8)],
@@ -121,6 +129,22 @@ struct BackgroundPicker: View {
                         preview(of: preset.background)
                     }
                 }
+                SwatchTile(isSelected: model.hasCustomGradient,
+                           title: "Your own gradient",
+                           tooltip: model.hasCustomGradient
+                               ? "Your own gradient"
+                               : "Your own gradient. Change anything below to make your own.") {
+                    model.setBackgroundGradient(model.editableGradient)
+                } content: {
+                    GradientSwatch(gradient: model.editableGradient)
+                        .overlay(alignment: .bottomTrailing) {
+                            Image(systemName: "slider.horizontal.3")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundStyle(.white)
+                                .shadow(color: .black.opacity(0.5), radius: 1)
+                                .padding(3)
+                        }
+                }
             }
             // Under the stock ones rather than instead of them: most people want one of
             // those, and the editor starts from whichever is chosen.
@@ -130,25 +154,20 @@ struct BackgroundPicker: View {
 
     // MARK: - None
 
-    /// What a see-through background means, since the answer depends on the export.
+    /// What a see-through background means, since the answer depends on the export. The
+    /// one line says which formats keep it; the tooltip says what the rest do.
     private var transparent: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                Checkerboard(square: 5)
-                    .frame(width: 44, height: 28)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .strokeBorder(.primary.opacity(0.08))
-                    }
-                Text("Transparent")
-                    .font(.system(size: 12))
-            }
-            Text("Nothing is drawn around the picture. ProRes 4444, and HEVC with transparency in a MOV, keep it see-through; other formats fill it with black.")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .fixedSize(horizontal: false, vertical: true)
+        HStack(spacing: 10) {
+            Checkerboard(square: 5)
+                .frame(width: 44, height: 28)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(.primary.opacity(0.08))
+                }
+            InspectorNote("Stays see-through in ProRes 4444 and HEVC with transparency.")
         }
+        .help("Nothing is drawn around the picture. ProRes 4444, and HEVC with transparency in a MOV, keep it see-through; other formats fill it with black.")
     }
 
     @ViewBuilder
@@ -182,9 +201,8 @@ struct BackgroundPicker: View {
                 }
             }
 
-            InspectorField(title: "Custom") {
-                ColorPicker("Custom", selection: custom, supportsOpacity: false)
-                    .fixedSize()
+            InspectorRow("Custom") {
+                InspectorColorWell(title: "Custom colour", selection: custom)
             }
         }
     }
@@ -207,29 +225,21 @@ struct BackgroundPicker: View {
     @ViewBuilder
     private var image: some View {
         if case .image(let path) = model.timeline.style.background {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
                 ImageThumbnail(url: model.packageURL.appendingPathComponent(path))
-                HStack {
+                    .help("Images fill the frame, so a tall picture behind a wide recording is cropped rather than letterboxed.")
+                HStack(spacing: 8) {
                     Button("Replace…") { choose() }
                     Button("Remove") {
                         style.set(\.style.background, to: BackgroundPreset.indigo.background, "Background")
                     }
                 }
                 .controlSize(.small)
-                Text("Images fill the frame, so a tall picture behind a wide recording is cropped rather than letterboxed.")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         } else {
-            VStack(alignment: .leading, spacing: 8) {
-                Button("Choose Image…") { choose() }
-                    .controlSize(.small)
-                Text("The picture is copied into the recording, so the project still looks right on another Mac.")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Button("Choose Image…") { choose() }
+                .controlSize(.small)
+                .help("The picture is copied into the recording, so the project still looks right on another Mac.")
         }
     }
 

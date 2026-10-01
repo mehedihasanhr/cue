@@ -3,38 +3,42 @@ import BackgroundKit
 import SwiftUI
 import TimelineKit
 
-/// The looks: the built-in ones, the saved ones, and a way to save this one.
+/// The look the recording is wearing, as one row: "Look  [Studio ▾]".
 ///
-/// At the top of the Frame panel, because a look sets most of what is under it. Each
-/// tile is a small picture of the frame the look makes — its background, its shape, its
-/// corners — and the one the project is wearing is ringed. Saving asks for a name in a
-/// row that appears here, not in a dialog: the tiles it will join are already in view.
+/// It was a grid of six large thumbnails at the top of the Frame panel — the most valuable
+/// space in the column, spent on something chosen once per video. Now it is a heading with
+/// a pop-up button, and the pictures are in the popover that button opens: the built-in
+/// looks, then the saved ones, then Save Look… and Import…. A project dressed in no look
+/// in particular — restyled by hand, or wearing one that has since been retired — says
+/// Custom.
+///
+/// Saving asks for a name in a row that appears here, not in a dialog, so the Frame
+/// panel's own controls stay in view while it is typed.
 struct LooksSection: View {
     let model: EditorModel
 
     @Environment(StudioSettings.self) private var settings
     @State private var draftName = ""
     @State private var problem: String?
+    @State private var isChoosing = false
     @FocusState private var isTypingName: Bool
 
     private var library: LookLibrary { .shared }
 
-    private let columns = [GridItem(.adaptive(minimum: 78, maximum: 120), spacing: 8, alignment: .top)]
+    /// The look the project is wearing, if it is wearing one exactly.
+    private var current: Look? {
+        library.builtIn.first { model.isWearing($0) }
+            ?? library.saved.first { model.isWearing($0.look) }?.look
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: SidebarSpacing.betweenGroups) {
+        Group {
             if let request = library.request {
                 naming(request)
             }
-            grid
         }
-        .inspectorSection("Looks", systemImage: "paintpalette") {
-            HStack(spacing: 12) {
-                SectionButton(title: "Import…") { importLooks() }
-                    .help("Bring in a .klikstyle file somebody sent you")
-                SectionButton(title: "Save Look…") { library.request = .save }
-                    .help("Keep how this recording is dressed, to use again")
-            }
+        .inspectorSection("Look", systemImage: "paintpalette") {
+            chooser
         }
         .onChange(of: library.request, initial: true) { _, request in
             switch request {
@@ -45,74 +49,43 @@ struct LooksSection: View {
             problem = nil
             if request != nil { isTypingName = true }
         }
-        // A look on a desktop picture draws the catalogue's thumbnail of it, and the
-        // catalogue decodes those once, when asked — so it is asked only when some look
-        // actually needs one.
-        .task(id: needsDesktopPictures) {
-            if needsDesktopPictures { await WallpaperCatalog.shared.prepareThumbnails() }
-        }
     }
 
-    private var needsDesktopPictures: Bool {
-        (library.builtIn + library.saved.map(\.look)).contains { look in
-            guard case .wallpaper(let raw) = look.frame.background else { return false }
-            return WallpaperID(rawValue: raw)?.namespace == .system
-        }
-    }
+    // MARK: - The pop-up
 
-    // MARK: - The tiles
-
-    private var grid: some View {
-        LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
-            ForEach(library.builtIn, id: \.name) { look in
-                LookTile(look: look, isCurrent: model.isWearing(look)) {
-                    model.applyLook(look)
-                }
-                .contextMenu { builtInMenu(look) }
-            }
-            ForEach(library.saved) { saved in
-                LookTile(look: saved.look, isCurrent: model.isWearing(saved.look)) {
-                    model.applyLook(saved.look)
-                }
-                .contextMenu { savedMenu(saved) }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func builtInMenu(_ look: Look) -> some View {
-        newRecordingsItem(look)
-        Divider()
-        // Said rather than left out: a menu missing Rename and Delete looks like a bug,
-        // and a disabled line that says why does not.
-        Text("Built in — can't be renamed or deleted")
-    }
-
-    @ViewBuilder
-    private func savedMenu(_ saved: SavedLook) -> some View {
-        Button("Rename…") { library.request = .rename(saved) }
-        Button("Delete", role: .destructive) { delete(saved) }
-        Divider()
-        newRecordingsItem(saved.look)
-        Button("Show in Finder") { library.reveal(saved) }
-    }
-
-    /// One item that flips: choosing it on the look that is already the default takes
-    /// the default away, which is the only way to say "none".
-    private func newRecordingsItem(_ look: Look) -> some View {
-        let isDefault = settings.isNewRecordingLook(look)
-        return Button {
-            if isDefault {
-                settings.clearNewRecordingLook()
-            } else {
-                settings.useForNewRecordings(look)
-            }
+    /// The button on the heading, and the list it opens.
+    ///
+    /// A popover rather than a menu: a look is a picture, and a menu cannot draw one; and a
+    /// saved look has its own Rename and Delete, which want a context menu on a row.
+    private var chooser: some View {
+        Button {
+            isChoosing.toggle()
         } label: {
-            if isDefault {
-                Label("Use for New Recordings", systemImage: "checkmark")
-            } else {
-                Text("Use for New Recordings")
+            HStack(spacing: 4) {
+                Text(current?.name ?? "Custom")
+                    .lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(.secondary)
             }
+        }
+        .controlSize(.small)
+        .fixedSize()
+        .help("Dress this recording in a built-in or saved look, or save this one")
+        .accessibilityLabel("Look")
+        .accessibilityValue(current?.name ?? "Custom")
+        .popover(isPresented: $isChoosing, arrowEdge: .bottom) {
+            LookList(model: model, current: current) { action in
+                isChoosing = false
+                switch action {
+                case .apply(let look): model.applyLook(look)
+                case .save: library.request = .save
+                case .rename(let saved): library.request = .rename(saved)
+                case .delete(let saved): delete(saved)
+                case .importLooks: importLooks()
+                }
+            }
+            .environment(settings)
         }
     }
 
@@ -130,6 +103,9 @@ struct LooksSection: View {
                     .onSubmit { commit(request) }
                     .onExitCommand { library.request = nil }
                     .accessibilityLabel("Look name")
+                    .help(!isRename && model.backgroundIsAPicture
+                          ? "The picture behind this recording stays with it. The look keeps everything else."
+                          : "")
                 Button(isRename ? "Rename" : "Save") { commit(request) }
                     .keyboardShortcut(.defaultAction)
                     .disabled(trimmedName.isEmpty)
@@ -139,17 +115,11 @@ struct LooksSection: View {
             .controlSize(.small)
             if let problem {
                 Text(problem)
-                    .font(.caption)
+                    .font(.system(size: 11))
                     .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else if !isRename, model.backgroundIsAPicture {
-                Text("The picture behind this recording stays with it. The look keeps everything else.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.vertical, 2)
     }
 
     private func commit(_ request: LookLibrary.Request) {
@@ -189,42 +159,206 @@ struct LooksSection: View {
     }
 }
 
-// MARK: - One tile
+// MARK: - The list
 
-/// A look as a small picture of the frame it makes, with its name under it.
-struct LookTile: View {
+/// What the look pop-up holds: the built-in looks, the saved ones, and the two ways to add
+/// to them.
+private struct LookList: View {
+    enum Action {
+        case apply(Look)
+        case save
+        case rename(SavedLook)
+        case delete(SavedLook)
+        case importLooks
+    }
+
+    let model: EditorModel
+    let current: Look?
+    let act: (Action) -> Void
+
+    @Environment(StudioSettings.self) private var settings
+
+    private var library: LookLibrary { .shared }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            listHeading("Built In")
+            ForEach(library.builtIn, id: \.name) { look in
+                LookRow(look: look, isCurrent: current == look) { act(.apply(look)) }
+                    .contextMenu { builtInMenu(look) }
+            }
+
+            Divider().padding(.vertical, 6)
+
+            listHeading("Saved")
+            if library.saved.isEmpty {
+                Text("None yet")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+            } else {
+                ForEach(library.saved) { saved in
+                    LookRow(look: saved.look, isCurrent: current == saved.look) { act(.apply(saved.look)) }
+                        .contextMenu { savedMenu(saved) }
+                }
+            }
+
+            Divider().padding(.vertical, 6)
+
+            actionRow("Save Look…", help: "Keep how this recording is dressed, to use again") { act(.save) }
+            actionRow("Import…", help: "Bring in a .klikstyle file somebody sent you") { act(.importLooks) }
+        }
+        .padding(8)
+        .frame(width: 260)
+        // A look on a desktop picture draws the catalogue's thumbnail of it, and the
+        // catalogue decodes those once, when asked — so it is asked only when some look
+        // actually needs one.
+        .task(id: needsDesktopPictures) {
+            if needsDesktopPictures { await WallpaperCatalog.shared.prepareThumbnails() }
+        }
+    }
+
+    private var needsDesktopPictures: Bool {
+        (library.builtIn + library.saved.map(\.look)).contains { look in
+            guard case .wallpaper(let raw) = look.frame.background else { return false }
+            return WallpaperID(rawValue: raw)?.namespace == .system
+        }
+    }
+
+    private func listHeading(_ title: String) -> some View {
+        InspectorSubheading(title)
+            .padding(.horizontal, 8)
+            .padding(.bottom, 2)
+    }
+
+    private func actionRow(_ title: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 13))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(LookRowButtonStyle())
+        .help(help)
+    }
+
+    @ViewBuilder
+    private func builtInMenu(_ look: Look) -> some View {
+        newRecordingsItem(look)
+        Divider()
+        // Said rather than left out: a menu missing Rename and Delete looks like a bug,
+        // and a disabled line that says why does not.
+        Text("Built in — can't be renamed or deleted")
+    }
+
+    @ViewBuilder
+    private func savedMenu(_ saved: SavedLook) -> some View {
+        Button("Rename…") { act(.rename(saved)) }
+        Button("Delete", role: .destructive) { act(.delete(saved)) }
+        Divider()
+        newRecordingsItem(saved.look)
+        Button("Show in Finder") { library.reveal(saved) }
+    }
+
+    /// One item that flips: choosing it on the look that is already the default takes
+    /// the default away, which is the only way to say "none".
+    private func newRecordingsItem(_ look: Look) -> some View {
+        let isDefault = settings.isNewRecordingLook(look)
+        return Button {
+            if isDefault {
+                settings.clearNewRecordingLook()
+            } else {
+                settings.useForNewRecordings(look)
+            }
+        } label: {
+            if isDefault {
+                Label("Use for New Recordings", systemImage: "checkmark")
+            } else {
+                Text("Use for New Recordings")
+            }
+        }
+    }
+}
+
+/// One look in the list: a small picture of the frame it makes, its name, and — where the
+/// look changes the frame's shape — the shape, so choosing "Social Post" turning a wide
+/// video portrait is not a surprise.
+private struct LookRow: View {
     let look: Look
     let isCurrent: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 5) {
+            HStack(spacing: 10) {
                 LookPreview(look: look)
-                    .aspectRatio(16 / 10, contentMode: .fit)
-                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .frame(width: 46, height: 30)
+                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
                     .overlay {
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .strokeBorder(.primary.opacity(0.08))
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .strokeBorder(.primary.opacity(0.1))
                     }
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .strokeBorder(Color.accentColor, lineWidth: isCurrent ? 2 : 0)
-                            .padding(-3)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(look.name)
+                        .font(.system(size: 13))
+                        .lineLimit(1)
+                    if let shape = look.shapeTitle {
+                        Text(shape)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
-                Text(look.name)
-                    .font(.system(size: 10.5))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .foregroundStyle(isCurrent ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "checkmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .opacity(isCurrent ? 1 : 0)
             }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
             .contentShape(Rectangle())
-            .animation(StudioMotion.selection, value: isCurrent)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(LookRowButtonStyle())
         .help(isCurrent ? "\(look.name) — what this recording is wearing" : "Dress this recording in \(look.name)")
-        .accessibilityLabel(look.name)
+        .accessibilityLabel(look.shapeTitle.map { "\(look.name), \($0)" } ?? look.name)
         .accessibilityAddTraits(isCurrent ? [.isSelected] : [])
+    }
+}
+
+/// A row in the look list that lights under the pointer, as a menu item does.
+private struct LookRowButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        LookRowBody(configuration: configuration)
+    }
+
+    private struct LookRowBody: View {
+        let configuration: ButtonStyleConfiguration
+        @State private var isHovering = false
+
+        var body: some View {
+            configuration.label
+                .background {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.primary.opacity(configuration.isPressed ? 0.12 : isHovering ? 0.07 : 0))
+                }
+                .onHover { isHovering = $0 }
+                .animation(StudioMotion.hover, value: isHovering)
+        }
+    }
+}
+
+private extension Look {
+    /// The shape a look sets the frame to, when it sets one.
+    var shapeTitle: String? {
+        switch frame.aspect {
+        case nil: nil
+        case .custom: frame.customAspect.map { "Custom \($0.width):\($0.height)" } ?? "Custom shape"
+        case .some(let preset): preset.displayName
+        }
     }
 }
 
@@ -233,8 +367,8 @@ struct LookTile: View {
 /// and its border.
 ///
 /// Drawn rather than rendered: the real renderer would give a truer picture and cost a
-/// Core Image pass per tile per redraw, for a thumbnail whose job is to tell six looks
-/// apart at a glance.
+/// Core Image pass per row per redraw, for a thumbnail whose job is to tell a handful of
+/// looks apart at a glance.
 struct LookPreview: View {
     let look: Look
 

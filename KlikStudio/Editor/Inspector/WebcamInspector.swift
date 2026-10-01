@@ -38,10 +38,17 @@ struct WebcamInspector: View {
                 // First when there is no camera, because it is the reason for everything
                 // under it. At the foot of the panel it was read last, after a column of
                 // controls that appeared to do nothing.
-                if !hasFootage { note }
+                if !hasFootage {
+                    InspectorNote("This recording has no camera in it.")
+                        .help("This recording has no camera in it, so there is nothing to draw. Turn the camera on in the recorder bar before the take.")
+                }
 
-                Toggle("Show camera", isOn: style.binding(\.webcam.isEnabled, "Camera Bubble"))
+                InspectorSwitch("Show camera", isOn: style.binding(\.webcam.isEnabled, "Camera Bubble"))
 
+                // Disabled rather than removed when the bubble is off, so the panel does
+                // not change height as the switch is flicked — and so the settings are
+                // visibly still there rather than looking lost. The switch itself stays
+                // live: it is the way back.
                 Group {
                     corners
 
@@ -52,19 +59,11 @@ struct WebcamInspector: View {
                     InspectorSlider(model: model, "Shadow", systemImage: "shadow",
                                     value: style.binding(\.webcam.shadowOpacity, "Camera Shadow"), range: 0...1)
 
-                    Toggle("Mirror", isOn: style.binding(\.webcam.isMirrored, "Mirror Camera"))
-                    Toggle("Grow while zoomed", isOn: style.binding(\.webcam.reactsToZoom, "Grow While Zoomed"))
+                    InspectorSwitch("Mirror", isOn: style.binding(\.webcam.isMirrored, "Mirror Camera"))
+                    InspectorSwitch("Grow while zoomed", isOn: style.binding(\.webcam.reactsToZoom, "Grow While Zoomed"))
                 }
-                // Dimmed rather than removed when the bubble is off, so the panel does not
-                // change height as the toggle is flicked — and so the settings are visibly
-                // still there rather than looking lost. The switch itself stays bright: it
-                // is the way back.
                 .disabled(!webcam.isEnabled)
-                .opacity(webcam.isEnabled ? 1 : 0.5)
-
-                if hasFootage { note }
             }
-            .font(.system(size: 12))
             .inspectorSection("Camera", systemImage: "person.crop.square")
 
             Group {
@@ -73,9 +72,7 @@ struct WebcamInspector: View {
                 border
                 background
             }
-            .font(.system(size: 12))
             .disabled(!webcam.isEnabled)
-            .opacity(webcam.isEnabled ? 1 : 0.5)
         }
     }
 
@@ -91,27 +88,27 @@ struct WebcamInspector: View {
                 InspectorTabs(selection: Binding(get: { region.layout },
                                                  set: { model.setCameraLayout(region.id, to: $0) }),
                               items: CameraLayout.allCases) { $0.title }
-                Text("This stretch, \(Timecode.short(region.start)) to \(Timecode.short(region.end)), on the Camera lane.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .help("This stretch, \(Timecode.short(region.start)) to \(Timecode.short(region.end)), on the Camera lane.")
+                InspectorNote("From \(Timecode.short(region.start)) to \(Timecode.short(region.end)).")
             } else {
-                Text("The bubble, here. Give a stretch its own layout — the camera alone, side by side with the screen, or hidden — from the playhead, or over a selected range.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                InspectorRow("Here") {
+                    InspectorValue("Bubble")
+                }
+                .help("The bubble, here. Give a stretch its own layout — the camera alone, side by side with the screen, or hidden — from the playhead, or over a selected range.")
             }
+        }
+        .inspectorSection("Layout", systemImage: "person.crop.rectangle") {
             Menu("Add at Playhead") {
                 ForEach(CameraLayout.allCases) { layout in
                     Button(layout.title) { model.addCameraLayout(layout) }
                 }
             }
-            .menuStyle(.borderlessButton)
+            .controlSize(.small)
             .fixedSize()
             .disabled(!hasFootage)
+            .help("Give a stretch its own layout — the camera alone, side by side with the screen, or hidden — from the playhead, or over a selected range.")
             .accessibilityLabel("Add camera layout at playhead")
         }
-        .inspectorSection("Layout", systemImage: "person.crop.rectangle")
     }
 
     // MARK: - Framing
@@ -129,11 +126,8 @@ struct WebcamInspector: View {
             InspectorSlider(model: model, "Up and down", systemImage: "arrow.up.and.down",
                             value: offset(\.y, "Camera Framing"), range: -1...1,
                             format: { Self.direction($0, less: "Up", more: "Down") })
-            Text("Zoom in on the face, then slide to frame it. Unzoomed, a wide camera can still slide across; a square one has nowhere to go.")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
+        .help("Zoom in on the face, then slide to frame it. Unzoomed, a wide camera can still slide across; a square one has nowhere to go.")
         .inspectorSection("Framing", systemImage: "crop") {
             SectionButton(title: "Reset") { model.resetCameraCrop() }
                 .disabled(webcam.crop == WebcamCrop())
@@ -165,18 +159,11 @@ struct WebcamInspector: View {
             InspectorSlider(model: model, "Width", systemImage: "circle",
                             value: style.binding(\.webcam.borderWidth, "Camera Border"),
                             range: WebcamSettings.borderWidthRange)
-            InspectorField(title: "Colour") {
-                ColorPicker("Camera border colour", selection: borderColour, supportsOpacity: true)
-                    .fixedSize()
+            InspectorRow("Colour") {
+                InspectorColorWell(title: "Camera border colour", selection: borderColour, supportsOpacity: true)
             }
             .disabled(!hasBorder)
-            .help("The border's colour")
-            if !hasBorder {
-                Text("No border yet. Raise Width to draw one.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            .help(hasBorder ? "The border's colour" : "No border yet. Raise Width to draw one.")
         }
         .inspectorSection("Border", systemImage: "circle.dashed")
     }
@@ -200,15 +187,12 @@ struct WebcamInspector: View {
             InspectorTabs(selection: Binding(get: { webcam.background },
                                              set: { model.setCameraBackground($0) }),
                           items: WebcamSettings.Background.allCases) { $0.shortTitle }
+                .help(backgroundNote)
             if webcam.background == .blur {
                 InspectorSlider(model: model, "Blur", systemImage: "drop",
                                 value: style.binding(\.webcam.backgroundBlur, "Camera Background Blur"),
                                 range: 0...1)
             }
-            Text(backgroundNote)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .inspectorSection("Background", systemImage: "person.and.background.dotted")
     }
@@ -228,50 +212,32 @@ struct WebcamInspector: View {
     ///
     /// `.custom` is offered as a *reading* rather than as a choice: picking it from a menu
     /// would leave the bubble wherever it already was with no hint of what to do next, so
-    /// the row shows it selected when it applies and the note below says how to get there.
+    /// the row shows it selected when it applies and the row's tooltip says how to get there.
     private var corners: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "square.on.square.dashed")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .frame(width: 14)
-            Text("Corner")
-                .frame(width: 74, alignment: .leading)
-            Picker("", selection: cornerSelection) {
+        InspectorRow("Corner") {
+            Picker("Corner", selection: cornerSelection) {
                 ForEach(WebcamSettings.Corner.pickable, id: \.self) { corner in
-                    Image(systemName: corner.symbol).tag(corner)
+                    Image(systemName: corner.symbol)
+                        .help(corner.title)
+                        .tag(corner)
                 }
                 if webcam.corner == .custom {
                     Image(systemName: "hand.draw").tag(WebcamSettings.Corner.custom)
                 }
             }
             .pickerStyle(.segmented)
-            .labelsHidden()
+            .controlSize(.small)
+            .fixedSize()
         }
+        .help(webcam.corner == .custom
+              ? "The bubble is where you put it. Drag it on the picture to move it, or pick a corner above to park it."
+              : "Drag the bubble on the picture to put it anywhere. The camera is cropped to the middle of its shot, so a wide camera keeps a face centred rather than squashed.")
     }
 
     /// Writes through a command so the change is undoable and named, like every other
     /// control here. A `Binding` straight at the model would skip the undo stack.
     private var cornerSelection: Binding<WebcamSettings.Corner> {
         Binding { webcam.corner } set: { style.set(\.webcam.corner, to: $0, "Camera Corner") }
-    }
-
-    /// What the panel cannot do anything about: no camera in the take, or a bubble parked
-    /// somewhere by hand.
-    @ViewBuilder
-    private var note: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if !hasFootage {
-                Text("This recording has no camera in it, so there is nothing to draw. Turn the camera on in the recorder bar before the take.")
-            } else if webcam.corner == .custom {
-                Text("The bubble is where you put it. Drag it on the picture to move it, or pick a corner above to park it.")
-            } else {
-                Text("Drag the bubble on the picture to put it anywhere. The camera is cropped to the middle of its shot, so a wide camera keeps a face centred rather than squashed.")
-            }
-        }
-        .font(.system(size: 11.5))
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
     }
 }
 

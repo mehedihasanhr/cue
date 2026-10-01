@@ -81,26 +81,23 @@ struct FrameInspector: View {
             if model.windowChrome.kind.isDevice {
                 device
             } else if model.windowChrome.isVisible {
-                InspectorTabs(selection: Binding(get: { model.windowChrome.appearance },
-                                                 set: { model.setWindowAppearance($0) }),
-                              items: WindowChrome.Appearance.allCases) { $0.title }
-                    .accessibilityLabel("Window appearance")
-                Text("The picture is made a little smaller so the window fits inside the padding.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                Text("No window. Choose one to draw a title bar above the picture, or an iPhone or iPad round it.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                InspectorRow("Title bar") {
+                    InspectorTabs(selection: Binding(get: { model.windowChrome.appearance },
+                                                     set: { model.setWindowAppearance($0) }),
+                                  items: WindowChrome.Appearance.allCases) { $0.title }
+                        .frame(width: 120)
+                }
+                .help("The picture is made a little smaller so the window fits inside the padding.")
             }
+            // No window: nothing under the heading. The pop-up on it says None, and its
+            // tooltip says what the choices draw.
         }
         .inspectorSection("Window", systemImage: "macwindow") {
             InspectorPicker(selection: Binding(get: { model.windowChrome.kind },
                                                set: { model.setWindowChrome($0) }),
                             options: WindowChrome.Kind.allCases) { $0.title }
                 .accessibilityLabel("Window frame")
+                .help("Draw a title bar above the picture, or an iPhone or iPad round it")
         }
     }
 
@@ -108,25 +105,24 @@ struct FrameInspector: View {
     @ViewBuilder
     private var device: some View {
         let chrome = model.windowChrome
-        InspectorTabs(selection: Binding(get: { model.windowChrome.finish },
-                                         set: { model.setDeviceFinish($0) }),
-                      items: WindowChrome.Finish.allCases) { $0.title }
-            .accessibilityLabel("Device finish")
-        InspectorTabs(selection: Binding(get: { model.windowChrome.orientation },
-                                         set: { model.setDeviceOrientation($0) }),
-                      items: WindowChrome.Orientation.allCases) { $0.title }
-            .accessibilityLabel("Device orientation")
-            .help("Auto holds the device the way the recording is shaped")
-        Toggle(chrome.kind == .iPhone ? "Camera cut-out" : "Camera", isOn: Binding(
+        InspectorRow("Finish") {
+            InspectorPicker(selection: Binding(get: { model.windowChrome.finish },
+                                               set: { model.setDeviceFinish($0) }),
+                            options: WindowChrome.Finish.allCases) { $0.title }
+        }
+        .help("The recording is fitted to the screen, with black either side where its shape differs. The border is not drawn on a device.")
+        InspectorRow("Held") {
+            InspectorPicker(selection: Binding(get: { model.windowChrome.orientation },
+                                               set: { model.setDeviceOrientation($0) }),
+                            options: WindowChrome.Orientation.allCases) { $0.title }
+        }
+        .help("Auto holds the device the way the recording is shaped")
+        InspectorSwitch(chrome.kind == .iPhone ? "Camera cut-out" : "Camera", isOn: Binding(
             get: { model.windowChrome.showsCamera },
             set: { model.setDeviceCamera($0) }
         ))
         .help(chrome.kind == .iPhone ? "The pill across the top of the screen, over the picture"
                                      : "The lens in the bezel")
-        Text("The recording is fitted to the screen, with black either side where its shape differs. The border is not drawn on a device.")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
     }
 
     // MARK: - Border
@@ -140,18 +136,11 @@ struct FrameInspector: View {
                             range: FrameStyle.borderWidthRange)
             // "Colour" alone, directly under the Border slider: the label column is
             // narrow, and "Border colour" would be cut short in it.
-            InspectorField(title: "Colour") {
-                ColorPicker("Border colour", selection: borderColour, supportsOpacity: true)
-                    .fixedSize()
+            InspectorRow("Border colour") {
+                InspectorColorWell(title: "Border colour", selection: borderColour, supportsOpacity: true)
             }
             .disabled(!hasBorder)
-            .help("The border's colour")
-            if !hasBorder {
-                Text("No border yet. Raise Border to draw one.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            .help(hasBorder ? "The border's colour" : "No border yet. Raise Border to draw one.")
         }
     }
 
@@ -172,17 +161,16 @@ struct FrameInspector: View {
     /// preserved against the *cropped* picture: cropping hard means a smaller export,
     /// and that is worth saying out loud rather than discovering later.
     private var crop: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            InspectorRow(title: "Crop",
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
+            InspectorRow(title: "Kept",
                          value: "\(Int(model.croppedVideoSize.width)) × \(Int(model.croppedVideoSize.height))")
-            InspectorRow(title: "Output",
+            InspectorRow(title: "Exported",
                          value: "\(Int(model.outputSize.width)) × \(Int(model.outputSize.height))")
-            Button(model.tool == .crop ? "Done" : "Adjust…") {
+            Button(model.tool == .crop ? "Done" : "Adjust Crop…") {
                 model.tool = model.tool == .crop ? .frame : .crop
             }
             .controlSize(.small)
         }
-        .font(.system(size: 12))
         .inspectorSection("Crop", systemImage: "crop") {
             SectionButton(title: "Reset") { model.setCrop(nil) }
                 .help("Show the whole recording again")

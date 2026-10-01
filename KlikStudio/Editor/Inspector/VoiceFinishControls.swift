@@ -12,31 +12,25 @@ struct VoiceSwitches: View {
 
     var body: some View {
         let style = model.voiceStyle(id)
-        VStack(alignment: .leading, spacing: 6) {
-            Toggle("Clean up voice", isOn: Binding(
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
+            InspectorSwitch("Clean up voice", isOn: Binding(
                 get: { model.voiceStyle(id).cleansVoice },
                 set: { model.setCleansVoice($0, for: id) }
             ))
-            .help("Takes out rumble and the hiss between words, and softens the loudest syllables")
-            Toggle("Even out volume", isOn: Binding(
+            .help(unavailable ?? "Takes out rumble and the hiss between words, and softens the loudest syllables")
+            InspectorSwitch("Even out volume", isOn: Binding(
                 get: { model.voiceStyle(id).evensVolume },
                 set: { model.setEvensVolume($0, for: id) }
             ))
-            .help("Brings this sound to the loudness most videos and podcasts use, without clipping")
-            if let unavailable {
-                note(unavailable)
-            } else if style.evensVolume, let file = model.measuredFile(for: id) {
+            .help(unavailable ?? "Brings this sound to the loudness most videos and podcasts use, without clipping")
+            // The measurement is the one line kept: it is what the switch did, in numbers.
+            // Why the switches are off, when they are, is in their tooltips — the dimmed
+            // switch beside a muted source already says most of it.
+            if unavailable == nil, style.evensVolume, let file = model.measuredFile(for: id) {
                 LevelReadout(url: file.url, track: file.track, cleansVoice: style.cleansVoice)
             }
         }
         .disabled(unavailable != nil)
-    }
-
-    private func note(_ text: String) -> some View {
-        Text(text)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -59,9 +53,8 @@ struct LevelReadout: View {
 
     var body: some View {
         Text(text)
-            .font(.caption)
+            .font(.system(size: 11).monospacedDigit())
             .foregroundStyle(.secondary)
-            .monospacedDigit()
             .fixedSize(horizontal: false, vertical: true)
             .task(id: "\(url.path)#\(track)#\(cleansVoice)") {
                 reading = .measuring
@@ -106,11 +99,11 @@ struct DuckControls: View {
         let region = model.timeline.audio.first { $0.id == id }
         let source = model.duckingSource
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-            Toggle("Lower under speech", isOn: Binding(
+            InspectorSwitch("Lower under speech", isOn: Binding(
                 get: { region?.ducksUnderSpeech ?? false },
                 set: { model.setDucksUnderSpeech($0, for: id) }
             ))
-            .help("Turns this sound down wherever somebody is speaking, and back up after")
+            .help("Turns this sound down wherever somebody is speaking, and back up after. \(source.explanation)")
             .disabled(!source.available && region?.ducksUnderSpeech != true)
             if !compact, region?.ducksUnderSpeech == true {
                 InspectorSlider(model: model, "Lower by", systemImage: "arrow.down.to.line",
@@ -122,11 +115,11 @@ struct DuckControls: View {
                                 range: 3...30,
                                 format: { "\(Int($0.rounded())) dB" })
             }
-            if !compact || !source.available {
-                Text(source.explanation)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            // Only when there is nothing to listen for: then the switch cannot do its job,
+            // and that changes what you would do next. Otherwise the explanation is the
+            // switch's tooltip.
+            if !source.available {
+                InspectorNote(source.explanation)
             }
         }
     }

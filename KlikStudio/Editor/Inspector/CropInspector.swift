@@ -34,19 +34,18 @@ struct CropInspector: View {
     /// a smaller export, and that is worth saying while the handles are still in the hand
     /// rather than discovering it in the finished file.
     private var size: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
+            // The one line this panel keeps: with the tool on and nothing else here, how to
+            // use it is the thing to say.
+            InspectorNote("Drag an edge or a corner on the picture.")
+                .help(hasCrop
+                      ? "Drag an edge or a corner on the picture. ⌥-click it to take the whole frame back."
+                      : "Drag an edge or a corner on the picture to choose what to keep.")
             InspectorRow(title: "Kept",
                          value: "\(Int(model.croppedVideoSize.width)) × \(Int(model.croppedVideoSize.height))")
             InspectorRow(title: "Exported",
                          value: "\(Int(model.outputSize.width)) × \(Int(model.outputSize.height))")
-            Text(hasCrop
-                 ? "Drag an edge or a corner on the picture. ⌥-click it to take the whole frame back."
-                 : "Drag an edge or a corner on the picture to choose what to keep.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
-        .font(.system(size: 12))
         .inspectorSection("Crop", systemImage: "crop") {
             SectionButton(title: "Reset") { model.setCrop(nil) }
                 .disabled(!hasCrop)

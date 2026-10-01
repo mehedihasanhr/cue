@@ -50,11 +50,7 @@ struct KeyCueInspector: View {
                     if !editing { commit() }
                 }
                 .accessibilityLabel("Shortcut keys")
-
-            Text("Symbols or words, in any order: ⌘⇧K, cmd shift k, ctrl-alt-delete. Add ×3 for a repeat.")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                .help("Symbols or words, in any order: ⌘⇧K, cmd shift k, ctrl-alt-delete. Add ×3 for a repeat.")
         }
         .inspectorSection("Keys", systemImage: "keyboard")
     }
@@ -83,64 +79,37 @@ struct KeyCueInspector: View {
     /// the same reason: a key that appears a frame before the thing it did is what "in
     /// sync" looks like.
     private func edge(_ cue: KeyCue, title: String, value: CMTime, isHead: Bool) -> some View {
-        HStack(spacing: 8) {
-            Text(title)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .frame(width: 66, alignment: .leading)
-            Spacer(minLength: 0)
-            nudge("chevron.left", isHead: isHead, forward: false)
-            Text(Timecode.short(value))
-                .font(.system(size: 12).monospacedDigit())
-                .frame(minWidth: 58)
-            nudge("chevron.right", isHead: isHead, forward: true)
-        }
-    }
-
-    private func nudge(_ symbol: String, isHead: Bool, forward: Bool) -> some View {
-        Button {
-            let frame = CMTime(seconds: model.frameDuration, preferredTimescale: 60_000)
-            model.moveKeyCueEdge(id, isHead: isHead, by: forward ? frame : .zero - frame)
-        } label: {
-            Image(systemName: symbol)
-                .font(.system(size: 10, weight: .semibold))
-                .frame(width: 22, height: 22)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
-        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .help("\(isHead ? "Start" : "End") one frame \(forward ? "later" : "earlier")")
-        .accessibilityLabel("\(isHead ? "Start" : "End") one frame \(forward ? "later" : "earlier")")
+        let frame = CMTime(seconds: model.frameDuration, preferredTimescale: 60_000)
+        let name = isHead ? "Start" : "End"
+        return InspectorNudgeRow(title: title, value: Timecode.short(value),
+                                 earlierHelp: "\(name) one frame earlier",
+                                 laterHelp: "\(name) one frame later",
+                                 earlier: { model.moveKeyCueEdge(id, isHead: isHead, by: .zero - frame) },
+                                 later: { model.moveKeyCueEdge(id, isHead: isHead, by: frame) })
     }
 
     // MARK: - Shown or not
 
     private func visibility(_ cue: KeyCue) -> some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-            Button {
-                model.toggleKeyCueHidden(id)
-            } label: {
-                Label(cue.isHidden ? "Show" : "Hide", systemImage: cue.isHidden ? "eye" : "eye.slash")
-                    .frame(maxWidth: .infinity)
-            }
-            .controlSize(.small)
+            InspectorSwitch("Show in the video", isOn: Binding(
+                get: { !(self.cue?.isHidden ?? cue.isHidden) },
+                set: { _ in model.toggleKeyCueHidden(id) }
+            ))
             .help(cue.isHidden ? "Draw this shortcut in the video again" : "Keep this on the lane but leave it out of the video")
 
-            Text(note(cue))
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            // Only when something other than this switch keeps it off the picture: then
+            // the switch reads On and the key is still not there, which needs a reason.
+            if !cue.isHidden, let why = whyNotShown(cue) {
+                InspectorNote(why)
+            }
         }
-        .inspectorSection("In the video", systemImage: "eye")
+        .inspectorSection("In the Video", systemImage: "eye")
     }
 
-    /// Why this press is not on the picture, when it is not. A faded chip with no reason
-    /// beside it is a chip that looks broken.
-    private func note(_ cue: KeyCue) -> String {
-        if cue.isHidden {
-            return "Hidden: it stays on the lane and is left out of the video and the export."
-        }
+    /// Why this press is not on the picture although it is not hidden, when it is not. A
+    /// faded chip with no reason beside it is a chip that looks broken.
+    private func whyNotShown(_ cue: KeyCue) -> String? {
         if cue.isEmpty {
             return "Type the keys above and it will appear in the video."
         }
@@ -150,6 +119,6 @@ struct KeyCueInspector: View {
         if cue.isNamedKeyAlone, !model.timeline.keyStyle.showsNamedKeysAlone {
             return "\(cue.title) pressed on its own is left out unless the Keyboard panel says to show those."
         }
-        return "Shown in the video while the playhead is inside it."
+        return nil
     }
 }

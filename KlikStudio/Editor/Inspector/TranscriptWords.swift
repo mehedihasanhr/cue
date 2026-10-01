@@ -73,18 +73,18 @@ struct TranscriptWords: View {
             .disabled(picked.isEmpty)
             .padding(.top, 4)
 
-            Text(picked.isEmpty
-                 ? "Click a word to go to it. Shift-click to pick a run of words, ⌘-click to add one."
-                 : "Delete cuts the picked words from the video, picture and sound together. Undo puts them back.")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            // One short line on how picking works, because nothing else on screen says the
+            // words can be clicked; the rest is its tooltip.
+            InspectorNote(picked.isEmpty
+                          ? "Click a word to go to it. Shift-click to pick a run."
+                          : "Delete cuts the picked words from the video.")
+                .help(picked.isEmpty
+                      ? "Click a word to go to it. Shift-click to pick a run of words, ⌘-click to add one."
+                      : "Delete cuts the picked words from the video, picture and sound together. Undo puts them back.")
 
             if untimed {
-                Text("Greyed lines were typed or corrected by hand, so nothing knows exactly when their words were said. Cut them a whole line at a time from the line's menu, or listen again to time them.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                InspectorNote("Greyed lines can only be cut a whole line at a time.")
+                    .help("Greyed lines were typed or corrected by hand, so nothing knows exactly when their words were said. Cut them a whole line at a time from the line's menu, or listen again to time them.")
             }
         }
     }

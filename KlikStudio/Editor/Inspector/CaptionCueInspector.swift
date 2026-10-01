@@ -27,7 +27,7 @@ struct CaptionCueInspector: View {
     // MARK: - What it says
 
     private func words(_ cue: CaptionCue) -> some View {
-        VStack(alignment: .leading, spacing: SidebarSpacing.withinControl) {
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
             TextField("What is said here", text: text, axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(2...6)
@@ -68,35 +68,13 @@ struct CaptionCueInspector: View {
     /// word is what "in sync" looks like, and that is a judgement made one frame at a
     /// time.
     private func edge(_ cue: CaptionCue, title: String, value: CMTime, isHead: Bool) -> some View {
-        HStack(spacing: 8) {
-            Text(title)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .frame(width: 66, alignment: .leading)
-            Spacer(minLength: 0)
-            nudge("chevron.left", cue, isHead: isHead, forward: false)
-            Text(Timecode.short(value))
-                .font(.system(size: 12).monospacedDigit())
-                .frame(minWidth: 58)
-            nudge("chevron.right", cue, isHead: isHead, forward: true)
-        }
-    }
-
-    private func nudge(_ symbol: String, _ cue: CaptionCue, isHead: Bool, forward: Bool) -> some View {
-        Button {
-            let frame = CMTime(seconds: model.frameDuration, preferredTimescale: 60_000)
-            move(cue, isHead: isHead, by: forward ? frame : .zero - frame)
-        } label: {
-            Image(systemName: symbol)
-                .font(.system(size: 10, weight: .semibold))
-                .frame(width: 22, height: 22)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
-        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .help("\(isHead ? "Start" : "End") one frame \(forward ? "later" : "earlier")")
-        .accessibilityLabel("\(isHead ? "Start" : "End") one frame \(forward ? "later" : "earlier")")
+        let frame = CMTime(seconds: model.frameDuration, preferredTimescale: 60_000)
+        let name = isHead ? "Start" : "End"
+        return InspectorNudgeRow(title: title, value: Timecode.short(value),
+                                 earlierHelp: "\(name) one frame earlier",
+                                 laterHelp: "\(name) one frame later",
+                                 earlier: { move(cue, isHead: isHead, by: .zero - frame) },
+                                 later: { move(cue, isHead: isHead, by: frame) })
     }
 
     private func move(_ cue: CaptionCue, isHead: Bool, by step: CMTime) {
@@ -133,11 +111,7 @@ struct CaptionCueInspector: View {
                 .disabled(model.captionAfter(cue.id) == nil)
             }
             .controlSize(.small)
-
-            Text(note(cue))
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            .help(note(cue))
         }
         .inspectorSection("Line", systemImage: "text.alignleft")
     }

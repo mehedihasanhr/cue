@@ -53,10 +53,7 @@ struct MotionBackgroundPicker: View {
                                                }),
                                 range: AnimatedBackground.speedRange,
                                 format: { String(format: "%.2g×", $0) })
-                Text("It moves while the video plays, and is the same on every frame of the export as in the preview.")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .help("It moves while the video plays, and is the same on every frame of the export as in the preview.")
             }
         }
     }
@@ -102,9 +99,9 @@ struct MotionBackgroundPicker: View {
 
     @ViewBuilder
     private var video: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        Group {
             if model.hasVideoBackground {
-                HStack {
+                HStack(spacing: 8) {
                     Button("Replace…") { model.chooseBackgroundVideo() }
                     Button("Remove") {
                         showsVideo = false
@@ -116,10 +113,7 @@ struct MotionBackgroundPicker: View {
                 Button("Choose Video…") { model.chooseBackgroundVideo() }
                     .controlSize(.small)
             }
-            Text("The movie is copied into the recording and loops for as long as the video runs. Its sound is not used.")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .fixedSize(horizontal: false, vertical: true)
         }
+        .help("The movie is copied into the recording and loops for as long as the video runs. Its sound is not used.")
     }
 }

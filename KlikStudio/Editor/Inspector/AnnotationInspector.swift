@@ -23,6 +23,9 @@ struct AnnotationInspector: View {
 
     var body: some View {
         if let item {
+            // Groups told apart by space rather than by headings of their own: what it is,
+            // its type, how it looks, how it comes and goes, when. Five headings in one
+            // selection would be a second panel's worth of chrome.
             VStack(alignment: .leading, spacing: SidebarSpacing.betweenGroups) {
                 content(item)
                 if item.kind.hasWords {
@@ -33,7 +36,6 @@ struct AnnotationInspector: View {
                 timing(item)
                 advanced(item)
             }
-            .font(.system(size: 12))
             .inspectorSection("Annotation", systemImage: "character.textbox") {
                 HStack(spacing: 2) {
                     headerToggle(on: item.isHidden, symbol: item.isHidden ? "eye.slash" : "eye",
@@ -66,11 +68,7 @@ struct AnnotationInspector: View {
     /// A picture has no kind to switch to: turning a logo into a box would throw the
     /// logo away. What it has instead is a way to swap the picture for another.
     private func picture(_: String) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "photo")
-                .foregroundStyle(.secondary)
-            Text("Picture")
-            Spacer(minLength: 8)
+        InspectorRow("Picture") {
             Button("Replace…") { model.replacePicture(ofAnnotation: id) }
                 .controlSize(.small)
                 .help("Choose another picture for this place")
@@ -85,7 +83,7 @@ struct AnnotationInspector: View {
     @ViewBuilder
     private func shape(_ item: AnnotationItem) -> some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-            InspectorField(title: "Kind") {
+            InspectorRow("Kind") {
                 InspectorPicker(selection: kind, options: AnnotationItem.KindName.switchable) { $0.title }
             }
 
@@ -99,7 +97,7 @@ struct AnnotationInspector: View {
             }
 
             if case .step = item.kind {
-                InspectorField(title: "Number") {
+                InspectorRow("Number") {
                     HStack(spacing: 6) {
                         TextField("Number", value: stepNumber, format: .number)
                             .textFieldStyle(.roundedBorder)
@@ -119,22 +117,22 @@ struct AnnotationInspector: View {
     private func typeSettings(_ item: AnnotationItem) -> some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
             FontFamilyPicker(family: restyled(\.style.fontFamily, "Text Font"))
-            InspectorField(title: "Weight") {
+            InspectorRow("Weight") {
                 InspectorPicker(selection: restyled(\.style.weight, "Text Weight"),
                                 options: AnnotationStyle.Weight.allCases) { $0.title }
             }
-            InspectorField(title: "Align") {
+            InspectorRow("Align") {
                 InspectorPicker(selection: restyled(\.style.alignment, "Text Alignment"),
                                 options: AnnotationStyle.Alignment.allCases) { $0.title }
             }
-            InspectorField(title: item.kind.name == .callout ? "Bubble" : "Backdrop") {
+            InspectorRow(item.kind.name == .callout ? "Bubble" : "Backdrop") {
                 InspectorPicker(selection: restyled(\.style.backdrop, "Text Backdrop"),
                                 options: AnnotationStyle.Backdrop.allCases) { backdrop in
                     // A callout with nothing behind its words is still a bubble: an outline.
                     item.kind.name == .callout && backdrop == .none ? "Outline" : backdrop.title
                 }
             }
-            Toggle("Outline letters", isOn: restyled(\.style.outlinesText, "Outline Letters"))
+            InspectorSwitch("Outline letters", isOn: restyled(\.style.outlinesText, "Outline Letters"))
                 .help("A dark or light ring round each letter, so it reads over a busy picture")
         }
     }
@@ -145,8 +143,8 @@ struct AnnotationInspector: View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
             // A picture brings its own colours.
             if !item.isPicture {
-                InspectorField(title: "Colour") {
-                    ColorPicker("Colour", selection: colour, supportsOpacity: true)
+                InspectorRow("Colour") {
+                    InspectorColorWell(title: "Annotation colour", selection: colour, supportsOpacity: true)
                 }
             }
             // Only where there is a line to thicken: a callout has one only when it is drawn
@@ -156,14 +154,14 @@ struct AnnotationInspector: View {
                                 range: 0.5...6, format: { String(format: "%.1f×", $0) })
             }
             if item.kind.canBeFilled {
-                InspectorField(title: "Fill") {
+                InspectorRow("Fill") {
                     InspectorPicker(selection: restyled(\.style.fill, "Fill"),
                                     options: AnnotationStyle.Fill.allCases) { $0.title }
                 }
             }
             InspectorSlider(model: model, "Opacity", value: restyled(\.opacity, "Annotation Opacity"),
                             range: 0...1)
-            Toggle("Shadow", isOn: restyled(\.style.hasShadow, "Shadow"))
+            InspectorSwitch("Shadow", isOn: restyled(\.style.hasShadow, "Shadow"))
                 .help("A soft shadow under it, so it lifts off a busy picture")
         }
     }
@@ -172,11 +170,11 @@ struct AnnotationInspector: View {
 
     private func animation(_ item: AnnotationItem) -> some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-            InspectorField(title: "In") {
+            InspectorRow("In") {
                 InspectorPicker(selection: restyled(\.animation.entrance, "Animate In"),
                                 options: AnnotationAnimation.Entrance.allCases) { $0.title }
             }
-            InspectorField(title: "Out") {
+            InspectorRow("Out") {
                 InspectorPicker(selection: restyled(\.animation.exit, "Animate Out"),
                                 options: AnnotationAnimation.Exit.allCases) { $0.title }
             }
@@ -188,18 +186,18 @@ struct AnnotationInspector: View {
     /// Start, length and end, each typed. Changing the end changes the length and keeps the
     /// start, which is what "make it stop at 6 seconds" means.
     private func timing(_ item: AnnotationItem) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            InspectorField(title: "Start") {
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
+            InspectorRow("Start") {
                 TimeField(seconds: item.start.seconds, format: { Timecode.precise(Self.time($0)) }) { seconds in
                     model.setTiming(ofAnnotation: id, start: Self.time(seconds))
                 }
             }
-            InspectorField(title: "Duration") {
+            InspectorRow("Duration") {
                 TimeField(seconds: item.duration.seconds, format: { String(format: "%.2fs", $0) }) { seconds in
                     model.setTiming(ofAnnotation: id, duration: Self.time(seconds))
                 }
             }
-            InspectorField(title: "End") {
+            InspectorRow("End") {
                 TimeField(seconds: item.end.seconds, format: { Timecode.precise(Self.time($0)) }) { seconds in
                     model.setTiming(ofAnnotation: id, duration: Self.time(seconds - item.start.seconds))
                 }
@@ -216,35 +214,28 @@ struct AnnotationInspector: View {
     // MARK: - Advanced
 
     private func advanced(_ item: AnnotationItem) -> some View {
-        DisclosureGroup(isExpanded: isAdvancedOpen) {
-            VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-                InspectorSlider(model: model, "Rotation", value: restyled(\.rotation, "Rotate"),
-                                range: -180...180, format: { "\(Int($0.rounded()))°" })
-                    .disabled(item.isLocked)
+        InspectorDisclosure("Advanced", isExpanded: isAdvancedOpen) {
+            InspectorSlider(model: model, "Rotation", value: restyled(\.rotation, "Rotate"),
+                            range: -180...180, format: { "\(Int($0.rounded()))°" })
+                .disabled(item.isLocked)
 
-                HStack(spacing: 8) {
-                    number("X", \.origin.x, item)
-                    number("Y", \.origin.y, item)
-                }
-                HStack(spacing: 8) {
-                    number("W", \.size.width, item)
-                    number("H", \.size.height, item)
-                }
-
-                InspectorSlider(model: model, "In length", value: restyled(\.animation.entranceDuration, "Animate In"),
-                                range: 0...2, format: { String(format: "%.2fs", $0) })
-                InspectorSlider(model: model, "Out length", value: restyled(\.animation.exitDuration, "Animate Out"),
-                                range: 0...2, format: { String(format: "%.2fs", $0) })
-                InspectorField(title: "Easing") {
-                    InspectorPicker(selection: restyled(\.animation.easing, "Animation Easing"),
-                                    options: Easing.allCases) { $0.rawValue.capitalized }
-                }
+            HStack(spacing: 8) {
+                number("X", \.origin.x, item)
+                number("Y", \.origin.y, item)
             }
-            .padding(.top, 10)
-        } label: {
-            Text("Advanced")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                number("W", \.size.width, item)
+                number("H", \.size.height, item)
+            }
+
+            InspectorSlider(model: model, "In length", value: restyled(\.animation.entranceDuration, "Animate In"),
+                            range: 0...2, format: { String(format: "%.2fs", $0) })
+            InspectorSlider(model: model, "Out length", value: restyled(\.animation.exitDuration, "Animate Out"),
+                            range: 0...2, format: { String(format: "%.2fs", $0) })
+            InspectorRow("Easing") {
+                InspectorPicker(selection: restyled(\.animation.easing, "Animation Easing"),
+                                options: Easing.allCases) { $0.rawValue.capitalized }
+            }
         }
     }
 
@@ -252,8 +243,7 @@ struct AnnotationInspector: View {
     /// model keeps it in, so a number typed here lands exactly where it says.
     private func number(_ title: String, _ path: WritableKeyPath<CGRect, CGFloat>, _ item: AnnotationItem) -> some View {
         HStack(spacing: 6) {
-            Text(title)
-                .foregroundStyle(.secondary)
+            InspectorLabel(title)
                 .frame(width: 14, alignment: .leading)
             TimeField(seconds: Double(item.rect[keyPath: path]) * 100,
                       format: { String(format: "%.1f%%", $0) }) { percent in

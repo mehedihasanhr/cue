@@ -11,7 +11,7 @@ struct MaskFollowControls: View {
     private var isFollowingThis: Bool { job.maskID == mask.id }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
             if isFollowingThis {
                 running
             } else {
@@ -24,7 +24,7 @@ struct MaskFollowControls: View {
 
     /// The button, and — when it cannot be pressed — why, written beside it.
     private var follow: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: SidebarSpacing.withinControl) {
             Button {
                 model.followSelectedMask()
             } label: {
@@ -34,12 +34,12 @@ struct MaskFollowControls: View {
             }
             .controlSize(.small)
             .disabled(!model.canFollowSelectedMask)
-            .help("Keep the mask on what is under it while it moves or scrolls")
+            .help("Keep the mask on what is under it while it moves or scrolls. Moves the mask with what is under it, from the playhead to both ends.")
 
-            Text(model.whyMaskCannotFollow ?? "Moves the mask with what is under it, from the playhead to both ends.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            // Only why it cannot: a dimmed button with no reason beside it looks broken.
+            if let why = model.whyMaskCannotFollow {
+                InspectorNote(why)
+            }
         }
     }
 
@@ -67,8 +67,7 @@ struct MaskFollowControls: View {
     private var following: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Label("Follows its content", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
-                    .foregroundStyle(.secondary)
+                InspectorLabel("Follows its content")
                 Spacer()
                 SectionButton(title: "Stop Following") { model.stopFollowingSelectedMask() }
             }

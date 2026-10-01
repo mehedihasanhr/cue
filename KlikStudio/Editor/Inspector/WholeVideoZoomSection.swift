@@ -21,25 +21,20 @@ struct WholeVideoZoomSection: View {
     var body: some View {
         let isOn = camera.holdsWholeVideoZoomed
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-            Toggle("Keep the whole video zoomed in", isOn: Binding(
+            InspectorSwitch("Keep the whole video zoomed in", isOn: Binding(
                 get: { isOn },
                 set: { on in
                     style.set(\.camera.wholeVideoZoom, to: on ? Self.firstLevel : 1, "Whole Video Zoom")
                 }
             ))
+            .help("For a vertical or square cut of a wide recording: the picture is held zoomed in and the camera follows the pointer across it, instead of showing the whole recording between zooms.")
             InspectorSlider(model: model, "Level", systemImage: "plus.magnifyingglass",
                             value: style.binding(\.camera.wholeVideoZoom, "Whole Video Zoom"),
                             range: 1.1...CameraStyle.wholeVideoZoomRange.upperBound,
                             format: { String(format: "%.1f×", $0) })
                 .disabled(!isOn)
-            Text(isOn
-                 ? "The camera stays at \(String(format: "%.1f×", camera.sanitised.wholeVideoZoom)) from the first frame to the last and pans after the pointer. A zoom goes further in from there — a 2× zoom here is \(String(format: "%.1f×", camera.sanitised.wholeVideoZoom * 2)). Follow, Steadiness and Stray in a zoom's Camera Motion set how it pans."
-                 : "For a vertical or square cut of a wide recording: the picture is held zoomed in and the camera follows the pointer across it, instead of showing the whole recording between zooms.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                .help("The camera stays at \(String(format: "%.1f×", camera.sanitised.wholeVideoZoom)) from the first frame to the last and pans after the pointer. A zoom goes further in from there — a 2× zoom here is \(String(format: "%.1f×", camera.sanitised.wholeVideoZoom * 2)). Follow, Steadiness and Stray in a zoom's Camera Motion set how it pans.")
         }
-        .font(.system(size: 12))
         .inspectorSection("Zoom", systemImage: "plus.magnifyingglass")
     }
 }

@@ -28,14 +28,11 @@ struct ColorGradeSection: View {
             slider("Temperature", \.temperature, systemImage: "thermometer.medium")
             slider("Tint", \.tint, systemImage: "paintpalette")
             lut
-            Text("Changes the recording only — not the background, the window, the camera or anything drawn on top.")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .inspectorSection("Colour", systemImage: "camera.filters") {
             InspectorPicker(selection: choice, options: choices) { $0.title }
                 .accessibilityLabel("Colour preset")
+                .help("Changes the recording only — not the background, the window, the camera or anything drawn on top.")
         }
     }
 
@@ -46,7 +43,7 @@ struct ColorGradeSection: View {
         if let table = grade.lut {
             VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
                 InspectorRow(title: "LUT", value: table.name)
-                HStack {
+                HStack(spacing: 8) {
                     Button("Replace…") { model.loadLUT() }
                     Button("Remove") { model.removeLUT() }
                 }
@@ -54,13 +51,10 @@ struct ColorGradeSection: View {
                 slider("Intensity", \.lutIntensity, range: 0...1, systemImage: "slider.horizontal.below.rectangle")
             }
         } else {
-            VStack(alignment: .leading, spacing: 6) {
-                Button("Load LUT…") { model.loadLUT() }
+            InspectorRow("LUT") {
+                Button("Load…") { model.loadLUT() }
                     .controlSize(.small)
-                Text("A 3D .cube file. It is copied into the recording.")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .help("A 3D .cube file. It is copied into the recording.")
             }
         }
     }

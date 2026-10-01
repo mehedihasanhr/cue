@@ -24,90 +24,83 @@ struct CameraControls: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-            Text("Camera Motion")
-                .font(.system(size: 12.5))
-                .foregroundStyle(Color.primary.opacity(0.82))
+            InspectorSubheading("Camera Motion")
+                .help("For every zoom in the project")
 
             // First, because "too quick" is the first thing anyone says about a zoom. For
-            // every zoom in the project that has not been timed by hand.
-            Picker("Zoom speed", selection: Binding(
-                get: { model.timeline.camera.zoomSpeed },
-                set: { model.setZoomSpeed($0) }
-            )) {
-                ForEach(ZoomSpeed.allCases, id: \.self) { Text($0.title).tag($0) }
+            // every zoom in the project that has not been timed by hand. Three short words
+            // fit a system segmented control in the row, so it is one.
+            InspectorRow("Zoom speed") {
+                Picker("Zoom speed", selection: Binding(
+                    get: { model.timeline.camera.zoomSpeed },
+                    set: { model.setZoomSpeed($0) }
+                )) {
+                    ForEach(ZoomSpeed.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .controlSize(.small)
+                .fixedSize()
             }
-            .pickerStyle(.segmented)
-            Text("How long every zoom takes to go in and come out — \(String(format: "%.1f", model.timeline.camera.zoomSpeed.transition)) s each way. Zooms you have timed by hand keep their own.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            .help("How long every zoom takes to go in and come out — \(String(format: "%.1f", model.timeline.camera.zoomSpeed.transition)) s each way. Zooms you have timed by hand keep their own.")
 
             Group {
                 InspectorSlider(model: model, "Steadiness", systemImage: "hand.raised",
                                 value: style.binding(\.camera.steadiness, "Steadiness"), range: 0...2)
+                    .help("Steadiness smooths the pointer before the camera follows it.")
                 InspectorSlider(model: model, "Follow", systemImage: "scope",
                                 value: style.binding(\.camera.follow, "Follow Strength"), range: 0...1)
+                    .help("How closely the camera keeps up with the pointer.")
                 InspectorSlider(model: model, "Stray", systemImage: "arrow.left.and.right",
                                 value: style.binding(\.camera.safeArea, "Safe Area"), range: 0.05...1)
+                    .help("Stray is how far the pointer may wander from the middle before the frame has to move — the pointer never leaves the frame.")
             }
+            // Dimmed rather than disabled, as before: the values are still the project's
+            // and still editable, they simply have nothing to move on this zoom.
             .opacity(isFollowing ? 1 : 0.5)
+            if !isFollowing {
+                InspectorNote("This zoom doesn't follow the pointer, so these have nothing to move.")
+            }
 
-            Text(isFollowing
-                 ? "Steadiness smooths the pointer before the camera follows it. Stray is how far the pointer may wander from the middle before the frame has to move — the pointer never leaves the frame."
-                 : "This zoom is not following the pointer, so these have nothing to move.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .opacity(isFollowing ? 1 : 0.5)
+            // Not about following, so they sit outside the dimming that the three sliders
+            // above take when a zoom holds its aim. Each applies to every zoom in the
+            // project.
+            InspectorSwitch("Zoom the whole picture", isOn: style.binding(\.camera.zoomsWholeFrame, "Zoom Scope"))
+                .help(model.timeline.camera.zoomsWholeFrame
+                      ? "The frame grows and travels with the zoom — corners, shadow and all — and the padding closes up as the camera pushes in. The background stays put."
+                      : "The frame stays where the padding put it and only its contents magnify, so the padding, corners and shadow never move.")
 
-            Divider()
-
-            // Not about following, so it sits below the rule and outside the dimming that
-            // the three sliders above take when a zoom holds its aim. It applies to every
-            // zoom in the project.
-            Toggle("Zoom the whole picture", isOn: style.binding(\.camera.zoomsWholeFrame, "Zoom Scope"))
-            Text(model.timeline.camera.zoomsWholeFrame
-                 ? "The frame grows and travels with the zoom — corners, shadow and all — and the padding closes up as the camera pushes in. The background stays put."
-                 : "The frame stays where the padding put it and only its contents magnify, so the padding, corners and shadow never move.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            // Also for every zoom in the project, and also below the rule. What "close
-            // together" means is `ZoomGlide`'s rule; the caption says it in a sentence.
-            Toggle("Glide between zooms that are close together", isOn: Binding(
+            // What "close together" means is `ZoomGlide`'s rule; the tooltip says it in a
+            // sentence.
+            InspectorSwitch("Glide between close zooms", isOn: Binding(
                 get: { model.glidesBetweenZooms },
                 set: { model.setGlidesBetweenZooms($0) }
             ))
-            Text(model.glidesBetweenZooms
-                 ? "When two zooms touch, or the gap between them is shorter than their two ramps, the camera moves straight from one framing to the next instead of pulling back to the whole picture in between. An instant zoom never glides."
-                 : "The camera pulls back to the whole picture at the end of every zoom, however soon the next one begins.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            .help(model.glidesBetweenZooms
+                  ? "When two zooms touch, or the gap between them is shorter than their two ramps, the camera moves straight from one framing to the next instead of pulling back to the whole picture in between. An instant zoom never glides."
+                  : "The camera pulls back to the whole picture at the end of every zoom, however soon the next one begins.")
 
-            // A glide that waits, so it lives under the glide and only while it is on.
-            Picker("Stay zoomed in", selection: style.binding(\.camera.keepsZoomedInFor, "Stay Zoomed In")) {
-                Text("Never").tag(0.0)
-                ForEach([2.0, 4.0, 8.0], id: \.self) { Text("Across gaps up to \(Int($0)) s").tag($0) }
+            // A glide that waits, so it lives under the glide and only works while it is on.
+            InspectorRow("Stay zoomed in") {
+                Picker("Stay zoomed in", selection: style.binding(\.camera.keepsZoomedInFor, "Stay Zoomed In")) {
+                    Text("Never").tag(0.0)
+                    ForEach([2.0, 4.0, 8.0], id: \.self) { Text("Across gaps up to \(Int($0)) s").tag($0) }
+                }
+                .pickerStyle(.menu)
+                .controlSize(.small)
+                .fixedSize()
             }
             .disabled(!model.glidesBetweenZooms)
-            if model.glidesBetweenZooms, model.timeline.camera.keepsZoomedInFor > 0 {
-                Text("Between zooms up to \(Int(model.timeline.camera.keepsZoomedInFor)) seconds apart the camera holds the first framing, then travels to the next, instead of pulling out to the whole picture and back.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            .help(model.timeline.camera.keepsZoomedInFor > 0
+                  ? "Between zooms up to \(Int(model.timeline.camera.keepsZoomedInFor)) seconds apart the camera holds the first framing, then travels to the next, instead of pulling out to the whole picture and back."
+                  : "Hold the first framing across a short gap, then travel to the next, instead of pulling out to the whole picture and back.")
+
             // The level the whole video is held at lives with the frame's shape, where it
             // is set; here it is only said, because it changes what every zoom's scale means.
             if model.timeline.camera.holdsWholeVideoZoomed {
-                Text("The whole video is held at \(String(format: "%.1f×", model.timeline.camera.sanitised.wholeVideoZoom)) (Frame ▸ Zoom), so this zoom goes that much further in, and between zooms the camera pans after the pointer with these same settings.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                InspectorNote("The whole video is held at \(String(format: "%.1f×", model.timeline.camera.sanitised.wholeVideoZoom)) (Frame ▸ Zoom).")
+                    .help("The whole video is held at \(String(format: "%.1f×", model.timeline.camera.sanitised.wholeVideoZoom)) (Frame ▸ Zoom), so this zoom goes that much further in, and between zooms the camera pans after the pointer with these same settings.")
             }
         }
-        .font(.system(size: 12))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Camera motion")
     }

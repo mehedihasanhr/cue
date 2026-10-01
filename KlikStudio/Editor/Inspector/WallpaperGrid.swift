@@ -80,7 +80,7 @@ struct WallpaperGrid: View {
             let shown = state.showsAllSystemWallpapers ? pictures : Array(pictures.prefix(collapsedCount))
 
             VStack(alignment: .leading, spacing: 8) {
-                header("From macOS") {
+                header("From macOS", help: "Desktop pictures installed on this Mac") {
                     if pictures.count > collapsedCount {
                         SectionButton(title: state.showsAllSystemWallpapers
                                       ? "Show less"
@@ -101,9 +101,6 @@ struct WallpaperGrid: View {
                         }
                     }
                 }
-                Text("Desktop pictures installed on this Mac.")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
             }
         }
     }
@@ -135,11 +132,11 @@ struct WallpaperGrid: View {
         }
     }
 
-    private func header(_ title: String, @ViewBuilder trailing: () -> some View) -> some View {
+    private func header(_ title: String, help: String = "",
+                        @ViewBuilder trailing: () -> some View) -> some View {
         HStack {
-            Text(title)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+            InspectorSubheading(title)
+                .help(help)
             Spacer()
             trailing()
         }

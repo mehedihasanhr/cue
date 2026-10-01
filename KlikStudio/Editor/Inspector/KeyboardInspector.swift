@@ -26,10 +26,10 @@ struct KeyboardInspector: View {
     /// the two ways to get something on it.
     private var empty: some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-            Text(reason)
-                .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            // Why the lane is empty is the whole of this state, so it is said in the panel
+            // — shortly, with the full answer in the tooltip.
+            InspectorNote(shortReason)
+                .help(reason)
 
             if model.keyCapture == nil {
                 SettingsLink {
@@ -57,14 +57,19 @@ struct KeyboardInspector: View {
                 .help("Put back the shortcuts the recorder saw")
             }
 
-            Text("Or add one by hand, starting where the playhead is.")
-                .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
             addOne
         }
         .inspectorSection("Shortcuts", systemImage: "keyboard")
+    }
+
+    /// The reason in a line.
+    private var shortReason: String {
+        switch model.keyCapture {
+        case .some(.recorded): "No shortcuts were pressed, or all have been removed."
+        case .some(.notPermitted): "Not recorded: Klik Studio had no Accessibility access."
+        case .some: "This recording's keyboard data can't be read."
+        case .none: "Shortcuts weren't recorded for this take."
+        }
     }
 
     private var reason: String {
@@ -88,22 +93,22 @@ struct KeyboardInspector: View {
                 .frame(maxWidth: .infinity)
         }
         .controlSize(.small)
-        .help("A shortcut to type into, starting at the playhead (⌥⌘K)")
+        .help("A shortcut to type into, starting at the playhead (⌥⌘K). Or add one by hand, starting where the playhead is.")
     }
 
     // MARK: - How they look
 
     private var appearance: some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-            Toggle("Show keys in the video", isOn: style.binding(\.keyStyle.isVisible, "Keys"))
+            InspectorSwitch("Show keys in the video", isOn: style.binding(\.keyStyle.isVisible, "Keys"))
 
             Group {
-                InspectorField(title: "Position") {
+                InspectorRow("Position") {
                     InspectorPicker(selection: style.binding(\.keyStyle.position, "Key Position"),
                                     options: KeyStyle.Position.allCases,
                                     title: \.title)
                 }
-                InspectorField(title: "Look") {
+                InspectorRow("Look") {
                     InspectorPicker(selection: style.binding(\.keyStyle.look, "Key Look"),
                                     options: KeyStyle.Look.allCases,
                                     title: \.title)
@@ -111,12 +116,9 @@ struct KeyboardInspector: View {
                 InspectorSlider(model: model, "Size", systemImage: "textformat.size",
                                 value: style.binding(\.keyStyle.size, "Key Size"),
                                 range: KeyStyle.sizeRange)
-                Toggle("Show Return, arrows and the like pressed alone",
-                       isOn: style.binding(\.keyStyle.showsNamedKeysAlone, "Lone Keys"))
-                Text("Off, every line break and every step through a list would put a key on screen. Shortcuts with ⌘, ⌃ or ⌥ are always shown.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                InspectorSwitch("Show lone Return, arrows and the like",
+                                isOn: style.binding(\.keyStyle.showsNamedKeysAlone, "Lone Keys"))
+                    .help("Show Return, arrows and the like pressed alone. Off, every line break and every step through a list would put a key on screen. Shortcuts with ⌘, ⌃ or ⌥ are always shown.")
             }
             // The switch itself stays live: it is the way back.
             .disabled(!model.timeline.keyStyle.isVisible)
@@ -127,12 +129,12 @@ struct KeyboardInspector: View {
     // MARK: - Which ones
 
     private var list: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 4) {
             ForEach(model.timeline.keyCues) { cue in
                 row(cue)
             }
             addOne
-                .padding(.top, 4)
+                .padding(.top, SidebarSpacing.betweenControls - 4)
             if model.hasRecordedKeys {
                 Button("Restore Recorded Shortcuts") { model.restoreRecordedKeys() }
                     .controlSize(.small)

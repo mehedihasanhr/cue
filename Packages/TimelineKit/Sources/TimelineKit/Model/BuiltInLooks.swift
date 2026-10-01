@@ -9,8 +9,13 @@ public extension Look {
     /// than somebody's whole set-up. "Social Post" is the one that also sets the shape,
     /// since a portrait frame is the point of it.
     ///
-    /// Six, and each is a different idea rather than a different colour: the app's
-    /// default, a light one, a dark one, a warm one, none at all, and a portrait one.
+    /// Four, and each is a different idea rather than a different colour: the app's
+    /// default, a warm one, none at all, and a portrait one. There were six, with a light
+    /// and a dark one beside them, but those two were the default in another colour —
+    /// which is what the Background section is for — and six tiles made the choice look
+    /// bigger than it is. A project still wearing either of them is not changed: it simply
+    /// stops matching a built-in, and the picker calls it Custom.
+    ///
     /// The two that are about having nothing round the picture — the factory one and the
     /// bare one — also take away a window frame; the others leave it as it is.
     static let builtIn: [Look] = [
@@ -22,22 +27,6 @@ public extension Look {
                           shadowRadius: 0.03, shadowOpacity: 0.45,
                           backgroundBlur: 0, borderWidth: 0, borderColor: .white,
                           chrome: WindowChrome())),
-        // Paper-white with a hairline: a light recording on a light background needs an
-        // edge, and a shadow alone is too soft to give it one.
-        Look(name: "Paper",
-             frame: Frame(background: .color(ColorValue(r: 0.94, g: 0.93, b: 0.9)),
-                          padding: 0.07, cornerRadius: 0.018,
-                          shadowRadius: 0.035, shadowOpacity: 0.22,
-                          backgroundBlur: 0,
-                          borderWidth: 0.0025, borderColor: ColorValue(r: 0.1, g: 0.1, b: 0.12, a: 0.55))),
-        // Near-black, no shadow — there is nothing for one to fall on — and a faint
-        // keyline in its place.
-        Look(name: "Midnight",
-             frame: Frame(background: .color(ColorValue(r: 0.05, g: 0.05, b: 0.07)),
-                          padding: 0.05, cornerRadius: 0.024,
-                          shadowRadius: 0.03, shadowOpacity: 0,
-                          backgroundBlur: 0,
-                          borderWidth: 0.002, borderColor: ColorValue(r: 1, g: 1, b: 1, a: 0.35))),
         // Warm, roomy, with a deep soft shadow: the one for a launch video.
         Look(name: "Sunset",
              frame: Frame(background: .gradient(from: ColorValue(r: 0.98, g: 0.55, b: 0.35),
