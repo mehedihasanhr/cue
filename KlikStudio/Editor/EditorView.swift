@@ -23,14 +23,15 @@ struct EditorView: View {
     /// sat on the left, so the width somebody chose then carries over.
     @AppStorage("editor.settingsWidth") private var settingsWidth: Double = 320
 
-    /// How far the inspector can be dragged. The narrow end is set by the tool tabs across
-    /// its top — nine of them still have to be a comfortable target each — and the wide end
-    /// by the picture, which at the window's minimum width should keep about half of it.
-    private static let inspectorWidths: ClosedRange<Double> = 300...480
+    /// How far the inspector can be dragged. The narrow end is the settings column's old
+    /// narrowest — a slider's track and its name still need about three hundred points —
+    /// plus the tool rail down its left edge; the wide end is set by the picture, which at
+    /// the window's minimum width should keep about half of it.
+    private static let inspectorWidths: ClosedRange<Double> = 352...532
 
     /// The stored width, held to the range. A width saved by an older layout with a
-    /// narrower minimum would otherwise squeeze the tabs until the splitter was next
-    /// touched.
+    /// narrower minimum would otherwise squeeze the panel beside the rail until the
+    /// splitter was next touched.
     private var clampedWidth: Double {
         min(max(settingsWidth, Self.inspectorWidths.lowerBound), Self.inspectorWidths.upperBound)
     }
@@ -58,9 +59,9 @@ struct EditorView: View {
     /// Picture on the left, its settings on the right, time along the bottom.
     ///
     /// Three bands, top to bottom. The upper one is the picture and the inspector side by
-    /// side, the same height, with the tools as tabs across the top of the inspector — so
-    /// choosing a tool and seeing what it opened happen in one column, the way an inspector
-    /// works in Final Cut, Xcode and Keynote. Under it, one slim transport bar across the
+    /// side, the same height, with the tools as a rail down the inspector's left edge —
+    /// between the picture and the settings — so choosing a tool and seeing what it opened
+    /// happen side by side in one column. Under it, one slim transport bar across the
     /// full width; under that, the timeline, also full width, because its width is what
     /// decides how finely an edit can be placed and nothing up here earns a share of it.
     ///
@@ -114,7 +115,7 @@ struct EditorView: View {
                                                     hasSound: model.waveform.state != .unavailable))
         }
         // Asking for a tool is asking to see its settings. However it was asked for — a
-        // tab, the View menu, its shortcut, a Frame menu item that needs its panel — a
+        // rail tab, the View menu, its shortcut, a Frame menu item that needs its panel — a
         // hidden inspector comes back for it, rather than the request landing in a column
         // nobody can see.
         .onChange(of: model.toolRequests) {

@@ -3,35 +3,38 @@ import TimelineKit
 
 /// The settings column: whatever the current tool — or the current selection — is about.
 ///
-/// It sits at the right of the window, beside the picture, with the tool tabs that drive
-/// it across its top — so choosing a tool and seeing what it opened happen in the same
-/// column. It is the one surface in the editor that changes wholesale, so it says what it
-/// is showing. Without a heading, picking a tool swapped one unlabelled stack of sliders
-/// for another and the only evidence of what happened was a chip moving along the tabs —
-/// and while a timeline selection owns the panel, the heading is the only thing saying
-/// that the panel is no longer about the highlighted tab.
+/// It sits at the right of the window, beside the picture, with the rail of tools that
+/// drives it down its left edge — between the picture and the controls — so choosing a tool
+/// and seeing what it opened happen side by side. It is the one surface in the editor that
+/// changes wholesale, so it says what it is showing. Without a heading, picking a tool
+/// swapped one unlabelled stack of sliders for another and the only evidence of what
+/// happened was a highlight moving along the rail — and while a timeline selection owns
+/// the panel, the heading is the only thing saying that the panel is no longer about the
+/// highlighted tool.
 struct InspectorPanel: View {
     let model: EditorModel
     @State private var state = InspectorState()
 
     var body: some View {
-        VStack(spacing: 0) {
-            ToolTabs(model: model)
-            StudioDivider()
-            header
-            ScrollView {
-                VStack(alignment: .leading, spacing: SidebarSpacing.betweenSections) {
-                    content
+        HStack(spacing: 0) {
+            ToolRail(model: model)
+            StudioDivider(axis: .vertical)
+            VStack(spacing: 0) {
+                header
+                ScrollView {
+                    VStack(alignment: .leading, spacing: SidebarSpacing.betweenSections) {
+                        content
+                    }
+                    .padding(.horizontal, SidebarMetrics.contentInset)
+                    .padding(.bottom, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(.horizontal, SidebarMetrics.contentInset)
-                .padding(.bottom, 8)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // No scroller. The panel is a column of controls, not a document: the bar
+                // appears over the right-hand end of every slider in it, and the length of
+                // the panel is not something anybody needs reporting.
+                .scrollIndicators(.never)
+                .studioScrollEdges()
             }
-            // No scroller. The panel is a column of controls, not a document: the bar
-            // appears over the right-hand end of every slider in it, and the length of
-            // the panel is not something anybody needs reporting.
-            .scrollIndicators(.never)
-            .studioScrollEdges()
         }
         .studioSurface()
         .accessibilityElement(children: .contain)
@@ -101,22 +104,17 @@ struct InspectorPanel: View {
                 .foregroundStyle(Color.accentColor)
                 .frame(width: 18)
             Text(heading.title)
-                .font(.system(size: 13))
+                .font(.system(size: 13, weight: .semibold))
                 .lineLimit(1)
             Spacer(minLength: 8)
             if selectionOwnsPanel {
-                Button {
+                StudioIconButton(systemImage: "xmark",
+                                 help: "Stop editing this and go back to \(model.tool.title)",
+                                 accessibilityName: "Clear selection",
+                                 size: .small,
+                                 iconSize: 10) {
                     model.clearSelection()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10))
-                        .frame(width: 20, height: 20)
-                        .contentShape(Rectangle())
                 }
-                .buttonStyle(BarButtonStyle())
-                .foregroundStyle(.secondary)
-                .help("Stop editing this and go back to \(model.tool.title)")
-                .accessibilityLabel("Clear selection")
             }
         }
         .padding(.horizontal, SidebarMetrics.contentInset)

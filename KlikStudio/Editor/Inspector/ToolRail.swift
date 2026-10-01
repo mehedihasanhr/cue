@@ -1,79 +1,64 @@
 import RecordKit
 import SwiftUI
 
-/// The row of tool tabs across the top of the inspector.
+/// The column of tool tabs down the left edge of the inspector.
 ///
-/// It used to be a rail down the far left of the window, with the panel it drove beside
-/// it and the picture between the panel and everything else. Now the panel is on the
-/// right, the way an inspector is in Final Cut, Xcode or Keynote, and the tools are the
-/// tabs on top of it: the thing you choose and the controls it opens are one column, and
-/// the picture is not split from the timeline by a strip of icons it has nothing to do
-/// with.
+/// Between the picture and the settings it opens: the tools are the spine of the panel,
+/// and the controls hang off them. As a row of tabs across the top of the panel the nine
+/// glyphs were squeezed into whatever width the column had and sat above the heading that
+/// named them, so the eye read tools, then name, then controls, top to bottom across three
+/// bands. Down the side, a tool and the panel it opened are side by side, and the panel
+/// gets its whole height back for controls.
 ///
-/// The selection still lives on `EditorModel` rather than here, because entering crop
-/// mode changes the rendered frame: that is behaviour, not chrome.
-///
-/// The tabs share the width evenly rather than each taking a fixed square. Nine fixed
-/// squares left-aligned in a column that can be dragged wider leave a ragged gap at the
-/// right end, which reads as a tenth tab that failed to load; spread across the column
-/// they are one control, the same width as the panel underneath them.
-struct ToolTabs: View {
+/// The selection still lives on `EditorModel` rather than here, because entering crop mode
+/// changes the rendered frame: that is behaviour, not chrome.
+struct ToolRail: View {
     let model: EditorModel
     @Environment(StudioSettings.self) private var settings
-    @Namespace private var chip
+    @Namespace private var highlight
 
-    /// How tall the row is. The same band as the panel's heading under it, so the two
-    /// rows of chrome at the top of the column are one rhythm rather than two.
-    static let height: CGFloat = SidebarMetrics.headerHeight
+    static let width: CGFloat = SidebarMetrics.railWidth
 
     var body: some View {
-        HStack(spacing: 2) {
-            ForEach(EditorTool.rail) { tool in
-                tab(tool)
+        // Scrolls only if it must. Nine tabs are taller than the picture's band at the
+        // window's smallest, and a rail whose last tool is clipped off is a tool that does
+        // not exist.
+        ScrollView(.vertical) {
+            VStack(spacing: StudioTheme.Spacing.tight) {
+                ForEach(EditorTool.rail) { tool in
+                    StudioIconTab(systemImage: tool.symbol,
+                                  title: tool.title,
+                                  help: help(for: tool),
+                                  isSelected: model.tool == tool,
+                                  isAvailable: tool.isAvailable,
+                                  namespace: highlight) {
+                        model.choose(tool)
+                    }
+                    .accessibilityHint(tool.unavailableReason ?? "")
+                }
             }
+            // The first tab's centre on the heading's centre beside it, so the chosen tool
+            // and the name of what it opened read as one line across the column.
+            .padding(.top, (SidebarMetrics.headerHeight - StudioIconTab.size) / 2)
+            .padding(.bottom, StudioTheme.Spacing.regular)
+            .frame(maxWidth: .infinity)
         }
-        .padding(.horizontal, SidebarMetrics.contentInset - 4)
-        .frame(height: Self.height)
+        .scrollIndicators(.never)
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(width: Self.width)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .animation(StudioMotion.selection, value: model.tool)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Editor tools")
     }
 
-    private func tab(_ tool: EditorTool) -> some View {
-        let isSelected = model.tool == tool
-
-        return Button {
-            model.choose(tool)
-        } label: {
-            Image(systemName: tool.symbol)
-                .font(.system(size: 13, weight: isSelected ? .medium : .regular))
-                .symbolVariant(isSelected ? .fill : .none)
-                .frame(maxWidth: .infinity)
-                .frame(height: 28)
-                .foregroundStyle(tool.isAvailable
-                    ? (isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
-                    : AnyShapeStyle(.tertiary))
-                .background {
-                    if isSelected {
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(Color.accentColor.opacity(0.16))
-                            .matchedGeometryEffect(id: "tool", in: chip)
-                    }
-                }
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(BarButtonStyle())
-        .disabled(!tool.isAvailable)
-        // The shortcut itself is the menu bar's — View lists the nine tools — so it
-        // answers whatever has the keyboard, and is not registered twice.
-        .animation(StudioMotion.selection, value: model.tool)
-        // The shortcut is on the tip because the tabs are where somebody looks for it:
-        // the menu bar has the same commands, and nobody finds them there twice. The
-        // shortcut as it is set now, which Settings can change, or none.
-        .help(tool.unavailableReason
-              ?? settings.editorShortcuts[tool.command].map { "\(tool.title) (\($0.displayString))" }
-              ?? tool.title)
-        .accessibilityLabel(tool.title)
-        .accessibilityHint(tool.unavailableReason ?? "")
-        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+    /// The shortcut is on the tip because the rail is where somebody looks for it: the menu
+    /// bar has the same commands (View lists the nine tools, and answers whatever has the
+    /// keyboard, so the shortcut is not registered twice here), and nobody finds them there
+    /// twice. The shortcut as it is set now, which Settings can change, or none.
+    private func help(for tool: EditorTool) -> String {
+        tool.unavailableReason
+            ?? settings.editorShortcuts[tool.command].map { "\(tool.title) (\($0.displayString))" }
+            ?? tool.title
     }
 }

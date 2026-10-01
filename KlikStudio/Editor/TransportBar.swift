@@ -62,9 +62,10 @@ struct TransportBar: View {
 
     // MARK: - Moving through it
 
-    /// One size, all glyphs — no capsules, no discs, nothing outlined. Controls that all
-    /// act at the playhead should look like the same kind of thing, and the chrome around
-    /// each one was more pixels than the icons it framed.
+    /// One size, all ghost squircles — nothing drawn round a glyph until the pointer is on
+    /// it. Controls that all act at the playhead should look like the same kind of thing.
+    /// Play is the exception, filled in the accent: it is the control the hand goes to
+    /// first, and the one this bar is for.
     private var playback: some View {
         HStack(spacing: 2) {
             glyph("backward.end.fill", help: tip("Previous frame", .previousFrame), name: "Previous frame") {
@@ -74,8 +75,9 @@ struct TransportBar: View {
             glyph(model.isPlaying ? "pause.fill" : "play.fill",
                   help: tip(model.isPlaying ? "Pause" : "Play", .playPause),
                   name: model.isPlaying ? "Pause" : "Play",
-                  tint: StudioPalette.brand,
-                  size: 15) { model.togglePlayback() }
+                  variant: .primary,
+                  size: 12) { model.togglePlayback() }
+                .padding(.horizontal, 2)
 
             glyph("forward.end.fill", help: tip("Next frame", .nextFrame), name: "Next frame") {
                 model.stepFrame(forward: true)
@@ -133,19 +135,13 @@ struct TransportBar: View {
                 model.splitAtPlayhead()
             }
 
-            Menu {
-                Button("Add Zoom at Playhead") { model.addZoomAtPlayhead() }
-                Button("Auto-Zoom from Clicks") { model.suggestZooms() }
-            } label: {
+            StudioActionMenu(actions: [
+                .init("Add Zoom at Playhead", systemImage: "plus.magnifyingglass") { model.addZoomAtPlayhead() },
+                .init("Auto-Zoom from Clicks", systemImage: "cursorarrow.click.2") { model.suggestZooms() },
+            ], style: .studio(.ghost, isIconOnly: true)) {
                 Image(systemName: "plus.magnifyingglass")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 28, height: 28)
-                    .contentShape(Rectangle())
+                    .font(.system(size: 13, weight: .medium))
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
             .help("Push in on part of the picture")
             .accessibilityLabel("Add zoom")
         }
@@ -158,25 +154,20 @@ struct TransportBar: View {
         settings.editorShortcuts[command].map { "\(text) (\($0.displayString))" } ?? text
     }
 
-    /// One control: a glyph that lights up under the pointer. The same 28-point square as
-    /// the title bar's glyphs, so the rows of icons in this window are one size.
+    /// One control: a `StudioIconButton`, the same 28-point squircle as the title bar's
+    /// glyphs, so the rows of icons in this window are one size.
     private func glyph(_ symbol: String,
                        help: String,
                        name: String,
-                       tint: Color? = nil,
+                       variant: StudioButtonStyle.Variant = .ghost,
                        size: CGFloat = 13,
                        action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: size))
-                .foregroundStyle(tint.map(AnyShapeStyle.init) ?? AnyShapeStyle(.secondary))
-                .frame(width: 28, height: 28)
-                .contentTransition(.symbolEffect(.replace))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(BarButtonStyle())
-        .help(help)
-        .accessibilityLabel(name)
+        StudioIconButton(systemImage: symbol,
+                         help: help,
+                         accessibilityName: name,
+                         variant: variant,
+                         iconSize: size,
+                         action: action)
     }
 
     // MARK: - How loud the preview is
@@ -189,24 +180,20 @@ struct TransportBar: View {
     private func level(_ audio: PreviewAudio) -> some View {
         @Bindable var audio = audio
 
-        HStack(spacing: 8) {
-            Button { audio.isMuted.toggle() } label: {
-                Image(systemName: audio.isMuted || audio.volume == 0
-                      ? "speaker.slash.fill"
-                      : audio.volume < 0.4 ? "speaker.wave.1.fill" : "speaker.wave.2.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    // Wide enough for the widest of the three speakers, so the slider
-                    // beside it does not shift when the waves change.
-                    .frame(width: 20, height: 28)
-                    .contentTransition(.symbolEffect(.replace))
-                    .contentShape(Rectangle())
+        HStack(spacing: 4) {
+            // A square button, so the slider beside it does not shift when the speaker's
+            // waves change width.
+            StudioIconButton(systemImage: audio.isMuted || audio.volume == 0
+                                 ? "speaker.slash.fill"
+                                 : audio.volume < 0.4 ? "speaker.wave.1.fill" : "speaker.wave.2.fill",
+                             help: audio.isMuted ? "Turn the sound on" : "Silence the preview",
+                             accessibilityName: audio.isMuted ? "Unmute preview" : "Mute preview",
+                             size: .small,
+                             iconSize: 11) {
+                audio.isMuted.toggle()
             }
-            .buttonStyle(BarButtonStyle())
-            .help(audio.isMuted ? "Turn the sound on" : "Silence the preview")
-            .accessibilityLabel(audio.isMuted ? "Unmute preview" : "Mute preview")
 
-            StudioSlider(value: $audio.volume, in: 0...1)
+            StudioSlider(value: $audio.volume, in: 0...1, size: .small, defaultValue: 1)
                 .frame(width: Self.sliderWidth)
                 .disabled(audio.isMuted)
                 .help("How loud the preview is")
@@ -221,20 +208,18 @@ struct TransportBar: View {
     /// apart meaning two different things is exactly the confusion this row exists to
     /// avoid.
     private var zoom: some View {
-        HStack(spacing: 8) {
-            Button { model.viewport.fit(model.duration) } label: {
-                Image(systemName: "arrow.left.and.right")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 20, height: 28)
-                    .contentShape(Rectangle())
+        HStack(spacing: 4) {
+            StudioIconButton(systemImage: "arrow.left.and.right",
+                             help: tip("Fit the whole edit", .fitTimeline),
+                             accessibilityName: "Fit timeline",
+                             size: .small,
+                             iconSize: 11) {
+                model.viewport.fit(model.duration)
             }
-            .buttonStyle(BarButtonStyle())
-            .help(tip("Fit the whole edit", .fitTimeline))
-            .accessibilityLabel("Fit timeline")
 
             StudioSlider(value: zoomLevel,
-                         in: log2(TimelineViewport.minimumPointsPerSecond)...log2(TimelineViewport.maximumPointsPerSecond))
+                         in: log2(TimelineViewport.minimumPointsPerSecond)...log2(TimelineViewport.maximumPointsPerSecond),
+                         size: .small)
                 .frame(width: Self.sliderWidth)
                 .help("How much of the edit the timeline shows")
                 .accessibilityLabel("Timeline scale")

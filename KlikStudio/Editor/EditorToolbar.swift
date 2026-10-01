@@ -30,7 +30,7 @@ struct EditorToolbar: View {
     /// left end of the bar is left to them alone and every control this bar owns is in one
     /// cluster at the other end, over the inspector it mostly concerns.
     private static let trafficLightInset: CGFloat = 78
-    /// As tall as it has to be for the traffic lights and a row of 26-point controls,
+    /// As tall as it has to be for the traffic lights and a row of 28-point controls,
     /// and no taller: this bar is the frame around the work, not part of it. The same
     /// height as the transport bar, so the two strips of chrome either side of the picture
     /// are one size.
@@ -120,19 +120,12 @@ struct EditorToolbar: View {
         let saving = model.autosaver.state
         Button { model.save() } label: {
             Text(saveTitle(for: saving))
-                .font(.system(size: 12))
                 .foregroundStyle(saveStyle(for: saving))
-                .padding(.horizontal, 11)
-                .frame(height: 26)
-                .background {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        // `primary` rather than white: white on the light chrome is no
-                        // fill at all, and the button vanished in the light appearance.
-                        .fill(Color.primary.opacity(saveIsPressable(saving) ? 0.08 : 0.04))
-                }
-                .contentShape(Rectangle())
         }
-        .buttonStyle(BarButtonStyle())
+        // A secondary button while there is something to save; a ghost — just the word —
+        // once there is not, so "Saved" reads as a state rather than as a button waiting
+        // to be pressed.
+        .buttonStyle(.studio(saveIsPressable(saving) ? .secondary : .ghost))
         .disabled(!saveIsPressable(saving))
         // ⌘S is File › Save's, in the menu bar, where it answers whatever has the keyboard.
         .animation(StudioMotion.state, value: saving)
@@ -144,20 +137,8 @@ struct EditorToolbar: View {
         // all when nothing is exporting.
         ExportStatusPill(jobs: exports)
 
-        Button(action: export) {
-            HStack(spacing: 5) {
-                Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 11))
-                Text("Export")
-                    .font(.system(size: 12))
-            }
-            .foregroundStyle(.white)
-            .padding(.horizontal, 11)
-            .frame(height: 26)
-            .background(StudioPalette.brand, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-        }
-        .buttonStyle(BarButtonStyle())
-        .help("Export this as a video or a GIF")
+        StudioButton("Export", systemImage: "square.and.arrow.up", variant: .primary, action: export)
+            .help("Export this as a video or a GIF")
 
         clusterRule
 
@@ -167,10 +148,10 @@ struct EditorToolbar: View {
         // shortcut, so it is never hidden itself.
         GlyphButton(symbol: "sidebar.right",
                     help: showsInspector ? "Hide the inspector (⌥⌘I)" : "Show the inspector (⌥⌘I)",
+                    accessibilityName: showsInspector ? "Hide inspector" : "Show inspector",
                     isOn: showsInspector) {
             showsInspector.toggle()
         }
-        .accessibilityLabel(showsInspector ? "Hide inspector" : "Show inspector")
     }
 
     /// The short rule between two clusters of controls.
@@ -191,10 +172,12 @@ struct EditorToolbar: View {
     }
 
     /// Red for a failure in either appearance: `Color.red` adapts, and it is the one
-    /// state in this bar that must not be quiet.
+    /// state in this bar that must not be quiet. "Saved" and "Saving…" are secondary ink on
+    /// a disabled button, which the button dims again — tertiary, in effect, without
+    /// disappearing.
     private func saveStyle(for state: EditorAutosaver.State) -> AnyShapeStyle {
         switch state {
-        case .saved, .saving: AnyShapeStyle(.tertiary)
+        case .saved, .saving: AnyShapeStyle(.secondary)
         case .edited: AnyShapeStyle(.primary)
         case .failed: AnyShapeStyle(Color.red)
         }
@@ -223,43 +206,26 @@ struct EditorToolbar: View {
     }
 }
 
-/// One quiet control: a glyph that lights up under the pointer and dims when it cannot
-/// be used. Close to the size of the transport bar's glyphs, so the rows of icons in this
-/// window read as one family.
+/// One quiet control: a ghost `StudioIconButton` — nothing but its glyph until the pointer
+/// is over it, dimmed when it cannot be used. The same 28-point squircle as the transport
+/// bar's, so the rows of icons in this window read as one family.
 private struct GlyphButton: View {
     let symbol: String
     let help: String
+    var accessibilityName: String?
     var isEnabled = true
-    /// For a switch: drawn in the accent colour while on, the way the system draws a
+    /// For a switch: an accent wash and accent glyph while on, the way the system draws a
     /// toolbar toggle that is pressed in.
     var isOn = false
     let action: () -> Void
 
-    @State private var isHovering = false
-
     var body: some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 13))
-                .frame(width: 26, height: 26)
-                .foregroundStyle(isEnabled
-                    ? (isOn ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
-                    : AnyShapeStyle(.quaternary))
-                .background {
-                    if isHovering, isEnabled {
-                        // `primary`, so the hover reads in both appearances: white at eight
-                        // percent was invisible on the light chrome.
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(Color.primary.opacity(0.07))
-                    }
-                }
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(BarButtonStyle())
-        .disabled(!isEnabled)
-        .onHover { isHovering = $0 }
-        .animation(StudioMotion.state, value: isHovering)
-        .help(help)
+        StudioIconButton(systemImage: symbol,
+                         help: help,
+                         accessibilityName: accessibilityName,
+                         isActive: isOn,
+                         action: action)
+            .disabled(!isEnabled)
     }
 }
 

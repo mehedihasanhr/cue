@@ -146,8 +146,9 @@ struct StyleBinding {
 /// a checkbox was 16 points, a hand-styled pop-up 30 — and the column read as a stack of
 /// unrelated parts rather than one list.
 enum InspectorMetrics {
-    /// The least a one-line row is tall: a small switch or a small pop-up, with no slack.
-    static let rowHeight: CGFloat = 22
+    /// The least a one-line row is tall: the kit's small control height, so a pop-up
+    /// field, a stepper and a switch all sit on the same line with no slack.
+    static let rowHeight: CGFloat = StudioTheme.Height.small
     /// How far a row's name stays from its control, at the narrowest.
     static let labelGap: CGFloat = 10
 }
@@ -167,8 +168,8 @@ struct InspectorHeading: View {
 
     var body: some View {
         Text(title)
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(.primary)
+            .font(.system(size: StudioTheme.FontSize.heading, weight: .semibold))
+            .foregroundStyle(StudioTheme.Palette.textPrimary)
             .lineLimit(1)
             .accessibilityAddTraits(.isHeader)
     }
@@ -194,12 +195,14 @@ struct InspectorSubheading: View {
     }
 }
 
-/// A section: a heading row, its controls, and a rule closing it off.
+/// A section: a heading row and its controls, set apart from the next by air alone.
 ///
-/// The rule is at the end of the section rather than under its title, where it does the
-/// job a rule is for: saying where one thing stops and the next starts. The same air
-/// above and below it, so the line is a boundary between two blocks rather than a lid on
-/// the one above — which means the stack holding the sections must add nothing itself.
+/// It used to close with a rule. With every control now drawn in the same soft fill, a
+/// line between every pair of sections was one more stroke in a column that already has a
+/// hairline round each field, and the panel read as a ruled form. The semibold heading and
+/// the gap above it — `sectionPadding` either side, twice the gap between two controls —
+/// say where one section stops and the next starts on their own, which is how Linear and
+/// Raycast group a settings column. The stack holding the sections adds nothing itself.
 ///
 /// What sits at the end of the heading is as often a control as a word — the shape's
 /// pop-up, a Reset — so the row is centred rather than baseline-aligned, and given a
@@ -232,8 +235,6 @@ struct InspectorSection<Content: View, Trailing: View>: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, SidebarSpacing.sectionPadding)
-
-            StudioDivider(isSection: true)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(title)
@@ -275,8 +276,8 @@ struct InspectorLabel: View {
 
     var body: some View {
         Text(title)
-            .font(.system(size: 12))
-            .foregroundStyle(.secondary)
+            .font(.system(size: StudioTheme.FontSize.label))
+            .foregroundStyle(StudioTheme.Palette.textSecondary)
             .opacity(isEnabled ? 1 : 0.55)
             // Wraps rather than truncates: a name cut to "Keep size wh…" is a name you
             // have to hover to read, and the column is narrow enough that some will meet
@@ -347,12 +348,14 @@ struct InspectorValue: View {
     }
 }
 
-/// An on-and-off, as a row: the name on the left, a small switch on the right.
+/// An on-and-off, as a row: the name on the left, the kit's switch on the right.
 ///
 /// One style of on-and-off for the whole editor. The panels used to mix checkboxes with
 /// the odd switch, which made two settings of the same kind look like two kinds of
 /// setting; a switch at the row's end lines up with the pop-ups and colour wells in the
-/// rows around it, where a checkbox would sit at the opposite edge.
+/// rows around it, where a checkbox would sit at the opposite edge. `StudioSwitch` rather
+/// than the system's, whose raised, lit capsule was the heaviest thing in a row of flat
+/// fields.
 struct InspectorSwitch: View {
     let title: String
     @Binding var isOn: Bool
@@ -367,10 +370,7 @@ struct InspectorSwitch: View {
             InspectorLabel(title)
                 .accessibilityHidden(true)
             Spacer(minLength: 0)
-            Toggle(title, isOn: $isOn)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
+            StudioSwitch(title, isOn: $isOn)
                 .layoutPriority(1)
         }
         .frame(minHeight: InspectorMetrics.rowHeight)
@@ -400,12 +400,10 @@ struct InspectorNote: View {
 
 /// A row of choices that always fits the panel.
 ///
-/// Drawn as a segmented control — one recessed track, the chosen segment raised out of
-/// it — and laid out on as many rows as it takes for every title to be shown whole, in
-/// one size of type. A single row of six ("Wallpaper Gradient Color Image Motion None")
-/// is wider than the column, and the old answer was to shrink each title until it fitted,
-/// which left "Color" in larger type than "Motion" next to it and still cut "Wallp…" short.
-/// Now the row is tried first, then two, then three: the first that fits is the one drawn.
+/// `StudioSegmented`: one trough, the chosen segment lifted out of it on a highlight that
+/// slides between choices, every segment the width of the widest, and as many lines as it
+/// takes for every title to be shown whole in one size of type. Kept as its own name so the
+/// panels that use it describe what they want — tabs — rather than how it is drawn.
 ///
 /// Not `.pickerStyle(.segmented)`: a segmented control reports the sum of its titles as
 /// the width it must have, and cannot wrap.
@@ -414,76 +412,8 @@ struct InspectorTabs<Item: Identifiable & Hashable>: View {
     let items: [Item]
     let title: (Item) -> String
 
-    @State private var hovered: Item?
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            track(rows: 1)
-            track(rows: 2)
-            track(rows: 3)
-        }
-        .animation(StudioMotion.state, value: selection)
-        .animation(StudioMotion.hover, value: hovered)
-        .accessibilityElement(children: .contain)
-    }
-
-    private func track(rows: Int) -> some View {
-        let perRow = max(1, Int((Double(items.count) / Double(rows)).rounded(.up)))
-        let lines = stride(from: 0, to: items.count, by: perRow).map {
-            Array(items[$0..<min($0 + perRow, items.count)])
-        }
-        return VStack(spacing: 2) {
-            ForEach(lines.indices, id: \.self) { line in
-                HStack(spacing: 2) {
-                    ForEach(lines[line]) { item in
-                        segment(item)
-                    }
-                }
-            }
-        }
-        .padding(2)
-        .background {
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.06))
-        }
-    }
-
-    private func segment(_ item: Item) -> some View {
-        let isSelected = item == selection
-        return Button { selection = item } label: {
-            Text(title(item))
-                .font(.system(size: 12))
-                .lineLimit(1)
-                // Its whole width, always: this is what lets the row fail to fit and
-                // hand over to two rows, rather than squeezing its titles.
-                .fixedSize()
-                .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-                .padding(.horizontal, 8)
-                .frame(maxWidth: .infinity)
-                .frame(height: 22)
-                .background {
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .fill(fill(isSelected: isSelected, isHovered: hovered == item))
-                        .shadow(color: .black.opacity(isSelected && colorScheme == .light ? 0.12 : 0),
-                                radius: 1, y: 0.5)
-                }
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovered = $0 ? item : (hovered == item ? nil : hovered) }
-        .accessibilityLabel(title(item))
-        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
-    }
-
-    /// The chosen segment is a raised surface, as a system segmented control draws it:
-    /// white in light mode, a lighter grey in dark. The rest are the track, lit a little
-    /// under the pointer.
-    private func fill(isSelected: Bool, isHovered: Bool) -> Color {
-        if isSelected {
-            return colorScheme == .dark ? Color.white.opacity(0.17) : Color.white
-        }
-        return Color.primary.opacity(isHovered ? 0.05 : 0)
+        StudioSegmented(selection: $selection, items: items, title: title)
     }
 }
 
@@ -495,19 +425,18 @@ struct SectionButton: View {
 
     var body: some View {
         Button(title, action: action)
-            .buttonStyle(.plain)
-            .font(.system(size: 11.5))
-            .foregroundStyle(.tint)
-            .lineLimit(1)
+            .buttonStyle(.studio(.text, size: .small))
     }
 }
 
-/// A pop-up: the system's own, small, sized to what it is showing.
+/// A pop-up, as the kit draws it: a squircle field with the current choice and a quiet
+/// chevron, opening the kit's own list.
 ///
-/// It used to be a hand-made squircle with fourteen points of padding either side — a
-/// pill that was the largest thing in its row, and the audit's "Shape: Linear" slab. A
-/// small system pop-up says "menu" the way every Mac app says it, in light and dark, and
-/// takes the width of its longest title rather than the row's.
+/// It was the system's small pop-up for a while, after a hand-made pill that was the
+/// largest thing in its row. Both are gone: `StudioMenuPicker` is the same flat fill and
+/// hairline as every other field in the panel, takes the width of its longest title
+/// rather than the row's, and opens a list with a check on the current choice that the
+/// keyboard can walk.
 struct InspectorPicker<Value: Hashable>: View {
     @Binding var selection: Value
     let options: [Value]
@@ -515,36 +444,20 @@ struct InspectorPicker<Value: Hashable>: View {
 
     var body: some View {
         // A value the list does not offer — a speed set some other way — is added to it
-        // rather than shown as a blank: the old pop-up drew whatever the value was, and a
-        // system pop-up with no matching item draws nothing at all.
+        // rather than shown as a blank.
         let shown = options.contains(selection) ? options : options + [selection]
-        Picker(selection: $selection) {
-            ForEach(shown, id: \.self) { option in
-                Text(title(option)).tag(option)
-            }
-        } label: {
-            EmptyView()
-        }
-        .pickerStyle(.menu)
-        .labelsHidden()
-        .controlSize(.small)
-        .fixedSize()
-        .accessibilityValue(Text(title(selection)))
+        StudioMenuPicker(selection: $selection, options: shown, title: title)
     }
 }
 
-/// A colour well, the system's, at the size of the rows around it.
+/// A colour well at the size of the rows around it: the kit's swatch and colour popover.
 struct InspectorColorWell: View {
     let title: String
     @Binding var selection: Color
     var supportsOpacity = false
 
     var body: some View {
-        ColorPicker(title, selection: $selection, supportsOpacity: supportsOpacity)
-            .labelsHidden()
-            .controlSize(.small)
-            .fixedSize()
-            .accessibilityLabel(title)
+        StudioColorWell(title, selection: $selection, supportsOpacity: supportsOpacity)
     }
 }
 
@@ -552,7 +465,8 @@ struct InspectorColorWell: View {
 ///
 /// One control for all of them, so a nudge looks and behaves the same wherever it is —
 /// they had grown up as three different pairs of buttons, two of them `+` and `−` and one
-/// of them chevrons, each with its own column width for the name.
+/// of them chevrons, each with its own column width for the name. Drawn by
+/// `StudioStepper`.
 struct InspectorNudgeRow: View {
     let title: String
     let value: String
@@ -566,43 +480,15 @@ struct InspectorNudgeRow: View {
         HStack(alignment: .center, spacing: 6) {
             InspectorLabel(title)
             Spacer(minLength: InspectorMetrics.labelGap)
-            NudgeButton(symbol: "chevron.left", help: earlierHelp, action: earlier)
-            Text(value)
-                .font(.system(size: 12).monospacedDigit())
-                .lineLimit(1)
-                .fixedSize()
-                .frame(minWidth: 58)
-            NudgeButton(symbol: "chevron.right", help: laterHelp, action: later)
+            StudioStepper(value: value,
+                          decrementHelp: earlierHelp,
+                          incrementHelp: laterHelp,
+                          decrement: earlier,
+                          increment: later)
         }
         .frame(minHeight: InspectorMetrics.rowHeight)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(title) \(value)")
-    }
-}
-
-/// One step of an `InspectorNudgeRow`.
-private struct NudgeButton: View {
-    let symbol: String
-    let help: String
-    let action: () -> Void
-
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 9, weight: .semibold))
-                .frame(width: 20, height: 20)
-                .background(Color.primary.opacity(isHovering ? 0.11 : 0.06),
-                            in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(BarButtonStyle())
-        .foregroundStyle(.secondary)
-        .onHover { isHovering = $0 }
-        .animation(StudioMotion.hover, value: isHovering)
-        .help(help)
-        .accessibilityLabel(help)
     }
 }
 
@@ -622,6 +508,8 @@ struct InspectorDisclosure<Content: View>: View {
         self.content = content()
     }
 
+    @State private var isHovering = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
             Button {
@@ -632,14 +520,18 @@ struct InspectorDisclosure<Content: View>: View {
                         .font(.system(size: 9, weight: .semibold))
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                     Text(title)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: StudioTheme.FontSize.label, weight: .medium))
                     Spacer(minLength: 0)
                 }
-                .foregroundStyle(.secondary)
+                // Brightens under the pointer rather than growing a box: the row is a
+                // heading you can press, and a filled bar would make it a button.
+                .foregroundStyle(isHovering ? StudioTheme.Palette.textPrimary : StudioTheme.Palette.textSecondary)
                 .frame(minHeight: InspectorMetrics.rowHeight)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(StudioPressStyle())
+            .onHover { isHovering = $0 }
+            .animation(StudioMotion.hover, value: isHovering)
             .accessibilityLabel(title)
             .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
 
@@ -657,32 +549,37 @@ struct InspectorDisclosure<Content: View>: View {
 /// Two lines: the name and its value on top, the track its own full width underneath.
 /// Side by side, a 70-point name column and a 34-point number column left the track
 /// about half the panel, which is half the precision. The value is right-aligned in the
-/// name's row, in secondary monospaced digits, so a column of sliders has its numbers in
-/// one straight line that does not shuffle as they change.
+/// name's row, in secondary monospaced numerals, so a column of sliders has its numbers in
+/// one straight line that does not shuffle as they change. Drawn by `StudioLabeledSlider`.
 struct InspectorSlider: View {
     let model: EditorModel
     let title: String
     let systemImage: String?
     let value: Binding<Double>
     let range: ClosedRange<Double>
+    /// Where the value snaps to, if anywhere.
+    let step: Double?
+    /// Where a double-click on the knob puts it back to, when a default is known.
+    let defaultValue: Double?
     /// How the number reads. The default is the value's share of the range, which is the
     /// only honest reading of a setting whose units are arbitrary.
     let format: (Double) -> String
-
-    @State private var isDragging = false
-    @Environment(\.isEnabled) private var isEnabled
 
     init(model: EditorModel,
          _ title: String,
          systemImage: String? = nil,
          value: Binding<Double>,
          range: ClosedRange<Double>,
+         step: Double? = nil,
+         defaultValue: Double? = nil,
          format: ((Double) -> String)? = nil) {
         self.model = model
         self.title = title
         self.systemImage = systemImage
         self.value = value
         self.range = range
+        self.step = step
+        self.defaultValue = defaultValue
         self.format = format ?? { value in
             let span = range.upperBound - range.lowerBound
             guard span > 0 else { return "" }
@@ -691,36 +588,23 @@ struct InspectorSlider: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: SidebarSpacing.withinControl) {
-            // No glyph. A row of little grey icons down the left of the names was a
-            // second column of decoration for words that already say what they are. The
-            // argument stays so the call sites keep describing themselves.
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                InspectorLabel(title)
-                Spacer(minLength: 8)
-                Text(format(value.wrappedValue))
-                    .font(.system(size: 11).monospacedDigit())
-                    .foregroundStyle(isDragging ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-                    .opacity(isEnabled ? 1 : 0.55)
-                    .lineLimit(1)
-                    .fixedSize()
-            }
-
-            StudioSlider(value: value, in: range) { editing in
-                // The edit is recorded once per drag, not once per pixel of movement:
-                // undo should step back over "Padding", not over four hundred tiny
-                // changes.
-                isDragging = editing
-                if editing {
-                    model.document.beginInteraction(title)
-                } else {
-                    model.finishInteraction()
-                }
+        // No glyph. A row of little grey icons down the left of the names was a second
+        // column of decoration for words that already say what they are. The argument
+        // stays so the call sites keep describing themselves.
+        StudioLabeledSlider(title,
+                            value: value,
+                            in: range,
+                            step: step,
+                            defaultValue: defaultValue,
+                            format: format) { editing in
+            // The edit is recorded once per gesture, not once per pixel of movement:
+            // undo should step back over "Padding", not over four hundred tiny changes.
+            if editing {
+                model.document.beginInteraction(title)
+            } else {
+                model.finishInteraction()
             }
         }
-        .animation(StudioMotion.state, value: isDragging)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(title)
     }
 }
 
@@ -733,6 +617,8 @@ struct SwatchTile<Content: View>: View {
     let action: () -> Void
     @ViewBuilder let content: Content
 
+    @State private var isHovering = false
+
     var body: some View {
         Button(action: action) {
             // The square is laid out first and the picture put inside it, rather than
@@ -742,21 +628,27 @@ struct SwatchTile<Content: View>: View {
             Color.clear
                 .aspectRatio(1, contentMode: .fit)
                 .overlay { content }
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .clipShape(StudioTheme.squircle(StudioTheme.Radius.small))
                 .overlay {
                     // Strong enough to outline a black swatch on the dark panel, which at
                     // eight per cent simply vanished.
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .strokeBorder(.primary.opacity(0.18))
+                    StudioTheme.squircle(StudioTheme.Radius.small)
+                        .strokeBorder(StudioTheme.Palette.strokeStrong)
                 }
                 .overlay {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .strokeBorder(Color.accentColor, lineWidth: isSelected ? 2 : 0)
+                    // The chosen one ringed in the accent a step outside its edge; the one
+                    // under the pointer, in the neutral edge colour, so hovering never
+                    // looks like choosing.
+                    StudioTheme.squircle(StudioTheme.Radius.small + 2)
+                        .strokeBorder(isSelected ? StudioTheme.Palette.accent : StudioTheme.Palette.strokeStrong,
+                                      lineWidth: isSelected ? 2 : (isHovering ? 1.5 : 0))
                         .padding(-3)
                 }
                 .animation(StudioMotion.selection, value: isSelected)
+                .animation(StudioMotion.hover, value: isHovering)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(StudioPressStyle())
+        .onHover { isHovering = $0 }
         .help(tooltip ?? title)
         .accessibilityLabel(title)
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
