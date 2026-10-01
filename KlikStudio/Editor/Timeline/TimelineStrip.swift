@@ -252,7 +252,8 @@ struct TimelineStrip: View {
     private func heading(_ lane: Lane) -> some View {
         let timeline = model.timeline
         let muted = isMuted(lane)
-        let selectable = selection(of: lane) != nil
+        let mutable = canMute(lane)
+        let selectable = mutable || selection(of: lane) != nil
         let hovered = selectable && hoveredLane == lane.id
         return HStack(spacing: 0) {
             // A stripe in the lane's own colour, full height: at a glance down the gutter
@@ -263,7 +264,10 @@ struct TimelineStrip: View {
                 .frame(width: 3)
             // Every glyph centred in the same column, at the same size and weight, so the
             // gutter reads as one aligned list however wide each symbol happens to be.
-            Image(systemName: muted ? "speaker.slash.fill" : lane.symbol(in: timeline))
+            // A sound row's heading is its mute switch, so it shows a speaker — on or
+            // struck through — rather than the source's own glyph.
+            Image(systemName: mutable ? (muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                                      : lane.symbol(in: timeline))
                 .font(.system(size: 12, weight: .medium))
                 .symbolRenderingMode(.monochrome)
                 .imageScale(.medium)
@@ -282,12 +286,43 @@ struct TimelineStrip: View {
         .onHover { inside in
             hoveredLane = inside ? lane.id : (hoveredLane == lane.id ? nil : hoveredLane)
         }
-        .onTapGesture { if let selection = selection(of: lane) { model.select(selection) } }
-        .help(muted ? "\(lane.title(in: timeline)) — muted" : lane.title(in: timeline))
+        .onTapGesture {
+            if mutable {
+                toggleMute(lane)
+            } else if let selection = selection(of: lane) {
+                model.select(selection)
+            }
+        }
+        .help(mutable ? "\(muted ? "Unmute" : "Mute") \(lane.title(in: timeline))"
+                      : lane.title(in: timeline))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(lane.title(in: timeline))
+        .accessibilityLabel(mutable ? "\(muted ? "Unmute" : "Mute") \(lane.title(in: timeline))"
+                                    : lane.title(in: timeline))
         .accessibilityValue(muted ? "Muted" : "")
         .accessibilityAddTraits(selectable ? .isButton : [])
+        .accessibilityAction { if mutable { toggleMute(lane) } }
+    }
+
+    /// The rows with a sound of their own, whose heading turns it on and off.
+    private func canMute(_ lane: Lane) -> Bool {
+        switch lane {
+        case .recordedSound: true
+        case .source(let id): model.timeline.soundTrack(id) != nil
+        default: false
+        }
+    }
+
+    /// The same undoable edit the row's own menu makes.
+    private func toggleMute(_ lane: Lane) {
+        switch lane {
+        case .recordedSound:
+            let muted = model.timeline.sound.isMuted
+            model.apply(Commands.Restyle(muted ? "Unmute" : "Mute") { $0.sound.isMuted = !muted })
+        case .source(let id):
+            model.toggleSoundMute(id)
+        default:
+            break
+        }
     }
 
     /// Whether this row's sound is off, which is the one piece of state a heading shows.

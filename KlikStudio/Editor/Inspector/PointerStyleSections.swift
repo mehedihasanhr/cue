@@ -46,8 +46,11 @@ struct PointerStyleSection: View {
             style.set(\.cursor.appearance, to: appearance, "Pointer Style")
         } content: {
             ZStack {
-                // Half light, half dark, so a tile shows how the drawing reads on both.
-                LinearGradient(colors: [Color(white: 0.86), Color(white: 0.86), Color(white: 0.22), Color(white: 0.22)],
+                // One calm mid-tone, like a desktop: dark enough for a white pointer to
+                // stand out on and light enough for a black one. A hard diagonal of light
+                // and dark showed both, but read as a bevelled button.
+                LinearGradient(colors: [Color(red: 0.66, green: 0.72, blue: 0.84),
+                                        Color(red: 0.5, green: 0.56, blue: 0.72)],
                                startPoint: .topLeading, endPoint: .bottomTrailing)
                 preview(appearance)
             }
