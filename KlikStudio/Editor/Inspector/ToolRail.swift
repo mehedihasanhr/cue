@@ -1,99 +1,61 @@
 import RecordKit
 import SwiftUI
 
-/// The strip of tools down the left edge of the editor.
+/// The row of tool tabs across the top of the inspector.
 ///
-/// Selecting one decides what the panel beside it shows, and — for a canvas tool like
-/// crop — what the preview is drawing. The selection lives on `EditorModel` rather than
-/// here, because entering crop mode changes the rendered frame: that is behaviour, not
-/// chrome.
+/// It used to be a rail down the far left of the window, with the panel it drove beside
+/// it and the picture between the panel and everything else. Now the panel is on the
+/// right, the way an inspector is in Final Cut, Xcode or Keynote, and the tools are the
+/// tabs on top of it: the thing you choose and the controls it opens are one column, and
+/// the picture is not split from the timeline by a strip of icons it has nothing to do
+/// with.
 ///
-/// The tools are grouped rather than listed, because eight identical glyphs in a line
-/// is a list you have to read from the top every time. The groups are the four questions
-/// this editor answers — what the frame looks like, what is hidden or called out on it,
-/// what moves across it, and what you hear. A gap marks them rather than a rule: four
-/// hairlines down a 52-point strip is more lines than icons, and the eye reads the
-/// grouping from the space just as well.
-struct ToolRail: View {
+/// The selection still lives on `EditorModel` rather than here, because entering crop
+/// mode changes the rendered frame: that is behaviour, not chrome.
+///
+/// The tabs share the width evenly rather than each taking a fixed square. Nine fixed
+/// squares left-aligned in a column that can be dragged wider leave a ragged gap at the
+/// right end, which reads as a tenth tab that failed to load; spread across the column
+/// they are one control, the same width as the panel underneath them.
+struct ToolTabs: View {
     let model: EditorModel
     @Environment(StudioSettings.self) private var settings
     @Namespace private var chip
 
-    private static let groups: [[EditorTool]] = [
-        [.frame, .crop],
-        [.blur, .annotate],
-        [.cursor, .webcam],
-        [.captions, .audio],
-        // What was pressed. Its own group: it is neither said nor heard, it is shown.
-        [.keyboard],
-    ]
+    /// How tall the row is. The same band as the panel's heading under it, so the two
+    /// rows of chrome at the top of the column are one rhythm rather than two.
+    static let height: CGFloat = SidebarMetrics.headerHeight
 
     var body: some View {
-        // Scrolling rather than clipping: the rail stands beside the preview only, and a
-        // timeline that has grown a lane for blurs, annotations and imported sound can
-        // take enough height on a small display to leave the last tool with nowhere to
-        // be. It never scrolls at a usable window size — it simply refuses to lose Audio.
-        VStack(spacing: 0) {
-            // The sidebar's top band. The panel beside it puts its heading here; this
-            // end of it carries the mark, so the column starts with the app rather than
-            // with the first tool.
-            mark
-            rail
+        HStack(spacing: 2) {
+            ForEach(EditorTool.rail) { tool in
+                tab(tool)
+            }
         }
-        .frame(width: SidebarMetrics.railWidth)
-        .studioSurface()
+        .padding(.horizontal, SidebarMetrics.contentInset - 4)
+        .frame(height: Self.height)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Editor tools")
     }
 
-    /// The Klik mark, from the host app's asset catalog — the same file, referenced
-    /// rather than copied, so the add-on cannot end up wearing an older logo than the app
-    /// it belongs to. Template artwork, so it takes the sidebar's own grey.
-    private var mark: some View {
-        Image("KlikMark")
-            .renderingMode(.template)
-            .resizable()
-            .scaledToFit()
-            .foregroundStyle(.secondary)
-            .frame(width: 16, height: 16)
-            .frame(height: SidebarMetrics.headerHeight)
-            .accessibilityLabel("Klik Studio")
-    }
-
-    private var rail: some View {
-        ScrollView(.vertical) {
-            VStack(spacing: 14) {
-                ForEach(Array(Self.groups.enumerated()), id: \.offset) { _, group in
-                    VStack(spacing: 4) {
-                        ForEach(group) { tool in
-                            tile(tool)
-                        }
-                    }
-                }
-            }
-            .padding(.vertical, 10)
-        }
-        .scrollIndicators(.never)
-        .scrollBounceBehavior(.basedOnSize)
-    }
-
-    private func tile(_ tool: EditorTool) -> some View {
+    private func tab(_ tool: EditorTool) -> some View {
         let isSelected = model.tool == tool
 
         return Button {
             model.choose(tool)
         } label: {
             Image(systemName: tool.symbol)
-                .font(.system(size: 14, weight: isSelected ? .medium : .regular))
+                .font(.system(size: 13, weight: isSelected ? .medium : .regular))
                 .symbolVariant(isSelected ? .fill : .none)
-                .frame(width: 34, height: 30)
+                .frame(maxWidth: .infinity)
+                .frame(height: 28)
                 .foregroundStyle(tool.isAvailable
                     ? (isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
                     : AnyShapeStyle(.tertiary))
                 .background {
                     if isSelected {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.accentColor.opacity(0.18))
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(Color.accentColor.opacity(0.16))
                             .matchedGeometryEffect(id: "tool", in: chip)
                     }
                 }
@@ -101,12 +63,12 @@ struct ToolRail: View {
         }
         .buttonStyle(BarButtonStyle())
         .disabled(!tool.isAvailable)
-        // The shortcut itself is the menu bar's — View lists the eight tools — so it
+        // The shortcut itself is the menu bar's — View lists the nine tools — so it
         // answers whatever has the keyboard, and is not registered twice.
         .animation(StudioMotion.selection, value: model.tool)
-        // The shortcut is on the tip because the rail is where somebody looks for it:
-        // the menu bar has the same eight commands, and nobody finds them there twice.
-        // The shortcut as it is set now, which Settings can change, or none.
+        // The shortcut is on the tip because the tabs are where somebody looks for it:
+        // the menu bar has the same commands, and nobody finds them there twice. The
+        // shortcut as it is set now, which Settings can change, or none.
         .help(tool.unavailableReason
               ?? settings.editorShortcuts[tool.command].map { "\(tool.title) (\($0.displayString))" }
               ?? tool.title)

@@ -18,31 +18,42 @@ struct EditorToolbar: View {
     /// The app's export queue, for the pill beside the Export button. Handed in rather
     /// than read from the environment so this bar can still be built in a preview.
     let exports: ExportJobs
+    /// Whether the inspector column is showing. A binding to the window's session rather
+    /// than state of its own, because the View menu flips the same switch.
+    @Binding var showsInspector: Bool
     let export: () -> Void
 
     /// The width of the three system buttons plus the breathing room either side of them.
     ///
-    /// Nothing of ours is drawn inside it. The traffic lights are the system's, they do
-    /// not line up with the tool rail below them, and a control of ours squeezed into the
-    /// gap lines up with neither — so the left end of the bar is left to them alone and
-    /// every control this bar owns is in one cluster at the other end.
+    /// Nothing of ours is drawn inside it. The traffic lights are the system's, and a
+    /// control of ours squeezed in beside them lines up with nothing below it — so the
+    /// left end of the bar is left to them alone and every control this bar owns is in one
+    /// cluster at the other end, over the inspector it mostly concerns.
     private static let trafficLightInset: CGFloat = 78
     /// As tall as it has to be for the traffic lights and a row of 26-point controls,
-    /// and no taller: this bar is the frame around the work, not part of it.
+    /// and no taller: this bar is the frame around the work, not part of it. The same
+    /// height as the transport bar, so the two strips of chrome either side of the picture
+    /// are one size.
     static let height: CGFloat = 40
+
+    /// The gap between two controls in a cluster, and the room either side of the short
+    /// rule between two clusters. Two numbers, used everywhere in the bar, so the spacing
+    /// is a rhythm rather than a run of near-misses.
+    private static let gap: CGFloat = 6
+    private static let clusterGap: CGFloat = 8
 
     var body: some View {
         ZStack {
             // Laid over the row rather than between two spacers, so the name sits in the
             // middle of the *window* however wide the controls on either side grow.
             title
-            HStack(spacing: 8) {
+            HStack(spacing: Self.gap) {
                 Spacer(minLength: 40)
                 trailing
             }
         }
         .padding(.leading, Self.trafficLightInset)
-        .padding(.trailing, 12)
+        .padding(.trailing, SidebarMetrics.contentInset - 4)
         .frame(height: Self.height)
         .background {
             // Flat and dark, the way an editor's chrome is: the picture is the bright
@@ -86,7 +97,7 @@ struct EditorToolbar: View {
             NSWorkspace.shared.activateFileViewerSelecting([model.packageURL])
         }
 
-        StudioDivider(axis: .vertical, length: 16).padding(.horizontal, 2)
+        clusterRule
 
         GlyphButton(symbol: "arrow.uturn.backward",
                     help: model.document.undoName.map { "Undo \($0)" } ?? "Undo",
@@ -96,7 +107,7 @@ struct EditorToolbar: View {
                     help: "Redo",
                     isEnabled: model.document.canRedo) { model.redo() }
 
-        StudioDivider(axis: .vertical, length: 16).padding(.horizontal, 2)
+        clusterRule
 
         // Spelled out rather than left as a glyph. The edits live in the recording and
         // come back when it is opened again, which is worth a word: a downward arrow in
@@ -115,7 +126,9 @@ struct EditorToolbar: View {
                 .frame(height: 26)
                 .background {
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(.white.opacity(saveIsPressable(saving) ? 0.1 : 0.04))
+                        // `primary` rather than white: white on the light chrome is no
+                        // fill at all, and the button vanished in the light appearance.
+                        .fill(Color.primary.opacity(saveIsPressable(saving) ? 0.08 : 0.04))
                 }
                 .contentShape(Rectangle())
         }
@@ -145,6 +158,25 @@ struct EditorToolbar: View {
         }
         .buttonStyle(BarButtonStyle())
         .help("Export this as a video or a GIF")
+
+        clusterRule
+
+        // The inspector's switch, at the end of the bar directly over the column it shows
+        // and hides — where Xcode and Keynote keep theirs. It is the one way back to the
+        // tool tabs with the column put away, other than the View menu and a tool's
+        // shortcut, so it is never hidden itself.
+        GlyphButton(symbol: "sidebar.right",
+                    help: showsInspector ? "Hide the inspector (⌥⌘I)" : "Show the inspector (⌥⌘I)",
+                    isOn: showsInspector) {
+            showsInspector.toggle()
+        }
+        .accessibilityLabel(showsInspector ? "Hide inspector" : "Show inspector")
+    }
+
+    /// The short rule between two clusters of controls.
+    private var clusterRule: some View {
+        StudioDivider(axis: .vertical, length: 16)
+            .padding(.horizontal, Self.clusterGap - Self.gap)
     }
 
     // MARK: - The Save control's four faces
@@ -192,12 +224,15 @@ struct EditorToolbar: View {
 }
 
 /// One quiet control: a glyph that lights up under the pointer and dims when it cannot
-/// be used. The same square as the tool rail's tiles, so the two rows of icons in this
-/// window are one size.
+/// be used. Close to the size of the transport bar's glyphs, so the rows of icons in this
+/// window read as one family.
 private struct GlyphButton: View {
     let symbol: String
     let help: String
     var isEnabled = true
+    /// For a switch: drawn in the accent colour while on, the way the system draws a
+    /// toolbar toggle that is pressed in.
+    var isOn = false
     let action: () -> Void
 
     @State private var isHovering = false
@@ -207,11 +242,15 @@ private struct GlyphButton: View {
             Image(systemName: symbol)
                 .font(.system(size: 13))
                 .frame(width: 26, height: 26)
-                .foregroundStyle(isEnabled ? AnyShapeStyle(.secondary) : AnyShapeStyle(.quaternary))
+                .foregroundStyle(isEnabled
+                    ? (isOn ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
+                    : AnyShapeStyle(.quaternary))
                 .background {
                     if isHovering, isEnabled {
+                        // `primary`, so the hover reads in both appearances: white at eight
+                        // percent was invisible on the light chrome.
                         RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(.white.opacity(0.08))
+                            .fill(Color.primary.opacity(0.07))
                     }
                 }
                 .contentShape(Rectangle())

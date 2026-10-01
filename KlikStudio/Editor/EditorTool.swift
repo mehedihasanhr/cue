@@ -116,7 +116,7 @@ enum EditorTool: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
-    /// The tools the rail shows.
+    /// The tools the inspector's tabs show, in order — the order ⌘1 to ⌘9 follow.
     ///
     /// Shortcuts and Links from the reference are not here: neither has a model behind
     /// it, and a greyed icon for something that does not exist yet is a promise with

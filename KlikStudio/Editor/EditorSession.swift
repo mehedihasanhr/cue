@@ -23,6 +23,23 @@ final class EditorSession {
     /// edit. Set by the menu item that asked for the sheet, read by the sheet as it opens.
     var exportsSelection = false
 
+    /// Whether the inspector column is showing.
+    ///
+    /// The window's business rather than the document's — hiding it gives the picture the
+    /// width, and says nothing about the edit — so it is here, where the menu bar can reach
+    /// it, and not on `EditorModel`. Remembered for the next window too: somebody who works
+    /// with the panel put away has decided how they like the editor, not how they like this
+    /// one recording.
+    var showsInspector: Bool = EditorSession.storedShowsInspector {
+        didSet { UserDefaults.standard.set(showsInspector, forKey: Self.showsInspectorKey) }
+    }
+
+    private static let showsInspectorKey = "editor.showsInspector"
+
+    private static var storedShowsInspector: Bool {
+        UserDefaults.standard.object(forKey: showsInspectorKey) as? Bool ?? true
+    }
+
     init(packageURL: URL) {
         self.packageURL = packageURL
     }

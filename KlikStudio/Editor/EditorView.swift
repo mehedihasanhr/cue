@@ -17,10 +17,23 @@ struct EditorView: View {
     /// The sheet's own state — the settings and which job it last started. The export
     /// itself lives in `exports` above, so nothing here is holding the work.
     @State private var export = ExportModel()
-    /// How wide the settings column is. Remembered across windows and launches, because
+    /// How wide the inspector is. Remembered across windows and launches, because
     /// somebody who widened it to read a caption meant it, and dragging it back every
-    /// morning is not a setting — it is a chore.
-    @AppStorage("editor.settingsWidth") private var settingsWidth: Double = 300
+    /// morning is not a setting — it is a chore. The key is the one the column had when it
+    /// sat on the left, so the width somebody chose then carries over.
+    @AppStorage("editor.settingsWidth") private var settingsWidth: Double = 320
+
+    /// How far the inspector can be dragged. The narrow end is set by the tool tabs across
+    /// its top — nine of them still have to be a comfortable target each — and the wide end
+    /// by the picture, which at the window's minimum width should keep about half of it.
+    private static let inspectorWidths: ClosedRange<Double> = 300...480
+
+    /// The stored width, held to the range. A width saved by an older layout with a
+    /// narrower minimum would otherwise squeeze the tabs until the splitter was next
+    /// touched.
+    private var clampedWidth: Double {
+        min(max(settingsWidth, Self.inspectorWidths.lowerBound), Self.inspectorWidths.upperBound)
+    }
 
     var body: some View {
         Group {
@@ -42,63 +55,70 @@ struct EditorView: View {
         }
     }
 
-    /// Settings on the left, picture on the right, time along the bottom.
+    /// Picture on the left, its settings on the right, time along the bottom.
     ///
-    /// The tool rail is the only thing that runs the full height: it is how you choose
-    /// what the whole window is about, so it belongs to the window rather than to a row
-    /// in it. Everything else is two decks. The top one is the settings panel and the
-    /// picture it is changing, side by side and the same height, because a panel that
-    /// runs past the bottom of the preview is mostly empty and still costs the picture
-    /// the width. The bottom one is the transport and the timeline, on the same two
-    /// columns, so the edge between settings and picture is one straight line down the
-    /// window instead of two that nearly agree.
+    /// Three bands, top to bottom. The upper one is the picture and the inspector side by
+    /// side, the same height, with the tools as tabs across the top of the inspector — so
+    /// choosing a tool and seeing what it opened happen in one column, the way an inspector
+    /// works in Final Cut, Xcode and Keynote. Under it, one slim transport bar across the
+    /// full width; under that, the timeline, also full width, because its width is what
+    /// decides how finely an edit can be placed and nothing up here earns a share of it.
     ///
-    /// The old arrangement put the panel in a trailing `.inspector`, which meant the two
-    /// halves of one decision — the tool you picked on the far left and the controls it
-    /// opened on the far right — sat a window apart, with the picture between them.
+    /// The previous arrangement ran a tool rail down the far left and stacked the panel
+    /// beside it, with the transport in a column of its own under the panel: the timeline
+    /// lost the panel's width to a block that was mostly an empty gap, and the picture sat
+    /// boxed in between two strips of chrome.
     private func loaded(_ model: EditorModel) -> some View {
         VStack(spacing: 0) {
             // The window's own title bar is transparent and empty — `EditorWindowController`
             // makes it so — and this is the top of the window: the name, and Export.
-            EditorToolbar(model: model, exports: exports) { session.isExporting = true }
+            EditorToolbar(model: model,
+                          exports: exports,
+                          showsInspector: $session.showsInspector) { session.isExporting = true }
 
             HStack(spacing: 0) {
-                ToolRail(model: model)
-                StudioDivider(axis: .vertical)
+                PreviewPane(model: model)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                VStack(spacing: 0) {
+                if session.showsInspector {
+                    // Splitter and column come and go together, so a hidden inspector leaves
+                    // no stray hairline at the window's edge.
                     HStack(spacing: 0) {
+                        ColumnSplitter(width: $settingsWidth,
+                                       range: Self.inspectorWidths,
+                                       edge: .trailing)
                         InspectorPanel(model: model)
-                            .frame(width: CGFloat(settingsWidth), alignment: .leading)
-                            // A fixed width is a proposal, not a promise: a control that
-                            // will not shrink below it draws straight out over the rail
-                            // and the picture, and — centred in the frame — slides
-                            // sideways every time a number in the panel grows a digit.
-                            // Pinned to the leading edge and clipped, the column is a
-                            // column whatever it is given.
+                            .frame(width: CGFloat(clampedWidth), alignment: .leading)
+                            // A fixed width is a proposal, not a promise: a control that will
+                            // not shrink below it draws straight out over the picture, and —
+                            // centred in the frame — slides sideways every time a number in
+                            // the panel grows a digit. Pinned to the leading edge and clipped,
+                            // the column is a column whatever it is given.
                             .clipped()
-                        ColumnSplitter(width: $settingsWidth, range: 260...460)
-
-                        PreviewPane(model: model)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
-
-                    StudioDivider()
-
-                    HStack(spacing: 0) {
-                        // The same width as the panel above it, from the same number:
-                        // two columns that have to line up must not be two measurements.
-                        TransportBar(model: model)
-                            .frame(width: CGFloat(settingsWidth), alignment: .leading)
-                            .clipped()
-                        StudioDivider(axis: .vertical)
-                        TimelineStrip(model: model)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .frame(height: TimelineStrip.height(for: model.timeline,
-                                                       hasSound: model.waveform.state != .unavailable))
+                    .transition(.move(edge: .trailing))
                 }
             }
+            // The picture is the thing that moves when the column comes or goes, so the
+            // two are animated as one change rather than the column sliding over a picture
+            // that has already jumped to its new size.
+            .animation(StudioMotion.shape, value: session.showsInspector)
+
+            StudioDivider()
+            TransportBar(model: model)
+            StudioDivider()
+
+            TimelineStrip(model: model)
+                .frame(maxWidth: .infinity)
+                .frame(height: TimelineStrip.height(for: model.timeline,
+                                                    hasSound: model.waveform.state != .unavailable))
+        }
+        // Asking for a tool is asking to see its settings. However it was asked for — a
+        // tab, the View menu, its shortcut, a Frame menu item that needs its panel — a
+        // hidden inspector comes back for it, rather than the request landing in a column
+        // nobody can see.
+        .onChange(of: model.toolRequests) {
+            if !session.showsInspector { session.showsInspector = true }
         }
         // The bar runs to the very top of the window, under where the title bar was.
         .ignoresSafeArea(.container, edges: .top)
@@ -142,14 +162,19 @@ struct EditorView: View {
     }
 }
 
-/// The line between the settings and the picture, which can be dragged.
+/// The line between the picture and the inspector, which can be dragged.
 ///
 /// A hairline is the right thing to look at and the wrong thing to aim at, so the grab
 /// area is ten points wide and invisible. The pointer changes over it, which is the only
 /// promise a splitter gets to make before it is used.
 private struct ColumnSplitter: View {
+    /// Which side of the window the column it sizes is on. A column on the trailing side
+    /// grows as the splitter is dragged *left*, so the drag is read the other way round.
+    enum Edge { case leading, trailing }
+
     @Binding var width: Double
     let range: ClosedRange<Double>
+    var edge: Edge = .leading
 
     /// The width the drag started from. Tracked so the column follows the pointer exactly
     /// rather than drifting: adding each frame's translation to the running width applies
@@ -172,10 +197,14 @@ private struct ColumnSplitter: View {
                     .gesture(
                         DragGesture(minimumDistance: 0)
                             .onChanged { value in
-                                let start = startWidth ?? width
+                                // Started from the width as drawn, which is the clamped one:
+                                // starting from a stale stored value below the range would
+                                // swallow the first part of the drag.
+                                let start = startWidth ?? min(max(width, range.lowerBound), range.upperBound)
                                 startWidth = start
-                                width = min(max(start + value.translation.width, range.lowerBound),
-                                            range.upperBound)
+                                let delta = edge == .leading ? value.translation.width
+                                                             : -value.translation.width
+                                width = min(max(start + delta, range.lowerBound), range.upperBound)
                             }
                             .onEnded { _ in startWidth = nil }
                     )

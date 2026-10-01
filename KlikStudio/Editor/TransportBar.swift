@@ -1,52 +1,85 @@
 import CoreMedia
+import RecordKit
 import SwiftUI
 import TimelineKit
 
-/// What can be cut, and how much of the edit the timeline is showing.
+/// The slim bar between the picture and the timeline: playing it, where you are in it,
+/// cutting it, and how loud and how close the work is.
 ///
-/// A column in the corner beside the timeline rather than a bar across the window. Every
-/// control here acts on the strip to its right — the playhead, the split, how far the
-/// ruler is zoomed — so it sits against it, and the timeline keeps the full width of the
-/// window, which is the one measurement that decides how finely an edit can be placed.
+/// It used to be a column in the corner beside the timeline — play controls at the top,
+/// then a tall empty gap, then the volume and the timeline zoom at the bottom — which cost
+/// the timeline the width of the settings column and said nothing at all with most of its
+/// height. One row across the full window is how Final Cut and Screen Studio do it, and
+/// for the same reason: every control here acts on the strip directly beneath it, and the
+/// strip gets the whole width of the window, which is the one measurement that decides how
+/// finely an edit can be placed.
 ///
-/// What is *not* here: the aspect menu and the Crop button. Both are a frame setting,
-/// both already live in the panel directly above this one, and a control duplicated eight
-/// inches away is a control somebody has to check.
+/// Left to right in the order the hand reaches for them: move through the edit, read where
+/// you are, act at the playhead, then — set apart at the far end — the two settings that
+/// change what you are looking at rather than the edit itself.
+///
+/// What is *not* here: the aspect menu and the Crop button. Both are a frame setting, both
+/// already live in the inspector, and a control duplicated across the window is a control
+/// somebody has to check.
 struct TransportBar: View {
     let model: EditorModel
+    @Environment(StudioSettings.self) private var settings
+
+    /// Tall enough for a row of 28-point glyphs with a little air, and no taller: this bar
+    /// is a seam between the picture and the timeline, not a third panel.
+    static let height: CGFloat = 40
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            controls
-            Spacer(minLength: 0)
+        HStack(spacing: 0) {
+            playback
+            timecode
+                .padding(.leading, 10)
+
+            divider
+
+            editing
+
+            Spacer(minLength: 16)
+
             if let audio = model.audio, audio.hasSound {
                 level(audio)
+                divider
             }
             zoom
         }
-        .padding(.horizontal, SidebarMetrics.contentInset)
-        .padding(.vertical, 14)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(.horizontal, SidebarMetrics.contentInset - 4)
+        .frame(height: Self.height)
+        .frame(maxWidth: .infinity)
         .studioSurface()
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Timeline tools")
+        .accessibilityLabel("Transport")
     }
 
-    // MARK: - Playing it, and cutting it
+    private var divider: some View {
+        StudioDivider(axis: .vertical, length: 16)
+            .padding(.horizontal, 10)
+    }
 
-    /// One row, one size, all glyphs — no capsules, no discs, nothing outlined. Five
-    /// controls that all act at the playhead should look like five of the same thing,
-    /// and the chrome around each one was more pixels than the icons it framed.
-    private var controls: some View {
-        HStack(spacing: 4) {
-            glyph("backward.end.fill", help: "Previous frame") { model.stepFrame(forward: false) }
+    // MARK: - Moving through it
+
+    /// One size, all glyphs — no capsules, no discs, nothing outlined. Controls that all
+    /// act at the playhead should look like the same kind of thing, and the chrome around
+    /// each one was more pixels than the icons it framed.
+    private var playback: some View {
+        HStack(spacing: 2) {
+            glyph("backward.end.fill", help: tip("Previous frame", .previousFrame), name: "Previous frame") {
+                model.stepFrame(forward: false)
+            }
 
             glyph(model.isPlaying ? "pause.fill" : "play.fill",
-                  help: model.isPlaying ? "Pause (Space)" : "Play (Space)",
+                  help: tip(model.isPlaying ? "Pause" : "Play", .playPause),
+                  name: model.isPlaying ? "Pause" : "Play",
                   tint: StudioPalette.brand,
                   size: 15) { model.togglePlayback() }
 
-            glyph("forward.end.fill", help: "Next frame") { model.stepFrame(forward: true) }
+            glyph("forward.end.fill", help: tip("Next frame", .nextFrame), name: "Next frame") {
+                model.stepFrame(forward: true)
+            }
 
             // The rate, whenever it is not the ordinary one: J and L run the playhead at
             // 2× and 4×, either way, and a picture moving at the wrong speed with nothing
@@ -60,13 +93,43 @@ struct TransportBar: View {
                     .frame(height: 18)
                     .background(StudioPalette.brand.opacity(0.14),
                                 in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                    .padding(.leading, 4)
                     .help("\(model.playbackRateDescription ?? rate). K stops; Space pauses.")
                     .accessibilityLabel(model.playbackRateDescription ?? rate)
             }
+        }
+    }
 
-            StudioDivider(axis: .vertical, length: 16).padding(.horizontal, 4)
+    /// Where the playhead is, out of how long the edit is.
+    ///
+    /// Hundredths on both sides, because frame-stepping is one of the three buttons beside
+    /// it: a clock that only counts whole seconds does not move when you press Next Frame,
+    /// and a button that changes nothing reads as a button that is broken. Monospaced
+    /// digits so the numbers tick in place instead of shuffling the bar sideways while the
+    /// edit plays, and fixed in size so the row never truncates it.
+    private var timecode: some View {
+        HStack(spacing: 4) {
+            Text(Timecode.precise(model.playhead))
+                .foregroundStyle(.primary)
+            Text("/")
+                .foregroundStyle(.tertiary)
+            Text(Timecode.precise(model.duration))
+                .foregroundStyle(.secondary)
+        }
+        .font(.system(size: 12))
+        .monospacedDigit()
+        .lineLimit(1)
+        .fixedSize()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Playhead")
+        .accessibilityValue("\(Timecode.precise(model.playhead)) of \(Timecode.precise(model.duration))")
+    }
 
-            glyph("scissors", help: "Split at the playhead (⌘B)", name: "Split") {
+    // MARK: - Acting at the playhead
+
+    private var editing: some View {
+        HStack(spacing: 2) {
+            glyph("scissors", help: tip("Split at the playhead", .splitAtPlayhead), name: "Split") {
                 model.splitAtPlayhead()
             }
 
@@ -84,17 +147,22 @@ struct TransportBar: View {
             .menuIndicator(.hidden)
             .fixedSize()
             .help("Push in on part of the picture")
-            .accessibilityLabel("Zoom")
-
-            Spacer(minLength: 0)
+            .accessibilityLabel("Add zoom")
         }
     }
 
-    /// One control: a glyph that lights up under the pointer. The same 28-point square
-    /// the editor's title bar uses, so the two rows of icons in this window are one size.
+    /// A tooltip with the shortcut as it is set now, which Settings can change — or none,
+    /// rather than a key written into the string that stops being true the day somebody
+    /// rebinds it.
+    private func tip(_ text: String, _ command: EditorCommand) -> String {
+        settings.editorShortcuts[command].map { "\(text) (\($0.displayString))" } ?? text
+    }
+
+    /// One control: a glyph that lights up under the pointer. The same 28-point square as
+    /// the title bar's glyphs, so the rows of icons in this window are one size.
     private func glyph(_ symbol: String,
                        help: String,
-                       name: String? = nil,
+                       name: String,
                        tint: Color? = nil,
                        size: CGFloat = 13,
                        action: @escaping () -> Void) -> some View {
@@ -108,14 +176,15 @@ struct TransportBar: View {
         }
         .buttonStyle(BarButtonStyle())
         .help(help)
-        .accessibilityLabel(name ?? help)
+        .accessibilityLabel(name)
     }
 
     // MARK: - How loud the preview is
 
     /// Not a document setting — it changes what this Mac plays while you work and nothing
     /// about the exported file — so it is not undoable and it does not make the project
-    /// dirty.
+    /// dirty. Left out entirely for a recording with no sound, rather than shown dead: a
+    /// volume slider that does nothing is a question somebody has to ask.
     @ViewBuilder
     private func level(_ audio: PreviewAudio) -> some View {
         @Bindable var audio = audio
@@ -127,36 +196,55 @@ struct TransportBar: View {
                       : audio.volume < 0.4 ? "speaker.wave.1.fill" : "speaker.wave.2.fill")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                    .frame(width: 18)
+                    // Wide enough for the widest of the three speakers, so the slider
+                    // beside it does not shift when the waves change.
+                    .frame(width: 20, height: 28)
                     .contentTransition(.symbolEffect(.replace))
+                    .contentShape(Rectangle())
             }
             .buttonStyle(BarButtonStyle())
             .help(audio.isMuted ? "Turn the sound on" : "Silence the preview")
+            .accessibilityLabel(audio.isMuted ? "Unmute preview" : "Mute preview")
 
             StudioSlider(value: $audio.volume, in: 0...1)
+                .frame(width: Self.sliderWidth)
                 .disabled(audio.isMuted)
                 .help("How loud the preview is")
+                .accessibilityLabel("Preview volume")
         }
     }
 
     // MARK: - How much of the edit is on screen
 
+    /// The timeline's scale. Its glyph is the fit button rather than a magnifying glass:
+    /// the glass is already on this bar meaning a *camera* zoom, and two magnifiers a hand
+    /// apart meaning two different things is exactly the confusion this row exists to
+    /// avoid.
     private var zoom: some View {
         HStack(spacing: 8) {
             Button { model.viewport.fit(model.duration) } label: {
                 Image(systemName: "arrow.left.and.right")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                    .frame(width: 18)
+                    .frame(width: 20, height: 28)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(BarButtonStyle())
-            .help("Fit the whole edit (⌘0)")
+            .help(tip("Fit the whole edit", .fitTimeline))
+            .accessibilityLabel("Fit timeline")
 
             StudioSlider(value: zoomLevel,
                          in: log2(TimelineViewport.minimumPointsPerSecond)...log2(TimelineViewport.maximumPointsPerSecond))
+                .frame(width: Self.sliderWidth)
                 .help("How much of the edit the timeline shows")
+                .accessibilityLabel("Timeline scale")
         }
     }
+
+    /// Both sliders one length, so the right end of the bar is two matching controls
+    /// rather than a long one and a short one. Long enough to place a value by eye, short
+    /// enough to leave the left of the bar its room at the window's narrowest.
+    private static let sliderWidth: CGFloat = 96
 
     /// Bound over the logarithm, so the slider's travel feels even instead of spending
     /// nine tenths of itself in the last few seconds of zoom.

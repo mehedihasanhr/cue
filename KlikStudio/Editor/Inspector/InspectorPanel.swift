@@ -3,16 +3,21 @@ import TimelineKit
 
 /// The settings column: whatever the current tool — or the current selection — is about.
 ///
-/// It sits at the left of the window, next to the rail that drives it, and it is the one
-/// surface in the editor that changes wholesale. So it says what it is showing. Without a
-/// heading, picking a tool swapped one unlabelled stack of sliders for another and the
-/// only evidence of what happened was a chip moving in the rail.
+/// It sits at the right of the window, beside the picture, with the tool tabs that drive
+/// it across its top — so choosing a tool and seeing what it opened happen in the same
+/// column. It is the one surface in the editor that changes wholesale, so it says what it
+/// is showing. Without a heading, picking a tool swapped one unlabelled stack of sliders
+/// for another and the only evidence of what happened was a chip moving along the tabs —
+/// and while a timeline selection owns the panel, the heading is the only thing saying
+/// that the panel is no longer about the highlighted tab.
 struct InspectorPanel: View {
     let model: EditorModel
     @State private var state = InspectorState()
 
     var body: some View {
         VStack(spacing: 0) {
+            ToolTabs(model: model)
+            StudioDivider()
             header
             ScrollView {
                 VStack(alignment: .leading, spacing: SidebarSpacing.betweenSections) {

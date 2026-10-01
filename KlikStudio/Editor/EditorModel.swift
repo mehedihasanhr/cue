@@ -54,12 +54,21 @@ final class EditorModel {
     /// without first guessing that another tool had to be chosen.
     private(set) var panelFollowsSelection = true
 
-    /// Chooses a tool the way the person at the rail or the menu bar does: the panel
+    /// Chooses a tool the way the person at the tool tabs or the menu bar does: the panel
     /// turns to it, whatever is selected. The selection itself is left alone.
     func choose(_ tool: EditorTool) {
         self.tool = tool
         panelFollowsSelection = false
+        toolRequests &+= 1
     }
+
+    /// How many times a tool has been asked for, from anywhere — the tabs, the View menu,
+    /// a Frame menu item that needs its panel.
+    ///
+    /// The window watches this rather than `tool`, so that asking for the tool that is
+    /// already chosen still brings a hidden inspector back: choosing a tool is a request
+    /// to see its settings, and a request that changed no value would otherwise go unseen.
+    private(set) var toolRequests = 0
 
     /// Everything picked out on the timeline, oldest first.
     ///

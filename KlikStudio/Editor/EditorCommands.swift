@@ -430,9 +430,19 @@ struct EditorCommands: SwiftUI.Commands {
     @CommandsBuilder
     private var view: some SwiftUI.Commands {
         CommandGroup(after: .sidebar) {
-            // The eight tools, which the rail's tips have always said were in the menu
-            // bar. They are now. The shortcut lives here and not on the rail's buttons,
-            // so it answers whatever has the keyboard.
+            // The inspector's switch, the same one as at the right end of the title bar.
+            // A fixed ⌥⌘I rather than a rebindable command: it is the key Keynote, Pages
+            // and Numbers give Show Inspector, and no editor command has it by default.
+            Button(windows.front?.showsInspector == false ? "Show Inspector" : "Hide Inspector") {
+                windows.front?.showsInspector.toggle()
+            }
+            .keyboardShortcut("i", modifiers: [.command, .option])
+            .disabled(windows.front == nil)
+            Divider()
+            // The nine tools, which the tabs' tips have always said were in the menu bar.
+            // The shortcut lives here and not on the tabs, so it answers whatever has the
+            // keyboard. Choosing one brings a hidden inspector back — see
+            // `EditorModel.toolRequests` — because asking for a tool is asking to see it.
             ForEach(EditorTool.allCases) { tool in
                 Button(tool.title) { editor?.choose(tool) }
                     .editorShortcut(tool.command, shortcuts)
