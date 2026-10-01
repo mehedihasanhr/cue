@@ -35,23 +35,23 @@ enum BarMood: Equatable {
     /// bar is the one thing on screen saying "this is being recorded".
     fileprivate var lap: Double {
         switch self {
-        case .ready: 7
-        case .live: 3.6
-        case .held, .alert: 9
+        case .ready: 16
+        case .live: 9
+        case .held, .alert: 18
         }
     }
 
     /// How strongly the smoke shows through the glass.
     fileprivate var glow: Double {
         switch self {
-        case .ready: 0.3
-        case .live: 0.38
-        case .held, .alert: 0.3
+        case .ready: 0.13
+        case .live: 0.18
+        case .held, .alert: 0.13
         }
     }
 }
 
-/// Coloured smoke drifting behind the bar's controls.
+/// A faint coloured haze drifting behind the bar's controls — a tint, not a show.
 ///
 /// Three soft lights, each a blurred ellipse wandering between two places on its own
 /// clock. The clocks are deliberately not multiples of one another, so the three never
@@ -109,7 +109,7 @@ struct BarSmoke: View {
     }
 }
 
-/// A light that travels round the bar's edge, with a soft glow under it.
+/// A faint light that travels round the bar's edge.
 ///
 /// An angular gradient — one bright arc, the rest of the turn dark — stroked along the
 /// bar's outline and turned. Round a long, thin bar the arc dashes along the short ends and
@@ -123,13 +123,12 @@ struct BarEdgeLight: View {
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         ZStack {
-            // The glow: the same light, wider and blurred, spilling just inside the rim.
-            sweep.mask(shape.strokeBorder(lineWidth: 4))
-                .blur(radius: 5)
-                .opacity(0.8)
-            sweep.mask(shape.strokeBorder(lineWidth: 1.2))
+            // A thin line of light and nothing round it: the bar sits over somebody's work,
+            // and a glow there pulled the eye off it.
+            sweep.mask(shape.strokeBorder(lineWidth: 1))
+                .opacity(0.6)
             // A fine highlight along the top, as glass catches light from above.
-            shape.strokeBorder(LinearGradient(colors: [.white.opacity(0.28), .white.opacity(0.04), .clear],
+            shape.strokeBorder(LinearGradient(colors: [.white.opacity(0.16), .white.opacity(0.03), .clear],
                                               startPoint: .top, endPoint: .bottom),
                                lineWidth: 1)
         }
@@ -152,10 +151,10 @@ struct BarEdgeLight: View {
             AngularGradient(
                 stops: [
                     .init(color: .clear, location: 0),
-                    .init(color: .clear, location: 0.58),
-                    .init(color: mood.edge.opacity(0.55), location: 0.78),
-                    .init(color: .white.opacity(0.95), location: 0.86),
-                    .init(color: mood.edge.opacity(0.55), location: 0.92),
+                    .init(color: .clear, location: 0.7),
+                    .init(color: mood.edge.opacity(0.4), location: 0.82),
+                    .init(color: .white.opacity(0.6), location: 0.87),
+                    .init(color: mood.edge.opacity(0.4), location: 0.92),
                     .init(color: .clear, location: 1),
                 ],
                 center: .center)
