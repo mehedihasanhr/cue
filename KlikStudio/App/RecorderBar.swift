@@ -402,49 +402,44 @@ struct RecorderBar: View {
     // MARK: - During a take
 
     /// Timer, pause, stop, discard — and nothing else.
+    ///
+    /// Three groups, in the order a take is thought about: how long and what is live; the
+    /// two things that decide the take, pause and a red Stop that is plainly the way out;
+    /// and the quieter extras — a marker, a restart, the bin — as matching round glass.
     private var recordingControls: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             timer
             takeMeter
             cameraLive
             diskWarning
             separator
             Button { studio.togglePause() } label: {
-                Image(systemName: studio.session.isPaused ? "play.fill" : "pause.fill")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.white)
+                BarCircleIcon(symbol: studio.session.isPaused ? "play.fill" : "pause.fill",
+                              size: 13, prominent: true)
                     .contentTransition(.symbolEffect(.replace))
                     .animation(StudioMotion.state, value: studio.session.isPaused)
-                    .frame(width: 36, height: 36)
-                    .background(.white.opacity(0.12), in: Circle())
             }
             .buttonStyle(BarButtonStyle())
             .disabled(!studio.session.state.isTaking)
             .help(settings.recorder.help(studio.session.isPaused ? "Resume" : "Pause", .pause))
 
             Button { studio.stop() } label: {
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .fill(.white)
-                    .frame(width: 13, height: 13)
-                    .frame(width: 38, height: 38)
-                    .background(.red, in: Circle())
+                StopPill()
             }
-            .buttonStyle(BarButtonStyle())
+            .buttonStyle(BarButtonStyle(pressedScale: 0.95))
             // The same property the bridge's `stop()` guards on, which is the whole point of
             // it having a name. These two used to disagree about `.paused`: the button was
             // live, the guard refused, and the take went to the bin.
             .disabled(!studio.session.state.isTaking)
             .help(settings.recorder.help("Stop and keep this recording", .record))
 
+            separator
+
             markerButton
             restartButton
 
             Button { studio.cancel() } label: {
-                Image(systemName: "trash")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.75))
-                    .frame(width: 36, height: 36)
-                    .background(.white.opacity(0.08), in: Circle())
+                BarCircleIcon(symbol: "trash", size: 12, hoverTint: .red)
             }
             .buttonStyle(BarButtonStyle())
             // The same predicate again, and for a sharper reason than the other two: this
@@ -454,6 +449,7 @@ struct RecorderBar: View {
             // is a different button, on the layout that owns that state.
             .disabled(!studio.session.state.isTaking)
             .help("Discard this recording")
+            .padding(.trailing, 2)
         }
         .padding(.horizontal, 6)
         .animation(StudioMotion.state, value: studio.session.diskWarning)
@@ -533,20 +529,35 @@ struct RecorderBar: View {
         }
     }
 
+    /// The time, in a capsule of the take's own colour: red while it runs, amber while it
+    /// is held — with the word, because a stopped clock alone looks like a stuck one.
     private func elapsed(_ text: String, blinking: Bool) -> some View {
-        HStack(spacing: 9) {
-            RecordingDot(color: studio.session.isPaused ? Color.orange : Color.red,
-                         isBreathing: blinking)
+        let paused = studio.session.isPaused
+        let tint = paused ? BarMood.held.accent : BarMood.live.accent
+        return HStack(spacing: 8) {
+            RecordingDot(color: tint, isBreathing: blinking)
             Text(text)
-                .font(.system(.title3, design: .monospaced).weight(.medium))
+                .font(.system(size: 15, weight: .semibold).monospacedDigit())
                 .foregroundStyle(.white)
                 .contentTransition(.numericText())
                 // A slot wide enough for "00:00". Without it the bar grows by a digit at
                 // ten seconds and again at ten minutes — and now that it holds its own
                 // centre, it would step sideways on both edges each time it did.
-                .frame(minWidth: 48, alignment: .leading)
+                .frame(minWidth: 46, alignment: .leading)
+            if paused {
+                Text("PAUSED")
+                    .font(.system(size: 9.5, weight: .bold))
+                    .tracking(0.6)
+                    .foregroundStyle(tint)
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+            }
         }
-        .padding(.leading, 8)
+        .padding(.horizontal, 12)
+        .frame(height: 34)
+        .background(tint.opacity(0.16), in: Capsule())
+        .overlay(Capsule().strokeBorder(tint.opacity(0.35)))
+        .animation(StudioMotion.state, value: paused)
+        .padding(.leading, 4)
     }
 }
 
@@ -604,7 +615,15 @@ extension RecorderBar {
     /// nothing at all through it is the same silence the countdown was added to break.
     private var startingDial: some View {
         ZStack {
-            Circle().stroke(.white.opacity(0.14), lineWidth: 2)
+            Circle().stroke(.white.opacity(0.12), lineWidth: 2.5)
+            // What is left of the countdown, draining a step each second.
+            if let remaining = studio.session.state.countdownRemaining {
+                Circle()
+                    .trim(from: 0, to: Double(remaining) / Double(max(1, settings.countdownSeconds)))
+                    .stroke(BarMood.live.accent, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .animation(.easeInOut(duration: 0.6), value: remaining)
+            }
             if let remaining = studio.session.state.countdownRemaining {
                 Text("\(remaining)")
                     .font(.system(size: 19, design: .monospaced).weight(.medium))
@@ -688,11 +707,7 @@ extension RecorderBar {
             }
 
             Button { studio.dismissFailure() } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.75))
-                    .frame(width: 30, height: 30)
-                    .background(.white.opacity(0.08), in: Circle())
+                BarCircleIcon(symbol: "xmark", size: 10.5)
             }
             .buttonStyle(BarButtonStyle())
             .help("Dismiss")
@@ -716,7 +731,8 @@ extension RecorderBar {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 14)
                 .frame(height: 34)
-                .background(.white.opacity(0.14), in: Capsule())
+                .background(.white.opacity(0.1), in: Capsule())
+                .overlay(Capsule().strokeBorder(.white.opacity(0.1)))
         }
         .buttonStyle(BarButtonStyle(pressedScale: 0.96))
     }
@@ -728,20 +744,8 @@ extension RecorderBar {
     /// Drops a marker, and says how many this take has.
     fileprivate var markerButton: some View {
         Button { studio.addMarker() } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "flag.fill")
-                    .font(.system(size: 12, weight: .medium))
-                if studio.session.markerCount > 0 {
-                    Text("\(studio.session.markerCount)")
-                        .font(.system(size: 11.5, weight: .semibold).monospacedDigit())
-                        .contentTransition(.numericText())
-                }
-            }
-            .foregroundStyle(.white.opacity(0.85))
-            .frame(minWidth: 36, minHeight: 36)
-            .padding(.horizontal, studio.session.markerCount > 0 ? 6 : 0)
-            .background(.white.opacity(0.08), in: Capsule())
-            .animation(StudioMotion.state, value: studio.session.markerCount)
+            BarCircleIcon(symbol: "flag.fill", size: 12, count: studio.session.markerCount)
+                .animation(StudioMotion.state, value: studio.session.markerCount)
         }
         .buttonStyle(BarButtonStyle())
         .disabled(!studio.session.state.isTaking)
@@ -751,11 +755,7 @@ extension RecorderBar {
     /// Throws this take away and starts again with the same target and settings.
     fileprivate var restartButton: some View {
         Button { studio.requestRestart() } label: {
-            Image(systemName: "arrow.counterclockwise")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.85))
-                .frame(width: 36, height: 36)
-                .background(.white.opacity(0.08), in: Circle())
+            BarCircleIcon(symbol: "arrow.counterclockwise", size: 12.5)
         }
         .buttonStyle(BarButtonStyle())
         .disabled(!studio.session.state.isTaking)
@@ -809,7 +809,9 @@ extension RecorderBar {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 14)
                     .frame(height: 34)
-                    .background(.red.opacity(0.85), in: Capsule())
+                    .background(LinearGradient(colors: [Color(red: 1, green: 0.33, blue: 0.35), Color(red: 0.86, green: 0.13, blue: 0.17)],
+                                               startPoint: .top, endPoint: .bottom),
+                                in: Capsule())
             }
             .buttonStyle(BarButtonStyle(pressedScale: 0.96))
             .help(settings.recorder.help("Throw this take away and count down again", .restart))
@@ -952,6 +954,77 @@ private struct InputChipLabel: View {
         }
         .contentShape(Rectangle())
         .animation(StudioMotion.state, value: isOn)
+    }
+}
+
+/// A round glass button's face: the bar's secondary actions, all one size and one
+/// manner, brightening under the pointer. A count rides alongside when there is one —
+/// the markers dropped so far — and widens the circle into a capsule to hold it.
+private struct BarCircleIcon: View {
+    let symbol: String
+    var size: CGFloat = 12.5
+    /// Pause: the one secondary action that decides the take, a step brighter.
+    var prominent = false
+    /// The colour it turns under the pointer, for the one that destroys something.
+    var hoverTint: Color?
+    var count = 0
+    @State private var isHovering = false
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: symbol)
+                .font(.system(size: size, weight: .semibold))
+            if count > 0 {
+                Text("\(count)")
+                    .font(.system(size: 11.5, weight: .semibold).monospacedDigit())
+                    .contentTransition(.numericText())
+            }
+        }
+        .foregroundStyle(isHovering ? (hoverTint ?? .white) : .white.opacity(prominent ? 0.95 : 0.8))
+        .padding(.horizontal, count > 0 ? 10 : 0)
+        .frame(minWidth: 34, minHeight: 34)
+        .background(fill, in: Capsule())
+        .overlay(Capsule().strokeBorder(.white.opacity(0.07)))
+        .opacity(isEnabled ? 1 : 0.45)
+        .contentShape(Capsule())
+        .onHover { hovering in
+            withAnimation(StudioMotion.hover) { isHovering = hovering && isEnabled }
+        }
+    }
+
+    private var fill: Color {
+        if isHovering, let hoverTint { return hoverTint.opacity(0.18) }
+        let base = prominent ? 0.14 : 0.08
+        return .white.opacity(isHovering ? base + 0.07 : base)
+    }
+}
+
+/// Stop: a red capsule with the stop square and the word, so the way out of a take is the
+/// one unmistakable thing on the bar.
+private struct StopPill: View {
+    @State private var isHovering = false
+
+    var body: some View {
+        HStack(spacing: 7) {
+            RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                .fill(.white)
+                .frame(width: 10, height: 10)
+            Text("Stop")
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(.white)
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 34)
+        .background(LinearGradient(colors: [Color(red: 1, green: 0.33, blue: 0.35), Color(red: 0.86, green: 0.13, blue: 0.17)],
+                                   startPoint: .top, endPoint: .bottom),
+                    in: Capsule())
+        .overlay(Capsule().strokeBorder(.white.opacity(0.18)))
+        .shadow(color: .red.opacity(isHovering ? 0.5 : 0.25), radius: isHovering ? 8 : 4)
+        .contentShape(Capsule())
+        .onHover { hovering in
+            withAnimation(StudioMotion.hover) { isHovering = hovering }
+        }
     }
 }
 
