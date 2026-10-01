@@ -17,33 +17,13 @@ struct FontFamilyPicker: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             InspectorRow("Font") {
-                Menu {
-                    choice("", title: systemTitle)
-                    Divider()
-                    ForEach(FontFamilies.curatedInstalled, id: \.self) { name in
-                        choice(name, title: name)
-                    }
-                    if isMissing {
-                        Divider()
-                        choice(family, title: "\(family) (not on this Mac)")
-                    }
-                    Divider()
-                    Menu("All Fonts") {
-                        ForEach(InstalledFamilies.all, id: \.self) { name in
-                            choice(name, title: name)
-                        }
-                    }
-                } label: {
-                    Text(family.isEmpty ? systemTitle : family)
-                        .lineLimit(1)
-                }
-                // The system's pull-down, small, like every other pop-up in the panel —
-                // a Menu rather than a Picker only because the families on this Mac are
-                // a submenu.
-                .controlSize(.small)
-                .fixedSize()
-                .accessibilityValue(Text(family.isEmpty ? systemTitle : family))
-                .help("The family the words are set in")
+                // The kit's pop-up, like every other in the panel. The families on this Mac
+                // were a submenu of the system's pull-down; the kit's list has no submenus,
+                // so they are the last group under a heading of their own, and the list
+                // scrolls. The field takes the chosen name's width, not the longest of
+                // several hundred.
+                StudioMenuPicker(selection: $family, sections: sections, sizesToLongest: false)
+                    .help("The family the words are set in")
             }
             if isMissing {
                 InspectorNote("Not on this Mac, so the system font is drawn instead.")
@@ -52,16 +32,16 @@ struct FontFamilyPicker: View {
         }
     }
 
-    private func choice(_ name: String, title: String) -> some View {
-        Button {
-            family = name
-        } label: {
-            if name == family {
-                Label(title, systemImage: "checkmark")
-            } else {
-                Text(title)
-            }
+    private var sections: [StudioMenuSection<String>] {
+        var sections = [
+            StudioMenuSection(items: [StudioMenuItem("", title: systemTitle)]),
+            StudioMenuSection(items: FontFamilies.curatedInstalled.map { StudioMenuItem($0, title: $0) })
+        ]
+        if isMissing {
+            sections.append(StudioMenuSection(items: [StudioMenuItem(family, title: "\(family) (not on this Mac)")]))
         }
+        sections.append(StudioMenuSection("All Fonts", items: InstalledFamilies.all.map { StudioMenuItem($0, title: $0) }))
+        return sections
     }
 }
 

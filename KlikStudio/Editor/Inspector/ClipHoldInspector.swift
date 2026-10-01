@@ -60,12 +60,14 @@ struct ClipHoldInspector: View {
             } label: {
                 Image(systemName: "trash")
             }
+            .buttonStyle(.studio(.destructive, size: .small, isIconOnly: true))
+            .accessibilityLabel("Delete")
             .disabled(model.timeline.clips.count < 2)
             .help(model.timeline.clips.count < 2
                   ? "An edit has to keep one piece"
                   : "Remove this and close the gap")
         }
-        .controlSize(.small)
+        .buttonStyle(.studio(.secondary, size: .small))
     }
 }
 
@@ -183,13 +185,10 @@ struct TitleTextField: View {
 
     var body: some View {
         TextField(placeholder, text: text, axis: .vertical)
-            .textFieldStyle(.plain)
             .lineLimit(1...3)
             .font(.system(size: 12))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
             .focused($isFocused)
+            .studioField(isFocused: isFocused, isMultiline: true)
             .onSubmit { finishTyping() }
             .onChange(of: isFocused) { _, focused in
                 if !focused { finishTyping() }
@@ -237,6 +236,9 @@ struct ClipOrderButtons: View {
             .help(index >= model.timeline.clips.count - 1 ? "This is the last clip" : "Move this clip later (⌥⌘→)")
             .accessibilityLabel("Move Clip Later")
         }
+        // Ghost glyphs, so the pair reads as one small tool beside the row's labelled
+        // buttons rather than two more of them.
+        .buttonStyle(.studio(.ghost, size: .small, isIconOnly: true))
     }
 }
 

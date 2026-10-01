@@ -126,7 +126,7 @@ struct WallpaperGrid: View {
                         .aspectRatio(1, contentMode: .fit)
                         .overlay { Image(systemName: "plus").font(.system(size: 11)).foregroundStyle(.secondary) }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(StudioPressStyle())
                 .help("Choose a picture of your own")
             }
         }

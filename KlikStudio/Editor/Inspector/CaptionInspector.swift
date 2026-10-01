@@ -15,6 +15,8 @@ struct CaptionInspector: View {
     /// Words, whenever there are timed ones: cutting by what was said is what a
     /// transcript in an editor is for, and correcting a line throws its timings away.
     @State private var editsText = false
+    /// The transcript line being typed into, so only it takes the full field box.
+    @FocusState private var focusedLine: UUID?
 
     private var style: StyleBinding { StyleBinding(model: model) }
 
@@ -48,8 +50,7 @@ struct CaptionInspector: View {
 
             language
 
-            generate(title: "Generate Captions")
-                .buttonStyle(.borderedProminent)
+            generate(title: "Generate Captions", variant: .primary)
 
             addLine
                 .help("Or write them yourself, a line at a time, starting where the playhead is.")
@@ -74,7 +75,9 @@ struct CaptionInspector: View {
         }
     }
 
-    private func generate(title: String) -> some View {
+    /// Primary where it is the one thing an empty panel asks for; secondary once there is a
+    /// transcript, where listening again is a second thought rather than the point.
+    private func generate(title: String, variant: StudioButtonStyle.Variant = .secondary) -> some View {
         Button {
             model.generateCaptions()
         } label: {
@@ -96,7 +99,7 @@ struct CaptionInspector: View {
             }
         }
         .disabled(model.isGeneratingCaptions)
-        .controlSize(.small)
+        .buttonStyle(.studio(variant, size: .small))
     }
 
     private var addLine: some View {
@@ -106,7 +109,7 @@ struct CaptionInspector: View {
             Label("Add Caption at Playhead", systemImage: "plus")
                 .frame(maxWidth: .infinity)
         }
-        .controlSize(.small)
+        .buttonStyle(.studio(.secondary, size: .small))
         .help("A caption to type into, starting at the playhead")
     }
 
@@ -225,14 +228,18 @@ struct CaptionInspector: View {
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(isCurrent ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(StudioPressStyle())
             .frame(width: 48, alignment: .leading)
+            .padding(.top, 4)
             .help("Go to this caption")
 
+            // A quiet field: the line reads as text, and takes the kit's box only while
+            // it is being typed in.
             TextField("Empty caption", text: text(for: cue), axis: .vertical)
-                .textFieldStyle(.plain)
                 .lineLimit(1...4)
                 .font(.system(size: 11))
+                .focused($focusedLine, equals: cue.id)
+                .studioField(isFocused: focusedLine == cue.id, isMultiline: true, isQuiet: true)
         }
         .padding(.vertical, 3)
         .padding(.horizontal, 6)
@@ -260,6 +267,7 @@ struct CaptionInspector: View {
                 Text(fillers == 0 ? "No Filler Words" : fillers == 1 ? "Remove 1 Filler Word" : "Remove \(fillers) Filler Words")
                     .frame(maxWidth: .infinity)
             }
+            .buttonStyle(.studio(.secondary, size: .small))
             .disabled(fillers == 0)
             .help("Cut out every um, uh and er. Cuts the video there, picture and sound together. Undo puts it all back.")
 
@@ -274,6 +282,7 @@ struct CaptionInspector: View {
                 Text(pauses == 0 ? "No Pauses That Long" : pauses == 1 ? "Shorten 1 Pause" : "Shorten \(pauses) Pauses")
                     .frame(maxWidth: .infinity)
             }
+            .buttonStyle(.studio(.secondary, size: .small))
             .disabled(pauses == 0)
             .help("Cut each long silence down to \(String(format: "%g", EditorModel.keptPause)) seconds. Cuts the video there, picture and sound together. A pause in which something is clicked is left alone. Undo puts it all back.")
 
@@ -323,14 +332,14 @@ struct CaptionInspector: View {
                     .help("\(format.purpose). A subtitle file to upload beside the video, for players that draw captions themselves.")
                 }
             }
-            .controlSize(.small)
+            .buttonStyle(.studio(.secondary, size: .small))
             Button {
                 model.isTranslatingCaptions = true
             } label: {
                 Label("Translate Captions…", systemImage: "character.bubble")
                     .frame(maxWidth: .infinity)
             }
-            .controlSize(.small)
+            .buttonStyle(.studio(.secondary, size: .small))
             .help("Put the captions into another language, on this Mac. Undo puts the original back.")
         }
         .inspectorSection("Subtitle File", systemImage: "doc.text")

@@ -17,15 +17,20 @@ struct StudioSegmented<Item: Hashable>: View {
     let items: [Item]
     let title: (Item) -> String
     var systemImage: ((Item) -> String?)?
+    /// Off for a row of glyphs — the four corners — where the title is said by the
+    /// tooltip and to VoiceOver instead of being written in the segment.
+    var showsTitles = true
 
     init(selection: Binding<Item>,
          items: [Item],
          title: @escaping (Item) -> String,
-         systemImage: ((Item) -> String?)? = nil) {
+         systemImage: ((Item) -> String?)? = nil,
+         showsTitles: Bool = true) {
         _selection = selection
         self.items = items
         self.title = title
         self.systemImage = systemImage
+        self.showsTitles = showsTitles
     }
 
     @Namespace private var highlight
@@ -73,15 +78,17 @@ struct StudioSegmented<Item: Hashable>: View {
                     Image(systemName: symbol)
                         .font(.system(size: 11, weight: .medium))
                 }
-                Text(title(item))
-                    .font(.system(size: StudioTheme.FontSize.label, weight: isSelected ? .medium : .regular))
+                if showsTitles {
+                    Text(title(item))
+                        .font(.system(size: StudioTheme.FontSize.label, weight: isSelected ? .medium : .regular))
+                }
             }
             .lineLimit(1)
             // Its whole width, always: this is what makes the row break onto two lines
             // rather than squeeze its titles.
             .fixedSize()
             .foregroundStyle(isSelected ? StudioTheme.Palette.textPrimary : StudioTheme.Palette.textSecondary)
-            .padding(.horizontal, 10)
+            .padding(.horizontal, showsTitles ? 10 : 8)
             .frame(maxWidth: .infinity)
             .frame(height: Self.segmentHeight)
             .background {
@@ -100,6 +107,9 @@ struct StudioSegmented<Item: Hashable>: View {
         .onHover { inside in
             hovered = inside ? item : (hovered == item ? nil : hovered)
         }
+        // Only where the title is not written: an empty tooltip here would hide the one
+        // the row around the control gives.
+        .segmentHelp(showsTitles ? nil : title(item))
         .accessibilityLabel(title(item))
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
@@ -155,5 +165,17 @@ struct EqualWidthRows: Layout {
                     rowHeight: rowHeight,
                     width: available,
                     height: CGFloat(lines) * rowHeight + CGFloat(max(0, lines - 1)) * spacing)
+    }
+}
+
+private extension View {
+    /// A tooltip when there is one to give, and no `.help` at all when there is not.
+    @ViewBuilder
+    func segmentHelp(_ text: String?) -> some View {
+        if let text {
+            help(text)
+        } else {
+            self
+        }
     }
 }

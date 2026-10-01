@@ -180,7 +180,7 @@ struct CursorInspector: View {
             VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
                 InspectorNote("Everything above is for the whole recording.")
                 Button("Hide Pointer over Selection") { model.hidePointerOverSelection() }
-                    .controlSize(.small)
+                    .buttonStyle(.studio(.secondary, size: .small))
                     .help("A stretch can override the settings above — hidden while a face is on screen, calmed through one bad flick, held still while something is being read.")
             }
             .inspectorSection("Pointer over Time", systemImage: "cursorarrow.slash")

@@ -51,13 +51,10 @@ struct ZoomInspector: View {
                 // of its settings. Switching a zoom off keeps its framing and its place on
                 // the lane, which is what makes a run of suggestions something you can
                 // audition rather than something you have to accept or destroy.
-                Toggle(model.hasMultipleSelected ? "Zooms on" : "Zoom on", isOn: Binding(
+                StudioSwitch(model.hasMultipleSelected ? "Zooms on" : "Zoom on", isOn: Binding(
                     get: { zoom.isEnabled },
                     set: { model.setZoomsEnabled($0) }
                 ))
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
                 .help("Keeps its framing and its timing, and takes it out of the picture")
             }
         }
@@ -123,7 +120,7 @@ struct ZoomInspector: View {
                 .help("Back to the middle of the picture at \(ZoomRegion.defaultScale, format: .number.precision(.fractionLength(0...1)))×, following the pointer again")
             Spacer(minLength: 0)
         }
-        .controlSize(.small)
+        .buttonStyle(.studio(.secondary, size: .small))
     }
 
     // MARK: - The rest
@@ -153,7 +150,7 @@ struct ZoomInspector: View {
                     .help("End this zoom at the playhead, keeping where it starts")
                 Spacer(minLength: 0)
             }
-            .controlSize(.small)
+            .buttonStyle(.studio(.secondary, size: .small))
 
             provenance(zoom)
 
@@ -219,7 +216,7 @@ struct ZoomInspector: View {
                       : "Join this zoom and the one after it into a single push-in, keeping the ramp at each outer end.")
             Spacer(minLength: 0)
         }
-        .controlSize(.small)
+        .buttonStyle(.studio(.secondary, size: .small))
 
         // Touching is the surest way to make two zooms glide, and this is how to ask for
         // it without dragging an edge onto a neighbour's. Why it is off is its tooltip; the
@@ -234,7 +231,7 @@ struct ZoomInspector: View {
                 .help("Scale, ramp and easing back to what a new zoom has. Where it points is left alone.")
             Spacer(minLength: 0)
         }
-        .controlSize(.small)
+        .buttonStyle(.studio(.secondary, size: .small))
         if model.extendToNextZoomReason == nil, !model.glidesBetweenZooms {
             InspectorNote("Gliding is off, so the camera still pulls back between them.")
                 .help("Gliding is off for this project, so the camera will still pull back between them. Turn it on under Camera Motion below.")

@@ -234,11 +234,11 @@ struct BackgroundPicker: View {
                         style.set(\.style.background, to: BackgroundPreset.indigo.background, "Background")
                     }
                 }
-                .controlSize(.small)
+                .buttonStyle(.studio(.secondary, size: .small))
             }
         } else {
             Button("Choose Image…") { choose() }
-                .controlSize(.small)
+                .buttonStyle(.studio(.secondary, size: .small))
                 .help("The picture is copied into the recording, so the project still looks right on another Mac.")
         }
     }

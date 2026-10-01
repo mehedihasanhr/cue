@@ -38,13 +38,9 @@ struct KeyCueInspector: View {
     private func keys(_ cue: KeyCue) -> some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
             TextField("⌘⇧K, or cmd shift k", text: $draft)
-                .textFieldStyle(.plain)
                 .font(.system(size: 13, weight: .medium))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .background(Color.primary.opacity(0.06),
-                            in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                 .focused($isEditing)
+                .studioField(isFocused: isEditing, size: .regular)
                 .onSubmit { commit() }
                 .onChange(of: isEditing) { _, editing in
                     if !editing { commit() }

@@ -69,8 +69,7 @@ struct AnnotationInspector: View {
     /// logo away. What it has instead is a way to swap the picture for another.
     private func picture(_: String) -> some View {
         InspectorRow("Picture") {
-            Button("Replace…") { model.replacePicture(ofAnnotation: id) }
-                .controlSize(.small)
+            StudioButton("Replace…", size: .small) { model.replacePicture(ofAnnotation: id) }
                 .help("Choose another picture for this place")
         }
     }
@@ -88,22 +87,34 @@ struct AnnotationInspector: View {
             }
 
             if item.kind.hasWords {
-                TextField("Say something", text: text, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
+                StudioTextField("Say something", text: text, axis: .vertical)
                     .lineLimit(1...4)
+                    .accessibilityLabel("Annotation text")
 
                 InspectorSlider(model: model, "Size", systemImage: "textformat.size",
                                 value: restyled(\.fontSize, "Annotation Size"), range: 0.02...0.2)
             }
 
             if case .step = item.kind {
+                // The kit's stepper with its readout as a field of its own, so a step can
+                // be counted to by the buttons or jumped to by typing.
                 InspectorRow("Number") {
-                    HStack(spacing: 6) {
-                        TextField("Number", value: stepNumber, format: .number)
-                            .textFieldStyle(.roundedBorder)
-                            .multilineTextAlignment(.trailing)
-                            .frame(width: 52)
-                        Stepper("Number", value: stepNumber, in: AnnotationItem.stepRange)
+                    HStack(spacing: StudioTheme.Spacing.tight) {
+                        StudioIconButton(systemImage: "minus", help: "One lower", variant: .secondary, size: .small) {
+                            stepNumber.wrappedValue -= 1
+                        }
+                        .disabled(stepNumber.wrappedValue <= AnnotationItem.stepRange.lowerBound)
+                        TimeField(seconds: Double(stepNumber.wrappedValue),
+                                  format: { String(Int($0)) },
+                                  width: 44,
+                                  alignment: .center) { value in
+                            stepNumber.wrappedValue = Int(value.rounded())
+                        }
+                        .accessibilityLabel("Number")
+                        StudioIconButton(systemImage: "plus", help: "One higher", variant: .secondary, size: .small) {
+                            stepNumber.wrappedValue += 1
+                        }
+                        .disabled(stepNumber.wrappedValue >= AnnotationItem.stepRange.upperBound)
                     }
                 }
                 .help("New steps count on from the highest number on the timeline")
@@ -255,17 +266,9 @@ struct AnnotationInspector: View {
         .disabled(item.isLocked)
     }
 
+    /// A ghost glyph on the heading, lit in the accent while what it switches is on.
     private func headerToggle(on: Bool, symbol: String, help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(on ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
-                .frame(width: 22, height: 20)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(BarButtonStyle())
-        .help(help)
-        .accessibilityLabel(help)
+        StudioIconButton(systemImage: symbol, help: help, size: .small, isActive: on, action: action)
     }
 
     // MARK: - Bindings
@@ -330,9 +333,14 @@ struct AnnotationInspector: View {
 /// the document would move the annotation to zero and back while somebody types. What is
 /// shown is the model's value, formatted, until editing starts; an entry that does not
 /// parse puts the old value back.
+///
+/// Drawn in the kit's field chrome rather than the system's sunken rounded border, with
+/// the focus kept here so the reformat-on-leave above still has something to watch.
 struct TimeField: View {
     let seconds: Double
     let format: (Double) -> String
+    var width: CGFloat = 96
+    var alignment: TextAlignment = .trailing
     let commit: (Double) -> Void
 
     @State private var text = ""
@@ -340,11 +348,11 @@ struct TimeField: View {
 
     var body: some View {
         TextField("", text: $text)
-            .textFieldStyle(.roundedBorder)
             .font(.system(size: 11, design: .monospaced))
-            .multilineTextAlignment(.trailing)
-            .frame(maxWidth: 96)
+            .multilineTextAlignment(alignment)
             .focused($isFocused)
+            .studioField(isFocused: isFocused)
+            .frame(maxWidth: width)
             .onAppear { text = format(seconds) }
             .onChange(of: seconds) { _, value in if !isFocused { text = format(value) } }
             .onChange(of: isFocused) { _, focused in if !focused { submit() } }

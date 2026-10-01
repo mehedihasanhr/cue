@@ -26,7 +26,7 @@ struct TranscriptWords: View {
                             .font(.system(size: 10, design: .monospaced))
                             .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(StudioPressStyle())
                     .frame(width: 48, alignment: .leading)
                     .help("Go to this caption")
 
@@ -69,7 +69,7 @@ struct TranscriptWords: View {
                      : picked.count == 1 ? "Cut 1 Word from Video" : "Cut \(picked.count) Words from Video")
                     .frame(maxWidth: .infinity)
             }
-            .controlSize(.small)
+            .buttonStyle(.studio(.destructive, size: .small))
             .disabled(picked.isEmpty)
             .padding(.top, 4)
 
@@ -131,7 +131,7 @@ private struct TranscriptLineWords: View, Equatable {
                 }
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(StudioPressStyle())
         .accessibilityLabel(word.text)
         .accessibilityAddTraits(isPicked ? .isSelected : [])
     }
