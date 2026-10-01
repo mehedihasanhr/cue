@@ -1043,7 +1043,8 @@ public struct SceneBuilder: Sendable {
         switch appearance {
         case .largeArrow, .minimal: true
         case .dot, .clicksOnly: false
-        case .asRecorded, .macOS26, .macOS14, .macOS26White, .macOS14White, .macOS26Colour:
+        case .asRecorded, .macOS26, .macOS14, .macOS26White, .macOS14White, .macOS26Colour,
+             .gradient, .neon, .frost:
             CursorShapeKind(shape) == .arrow || CursorShapeKind(shape) == .pointingHand
         }
     }

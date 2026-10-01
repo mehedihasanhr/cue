@@ -48,7 +48,7 @@ enum PointerStyleArtwork {
         let rounded = Int(size.rounded())
         guard rounded > 1 else { return nil }
         let ink = appearance.usesColour ? color : ColorValue.white
-        let shape = appearance.isSystemPointer ? shape : .arrow
+        let shape = appearance.usesSystemShapes ? shape : .arrow
         let key = Key(appearance: appearance, shape: shape, size: rounded, r: ink.r, g: ink.g, b: ink.b, a: ink.a)
         return cache.value(for: key) { draw(appearance, shape: shape, size: Double(rounded), color: ink) }
     }
@@ -75,15 +75,15 @@ enum PointerStyleArtwork {
 
     private static func draw(_ appearance: CursorStyle.Appearance, shape: CursorShapeKind,
                              size: Double, color: ColorValue) -> Drawing? {
-        if let ink = SystemPointerArtwork.ink(for: appearance, color: color) {
-            return SystemPointerArtwork.drawing(ink.generation, shape: shape, size: size,
-                                                body: ink.body, outline: ink.outline)
+        if let look = SystemPointerArtwork.look(for: appearance, color: color) {
+            return SystemPointerArtwork.drawing(look, shape: shape, size: size)
         }
         switch appearance {
         case .largeArrow: return arrow(size: size)
         case .dot: return dot(size: size, color: color)
         case .minimal: return minimal(size: size)
-        case .asRecorded, .clicksOnly, .macOS26, .macOS14, .macOS26White, .macOS14White, .macOS26Colour:
+        case .asRecorded, .clicksOnly, .macOS26, .macOS14, .macOS26White, .macOS14White, .macOS26Colour,
+             .gradient, .neon, .frost:
             return nil
         }
     }

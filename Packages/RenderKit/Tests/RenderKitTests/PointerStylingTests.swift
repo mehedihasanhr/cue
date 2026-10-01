@@ -121,7 +121,7 @@ struct PointerStylingTests {
     /// twice the size it is at 1080p, and its edges are harder than the 1080p drawing
     /// enlarged to the same size would be.
     @Test(arguments: [CursorStyle.Appearance.largeArrow, .dot, .minimal, .macOS26, .macOS14,
-                      .macOS26White, .macOS26Colour])
+                      .macOS26White, .macOS26Colour, .gradient, .frost])
     func aStyleIsSharpAtFourK(_ appearance: CursorStyle.Appearance) throws {
         let small = try #require(try render(frame(Self.sizes[0], cursor: pointer(appearance, at: Self.spot))).light())
         let large = try #require(try render(frame(Self.sizes[1], cursor: pointer(appearance, at: Self.spot))).light())
@@ -551,7 +551,7 @@ struct PointerStylingTests {
     /// The colour styles take the chosen colour; the others do not change with it.
     @Test func onlyTheColourStylesUseTheColour() {
         let colour = CursorStyle.Appearance.allCases.filter(\.usesColour)
-        #expect(Set(colour) == [.dot, .macOS26Colour])
+        #expect(Set(colour) == [.dot, .macOS26Colour, .gradient, .neon])
     }
 }
 

@@ -76,7 +76,7 @@ struct CursorInspector: View {
         .disabled(!model.timeline.cursor.isVisible || !followsShape)
         .help(followsShape
               ? ""
-              : "Only for the As recorded and macOS styles. The \(model.timeline.cursor.appearance.title) style is one drawing throughout.")
+              : "Only for the As recorded, macOS, Gradient, Neon and Frost styles. The \(model.timeline.cursor.appearance.title) style is one drawing throughout.")
         .inspectorSection("Shape", systemImage: "cursorarrow")
     }
 

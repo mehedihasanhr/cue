@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import CoreImage
 import Foundation
@@ -38,21 +39,75 @@ enum SystemPointerArtwork {
     /// change how big the pointer is.
     static let pointsAcross = 14.0
 
-    /// What the style's generation and colours are, or `nil` for a style that is not a
-    /// system pointer.
-    static func ink(for appearance: CursorStyle.Appearance, color: ColorValue)
-        -> (generation: Generation, body: CGColor, outline: CGColor)? {
+    /// How a layer of the artwork is coloured.
+    enum Paint {
+        case solid(CGColor)
+        /// From the first colour at the pointer's top-left to the second at its far corner.
+        case gradient(CGColor, CGColor)
+    }
+
+    /// Everything a style decides about a system shape: whose artwork, how its body and
+    /// outline are painted, the shadow under it, and any light round it.
+    struct Look {
+        let generation: Generation
+        let body: Paint
+        let outline: Paint
+        var shadow = CGColor(gray: 0, alpha: 0.45)
+        /// A glow round the outline, in this colour — the neon style's.
+        var glow: CGColor?
+    }
+
+    /// The look for a style, or `nil` for a style that is not drawn from the system's
+    /// shapes.
+    static func look(for appearance: CursorStyle.Appearance, color: ColorValue) -> Look? {
         let black = CGColor(gray: 0, alpha: 1), white = CGColor(gray: 1, alpha: 1)
+        let chosen = CGColor(srgbRed: color.r, green: color.g, blue: color.b, alpha: 1)
         switch appearance {
-        case .macOS26: return (.current, black, white)
-        case .macOS14: return (.classic, black, white)
-        case .macOS26White: return (.current, white, black)
-        case .macOS14White: return (.classic, white, black)
-        case .macOS26Colour:
-            let body = CGColor(srgbRed: color.r, green: color.g, blue: color.b, alpha: 1)
-            return (.current, body, white)
+        case .macOS26: return Look(generation: .current, body: .solid(black), outline: .solid(white))
+        case .macOS14: return Look(generation: .classic, body: .solid(black), outline: .solid(white))
+        case .macOS26White: return Look(generation: .current, body: .solid(white), outline: .solid(black))
+        case .macOS14White: return Look(generation: .classic, body: .solid(white), outline: .solid(black))
+        case .macOS26Colour: return Look(generation: .current, body: .solid(chosen), outline: .solid(white))
+        case .gradient:
+            // The chosen colour into its neighbour round the colour wheel, lit from the
+            // top-left, with a shadow of its own colour: it reads as one object, not as a
+            // swatch.
+            return Look(generation: .current,
+                        body: .gradient(lighter(color, by: 0.12), turned(color, degrees: 38)),
+                        outline: .solid(white),
+                        shadow: CGColor(srgbRed: color.r, green: color.g, blue: color.b, alpha: 0.5))
+        case .neon:
+            return Look(generation: .current,
+                        body: .solid(CGColor(srgbRed: 0.05, green: 0.06, blue: 0.09, alpha: 1)),
+                        outline: .solid(lighter(color, by: 0.25)),
+                        shadow: CGColor(gray: 0, alpha: 0.35),
+                        glow: CGColor(srgbRed: color.r, green: color.g, blue: color.b, alpha: 0.95))
+        case .frost:
+            return Look(generation: .current,
+                        body: .gradient(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.96),
+                                        CGColor(srgbRed: 0.8, green: 0.87, blue: 0.98, alpha: 0.9)),
+                        outline: .solid(CGColor(srgbRed: 0.1, green: 0.13, blue: 0.22, alpha: 0.9)),
+                        shadow: CGColor(srgbRed: 0.1, green: 0.15, blue: 0.35, alpha: 0.35))
         case .asRecorded, .largeArrow, .minimal, .dot, .clicksOnly: return nil
         }
+    }
+
+    /// The colour turned round the colour wheel.
+    private static func turned(_ color: ColorValue, degrees: Double) -> CGColor {
+        let base = NSColor(srgbRed: color.r, green: color.g, blue: color.b, alpha: 1)
+        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
+        base.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+        var turnedHue = hue + degrees / 360
+        turnedHue -= floor(turnedHue)
+        return NSColor(hue: turnedHue, saturation: max(saturation, 0.55), brightness: max(brightness, 0.7), alpha: 1)
+            .usingColorSpace(.sRGB)?.cgColor ?? base.cgColor
+    }
+
+    /// The colour a step towards white.
+    private static func lighter(_ color: ColorValue, by amount: Double) -> CGColor {
+        CGColor(srgbRed: color.r + (1 - color.r) * amount,
+                green: color.g + (1 - color.g) * amount,
+                blue: color.b + (1 - color.b) * amount, alpha: 1)
     }
 
     /// The artwork's name for each shape.
@@ -177,15 +232,15 @@ enum SystemPointerArtwork {
         }
     }
 
-    /// The pointer for a shape at a pointer size in output pixels, in the given colours,
-    /// with the system's soft shadow under it.
-    static func drawing(_ generation: Generation, shape: CursorShapeKind, size: Double,
-                        body: CGColor, outline: CGColor) -> PointerStyleArtwork.Drawing? {
-        guard let artwork = artwork(generation, shape) else { return nil }
+    /// The pointer for a shape at a pointer size in output pixels, painted as the look
+    /// says, with its shadow under it and any glow round it.
+    static func drawing(_ look: Look, shape: CursorShapeKind, size: Double) -> PointerStyleArtwork.Drawing? {
+        guard let artwork = artwork(look.generation, shape) else { return nil }
         let unit = size / pointsAcross
-        // The system's shadow: two points of blur, a point down, a little under half dark.
+        // The system's shadow: two points of blur, a point down.
         let blur = 2 * unit
-        let margin = blur + unit
+        let glowBlur = 3 * unit
+        let margin = max(blur + unit, look.glow == nil ? 0 : glowBlur * 1.3)
         let content = artwork.content
         let width = Int((content.width * unit + margin * 2).rounded(.up))
         let height = Int((content.height * unit + margin * 2).rounded(.up))
@@ -200,7 +255,7 @@ enum SystemPointerArtwork {
         // PDF space runs up, as Core Graphics does, so the artwork is drawn as it is and
         // only moved: the content's bottom-left to the margin's. `content` is measured from
         // the top, so its bottom is the canvas's height less its far edge.
-        func place(_ page: CGPDFPage, in colour: CGColor) {
+        func place(_ page: CGPDFPage, in paint: Paint) {
             context.beginTransparencyLayer(auxiliaryInfo: nil)
             context.saveGState()
             context.translateBy(x: margin, y: margin)
@@ -209,21 +264,48 @@ enum SystemPointerArtwork {
             context.translateBy(x: -artwork.box.minX, y: -artwork.box.minY)
             context.drawPDFPage(page)
             context.restoreGState()
-            // The layer's own shape, filled with the colour asked for.
+            // The layer's own shape, filled with the paint asked for.
             context.saveGState()
             context.setBlendMode(.sourceIn)
-            context.setFillColor(colour)
-            context.fill(canvas)
+            switch paint {
+            case .solid(let colour):
+                context.setFillColor(colour)
+                context.fill(canvas)
+            case .gradient(let from, let to):
+                if let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
+                                             colors: [from, to] as CFArray, locations: [0, 1]) {
+                    // Top-left of the pointer to its bottom-right; y runs up here.
+                    context.drawLinearGradient(gradient,
+                                               start: CGPoint(x: margin, y: Double(height) - margin),
+                                               end: CGPoint(x: Double(width) - margin, y: margin),
+                                               options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+                }
+            }
             context.restoreGState()
             context.endTransparencyLayer()
         }
 
-        context.setShadow(offset: CGSize(width: 0, height: -unit), blur: blur,
-                          color: CGColor(gray: 0, alpha: 0.45))
+        if let glow = look.glow {
+            // The light first, under everything: the outline in the glow's colour, with a
+            // halo of the same round it — twice, so the halo is bright near the line and
+            // fades out, the way a lit tube looks.
+            for pass in [1.0, 0.5] {
+                context.saveGState()
+                context.setShadow(offset: .zero, blur: glowBlur * pass, color: glow)
+                context.beginTransparencyLayer(auxiliaryInfo: nil)
+                place(artwork.outline, in: .solid(glow))
+                context.endTransparencyLayer()
+                context.restoreGState()
+            }
+        }
+
+        context.saveGState()
+        context.setShadow(offset: CGSize(width: 0, height: -unit), blur: blur, color: look.shadow)
         context.beginTransparencyLayer(auxiliaryInfo: nil)
-        place(artwork.body, in: body)
-        place(artwork.outline, in: outline)
+        place(artwork.body, in: look.body)
+        place(artwork.outline, in: look.outline)
         context.endTransparencyLayer()
+        context.restoreGState()
 
         guard let image = context.makeImage() else { return nil }
         let point = CGPoint(x: margin + (artwork.hotspot.x - content.minX) * unit,
