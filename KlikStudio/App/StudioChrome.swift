@@ -71,16 +71,21 @@ extension View {
     /// and lightening the tint lets the wallpaper through — which is the whole point of a
     /// translucent recorder bar. It has to sit over the thing being recorded without
     /// pretending it is not there.
-    @ViewBuilder
+    ///
+    /// Frosted and dark on every system, deliberately not Liquid Glass: that bends the light
+    /// round its rim, which over a white page drew a grey halo down both ends of the bar —
+    /// and it lightens over a light page, where white text then has nothing to stand on.
+    /// A dark frost reads the same over a white document and a dark photo, and the colour
+    /// the bar carries is its own light, not the page's.
     func studioGlass(cornerRadius: CGFloat) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        if #available(macOS 26.0, *) {
-            glassEffect(.regular.tint(.black.opacity(0.16)), in: shape)
-                .overlay(shape.strokeBorder(.white.opacity(0.1)))
-        } else {
-            background(.ultraThinMaterial, in: shape)
-                .background(Color.black.opacity(0.26), in: shape)
-                .overlay(shape.strokeBorder(.white.opacity(0.1)))
+        return background {
+            ZStack {
+                Rectangle().fill(.ultraThinMaterial)
+                Color(red: 0.05, green: 0.055, blue: 0.08).opacity(0.78)
+            }
+            .clipShape(shape)
         }
+        .overlay(shape.strokeBorder(.white.opacity(0.08)))
     }
 }

@@ -84,9 +84,9 @@ struct RecorderBar: View {
         .studioGlass(cornerRadius: StudioPalette.barRadius)
         .clipShape(RoundedRectangle(cornerRadius: StudioPalette.barRadius, style: .continuous))
         .overlay { BarEdgeLight(mood: mood, cornerRadius: StudioPalette.barRadius) }
-        .shadow(color: .black.opacity(0.4), radius: 26, y: 12)
-        // A soft light of the mood's colour under the bar, as if the smoke spilled out.
-        .shadow(color: moodShadow, radius: 22, y: 6)
+        // One soft shadow, small enough to end inside the window. A wide one was cut off
+        // flat at the window's edges, and a coloured one spread a smudge over a white page.
+        .shadow(color: .black.opacity(0.22), radius: 8, y: 4)
         .animation(StudioMotion.shape, value: shape)
         // Also covers the quieter change: the display's name arriving from
         // ScreenCaptureKit widens the setup bar a second after it opens.
@@ -124,13 +124,7 @@ struct RecorderBar: View {
         }
     }
 
-    private var moodShadow: Color {
-        switch mood {
-        case .ready: StudioPalette.brand.opacity(0.28)
-        case .live: Color.red.opacity(0.32)
-        case .held, .alert: Color.orange.opacity(0.28)
-        }
-    }
+
 
     /// One layer of the stack: laid out and measured whether or not it is the one showing,
     /// transparent and untouchable when it is not.
@@ -198,7 +192,7 @@ struct RecorderBar: View {
                 .font(.system(size: 10.5, weight: .bold))
                 .foregroundStyle(.white.opacity(0.8))
                 .frame(width: 28, height: 28)
-                .background(.white.opacity(0.1), in: Circle())
+                .background(.white.opacity(0.08), in: Circle())
                 .overlay(Circle().strokeBorder(.white.opacity(0.08)))
         }
         .buttonStyle(BarButtonStyle(pressedScale: 0.88))
@@ -211,6 +205,7 @@ struct RecorderBar: View {
         HStack(spacing: 2) {
             ForEach(RecorderModel.Mode.allCases) { mode in
                 ModeButton(mode: mode,
+                           accent: mood.accent,
                            isSelected: model.mode == mode,
                            isAvailable: mode.isAvailable,
                            chip: modeChip) {
@@ -220,7 +215,7 @@ struct RecorderBar: View {
             }
         }
         .padding(3)
-        .background(.black.opacity(0.2), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.white.opacity(0.06)))
         // The highlight used to vanish from one tile and appear on another, which reads
         // as two events. One chip that slides says the same thing as a single move, and
@@ -237,17 +232,17 @@ struct RecorderBar: View {
     /// display picker and the record button moved to the overlay.
     private var inputs: some View {
         HStack(spacing: 4) {
-            InputChipMenu(symbol: "video.slash",
+            InputChipMenu(accent: mood.accent,
+                          symbol: "video.slash",
                           onSymbol: "video.fill",
-                          size: 15,
                           isOn: settings.recordsCamera,
                           label: model.cameraLabel) {
                 cameraMenu
             }
 
-            InputChipMenu(symbol: "mic.slash",
+            InputChipMenu(accent: mood.accent,
+                          symbol: "mic.slash",
                           onSymbol: "mic.fill",
-                          size: 15,
                           isOn: settings.recordsMicrophone,
                           label: model.microphoneLabel) {
                 microphoneMenu
@@ -261,9 +256,9 @@ struct RecorderBar: View {
                     .transition(.opacity)
             }
 
-            InputChipMenu(symbol: "music.note.tv",
+            InputChipMenu(accent: mood.accent,
+                          symbol: "music.note.tv",
                           onSymbol: "music.note.tv.fill",
-                          size: 16,
                           isOn: settings.recordsSystemAudio,
                           label: SystemAudioApps.label(isOn: settings.recordsSystemAudio,
                                                        chosen: settings.systemAudioAppIDs)) {
@@ -395,8 +390,8 @@ struct RecorderBar: View {
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
-        .frame(width: 36, height: 36)
-        .background(.white.opacity(0.07), in: Circle())
+        .frame(width: 34, height: 34)
+        .background(.white.opacity(0.08), in: Circle())
         .padding(.trailing, 4)
     }
 
@@ -829,6 +824,8 @@ extension RecorderBar {
 /// One of Display / Window / Area / Device.
 private struct ModeButton: View {
     let mode: RecorderModel.Mode
+    /// The bar's colour, which the chosen mode wears.
+    let accent: Color
     let isSelected: Bool
     let isAvailable: Bool
     let chip: Namespace.ID
@@ -838,11 +835,16 @@ private struct ModeButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 7) {
+                // Fitted to one height rather than set at a point size: a monitor, a
+                // window, a dashed box and a phone are four shapes, and at one size each
+                // inks to a different height. Scaled into the same box, every one stands
+                // the same height beside its title.
                 Image(systemName: mode.symbol)
-                    .font(.system(size: mode.symbolSize * 0.82, weight: .medium))
-                    // One slot for four glyphs of four shapes, so the titles beside them
-                    // start at the same distance.
-                    .frame(width: 20, height: 16)
+                    .resizable()
+                    .scaledToFit()
+                    .fontWeight(.medium)
+                    .frame(height: BarIcon.mode)
+                    .frame(width: 22)
                 Text(mode.title).font(.system(size: 12.5, weight: isSelected ? .semibold : .medium))
             }
             .foregroundStyle(isAvailable ? (isSelected ? StudioPalette.chosen : StudioPalette.offered)
@@ -856,9 +858,9 @@ private struct ModeButton: View {
                     // rather than extinguishing one tile and lighting another. Glass on
                     // glass — a lighter pane with a lit top edge and a little lift.
                     shape
-                        .fill(LinearGradient(colors: [.white.opacity(0.24), .white.opacity(0.12)],
+                        .fill(LinearGradient(colors: [accent.opacity(0.62), accent.opacity(0.4)],
                                              startPoint: .top, endPoint: .bottom))
-                        .overlay(shape.strokeBorder(LinearGradient(colors: [.white.opacity(0.35), .white.opacity(0.05)],
+                        .overlay(shape.strokeBorder(LinearGradient(colors: [.white.opacity(0.32), .white.opacity(0.04)],
                                                                    startPoint: .top, endPoint: .bottom)))
                         .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
                         .matchedGeometryEffect(id: "selected", in: chip)
@@ -880,9 +882,9 @@ private struct ModeButton: View {
 /// Camera / microphone / system audio: an icon, what it is doing, and a menu of which
 /// device — or, for system audio, which apps.
 private struct InputChipMenu<Content: View>: View {
+    let accent: Color
     let symbol: String
     let onSymbol: String
-    let size: CGFloat
     let isOn: Bool
     let label: String
     @ViewBuilder let content: Content
@@ -893,7 +895,7 @@ private struct InputChipMenu<Content: View>: View {
         // A menu's own label is drawn by AppKit, which keeps only a glyph and a title out
         // of whatever it is given — the lit pane, the live light and the dimmed "off" all
         // went missing when the chip was the label.
-        InputChipLabel(symbol: isOn ? onSymbol : symbol, size: size,
+        InputChipLabel(accent: accent, symbol: isOn ? onSymbol : symbol,
                        isOn: isOn, isAvailable: true, isHovering: isHovering, label: label)
             .fixedSize()
             .overlay {
@@ -915,13 +917,8 @@ private struct InputChipMenu<Content: View>: View {
 }
 
 private struct InputChipLabel: View {
+    let accent: Color
     let symbol: String
-    /// Per input, not per row. A camcorder, a microphone and a screen with a note on it
-    /// are drawn to different heights at one point size, and the row read as three sizes.
-    /// 15 inks the camera and the microphone at 15.75pt tall; the audio glyph needs 16 to
-    /// reach the same line. Both faces of one input share a size, so toggling it never
-    /// resizes the glyph.
-    let size: CGFloat
     let isOn: Bool
     let isAvailable: Bool
     let isHovering: Bool
@@ -929,21 +926,16 @@ private struct InputChipLabel: View {
 
     var body: some View {
         HStack(spacing: 7) {
+            // One height for the three, for the reason the modes' glyphs have one.
             Image(systemName: symbol)
-                .font(.system(size: size - 1))
+                .resizable()
+                .scaledToFit()
                 .contentTransition(.symbolEffect(.replace))
-                .frame(width: 22)
+                .frame(height: BarIcon.input)
+                .frame(width: 24)
             Text(label)
                 .font(.system(size: 12.5, weight: .medium))
                 .lineLimit(1)
-            if isOn {
-                // A small live light: green, like the system's own camera-in-use dot.
-                Circle()
-                    .fill(Color.green)
-                    .frame(width: 5, height: 5)
-                    .shadow(color: .green.opacity(0.8), radius: 3)
-                    .transition(.scale.combined(with: .opacity))
-            }
         }
         .foregroundStyle(isAvailable ? (isOn ? StudioPalette.chosen : StudioPalette.offered)
                                      : StudioPalette.unavailable)
@@ -953,12 +945,20 @@ private struct InputChipLabel: View {
             let shape = RoundedRectangle(cornerRadius: 11, style: .continuous)
             // On is a lit pane, so what will be recorded is visible across the room; off
             // is bare glass that only shows itself under the pointer.
-            shape.fill(.white.opacity(isOn ? 0.12 : (isHovering && isAvailable ? 0.07 : 0)))
-                .overlay(shape.strokeBorder(.white.opacity(isOn ? 0.12 : 0)))
+            // Switched on, it wears the bar's colour — the same as the chosen mode.
+            shape.fill(isOn ? AnyShapeStyle(accent.opacity(0.3))
+                            : AnyShapeStyle(.white.opacity(isHovering && isAvailable ? 0.07 : 0)))
+                .overlay(shape.strokeBorder(isOn ? accent.opacity(0.5) : .clear))
         }
         .contentShape(Rectangle())
         .animation(StudioMotion.state, value: isOn)
     }
+}
+
+/// The heights the bar's glyphs are fitted to.
+private enum BarIcon {
+    static let mode: CGFloat = 14
+    static let input: CGFloat = 15
 }
 
 /// The red record button: a red disc in a white ring, lit from above, glowing under the

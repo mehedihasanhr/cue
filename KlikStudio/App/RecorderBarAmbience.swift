@@ -18,8 +18,18 @@ enum BarMood: Equatable {
         }
     }
 
-    /// The light that runs round the edge.
-    fileprivate var edge: Color { smoke[0] }
+    /// The bar's one colour for this mood: the light round the edge, and what is chosen
+    /// or switched on — so the controls and the light are plainly the same thing.
+    var accent: Color {
+        switch self {
+        case .ready: Color(red: 0.25, green: 0.47, blue: 1)
+        case .live: Color(red: 1, green: 0.27, blue: 0.3)
+        case .held: Color(red: 1, green: 0.62, blue: 0.16)
+        case .alert: Color(red: 1, green: 0.5, blue: 0.16)
+        }
+    }
+
+    fileprivate var edge: Color { accent }
 
     /// How long the edge light takes to go once round. Quicker while a take is live: the
     /// bar is the one thing on screen saying "this is being recorded".
@@ -34,9 +44,9 @@ enum BarMood: Equatable {
     /// How strongly the smoke shows through the glass.
     fileprivate var glow: Double {
         switch self {
-        case .ready: 0.42
-        case .live: 0.55
-        case .held, .alert: 0.4
+        case .ready: 0.3
+        case .live: 0.38
+        case .held, .alert: 0.3
         }
     }
 }

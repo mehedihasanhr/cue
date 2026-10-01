@@ -28,31 +28,17 @@ final class RecorderModel {
             }
         }
 
+        /// `menubar.dock.rectangle` replaced `display` and `apps.iphone` replaced `iphone`
+        /// so the four share a drawing: a plain rounded rectangle with something in it. A
+        /// monitor on a stand and a bare phone were two different kinds of picture sitting
+        /// in one row. The bar fits each to one height, so they also stand level.
+
         var symbol: String {
             switch self {
             case .display: "menubar.dock.rectangle"
             case .window: "macwindow"
             case .area: "rectangle.dashed"
             case .device: "apps.iphone"
-            }
-        }
-
-        /// The point size that puts this symbol on the same optical line as the others.
-        ///
-        /// SF Symbols share an optical grid, not a box: at one point size these ink
-        /// different heights, which is why the row used to read as four sizes. Measured,
-        /// not guessed — all four land their ink at exactly 15.5pt tall.
-        ///
-        /// `menubar.dock.rectangle` replaced `display` and `apps.iphone` replaced `iphone`
-        /// so the four share a drawing: a plain rounded rectangle with something in it. A
-        /// monitor on a stand and a bare phone were two different kinds of picture sitting
-        /// in one row.
-        var symbolSize: CGFloat {
-            switch self {
-            case .display: 17
-            case .window: 17
-            case .area: 17
-            case .device: 15
             }
         }
 
