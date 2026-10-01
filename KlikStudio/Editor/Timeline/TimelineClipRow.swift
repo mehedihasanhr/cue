@@ -25,7 +25,7 @@ struct TimelineClipRow: View {
     private var viewport: TimelineViewport { model.viewport }
     private let radius: CGFloat = TimelineChipBackground.radius
 
-    private static let speeds: [Double] = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4, 8]
+    fileprivate static let speeds: [Double] = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4, 8]
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -130,10 +130,6 @@ struct TimelineClipRow: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(.black.opacity(0.45), in: Capsule())
-            // The speed menu is a system control, and it draws its title in the window's
-            // label colour whatever it is told: dark grey on this dark pill, in light mode.
-            // Saying the pill is dark is what makes it draw light.
-            .environment(\.colorScheme, .dark)
             .fixedSize()
     }
 
@@ -156,22 +152,7 @@ struct TimelineClipRow: View {
                 Rectangle()
                     .fill(.white.opacity(0.35))
                     .frame(width: 1, height: 9)
-                Menu {
-                    ForEach(Self.speeds, id: \.self) { speed in
-                        Button(Self.speedLabel(speed)) { model.setSpeed(speed, of: clip.id) }
-                    }
-                } label: {
-                    HStack(spacing: 2) {
-                        Image(systemName: "timer").font(.system(size: 9, weight: .semibold))
-                        Text(Self.speedLabel(clip.speed))
-                    }
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.white)
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("Playback speed")
+                SpeedMenu(model: model, clip: clip)
             }
         }
     }
@@ -454,7 +435,8 @@ struct TimelineClipRow: View {
                 }
                 .foregroundStyle(.black.opacity(0.8))
                 .frame(width: 26, height: 26)
-                .background(Color.yellow, in: Circle())
+                .background(Color.yellow, in: StudioTheme.squircle(StudioTheme.Radius.regular))
+                .contentShape(StudioTheme.squircle(StudioTheme.Radius.regular))
             }
             .buttonStyle(BarButtonStyle())
             .position(x: x + 13, y: height / 2)
@@ -465,6 +447,53 @@ struct TimelineClipRow: View {
 
     private func trimmedAway(head: Bool, clip: Clip) -> CMTime? {
         head ? clip.sourceStart : model.timeline.sourceDuration(of: clip) - clip.sourceEnd
+    }
+}
+
+// MARK: - The speed on a clip's pill
+
+/// A clip's speed, as a word on its pill that opens the kit's list of speeds.
+///
+/// It was a system `Menu` in its borderless style, which draws its title in the window's
+/// label colour whatever it is told — dark grey on the dark pill in light mode — and opens
+/// the system's own menu, the one list in the editor not drawn in the kit's hand. This is
+/// the same word in the pill's white, brightening under the pointer, opening the list the
+/// inspector's pop-ups open, with a check against the speed the clip plays at now.
+private struct SpeedMenu: View {
+    let model: EditorModel
+    let clip: Clip
+
+    @State private var isPresented = false
+    @State private var isHovering = false
+
+    var body: some View {
+        Button { isPresented.toggle() } label: {
+            HStack(spacing: 2) {
+                Image(systemName: "timer").font(.system(size: 9, weight: .semibold))
+                Text(TimelineClipRow.speedLabel(clip.speed))
+            }
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(.white.opacity(isHovering || isPresented ? 1 : 0.85))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(StudioPressStyle())
+        .onHover { isHovering = $0 }
+        .animation(StudioMotion.hover, value: isHovering)
+        .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+            StudioMenuList(sections: [
+                .init(title: nil, rows: TimelineClipRow.speeds.map { speed in
+                    .init(title: TimelineClipRow.speedLabel(speed),
+                          systemImage: nil,
+                          thumbnail: nil,
+                          isChecked: speed == clip.speed,
+                          isEnabled: true) { model.setSpeed(speed, of: clip.id) }
+                })
+            ], showsChecks: true)
+        }
+        .fixedSize()
+        .help("Playback speed")
+        .accessibilityLabel("Playback speed")
+        .accessibilityValue(TimelineClipRow.speedLabel(clip.speed))
     }
 }
 

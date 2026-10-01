@@ -14,57 +14,49 @@ import TimelineKit
 ///
 /// It appears only while a zoom is selected and goes away during playback, because playback
 /// answers the question by itself.
+///
+/// The kit's segmented row, so it is the same control as every other either-or in the
+/// window — the chosen reading lifted out of a squircle trough — set on a plate of glass
+/// because it floats over the picture rather than sitting on a panel.
 struct ZoomPreviewSwitch: View {
     let model: EditorModel
 
-    @State private var hovered: EditorModel.ZoomPreview?
-
     var body: some View {
-        HStack(spacing: 2) {
-            ForEach(EditorModel.ZoomPreview.allCases) { mode in
-                button(mode)
-            }
-        }
-        .padding(3)
-        .background(.regularMaterial, in: Capsule())
-        .overlay(Capsule().strokeBorder(.white.opacity(0.08), lineWidth: 1))
-        .shadow(color: .black.opacity(0.3), radius: 8, y: 3)
-        .padding(.bottom, 12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Zoom preview")
+        StudioSegmented(selection: mode,
+                        items: EditorModel.ZoomPreview.allCases,
+                        title: \.title,
+                        systemImage: \.symbol,
+                        help: { mode in
+                            mode == .framing
+                                ? "Show the whole recording with this zoom's framing box on it"
+                                : "Show this zoom as it will play and as it will export"
+                        })
+            // Its own width, not the picture's: the segmented row stretches its segments
+            // across whatever it is offered, and here it is offered the whole preview.
+            .fixedSize()
+            .padding(Self.plateInset)
+            .background(.regularMaterial, in: StudioTheme.squircle(StudioTheme.Radius.panel))
+            .overlay(StudioTheme.squircle(StudioTheme.Radius.panel).strokeBorder(StudioTheme.Palette.stroke))
+            .shadow(color: .black.opacity(0.3), radius: 8, y: 3)
+            .padding(.bottom, 12)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Zoom preview")
     }
 
-    private func button(_ mode: EditorModel.ZoomPreview) -> some View {
-        let isOn = model.zoomPreview == mode
-        return Button {
-            // Through the model's own verbs rather than by assigning: each parks the
-            // playhead inside the zoom when it is outside it, and a Result that shows an
-            // unzoomed frame because the playhead is elsewhere is the exact confusion this
-            // control exists to end.
+    /// The glass around the trough: the panel's radius less the trough's own, so the two
+    /// corners run parallel.
+    private static let plateInset: CGFloat = StudioTheme.Radius.panel - StudioTheme.Radius.inner - 2
+
+    /// Through the model's own verbs rather than by assigning: each parks the playhead
+    /// inside the zoom when it is outside it, and a Result that shows an unzoomed frame
+    /// because the playhead is elsewhere is the exact confusion this control exists to end.
+    private var mode: Binding<EditorModel.ZoomPreview> {
+        Binding {
+            model.zoomPreview
+        } set: { mode in
             if mode == .framing { model.frameSelectedZoom() } else { model.previewZoomResult() }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: mode.symbol).font(.system(size: 10, weight: .semibold))
-                Text(mode.title)
-            }
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(isOn ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background {
-                Capsule().fill(isOn ? AnyShapeStyle(Color.accentColor)
-                                    : AnyShapeStyle(hovered == mode ? Color.primary.opacity(0.08) : Color.clear))
-            }
-            .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
-        .onHover { hovered = $0 ? mode : (hovered == mode ? nil : hovered) }
-        .animation(StudioMotion.state, value: isOn)
-        .help(mode == .framing
-              ? "Show the whole recording with this zoom's framing box on it"
-              : "Show this zoom as it will play and as it will export")
-        .accessibilityAddTraits(isOn ? [.isSelected] : [])
     }
 }
 

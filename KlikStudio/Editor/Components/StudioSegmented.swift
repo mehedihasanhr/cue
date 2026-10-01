@@ -17,15 +17,20 @@ struct StudioSegmented<Item: Hashable>: View {
     let items: [Item]
     let title: (Item) -> String
     var systemImage: ((Item) -> String?)?
+    /// A tooltip for each segment, for a row whose one-word titles need a sentence to say
+    /// what choosing them does — the preview's Framing and Result.
+    var help: ((Item) -> String?)?
 
     init(selection: Binding<Item>,
          items: [Item],
          title: @escaping (Item) -> String,
-         systemImage: ((Item) -> String?)? = nil) {
+         systemImage: ((Item) -> String?)? = nil,
+         help: ((Item) -> String?)? = nil) {
         _selection = selection
         self.items = items
         self.title = title
         self.systemImage = systemImage
+        self.help = help
     }
 
     @Namespace private var highlight
@@ -100,6 +105,7 @@ struct StudioSegmented<Item: Hashable>: View {
         .onHover { inside in
             hovered = inside ? item : (hovered == item ? nil : hovered)
         }
+        .help(help?(item) ?? "")
         .accessibilityLabel(title(item))
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
