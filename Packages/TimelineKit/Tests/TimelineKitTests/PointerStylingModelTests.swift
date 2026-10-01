@@ -158,6 +158,6 @@ struct PointerStylingModelTests {
         // And the system pointers follow the pointer's shape, as the recorded one does.
         #expect(CursorStyle.Appearance.allCases.filter(\.followsRecordedShape)
                 == [.asRecorded, .macOS26, .macOS14, .macOS26White, .macOS14White, .macOS26Colour,
-                    .gradient, .neon, .frost])
+                    .classicKlik, .gradient, .neon, .frost])
     }
 }

@@ -8,7 +8,7 @@ import TimelineKit
 ///
 /// Tiles rather than a pop-up because the choice is a picture — small ones, four to a row
 /// at the panel's width, with the chosen style's name on the heading. One fixed row of
-/// five ran off the right edge of the panel, and there are thirteen styles now. The
+/// five ran off the right edge of the panel, and there are fourteen styles now. The
 /// previews come from the renderer's own drawings, so a tile shows what the export will;
 /// what each style does is its tooltip.
 struct PointerStyleSection: View {
@@ -85,6 +85,7 @@ struct PointerStyleSection: View {
         case .macOS26White: "macOS 26's pointer in white with a black outline. Clearest on dark pages."
         case .macOS14White: "The classic pointer in white with a black outline. Clearest on dark pages."
         case .macOS26Colour: "macOS 26's pointer filled with the colour you choose and outlined in white, as Accessibility can set it."
+        case .classicKlik: "Klik's own classic arrow and pointing hand, crisp black and white, sharp at any size."
         case .gradient: "macOS 26's pointer filled with a gradient from the colour you choose, with a soft glow of it underneath."
         case .neon: "A dark pointer with a glowing outline in the colour you choose. Strongest on dark pages."
         case .frost: "A frosted, icy-white pointer with a crisp dark outline. Clean on any page."

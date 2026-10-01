@@ -75,6 +75,9 @@ enum PointerStyleArtwork {
 
     private static func draw(_ appearance: CursorStyle.Appearance, shape: CursorShapeKind,
                              size: Double, color: ColorValue) -> Drawing? {
+        if appearance == .classicKlik, let drawing = KlikPointerArtwork.drawing(shape, size: size) {
+            return drawing
+        }
         if let look = SystemPointerArtwork.look(for: appearance, color: color) {
             return SystemPointerArtwork.drawing(look, shape: shape, size: size)
         }
@@ -83,7 +86,7 @@ enum PointerStyleArtwork {
         case .dot: return dot(size: size, color: color)
         case .minimal: return minimal(size: size)
         case .asRecorded, .clicksOnly, .macOS26, .macOS14, .macOS26White, .macOS14White, .macOS26Colour,
-             .gradient, .neon, .frost:
+             .gradient, .neon, .frost, .classicKlik:
             return nil
         }
     }

@@ -26,6 +26,9 @@ public extension CursorStyle {
         /// macOS 26's pointer filled with the chosen colour and outlined in white, the way
         /// Accessibility's pointer fill colour draws it.
         case macOS26Colour
+        /// Klik's own classic arrow and pointing hand, crisp black and white, with the
+        /// classic system shapes for the rest.
+        case classicKlik
         /// macOS 26's shapes filled with a gradient from the chosen colour into its
         /// neighbour on the colour wheel, outlined in white, with a shadow of its colour.
         case gradient
@@ -51,6 +54,7 @@ public extension CursorStyle {
             case .macOS26White: "macOS 26 white"
             case .macOS14White: "macOS 14 white"
             case .macOS26Colour: "macOS 26 colour"
+            case .classicKlik: "Classic Klik"
             case .gradient: "Gradient"
             case .neon: "Neon"
             case .frost: "Frost"
@@ -84,7 +88,7 @@ public extension CursorStyle {
         public var isSystemPointer: Bool {
             switch self {
             case .macOS26, .macOS14, .macOS26White, .macOS14White, .macOS26Colour: true
-            case .asRecorded, .largeArrow, .minimal, .dot, .clicksOnly, .gradient, .neon, .frost: false
+            case .asRecorded, .largeArrow, .minimal, .dot, .clicksOnly, .gradient, .neon, .frost, .classicKlik: false
             }
         }
 
@@ -92,7 +96,7 @@ public extension CursorStyle {
         /// styled ones built on them — and so has a drawing for every shape the pointer
         /// takes.
         public var usesSystemShapes: Bool {
-            isSystemPointer || self == .gradient || self == .neon || self == .frost
+            isSystemPointer || self == .gradient || self == .neon || self == .frost || self == .classicKlik
         }
 
         /// Whether anything is drawn where the pointer is.
