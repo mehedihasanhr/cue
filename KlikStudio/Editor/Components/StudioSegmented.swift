@@ -44,7 +44,7 @@ struct StudioSegmented<Item: Hashable>: View {
     @Environment(\.isEnabled) private var isEnabled
 
     private static var inset: CGFloat { 2 }
-    private static var segmentHeight: CGFloat { StudioTheme.Height.small - 2 }
+    private static var segmentHeight: CGFloat { StudioTheme.Height.control - inset * 2 }
 
     var body: some View {
         let shape = StudioTheme.squircle(StudioTheme.Radius.inner + Self.inset)

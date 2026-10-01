@@ -100,10 +100,10 @@ enum StudioTheme {
     // MARK: - Shape
 
     enum Radius {
-        /// A regular (28-point) control.
+        /// A regular control.
         static let regular: CGFloat = 8
-        /// A small (24-point) control.
-        static let small: CGFloat = 7
+        /// A small control: the same height as a regular one, so the same corner.
+        static let small: CGFloat = 8
         /// A segment inside a trough, or a row inside a menu: the trough's radius less the
         /// inset, so the inner and outer corners run parallel.
         static let inner: CGFloat = 5
@@ -123,10 +123,14 @@ enum StudioTheme {
     // MARK: - Size
 
     enum Height {
+        /// Every control that holds a value or does something — a button, a text field, a
+        /// pop-up, a stepper's buttons, a segmented trough — whether it sits in a bar or a
+        /// panel row. One height, so a field and the button beside or below it line up.
+        static let control: CGFloat = 28
         /// A button in a bar, the Export button, a tool tab's hit area.
-        static let regular: CGFloat = 28
+        static let regular: CGFloat = control
         /// Anything in a panel row: a pop-up field, a small button, a stepper.
-        static let small: CGFloat = 24
+        static let small: CGFloat = control
         /// A switch.
         static let switchTrack: CGFloat = 16
         static let switchWidth: CGFloat = 28

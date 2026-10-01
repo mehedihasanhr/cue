@@ -84,7 +84,9 @@ struct StudioFieldChrome: ViewModifier {
             .focusEffectDisabled()
             .padding(.horizontal, isQuiet ? 6 : 8)
             .padding(.vertical, isMultiline ? 5 : 0)
-            .frame(minHeight: size.height)
+            // Exactly a control's height on one line, so a field sits level with the
+            // button or pop-up beside it; a multi-line field grows from there.
+            .frame(minHeight: size.height, maxHeight: isMultiline ? nil : size.height)
             .background { shape.fill(fill(showsBox: showsBox)) }
             .overlay {
                 shape.strokeBorder(isInvalid ? Palette.destructive : Palette.stroke)

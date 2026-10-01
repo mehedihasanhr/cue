@@ -19,13 +19,13 @@ struct StudioColorWell: View {
     let title: String
     @Binding var selection: Color
     var supportsOpacity = false
-    var size: CGFloat = 22
+    var size: CGFloat = StudioTheme.Height.control
 
     @State private var isPresented = false
     @State private var isHovering = false
     @Environment(\.isEnabled) private var isEnabled
 
-    init(_ title: String, selection: Binding<Color>, supportsOpacity: Bool = false, size: CGFloat = 22) {
+    init(_ title: String, selection: Binding<Color>, supportsOpacity: Bool = false, size: CGFloat = StudioTheme.Height.control) {
         self.title = title
         _selection = selection
         self.supportsOpacity = supportsOpacity

@@ -59,12 +59,8 @@ struct GradientEditor: View {
         } label: {
             Image(systemName: adds ? "plus" : "minus")
                 .font(.system(size: 9, weight: .semibold))
-                .frame(width: 20, height: 20)
-                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-                .contentShape(Rectangle())
         }
-        .buttonStyle(BarButtonStyle())
-        .foregroundStyle(.secondary)
+        .buttonStyle(StudioButtonStyle(variant: .secondary, size: .small, isIconOnly: true))
         .help(adds ? "Add a middle colour" : "Take the middle colour away")
         .accessibilityLabel(adds ? "Add a middle colour" : "Remove the middle colour")
     }
