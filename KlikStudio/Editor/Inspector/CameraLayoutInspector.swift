@@ -29,15 +29,12 @@ struct CameraLayoutInspector: View {
             InspectorTabs(selection: Binding(get: { region.layout },
                                              set: { model.setCameraLayout(id, to: $0) }),
                           items: CameraLayout.allCases) { $0.title }
-            Text(note(region.layout))
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                .help(note(region.layout))
+            // The one line kept: a stretch of a camera that is switched off shows nothing,
+            // and the layout above would look like it was not working.
             if !model.timeline.webcam.isEnabled {
-                Text("The camera is switched off for the whole video, so this stretch shows nothing of it. Turn it on in the Webcam panel or the Camera menu.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                InspectorNote("The camera is off for the whole video.")
+                    .help("The camera is switched off for the whole video, so this stretch shows nothing of it. Turn it on in the Webcam panel or the Camera menu.")
             }
         }
         .inspectorSection("Layout", systemImage: "person.crop.rectangle")
@@ -64,11 +61,8 @@ struct CameraLayoutInspector: View {
             InspectorRow(title: "Starts", value: Timecode.short(region.start))
             InspectorRow(title: "Ends", value: Timecode.short(region.end))
             InspectorRow(title: "Lasts", value: Timecode.length(region.duration))
-            Text("The change takes a third of a second, inside the stretch at each end. Drag it along the lane to move it, or take an edge to change when it starts or ends.")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
+        .help("The change takes a third of a second, inside the stretch at each end. Drag it along the lane to move it, or take an edge to change when it starts or ends.")
         .inspectorSection("Timing", systemImage: "clock") {
             SectionButton(title: "Go to Start") { model.scrub(to: region.start) }
         }

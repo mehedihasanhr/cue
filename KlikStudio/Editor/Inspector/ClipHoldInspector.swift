@@ -19,24 +19,19 @@ struct ClipHoldInspector: View {
             VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
                 if clip.isStill {
                     InspectorRow(title: "Holds the frame at", value: Timecode.short(clip.sourceStart))
+                        .help("A still of the recording, silent while it holds. Zooms and notes over it stay where you put them.")
                 }
                 InspectorRow(title: "Starts", value: Timecode.short(model.timeline.start(ofClipAt: index)))
                 InspectorSlider(model: model, "Length", systemImage: "timer",
                                 value: length,
                                 range: 0.5...max(10, clip.duration.seconds),
                                 format: { String(format: "%.1f s", $0) })
-                if clip.isStill {
-                    Text("A still of the recording, silent while it holds. Zooms and notes over it stay where you put them.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
                 verbs
             }
             .inspectorSection(clip.isTitle ? "Title Slide" : "Freeze Frame",
                               systemImage: clip.isTitle ? "textformat" : "snowflake") {
                 Text("Clip \(index + 1) of \(model.timeline.clips.count)")
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
 
@@ -71,7 +66,6 @@ struct ClipHoldInspector: View {
                   : "Remove this and close the gap")
         }
         .controlSize(.small)
-        .padding(.top, 2)
     }
 }
 
@@ -92,21 +86,21 @@ struct TitleCardInspector: View {
             .inspectorSection("Words", systemImage: "character.cursor.ibeam")
 
             VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-                InspectorField(title: "Layout") {
+                InspectorRow("Layout") {
                     InspectorPicker(selection: restyled(\.layout, "Title Layout"),
                                     options: TitleCard.Layout.allCases) { $0.title }
                 }
-                InspectorField(title: "Behind") {
+                InspectorRow("Behind") {
                     InspectorPicker(selection: backdrop, options: TitleCard.Backdrop.allCases) { $0.title }
                 }
-                InspectorField(title: "Arrives") {
+                InspectorRow("Arrives") {
                     InspectorPicker(selection: restyled(\.entrance, "Title Entrance"),
                                     options: TitleCard.Entrance.allCases) { $0.title }
                 }
                 FontFamilyPicker(family: restyled(\.fontFamily, "Title Font"))
                 // The system's type comes in four designs; a chosen family has its own.
                 if card.fontFamily.isEmpty {
-                    InspectorField(title: "Type") {
+                    InspectorRow("Type") {
                         InspectorPicker(selection: restyled(\.typeface, "Title Type"),
                                         options: CaptionStyle.Typeface.allCases) { $0.title }
                     }
@@ -114,12 +108,12 @@ struct TitleCardInspector: View {
                 InspectorSlider(model: model, "Size", systemImage: "textformat.size",
                                 value: restyled(\.size, "Title Size"),
                                 range: TitleCard.minimumSize...TitleCard.maximumSize)
-                InspectorField(title: "Words") {
-                    ColorPicker("Words", selection: colour(\.textColor, "Title Colour"), supportsOpacity: false)
+                InspectorRow("Words") {
+                    InspectorColorWell(title: "Words colour", selection: colour(\.textColor, "Title Colour"))
                 }
                 if card.backdrop == .panel {
-                    InspectorField(title: "Panel") {
-                        ColorPicker("Panel", selection: colour(\.panelColor, "Panel Colour"), supportsOpacity: false)
+                    InspectorRow("Panel") {
+                        InspectorColorWell(title: "Panel colour", selection: colour(\.panelColor, "Panel Colour"))
                     }
                 }
             }
@@ -253,7 +247,7 @@ struct ClipTransitionInspector: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-            InspectorField(title: "Style") {
+            InspectorRow("Style") {
                 InspectorPicker(selection: style,
                                 options: [nil] + ClipTransition.Style.allCases.map { Optional($0) }) {
                     $0?.title ?? "Cut"
@@ -267,10 +261,8 @@ struct ClipTransitionInspector: View {
                 if let index = model.timeline.clips.firstIndex(where: { $0.id == clip.id }),
                    let used = model.timeline.transition(into: index)?.duration,
                    let asked = clip.transition?.duration, used < asked {
-                    Text("Shortened to \(String(format: "%.1f s", used.seconds)) — half of it falls in each clip, and the shorter clip has no more room.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    InspectorNote("Shortened to \(String(format: "%.1f s", used.seconds)) to fit.")
+                        .help("Shortened to \(String(format: "%.1f s", used.seconds)) — half of it falls in each clip, and the shorter clip has no more room.")
                 }
             }
         }

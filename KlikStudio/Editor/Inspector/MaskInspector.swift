@@ -18,19 +18,13 @@ struct MaskInspector: View {
     var body: some View {
         if let mask {
             VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-                Text(mask.style.hint)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
                 switch mask.style {
                 case .gaussian, .pixelate:
                     InspectorSlider(model: model, "Strength", systemImage: "drop",
                                     value: number(\.radius, "Mask Strength"), range: 4...80)
                 case .cover:
-                    InspectorField(title: "Colour") {
-                        ColorPicker("Colour", selection: colour, supportsOpacity: true)
-                            .fixedSize()
+                    InspectorRow("Colour") {
+                        InspectorColorWell(title: "Cover colour", selection: colour, supportsOpacity: true)
                     }
                 case .spotlight:
                     InspectorSlider(model: model, "Dimming", systemImage: "circle.lefthalf.filled",
@@ -45,7 +39,10 @@ struct MaskInspector: View {
                 MaskFollowControls(model: model, mask: mask)
             }
             .inspectorSection("Mask", systemImage: mask.style.symbol) {
+                // What the kind does is the pop-up's tooltip: the sentence used to open
+                // the panel, above the one or two controls it was describing.
                 InspectorPicker(selection: kind, options: BlurRegion.Style.allCases, title: \.title)
+                    .help(mask.style.hint)
             }
         }
     }
@@ -85,15 +82,12 @@ struct MaskToolControls: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-            InspectorField(title: "Kind") {
+            InspectorRow("Kind") {
                 InspectorPicker(selection: Binding(get: { model.newMaskStyle },
                                                    set: { model.newMaskStyle = $0 }),
                                 options: BlurRegion.Style.allCases, title: \.title)
             }
-            Text(model.newMaskStyle.hint)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            .help(model.newMaskStyle.hint)
             Button {
                 model.addMask(model.newMaskStyle)
             } label: {
@@ -103,7 +97,6 @@ struct MaskToolControls: View {
             .controlSize(.small)
             .help("Put one in the middle of the picture, to drag where it belongs")
         }
-        .font(.system(size: 12))
     }
 }
 

@@ -12,13 +12,11 @@ struct FontFamilyPicker: View {
     /// What the system's own type is called here: "System", or the caption's typeface.
     var systemTitle = "System"
 
-    @State private var isHovering = false
-
     private var isMissing: Bool { !family.isEmpty && !FontFamilies.isInstalled(family) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            InspectorField(title: "Font") {
+            InspectorRow("Font") {
                 Menu {
                     choice("", title: systemTitle)
                     Divider()
@@ -37,29 +35,19 @@ struct FontFamilyPicker: View {
                     }
                 } label: {
                     Text(family.isEmpty ? systemTitle : family)
-                        .font(.system(size: 12))
                         .lineLimit(1)
                 }
+                // The system's pull-down, small, like every other pop-up in the panel —
+                // a Menu rather than a Picker only because the families on this Mac are
+                // a submenu.
+                .controlSize(.small)
                 .fixedSize()
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(Color.primary.opacity(isHovering ? 0.11 : 0.06))
-                }
-                .onHover { isHovering = $0 }
-                .animation(StudioMotion.hover, value: isHovering)
                 .accessibilityValue(Text(family.isEmpty ? systemTitle : family))
                 .help("The family the words are set in")
             }
             if isMissing {
-                Label("\(family) isn't on this Mac, so the system font is drawn instead. A Mac that has it will draw it.",
-                      systemImage: "exclamationmark.triangle")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                InspectorNote("Not on this Mac, so the system font is drawn instead.")
+                    .help("\(family) isn't on this Mac, so the system font is drawn instead. A Mac that has it will draw it.")
             }
         }
     }

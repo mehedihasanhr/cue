@@ -71,7 +71,6 @@ struct SelectionInspector: View {
                 .help("Remove this from the timeline")
             }
         }
-        .font(.system(size: 12))
     }
 
     // MARK: - A run of the detached sound
@@ -83,21 +82,20 @@ struct SelectionInspector: View {
     /// between them *is* the edit. A panel showing only one of them would leave the user
     /// guessing at which, so it shows both and says which is which.
     private func soundRun(_ run: SoundRun) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            LabeledContent("Plays at", value: Timecode.short(run.start))
-            LabeledContent("Length", value: Timecode.length(run.duration))
-            LabeledContent("From", value: Timecode.short(run.sourceStart))
-            LabeledContent("To", value: Timecode.short(run.sourceEnd))
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
+            InspectorRow(title: "Plays at", value: Timecode.short(run.start))
+            InspectorRow(title: "Length", value: Timecode.length(run.duration))
+            InspectorRow(title: "From", value: Timecode.short(run.sourceStart))
+                .help("Where in the recording this run's sound comes from")
+            InspectorRow(title: "To", value: Timecode.short(run.sourceEnd))
             if run.speed != 1 {
-                LabeledContent("Speed", value: TimelineClipRow.speedLabel(run.speed))
+                InspectorRow(title: "Speed", value: TimelineClipRow.speedLabel(run.speed))
             }
-            Text("This is the recording's own sound, detached from the picture. Drag it to slide it, or its edges to trim — the picture does not move.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
             Button("Re-attach Audio") { model.requestSoundReattach() }
                 .controlSize(.small)
+                .help("This is the recording's own sound, detached from the picture. Drag it to slide it, or its edges to trim — the picture does not move.")
         }
+        .inspectorSection("Sound Run", systemImage: "waveform.path")
     }
 
     // MARK: - Clip
@@ -112,7 +110,7 @@ struct SelectionInspector: View {
             InspectorRow(title: "Starts", value: Timecode.short(model.timeline.start(ofClipAt: index)))
             InspectorRow(title: "Length", value: Timecode.length(clip.duration))
 
-            InspectorField(title: "Speed") {
+            InspectorRow("Speed") {
                 InspectorPicker(selection: Binding(
                     get: { clip.speed },
                     set: { model.setSpeed($0, of: clip.id) }
@@ -139,7 +137,7 @@ struct SelectionInspector: View {
         let region = model.timeline.audio[index]
         return VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
             Text((region.path as NSString).lastPathComponent)
-                .font(.system(size: 12))
+                .font(.system(size: 12, weight: .medium))
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .help(region.path)
@@ -172,38 +170,11 @@ struct SelectionInspector: View {
             DuckControls(model: model, id: region.id)
 
             InspectorRow(title: "Starts", value: Timecode.short(region.start))
+                .help("Drag it along the timeline to move it, or take an edge to trim it.")
             InspectorRow(title: "Lasts", value: Timecode.length(region.duration))
-            Text("Drag it along the timeline to move it, or take an edge to trim it.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                .help("Drag it along the timeline to move it, or take an edge to trim it.")
         }
         .inspectorSection("Sound", systemImage: "music.note")
-    }
-
-    /// A zoom's start or length, with a pair of nudges either side of it.
-    private func timing(_ zoom: ZoomRegion, title: String, value: String,
-                        _ nudge: @escaping (Double) -> Void) -> some View {
-        HStack(spacing: 8) {
-            Text(title)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .frame(width: 44, alignment: .leading)
-            Text(value)
-                .font(.system(size: 12))
-                .monospacedDigit()
-            Spacer(minLength: 4)
-            Button { nudge(-0.1) } label: {
-                Image(systemName: "minus").font(.system(size: 9, weight: .semibold))
-                    .frame(width: 18, height: 16)
-            }
-            .buttonStyle(.bordered).controlSize(.mini)
-            Button { nudge(0.1) } label: {
-                Image(systemName: "plus").font(.system(size: 9, weight: .semibold))
-                    .frame(width: 18, height: 16)
-            }
-            .buttonStyle(.bordered).controlSize(.mini)
-        }
     }
 
     /// One end of one clip, with the source time it sits at and a pair of nudges.
@@ -212,31 +183,12 @@ struct SelectionInspector: View {
     /// the clip keeps its place in the edit and shows different footage. Showing the
     /// timeline position here would be showing a number the buttons do not change.
     private func trim(_ clip: Clip, edge: EditorModel.ClipEdge, title: String, value: CMTime) -> some View {
-        HStack(spacing: 8) {
-            Text(title)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .frame(width: 34, alignment: .leading)
-            Text(Timecode.short(value))
-                .font(.system(size: 12))
-                .monospacedDigit()
-            Spacer(minLength: 4)
-            nudge("minus", clip: clip, edge: edge, by: -model.frameDuration)
-            nudge("plus", clip: clip, edge: edge, by: model.frameDuration)
-        }
-    }
-
-    private func nudge(_ symbol: String, clip: Clip, edge: EditorModel.ClipEdge, by seconds: Double) -> some View {
-        Button {
-            model.nudgeTrim(clip, edge: edge, by: seconds)
-        } label: {
-            Image(systemName: symbol)
-                .font(.system(size: 9, weight: .semibold))
-                .frame(width: 18, height: 16)
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.mini)
-        .help("\(seconds < 0 ? "Earlier" : "Later") by a frame")
+        InspectorNudgeRow(title: title, value: Timecode.short(value),
+                          earlierHelp: "Earlier by a frame",
+                          laterHelp: "Later by a frame",
+                          earlier: { model.nudgeTrim(clip, edge: edge, by: -model.frameDuration) },
+                          later: { model.nudgeTrim(clip, edge: edge, by: model.frameDuration) })
+            .help(edge == .head ? "Where this piece starts in the footage" : "Where this piece ends in the footage")
     }
 
     /// What can be done to this piece alone.
@@ -268,7 +220,6 @@ struct SelectionInspector: View {
                   : "Remove this piece and close the gap")
         }
         .controlSize(.small)
-        .padding(.top, 2)
     }
 
     // MARK: - Range
@@ -277,14 +228,17 @@ struct SelectionInspector: View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
             InspectorRow(title: "From", value: Timecode.short(range.start))
             InspectorRow(title: "Length", value: Timecode.length(range.duration))
-            Menu("Set Speed") {
-                ForEach([0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 4.0, 8.0], id: \.self) { speed in
-                    Button(TimelineClipRow.speedLabel(speed)) {
-                        model.apply(Commands.SetSpeed(range, speed: speed))
+            InspectorRow("Speed") {
+                Menu("Set Speed") {
+                    ForEach([0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 4.0, 8.0], id: \.self) { speed in
+                        Button(TimelineClipRow.speedLabel(speed)) {
+                            model.apply(Commands.SetSpeed(range, speed: speed))
+                        }
                     }
                 }
+                .controlSize(.small)
+                .fixedSize()
             }
-            .controlSize(.small)
         }
         .inspectorSection("Selection", systemImage: "selection.pin.in.out")
     }
@@ -314,18 +268,4 @@ struct SelectionInspector: View {
     private func change(_ name: String, _ mutate: @escaping @Sendable (inout Timeline) -> Void) {
         model.apply(Commands.Restyle(name, mutate))
     }
-
-    private func binding(_ index: Int,
-                         _ path: WritableKeyPath<ZoomRegion, Double> & Sendable,
-                         _ name: String) -> Binding<Double> {
-        Binding {
-            model.timeline.zooms.indices.contains(index) ? model.timeline.zooms[index][keyPath: path] : 0
-        } set: { value in
-            model.apply(Commands.Restyle(name) { timeline in
-                guard timeline.zooms.indices.contains(index) else { return }
-                timeline.zooms[index][keyPath: path] = value
-            })
-        }
-    }
-
 }

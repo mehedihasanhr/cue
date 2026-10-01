@@ -41,10 +41,25 @@ struct ZoomInspector: View {
         if let zoom {
             VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
                 basics(zoom)
-                Divider()
+                StudioDivider()
+                    .padding(.vertical, 2)
                 advanced(zoom)
             }
-            .inspectorSection("Zoom", systemImage: "plus.magnifyingglass")
+            .inspectorSection("Zoom", systemImage: "plus.magnifyingglass") {
+                // First, because it decides whether anything below it is doing anything —
+                // and on the heading, because it is about the whole zoom rather than one
+                // of its settings. Switching a zoom off keeps its framing and its place on
+                // the lane, which is what makes a run of suggestions something you can
+                // audition rather than something you have to accept or destroy.
+                Toggle(model.hasMultipleSelected ? "Zooms on" : "Zoom on", isOn: Binding(
+                    get: { zoom.isEnabled },
+                    set: { model.setZoomsEnabled($0) }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .help("Keeps its framing and its timing, and takes it out of the picture")
+            }
         }
     }
 
@@ -52,30 +67,17 @@ struct ZoomInspector: View {
 
     @ViewBuilder
     private func basics(_ zoom: ZoomRegion) -> some View {
-        // First, because it decides whether anything below it is doing anything. Switching
-        // a zoom off keeps its framing and its place on the lane, which is what makes a run
-        // of suggestions something you can audition rather than something you have to
-        // accept or destroy.
-        Toggle(model.hasMultipleSelected ? "Zooms on" : "Zoom on", isOn: Binding(
-            get: { zoom.isEnabled },
-            set: { model.setZoomsEnabled($0) }
-        ))
-        .help("Keeps its framing and its timing, and takes it out of the picture")
-
         // Down to half as well as up to eight: below 1× the zoom pulls back, and the framed
         // recording shrinks inside the frame with the background showing round it — the
-        // opening or closing shot, or a step back from a close-up. Said under the slider
+        // opening or closing shot, or a step back from a close-up. The readout says "out"
         // while it is there, because a "zoom" that makes the picture smaller is the one
         // thing on this panel nobody would guess.
         InspectorSlider(model: model, "Scale", systemImage: "plus.magnifyingglass",
                         value: scale, range: ZoomRegion.minimumScale...ZoomRegion.maximumScale,
-                        format: { String(format: "%.1f×", $0) })
-        if zoom.zoomsOut {
-            Text("Below 1×, so this zooms out: the recording shrinks inside the frame and more of the background shows.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+                        format: { $0 < 1 ? String(format: "%.1f× out", $0) : String(format: "%.1f×", $0) })
+            .help(zoom.zoomsOut
+                  ? "Below 1×, so this zooms out: the recording shrinks inside the frame and more of the background shows."
+                  : "How far in the camera goes")
 
         InspectorSlider(model: model, "Duration", systemImage: "ruler",
                         value: duration(zoom), range: 0.3...12,
@@ -89,23 +91,17 @@ struct ZoomInspector: View {
                         value: smoothness(zoom), range: 0...2,
                         format: { String(format: "%.2fs", $0) })
             .disabled(zoom.isInstant)
-            .opacity(zoom.isInstant ? 0.5 : 1)
+            .help(zoom.isInstant ? "Instant, so Smoothness is not used. The camera cuts in and out." : "How gently the camera arrives and leaves")
 
         // A cut instead of a movement. Under Smoothness because it is the other answer to
         // the same question, and because it is what greys that slider out.
-        Toggle("Instant", isOn: Binding(
+        InspectorSwitch("Instant", isOn: Binding(
             get: { zoom.isInstant },
             set: { _ in model.toggleZoomInstant() }
         ))
         .help("Cut straight in on the first frame and straight out after the last, with no movement. Smoothness is kept for switching back.")
-        if zoom.isInstant {
-            Text("Instant, so Smoothness is not used. The camera cuts in and out.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
 
-        Toggle("Follow the pointer", isOn: Binding(
+        InspectorSwitch("Follow the pointer", isOn: Binding(
             get: { zoom.followsCursor },
             set: { follows in change("Follow Cursor") { $0.zooms[index].followsCursor = follows } }
         ))
@@ -114,70 +110,61 @@ struct ZoomInspector: View {
         // In front rather than under Advanced, because it is what somebody reaches for
         // after watching a fast push-in — but it is the camera's, so it is for every zoom
         // in the project, and the help says so.
-        Toggle("Motion blur", isOn: Binding(
+        InspectorSwitch("Motion blur", isOn: Binding(
             get: { model.blursCameraMotion },
             set: { model.setZoomMotionBlur($0) }
         ))
         .help("Softens the picture a little while the camera moves fast, as a real camera's shutter would. For every zoom in the project.")
 
-        HStack(spacing: 6) {
-            Button("Frame on the Picture") { model.frameSelectedZoom() }
+        HStack(spacing: 8) {
+            Button("Frame on Picture") { model.frameSelectedZoom() }
                 .help("Show the whole recording with this zoom's framing box on it")
             Button("Reset Framing") { model.resetZoomFraming() }
                 .help("Back to the middle of the picture at \(ZoomRegion.defaultScale, format: .number.precision(.fractionLength(0...1)))×, following the pointer again")
             Spacer(minLength: 0)
         }
         .controlSize(.small)
-        .padding(.top, 2)
     }
 
     // MARK: - The rest
 
-    @ViewBuilder
     private func advanced(_ zoom: ZoomRegion) -> some View {
-        DisclosureGroup(isExpanded: isAdvancedOpen) {
-            VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-                InspectorField(title: "Easing") {
-                    InspectorPicker(selection: Binding(
-                        get: { zoom.easing },
-                        set: { easing in change("Zoom Easing") { $0.zooms[index].easing = easing } }
-                    ), options: Easing.allCases) { $0.rawValue.capitalized }
-                }
-
-                // Placed and timed here as well as by dragging the chip. A zoom that should
-                // begin a quarter-second earlier is a correction you make after watching it,
-                // and hunting for a few pixels on a zoomed-out timeline is the wrong way to
-                // ask for it.
-                timing(title: "Starts", value: Timecode.short(zoom.start)) { delta in
-                    model.nudgeZoom(zoom.id, start: delta)
-                }
-                HStack(spacing: 6) {
-                    Button("Start Here") { model.moveZoom(zoom.id, toStartAt: model.playhead) }
-                        .help("Begin this zoom at the playhead, keeping its length")
-                    Button("End Here") { model.moveZoom(zoom.id, toEndAt: model.playhead) }
-                        .help("End this zoom at the playhead, keeping where it starts")
-                    Spacer(minLength: 0)
-                }
-                .controlSize(.small)
-
-                provenance(zoom)
-
-                Divider()
-                verbs(zoom)
-
-                Divider()
-                // How the camera moves, under the zoom whose movement it governs. One set
-                // of values for the whole project, said so in the section's own caption —
-                // it is here because this is where somebody notices the movement is wrong.
-                CameraControls(model: model, isFollowing: zoom.followsCursor)
+        InspectorDisclosure("Advanced", isExpanded: isAdvancedOpen) {
+            InspectorRow("Easing") {
+                InspectorPicker(selection: Binding(
+                    get: { zoom.easing },
+                    set: { easing in change("Zoom Easing") { $0.zooms[index].easing = easing } }
+                ), options: Easing.allCases) { $0.rawValue.capitalized }
             }
-            .padding(.top, SidebarSpacing.betweenControls)
-        } label: {
-            Text("Advanced")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+
+            // Placed and timed here as well as by dragging the chip. A zoom that should
+            // begin a quarter-second earlier is a correction you make after watching it,
+            // and hunting for a few pixels on a zoomed-out timeline is the wrong way to
+            // ask for it.
+            InspectorNudgeRow(title: "Starts", value: Timecode.short(zoom.start),
+                              earlierHelp: "Start a tenth of a second earlier",
+                              laterHelp: "Start a tenth of a second later",
+                              earlier: { model.nudgeZoom(zoom.id, start: -0.1) },
+                              later: { model.nudgeZoom(zoom.id, start: 0.1) })
+            HStack(spacing: 8) {
+                Button("Start Here") { model.moveZoom(zoom.id, toStartAt: model.playhead) }
+                    .help("Begin this zoom at the playhead, keeping its length")
+                Button("End Here") { model.moveZoom(zoom.id, toEndAt: model.playhead) }
+                    .help("End this zoom at the playhead, keeping where it starts")
+                Spacer(minLength: 0)
+            }
+            .controlSize(.small)
+
+            provenance(zoom)
+
+            verbs(zoom)
+
+            // How the camera moves, under the zoom whose movement it governs. One set of
+            // values for the whole project, said so under its own subheading — it is here
+            // because this is where somebody notices the movement is wrong.
+            CameraControls(model: model, isFollowing: zoom.followsCursor)
+                .padding(.top, SidebarSpacing.betweenGroups - SidebarSpacing.betweenControls)
         }
-        .disclosureGroupStyle(.automatic)
         .accessibilityHint("Easing, timing, splitting, locking and camera motion")
     }
 
@@ -191,12 +178,9 @@ struct ZoomInspector: View {
     private func provenance(_ zoom: ZoomRegion) -> some View {
         if let source = zoom.source, source != .manual {
             InspectorRow(title: "Suggested by", value: source.title)
-                .foregroundStyle(.secondary)
+                .help(zoom.isEdited ? "Framed by you — auto-zoom will leave it alone." : "")
             if zoom.isEdited {
-                Label("Framed by you — auto-zoom will leave it alone.", systemImage: "hand.raised")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                InspectorNote("Framed by you, so auto-zoom leaves it alone.")
             }
         }
     }
@@ -208,7 +192,7 @@ struct ZoomInspector: View {
     /// someone feel they have done something wrong.
     @ViewBuilder
     private func verbs(_ zoom: ZoomRegion) -> some View {
-        Toggle("Lock it", isOn: Binding(
+        InspectorSwitch("Lock", isOn: Binding(
             get: { zoom.isLocked },
             set: { _ in model.toggleZoomLock() }
         ))
@@ -217,16 +201,12 @@ struct ZoomInspector: View {
         // One ramp at one end and nothing at the other: this is half of a split, and saying
         // so is what stops the Smoothness slider above looking broken.
         if zoom.ramps.in != zoom.ramps.out {
-            Label(zoom.ramps.in == .zero
-                  ? "Cut from the zoom before it — no ramp at its start."
-                  : "Cut from the zoom after it — no ramp at its end.",
-                  systemImage: "scissors")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            InspectorNote(zoom.ramps.in == .zero
+                          ? "Cut from the zoom before it — no ramp at its start."
+                          : "Cut from the zoom after it — no ramp at its end.")
         }
 
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Button("Split at Playhead") { model.splitZoomAtPlayhead() }
                 .disabled(!model.canSplitZoom)
                 .help(model.canSplitZoom
@@ -237,64 +217,27 @@ struct ZoomInspector: View {
                 .help(model.zoomToMergeInto == nil
                       ? "There is no zoom after this one to merge it with."
                       : "Join this zoom and the one after it into a single push-in, keeping the ramp at each outer end.")
+            Spacer(minLength: 0)
         }
         .controlSize(.small)
 
         // Touching is the surest way to make two zooms glide, and this is how to ask for
-        // it without dragging an edge onto a neighbour's. The reason it is off is written
-        // beside it, and so is the one thing that would stop the glide it promises.
-        HStack(spacing: 6) {
+        // it without dragging an edge onto a neighbour's. Why it is off is its tooltip; the
+        // one thing that would stop the glide it promises is said beside it, because the
+        // button would otherwise do something other than what it says.
+        HStack(spacing: 8) {
             Button("Extend to Next Zoom") { model.extendZoomToNext() }
                 .disabled(!model.canExtendZoomToNext)
                 .help(model.extendToNextZoomReason
                       ?? "Make this zoom end exactly where the next one begins, so the camera glides from one to the other.")
-            Spacer(minLength: 0)
-        }
-        .controlSize(.small)
-        if let reason = model.extendToNextZoomReason {
-            Text(reason)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        } else if !model.glidesBetweenZooms {
-            Text("Gliding is off for this project, so the camera will still pull back between them. Turn it on under Camera Motion below.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-
-        HStack(spacing: 6) {
             Button("Reset Scale & Ramp") { model.resetZoom() }
                 .help("Scale, ramp and easing back to what a new zoom has. Where it points is left alone.")
             Spacer(minLength: 0)
         }
         .controlSize(.small)
-    }
-
-    /// A zoom's start, with a pair of nudges beside it.
-    private func timing(title: String, value: String,
-                        _ nudge: @escaping (Double) -> Void) -> some View {
-        HStack(spacing: 8) {
-            Text(title)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .frame(width: 44, alignment: .leading)
-            Text(value)
-                .font(.system(size: 12))
-                .monospacedDigit()
-            Spacer(minLength: 4)
-            Button { nudge(-0.1) } label: {
-                Image(systemName: "minus").font(.system(size: 9, weight: .semibold))
-                    .frame(width: 18, height: 16)
-            }
-            .buttonStyle(.bordered).controlSize(.mini)
-            .accessibilityLabel("\(title) a tenth of a second earlier")
-            Button { nudge(0.1) } label: {
-                Image(systemName: "plus").font(.system(size: 9, weight: .semibold))
-                    .frame(width: 18, height: 16)
-            }
-            .buttonStyle(.bordered).controlSize(.mini)
-            .accessibilityLabel("\(title) a tenth of a second later")
+        if model.extendToNextZoomReason == nil, !model.glidesBetweenZooms {
+            InspectorNote("Gliding is off, so the camera still pulls back between them.")
+                .help("Gliding is off for this project, so the camera will still pull back between them. Turn it on under Camera Motion below.")
         }
     }
 

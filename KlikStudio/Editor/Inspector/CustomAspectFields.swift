@@ -24,21 +24,22 @@ struct CustomAspectFields: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                Text("Ratio")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 66, alignment: .leading)
+                InspectorLabel("Ratio")
+                Spacer(minLength: 0)
                 field("W", text: $width, side: .width)
                 Text(":")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                 field("H", text: $height, side: .height)
-                Spacer(minLength: 0)
             }
-            Text(refusal?.message ?? Self.rule)
-                .font(.caption)
-                .foregroundStyle(refusal == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.red))
-                .fixedSize(horizontal: false, vertical: true)
+            .help(Self.rule)
+            // Only when a pair has been refused: the rule itself is the tooltip.
+            if let refusal {
+                Text(refusal.message)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .onChange(of: model.timeline.style.customAspect, initial: true) { _, shape in
             // The document leads — an undo has to move the numbers — except while one of

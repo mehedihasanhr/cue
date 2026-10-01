@@ -39,31 +39,22 @@ struct PerspectiveSection: View {
             InspectorSlider(model: model, "Depth shadow", systemImage: "shadow",
                             value: angle(\.depthShadow, "Depth Shadow"), range: 0...1)
                 .disabled(perspective.isFlat || model.timeline.style.shadowOpacity <= 0)
-            if perspective.isFlat {
-                Text("The picture is flat. Choose a preset or move Turn or Lean to tilt it.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else if model.timeline.style.shadowOpacity <= 0 {
-                Text("No depth shadow while Shadow is off.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Toggle("Straighten while zoomed in", isOn: Binding(
+                .help(perspective.isFlat
+                      ? "The picture is flat. Choose a preset or move Turn or Lean to tilt it."
+                      : model.timeline.style.shadowOpacity <= 0
+                        ? "No depth shadow while Shadow is off."
+                        : "The shadow the tilted picture casts")
+            InspectorSwitch("Straighten while zoomed in", isOn: Binding(
                 get: { perspective.straightensWhenZoomed },
                 set: { model.setStraightensWhenZoomed($0) }
             ))
             .help("Turn the picture square-on while the camera is zoomed in, and back as it zooms out")
             .disabled(perspective.isFlat)
-            Text("The pointer, clicks and annotations turn with the picture. Captions, keys and the camera stay upright.")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .inspectorSection("Perspective", systemImage: "rotate.3d") {
             InspectorPicker(selection: choice, options: choices) { $0.title }
                 .accessibilityLabel("Perspective preset")
+                .help("The pointer, clicks and annotations turn with the picture. Captions, keys and the camera stay upright.")
         }
     }
 

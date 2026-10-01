@@ -137,39 +137,100 @@ struct StyleBinding {
     }
 }
 
-extension View {
-    /// A section: a heading row, its controls, and a rule closing it off.
-    ///
-    /// The rule moved out from under the title to the end of the section, where it is
-    /// doing the job a rule is for: saying where one thing stops and the next starts.
-    /// Under the title it was underlining a word that was not in any doubt, and the
-    /// sections themselves were left to be told apart by a gap.
-    ///
-    /// The same air above and below the rule, so the line is a boundary between two
-    /// blocks rather than a lid on the one above it. Which means the stack holding the
-    /// sections must add nothing itself: a gap there lands entirely on one side.
-    func inspectorSection(_ title: String,
-                          systemImage: String,
-                          @ViewBuilder trailing: () -> some View = { EmptyView() }) -> some View {
+// MARK: - The row system
+
+/// The few measurements every row in the panel shares.
+///
+/// One number for the height of a row, so a switch, a pop-up, a colour well and a fact sit
+/// on the same rhythm down the column. Before this each control brought its own height —
+/// a checkbox was 16 points, a hand-styled pop-up 30 — and the column read as a stack of
+/// unrelated parts rather than one list.
+enum InspectorMetrics {
+    /// The least a one-line row is tall: a small switch or a small pop-up, with no slack.
+    static let rowHeight: CGFloat = 22
+    /// How far a row's name stays from its control, at the narrowest.
+    static let labelGap: CGFloat = 10
+}
+
+/// The heading of a section.
+///
+/// Semibold and primary, the one place in the panel with any weight: the names of the
+/// controls under it are regular and secondary, so the heading is told apart by weight
+/// and ink together rather than by size, and every section — whichever panel it is on —
+/// is headed in exactly the same type.
+struct InspectorHeading: View {
+    let title: String
+
+    init(_ title: String) {
+        self.title = title
+    }
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.primary)
+            .lineLimit(1)
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// A heading inside a section: the group of sources, the camera's motion under a zoom.
+///
+/// Quieter than a section heading — it names a part of the section, not a new subject —
+/// and louder than a control's name, so the controls under it read as belonging to it.
+struct InspectorSubheading: View {
+    let title: String
+
+    init(_ title: String) {
+        self.title = title
+    }
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// A section: a heading row, its controls, and a rule closing it off.
+///
+/// The rule is at the end of the section rather than under its title, where it does the
+/// job a rule is for: saying where one thing stops and the next starts. The same air
+/// above and below it, so the line is a boundary between two blocks rather than a lid on
+/// the one above — which means the stack holding the sections must add nothing itself.
+///
+/// What sits at the end of the heading is as often a control as a word — the shape's
+/// pop-up, a Reset — so the row is centred rather than baseline-aligned, and given a
+/// row's height whether or not anything is there, so a heading with a pop-up and one
+/// without start their controls at the same depth.
+struct InspectorSection<Content: View, Trailing: View>: View {
+    let title: String
+    let content: Content
+    let trailing: Trailing
+
+    init(_ title: String,
+         @ViewBuilder content: () -> Content,
+         @ViewBuilder trailing: () -> Trailing) {
+        self.title = title
+        self.content = content()
+        self.trailing = trailing()
+    }
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 14) {
-                // Centred rather than baseline-aligned, because what sits at the end of
-                // a heading is as often a control as a word.
+            VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
                 HStack(alignment: .center, spacing: 8) {
-                    Text(title)
-                        .font(.system(size: 12.5))
-                        // Brighter than `.secondary`, which is where the control labels
-                        // under it sit: with no weight left to separate a heading from
-                        // the names below it, the only thing doing that job is how much
-                        // white it is given.
-                        .foregroundStyle(Color.primary.opacity(0.82))
-                    Spacer(minLength: 4)
-                    trailing()
+                    InspectorHeading(title)
+                    Spacer(minLength: 8)
+                    trailing
                         .lineLimit(1)
                 }
-                self
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minHeight: InspectorMetrics.rowHeight)
+                content
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, SidebarSpacing.sectionPadding)
 
             StudioDivider(isSection: true)
@@ -179,14 +240,175 @@ extension View {
     }
 }
 
+extension InspectorSection where Trailing == EmptyView {
+    init(_ title: String, @ViewBuilder content: () -> Content) {
+        self.init(title, content: content, trailing: { EmptyView() })
+    }
+}
+
+extension View {
+    /// This view as a section's body, under `title`. See `InspectorSection`.
+    ///
+    /// `systemImage` is not drawn — a column of little grey glyphs beside headings that
+    /// already say what they are was decoration — and is kept so the call sites go on
+    /// describing themselves.
+    func inspectorSection(_ title: String,
+                          systemImage: String,
+                          @ViewBuilder trailing: () -> some View = { EmptyView() }) -> some View {
+        InspectorSection(title, content: { self }, trailing: trailing)
+    }
+}
+
+/// The name of a control, on the left of its row or above its track.
+///
+/// Dims with the control when the control is off. A disabled `Toggle` or `Picker` greys
+/// itself, but a `Text` beside it does not, and a bright name next to a dead control
+/// reads as a control that is broken rather than one that is waiting for something.
+struct InspectorLabel: View {
+    let title: String
+
+    @Environment(\.isEnabled) private var isEnabled
+
+    init(_ title: String) {
+        self.title = title
+    }
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: 12))
+            .foregroundStyle(.secondary)
+            .opacity(isEnabled ? 1 : 0.55)
+            // Wraps rather than truncates: a name cut to "Keep size wh…" is a name you
+            // have to hover to read, and the column is narrow enough that some will meet
+            // its edge.
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// A name on the left, a control on the right.
+///
+/// The one row the panel is built from. The control is given its own width first and the
+/// name wraps in what is left, so nothing is ever cut short — the failure the old fixed
+/// 66-point name column had, where "Holds the frame at" lost its end. The control sits
+/// against the right-hand edge, where the sliders put their readouts, so the column has
+/// one edge down each side.
+///
+/// The label is a `Text` of its own rather than a control's own label, because a
+/// `Picker`'s built-in label sets a minimum width nobody can argue with.
+struct InspectorRow<Control: View>: View {
+    let title: String
+    let control: Control
+
+    init(_ title: String, @ViewBuilder control: () -> Control) {
+        self.title = title
+        self.control = control()
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: InspectorMetrics.labelGap) {
+            InspectorLabel(title)
+                .accessibilityHidden(true)
+            Spacer(minLength: 0)
+            control
+                .labelsHidden()
+                .layoutPriority(1)
+                .accessibilityLabel(title)
+        }
+        .frame(minHeight: InspectorMetrics.rowHeight)
+        .accessibilityElement(children: .contain)
+    }
+}
+
+extension InspectorRow where Control == InspectorValue {
+    /// A name on the left, a fact on the right: a size, a time, a file's name.
+    init(title: String, value: String) {
+        self.init(title) { InspectorValue(value) }
+    }
+}
+
+/// A fact at the end of a row.
+///
+/// Shrinks rather than truncates or pushes: a pixel size like "2,714 × 1,612" in a view
+/// that refuses to give up its ideal width made the whole panel demand more room than its
+/// column had, and a fixed-width frame does not clip.
+struct InspectorValue: View {
+    let text: String
+
+    init(_ text: String) {
+        self.text = text
+    }
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 12).monospacedDigit())
+            .foregroundStyle(.primary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+    }
+}
+
+/// An on-and-off, as a row: the name on the left, a small switch on the right.
+///
+/// One style of on-and-off for the whole editor. The panels used to mix checkboxes with
+/// the odd switch, which made two settings of the same kind look like two kinds of
+/// setting; a switch at the row's end lines up with the pop-ups and colour wells in the
+/// rows around it, where a checkbox would sit at the opposite edge.
+struct InspectorSwitch: View {
+    let title: String
+    @Binding var isOn: Bool
+
+    init(_ title: String, isOn: Binding<Bool>) {
+        self.title = title
+        _isOn = isOn
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: InspectorMetrics.labelGap) {
+            InspectorLabel(title)
+                .accessibilityHidden(true)
+            Spacer(minLength: 0)
+            Toggle(title, isOn: $isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .layoutPriority(1)
+        }
+        .frame(minHeight: InspectorMetrics.rowHeight)
+    }
+}
+
+/// A sentence under a control, for the rare one that needs it.
+///
+/// Rare on purpose. The panels had a paragraph under nearly every control, which made
+/// them long and made the one sentence that mattered — "No stretch asks for it yet" —
+/// look like all the others. The explanations moved into tooltips on the controls they
+/// explain, word for word; what stays here is a line that changes what you would do next.
+struct InspectorNote: View {
+    let text: String
+
+    init(_ text: String) {
+        self.text = text
+    }
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
 /// A row of choices that always fits the panel.
 ///
+/// Drawn as a segmented control — one recessed track, the chosen segment raised out of
+/// it — and laid out on as many rows as it takes for every title to be shown whole, in
+/// one size of type. A single row of six ("Wallpaper Gradient Color Image Motion None")
+/// is wider than the column, and the old answer was to shrink each title until it fitted,
+/// which left "Color" in larger type than "Motion" next to it and still cut "Wallp…" short.
+/// Now the row is tried first, then two, then three: the first that fits is the one drawn.
+///
 /// Not `.pickerStyle(.segmented)`: a segmented control reports the sum of its titles as
-/// the width it must have, and four of them ("Wallpaper Gradient Color Image") ask for
-/// more than the settings column is wide. A fixed-width frame does not enforce anything,
-/// so the panel simply drew wider than its column — clipped at both edges, and jumping
-/// sideways every time a number in it grew a digit. These chips divide whatever width
-/// they are given and shrink their text to suit.
+/// the width it must have, and cannot wrap.
 struct InspectorTabs<Item: Identifiable & Hashable>: View {
     @Binding var selection: Item
     let items: [Item]
@@ -195,69 +417,73 @@ struct InspectorTabs<Item: Identifiable & Hashable>: View {
     @State private var hovered: Item?
     @Environment(\.colorScheme) private var colorScheme
 
-    /// The chosen one's words: white on the dark tint it has in dark mode, and the tint's
-    /// own blue in light mode, where the same tint is a pale wash and white on it could
-    /// barely be read.
-    private var chosenInk: AnyShapeStyle {
-        colorScheme == .dark ? AnyShapeStyle(.white) : AnyShapeStyle(Color.accentColor)
-    }
-
     var body: some View {
-        HStack(spacing: 5) {
-            ForEach(items) { item in
-                let isSelected = item == selection
-                Button { selection = item } label: {
-                    Text(title(item))
-                        .font(.system(size: 12))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.65)
-                        // Strong on the chosen one, secondary on the rest. The tint and
-                        // the stroke already say which is chosen; the text only has to
-                        // be the most readable thing in the row.
-                        .foregroundStyle(isSelected ? chosenInk : AnyShapeStyle(.secondary))
-                        .fontWeight(isSelected ? .medium : .regular)
-                        .padding(.horizontal, 6)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 28)
-                        .background {
-                            // Every one of them is a button, so every one of them has a
-                            // surface. The chosen one is the app's own blue at a
-                            // fraction of it; the rest are a wash you can only just see,
-                            // which is enough to say "these are four things you can
-                            // press" without four slabs in a 300-point column.
-                            //
-                            // Squircle, not a capsule: the panel's rounded rectangles
-                            // are all continuous-corner, and one pill in the middle of
-                            // them would be a second shape language.
-                            let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            shape
-                                .fill(fill(isSelected: isSelected, isHovered: hovered == item))
-                                // The chosen one is drawn as well as filled: a tint at
-                                // eighteen percent is a soft edge against dark chrome,
-                                // and the border is what makes it look chosen rather
-                                // than merely lit.
-                                .overlay {
-                                    shape.strokeBorder(Color.accentColor.opacity(isSelected ? 0.55 : 0))
-                                }
-                        }
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(BarButtonStyle())
-                .onHover { hovered = $0 ? item : (hovered == item ? nil : hovered) }
-                .accessibilityLabel(title(item))
-                .accessibilityAddTraits(isSelected ? [.isSelected] : [])
-            }
+        ViewThatFits(in: .horizontal) {
+            track(rows: 1)
+            track(rows: 2)
+            track(rows: 3)
         }
         .animation(StudioMotion.state, value: selection)
         .animation(StudioMotion.hover, value: hovered)
         .accessibilityElement(children: .contain)
     }
 
-    private func fill(isSelected: Bool, isHovered: Bool) -> AnyShapeStyle {
-        if isSelected {
-            return AnyShapeStyle(Color.accentColor.opacity(0.18))
+    private func track(rows: Int) -> some View {
+        let perRow = max(1, Int((Double(items.count) / Double(rows)).rounded(.up)))
+        let lines = stride(from: 0, to: items.count, by: perRow).map {
+            Array(items[$0..<min($0 + perRow, items.count)])
         }
-        return AnyShapeStyle(Color.primary.opacity(isHovered ? 0.11 : 0.06))
+        return VStack(spacing: 2) {
+            ForEach(lines.indices, id: \.self) { line in
+                HStack(spacing: 2) {
+                    ForEach(lines[line]) { item in
+                        segment(item)
+                    }
+                }
+            }
+        }
+        .padding(2)
+        .background {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.06))
+        }
+    }
+
+    private func segment(_ item: Item) -> some View {
+        let isSelected = item == selection
+        return Button { selection = item } label: {
+            Text(title(item))
+                .font(.system(size: 12))
+                .lineLimit(1)
+                // Its whole width, always: this is what lets the row fail to fit and
+                // hand over to two rows, rather than squeezing its titles.
+                .fixedSize()
+                .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+                .padding(.horizontal, 8)
+                .frame(maxWidth: .infinity)
+                .frame(height: 22)
+                .background {
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(fill(isSelected: isSelected, isHovered: hovered == item))
+                        .shadow(color: .black.opacity(isSelected && colorScheme == .light ? 0.12 : 0),
+                                radius: 1, y: 0.5)
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered = $0 ? item : (hovered == item ? nil : hovered) }
+        .accessibilityLabel(title(item))
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+    }
+
+    /// The chosen segment is a raised surface, as a system segmented control draws it:
+    /// white in light mode, a lighter grey in dark. The rest are the track, lit a little
+    /// under the pointer.
+    private func fill(isSelected: Bool, isHovered: Bool) -> Color {
+        if isSelected {
+            return colorScheme == .dark ? Color.white.opacity(0.17) : Color.white
+        }
+        return Color.primary.opacity(isHovered ? 0.05 : 0)
     }
 }
 
@@ -276,108 +502,153 @@ struct SectionButton: View {
     }
 }
 
-/// A pop-up in the panel's own shape.
+/// A pop-up: the system's own, small, sized to what it is showing.
 ///
-/// The system's is a blue-chevroned bezel with its own corner radius, drawn for a
-/// settings window; next to the squircle tabs above it, it was the one control in the
-/// column shaped like something else. This is the same surface as those tabs — the same
-/// radius, the same wash, the same hover — with the system's menu behind it.
+/// It used to be a hand-made squircle with fourteen points of padding either side — a
+/// pill that was the largest thing in its row, and the audit's "Shape: Linear" slab. A
+/// small system pop-up says "menu" the way every Mac app says it, in light and dark, and
+/// takes the width of its longest title rather than the row's.
 struct InspectorPicker<Value: Hashable>: View {
     @Binding var selection: Value
     let options: [Value]
     let title: (Value) -> String
 
-    @State private var isHovering = false
-
     var body: some View {
-        Menu {
-            ForEach(options, id: \.self) { option in
-                Button {
-                    selection = option
-                } label: {
-                    if option == selection {
-                        Label(title(option), systemImage: "checkmark")
-                    } else {
-                        Text(title(option))
-                    }
-                }
+        // A value the list does not offer — a speed set some other way — is added to it
+        // rather than shown as a blank: the old pop-up drew whatever the value was, and a
+        // system pop-up with no matching item draws nothing at all.
+        let shown = options.contains(selection) ? options : options + [selection]
+        Picker(selection: $selection) {
+            ForEach(shown, id: \.self) { option in
+                Text(title(option)).tag(option)
             }
         } label: {
-            // No chevron of our own: the menu style draws the system's, and two of them
-            // in one control is how a hand-styled pop-up gives itself away. Sized to the
-            // word it is showing rather than stretched across the row, because a pop-up
-            // that fills the width reads as a text field.
-            Text(title(selection))
-                .font(.system(size: 12))
-                .lineLimit(1)
+            EmptyView()
         }
+        .pickerStyle(.menu)
+        .labelsHidden()
+        .controlSize(.small)
         .fixedSize()
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        // Both the room and the surface go outside the menu. A menu style re-hosts its
-        // label in a container of its own, and neither the padding nor a background set
-        // in there survives the trip — which is why the fill was drawn tight around the
-        // word however much padding the label asked for.
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .background {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(Color.primary.opacity(isHovering ? 0.11 : 0.06))
-        }
-        .onHover { isHovering = $0 }
-        .animation(StudioMotion.hover, value: isHovering)
         .accessibilityValue(Text(title(selection)))
     }
 }
 
-/// A name on the left, a control on the right, on the same column as the sliders.
-///
-/// The label is a `Text` of its own rather than a control's own label, because a
-/// `Picker`'s built-in label sets a minimum width nobody can argue with.
-struct InspectorField<Content: View>: View {
+/// A colour well, the system's, at the size of the rows around it.
+struct InspectorColorWell: View {
     let title: String
-    @ViewBuilder let content: Content
+    @Binding var selection: Color
+    var supportsOpacity = false
 
     var body: some View {
-        HStack(spacing: 14) {
-            Text(title)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .frame(width: 66, alignment: .leading)
-            content
-                .labelsHidden()
-                // Against the right-hand edge, where the sliders put their readouts, so
-                // the column has one edge down each side rather than a control floating
-                // in the middle.
-                .frame(maxWidth: .infinity, alignment: .trailing)
-        }
+        ColorPicker(title, selection: $selection, supportsOpacity: supportsOpacity)
+            .labelsHidden()
+            .controlSize(.small)
+            .fixedSize()
+            .accessibilityLabel(title)
     }
 }
 
-/// A name on the left, a fact on the right.
+/// A time with a step either way: a caption's start, a clip's out-point, a zoom's start.
 ///
-/// Not `LabeledContent`: that one refuses to give up its ideal width, so a pixel size
-/// like "2,714 × 1,612" made the whole panel demand more room than its column has — and
-/// a fixed-width frame does not clip, so the panel drew out over the tool rail on one
-/// side and the picture on the other. This row shrinks instead.
-struct InspectorRow: View {
+/// One control for all of them, so a nudge looks and behaves the same wherever it is —
+/// they had grown up as three different pairs of buttons, two of them `+` and `−` and one
+/// of them chevrons, each with its own column width for the name.
+struct InspectorNudgeRow: View {
     let title: String
     let value: String
+    /// What a press of each one does, said in the tooltip and to VoiceOver.
+    let earlierHelp: String
+    let laterHelp: String
+    let earlier: () -> Void
+    let later: () -> Void
 
     var body: some View {
-        HStack(spacing: 8) {
-            Text(title)
-                .foregroundStyle(.secondary)
-                .layoutPriority(1)
-            Spacer(minLength: 4)
+        HStack(alignment: .center, spacing: 6) {
+            InspectorLabel(title)
+            Spacer(minLength: InspectorMetrics.labelGap)
+            NudgeButton(symbol: "chevron.left", help: earlierHelp, action: earlier)
             Text(value)
-                .monospacedDigit()
+                .font(.system(size: 12).monospacedDigit())
                 .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                .fixedSize()
+                .frame(minWidth: 58)
+            NudgeButton(symbol: "chevron.right", help: laterHelp, action: later)
         }
-        .font(.system(size: 12))
-        .accessibilityElement(children: .combine)
+        .frame(minHeight: InspectorMetrics.rowHeight)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(title) \(value)")
+    }
+}
+
+/// One step of an `InspectorNudgeRow`.
+private struct NudgeButton: View {
+    let symbol: String
+    let help: String
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 9, weight: .semibold))
+                .frame(width: 20, height: 20)
+                .background(Color.primary.opacity(isHovering ? 0.11 : 0.06),
+                            in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(BarButtonStyle())
+        .foregroundStyle(.secondary)
+        .onHover { isHovering = $0 }
+        .animation(StudioMotion.hover, value: isHovering)
+        .help(help)
+        .accessibilityLabel(help)
+    }
+}
+
+/// More settings, folded away until asked for.
+///
+/// One disclosure for every panel, so "Advanced" under a zoom and under an annotation are
+/// the same row with the same chevron — not one system disclosure triangle and one
+/// hand-drawn label each.
+struct InspectorDisclosure<Content: View>: View {
+    let title: String
+    @Binding var isExpanded: Bool
+    let content: Content
+
+    init(_ title: String, isExpanded: Binding<Bool>, @ViewBuilder content: () -> Content) {
+        self.title = title
+        _isExpanded = isExpanded
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
+            Button {
+                withAnimation(StudioMotion.state) { isExpanded.toggle() }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    Text(title)
+                        .font(.system(size: 12, weight: .medium))
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(.secondary)
+                .frame(minHeight: InspectorMetrics.rowHeight)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(title)
+            .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+
+            if isExpanded {
+                VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
+                    content
+                }
+            }
+        }
     }
 }
 
@@ -385,9 +656,9 @@ struct InspectorRow: View {
 ///
 /// Two lines: the name and its value on top, the track its own full width underneath.
 /// Side by side, a 70-point name column and a 34-point number column left the track
-/// about half the panel, which is half the precision — and the numbers only fitted by
-/// hiding until you hovered. Given its own line the track is as long as the panel is
-/// wide, and the value can simply always be there.
+/// about half the panel, which is half the precision. The value is right-aligned in the
+/// name's row, in secondary monospaced digits, so a column of sliders has its numbers in
+/// one straight line that does not shuffle as they change.
 struct InspectorSlider: View {
     let model: EditorModel
     let title: String
@@ -398,8 +669,8 @@ struct InspectorSlider: View {
     /// only honest reading of a setting whose units are arbitrary.
     let format: (Double) -> String
 
-    @State private var isHovering = false
     @State private var isDragging = false
+    @Environment(\.isEnabled) private var isEnabled
 
     init(model: EditorModel,
          _ title: String,
@@ -422,20 +693,17 @@ struct InspectorSlider: View {
     var body: some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.withinControl) {
             // No glyph. A row of little grey icons down the left of the names was a
-            // second column of decoration for words that already say what they are, and
-            // the section headings above them dropped theirs for the same reason. The
+            // second column of decoration for words that already say what they are. The
             // argument stays so the call sites keep describing themselves.
-            HStack(spacing: 7) {
-                Text(title)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                InspectorLabel(title)
                 Spacer(minLength: 8)
                 Text(format(value.wrappedValue))
-                    .font(.system(size: 10, design: .monospaced))
-                    .monospacedDigit()
-                    .foregroundStyle(isHovering || isDragging ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tertiary))
+                    .font(.system(size: 11).monospacedDigit())
+                    .foregroundStyle(isDragging ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+                    .opacity(isEnabled ? 1 : 0.55)
                     .lineLimit(1)
+                    .fixedSize()
             }
 
             StudioSlider(value: value, in: range) { editing in
@@ -450,8 +718,7 @@ struct InspectorSlider: View {
                 }
             }
         }
-        .onHover { isHovering = $0 }
-        .animation(StudioMotion.state, value: isHovering)
+        .animation(StudioMotion.state, value: isDragging)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(title)
     }
@@ -461,6 +728,8 @@ struct InspectorSlider: View {
 struct SwatchTile<Content: View>: View {
     let isSelected: Bool
     let title: String
+    /// What the tooltip says, when the name alone is not enough.
+    var tooltip: String?
     let action: () -> Void
     @ViewBuilder let content: Content
 
@@ -486,7 +755,7 @@ struct SwatchTile<Content: View>: View {
                 .animation(StudioMotion.selection, value: isSelected)
         }
         .buttonStyle(.plain)
-        .help(title)
+        .help(tooltip ?? title)
         .accessibilityLabel(title)
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }

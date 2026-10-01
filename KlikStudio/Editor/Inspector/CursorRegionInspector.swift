@@ -22,9 +22,12 @@ struct CursorRegionInspector: View {
 
     var body: some View {
         if let region {
-            VStack(alignment: .leading, spacing: 10) {
-                Toggle("Hide the pointer", isOn: toggle(\.isHidden, "Hide Pointer"))
-                Toggle("Hold it still", isOn: toggle(\.isHeld, "Hold Pointer"))
+            VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
+                InspectorSwitch("Hide the pointer", isOn: toggle(\.isHidden, "Hide Pointer"))
+                    .help(region.isHidden && region.transition.seconds > 0
+                          ? "The pointer fades out and back over the ramp, and the camera stops following it while it is gone."
+                          : "Hide the pointer for this stretch")
+                InspectorSwitch("Hold it still", isOn: toggle(\.isHeld, "Hold Pointer"))
                     .help("Keeps the pointer where it was when this stretch began, so it stops wandering while something else is being read.")
                 stretchEffect("Spotlight here", \.spotlights, "Spotlight Stretch",
                               isLimited: model.timeline.cursor.spotlight.isEnabled
@@ -38,54 +41,41 @@ struct CursorRegionInspector: View {
                 InspectorSlider(model: model, "Calm", systemImage: "scribble",
                                 value: slider(\.smoothing, "Calm Pointer"), range: 0...1)
                 InspectorSlider(model: model, "Ramp", systemImage: "timelapse",
-                                value: seconds(\.transition, "Pointer Ramp"), range: 0...1)
+                                value: seconds(\.transition, "Pointer Ramp"), range: 0...1,
+                                format: { String(format: "%.2fs", $0) })
+                    .help("What the stretch does is a fade, a slide and an averaging, all over the ramp.")
 
-                // What the region does is a fade, a slide and an averaging, all over the
-                // ramp — so a stretch with no ramp is the one case where the pointer really
-                // does change between two frames, and that is worth saying rather than
-                // leaving someone to discover it in an export.
-                if region.transition.seconds <= 0 {
-                    note("With no ramp the pointer changes on a single frame, which reads as a cut.")
-                } else if region.isHidden {
-                    note("The pointer fades out and back over the ramp, and the camera stops following it while it is gone.")
-                }
+                // What the region does happens over the ramp — so a stretch with no ramp
+                // is the one case where the pointer really does change between two frames,
+                // and that is worth a line rather than a discovery in an export. One line
+                // at most: the stretch doing nothing at all outranks it.
                 if region.isInert {
-                    note("This stretch is not doing anything yet — hide the pointer, hold it, give it some calm, or spotlight or magnify it.")
+                    InspectorNote("This stretch isn't doing anything yet.")
+                        .help("This stretch is not doing anything yet — hide the pointer, hold it, give it some calm, or spotlight or magnify it.")
+                } else if region.transition.seconds <= 0 {
+                    InspectorNote("With no ramp, the change is a cut.")
+                        .help("With no ramp the pointer changes on a single frame, which reads as a cut.")
                 }
 
-                LabeledContent("Starts", value: Timecode.short(region.start))
-                LabeledContent("Lasts", value: Timecode.length(region.duration))
-                Text("Drag it along the Pointer lane to move it, or take an edge to change what it covers.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                InspectorRow(title: "Starts", value: Timecode.short(region.start))
+                InspectorRow(title: "Lasts", value: Timecode.length(region.duration))
+                    .help("Drag it along the Pointer lane to move it, or take an edge to change what it covers.")
             }
-            .font(.system(size: 12))
-            .inspectorSection("Pointer over time", systemImage: "cursorarrow.slash")
+            .inspectorSection("Pointer over Time", systemImage: "cursorarrow.slash")
         }
     }
 
-    /// A switch for an effect limited to marked stretches, off with its reason beside it
-    /// when the effect is off or is on for the whole video — where marking a stretch
-    /// would change nothing.
-    @ViewBuilder
+    /// A switch for an effect limited to marked stretches, off — with its reason as the
+    /// tooltip — when the effect is off or is on for the whole video, where marking a
+    /// stretch would change nothing.
     private func stretchEffect(_ title: String,
                                _ path: WritableKeyPath<CursorRegion, Bool> & Sendable,
                                _ name: String,
                                isLimited: Bool,
                                why: String) -> some View {
-        Toggle(title, isOn: toggle(path, name))
+        InspectorSwitch(title, isOn: toggle(path, name))
             .disabled(!isLimited)
-        if !isLimited {
-            note(why)
-        }
-    }
-
-    private func note(_ text: String) -> some View {
-        Text(text)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
+            .help(isLimited ? "" : why)
     }
 
     // MARK: - Plumbing

@@ -7,6 +7,11 @@ import TimelineKit
 ///
 /// None of this would be possible from a recording with the cursor burned in, which is
 /// why the recorder writes cursor positions as data and leaves the video clean.
+///
+/// Every section is rows and switches, with what each one does in its tooltip. The panel
+/// used to carry a sentence under nearly every control — eleven sections, most of them
+/// with a paragraph — and the one sentence that mattered in any of them was lost among
+/// the rest.
 struct CursorInspector: View {
     let model: EditorModel
 
@@ -15,7 +20,7 @@ struct CursorInspector: View {
     var body: some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenSections) {
             VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-                Toggle("Show pointer", isOn: style.binding(\.cursor.isVisible, "Pointer"))
+                InspectorSwitch("Show pointer", isOn: style.binding(\.cursor.isVisible, "Pointer"))
 
                 // Everything about how the pointer looks, which is nothing to set while
                 // there is no pointer. The switch above stays live, or there would be no
@@ -31,25 +36,23 @@ struct CursorInspector: View {
                     // "use the real pointer" on a recording that has no picture of one is a
                     // switch that does nothing, and the user would have no way to tell.
                     if model.hasRecordedPointer {
-                        Toggle("Use the pointer from the recording",
-                               isOn: style.binding(\.cursor.usesRecordedArtwork, "Recorded Pointer"))
+                        InspectorSwitch("Use the recorded pointer",
+                                        isOn: style.binding(\.cursor.usesRecordedArtwork, "Recorded Pointer"))
                             .disabled(model.timeline.cursor.appearance != .asRecorded)
-                            .help("Only for the As recorded style. The other styles are drawings of their own.")
+                            .help("Use the pointer from the recording. Only for the As recorded style. The other styles are drawings of their own.")
                     }
-                    Toggle("Motion blur", isOn: style.binding(\.cursor.motionBlur, "Motion Blur"))
-                    Toggle("Keep size while zoomed",
-                           isOn: style.binding(\.cursor.sizeIsIndependentOfZoom, "Pointer Zoom"))
+                    InspectorSwitch("Motion blur", isOn: style.binding(\.cursor.motionBlur, "Motion Blur"))
+                    InspectorSwitch("Keep size while zoomed",
+                                    isOn: style.binding(\.cursor.sizeIsIndependentOfZoom, "Pointer Zoom"))
                 }
                 .disabled(!model.timeline.cursor.isVisible)
             }
-            .font(.system(size: 12))
             .inspectorSection("Pointer", systemImage: "cursorarrow.rays")
 
             PointerStyleSection(model: model)
             shape
             rest
             clicks
-            clickSound
             PointerSwaySection(model: model)
             PointerSpotlightSection(model: model)
             PointerMagnifierSection(model: model)
@@ -61,21 +64,19 @@ struct CursorInspector: View {
     /// Which pointer is drawn.
     @ViewBuilder
     private var shape: some View {
+        let followsShape = model.timeline.cursor.appearance.followsRecordedShape
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-            Toggle("Always the arrow", isOn: style.binding(\.cursor.alwaysArrow, "Pointer Shape"))
-            Toggle("Ignore a shape held for an instant",
-                   isOn: style.binding(\.cursor.steadiesShape, "Pointer Shape"))
+            InspectorSwitch("Always the arrow", isOn: style.binding(\.cursor.alwaysArrow, "Pointer Shape"))
+            InspectorSwitch("Ignore brief shape changes",
+                            isOn: style.binding(\.cursor.steadiesShape, "Pointer Shape"))
                 // Nothing to steady when there is only ever one shape.
                 .disabled(model.timeline.cursor.alwaysArrow)
-            Text(model.timeline.cursor.appearance.followsRecordedShape
-                 ? "Crossing a toolbar turns the pointer into a hand and back within a moment. At video size that is a flicker."
-                 : "Only for the As recorded style. The \(model.timeline.cursor.appearance.title) style is one drawing throughout.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                .help("Ignore a shape held for an instant. Crossing a toolbar turns the pointer into a hand and back within a moment. At video size that is a flicker.")
         }
-        .font(.system(size: 12))
-        .disabled(!model.timeline.cursor.isVisible || !model.timeline.cursor.appearance.followsRecordedShape)
+        .disabled(!model.timeline.cursor.isVisible || !followsShape)
+        .help(followsShape
+              ? ""
+              : "Only for the As recorded style. The \(model.timeline.cursor.appearance.title) style is one drawing throughout.")
         .inspectorSection("Shape", systemImage: "cursorarrow")
     }
 
@@ -83,67 +84,56 @@ struct CursorInspector: View {
     @ViewBuilder
     private var rest: some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-            Toggle("Hide while it is still", isOn: style.binding(\.cursor.hidesWhenIdle, "Hide Idle Pointer"))
+            InspectorSwitch("Hide while it is still", isOn: style.binding(\.cursor.hidesWhenIdle, "Hide Idle Pointer"))
+                .help("It fades away once it has stopped moving, and is back before it moves again.")
             InspectorSlider(model: model, "After", systemImage: "timer",
                             value: style.binding(\.cursor.idleDelay, "Idle Delay"),
                             range: CursorStyle.idleDelayRange,
                             format: { String(format: "%.1fs", $0) })
                 .disabled(!model.timeline.cursor.hidesWhenIdle)
-            Text("It fades away once it has stopped moving, and is back before it moves again.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
-        .font(.system(size: 12))
         .disabled(!model.timeline.cursor.isVisible)
-        .inspectorSection("At rest", systemImage: "moon.zzz")
+        .inspectorSection("At Rest", systemImage: "moon.zzz")
     }
 
-    /// What a click looks like.
+    /// What a click looks like, and sounds like.
     ///
-    /// Its own section rather than two more toggles in the list above, because a screen
-    /// recording is watched without sound and this is the only thing in the whole editor
-    /// that says a click happened. Two settings, and they are not the same one: the swell
-    /// says *the pointer* did something, the ring says *this spot* was clicked.
+    /// Its own section because a screen recording is watched without sound and this is
+    /// the only thing in the whole editor that says a click happened. The swell says *the
+    /// pointer* did something, the mark says *this spot* was clicked, and the sound — under
+    /// a subheading, because it adds something to the soundtrack the recording never had —
+    /// says it to the ear.
     @ViewBuilder
     private var clicks: some View {
+        let marks = model.timeline.cursor.clickHighlight
+        let sound = model.timeline.cursor.clickSound
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-            Toggle("Mark where clicks happen", isOn: style.binding(\.cursor.clickHighlight, "Click Marks"))
-            InspectorField(title: "Style") {
-                InspectorPicker(selection: style.binding(\.cursor.clickStyle, "Click Style"),
-                                options: CursorStyle.ClickStyle.allCases,
-                                title: \.title)
-            }
-            .disabled(!model.timeline.cursor.clickHighlight)
-            InspectorSlider(model: model, "Size", systemImage: "circle.dashed",
-                            value: style.binding(\.cursor.clickSize, "Click Size"),
-                            range: 0.03...0.16)
-                .disabled(!model.timeline.cursor.clickHighlight)
-            ColorPicker("Colour", selection: clickColour, supportsOpacity: false)
-                .disabled(!model.timeline.cursor.clickHighlight)
-            Toggle("Pointer swells on click", isOn: style.binding(\.cursor.clickEffect, "Click Effect"))
-            Text(clickNote)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .font(.system(size: 12))
-        .disabled(!model.timeline.cursor.isVisible)
-        .inspectorSection("Clicks", systemImage: "cursorarrow.click")
-    }
-
-    /// A click heard as well as seen.
-    ///
-    /// A section of its own rather than more of Clicks: the marks are about the picture
-    /// and this is about the soundtrack, and it has to say so, because it adds a sound
-    /// the recording never had.
-    @ViewBuilder
-    private var clickSound: some View {
-        let isOn = model.timeline.cursor.clickSound
-        VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-            Toggle("Play a sound on each click", isOn: style.binding(\.cursor.clickSound, "Click Sound"))
+            InspectorSwitch("Mark where clicks happen", isOn: style.binding(\.cursor.clickHighlight, "Click Marks"))
             Group {
-                InspectorField(title: "Sound") {
+                InspectorRow("Style") {
+                    InspectorPicker(selection: style.binding(\.cursor.clickStyle, "Click Style"),
+                                    options: CursorStyle.ClickStyle.allCases,
+                                    title: \.title)
+                }
+                .help(clickNote)
+                InspectorSlider(model: model, "Size", systemImage: "circle.dashed",
+                                value: style.binding(\.cursor.clickSize, "Click Size"),
+                                range: 0.03...0.16)
+                InspectorRow("Colour") {
+                    InspectorColorWell(title: "Click colour", selection: clickColour)
+                }
+            }
+            .disabled(!marks)
+            InspectorSwitch("Pointer swells on click", isOn: style.binding(\.cursor.clickEffect, "Click Effect"))
+
+            InspectorSubheading("Sound")
+                .padding(.top, SidebarSpacing.betweenGroups - SidebarSpacing.betweenControls)
+            InspectorSwitch("Play a sound on each click", isOn: style.binding(\.cursor.clickSound, "Click Sound"))
+                .help(sound
+                      ? "Heard while you edit and in the export. Not where the pointer is hidden."
+                      : "Adds a click to the soundtrack wherever a click is seen.")
+            Group {
+                InspectorRow("Sound") {
                     InspectorPicker(selection: style.binding(\.cursor.clickSoundKind, "Click Sound"),
                                     options: CursorStyle.ClickSound.allCases,
                                     title: \.title)
@@ -152,17 +142,10 @@ struct CursorInspector: View {
                                 value: style.binding(\.cursor.clickSoundVolume, "Click Volume"),
                                 range: 0...1)
             }
-            .disabled(!isOn)
-            Text(isOn
-                 ? "Heard while you edit and in the export. Not where the pointer is hidden."
-                 : "Adds a click to the soundtrack wherever a click is seen.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            .disabled(!sound)
         }
-        .font(.system(size: 12))
         .disabled(!model.timeline.cursor.isVisible)
-        .inspectorSection("Click Sound", systemImage: "speaker.wave.1")
+        .inspectorSection("Clicks", systemImage: "cursorarrow.click")
     }
 
     /// What the chosen mark does, in a sentence.
@@ -194,15 +177,13 @@ struct CursorInspector: View {
         } else if let region = model.cursorRegionAtPlayhead {
             CursorRegionInspector(model: model, id: region.id)
         } else {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("The settings above are for the whole recording. A stretch can override them — hidden while a face is on screen, calmed through one bad flick, held still while something is being read.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
+                InspectorNote("Everything above is for the whole recording.")
                 Button("Hide Pointer over Selection") { model.hidePointerOverSelection() }
                     .controlSize(.small)
+                    .help("A stretch can override the settings above — hidden while a face is on screen, calmed through one bad flick, held still while something is being read.")
             }
-            .inspectorSection("Pointer over time", systemImage: "cursorarrow.slash")
+            .inspectorSection("Pointer over Time", systemImage: "cursorarrow.slash")
         }
     }
 }

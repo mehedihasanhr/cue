@@ -17,39 +17,23 @@ struct GradientEditor: View {
     private var gradient: BackgroundGradient { model.editableGradient }
 
     var body: some View {
+        // No swatch of its own and no sentence: the project's own gradient is the last
+        // swatch in the row above, and its tooltip says what these controls do to it.
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-            HStack(spacing: 10) {
-                GradientSwatch(gradient: gradient)
-                    .frame(width: 44, height: 28)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .strokeBorder(.primary.opacity(0.08))
-                    }
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .strokeBorder(Color.accentColor, lineWidth: model.hasCustomGradient ? 2 : 0)
-                            .padding(-3)
-                    }
-                    .accessibilityHidden(true)
-                Text(model.hasCustomGradient ? "Your own gradient" : "Change anything below to make your own.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            InspectorField(title: "Shape") {
+            InspectorRow("Shape") {
                 InspectorPicker(selection: shape, options: BackgroundGradient.Shape.allCases) { $0.title }
             }
-            InspectorField(title: "Colours") {
-                InspectorPicker(selection: stopCount, options: Array(BackgroundGradient.stopCount)) { "\($0) colours" }
-            }
-            ForEach(Array(gradient.stops.indices), id: \.self) { index in
-                InspectorField(title: title(ofStop: index)) {
-                    ColorPicker(title(ofStop: index) + " colour", selection: colour(of: index), supportsOpacity: false)
-                        .fixedSize()
+            // The colours in one row, start to end, as they run across the gradient — with
+            // a step at the end to add a middle one or take it away. Two pop-ups and a row
+            // per colour said the same thing in three times the height.
+            InspectorRow("Colours") {
+                HStack(spacing: 6) {
+                    ForEach(Array(gradient.stops.indices), id: \.self) { index in
+                        InspectorColorWell(title: title(ofStop: index) + " colour", selection: colour(of: index))
+                            .help("The gradient's \(title(ofStop: index).lowercased()) colour")
+                    }
+                    stopStep
                 }
-                .help("The gradient's \(title(ofStop: index).lowercased()) colour")
             }
             if gradient.shape == .linear {
                 InspectorSlider(model: model, "Angle", systemImage: "angle",
@@ -63,6 +47,26 @@ struct GradientEditor: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Your own gradient")
+    }
+
+    /// Add a middle colour, or take it away: the gradient's two stop counts as one button.
+    private var stopStep: some View {
+        let range = BackgroundGradient.stopCount
+        let count = gradient.stops.count
+        let adds = count < range.upperBound
+        return Button {
+            model.setBackgroundGradient(gradient.withStopCount(adds ? count + 1 : max(range.lowerBound, count - 1)))
+        } label: {
+            Image(systemName: adds ? "plus" : "minus")
+                .font(.system(size: 9, weight: .semibold))
+                .frame(width: 20, height: 20)
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(BarButtonStyle())
+        .foregroundStyle(.secondary)
+        .help(adds ? "Add a middle colour" : "Take the middle colour away")
+        .accessibilityLabel(adds ? "Add a middle colour" : "Remove the middle colour")
     }
 
     private func title(ofStop index: Int) -> String {
@@ -79,12 +83,6 @@ struct GradientEditor: View {
 
     private var shape: Binding<BackgroundGradient.Shape> {
         Binding { gradient.shape } set: { shape in change { $0.shape = shape } }
-    }
-
-    private var stopCount: Binding<Int> {
-        Binding { gradient.stops.count } set: { count in
-            model.setBackgroundGradient(gradient.withStopCount(count))
-        }
     }
 
     /// The one control with no "editing ended" of its own — see `InteractionCoalescer`.

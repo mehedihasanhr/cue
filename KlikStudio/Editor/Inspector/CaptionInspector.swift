@@ -41,28 +41,24 @@ struct CaptionInspector: View {
     /// talking, and one where nobody is and the captions are the narration.
     private var empty: some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-            Text("Klik Studio can listen to the recording and write down what was said. It happens on this Mac. The audio is never sent anywhere.")
-                .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            // One line, because it is the line that decides whether somebody presses the
+            // button: where their audio goes.
+            InspectorNote("Written on this Mac. The audio is never sent anywhere.")
+                .help("Klik Studio can listen to the recording and write down what was said. It happens on this Mac. The audio is never sent anywhere.")
 
             language
 
             generate(title: "Generate Captions")
                 .buttonStyle(.borderedProminent)
 
-            Text("Or write them yourself, a line at a time, starting where the playhead is.")
-                .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
             addLine
+                .help("Or write them yourself, a line at a time, starting where the playhead is.")
         }
         .inspectorSection("Transcript", systemImage: "captions.bubble")
     }
 
     private var language: some View {
-        InspectorField(title: "Language") {
+        InspectorRow("Language") {
             InspectorPicker(selection: chosenLanguage,
                             options: CaptionLanguages.all,
                             title: CaptionLanguages.title(for:))
@@ -118,10 +114,10 @@ struct CaptionInspector: View {
 
     private var appearance: some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-            Toggle("Show captions", isOn: style.binding(\.captionStyle.isVisible, "Captions"))
+            InspectorSwitch("Show captions", isOn: style.binding(\.captionStyle.isVisible, "Captions"))
 
             Group {
-                InspectorField(title: "Position") {
+                InspectorRow("Position") {
                     InspectorPicker(selection: style.binding(\.captionStyle.position, "Caption Position"),
                                     options: CaptionStyle.Position.allCases,
                                     title: \.title)
@@ -129,7 +125,7 @@ struct CaptionInspector: View {
                 FontFamilyPicker(family: style.binding(\.captionStyle.fontFamily, "Caption Font"))
                 // The system's type comes in four designs; a chosen family has its own.
                 if model.timeline.captionStyle.fontFamily.isEmpty {
-                    InspectorField(title: "Typeface") {
+                    InspectorRow("Typeface") {
                         InspectorPicker(selection: style.binding(\.captionStyle.typeface, "Caption Typeface"),
                                         options: CaptionStyle.Typeface.allCases,
                                         title: \.title)
@@ -144,9 +140,8 @@ struct CaptionInspector: View {
                 InspectorSlider(model: model, "Margin", systemImage: "arrow.up.and.down",
                                 value: style.binding(\.captionStyle.margin, "Caption Margin"),
                                 range: 0.01...0.25)
-                InspectorField(title: "Colour") {
-                    ColorPicker("Colour", selection: colour(\.captionStyle.color, "Caption Colour"),
-                                supportsOpacity: false)
+                InspectorRow("Colour") {
+                    InspectorColorWell(title: "Caption colour", selection: colour(\.captionStyle.color, "Caption Colour"))
                 }
             }
             // The switch itself stays live: it is the way back.
@@ -157,17 +152,17 @@ struct CaptionInspector: View {
 
     private var motion: some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-            InspectorField(title: "Arrives") {
+            InspectorRow("Arrives") {
                 InspectorPicker(selection: style.binding(\.captionStyle.animation, "Caption Animation"),
                                 options: CaptionStyle.Animation.allCases,
                                 title: \.title)
             }
-            Toggle("Light up each word as it is said",
-                   isOn: style.binding(\.captionStyle.highlightsWords, "Word Highlight"))
+            InspectorSwitch("Light up each word as it is said",
+                            isOn: style.binding(\.captionStyle.highlightsWords, "Word Highlight"))
             if model.timeline.captionStyle.highlightsWords {
-                InspectorField(title: "Highlight") {
-                    ColorPicker("Highlight", selection: colour(\.captionStyle.highlightColor, "Highlight Colour"),
-                                supportsOpacity: false)
+                InspectorRow("Highlight") {
+                    InspectorColorWell(title: "Highlight colour",
+                                       selection: colour(\.captionStyle.highlightColor, "Highlight Colour"))
                 }
             }
         }
@@ -187,7 +182,7 @@ struct CaptionInspector: View {
 
     private var transcript: some View {
         let picksWords = model.hasTimedWords && !editsText
-        return VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: 4) {
             if picksWords {
                 TranscriptWords(model: model)
             } else {
@@ -196,7 +191,7 @@ struct CaptionInspector: View {
                 }
             }
             addLine
-                .padding(.top, 4)
+                .padding(.top, SidebarSpacing.betweenControls - 4)
         }
         .inspectorSection("Transcript", systemImage: "captions.bubble") {
             HStack(spacing: 10) {
@@ -266,9 +261,9 @@ struct CaptionInspector: View {
                     .frame(maxWidth: .infinity)
             }
             .disabled(fillers == 0)
-            .help("Cut out every um, uh and er")
+            .help("Cut out every um, uh and er. Cuts the video there, picture and sound together. Undo puts it all back.")
 
-            InspectorField(title: "Pauses") {
+            InspectorRow("Pauses") {
                 InspectorPicker(selection: $pauseLimit, options: [0.5, 1, 1.5, 2, 3]) { limit in
                     limit < 1 ? "Over half a second" : limit == 1 ? "Over a second" : String(format: "Over %g seconds", limit)
                 }
@@ -280,14 +275,14 @@ struct CaptionInspector: View {
                     .frame(maxWidth: .infinity)
             }
             .disabled(pauses == 0)
-            .help("Cut each long silence down to \(String(format: "%g", EditorModel.keptPause)) seconds")
+            .help("Cut each long silence down to \(String(format: "%g", EditorModel.keptPause)) seconds. Cuts the video there, picture and sound together. A pause in which something is clicked is left alone. Undo puts it all back.")
 
-            Text(timed
-                 ? "Cuts the video there, picture and sound together. A pause in which something is clicked is left alone. Undo puts it all back."
-                 : "Only captions made by listening to the recording know when each word was said. Generate them to tidy the speech.")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            // The one line kept: without timed words none of this can work, and the
+            // dimmed buttons alone would not say why.
+            if !timed {
+                InspectorNote("Needs captions made by listening to the recording.")
+                    .help("Only captions made by listening to the recording know when each word was said. Generate them to tidy the speech.")
+            }
         }
         .controlSize(.small)
         .disabled(!timed)
@@ -308,12 +303,9 @@ struct CaptionInspector: View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
             language
             generate(title: "Listen Again")
-            Text("Listening again replaces these captions, including any you have corrected. Undo brings them back.")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                .help("Listening again replaces these captions, including any you have corrected. Undo brings them back.")
         }
-        .inspectorSection("From the recording", systemImage: "waveform")
+        .inspectorSection("From the Recording", systemImage: "waveform")
     }
 
     // MARK: - As a file
@@ -328,14 +320,10 @@ struct CaptionInspector: View {
                         Text(format.buttonTitle)
                             .frame(maxWidth: .infinity)
                     }
-                    .help(format.purpose)
+                    .help("\(format.purpose). A subtitle file to upload beside the video, for players that draw captions themselves.")
                 }
             }
             .controlSize(.small)
-            Text("A subtitle file to upload beside the video, for players that draw captions themselves.")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
             Button {
                 model.isTranslatingCaptions = true
             } label: {
@@ -345,7 +333,7 @@ struct CaptionInspector: View {
             .controlSize(.small)
             .help("Put the captions into another language, on this Mac. Undo puts the original back.")
         }
-        .inspectorSection("Subtitle file", systemImage: "doc.text")
+        .inspectorSection("Subtitle File", systemImage: "doc.text")
     }
 }
 

@@ -4,59 +4,54 @@ import RenderKit
 import SwiftUI
 import TimelineKit
 
-/// What the pointer is drawn as: five tiles, each showing the drawing it makes.
+/// What the pointer is drawn as: one row of small tiles, each showing the drawing it makes.
 ///
-/// Tiles rather than a pop-up because the choice is a picture. The previews come from the
-/// renderer's own drawings, so a tile shows what the export will.
+/// Tiles rather than a pop-up because the choice is a picture — but small ones, in a
+/// single row, with the chosen style's name on the heading. It was a three-and-two grid
+/// of large tiles with a name under each, and "Invisible but clicks" wrapped onto a
+/// second line under a tile half its width. The previews come from the renderer's own
+/// drawings, so a tile shows what the export will; what each style does is its tooltip.
 struct PointerStyleSection: View {
     let model: EditorModel
 
     private var style: StyleBinding { StyleBinding(model: model) }
     private var cursor: CursorStyle { model.timeline.cursor }
 
-    private let columns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8),
-                           GridItem(.flexible(), spacing: 8)]
-
     var body: some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
                 ForEach(CursorStyle.Appearance.allCases, id: \.self) { appearance in
                     tile(appearance)
                 }
             }
             if cursor.appearance == .dot {
-                ColorPicker("Dot colour", selection: dotColour, supportsOpacity: false)
+                InspectorRow("Dot colour") {
+                    InspectorColorWell(title: "Dot colour", selection: dotColour)
+                }
             }
-            Text(cursor.isVisible ? note : "Turn on Show pointer to choose how it is drawn.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
-        .font(.system(size: 12))
         .disabled(!cursor.isVisible)
-        .inspectorSection("Style", systemImage: "cursorarrow.square")
+        .help(cursor.isVisible ? "" : "Turn on Show pointer to choose how it is drawn.")
+        .inspectorSection("Style", systemImage: "cursorarrow.square") {
+            Text(cursor.appearance.title)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+        }
     }
 
     private func tile(_ appearance: CursorStyle.Appearance) -> some View {
-        VStack(spacing: 4) {
-            SwatchTile(isSelected: cursor.appearance == appearance, title: appearance.title) {
-                style.set(\.cursor.appearance, to: appearance, "Pointer Style")
-            } content: {
-                ZStack {
-                    // Half light, half dark, so a tile shows how the drawing reads on both.
-                    LinearGradient(colors: [Color(white: 0.86), Color(white: 0.86), Color(white: 0.22), Color(white: 0.22)],
-                                   startPoint: .topLeading, endPoint: .bottomTrailing)
-                    preview(appearance)
-                }
+        SwatchTile(isSelected: cursor.appearance == appearance, title: appearance.title,
+                   tooltip: "\(appearance.title): \(note(appearance))") {
+            style.set(\.cursor.appearance, to: appearance, "Pointer Style")
+        } content: {
+            ZStack {
+                // Half light, half dark, so a tile shows how the drawing reads on both.
+                LinearGradient(colors: [Color(white: 0.86), Color(white: 0.86), Color(white: 0.22), Color(white: 0.22)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+                preview(appearance)
             }
-            Text(appearance.title)
-                .font(.system(size: 10.5))
-                .foregroundStyle(cursor.appearance == appearance ? .primary : .secondary)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity)
         }
+        .frame(maxWidth: 48)
     }
 
     @ViewBuilder
@@ -74,8 +69,8 @@ struct PointerStyleSection: View {
         }
     }
 
-    private var note: String {
-        switch cursor.appearance {
+    private func note(_ appearance: CursorStyle.Appearance) -> String {
+        switch appearance {
         case .asRecorded: "The pointer the recording had: its own picture where one was kept, and its shape — arrow, text, hand — throughout."
         case .largeArrow: "A large arrow throughout, whatever the pointer turned into."
         case .dot: "A dot with a soft ring, like a presentation pointer. Its size is the Size above."
@@ -117,10 +112,13 @@ struct PointerSpotlightSection: View {
     private var style: StyleBinding { StyleBinding(model: model) }
     private var cursor: CursorStyle { model.timeline.cursor }
 
+    private static let effect = "The background and the recording darken outside a soft circle round the pointer. Captions, notes, keys and the camera stay bright."
+
     var body: some View {
         let spotlight = cursor.spotlight
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-            Toggle("Darken all but the pointer", isOn: style.binding(\.cursor.spotlight.isEnabled, "Spotlight"))
+            InspectorSwitch("Darken all but the pointer", isOn: style.binding(\.cursor.spotlight.isEnabled, "Spotlight"))
+                .help(PointerEffectNote.tooltip(model: model, effect: Self.effect))
             Group {
                 InspectorSlider(model: model, "Size", systemImage: "circle",
                                 value: style.binding(\.cursor.spotlight.radius, "Spotlight Size"),
@@ -136,10 +134,8 @@ struct PointerSpotlightSection: View {
                               isEnabled: spotlight.isEnabled,
                               scope: spotlight.scope,
                               isMarked: { $0.spotlights },
-                              effect: "The background and the recording darken outside a soft circle round the pointer. Captions, notes, keys and the camera stay bright.",
                               menuItem: "Spotlight Pointer over Selection")
         }
-        .font(.system(size: 12))
         .disabled(!cursor.isVisible)
         .inspectorSection("Spotlight", systemImage: "circle.dashed.inset.filled")
     }
@@ -152,10 +148,13 @@ struct PointerMagnifierSection: View {
     private var style: StyleBinding { StyleBinding(model: model) }
     private var cursor: CursorStyle { model.timeline.cursor }
 
+    private static let effect = "A round lens shows what is under the pointer, taken from the full recording so small text stays sharp. Near an edge it moves in rather than being cut off."
+
     var body: some View {
         let magnifier = cursor.magnifier
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-            Toggle("Magnify round the pointer", isOn: style.binding(\.cursor.magnifier.isEnabled, "Magnifier"))
+            InspectorSwitch("Magnify round the pointer", isOn: style.binding(\.cursor.magnifier.isEnabled, "Magnifier"))
+                .help(PointerEffectNote.tooltip(model: model, effect: Self.effect))
             Group {
                 InspectorSlider(model: model, "Zoom", systemImage: "plus.magnifyingglass",
                                 value: style.binding(\.cursor.magnifier.factor, "Magnifier Zoom"),
@@ -171,10 +170,8 @@ struct PointerMagnifierSection: View {
                               isEnabled: magnifier.isEnabled,
                               scope: magnifier.scope,
                               isMarked: { $0.magnifies },
-                              effect: "A round lens shows what is under the pointer, taken from the full recording so small text stays sharp. Near an edge it moves in rather than being cut off.",
                               menuItem: "Magnify Pointer over Selection")
         }
-        .font(.system(size: 12))
         .disabled(!cursor.isVisible)
         .inspectorSection("Magnifier", systemImage: "magnifyingglass.circle")
     }
@@ -187,7 +184,7 @@ private struct PointerEffectScopeField: View {
     let name: String
 
     var body: some View {
-        InspectorField(title: "Where") {
+        InspectorRow("Where") {
             InspectorPicker(selection: StyleBinding(model: model).binding(scope, "\(name) Where"),
                             options: PointerEffectScope.allCases,
                             title: \.title)
@@ -195,29 +192,30 @@ private struct PointerEffectScopeField: View {
     }
 }
 
-/// What an effect does, or why it is not doing it.
+/// Why an effect that is switched on is not showing anywhere — and nothing otherwise.
+///
+/// The one case worth a line in the panel: the effect is on, limited to marked stretches,
+/// and no stretch is marked, so it does nothing at all. What the effect does is the
+/// switch's tooltip.
 private struct PointerEffectNote: View {
     let model: EditorModel
     let isEnabled: Bool
     let scope: PointerEffectScope
     let isMarked: (CursorRegion) -> Bool
-    let effect: String
     let menuItem: String
 
     var body: some View {
-        Text(text)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
+        if model.timeline.cursor.isVisible, isEnabled, scope == .markedStretches,
+           !model.timeline.cursorRegions.contains(where: isMarked) {
+            InspectorNote("No stretch asks for it yet.")
+                .help("No stretch asks for it yet. Select a stretch on the Pointer lane and turn it on there, or choose Edit ▸ \(menuItem).")
+        }
     }
 
-    private var text: String {
+    /// What the effect does, with the one condition that changes it.
+    static func tooltip(model: EditorModel, effect: String) -> String {
         let cursor = model.timeline.cursor
         guard cursor.isVisible else { return "Turn on Show pointer to use this. It follows the pointer." }
-        guard isEnabled else { return effect }
-        if scope == .markedStretches, !model.timeline.cursorRegions.contains(where: isMarked) {
-            return "No stretch asks for it yet. Select a stretch on the Pointer lane and turn it on there, or choose Edit ▸ \(menuItem)."
-        }
         if cursor.hidesWhenIdle {
             return effect + " It fades with the pointer when the pointer hides while still."
         }
