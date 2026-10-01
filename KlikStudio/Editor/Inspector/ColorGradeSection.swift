@@ -47,13 +47,13 @@ struct ColorGradeSection: View {
                     Button("Replace…") { model.loadLUT() }
                     Button("Remove") { model.removeLUT() }
                 }
-                .controlSize(.small)
+                .buttonStyle(.studio(.secondary, size: .small))
                 slider("Intensity", \.lutIntensity, range: 0...1, systemImage: "slider.horizontal.below.rectangle")
             }
         } else {
             InspectorRow("LUT") {
                 Button("Load…") { model.loadLUT() }
-                    .controlSize(.small)
+                    .buttonStyle(.studio(.secondary, size: .small))
                     .help("A 3D .cube file. It is copied into the recording.")
             }
         }

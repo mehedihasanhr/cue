@@ -29,16 +29,12 @@ struct CameraControls: View {
 
             // First, because "too quick" is the first thing anyone says about a zoom. For
             // every zoom in the project that has not been timed by hand. Three short words
-            // fit a system segmented control in the row, so it is one.
+            // fit the kit's segmented row beside the name, so it is one.
             InspectorRow("Zoom speed") {
-                Picker("Zoom speed", selection: Binding(
+                StudioSegmented(selection: Binding(
                     get: { model.timeline.camera.zoomSpeed },
                     set: { model.setZoomSpeed($0) }
-                )) {
-                    ForEach(ZoomSpeed.allCases, id: \.self) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .controlSize(.small)
+                ), items: Array(ZoomSpeed.allCases), title: \.title)
                 .fixedSize()
             }
             .help("How long every zoom takes to go in and come out — \(String(format: "%.1f", model.timeline.camera.zoomSpeed.transition)) s each way. Zooms you have timed by hand keep their own.")
@@ -81,13 +77,9 @@ struct CameraControls: View {
 
             // A glide that waits, so it lives under the glide and only works while it is on.
             InspectorRow("Stay zoomed in") {
-                Picker("Stay zoomed in", selection: style.binding(\.camera.keepsZoomedInFor, "Stay Zoomed In")) {
-                    Text("Never").tag(0.0)
-                    ForEach([2.0, 4.0, 8.0], id: \.self) { Text("Across gaps up to \(Int($0)) s").tag($0) }
-                }
-                .pickerStyle(.menu)
-                .controlSize(.small)
-                .fixedSize()
+                InspectorPicker(selection: style.binding(\.camera.keepsZoomedInFor, "Stay Zoomed In"),
+                                options: [0.0, 2.0, 4.0, 8.0],
+                                title: { $0 == 0 ? "Never" : "Across gaps up to \(Int($0)) s" })
             }
             .disabled(!model.glidesBetweenZooms)
             .help(model.timeline.camera.keepsZoomedInFor > 0

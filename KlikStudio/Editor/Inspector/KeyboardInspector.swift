@@ -36,7 +36,7 @@ struct KeyboardInspector: View {
                     Text("Open Settings…")
                         .frame(maxWidth: .infinity)
                 }
-                .controlSize(.small)
+                .buttonStyle(.studio(.secondary, size: .small))
                 .help("The switch is under Recording")
             } else if model.keyCapture == .notPermitted {
                 Button {
@@ -45,7 +45,7 @@ struct KeyboardInspector: View {
                     Text("Open System Settings")
                         .frame(maxWidth: .infinity)
                 }
-                .controlSize(.small)
+                .buttonStyle(.studio(.secondary, size: .small))
             } else if model.hasRecordedKeys {
                 Button {
                     model.restoreRecordedKeys()
@@ -53,7 +53,7 @@ struct KeyboardInspector: View {
                     Label("Restore Recorded Shortcuts", systemImage: "arrow.counterclockwise")
                         .frame(maxWidth: .infinity)
                 }
-                .controlSize(.small)
+                .buttonStyle(.studio(.secondary, size: .small))
                 .help("Put back the shortcuts the recorder saw")
             }
 
@@ -92,7 +92,7 @@ struct KeyboardInspector: View {
             Label("Add Shortcut at Playhead", systemImage: "plus")
                 .frame(maxWidth: .infinity)
         }
-        .controlSize(.small)
+        .buttonStyle(.studio(.secondary, size: .small))
         .help("A shortcut to type into, starting at the playhead (⌥⌘K). Or add one by hand, starting where the playhead is.")
     }
 
@@ -137,7 +137,7 @@ struct KeyboardInspector: View {
                 .padding(.top, SidebarSpacing.betweenControls - 4)
             if model.hasRecordedKeys {
                 Button("Restore Recorded Shortcuts") { model.restoreRecordedKeys() }
-                    .controlSize(.small)
+                    .buttonStyle(.studio(.secondary, size: .small))
                     .help("Put the lane back to what the recorder saw, replacing what is there. Undo brings the edit back.")
             }
         }
@@ -161,7 +161,7 @@ struct KeyboardInspector: View {
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(isCurrent ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(StudioPressStyle())
             .frame(width: 48, alignment: .leading)
             .help("Go to this shortcut")
 

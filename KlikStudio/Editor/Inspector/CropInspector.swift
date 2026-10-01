@@ -20,11 +20,11 @@ struct CropInspector: View {
                 Spacer(minLength: 0)
 
                 Button("Done") { model.tool = .frame }
-                    .studioProminentButton()
+                    .buttonStyle(.studio(.primary, size: .small))
                     .keyboardShortcut(.defaultAction)
                     .help("Keep this crop and put the frame back the way it will export")
             }
-            .controlSize(.small)
+            .buttonStyle(.studio(.secondary, size: .small))
         }
     }
 

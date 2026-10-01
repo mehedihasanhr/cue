@@ -14,6 +14,9 @@ import TimelineKit
 struct AudioInspector: View {
     let model: EditorModel
 
+    /// The source whose name is being typed, so only its field takes the full box.
+    @FocusState private var focusedName: UUID?
+
     var body: some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenSections) {
             if model.timeline.hasSeparateSound {
@@ -73,20 +76,14 @@ struct AudioInspector: View {
     @ViewBuilder
     private var detachment: some View {
         if model.isSoundDetached {
-            Button {
+            StudioButton("Re-attach Audio", systemImage: "link", size: .small) {
                 model.requestSoundReattach()
-            } label: {
-                Label("Re-attach Audio", systemImage: "link")
             }
-            .controlSize(.small)
             .help("The sound is on its own. Drag its runs to slide them, or their edges to trim — the picture stays where it is. Re-attaching cuts it at the picture's cuts again.")
         } else {
-            Button {
+            StudioButton("Detach Audio", systemImage: "link.badge.plus", size: .small) {
                 model.detachSound()
-            } label: {
-                Label("Detach Audio", systemImage: "link.badge.plus")
             }
-            .controlSize(.small)
             .help("Cut the sound loose from the picture, so you can keep talking over a cut, trim a cough out, or slide narration onto an action. Nothing changes until you move something.")
         }
     }
@@ -107,12 +104,9 @@ struct AudioInspector: View {
             // recorded, and there is a button to start.
             switch model.voiceover?.state ?? .idle {
             case .idle:
-                Button {
+                StudioButton("Record Voiceover…", systemImage: "mic", size: .small) {
                     model.startVoiceover()
-                } label: {
-                    Label("Record Voiceover…", systemImage: "mic")
                 }
-                .controlSize(.small)
                 .help("Talk over the edit. The timeline plays from the playhead while you talk, and the take lands where it started. The editor's own sound is silenced so it doesn't end up in the recording.")
 
             case .countingIn(let remaining):
@@ -163,8 +157,7 @@ struct AudioInspector: View {
     }
 
     private var stop: some View {
-        Button("Stop") { model.stopVoiceover() }
-            .controlSize(.small)
+        StudioButton("Stop", systemImage: "stop.fill", variant: .destructive, size: .small) { model.stopVoiceover() }
             .help("Stop recording and put the take on the sound lane")
     }
 
@@ -218,29 +211,27 @@ struct AudioInspector: View {
                 // Editable, because "Microphone 2" is what the system calls a device and
                 // "Guest" is what the person editing calls it. Committing on return or on
                 // losing focus, like every other name field on the Mac.
+                // A quiet field: it reads as the source's name until it is pointed at.
                 TextField("Name", text: Binding(
                     get: { track.name },
                     set: { model.renameSound(track.id, to: $0) }
                 ))
-                .textFieldStyle(.plain)
                 .font(.system(size: 12, weight: .medium))
                 .lineLimit(1)
+                .focused($focusedName, equals: track.id)
+                .studioField(isFocused: focusedName == track.id, isQuiet: true)
                 .help("Rename this source")
                 Spacer(minLength: 6)
                 if model.timeline.soundTracks.count > 1 {
-                    Button("Solo") { model.soloSound(track.id) }
-                        .controlSize(.mini)
+                    StudioButton("Solo", variant: .ghost, size: .small) { model.soloSound(track.id) }
                         .help("Leave only this one audible")
                 }
                 // The same switch as every other on-and-off in the panels, at the end of
                 // the row where every other one sits.
-                Toggle("Include \(track.name)", isOn: Binding(
+                StudioSwitch("Include \(track.name)", isOn: Binding(
                     get: { !track.style.isMuted },
                     set: { _ in model.toggleSoundMute(track.id) }
                 ))
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
                 .help(track.style.isMuted ? "Bring \(track.name) back" : "Leave \(track.name) out")
             }
             .frame(minHeight: InspectorMetrics.rowHeight)

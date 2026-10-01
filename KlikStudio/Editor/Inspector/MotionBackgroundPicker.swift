@@ -108,10 +108,10 @@ struct MotionBackgroundPicker: View {
                         model.setAnimatedBackground(AnimatedBackground())
                     }
                 }
-                .controlSize(.small)
+                .buttonStyle(.studio(.secondary, size: .small))
             } else {
                 Button("Choose Video…") { model.chooseBackgroundVideo() }
-                    .controlSize(.small)
+                    .buttonStyle(.studio(.secondary, size: .small))
             }
         }
         .help("The movie is copied into the recording and loops for as long as the video runs. Its sound is not used.")

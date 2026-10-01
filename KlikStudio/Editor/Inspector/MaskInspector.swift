@@ -94,7 +94,7 @@ struct MaskToolControls: View {
                 Label("Add \(model.newMaskStyle.title) at Playhead", systemImage: "plus")
                     .frame(maxWidth: .infinity)
             }
-            .controlSize(.small)
+            .buttonStyle(.studio(.secondary, size: .small))
             .help("Put one in the middle of the picture, to drag where it belongs")
         }
     }

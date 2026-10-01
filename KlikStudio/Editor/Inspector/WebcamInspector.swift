@@ -98,12 +98,15 @@ struct WebcamInspector: View {
             }
         }
         .inspectorSection("Layout", systemImage: "person.crop.rectangle") {
-            Menu("Add at Playhead") {
-                ForEach(CameraLayout.allCases) { layout in
-                    Button(layout.title) { model.addCameraLayout(layout) }
+            StudioActionMenu(actions: CameraLayout.allCases.map { layout in
+                .init(layout.title) { model.addCameraLayout(layout) }
+            }, style: .studio(.text, size: .small)) {
+                HStack(spacing: 3) {
+                    Text("Add at Playhead")
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8, weight: .semibold))
                 }
             }
-            .controlSize(.small)
             .fixedSize()
             .disabled(!hasFootage)
             .help("Give a stretch its own layout — the camera alone, side by side with the screen, or hidden — from the playhead, or over a selected range.")
@@ -215,19 +218,13 @@ struct WebcamInspector: View {
     /// the row shows it selected when it applies and the row's tooltip says how to get there.
     private var corners: some View {
         InspectorRow("Corner") {
-            Picker("Corner", selection: cornerSelection) {
-                ForEach(WebcamSettings.Corner.pickable, id: \.self) { corner in
-                    Image(systemName: corner.symbol)
-                        .help(corner.title)
-                        .tag(corner)
-                }
-                if webcam.corner == .custom {
-                    Image(systemName: "hand.draw").tag(WebcamSettings.Corner.custom)
-                }
-            }
-            .pickerStyle(.segmented)
-            .controlSize(.small)
-            .fixedSize()
+            // Glyphs only, each corner's name in its tooltip and to VoiceOver.
+            StudioSegmented(selection: cornerSelection,
+                            items: WebcamSettings.Corner.pickable + (webcam.corner == .custom ? [.custom] : []),
+                            title: { $0 == .custom ? "Where you put it" : $0.title },
+                            systemImage: { $0 == .custom ? "hand.draw" : $0.symbol },
+                            showsTitles: false)
+                .fixedSize()
         }
         .help(webcam.corner == .custom
               ? "The bubble is where you put it. Drag it on the picture to move it, or pick a corner above to park it."

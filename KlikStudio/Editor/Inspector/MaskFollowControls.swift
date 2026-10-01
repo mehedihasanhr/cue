@@ -32,7 +32,7 @@ struct MaskFollowControls: View {
                       systemImage: "scope")
                     .frame(maxWidth: .infinity)
             }
-            .controlSize(.small)
+            .buttonStyle(.studio(.secondary, size: .small))
             .disabled(!model.canFollowSelectedMask)
             .help("Keep the mask on what is under it while it moves or scrolls. Moves the mask with what is under it, from the playhead to both ends.")
 

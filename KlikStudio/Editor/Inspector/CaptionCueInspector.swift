@@ -28,14 +28,8 @@ struct CaptionCueInspector: View {
 
     private func words(_ cue: CaptionCue) -> some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
-            TextField("What is said here", text: text, axis: .vertical)
-                .textFieldStyle(.plain)
+            StudioTextField("What is said here", text: text, axis: .vertical)
                 .lineLimit(2...6)
-                .font(.system(size: 12))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .background(Color.primary.opacity(0.06),
-                            in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                 .accessibilityLabel("Caption text")
         }
         .inspectorSection("Text", systemImage: "captions.bubble")
@@ -110,7 +104,7 @@ struct CaptionCueInspector: View {
                 }
                 .disabled(model.captionAfter(cue.id) == nil)
             }
-            .controlSize(.small)
+            .buttonStyle(.studio(.secondary, size: .small))
             .help(note(cue))
         }
         .inspectorSection("Line", systemImage: "text.alignleft")

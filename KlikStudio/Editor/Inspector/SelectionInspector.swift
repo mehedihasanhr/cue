@@ -66,7 +66,7 @@ struct SelectionInspector: View {
                     Label("Delete", systemImage: "trash")
                         .frame(maxWidth: .infinity)
                 }
-                .controlSize(.small)
+                .buttonStyle(.studio(.destructive, size: .small))
                 .padding(.top, SidebarSpacing.sectionPadding)
                 .help("Remove this from the timeline")
             }
@@ -91,8 +91,7 @@ struct SelectionInspector: View {
             if run.speed != 1 {
                 InspectorRow(title: "Speed", value: TimelineClipRow.speedLabel(run.speed))
             }
-            Button("Re-attach Audio") { model.requestSoundReattach() }
-                .controlSize(.small)
+            StudioButton("Re-attach Audio", systemImage: "link", size: .small) { model.requestSoundReattach() }
                 .help("This is the recording's own sound, detached from the picture. Drag it to slide it, or its edges to trim — the picture does not move.")
         }
         .inspectorSection("Sound Run", systemImage: "waveform.path")
@@ -214,12 +213,14 @@ struct SelectionInspector: View {
             } label: {
                 Image(systemName: "trash")
             }
+            .buttonStyle(.studio(.destructive, size: .small, isIconOnly: true))
+            .accessibilityLabel("Delete piece")
             .disabled(model.timeline.clips.count < 2)
             .help(model.timeline.clips.count < 2
                   ? "An edit has to keep one piece"
                   : "Remove this piece and close the gap")
         }
-        .controlSize(.small)
+        .buttonStyle(.studio(.secondary, size: .small))
     }
 
     // MARK: - Range
@@ -229,14 +230,20 @@ struct SelectionInspector: View {
             InspectorRow(title: "From", value: Timecode.short(range.start))
             InspectorRow(title: "Length", value: Timecode.length(range.duration))
             InspectorRow("Speed") {
-                Menu("Set Speed") {
-                    ForEach([0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 4.0, 8.0], id: \.self) { speed in
-                        Button(TimelineClipRow.speedLabel(speed)) {
-                            model.apply(Commands.SetSpeed(range, speed: speed))
-                        }
+                // An action list rather than a picker: a range has no one speed to show as
+                // chosen, and each choice is a command that applies to it.
+                StudioActionMenu(actions: [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 4.0, 8.0].map { speed in
+                    .init(TimelineClipRow.speedLabel(speed)) {
+                        model.apply(Commands.SetSpeed(range, speed: speed))
+                    }
+                }, style: .studio(.secondary, size: .small)) {
+                    HStack(spacing: 6) {
+                        Text("Set Speed")
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(StudioTheme.Palette.textSecondary)
                     }
                 }
-                .controlSize(.small)
                 .fixedSize()
             }
         }

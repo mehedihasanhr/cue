@@ -52,17 +52,23 @@ struct StudioMenuPicker<Value: Hashable>: View {
     var size: StudioTheme.ControlSize = .small
     /// Stretches the field across the width it is offered.
     var fillsWidth = false
+    /// Whether the field keeps the width of its longest choice. Off for a list too long to
+    /// lay out in full on every redraw — every font on this Mac — where the field takes the
+    /// current choice's width instead.
+    var sizesToLongest = true
 
     @State private var isPresented = false
 
     init(selection: Binding<Value>,
          sections: [StudioMenuSection<Value>],
          size: StudioTheme.ControlSize = .small,
-         fillsWidth: Bool = false) {
+         fillsWidth: Bool = false,
+         sizesToLongest: Bool = true) {
         _selection = selection
         self.sections = sections
         self.size = size
         self.fillsWidth = fillsWidth
+        self.sizesToLongest = sizesToLongest
     }
 
     /// The common case: one list of values, named by a closure.
@@ -94,10 +100,15 @@ struct StudioMenuPicker<Value: Hashable>: View {
                 // Every title laid out and all but the current one hidden: the field takes
                 // the width of the longest, and keeps it.
                 ZStack(alignment: .leading) {
-                    ForEach(allItems) { item in
-                        Text(item.title)
-                            .opacity(item.value == selection ? 1 : 0)
-                            .accessibilityHidden(item.value != selection)
+                    if sizesToLongest {
+                        ForEach(allItems) { item in
+                            Text(item.title)
+                                .opacity(item.value == selection ? 1 : 0)
+                                .accessibilityHidden(item.value != selection)
+                        }
+                    } else {
+                        Text(current?.title ?? "")
+                            .lineLimit(1)
                     }
                 }
                 .font(.system(size: size.fontSize))
@@ -145,14 +156,20 @@ struct StudioActionMenu<Label: View>: View {
         }
     }
 
-    let actions: [Action]
+    /// Groups of actions, drawn with a hairline between each group and the next — the
+    /// shapes, then the pictures, the way a menu's divider would split them.
+    let groups: [[Action]]
     var style: StudioButtonStyle
     @ViewBuilder let label: Label
 
     @State private var isPresented = false
 
     init(actions: [Action], style: StudioButtonStyle = .studio(.ghost), @ViewBuilder label: () -> Label) {
-        self.actions = actions
+        self.init(groups: [actions], style: style, label: label)
+    }
+
+    init(groups: [[Action]], style: StudioButtonStyle = .studio(.ghost), @ViewBuilder label: () -> Label) {
+        self.groups = groups.filter { !$0.isEmpty }
         self.style = style
         self.label = label()
     }
@@ -161,12 +178,12 @@ struct StudioActionMenu<Label: View>: View {
         Button { isPresented.toggle() } label: { label }
             .buttonStyle(style)
             .popover(isPresented: $isPresented, arrowEdge: .bottom) {
-                StudioMenuList(sections: [
+                StudioMenuList(sections: groups.map { actions in
                     .init(title: nil, rows: actions.map { action in
                         .init(title: action.title, systemImage: action.systemImage, thumbnail: nil,
                               isChecked: false, isEnabled: action.isEnabled, action: action.perform)
                     })
-                ], showsChecks: false)
+                }, showsChecks: false)
             }
     }
 }

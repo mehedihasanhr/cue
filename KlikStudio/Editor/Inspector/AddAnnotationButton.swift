@@ -14,29 +14,20 @@ struct AddAnnotationButton: View {
 
     var body: some View {
         if isCompact {
-            Menu {
-                ForEach(EditorModel.NewAnnotation.allCases) { kind in
-                    Button {
-                        model.addAnnotation(kind)
-                    } label: {
-                        Label(kind.menuTitle, systemImage: kind.symbol)
-                    }
-                }
-                Divider()
-                Button { model.addPicture(asLogo: false) } label: {
-                    Label("Picture…", systemImage: "photo")
-                }
-                Button { model.addPicture(asLogo: true) } label: {
-                    Label("Logo…", systemImage: "seal")
-                }
-            } label: {
+            // The kit's action list rather than a system menu: the same squircle rows, and
+            // the same keyboard, as every other list the panel opens.
+            StudioActionMenu(groups: [
+                EditorModel.NewAnnotation.allCases.map { kind in
+                    .init(kind.menuTitle, systemImage: kind.symbol) { model.addAnnotation(kind) }
+                },
+                [
+                    .init("Picture…", systemImage: "photo") { model.addPicture(asLogo: false) },
+                    .init("Logo…", systemImage: "seal") { model.addPicture(asLogo: true) }
+                ]
+            ], style: .studio(.ghost, size: .small, isIconOnly: true)) {
                 Image(systemName: "plus")
                     .font(.system(size: 11, weight: .semibold))
-                    .frame(width: 20, height: 20)
-                    .contentShape(Rectangle())
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
             .fixedSize()
             .help("Add a label, a shape, a numbered step, a callout, a picture or a logo")
             .accessibilityLabel("Add annotation")
@@ -55,28 +46,19 @@ struct AddAnnotationButton: View {
                         button(kind)
                     }
                 }
-                .controlSize(.small)
                 HStack(spacing: 8) {
                     ForEach(EditorModel.NewAnnotation.second) { kind in
                         button(kind)
                     }
-                    Menu {
-                        ForEach(EditorModel.NewAnnotation.more) { kind in
-                            Button {
-                                model.addAnnotation(kind)
-                            } label: {
-                                Label(kind.title, systemImage: kind.symbol)
-                            }
-                        }
-                    } label: {
+                    StudioActionMenu(actions: EditorModel.NewAnnotation.more.map { kind in
+                        .init(kind.title, systemImage: kind.symbol) { model.addAnnotation(kind) }
+                    }, style: .studio(.secondary, size: .small, isIconOnly: true)) {
                         Image(systemName: "ellipsis")
                     }
-                    .menuIndicator(.hidden)
                     .fixedSize()
                     .help("More: an ellipse, a line or a highlight")
                     .accessibilityLabel("More Annotations")
                 }
-                .controlSize(.small)
                 HStack(spacing: 8) {
                     Button { model.addPicture(asLogo: false) } label: {
                         Label("Picture…", systemImage: "photo").frame(maxWidth: .infinity)
@@ -87,8 +69,8 @@ struct AddAnnotationButton: View {
                     }
                     .help("Put a logo in the corner for the whole video")
                 }
-                .controlSize(.small)
             }
+            .buttonStyle(.studio(.secondary, size: .small))
         }
     }
 

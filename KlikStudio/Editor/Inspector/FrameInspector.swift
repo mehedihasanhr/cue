@@ -169,7 +169,7 @@ struct FrameInspector: View {
             Button(model.tool == .crop ? "Done" : "Adjust Crop…") {
                 model.tool = model.tool == .crop ? .frame : .crop
             }
-            .controlSize(.small)
+            .buttonStyle(.studio(.secondary, size: .small))
         }
         .inspectorSection("Crop", systemImage: "crop") {
             SectionButton(title: "Reset") { model.setCrop(nil) }

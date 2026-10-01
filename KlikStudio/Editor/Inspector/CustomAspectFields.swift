@@ -61,12 +61,11 @@ struct CustomAspectFields: View {
 
     private func field(_ placeholder: String, text: Binding<String>, side: Side) -> some View {
         TextField(placeholder, text: text)
-            .textFieldStyle(.roundedBorder)
-            .controlSize(.small)
             .font(.system(size: 12).monospacedDigit())
             .multilineTextAlignment(.center)
-            .frame(width: 46)
             .focused($focused, equals: side)
+            .studioField(isFocused: focused == side, isInvalid: refusal != nil)
+            .frame(width: 52)
             .onSubmit { commit() }
             .accessibilityLabel(side == .width ? "Width" : "Height")
     }

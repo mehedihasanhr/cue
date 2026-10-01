@@ -66,10 +66,12 @@ struct LooksSection: View {
                     .lineLimit(1)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(StudioTheme.Palette.textSecondary)
             }
         }
-        .controlSize(.small)
+        // Drawn as the kit's pop-up field, so it reads as the same control as every
+        // `StudioMenuPicker` in the panel even though what it opens is a picture list.
+        .buttonStyle(.studio(.secondary, size: .small))
         .fixedSize()
         .help("Dress this recording in a built-in or saved look, or save this one")
         .accessibilityLabel("Look")
@@ -98,8 +100,9 @@ struct LooksSection: View {
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 TextField(isRename ? "New name" : "Name this look", text: $draftName)
-                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: StudioTheme.FontSize.label))
                     .focused($isTypingName)
+                    .studioField(isFocused: isTypingName, isInvalid: problem != nil)
                     .onSubmit { commit(request) }
                     .onExitCommand { library.request = nil }
                     .accessibilityLabel("Look name")
@@ -107,12 +110,13 @@ struct LooksSection: View {
                           ? "The picture behind this recording stays with it. The look keeps everything else."
                           : "")
                 Button(isRename ? "Rename" : "Save") { commit(request) }
+                    .buttonStyle(.studio(.primary, size: .small))
                     .keyboardShortcut(.defaultAction)
                     .disabled(trimmedName.isEmpty)
                     .help(trimmedName.isEmpty ? "Type a name first" : "")
                 Button("Cancel") { library.request = nil }
+                    .buttonStyle(.studio(.ghost, size: .small))
             }
-            .controlSize(.small)
             if let problem {
                 Text(problem)
                     .font(.system(size: 11))
