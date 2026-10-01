@@ -22,17 +22,21 @@ struct LibraryWindow: View {
     /// Cards or rows. Remembered, because it is a way of working rather than a passing view.
     @AppStorage("libraryLayout") private var layout: LibraryLayout = .grid
 
+    /// How wide the window's content is, so the list can drop its columns into a line
+    /// under the name when there is no room for them.
+    @State private var width: CGFloat = 760
+
     var body: some View {
         VStack(spacing: 0) {
             if model?.permissionDenied == true, let model {
                 PermissionBanner(model: model)
             }
 
-            header
+            let hasRecordings = catalog.map { !$0.entries.isEmpty || !$0.interrupted.isEmpty } ?? false
+            header(hasRecordings ? catalog : nil)
 
             if let catalog {
-                if !catalog.entries.isEmpty || !catalog.interrupted.isEmpty {
-                    LibraryToolbar(catalog: catalog, layout: $layout)
+                if hasRecordings {
                     content(catalog)
                 } else if catalog.isLoading {
                     // Deliberately nothing: a spinner that flashes for the 20 ms a local
@@ -47,6 +51,11 @@ struct LibraryWindow: View {
         }
         .frame(minWidth: 520, minHeight: 440)
         .background(Color(nsColor: .windowBackgroundColor))
+        .background {
+            GeometryReader { proxy in
+                Color.clear.onChange(of: proxy.size.width, initial: true) { _, new in width = new }
+            }
+        }
         .navigationTitle("Recordings")
         .task {
             if let asked = StudioAutomation.libraryLayout.flatMap(LibraryLayout.init(rawValue:)) { layout = asked }
@@ -68,33 +77,58 @@ struct LibraryWindow: View {
         .modifier(LibraryDialogs(catalog: catalog))
     }
 
-    /// The window's name, how much is in it and where, and the way to make another.
+    /// The window's name and how much is in it, the tools for finding a take, and the way
+    /// to make another — on one line when the window is wide enough, two when it is not.
     ///
-    /// The count and the folder used to sit in a footer under the list, where nobody
-    /// reads; under the title is where a window says what it holds. "Recorder Bar" became
-    /// New Recording, because that is what anybody pressing it wants.
-    private var header: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Recordings")
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(StudioTheme.Palette.textPrimary)
-                    .accessibilityAddTraits(.isHeader)
-                Text(summary)
-                    .font(.system(size: 12))
-                    .foregroundStyle(StudioTheme.Palette.textSecondary)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 12)
-            StudioButton("New Recording", systemImage: "record.circle", variant: .primary) {
-                StudioAppDelegate.showBar()
-            }
-            .help("Bring up the recorder bar")
+    /// The count used to sit in a footer under the list, where nobody reads, and the title
+    /// and the tools on two rows of their own, under a strip that was only the window's
+    /// buttons: three bands of chrome before the first recording.
+    private func header(_ catalog: LibraryCatalog?) -> some View {
+        let title = VStack(alignment: .leading, spacing: 1) {
+            Text("Recordings")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(StudioTheme.Palette.textPrimary)
+                .accessibilityAddTraits(.isHeader)
+            Text(summary)
+                .font(.system(size: 11.5))
+                .foregroundStyle(StudioTheme.Palette.textSecondary)
+                .lineLimit(1)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 6)
-        .padding(.bottom, 12)
+        .fixedSize()
+        let record = StudioButton("New Recording", systemImage: "record.circle", variant: .primary) {
+            StudioAppDelegate.showBar()
+        }
+        .help("Bring up the recorder bar")
+        .fixedSize()
+
+        return VStack(spacing: 0) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) {
+                    title
+                    Spacer(minLength: 16)
+                    if let catalog { LibraryTools(catalog: catalog, layout: $layout).frame(minWidth: 470) }
+                    record
+                }
+                VStack(spacing: 10) {
+                    HStack {
+                        title
+                        Spacer(minLength: 12)
+                        record
+                    }
+                    if let catalog { LibraryTools(catalog: catalog, layout: $layout) }
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 2)
+            .padding(.bottom, 12)
+            Rectangle()
+                .fill(StudioTheme.Palette.stroke)
+                .frame(height: 1)
+        }
     }
+
+    /// Rows lose their columns below this width, and say the same facts under the name.
+    private var isCompact: Bool { width < 640 }
 
     @ViewBuilder
     private func content(_ catalog: LibraryCatalog) -> some View {
@@ -102,50 +136,65 @@ struct LibraryWindow: View {
             catalog.search.isEmpty || $0.name.localizedCaseInsensitiveContains(catalog.search)
         }
         let sections = RecordingSection.group(catalog.visible, by: catalog.order)
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                // Above everything else, whatever the sort: these need something doing.
-                if !interrupted.isEmpty {
-                    LibrarySectionView(title: "Needs attention") {
-                        VStack(spacing: 6) {
-                            ForEach(interrupted) { take in
-                                InterruptedTakeRow(take: take)
-                                    .background(StudioTheme.Palette.fill,
-                                                in: StudioTheme.squircle(12))
-                            }
-                        }
-                    }
-                }
-                ForEach(sections) { section in
-                    LibrarySectionView(title: section.title) {
-                        switch layout {
-                        case .grid:
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 196, maximum: 300), spacing: 16)],
-                                      alignment: .leading, spacing: 18) {
-                                ForEach(section.entries) { entry in
-                                    RecordingCard(entry: entry, catalog: catalog)
-                                }
-                            }
-                        case .list:
-                            LazyVStack(spacing: 2) {
-                                ForEach(section.entries) { entry in
-                                    RecordingRow(entry: entry, catalog: catalog)
-                                }
-                            }
-                        }
-                    }
-                }
+        let datedTitles = catalog.order == .date
+        VStack(spacing: 0) {
+            if layout == .list, !isCompact {
+                LibraryColumnHeader(catalog: catalog)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 6)
-            .padding(.bottom, 20)
-        }
-        .studioScrollEdges()
-        .overlay {
-            // A search that matches nothing must say so. An empty list under a search
-            // field somebody has typed into reads as a library that lost everything.
-            if catalog.visible.isEmpty, interrupted.isEmpty, !catalog.search.isEmpty {
-                ContentUnavailableView.search(text: catalog.search)
+            ScrollView {
+                VStack(alignment: .leading, spacing: layout == .list ? 14 : 24) {
+                    // Above everything else, whatever the sort: these need something doing.
+                    if !interrupted.isEmpty {
+                        LibrarySectionView(title: "Needs attention") {
+                            VStack(spacing: 6) {
+                                ForEach(interrupted) { take in
+                                    InterruptedTakeRow(take: take)
+                                        .background(StudioTheme.Palette.fill,
+                                                    in: StudioTheme.squircle(12))
+                                }
+                            }
+                        }
+                    }
+                    ForEach(sections) { section in
+                        LibrarySectionView(title: section.title) {
+                            switch layout {
+                            case .grid:
+                                LazyVGrid(columns: [GridItem(.adaptive(minimum: 200, maximum: 300), spacing: 18)],
+                                          alignment: .leading, spacing: 20) {
+                                    ForEach(section.entries) { entry in
+                                        RecordingCard(entry: entry, catalog: catalog, datedTitle: datedTitles)
+                                    }
+                                }
+                            case .list:
+                                LazyVStack(spacing: 0) {
+                                    ForEach(Array(section.entries.enumerated()), id: \.element.id) { index, entry in
+                                        if index > 0 {
+                                            // A hairline from the name onwards, so the
+                                            // pictures still read as one column.
+                                            Rectangle()
+                                                .fill(StudioTheme.Palette.stroke)
+                                                .frame(height: 1)
+                                                .padding(.leading, LibraryColumns.nameInset)
+                                        }
+                                        RecordingRow(entry: entry, catalog: catalog,
+                                                     datedTitle: datedTitles, isCompact: isCompact)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, layout == .list ? 12 : 20)
+                .padding(.top, 14)
+                .padding(.bottom, 20)
+            }
+            .studioScrollEdges()
+            .overlay {
+                // A search that matches nothing must say so. An empty list under a search
+                // field somebody has typed into reads as a library that lost everything.
+                if catalog.visible.isEmpty, interrupted.isEmpty, !catalog.search.isEmpty {
+                    ContentUnavailableView.search(text: catalog.search)
+                }
             }
         }
         .animation(.snappy(duration: 0.25), value: layout)
@@ -170,24 +219,83 @@ struct LibraryWindow: View {
                 .foregroundStyle(StudioTheme.Palette.textSecondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 320)
-            StudioButton("New Recording", systemImage: "record.circle", variant: .primary) {
-                StudioAppDelegate.showBar()
-            }
-            .padding(.top, 4)
             Spacer()
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 30)
     }
 
-    /// How many there are and where they are kept, with the folder a click away.
+    /// How many there are and where they are kept.
     private var summary: String {
         let folder = settings.library.lastPathComponent
         switch catalog?.entries.count ?? 0 {
         case 0: return "Kept in \(folder)"
-        case 1: return "1 recording \u{00B7} \(folder)"
-        case let count: return "\(count) recordings \u{00B7} \(folder)"
+        case 1: return "1 recording in \(folder)"
+        case let count: return "\(count) recordings in \(folder)"
         }
+    }
+}
+
+/// The list's columns, measured once so the header and every row agree.
+enum LibraryColumns {
+    static let thumbnail = CGSize(width: 64, height: 40)
+    static let rowPadding: CGFloat = 10
+    static let spacing: CGFloat = 12
+    static let date: CGFloat = 150
+    static let length: CGFloat = 64
+    static let size: CGFloat = 80
+    static let actions: CGFloat = 28
+    /// Where the name starts: past the row's padding and the picture.
+    static var nameInset: CGFloat { rowPadding + thumbnail.width + spacing }
+}
+
+/// The list's column names, which are also its sort: pressing one sorts by it, pressing it
+/// again turns the order round, and an arrow says which way it runs.
+private struct LibraryColumnHeader: View {
+    @Bindable var catalog: LibraryCatalog
+
+    var body: some View {
+        HStack(spacing: LibraryColumns.spacing) {
+            column("Name", order: .name)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            column("Date", order: .date)
+                .frame(width: LibraryColumns.date, alignment: .leading)
+            column("Length", order: .length)
+                .frame(width: LibraryColumns.length, alignment: .trailing)
+            Text("Size")
+                .frame(width: LibraryColumns.size, alignment: .trailing)
+            Color.clear.frame(width: LibraryColumns.actions, height: 1)
+        }
+        .font(.system(size: 11.5, weight: .semibold))
+        .foregroundStyle(StudioTheme.Palette.textSecondary)
+        .padding(.leading, 12 + LibraryColumns.nameInset)
+        .padding(.trailing, 12 + LibraryColumns.rowPadding)
+        .frame(height: 30)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(StudioTheme.Palette.stroke).frame(height: 1)
+        }
+    }
+
+    private func column(_ title: String, order: RecordingOrder) -> some View {
+        let isSorted = catalog.order == order
+        return Button {
+            if isSorted { catalog.descending.toggle() } else { catalog.order = order }
+        } label: {
+            HStack(spacing: 3) {
+                Text(title)
+                if isSorted {
+                    Image(systemName: catalog.descending ? "chevron.down" : "chevron.up")
+                        .font(.system(size: 8, weight: .bold))
+                }
+            }
+            .foregroundStyle(isSorted ? StudioTheme.Palette.textPrimary : StudioTheme.Palette.textSecondary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(StudioPressStyle())
+        .help(isSorted ? "Reverse the order" : "Sort by \(title.lowercased())")
+        .accessibilityLabel(isSorted
+            ? "\(title), sorted \(catalog.descending ? "descending" : "ascending")"
+            : "Sort by \(title.lowercased())")
     }
 }
 
@@ -218,7 +326,7 @@ private struct LibrarySectionView<Content: View>: View {
 }
 
 /// Finding one take among thirty: what to look for, in what order, and how to see them.
-private struct LibraryToolbar: View {
+private struct LibraryTools: View {
     @Bindable var catalog: LibraryCatalog
     @Binding var layout: LibraryLayout
     @Environment(StudioSettings.self) private var settings
@@ -231,7 +339,7 @@ private struct LibraryToolbar: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(StudioTheme.Palette.textSecondary)
                     .accessibilityHidden(true)
-                TextField("Search recordings", text: $catalog.search)
+                TextField("Search", text: $catalog.search)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
                     .focused($isSearching)
@@ -247,7 +355,7 @@ private struct LibraryToolbar: View {
                 }
             }
             .studioField(isFocused: isSearching, size: .regular)
-            .frame(maxWidth: .infinity)
+            .frame(minWidth: 150, idealWidth: 240, maxWidth: .infinity)
 
             // A menu rather than a segmented control: three keys and a direction is four
             // things, and the direction only makes sense next to the key it reverses.
@@ -292,8 +400,6 @@ private struct LibraryToolbar: View {
                 NSWorkspace.shared.open(settings.library)
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 10)
     }
 }
 
@@ -331,6 +437,49 @@ private struct RecordingActions {
     }
 
     var hasSound: Bool { entry.kinds.contains(.microphone) || entry.kinds.contains(.systemAudio) }
+
+    /// What the take is called on screen.
+    ///
+    /// A take nobody has named is called "Recording 2026-09-29 at 20.47.12" on disk, which
+    /// is a timestamp written twice over and reads as thirty identical rows. Shown as
+    /// "Recording at 8:47 PM" under its day's heading — or with the day, when the list is
+    /// not grouped by day — it says the one thing that tells it apart. A take somebody
+    /// named keeps its name. The file's own name is the tooltip.
+    func title(dated: Bool) -> String {
+        guard entry.name.wholeMatch(of: /Recording \d{4}-\d{2}-\d{2} at \d{2}\.\d{2}\.\d{2}( \d+)?/) != nil else {
+            return entry.name
+        }
+        let time = entry.createdAt.formatted(date: .omitted, time: .shortened)
+        return dated ? "Recording at \(time)"
+                     : "Recording, \(entry.createdAt.formatted(.dateTime.month(.abbreviated).day())) at \(time)"
+    }
+
+    /// The date column: day and time, without the year unless it is another year's.
+    var dateColumn: String {
+        let sameYear = Calendar.current.isDate(entry.createdAt, equalTo: .now, toGranularity: .year)
+        return sameYear
+            ? entry.createdAt.formatted(.dateTime.month(.abbreviated).day().hour().minute())
+            : entry.createdAt.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    /// For VoiceOver: "40 seconds", not "0:40", which is read as a time of day.
+    var spokenDetail: String {
+        let formatter = DateComponentsFormatter()
+        formatter.unitsStyle = .full
+        formatter.allowedUnits = entry.duration >= 3600 ? [.hour, .minute] : [.minute, .second]
+        let length = entry.duration > 0 ? formatter.string(from: entry.duration) ?? "" : ""
+        let sound: String
+        switch (entry.kinds.contains(.microphone), entry.kinds.contains(.systemAudio)) {
+        case (true, true): sound = "microphone and system audio"
+        case (true, false): sound = "microphone"
+        case (false, true): sound = "system audio"
+        default: sound = ""
+        }
+        return [entry.createdAt.formatted(date: .long, time: .shortened), length,
+                LibraryCatalog.size(entry.byteCount), sound]
+            .filter { !$0.isEmpty }
+            .joined(separator: ", ")
+    }
 }
 
 private extension View {
@@ -357,6 +506,7 @@ private extension View {
 private struct RecordingCard: View {
     let entry: RecordingEntry
     let catalog: LibraryCatalog
+    let datedTitle: Bool
     @State private var isHovering = false
     @State private var poster: Data?
     @Environment(\.colorScheme) private var colorScheme
@@ -369,7 +519,7 @@ private struct RecordingCard: View {
                 VStack(alignment: .leading, spacing: 8) {
                     picture
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(entry.name)
+                        Text(actions.title(dated: datedTitle))
                             .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(StudioTheme.Palette.textPrimary)
                             .lineLimit(1)
@@ -384,9 +534,10 @@ private struct RecordingCard: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(StudioPressStyle())
+            .help(entry.name)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(entry.name)
-            .accessibilityValue(actions.detail)
+            .accessibilityLabel(actions.title(dated: false))
+            .accessibilityValue(actions.spokenDetail)
             .accessibilityHint("Opens in the editor")
             .accessibilityAddTraits(.isButton)
         }
@@ -463,14 +614,17 @@ private struct RecordingCard: View {
         .padding(7)
         .opacity(isHovering ? 1 : 0)
         .help("More actions")
-        .accessibilityLabel("More actions for \(entry.name)")
+        .accessibilityLabel("More actions for \(actions.title(dated: false))")
     }
 }
 
-/// One take, as a row.
+/// One take, as a row of the list: the picture, the name, then the date, length and size
+/// in columns — or under the name, when the window is too narrow for columns.
 private struct RecordingRow: View {
     let entry: RecordingEntry
     let catalog: LibraryCatalog
+    let datedTitle: Bool
+    let isCompact: Bool
     @State private var isHovering = false
     /// The poster frame, once it has been read. `Data` crossing back from the decoder and
     /// an `NSImage` made here, because `NSImage` is not something to send between actors.
@@ -479,47 +633,61 @@ private struct RecordingRow: View {
     private var actions: RecordingActions { RecordingActions(entry: entry, catalog: catalog) }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: LibraryColumns.spacing) {
             Button { catalog.open(entry) } label: {
-                HStack(spacing: 12) {
+                HStack(spacing: LibraryColumns.spacing) {
                     thumbnail
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(entry.name)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(actions.title(dated: datedTitle))
                             .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(StudioTheme.Palette.textPrimary)
                             .lineLimit(1)
-                        Text(actions.detail)
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(StudioTheme.Palette.textSecondary)
-                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        if isCompact {
+                            Text(compactDetail)
+                                .font(.system(size: 11.5).monospacedDigit())
+                                .foregroundStyle(StudioTheme.Palette.textSecondary)
+                                .lineLimit(1)
+                        } else if actions.hasSound {
+                            soundLabel
+                        }
                     }
-                    Spacer(minLength: 6)
-                    if actions.hasSound {
-                        Image(systemName: "waveform")
-                            .font(.system(size: 11))
-                            .foregroundStyle(StudioTheme.Palette.textTertiary)
-                            .help(entry.kinds.contains(.microphone) ? "Has a microphone track" : "Has system audio")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    if !isCompact {
+                        Text(actions.dateColumn)
+                            .frame(width: LibraryColumns.date, alignment: .leading)
+                        Text(LibraryCatalog.length(entry.duration))
+                            .frame(width: LibraryColumns.length, alignment: .trailing)
+                        Text(LibraryCatalog.size(entry.byteCount))
+                            .frame(width: LibraryColumns.size, alignment: .trailing)
                     }
                 }
+                .font(.system(size: 12.5).monospacedDigit())
+                .foregroundStyle(StudioTheme.Palette.textSecondary)
+                .lineLimit(1)
                 .contentShape(Rectangle())
             }
             .buttonStyle(StudioPressStyle())
+            .help(entry.name)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(entry.name)
-            .accessibilityValue(actions.detail)
+            .accessibilityLabel(actions.title(dated: false))
+            .accessibilityValue(actions.spokenDetail)
             .accessibilityHint("Opens in the editor")
             .accessibilityAddTraits(.isButton)
 
+            // Always there, quietly: something that only appears under the pointer cannot
+            // be found by anybody who does not already know it exists.
             StudioActionMenu(groups: actions.menuActions, style: .studio(.ghost, size: .small, isIconOnly: true)) {
                 AnyView(Image(systemName: "ellipsis")
                     .font(.system(size: 11, weight: .semibold)))
             }
-            .opacity(isHovering ? 1 : 0.0)
+            .frame(width: LibraryColumns.actions)
+            .opacity(isHovering ? 1 : 0.55)
             .help("More actions")
-            .accessibilityLabel("More actions for \(entry.name)")
+            .accessibilityLabel("More actions for \(actions.title(dated: false))")
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
+        .padding(.horizontal, LibraryColumns.rowPadding)
+        .padding(.vertical, 8)
         .background(isHovering ? StudioTheme.Palette.ghostHover : .clear, in: StudioTheme.squircle(10))
         .onHover { hovering in
             withAnimation(StudioMotion.hover) { isHovering = hovering }
@@ -528,10 +696,30 @@ private struct RecordingRow: View {
         .recordingActions(actions)
     }
 
+    private var compactDetail: String {
+        [actions.dateColumn, LibraryCatalog.length(entry.duration), LibraryCatalog.size(entry.byteCount)]
+            .filter { !$0.isEmpty }
+            .joined(separator: " \u{00B7} ")
+    }
+
+    /// What was heard: a glyph and a word, quieter than the name.
+    private var soundLabel: some View {
+        let microphone = entry.kinds.contains(.microphone)
+        let system = entry.kinds.contains(.systemAudio)
+        return HStack(spacing: 4) {
+            Image(systemName: microphone ? "mic.fill" : "speaker.wave.2.fill")
+                .font(.system(size: 9.5))
+            Text(microphone && system ? "Microphone and system audio" : microphone ? "Microphone" : "System audio")
+        }
+        .font(.system(size: 11))
+        .foregroundStyle(StudioTheme.Palette.textTertiary)
+    }
+
     private var thumbnail: some View {
-        StudioTheme.squircle(6)
+        let size = LibraryColumns.thumbnail
+        return StudioTheme.squircle(6)
             .fill(StudioTheme.Palette.fill)
-            .frame(width: 72, height: 45)
+            .frame(width: size.width, height: size.height)
             .overlay {
                 if let poster, let image = NSImage(data: poster) {
                     Image(nsImage: image)
