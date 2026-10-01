@@ -384,14 +384,16 @@ struct RecorderBar: View {
             }
             .pickerStyle(.inline)
         } label: {
-            Image(systemName: "gearshape")
-                .font(.system(size: 14))
-                .foregroundStyle(StudioPalette.offered)
+            // The whole round button is the label, in the button menu style with a plain
+            // button, as the input chips are: as a borderless menu with the circle drawn
+            // behind it, only the glyph took the click, and often not even that.
+            BarCircleIcon(symbol: "gearshape", size: 14)
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
         .menuIndicator(.hidden)
-        .frame(width: 34, height: 34)
-        .background(.white.opacity(0.08), in: Circle())
+        .fixedSize()
+        .help("Recordings, settings and countdown")
         .padding(.trailing, 4)
     }
 
