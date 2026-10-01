@@ -82,32 +82,46 @@ public final class WindowPresence: @unchecked Sendable {
         queue.async { writer.append(sample) }
     }
 
-    /// The window's app active, and the topmost of that app's ordinary windows the window
-    /// itself or lying mostly over it.
+    /// The window's app active, and no other window of the app's — one the size of a
+    /// window rather than a strip or a popup — lying over it.
     @MainActor
     static func isInFront(_ window: CGWindowID, owner: pid_t?) -> Bool {
         guard let owner else { return true }
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == owner else { return false }
         guard let listing = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
                                                        kCGNullWindowID) as? [[String: Any]] else { return true }
-        func bounds(_ info: [String: Any]) -> CGRect? {
-            (info[kCGWindowBounds as String] as? [String: Any]).flatMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) }
-        }
-        let ours = listing.first { ($0[kCGWindowNumber as String] as? NSNumber)?.uint32Value == window }
-        // Front to back: the first ordinary window of the app is the one it shows on top.
-        for info in listing {
+        let windows: [(id: CGWindowID, bounds: CGRect)] = listing.compactMap { info in
             guard (info[kCGWindowLayer as String] as? NSNumber)?.intValue == 0,
-                  (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == owner else { continue }
-            if (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value == window { return true }
-            // Not on screen at all — on another Space — so nothing of the app can be over it.
-            guard let ours, let mine = bounds(ours), let top = bounds(info) else { return false }
-            let overlap = mine.intersection(top)
-            guard !overlap.isNull else { return false }
-            // A sheet, a popover's window, the tab strip over a full-screen page: most of
-            // it lies on the window. Another of the app's windows somewhere else does not.
-            let smaller = min(mine.width * mine.height, top.width * top.height)
-            return smaller > 0 && overlap.width * overlap.height >= smaller * 0.6
+                  (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == owner,
+                  let id = (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value,
+                  let bounds = (info[kCGWindowBounds as String] as? [String: Any])
+                      .flatMap({ CGRect(dictionaryRepresentation: $0 as CFDictionary) })
+            else { return nil }
+            return (id, bounds)
         }
-        return true
+        return frontmost(window, among: windows)
+    }
+
+    /// The rule, on a listing already read, front to back.
+    ///
+    /// The app's windows above the recorded one are mostly not other windows at all. A
+    /// full-screen browser keeps a strip for the menu bar, one for its toolbar and one per
+    /// open popup above its page, each its own window; taking the topmost of the app's
+    /// windows as "the one in front" found one of those every time, and a whole take was
+    /// shown black. So: anything not over the window is passed by, and so is anything over
+    /// it but much smaller — a strip, a popup, a sheet — and the window is in front when it
+    /// is reached before something of a window's size covers it. Not reached at all, it is
+    /// not on screen: on another Space, behind whatever the person went to.
+    static func frontmost(_ window: CGWindowID, among windows: [(id: CGWindowID, bounds: CGRect)]) -> Bool {
+        guard let mine = windows.first(where: { $0.id == window })?.bounds else { return false }
+        let area = mine.width * mine.height
+        for other in windows {
+            if other.id == window { return true }
+            let overlap = mine.intersection(other.bounds)
+            guard !overlap.isNull, overlap.width * overlap.height > 0 else { continue }
+            if other.bounds.width * other.bounds.height < area * 0.6 { continue }
+            return false
+        }
+        return false
     }
 }

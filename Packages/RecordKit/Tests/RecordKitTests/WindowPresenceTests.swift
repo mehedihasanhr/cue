@@ -37,3 +37,39 @@ struct WindowPresenceTests {
         #expect(try JSONDecoder().decode(PresenceSample.self, from: data) == sample)
     }
 }
+
+/// Which of an app's windows counts as the one in front.
+struct WindowFrontmostTests {
+    private let page: (id: CGWindowID, bounds: CGRect) = (116, CGRect(x: 0, y: 121, width: 1_512, height: 861))
+
+    /// A full-screen browser's own strips — menu bar, toolbar, the address bar's popups —
+    /// lie above its page and do not make it "behind". The listing Chrome actually gave.
+    @Test func aFullScreenBrowsersStripsDoNotHideItsPage() {
+        let windows: [(id: CGWindowID, bounds: CGRect)] = [
+            (120, CGRect(x: 0, y: 33, width: 1_512, height: 41)),
+            (109, CGRect(x: 0, y: 0, width: 1_512, height: 33)),
+            (108, CGRect(x: 0, y: 0, width: 1_512, height: 33)),
+            (632, CGRect(x: 0, y: 33, width: 1_512, height: 124)),
+            (119, CGRect(x: 0, y: 74, width: 1_512, height: 47)),
+            (118, CGRect(x: 135, y: 59, width: 1_098, height: 89)),
+            (117, CGRect(x: 135, y: 59, width: 1_098, height: 139)),
+            page,
+        ]
+        #expect(WindowPresence.frontmost(116, among: windows))
+    }
+
+    /// Another of the app's windows, the size of a window, over the page: behind.
+    @Test func anotherWindowOverItIsInFront() {
+        let other: (id: CGWindowID, bounds: CGRect) = (300, CGRect(x: 100, y: 200, width: 1_200, height: 700))
+        #expect(!WindowPresence.frontmost(116, among: [other, page]))
+        // The same window elsewhere on the screen, not over it, leaves it in front.
+        let aside: (id: CGWindowID, bounds: CGRect) = (301, CGRect(x: 2_000, y: 0, width: 1_200, height: 700))
+        #expect(WindowPresence.frontmost(116, among: [aside, page]))
+    }
+
+    /// Not on screen — on another Space — is not in front.
+    @Test func aWindowNotOnScreenIsBehind() {
+        let elsewhere: [(id: CGWindowID, bounds: CGRect)] = [(300, CGRect(x: 0, y: 0, width: 800, height: 600))]
+        #expect(!WindowPresence.frontmost(116, among: elsewhere))
+    }
+}
