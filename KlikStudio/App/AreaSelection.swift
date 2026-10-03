@@ -26,11 +26,16 @@ final class AreaSelectionController {
         finish = completion
 
         for screen in NSScreen.screens {
-            let window = NSWindow(contentRect: screen.frame,
-                                  styleMask: [.borderless],
-                                  backing: .buffered,
-                                  defer: false,
-                                  screen: screen)
+            // A non-activating panel that can take the keyboard, like the target overlay.
+            // A plain borderless window could not become key, so Escape never reached it,
+            // and it relied on Klik Studio becoming the active app first — which macOS no
+            // longer grants on request — so the press that should start the drag went on
+            // activating the window instead, and the drag never began.
+            let window = AreaSelectionWindow(contentRect: screen.frame,
+                                             styleMask: [.borderless, .nonactivatingPanel],
+                                             backing: .buffered,
+                                             defer: false,
+                                             screen: screen)
             window.level = .screenSaver
             window.backgroundColor = .clear
             window.isOpaque = false
@@ -38,6 +43,10 @@ final class AreaSelectionController {
             window.ignoresMouseEvents = false
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
             window.acceptsMouseMovedEvents = true
+            window.hidesOnDeactivate = false
+            window.becomesKeyOnlyIfNeeded = false
+            window.animationBehavior = .none
+            window.onCancel = { [weak self] in self?.end(with: nil) }
 
             let view = AreaSelectionView(screen: screen)
             view.onFinish = { [weak self] rect in
@@ -55,7 +64,7 @@ final class AreaSelectionController {
                 }
             }
             window.contentView = view
-            window.makeKeyAndOrderFront(nil)
+            window.orderFrontRegardless()
             windows.append(window)
             window.makeFirstResponder(view)
         }
@@ -66,7 +75,6 @@ final class AreaSelectionController {
         let front = windows.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? windows.first
         front?.makeKeyAndOrderFront(nil)
         front?.makeFirstResponder(front?.contentView)
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     private func end(with selection: Selection?) {
@@ -81,6 +89,13 @@ final class AreaSelectionController {
         (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)
             .map { CGDirectDisplayID($0.uint32Value) }
     }
+}
+
+/// Borderless, but able to take the keyboard, so Escape cancels the drag.
+private final class AreaSelectionWindow: NSPanel {
+    var onCancel: () -> Void = {}
+    override var canBecomeKey: Bool { true }
+    override func cancelOperation(_ sender: Any?) { onCancel() }
 }
 
 /// The dimmed overlay and the rectangle being dragged on it.
@@ -100,6 +115,11 @@ private final class AreaSelectionView: NSView {
     required init?(coder: NSCoder) { fatalError("not supported") }
 
     override var acceptsFirstResponder: Bool { true }
+
+    /// The first press starts the drag even when Klik Studio is not the active app. Without
+    /// this, macOS spends that press on bringing the window forward and the view never
+    /// hears it: the drag had no origin, and letting go read as a click — a cancel.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func resetCursorRects() {
         // A crosshair says "drag me" without a word of instruction.
