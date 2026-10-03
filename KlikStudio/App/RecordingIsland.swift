@@ -6,8 +6,8 @@ import SwiftUI
 ///
 /// It rises out of the screen's bottom edge and sits melted into the bezel, the way the
 /// notch sits in the top one. Pulled away, it stretches off the edge like a drop of ink
-/// and snaps free; let go near any edge, it melts back in; anywhere else it floats where
-/// it was put. It lies along the edge it is on — a wide pill on the top or bottom, a tall
+/// and snaps free; let go, it springs to the nearest edge and melts back in — it never
+/// stays out over the middle of the screen. It lies along the edge it is on — a wide pill on the top or bottom, a tall
 /// one on either side — and under the pointer it grows along that edge to offer pause and
 /// stop. Clicking the clock brings the whole bar back.
 ///
@@ -30,12 +30,11 @@ final class RecordingIsland {
 
     /// Room around the island for the neck to reach the edge through.
     fileprivate static let margin: CGFloat = 44
-    /// Lying along the top or bottom edge, or floating.
+    /// Lying along the top or bottom edge, and while it is carried.
     fileprivate static let wide = (compact: CGSize(width: 92, height: 36), open: CGSize(width: 176, height: 36))
     /// Standing along the left or right edge.
     fileprivate static let tall = (compact: CGSize(width: 44, height: 64), open: CGSize(width: 44, height: 128))
-    /// How close to an edge a drop has to be for the island to melt into it — and how
-    /// close to a side for it to stand up.
+    /// How close to a side the island has to come to stand up.
     private static let snap: CGFloat = 56
 
     init(studio: StudioService) {
@@ -55,11 +54,10 @@ final class RecordingIsland {
         if StudioMotion.reduceMotion {
             place(at: landing)
         } else {
-            // Out of the edge it is docked to, the way a drop wells up; a floating island
-            // just appears where it was.
+            // Out of the edge it is docked to, the way a drop wells up.
             let near = nearest(at: landing)
             let thickness = near.edge.isSide ? Self.tall.compact.width : Self.wide.compact.height
-            place(at: near.distance < 1 ? Self.offset(landing, into: near.edge, by: thickness) : landing)
+            place(at: Self.offset(landing, into: near.edge, by: thickness))
             animate(to: landing)
         }
         panel.orderFrontRegardless()
@@ -79,8 +77,8 @@ final class RecordingIsland {
                                 styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
                                 backing: .buffered, defer: false)
         let view = IslandView(state: state,
-                              began: { [weak self] in self?.dragBegan() },
-                              moved: { [weak self] in self?.dragMoved() },
+                              began: { [weak self] in self?.dragBegan(at: $0) },
+                              moved: { [weak self] in self?.dragMoved(to: $0) },
                               ended: { [weak self] click in self?.dragEnded(click: click) })
             .environment(studio)
         let hosting = NSHostingView(rootView: view)
@@ -106,15 +104,14 @@ final class RecordingIsland {
 
     // MARK: - Moving
 
-    private func dragBegan() {
+    private func dragBegan(at mouse: CGPoint) {
         settle?.invalidate()
         settle = nil
-        dragStart = (NSEvent.mouseLocation, center)
+        dragStart = (mouse, center)
     }
 
-    private func dragMoved() {
+    private func dragMoved(to mouse: CGPoint) {
         guard let start = dragStart else { return }
-        let mouse = NSEvent.mouseLocation
         place(at: clamped(CGPoint(x: start.center.x + mouse.x - start.mouse.x,
                                   y: start.center.y + mouse.y - start.mouse.y)))
     }
@@ -130,8 +127,9 @@ final class RecordingIsland {
         animate(to: landing)
     }
 
-    /// Where an island let go at `point` comes to rest: melted into whichever edge it is
-    /// near, and otherwise where it is, kept on the screen with room to open.
+    /// Where an island let go at `point` comes to rest: melted into whichever edge is
+    /// nearest. It never stays out in the middle of the screen, over the thing being
+    /// recorded — let go anywhere, it springs to the closest edge.
     private func resting(for point: CGPoint) -> CGPoint {
         let point = clamped(point)
         guard let frame = Self.screen(at: point)?.frame else { return point }
@@ -139,7 +137,6 @@ final class RecordingIsland {
         let wide = Self.wide, tall = Self.tall
         func across(_ x: CGFloat) -> CGFloat { min(max(x, frame.minX + wide.open.width / 2), frame.maxX - wide.open.width / 2) }
         func along(_ y: CGFloat) -> CGFloat { min(max(y, frame.minY + tall.open.height / 2), frame.maxY - tall.open.height / 2) }
-        guard near.distance < Self.snap else { return CGPoint(x: across(point.x), y: point.y) }
         return switch near.edge {
         case .bottom: CGPoint(x: across(point.x), y: frame.minY + wide.compact.height / 2)
         case .top: CGPoint(x: across(point.x), y: frame.maxY - wide.compact.height / 2)
@@ -278,8 +275,8 @@ extension Edge {
 private struct IslandView: View {
     @Environment(StudioService.self) private var studio
     let state: IslandState
-    let began: () -> Void
-    let moved: () -> Void
+    let began: (CGPoint) -> Void
+    let moved: (CGPoint) -> Void
     let ended: (_ click: Bool) -> Void
 
     var body: some View {
@@ -459,8 +456,8 @@ private struct IslandInk: View, Animatable {
 /// to the buttons and the click it shared the island with; here every mouse event moves
 /// the window once, in screen points, and nothing else is listening.
 private struct IslandHandle: NSViewRepresentable {
-    let began: () -> Void
-    let moved: () -> Void
+    let began: (CGPoint) -> Void
+    let moved: (CGPoint) -> Void
     let ended: (_ click: Bool) -> Void
 
     func makeNSView(context: Context) -> HandleView {
@@ -481,16 +478,26 @@ private struct IslandHandle: NSViewRepresentable {
 
         override func mouseDown(with event: NSEvent) {
             guard let handle, let window else { return }
-            let start = NSEvent.mouseLocation
+            let start = Self.screenPoint(of: event)
             var travelled = false
-            handle.began()
+            handle.began(start)
             while let next = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
                 if next.type == .leftMouseUp { break }
-                let now = NSEvent.mouseLocation
+                let now = Self.screenPoint(of: next)
                 if !travelled, hypot(now.x - start.x, now.y - start.y) > 3 { travelled = true }
-                if travelled { handle.moved() }
+                if travelled { handle.moved(now) }
             }
             handle.ended(!travelled)
+        }
+
+        /// Where the event happened on the screen, from the event itself. Not
+        /// `NSEvent.mouseLocation`, which is where the pointer is now and can trail the
+        /// event — and not the event's window location either, which is relative to a
+        /// window this very drag is moving.
+        private static func screenPoint(of event: NSEvent) -> CGPoint {
+            guard let global = event.cgEvent?.location else { return NSEvent.mouseLocation }
+            let top = NSScreen.screens.first?.frame.maxY ?? 0
+            return CGPoint(x: global.x, y: top - global.y)
         }
     }
 }
