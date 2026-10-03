@@ -267,10 +267,10 @@ struct IslandPanel: View {
                 Icon(symbol, size: 12, weight: .semibold)
                 if !title.isEmpty { Text(title).font(.system(size: 11, weight: .medium)).lineLimit(1) }
             }
-            .foregroundStyle(selected ? Color.white : .white.opacity(0.75))
+            .foregroundStyle(selected ? IslandStyle.selectedText : .white.opacity(0.75))
             .padding(.horizontal, title.isEmpty ? 7 : 9)
             .frame(height: 22)
-            .background(selected ? Color.brand.opacity(0.85) : .white.opacity(0.1), in: Capsule())
+            .background(selected ? IslandStyle.selectedFill : .white.opacity(0.1), in: Capsule())
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -366,7 +366,7 @@ struct IslandPanel: View {
             HStack(spacing: 10) {
                 HStack(spacing: 8) {
                     Icon("magnifyingglass", size: 18, weight: .medium)
-                        .foregroundStyle(searching ? Color.brand : .white.opacity(0.6))
+                        .foregroundStyle(searching ? IslandStyle.accent : .white.opacity(0.6))
                     TextField("Search everything", text: $search)
                         .textFieldStyle(.plain)
                         .font(.system(size: 14))
@@ -394,7 +394,7 @@ struct IslandPanel: View {
                 .frame(height: 40)
                 .frame(maxWidth: searching ? .infinity : nil)
                 .background(.white.opacity(searching ? 0.12 : 0.08), in: Capsule(style: .continuous))
-                .overlay(Capsule(style: .continuous).strokeBorder(searching ? Color.brand.opacity(0.8) : .clear, lineWidth: 1.5))
+                .overlay(Capsule(style: .continuous).strokeBorder(searching ? IslandStyle.accent.opacity(0.7) : .clear, lineWidth: 1))
                 .background(KeyOnFocus(focused: searchFocused))
                 if !searching {
                     Spacer(minLength: 8)
@@ -725,7 +725,7 @@ struct IslandPanel: View {
             .foregroundStyle(selected ? .black : .white.opacity(0.85))
             .padding(.horizontal, 12)
             .frame(height: 28)
-            .background(selected ? Color.brand : Color.white.opacity(0.1), in: Capsule())
+            .background(selected ? IslandStyle.selectedFill : Color.white.opacity(0.1), in: Capsule())
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -997,8 +997,8 @@ struct IslandPanel: View {
     private var dropHint: some View {
         RoundedRectangle(cornerRadius: 18, style: .continuous)
             .fill(.black.opacity(0.75))
-            .background(Color.brand.opacity(0.35), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color.brand, style: SwiftUI.StrokeStyle(lineWidth: 2, dash: [8, 6])))
+            .background(IslandStyle.accent.opacity(0.22), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(IslandStyle.accent.opacity(0.8), style: SwiftUI.StrokeStyle(lineWidth: 1.5, dash: [8, 6])))
             .overlay {
                 VStack(spacing: 6) {
                     Icon("tray.and.arrow.down.fill", size: 35).foregroundStyle(.white)
@@ -1180,7 +1180,7 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
                     card(placed.item)
                         .overlay(
                             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .strokeBorder(Color.brand, lineWidth: 2)
+                                .strokeBorder(IslandStyle.selectedRing, lineWidth: IslandStyle.selectedRingWidth)
                                 .opacity(isSelected(placed.item) ? 1 : 0)
                                 .allowsHitTesting(false)
                         )
@@ -1271,8 +1271,8 @@ struct CardChrome<Content: View, Actions: View, Menu: View>: View {
             .overlay(alignment: .top) {
                 // Always in the tree (faded out, not hit-testable) so a drag started
                 // from the row survives the pointer leaving the card.
-                HStack(spacing: 6) { actionRow() }
-                    .padding(8)
+                HStack(spacing: 5) { actionRow() }
+                    .padding(6)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(LinearGradient(colors: [.black.opacity(0.85), .black.opacity(0)], startPoint: .top, endPoint: .bottom))
                     .opacity(hovering ? 1 : 0)
@@ -1281,7 +1281,7 @@ struct CardChrome<Content: View, Actions: View, Menu: View>: View {
             .frame(width: DayStrip<CaptureItem, EmptyView>.cardSize.width, height: DayStrip<CaptureItem, EmptyView>.cardSize.height)
             .background(.white.opacity(0.07))
             .clipShape(RoundedRectangle(cornerRadius: Self.radius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Self.radius, style: .continuous).strokeBorder(hovering ? Color.brand : .white.opacity(0.1), lineWidth: hovering ? 2 : 1))
+            .overlay(RoundedRectangle(cornerRadius: Self.radius, style: .continuous).strokeBorder(hovering ? IslandStyle.hoverRing : .white.opacity(0.1), lineWidth: IslandStyle.hoverRingWidth))
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
             .animation(.easeOut(duration: 0.12), value: hovering)
@@ -1299,8 +1299,8 @@ struct CardAction: View {
 
     var body: some View {
         Button(action: perform) {
-            Icon(symbol, size: 14, weight: .bold)
-                .frame(width: 27, height: 27)
+            Icon(symbol, size: 13, weight: .bold)
+                .frame(width: 24, height: 24)
                 .background(.black.opacity(0.8), in: Circle())
                 .overlay(Circle().strokeBorder(.white.opacity(0.35)))
                 .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
@@ -1424,11 +1424,11 @@ struct TabPill: View {
                         .opacity(selected ? 0.55 : 0.5)
                 }
             }
-            .foregroundStyle(.white.opacity(selected || hovering ? 1 : 0.75))
+            .foregroundStyle(selected ? IslandStyle.selectedText : .white.opacity(hovering ? 1 : 0.75))
             .fixedSize()
             .padding(.horizontal, 12)
             .frame(height: 28)
-            .background(selected ? Color.brand : Color.white.opacity(hovering ? 0.06 : 0), in: Capsule())
+            .background(selected ? IslandStyle.selectedFill : Color.white.opacity(hovering ? 0.06 : 0), in: Capsule())
             // The others are outlines.
             .overlay(Capsule().strokeBorder(Color.white.opacity(selected ? 0 : 0.14)))
             .contentShape(Capsule())
@@ -1506,7 +1506,7 @@ struct FocusPill: View {
         HStack(spacing: 8) {
             ZStack {
                 Circle().stroke(.white.opacity(0.18), lineWidth: 2.5)
-                Circle().trim(from: 0, to: timer.progress).stroke(Color.brand, style: SwiftUI.StrokeStyle(lineWidth: 2.5, lineCap: .round)).rotationEffect(.degrees(-90))
+                Circle().trim(from: 0, to: timer.progress).stroke(IslandStyle.accent, style: SwiftUI.StrokeStyle(lineWidth: 2.5, lineCap: .round)).rotationEffect(.degrees(-90))
                 Icon("timer", size: 10, weight: .bold).foregroundStyle(.white.opacity(0.85))
             }
             .frame(width: 18, height: 18)
@@ -1596,6 +1596,10 @@ struct CaptureCard: View {
             CardAction(symbol: "pencil", help: "Edit") { actions.edit(item) }
             PinAction(pinned: item.pinned) { library.togglePin(item) }
             CardAction(symbol: "trash", help: "Remove", tint: .red) { actions.delete(item) }
+            if let onToggleCompare {
+                Spacer(minLength: 0)
+                compareButton(onToggleCompare)
+            }
         } menu: {
             if let clipboard, clipboard.canPaste { Button("Paste", action: paste) }
             Button("Preview", action: onPreview)
@@ -1626,7 +1630,7 @@ struct CaptureCard: View {
         .overlay(alignment: .topTrailing) { compareToggle }
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(Color.brand, lineWidth: 2)
+                .strokeBorder(IslandStyle.selectedRing, lineWidth: IslandStyle.selectedRingWidth)
                 .opacity(compareIndex == nil ? 0 : 1)
                 .allowsHitTesting(false)
         }
@@ -1642,27 +1646,33 @@ struct CaptureCard: View {
         actions.copy(item)
     }
 
-    /// The tick in the corner: the card's number while it is in a comparison, an empty
-    /// ring while the pointer is on the card.
+    /// The card's number in the corner while it is in a comparison. While the pointer
+    /// is on the card the hover row holds the toggle instead, so the two never overlap.
     @ViewBuilder private var compareToggle: some View {
-        if let onToggleCompare, compareIndex != nil || hovering {
-            Button(action: onToggleCompare) {
-                Group {
-                    if let compareIndex {
-                        Text("\(compareIndex)").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
-                    } else {
-                        Icon("plus", size: 12, weight: .bold).foregroundStyle(.white.opacity(0.9))
-                    }
-                }
-                .frame(width: 24, height: 24)
-                .background(compareIndex == nil ? AnyShapeStyle(.black.opacity(0.8)) : AnyShapeStyle(Color.brand), in: Circle())
-                .overlay(Circle().strokeBorder(.white.opacity(0.35)))
-                .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
-            }
-            .buttonStyle(.plain)
-            .padding(8)
-            .help(compareIndex == nil ? "Add to the comparison (⌘-click)" : "Remove from the comparison")
+        if let onToggleCompare, compareIndex != nil, !hovering {
+            compareButton(onToggleCompare)
+                .padding(6)
         }
+    }
+
+    /// Plus to add the card to the comparison; its number, to take it out again.
+    private func compareButton(_ toggle: @escaping () -> Void) -> some View {
+        Button(action: toggle) {
+            Group {
+                if let compareIndex {
+                    Text("\(compareIndex)").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
+                } else {
+                    Icon("plus", size: 12, weight: .bold).foregroundStyle(.white.opacity(0.9))
+                }
+            }
+            .frame(width: 24, height: 24)
+            .background(compareIndex == nil ? AnyShapeStyle(.black.opacity(0.8)) : AnyShapeStyle(IslandStyle.accent), in: Circle())
+            .overlay(Circle().strokeBorder(.white.opacity(0.35)))
+            .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
+        }
+        .buttonStyle(.plain)
+        .help(compareIndex == nil ? "Add to the comparison (⌘-click)" : "Remove from the comparison")
+        .accessibilityLabel(compareIndex == nil ? "Add to comparison" : "Remove from comparison")
     }
 
     /// The capture's colors, worked out when first asked for.
@@ -2342,7 +2352,7 @@ private struct CompareDrop: ViewModifier {
         content
             .overlay {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(Color.brand, lineWidth: 2)
+                    .strokeBorder(IslandStyle.selectedRing, lineWidth: IslandStyle.selectedRingWidth)
                     .opacity(lit ? 1 : 0)
                     .allowsHitTesting(false)
             }
@@ -2352,7 +2362,7 @@ private struct CompareDrop: ViewModifier {
                         .font(.system(size: 11, weight: .semibold))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color.brand, in: Capsule())
+                        .background(IslandStyle.accent, in: Capsule())
                         .foregroundStyle(.white)
                         .padding(.top, 6)
                         .allowsHitTesting(false)
@@ -2387,7 +2397,7 @@ private struct GroupDrop: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .overlay(Capsule().strokeBorder(Color.brand, lineWidth: 1.5).opacity(targeted && IslandDrag.current?.kind == kind ? 1 : 0))
+            .overlay(Capsule().strokeBorder(IslandStyle.accent, lineWidth: 1.5).opacity(targeted && IslandDrag.current?.kind == kind ? 1 : 0))
             .scaleEffect(targeted && IslandDrag.current?.kind == kind ? 1.06 : 1)
             .animation(.easeOut(duration: 0.12), value: targeted)
             .onDrop(of: [.item], isTargeted: $targeted) { _ in

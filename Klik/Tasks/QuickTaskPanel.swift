@@ -36,23 +36,31 @@ final class QuickTaskPanel: NSPanel {
         let chrome: Chrome
         let content: Content
 
+        /// The island's ink: a blue-black that reads as glass, not grey.
+        private static var ink: Color { Color(red: 0.03, green: 0.035, blue: 0.05) }
+
         var body: some View {
             let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
+            let solid = 1 - min(max(chrome.clarity, 0), 1)
             content
                 .padding(.top, 8)
                 .frame(width: chrome.size.width, height: chrome.size.height)
-                .liquidGlass(cornerRadius: 22, clarity: chrome.clarity)
-                // One pane, its edge lit from the top like the light catching glass.
-                .overlay(
-                    shape.strokeBorder(
-                        LinearGradient(stops: [.init(color: Color(red: 0.55, green: 0.5, blue: 0.95).opacity(0.7), location: 0),
-                                               .init(color: Color(red: 0.35, green: 0.75, blue: 0.8).opacity(0.35), location: 0.25),
-                                               .init(color: .primary.opacity(0.1), location: 0.6),
-                                               .init(color: .primary.opacity(0.08), location: 1)],
-                                       startPoint: .top, endPoint: .bottom),
-                        lineWidth: 1
-                    )
-                )
+                // The island's look, as a window: dark smoked glass with the same slow
+                // smoke drifting through it, light falling from the top edge, and no
+                // outline — the shadow sets it off whatever lies behind.
+                .background {
+                    ZStack {
+                        Self.ink.opacity(0.55 + 0.37 * solid)
+                        SmokeField(palette: Smoke.calm, intensity: 0.75 * solid, fadeTop: 0)
+                        LinearGradient(colors: [.white.opacity(0.07 * solid + 0.02), .clear], startPoint: .top, endPoint: .init(x: 0.5, y: 0.35))
+                    }
+                    .background(.ultraThinMaterial)
+                    .clipShape(shape)
+                    .shadow(color: .black.opacity(0.5), radius: 24, y: 12)
+                    .allowsHitTesting(false)
+                }
+                .clipShape(shape)
+                .environment(\.colorScheme, .dark)
                 .padding(QuickTaskPanel.margin)
                 .environment(chrome)
         }

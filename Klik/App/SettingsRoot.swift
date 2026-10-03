@@ -6,14 +6,14 @@ import SwiftUI
 /// The pages of the Settings window, in sidebar order.
 enum SettingsSection: String, CaseIterable, Identifiable {
     case general, appearance, shortcuts, sharing, addOns, permissions, about
-    case island, capture, studio, editor, clipboard, tasks, snippets, notes, colors, time
+    case island, agents, capture, studio, editor, clipboard, tasks, snippets, notes, colors, time
 
     var id: String { rawValue }
 
     /// The sidebar shows the app-wide pages first, then a group per feature.
     static let groups: [[SettingsSection]] = [
         [.general, .appearance, .shortcuts, .sharing, .addOns, .permissions, .about],
-        [.island, .capture, .studio, .editor, .clipboard, .tasks, .snippets, .notes, .colors, .time],
+        [.island, .agents, .capture, .studio, .editor, .clipboard, .tasks, .snippets, .notes, .colors, .time],
     ]
 
     var title: String {
@@ -26,6 +26,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .permissions: "Permissions"
         case .about: "About"
         case .island: "Island"
+        case .agents: "Agents"
         case .capture: "Capture"
         case .studio: "Studio"
         case .editor: "Editor"
@@ -49,6 +50,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .permissions: "What macOS lets Klik see and do"
         case .about: "Screenshots you can annotate, blur and share — built natively for macOS"
         case .island: "How the Dynamic Island opens, closes, looks and moves"
+        case .agents: "Claude Code and Codex sessions on the island, and answering them from there"
         case .capture: "The pointer, the sound, and the language Capture Text reads"
         case .studio: "Screen recording, and what Klik asks the recorder for"
         case .editor: "What every new annotation starts as"
@@ -71,6 +73,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .permissions: "lock.shield.fill"
         case .about: "info"
         case .island: "rectangle.topthird.inset.filled"
+        case .agents: "asterisk"
         case .capture: "camera.fill"
         case .studio: "record.circle.fill"
         case .editor: "paintbrush.pointed.fill"
@@ -93,6 +96,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .permissions: .green
         case .about: .brand
         case .island: .brand
+        case .agents: .orange
         case .capture: .orange
         case .studio: .red
         case .editor: .purple
@@ -116,6 +120,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .permissions: ["screen recording", "accessibility", "privacy", "access", "grant", "system settings"]
         case .about: ["version", "build", "credits", "stackrover", "copyright", "website"]
         case .island: ["dynamic island", "notch", "pill", "panel", "position", "hover", "click", "delay", "open", "close", "background", "flash", "status", "animation", "tab"]
+        case .agents: ["agent", "claude", "claude code", "codex", "ai", "coding", "session", "permission", "approve", "allow", "deny", "question", "hook", "terminal"]
         case .tasks: ["task", "todo", "project", "server", "remote", "sync", "api", "post", "webhook", "token", "json", "endpoint"]
         case .snippets: ["snippet", "expand", "keyword", "trigger", "text", "type", "accessibility"]
         case .notes: ["note", "quick note", "markdown", "folder", "icloud", "obsidian", "vault", "apple notes", "notion", "sync"]
@@ -238,6 +243,7 @@ struct SettingsRootView: View {
         case .permissions: PermissionSettingsView()
         case .about: AboutSettingsView()
         case .island: IslandSettingsView()
+        case .agents: AgentSettingsView()
         case .capture: CaptureSettingsView()
         case .studio: StudioAddOnSettingsView()
         case .editor: EditorSettingsView()

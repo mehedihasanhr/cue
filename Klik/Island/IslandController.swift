@@ -42,7 +42,7 @@ final class IslandController {
     var onSnippetFilled: (Snippet, [String: String]?) -> Void = { _, _ in }
 
     init(library: CaptureLibrary, clipboard: ClipboardHistory, assets: AssetStore, colors: ColorStore, groups: GroupStore, tasks: TaskStore, snippets: SnippetStore,
-         notes: NoteStore, actions: HistoryActions, preferences: AppPreferences, clock: PrayerClock? = nil, focus: FocusTimer? = nil) {
+         notes: NoteStore, actions: HistoryActions, preferences: AppPreferences, clock: PrayerClock? = nil, focus: FocusTimer? = nil, agents: AgentStore? = nil) {
         self.preferences = preferences
         self.tasks = tasks
         self.snippets = snippets
@@ -66,7 +66,13 @@ final class IslandController {
         content.addSubview(host)
         window.contentView = content
         window.onEscape = { [weak self] in self?.escape() }
-        model.onTap = { [weak self] in self?.expand() }
+        model.onTap = { [weak self] in self?.open() }
+        model.agents = agents
+        model.onOpenPanel = { [weak self] in self?.expand() }
+        model.onAgentsClosed = { [weak self] in self?.collapse() }
+        agents?.onRequest = { [weak self] _ in self?.agentAsked() }
+        agents?.onRequestsCleared = { [weak self] in self?.agentQuestionsAnswered() }
+        agents?.onFinished = { [weak self] session, took in self?.agentFinished(session, took: took) }
         model.onPrompt = { [weak self] prompt in self?.prompt(prompt) }
         model.onShowTask = { [weak self] task in self?.showTask(task) }
         model.onPanelWidthChanged = { [weak self] in
@@ -223,7 +229,62 @@ final class IslandController {
             MainActor.assumeIsolated { self?.pointerMoved() }
             return event
         })
-        pointerMonitors = [global, local].compactMap { $0 }
+        // Two-finger swipes over the island move between the agents list and the panel.
+        let swipes = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel], handler: { [weak self] event in
+            MainActor.assumeIsolated { self?.swipe(event) ?? false } ? nil : event
+        })
+        pointerMonitors = [global, local, swipes].compactMap { $0 }
+    }
+
+    // MARK: - Swipes
+
+    /// Horizontal travel of the current two-finger gesture, as the fingers moved
+    /// (not as the content would scroll), and whether it has already switched.
+    private var swipeTravel: CGSize = .zero
+    private var swipeDone = false
+    /// How far the fingers travel sideways before the island switches.
+    private static let swipeThreshold: CGFloat = 70
+
+    /// The agents list and the panel are two pages side by side: fingers moving left
+    /// bring in the panel, right bring back the agents. On the panel only its top
+    /// (search and tabs) takes the swipe — its card rows scroll sideways themselves.
+    /// Returns whether the event was used up.
+    private func swipe(_ event: NSEvent) -> Bool {
+        guard event.window === window, event.hasPreciseScrollingDeltas, model.showsAmbient else { return false }
+        guard model.phase == .agents || (model.phase == .expanded && pointerInPanelTop()) else { return false }
+        if event.momentumPhase != [] { return swipeDone } // the glide after the fingers lift
+        if event.phase == .began || event.phase == .mayBegin {
+            swipeTravel = .zero
+            swipeDone = false
+        }
+        // Scrolling deltas follow the content; flip them back to the fingers' direction.
+        let sign: CGFloat = event.isDirectionInvertedFromDevice ? 1 : -1
+        swipeTravel.width += event.scrollingDeltaX * sign
+        swipeTravel.height += abs(event.scrollingDeltaY)
+        if event.phase == .ended || event.phase == .cancelled {
+            defer { swipeTravel = .zero }
+            return swipeDone
+        }
+        guard !swipeDone, abs(swipeTravel.width) > Self.swipeThreshold, abs(swipeTravel.width) > swipeTravel.height * 2 else {
+            // Mostly sideways so far: keep it from also scrolling the list under it.
+            return model.phase == .agents && abs(swipeTravel.width) > swipeTravel.height
+        }
+        swipeDone = true
+        if swipeTravel.width < 0, model.phase == .agents {
+            expand()
+        } else if swipeTravel.width > 0, model.phase == .expanded {
+            showAgents()
+        }
+        return true
+    }
+
+    /// Whether the pointer is over the open panel's header: the search bar and tabs,
+    /// below the notch strip.
+    private func pointerInPanelTop() -> Bool {
+        guard let geometry = model.geometry else { return false }
+        let shape = model.shapeRect(for: .expanded)
+        let location = NSEvent.mouseLocation
+        return shape.contains(location) && location.y > shape.maxY - geometry.stripHeight - 110
     }
 
     private func pointerMoved() {
@@ -395,6 +456,53 @@ final class IslandController {
 
     // MARK: - Phases
 
+    /// What a hover or click on the closed island opens: the agent sessions while
+    /// any run, otherwise the panel.
+    func open() {
+        if model.showsAmbient { showAgents() } else { expand() }
+    }
+
+    /// Opens the agent sessions list.
+    func showAgents() {
+        guard model.geometry != nil, !hidden, model.agents != nil, model.phase != .agents else { return }
+        closeTask?.cancel()
+        flashTask?.cancel()
+        hoverTask?.cancel()
+        window.orderFrontRegardless()
+        setPhase(.agents, animated: true)
+        installOutsideClickMonitor()
+    }
+
+    /// An agent asked something: open on it, unless the user is in the middle of
+    /// typing into the island (a form, a prompt) — the closed island pulses instead.
+    private func agentAsked() {
+        guard preferences.agentAutoOpen, model.geometry != nil, !hidden else { return }
+        switch model.phase {
+        case .collapsed, .flash, .status, .expanded: showAgents()
+        case .agents, .prompt, .taskDetail, .clock, .record: break
+        }
+    }
+
+    /// The last question was answered: close again unless the pointer is on the list.
+    private func agentQuestionsAnswered() {
+        guard model.phase == .agents else { return }
+        closeTask?.cancel()
+        closeTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(700))
+            guard !Task.isCancelled, let self, model.phase == .agents, model.agents?.requests.isEmpty != false else { return }
+            if !contains(NSEvent.mouseLocation) { collapse() }
+        }
+    }
+
+    /// An agent finished its turn: the closed island says so for a moment. An open
+    /// island already shows it in its list, so it is left alone.
+    private func agentFinished(_ session: AgentSession, took: Duration) {
+        guard !hidden, model.phase == .collapsed || model.phase.isFlash else { return }
+        let done = AgentDone(agent: session.agent, project: session.project, took: took, summary: session.activity)
+        flash(phase: .status(IslandStatus(symbol: "checkmark.circle.fill", title: "Task complete", subtitle: session.project,
+                                          duration: .seconds(3.6), agentDone: done)))
+    }
+
     func expand() {
         guard model.geometry != nil, !hidden, model.phase != .expanded else { return }
         closeTask?.cancel()
@@ -518,7 +626,7 @@ final class IslandController {
         case .prompt(let prompt):
             model.onPromptFinished(prompt, nil)
         default:
-            collapse()
+            collapse() // the agents list too: its questions stay open, and the closed island pulses
         }
     }
 
@@ -539,10 +647,13 @@ final class IslandController {
         let handler: @MainActor () -> Void = { [weak self] in
             guard let self, model.geometry != nil else { return }
             switch model.phase {
-            case .prompt, .taskDetail, .clock: break
+            case .prompt, .taskDetail, .clock, .agents: break
             case .expanded where forExpanded: break
             default: return
             }
+            // A question waiting on the list keeps it open: a click in another app is
+            // the user getting on with their work, not an answer.
+            if model.phase == .agents, model.agents?.requests.isEmpty == false { return }
             if !contains(NSEvent.mouseLocation) { collapse() }
         }
         if let global = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { _ in
@@ -653,7 +764,7 @@ final class IslandController {
         // The compact prompt / task detail stay as they are until ↩, ⎋ or a click
         // outside; the pointer does not reopen the panel.
         switch model.phase {
-        case .prompt, .taskDetail, .clock: return
+        case .prompt, .taskDetail, .clock, .agents: return
         case .status(let status) where status.clock != nil:
             // The clock ignores the pointer: it neither opens the panel nor stays;
             // a click opens the clock view, otherwise it closes on its own.
@@ -667,19 +778,21 @@ final class IslandController {
             expand()
         } else if preferences.islandOpenMode == .hover {
             let delay = preferences.islandHoverDelay
-            guard delay > 0 else { expand(); return }
+            guard delay > 0 else { open(); return }
             hoverTask?.cancel()
             hoverTask = Task { [weak self] in
                 try? await Task.sleep(for: .milliseconds(Int(delay * 1000)))
                 guard !Task.isCancelled, let self, pointerInside else { return }
-                expand()
+                open()
             }
         }
     }
 
     private func pointerExited() {
         hoverTask?.cancel()
-        guard model.phase == .expanded, preferences.islandCloseOnLeave else { return }
+        // The sessions list stays while an agent waits on it, until answered or ⎋.
+        let agentsCanClose = model.phase == .agents && model.agents?.requests.isEmpty != false
+        guard model.phase == .expanded || agentsCanClose, preferences.islandCloseOnLeave else { return }
         closeTask?.cancel()
         let delay = preferences.islandCloseDelay
         closeTask = Task { [weak self] in

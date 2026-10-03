@@ -32,6 +32,8 @@ final class AppPreferences {
         static let islandPreviewOnHover = "island.previewOnHover"
         static let islandPreviewHoverDelay = "island.previewHoverDelay"
         static let islandOpensOn = "island.opensOn"
+        static let agentSessions = "agents.enabled"
+        static let agentAutoOpen = "agents.autoOpen"
         static let afterCapture = "capture.after"
         static let clipboardEnabled = "clipboard.enabled"
         static let clipboardLimit = "clipboard.limit"
@@ -470,6 +472,18 @@ final class AppPreferences {
         didSet { defaults.set(islandOpensOn?.rawValue ?? "", forKey: Key.islandOpensOn) }
     }
 
+    // MARK: Agent sessions
+
+    /// Claude Code and Codex sessions on the island, once an agent is connected.
+    var agentSessionsEnabled: Bool {
+        didSet { defaults.set(agentSessionsEnabled, forKey: Key.agentSessions) }
+    }
+
+    /// The island opens by itself when an agent asks something.
+    var agentAutoOpen: Bool {
+        didSet { defaults.set(agentAutoOpen, forKey: Key.agentAutoOpen) }
+    }
+
     // MARK: Editor defaults
 
     var editorDefaults: EditorDefaults {
@@ -641,6 +655,8 @@ final class AppPreferences {
         islandPreviewOnHover = defaults.object(forKey: Key.islandPreviewOnHover) as? Bool ?? true
         islandPreviewHoverDelay = defaults.object(forKey: Key.islandPreviewHoverDelay) as? Double ?? 0.5
         islandOpensOn = IslandTab(rawValue: defaults.string(forKey: Key.islandOpensOn) ?? "")
+        agentSessionsEnabled = defaults.object(forKey: Key.agentSessions) as? Bool ?? true
+        agentAutoOpen = defaults.object(forKey: Key.agentAutoOpen) as? Bool ?? true
         clipboardHistoryEnabled = defaults.object(forKey: Key.clipboardEnabled) as? Bool ?? true
         clipboardHistoryLimit = defaults.object(forKey: Key.clipboardLimit) as? Int ?? 200
         colorPickerEnabled = defaults.object(forKey: Key.colorPickerEnabled) as? Bool ?? true

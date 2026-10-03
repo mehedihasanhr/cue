@@ -18,6 +18,8 @@ final class IslandModel {
         case clock
         /// Choosing what to record, and starting it.
         case record
+        /// The running agent sessions, and what they are asking.
+        case agents
         case expanded
 
         var geometryPhase: IslandGeometry.Phase {
@@ -26,7 +28,7 @@ final class IslandModel {
             case .flash: .flash
             case .status(let status): status.clock == nil ? .flash : .prompt
             case .prompt(let prompt): prompt.isForm ? .form : .prompt
-            case .taskDetail, .clock, .record: .form
+            case .taskDetail, .clock, .record, .agents: .form
             case .expanded: .expanded
             }
         }
@@ -34,7 +36,7 @@ final class IslandModel {
         var isFlash: Bool {
             switch self {
             case .flash, .status: true
-            case .collapsed, .expanded, .prompt, .taskDetail, .clock, .record: false
+            case .collapsed, .expanded, .prompt, .taskDetail, .clock, .record, .agents: false
             }
         }
 
@@ -44,7 +46,7 @@ final class IslandModel {
             switch self {
             case .flash, .status: true
             case .prompt(let prompt): prompt.isConfirm
-            case .collapsed, .expanded, .taskDetail, .clock, .record: false
+            case .collapsed, .expanded, .taskDetail, .clock, .record, .agents: false
             }
         }
     }
@@ -58,6 +60,26 @@ final class IslandModel {
     var clockHeight: CGFloat?
     var clockWidth: CGFloat?
     var recordHeight: CGFloat?
+    /// Coding-agent sessions; nil until the app delegate hands them over.
+    var agents: AgentStore?
+    /// The sessions list's height, reported by the view.
+    var agentsHeight: CGFloat?
+    /// Closed, but agents are at work: the notch shows them.
+    var showsAmbient: Bool { agents?.isActive == true }
+    /// The sessions list's height before it has measured itself (the first time it
+    /// opens): close enough that the island opens in one movement, not to a default
+    /// size and then again to the real one.
+    var estimatedAgentsHeight: CGFloat {
+        let sessions = CGFloat(agents?.sessions.count ?? 0)
+        let questions = CGFloat(agents?.requests.count ?? 0)
+        let workers = CGFloat(agents?.sessions.reduce(0) { $0 + $1.workers.count } ?? 0)
+        let withWorkers = CGFloat(agents?.sessions.filter { !$0.workers.isEmpty }.count ?? 0)
+        return min(50 + sessions * 74 + withWorkers * 10 + workers * 30 + questions * 160, IslandPanel.size.height)
+    }
+    /// Opens the full panel from the sessions list; set by the controller.
+    var onOpenPanel: () -> Void = {}
+    /// Leaves the sessions list; set by the controller.
+    var onAgentsClosed: () -> Void = {}
     /// What the island offers to record. Lives on the model so the phase and its contents
     /// are one thing, the way the clock's are.
     let recorder = IslandRecorder()
@@ -90,11 +112,13 @@ final class IslandModel {
         case .expanded: panelWidth
         case .clock: clockWidth
         case .record: IslandGeometry.recordWidth
+        case .agents: IslandGeometry.agentsWidth
         default: phase.fitsContent ? contentWidth : nil
         }
         let height: CGFloat? = switch phase {
         case .clock: clockHeight
         case .record: recordHeight
+        case .agents: agentsHeight ?? estimatedAgentsHeight
         case .expanded: panelHeight
         default: nil
         }
@@ -203,6 +227,9 @@ struct IslandView: View {
     static var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion || animationStyle != .lively }
     static var openAnimation: Animation { animationStyle == .none ? .linear(duration: 0) : reduceMotion ? .easeOut(duration: 0.18) : .spring(response: 0.36, dampingFraction: 0.82, blendDuration: 0) }
     static var closeAnimation: Animation { animationStyle == .none ? .linear(duration: 0) : reduceMotion ? .easeOut(duration: 0.18) : .spring(response: 0.45, dampingFraction: 1.0, blendDuration: 0) }
+    /// The agents list: rows moving, cards opening, and the island's height
+    /// following them, all on one critically damped spring so they move together.
+    static var listAnimation: Animation { animationStyle == .none ? .linear(duration: 0) : reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.42, dampingFraction: 1.0) }
     static var contentAnimation: Animation { animationStyle == .none ? .linear(duration: 0) : reduceMotion ? .easeOut(duration: 0.15) : .smooth(duration: 0.28) }
 
     /// Collapsed and settled: the shape is drawn clear so nothing shows beside the
@@ -213,6 +240,7 @@ struct IslandView: View {
         let phase = model.phase
         let _ = { Self.animationStyle = preferences.islandAnimation }()
         if let geometry = model.geometry {
+            let asking = model.agents?.requests.isEmpty == false
             let size = model.shapeRect(for: phase).size
             let collapsed = phase == .collapsed
             let flare: CGFloat = collapsed ? 6 : IslandGeometry.openFlare
@@ -221,6 +249,12 @@ struct IslandView: View {
                 // Invisible once collapsed (nothing peeks out beside the notch, nor sits
                 // on a plain menu bar); the tap target stays.
                 shape.fill(faded && !preferences.islandNotchBackground ? Color.clear : Color.black)
+                // Every open panel sits on the same slow smoke; brief flashes stay plain.
+                if Self.hasBackdrop(phase) {
+                    SmokeField(palette: asking && phase == .agents ? Smoke.asking : Smoke.calm,
+                               intensity: asking && phase == .agents ? 1.1 : 0.85, fadeTop: geometry.stripHeight + 18)
+                        .transition(.opacity.animation(Self.contentAnimation))
+                }
                 content(for: phase, strip: geometry.stripHeight)
                     .compositingGroup()
                     .padding(.horizontal, flare) // the body; the flares lie outside it
@@ -229,6 +263,38 @@ struct IslandView: View {
             // frame, and it must overflow downward (clipped), never slide up.
             .frame(width: size.width + flare * 2, height: size.height, alignment: .top)
             .clipShape(shape)
+            // The rim of every open panel: a hairline that catches the light toward
+            // the bottom edge, clear where the shape meets the menu bar.
+            .overlay {
+                if Self.hasBackdrop(phase) {
+                    shape.stroke(LinearGradient(colors: [.clear, .white.opacity(0.05), .white.opacity(0.16)], startPoint: .top, endPoint: .bottom),
+                                 lineWidth: 1)
+                        .allowsHitTesting(false)
+                }
+            }
+            // Behind the clipped shape, so it shows around the outside of it.
+            // One glow, always there: it follows the shape as the island opens and
+            // closes, and only its strength changes. Open panels get a still halo, the
+            // agents list a breathing one; the closed island is a plain notch.
+            .background {
+                AgentGlow(shape: shape, asking: asking && phase == .agents,
+                          fadeTop: geometry.stripHeight + 36,
+                          breathing: phase == .agents,
+                          strength: Self.hasBackdrop(phase) ? 1 : 0)
+            }
+            // While an agent works, a soft shadow breathes around the closed notch;
+            // the notch itself stays plain black.
+            .background(alignment: .top) {
+                if collapsed, geometry.screen.hasNotch, model.agents?.isBusy == true {
+                    NotchGlow(shape: shape, size: CGSize(width: size.width + flare * 2, height: size.height), asking: asking)
+                        .transition(.opacity.animation(.easeOut(duration: 0.4)))
+                        .allowsHitTesting(false)
+                } else if case .status(let status) = phase, status.agentDone != nil {
+                    CompletionGlow(shape: shape, size: CGSize(width: size.width + flare * 2, height: size.height))
+                        .transition(.opacity.animation(.easeOut(duration: 0.3)))
+                        .allowsHitTesting(false)
+                }
+            }
             .contentShape(shape)
             .onTapGesture {
                 if collapsed {
@@ -243,6 +309,7 @@ struct IslandView: View {
             .animation(Self.openAnimation, value: model.panelHeight)
             .animation(Self.openAnimation, value: model.clockHeight)
             .animation(Self.openAnimation, value: model.clockWidth)
+            .animation(Self.listAnimation, value: model.agentsHeight)
             .task(id: phase) {
                 guard collapsed else { faded = false; return } // black at once, then grows
                 try? await Task.sleep(for: .milliseconds(460)) // the close animation
@@ -258,13 +325,17 @@ struct IslandView: View {
     private func content(for phase: IslandModel.Phase, strip: CGFloat) -> some View {
         switch phase {
         case .collapsed:
-            EmptyView()
+            if model.showsAmbient, let agents = model.agents, let geometry = model.geometry, !geometry.screen.hasNotch {
+                AgentAmbientRow(store: agents, notchWidth: max(0, geometry.collapsed.width - 64))
+                    .frame(height: strip)
+                    .transition(.opacity.animation(Self.contentAnimation))
+            }
         case .flash(let item):
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
                 FlashRow(item: item, library: library)
                     .modifier(IdealWidth { model.contentWidth = $0 })
-                    .frame(height: IslandGeometry.flashContentHeight)
+                    .frame(height: IslandGeometry.flashContentHeight, alignment: .top)
             }
             .transition(Self.contentTransition)
         case .status(let status):
@@ -274,10 +345,14 @@ struct IslandView: View {
                     ClockRow(status: clock)
                         .modifier(IdealWidth { model.contentWidth = $0 })
                         .frame(height: IslandGeometry.promptContentHeight)
+                } else if let done = status.agentDone {
+                    AgentDoneRow(done: done)
+                        .modifier(IdealWidth { model.contentWidth = $0 })
+                        .frame(height: IslandGeometry.flashContentHeight, alignment: .top)
                 } else {
                     StatusRow(status: status)
                         .modifier(IdealWidth { model.contentWidth = $0 })
-                        .frame(height: IslandGeometry.flashContentHeight)
+                        .frame(height: IslandGeometry.flashContentHeight, alignment: .top)
                 }
             }
             .transition(Self.contentTransition)
@@ -325,6 +400,17 @@ struct IslandView: View {
                     .frame(width: IslandGeometry.recordWidth)
             }
             .transition(Self.contentTransition)
+        case .agents:
+            VStack(spacing: 0) {
+                Color.clear.frame(height: strip)
+                if let agents = model.agents {
+                    AgentsView(store: agents, openPanel: { model.onOpenPanel() }, close: { model.onAgentsClosed() },
+                               reportHeight: { model.agentsHeight = $0 },
+                               maxHeight: model.geometry.map { $0.expanded.height - $0.stripHeight } ?? IslandPanel.size.height)
+                        .frame(width: IslandGeometry.agentsWidth, height: model.agentsHeight ?? model.estimatedAgentsHeight, alignment: .top)
+                }
+            }
+            .transition(Self.contentTransition)
         case .taskDetail(let id):
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
@@ -348,6 +434,14 @@ struct IslandView: View {
                     .padding(.bottom, IslandGeometry.panelBottomPadding)
             }
             .transition(Self.contentTransition)
+        }
+    }
+
+    /// The panels that stay open to be used: they get the smoke, the rim and the halo.
+    static func hasBackdrop(_ phase: IslandModel.Phase) -> Bool {
+        switch phase {
+        case .expanded, .agents, .clock, .record, .taskDetail, .prompt: true
+        case .collapsed, .flash, .status: false
         }
     }
 
@@ -438,6 +532,8 @@ struct IslandStatus: Equatable, Identifiable {
     var duration: Duration = .seconds(1.8)
     /// Drawn as the clock (large time, prayer bar) instead of the plain line.
     var clock: ClockStatus? = nil
+    /// Drawn as an agent's finished turn instead of the plain line.
+    var agentDone: AgentDone? = nil
 
     /// Green for done, orange for "nothing to do", white otherwise.
     var tint: Color {
@@ -1085,14 +1181,19 @@ struct TaskFormRow: View {
                     .buttonStyle(.plain)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.primary.opacity(0.7))
+                    .lineLimit(1)
+                    .fixedSize()
                     .padding(.horizontal, 12)
                     .frame(height: 30)
                     .background(.primary.opacity(0.1), in: Capsule())
+                    .layoutPriority(2)
                 Button(action: create) {
                     HStack(spacing: 6) {
                         Text(prompt.editing == nil ? "Create" : "Save").font(.system(size: 12, weight: .semibold))
+                            .lineLimit(1)
                         KeyCap("⌘↩")
                     }
+                    .fixedSize()
                     .foregroundStyle(.white)
                     .padding(.leading, 14).padding(.trailing, 8)
                     .frame(height: 30)
@@ -1102,6 +1203,7 @@ struct TaskFormRow: View {
                 .buttonStyle(.plain)
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(!valid)
+                .layoutPriority(2)
             }
         }
         .padding(.horizontal, 18)
@@ -1194,6 +1296,9 @@ struct TaskFormRow: View {
                 Text(store.project(projectID).map { store.path(to: $0.id).map(\.name).joined(separator: " › ") } ?? "No project")
                     .font(.system(size: 12, weight: .medium))
                     .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 150, alignment: .leading)
+                    .fixedSize()
                 Icon("chevron.down", size: 11, weight: .bold)
             }
             .foregroundStyle(.primary)
@@ -1405,22 +1510,16 @@ struct PromptBox<Content: View>: View {
     }
 }
 
-/// The one look every field and card in the forms shares: a faint fill, a hairline
-/// edge a little brighter than it, and — with the focus — a brand edge with a soft
-/// glow. Radius 10 everywhere.
+/// The one look every field and card in the forms shares: a faint fill and no
+/// edge at all; the focused field's fill is a little brighter. Radius 10 everywhere.
 struct FieldChrome: ViewModifier {
     var focused = false
     var radius: CGFloat = 10
 
     func body(content: Content) -> some View {
         content
-            .background(.primary.opacity(focused ? 0.07 : 0.05), in: RoundedRectangle(cornerRadius: radius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .strokeBorder(focused ? Color.brand.opacity(0.85) : .primary.opacity(0.12), lineWidth: focused ? 1.5 : 1)
-            )
-            .shadow(color: Color.brand.opacity(focused ? 0.25 : 0), radius: 6)
-            .animation(.easeOut(duration: 0.12), value: focused)
+            .background(.primary.opacity(focused ? 0.085 : 0.05), in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .animation(.easeOut(duration: 0.15), value: focused)
     }
 }
 

@@ -202,6 +202,83 @@ private struct AppearancePreview: View {
 
 // MARK: - Island & panels
 
+/// Settings › Agents: Claude Code and Codex sessions on the island.
+struct AgentSettingsView: View {
+    @Environment(AppPreferences.self) private var preferences
+    @Environment(AgentConnector.self) private var agents: AgentConnector?
+
+    var body: some View {
+        @Bindable var preferences = preferences
+        SettingsPane(.agents) {
+            SettingsGroup("Agent sessions", footer: "Klik adds a hook to each agent you connect. With Klik not running the hook does nothing, and every question is asked in the terminal as usual.") {
+                SettingsRow("Show agent sessions", subtitle: "Claude Code and Codex sessions beside the notch. Hover to see them; allow, deny and answer their questions from the island.") {
+                    Toggle("Agent sessions", isOn: $preferences.agentSessionsEnabled).toggleStyle(.switch)
+                }
+                SettingsRow("Open when an agent asks", subtitle: "Otherwise the closed island pulses until you hover it.") {
+                    Toggle("Open when asked", isOn: $preferences.agentAutoOpen).toggleStyle(.switch)
+                }
+                .disabled(!preferences.agentSessionsEnabled)
+                if let agents {
+                    ForEach(AgentKind.allCases, id: \.self) { agent in
+                        ForEach(agents.links(for: agent)) { link in
+                            AgentLinkRow(link: link, connector: agents)
+                        }
+                        AgentConnectRow(agent: agent, connector: agents)
+                    }
+                    .disabled(!preferences.agentSessionsEnabled)
+                }
+            }
+            .disabled(!preferences.dynamicIslandEnabled)
+            if !preferences.dynamicIslandEnabled {
+                Text("Turn on the Dynamic Island (Settings › Island) to see agent sessions.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+
+        }
+    }
+}
+
+/// One connected agent folder: its profile, where its hooks are, and Disconnect.
+private struct AgentLinkRow: View {
+    let link: AgentConnector.Link
+    let connector: AgentConnector
+
+    var body: some View {
+        SettingsRow(link.profile.map { "\(link.agent.name) · \($0)" } ?? link.agent.name, subtitle: subtitle,
+                    symbol: link.agent == .claude ? "asterisk" : "terminal", tint: link.agent == .claude ? .orange : .blue) {
+            Button("Disconnect") { connector.disconnect(link.id) }
+        }
+    }
+
+    private var subtitle: String {
+        if let problem = link.problem { return problem }
+        let home = AgentConnector.home.path
+        let folder = link.folder.path.hasPrefix(home) ? "~" + link.folder.path.dropFirst(home.count) : link.folder.path
+        var text = "Connected through \(folder)/\(AgentHooks.settingsFile(for: link.agent))."
+        // Codex skips any hook the user has not reviewed, silently: until then no
+        // Codex session reaches the island.
+        if link.agent == .codex { text += " Codex runs it only once you trust it: in a terminal, run codex, type /hooks, and trust Klik’s hooks (the Codex app uses the same setting)." }
+        return text
+    }
+}
+
+/// Connects an agent's folder: the first one, or another profile.
+private struct AgentConnectRow: View {
+    let agent: AgentKind
+    let connector: AgentConnector
+
+    var body: some View {
+        let another = !connector.links(for: agent).isEmpty
+        SettingsRow(another ? "Another \(agent.name) profile" : agent.name,
+                    subtitle: another ? "Each profile has its own folder (like ~/.\(agent.rawValue)-work); connect each one whose sessions should show."
+                                      : "Not connected. Choose its folder (\(agent == .claude ? "~/.claude" : "~/.codex")) to add Klik’s hook.",
+                    symbol: agent == .claude ? "asterisk" : "terminal", tint: agent == .claude ? .orange : .blue) {
+            Button(another ? "Add…" : "Connect…") { connector.connect(agent) }
+        }
+    }
+}
+
 struct IslandSettingsView: View {
     @Environment(AppPreferences.self) private var preferences
     @Environment(AppModel.self) private var model

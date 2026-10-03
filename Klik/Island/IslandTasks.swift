@@ -145,10 +145,10 @@ struct IslandTasksView: View {
                 if let symbol { Icon(symbol, size: 12, weight: .semibold) }
                 Text(title).font(.system(size: 11, weight: .medium)).lineLimit(1)
             }
-            .foregroundStyle(prominent ? Color.white : .white.opacity(0.75))
+            .foregroundStyle(prominent ? IslandStyle.selectedText : .white.opacity(0.75))
             .padding(.horizontal, 9)
             .frame(height: 22)
-            .background(prominent ? Color.brand.opacity(0.85) : .white.opacity(0.1), in: Capsule())
+            .background(prominent ? IslandStyle.selectedFill : .white.opacity(0.1), in: Capsule())
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -188,9 +188,9 @@ struct IslandTasksView: View {
             withAnimation(.easeOut(duration: 0.15)) { projectLayout = layout }
         } label: {
             Icon(symbol, size: 12, weight: .semibold)
-                .foregroundStyle(projectLayout == layout ? Color.white : .white.opacity(0.7))
+                .foregroundStyle(projectLayout == layout ? IslandStyle.selectedText : .white.opacity(0.7))
                 .frame(width: 24, height: 18)
-                .background(projectLayout == layout ? Color.brand.opacity(0.85) : .clear, in: Capsule())
+                .background(projectLayout == layout ? IslandStyle.selectedFill : .clear, in: Capsule())
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -348,7 +348,7 @@ struct IslandTasksView: View {
             .padding(12)
             .frame(width: 160, height: 140, alignment: .topLeading)
             .background(.white.opacity(hovering ? 0.12 : 0.07), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(hovering ? Color.brand : .white.opacity(0.1), lineWidth: hovering ? 2 : 1))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(hovering ? IslandStyle.hoverRing : .white.opacity(0.1), lineWidth: IslandStyle.hoverRingWidth))
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
             .onTapGesture(perform: open)

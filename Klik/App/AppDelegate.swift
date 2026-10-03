@@ -47,6 +47,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let focusTimer = FocusTimer()
     let syncFolder = SyncFolder()
     private var commandPaletteObserver: (any NSObjectProtocol)?
+    /// Claude Code and Codex sessions, shown and answered on the island.
+    private let agentStore = AgentStore()
+    private lazy var agentConnector = AgentConnector(store: agentStore)
 
     private var settingsWindow: SettingsWindowController?
     private var onboardingWindows: [PermissionKind: HostedWindowController] = [:]
@@ -56,6 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         Clipboard.resolvePromises()
+        agentConnector.tearDown() // waiting agents ask in their terminals again
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -94,7 +98,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
         prayerClock = clock
+        // Questions are only held for the island; without it they go back to the terminal.
+        agentStore.canAsk = { [weak self] in
+            guard let self else { return false }
+            return island != nil && preferences.agentSessionsEnabled
+        }
         applyIslandPreference()
+        applyAgentPreference()
         applyClipboardPreference()
 
         let expander = SnippetExpander(store: snippets, assets: assets, preferences: preferences)
@@ -675,7 +685,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 island.place()
             } else {
                 island = IslandController(library: library, clipboard: clipboard, assets: assets, colors: colors, groups: groups, tasks: tasks, snippets: snippets,
-                                          notes: notes, actions: historyActions, preferences: preferences, clock: prayerClock, focus: focusTimer)
+                                          notes: notes, actions: historyActions, preferences: preferences, clock: prayerClock, focus: focusTimer, agents: agentStore)
                 island?.onSnippetFilled = { [weak self] snippet, values in self?.snippetFilled(snippet, values: values) }
                 library.warmThumbnails()
                 FeedbackHUD.island = { [weak self] status in self?.island?.showStatus(status) ?? false }
@@ -684,6 +694,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             island.tearDown()
             self.island = nil
         }
+    }
+
+    /// Listens for agent sessions while Settings › Island › Agent sessions is on.
+    private func applyAgentPreference() {
+        let enabled = withObservationTracking {
+            preferences.agentSessionsEnabled
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.applyAgentPreference() }
+        }
+        agentConnector.setRunning(enabled)
     }
 
     /// Starts or stops recording the pasteboard as the Settings toggles change.
@@ -1260,7 +1280,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func showSettings(_ sender: Any?) {
         if settingsWindow == nil {
-            let controller = SettingsWindowController(model: model, shortcuts: shortcuts, library: library, clipboard: clipboard, preferences: preferences, addOns: addOns, studio: studioPreferences, clock: prayerClock, share: share, sync: syncFolder, notes: notes, taskSync: taskSync, ocrEngines: ocrEngines)
+            let controller = SettingsWindowController(model: model, shortcuts: shortcuts, library: library, clipboard: clipboard, preferences: preferences, addOns: addOns, studio: studioPreferences, clock: prayerClock, share: share, sync: syncFolder, notes: notes, taskSync: taskSync, ocrEngines: ocrEngines, agents: agentConnector)
             controller.onClose = { [weak self] in
                 self?.settingsWindow = nil
                 self?.shortcuts.isRecording = false

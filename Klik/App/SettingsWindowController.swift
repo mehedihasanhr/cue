@@ -10,7 +10,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     private let navigation = SettingsNavigation()
 
-    init(model: AppModel, shortcuts: ShortcutController, library: CaptureLibrary, clipboard: ClipboardHistory, preferences: AppPreferences, addOns: AddOnRegistry, studio: StudioPreferences, clock: PrayerClock? = nil, share: ShareSettings? = nil, sync: SyncFolder? = nil, notes: NoteStore? = nil, taskSync: TaskSync? = nil, ocrEngines: OCREngines? = nil) {
+    init(model: AppModel, shortcuts: ShortcutController, library: CaptureLibrary, clipboard: ClipboardHistory, preferences: AppPreferences, addOns: AddOnRegistry, studio: StudioPreferences, clock: PrayerClock? = nil, share: ShareSettings? = nil, sync: SyncFolder? = nil, notes: NoteStore? = nil, taskSync: TaskSync? = nil, ocrEngines: OCREngines? = nil, agents: AgentConnector? = nil) {
         // The window is made first so the traffic lights can reach it.
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 920, height: 640), styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
         let buttons = WindowButtons(close: { [weak window] in window?.performClose(nil) },
@@ -31,6 +31,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             .environment(notes)
             .environment(taskSync)
             .environment(ocrEngines)
+            .environment(agents)
             .frame(minWidth: 820, minHeight: 540)
 
         window.contentViewController = NSHostingController(rootView: root)
