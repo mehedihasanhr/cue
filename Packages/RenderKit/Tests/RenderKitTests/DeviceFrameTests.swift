@@ -288,15 +288,17 @@ struct DeviceFrameExportTests {
         let pixels = try await DressingFixtures.frame(of: file, at: 0.5)
         let scene = builder.descriptor(for: edit, at: DressingFixtures.time(0.5))
         let device = try #require(scene.deviceGeometry)
+        // The file is the scene scaled up round its margin, so positions are scaled with it.
+        let k = Double(pixels.width) / scene.outputSize.width
         let height = scene.outputSize.height
         // The bezel's black, above the screen, and the white background outside the body.
-        let bezelY = Int(height - (device.screen.maxY + device.body.maxY - device.rim) / 2)
-        let bezel = pixels.colour(Int(device.body.midX), bezelY)
+        let bezelY = Int(k * (height - (device.screen.maxY + device.body.maxY - device.rim) / 2))
+        let bezel = pixels.colour(Int(k * device.body.midX), bezelY)
         #expect(max(bezel.r, bezel.g, bezel.b) < 0.12, "the bezel is in the file: \(bezel)")
-        let outside = pixels.colour(Int(device.body.midX), Int(height - device.body.maxY) - 4)
+        let outside = pixels.colour(Int(k * device.body.midX), Int(k * (height - device.body.maxY)) - 4)
         #expect(min(outside.r, outside.g, outside.b) > 0.9, "the background round it: \(outside)")
         // And the picture: the fixture's blue-ish frame colour, not black.
-        let middle = pixels.colour(Int(scene.videoFrame.midX), Int(height - scene.videoFrame.midY))
+        let middle = pixels.colour(Int(k * scene.videoFrame.midX), Int(k * (height - scene.videoFrame.midY)))
         #expect(middle.g > 0.25, "the picture is in the screen: \(middle)")
     }
 }

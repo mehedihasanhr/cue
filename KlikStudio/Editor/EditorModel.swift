@@ -2366,7 +2366,7 @@ final class EditorModel {
 
     /// What the finished file would be, before anything is written.
     func exportSize(for settings: ExportSettings) -> CGSize {
-        settings.outputSize(fitting: builder.outputSize(for: timeline.style))
+        settings.outputSize(fitting: builder.sharpOutputSize(for: timeline.style))
     }
 
     /// The user's auto-zoom preferences, or the suggester's own defaults when the editor

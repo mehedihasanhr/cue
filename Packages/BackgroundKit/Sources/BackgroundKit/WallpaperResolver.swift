@@ -19,7 +19,8 @@ public struct WallpaperResolver: Sendable {
         case .klik:
             return GradientPreset(rawValue: id.name).map(WallpaperSource.procedural)
         case .system:
-            let url = WallpaperCatalog.systemFolder.appendingPathComponent(id.name)
+            let name = WallpaperCatalog.fullSizeName(forPreview: id.name) ?? id.name
+            let url = WallpaperCatalog.systemFolder.appendingPathComponent(name)
             return FileManager.default.fileExists(atPath: url.path(percentEncoded: false))
                 ? .file(url) : nil
         case .user:

@@ -41,6 +41,26 @@ struct SceneTests {
         #expect(Int(output.height) % 2 == 0)
     }
 
+    @Test func anExportDrawsAPaddedRecordingPixelForPixel() {
+        var timeline = timeline()
+        timeline.style.padding = 0.06
+        let builder = builder()
+        let project = builder.outputSize(for: timeline.style)
+        let sharp = builder.sharpOutputSize(for: timeline.style)
+
+        #expect(sharp.width > project.width, "a margin must not be paid for in the recording's pixels")
+        let scene = builder.framingDescriptor(for: timeline, at: time(1)).scaled(by: sharp.width / project.width)
+        #expect(abs(scene.videoFrame.width - videoSize.width) <= 2)
+        #expect(abs(sharp.width / sharp.height - project.width / project.height) < 0.01)
+        #expect(Int(sharp.width) % 2 == 0 && Int(sharp.height) % 2 == 0, "encoders reject odd dimensions")
+    }
+
+    @Test func withoutAFrameTheExportIsTheProjectSize() {
+        var style = FrameStyle()
+        style.padding = 0
+        #expect(builder().sharpOutputSize(for: style) == builder().outputSize(for: style))
+    }
+
     @Test func paddingLeavesRoomOnEverySide() {
         var timeline = timeline()
         timeline.style.padding = 0.1

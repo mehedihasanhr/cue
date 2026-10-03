@@ -115,7 +115,9 @@ public actor VideoExporter {
         let builder = sourceSize == .zero ? self.builder : self.builder.resized(to: sourceSize)
 
         let projectSize = builder.outputSize(for: timeline.style)
-        let outputSize = settings.outputSize(fitting: projectSize)
+        // Drawn at the size that keeps the recording pixel for pixel inside its frame,
+        // then brought down under the user's cap if there is one.
+        let outputSize = settings.outputSize(fitting: builder.sharpOutputSize(for: timeline.style))
         let scale = settings.scale(from: projectSize, to: outputSize)
         let frameRate = settings.effectiveFrameRate
         let totalFrames = max(1, Int((timeline.duration.seconds * Double(frameRate)).rounded()))
