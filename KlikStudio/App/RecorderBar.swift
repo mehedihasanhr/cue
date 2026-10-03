@@ -847,18 +847,12 @@ private struct ModeButton: View {
     var body: some View {
         Button(action: action) {
             // A square tile with the glyph alone: the four shapes say which is which, and a
-            // bar of icons sits more quietly over somebody's work than one of words. Fitted
-            // to one height rather than set at a point size: a monitor, a window, a dashed box
-            // and a phone are four shapes, and at one size each inks to a different height.
+            // bar of icons sits more quietly over somebody's work than one of words.
             Image(systemName: mode.symbol)
-                .resizable()
-                .scaledToFit()
-                .fontWeight(.light)
-                .frame(height: BarIcon.mode)
-                .frame(width: 30)
+                .font(BarIcon.font)
             .foregroundStyle(isAvailable ? (isSelected ? Color.white.opacity(0.95) : StudioPalette.offered)
                                          : StudioPalette.unavailable)
-            .frame(width: 44, height: 44)
+            .frame(width: BarIcon.tile, height: BarIcon.tile)
             .background {
                 let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
                 if isSelected {
@@ -934,24 +928,16 @@ private struct InputChipLabel: View {
     let label: String
 
     var body: some View {
-        HStack(spacing: 9) {
-            // One height for the three, for the reason the modes' glyphs have one.
-            Image(systemName: symbol)
-                .resizable()
-                .scaledToFit()
-                .fontWeight(.light)
-                .contentTransition(.symbolEffect(.replace))
-                .frame(height: BarIcon.input)
-                .frame(width: 26)
-        }
+        Image(systemName: symbol)
+            .font(BarIcon.font)
+            .contentTransition(.symbolEffect(.replace))
         // Words and a glyph on the glass, with no pane: on is plain white, off is the
         // same dimmed white the unchosen modes are. What will be recorded still reads
         // across the room — by brightness and by the glyph losing its slash — without three
         // coloured boxes competing with the one thing the bar is for.
         .foregroundStyle(isAvailable ? (isOn ? Color.white : StudioPalette.offered)
                                      : StudioPalette.unavailable)
-        .padding(.horizontal, 10)
-        .frame(height: 40)
+        .frame(width: BarIcon.tile, height: BarIcon.tile)
         .background {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(.white.opacity(isHovering && isAvailable ? 0.07 : 0))
@@ -1033,9 +1019,16 @@ private struct StopPill: View {
 }
 
 /// The heights the bar's glyphs are fitted to.
+/// One size for every glyph on the bar, and one square for each to sit in.
+///
+/// Set as a point size rather than fitted to a box. SF Symbols are drawn so that glyphs at
+/// one point size look one size — a wide monitor and a narrow phone are balanced by their
+/// designers — and fitting each to the same height undid that: the wide ones came out
+/// large and the narrow ones small, and the modes and the inputs were fitted to two
+/// different heights besides.
 private enum BarIcon {
-    static let mode: CGFloat = 22
-    static let input: CGFloat = 18
+    static let font = Font.system(size: 18, weight: .regular)
+    static let tile: CGFloat = 44
 }
 
 /// The red record button: a red disc in a fine white ring, brightening under the pointer.
@@ -1069,13 +1062,13 @@ private struct SettingsGlyph: View {
     var body: some View {
         HStack(spacing: 5) {
             Image(systemName: "gearshape")
-                .font(.system(size: 19, weight: .light))
+                .font(BarIcon.font)
             Image(systemName: "chevron.down")
                 .font(.system(size: 9, weight: .bold))
         }
         .foregroundStyle(.white.opacity(isHovering ? 0.95 : 0.7))
         .padding(.horizontal, 9)
-        .frame(height: 40)
+        .frame(height: BarIcon.tile)
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
             .fill(.white.opacity(isHovering ? 0.07 : 0)))
         .contentShape(Rectangle())
