@@ -26,6 +26,14 @@ struct RecorderBar: View {
     /// now, so choosing a mode and starting a take are two halves of one gesture.
     let showTargets: (RecorderModel.Mode) -> Void
     @Namespace private var modeChip
+    /// One hover pane for the whole setup row, which travels to whatever the pointer is
+    /// over rather than each control lighting up on its own — so sweeping along the bar
+    /// reads as one thing following the hand, the way a tab bar's hover does.
+    @Namespace private var hoverSpace
+    @State private var hovered: String?
+    /// Clears the pane once the pointer has really left, rather than in the few points of
+    /// gap between two controls — where it would blink out and back in.
+    @State private var hoverClear: Task<Void, Never>?
     /// What each shape measured itself at, so the bar can animate an explicit width
     /// between them. One entry per shape rather than a property each, because the shapes
     /// are a closed set and the widths are all the same kind of thing.
@@ -103,6 +111,33 @@ struct RecorderBar: View {
         .blur(radius: hasArrived ? 0 : 6)
         .onAppear(perform: arrive)
         .onChange(of: model.presentations) { _, _ in arrive() }
+    }
+
+    /// The pointer arriving at, or leaving, one of the setup row's controls.
+    private func setHover(_ id: String, _ inside: Bool) {
+        if inside {
+            hoverClear?.cancel()
+            guard hovered != id else { return }
+            // Fades in where it first appears; after that it slides — with the same spring
+            // as the mode chip, so the two panes on the bar move alike. Under Reduce Motion
+            // it moves in a step instead of travelling.
+            let animation: Animation? = hovered == nil ? StudioMotion.hover
+                : (StudioMotion.reduceMotion ? nil : StudioMotion.selection)
+            withAnimation(animation) { hovered = id }
+        } else if hovered == id {
+            hoverClear?.cancel()
+            hoverClear = Task {
+                try? await Task.sleep(for: .milliseconds(90))
+                guard !Task.isCancelled else { return }
+                withAnimation(StudioMotion.hover) { hovered = nil }
+            }
+        }
+    }
+
+    private func slidingHover(_ id: String, isEnabled: Bool = true) -> SlidingHover {
+        SlidingHover(id: id, isShown: hovered == id, space: hoverSpace) { inside in
+            setHover(id, inside && isEnabled)
+        }
     }
 
     private func arrive() {
@@ -220,6 +255,7 @@ struct RecorderBar: View {
                     model.choose(mode)
                     showTargets(mode)
                 }
+                .modifier(slidingHover("mode.\(mode.title)", isEnabled: mode.isAvailable))
             }
         }
         // The highlight used to vanish from one tile and appear on another, which reads
@@ -244,6 +280,7 @@ struct RecorderBar: View {
                           label: model.cameraLabel) {
                 cameraMenu
             }
+            .modifier(slidingHover("input.cameraMenu"))
 
             InputChipMenu(accent: mood.accent,
                           symbol: "mic.slash",
@@ -252,6 +289,7 @@ struct RecorderBar: View {
                           label: model.microphoneLabel) {
                 microphoneMenu
             }
+            .modifier(slidingHover("input.microphoneMenu"))
             // Only once a microphone is on and allowed: the meter listens to it, and this
             // bar never opens a microphone nobody chose.
             if let meter = RecorderCenter.shared?.meter, meter.isListening, !studio.session.state.isTaking {
@@ -269,6 +307,7 @@ struct RecorderBar: View {
                                                        chosen: settings.systemAudioAppIDs)) {
                 systemAudioMenu
             }
+            .modifier(slidingHover("input.systemAudioMenu"))
         }
         .padding(.horizontal, 2)
     }
@@ -394,6 +433,7 @@ struct RecorderBar: View {
             // behind it, only the glyph took the click, and often not even that.
             SettingsGlyph()
         }
+        .modifier(slidingHover("settings"))
         .menuStyle(.button)
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
@@ -842,7 +882,6 @@ private struct ModeButton: View {
     let isAvailable: Bool
     let chip: Namespace.ID
     let action: () -> Void
-    @State private var isHovering = false
 
     var body: some View {
         Button(action: action) {
@@ -865,17 +904,12 @@ private struct ModeButton: View {
                         .overlay(shape.strokeBorder(LinearGradient(colors: [.white.opacity(0.14), .white.opacity(0.02)],
                                                                    startPoint: .top, endPoint: .bottom)))
                         .matchedGeometryEffect(id: "selected", in: chip)
-                } else if isHovering, isAvailable {
-                    shape.fill(.white.opacity(0.06))
                 }
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(BarButtonStyle())
         .disabled(!isAvailable)
-        .onHover { hovering in
-            withAnimation(StudioMotion.hover) { isHovering = hovering }
-        }
         .help(mode.title)
         .accessibilityLabel(mode.title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -891,7 +925,6 @@ private struct InputChipMenu<Content: View>: View {
     let isOn: Bool
     let label: String
     @ViewBuilder let content: Content
-    @State private var isHovering = false
 
     var body: some View {
         // The button menu style with a plain button: the label is drawn by SwiftUI, as
@@ -902,7 +935,7 @@ private struct InputChipMenu<Content: View>: View {
             content
         } label: {
             InputChipLabel(accent: accent, symbol: isOn ? onSymbol : symbol,
-                           isOn: isOn, isAvailable: true, isHovering: isHovering, label: label)
+                           isOn: isOn, isAvailable: true, label: label)
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
@@ -912,9 +945,6 @@ private struct InputChipMenu<Content: View>: View {
         // the words as two.
         .accessibilityElement(children: .combine)
         .accessibilityLabel(label)
-        .onHover { hovering in
-            withAnimation(StudioMotion.hover) { isHovering = hovering }
-        }
         .help(label)
     }
 }
@@ -924,7 +954,6 @@ private struct InputChipLabel: View {
     let symbol: String
     let isOn: Bool
     let isAvailable: Bool
-    let isHovering: Bool
     let label: String
 
     var body: some View {
@@ -938,10 +967,6 @@ private struct InputChipLabel: View {
         .foregroundStyle(isAvailable ? (isOn ? Color.white : StudioPalette.offered)
                                      : StudioPalette.unavailable)
         .frame(width: BarIcon.tile, height: BarIcon.tile)
-        .background {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(.white.opacity(isHovering && isAvailable ? 0.07 : 0))
-        }
         .contentShape(Rectangle())
         .animation(StudioMotion.state, value: isOn)
     }
@@ -1069,8 +1094,6 @@ private struct SettingsGlyph: View {
         .foregroundStyle(.white.opacity(isHovering ? 0.95 : 0.7))
         .padding(.horizontal, 9)
         .frame(height: BarIcon.tile)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .fill(.white.opacity(isHovering ? 0.07 : 0)))
         .contentShape(Rectangle())
         .onHover { hovering in
             withAnimation(StudioMotion.hover) { isHovering = hovering }
@@ -1109,5 +1132,28 @@ private struct WindowDragBackground: NSViewRepresentable {
         override func mouseDown(with event: NSEvent) {
             window?.performDrag(with: event)
         }
+    }
+}
+
+/// The setup row's one hover pane, behind whichever control the pointer is over.
+///
+/// Drawn by the control that has it and matched across all of them, so when the pointer
+/// moves on the pane travels to the next control instead of one fading out and another in.
+private struct SlidingHover: ViewModifier {
+    let id: String
+    let isShown: Bool
+    let space: Namespace.ID
+    let report: (Bool) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                if isShown {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(.white.opacity(0.08))
+                        .matchedGeometryEffect(id: "hover", in: space)
+                }
+            }
+            .onHover(perform: report)
     }
 }
