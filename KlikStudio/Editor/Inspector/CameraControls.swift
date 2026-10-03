@@ -27,17 +27,8 @@ struct CameraControls: View {
             InspectorSubheading("Camera Motion")
                 .help("For every zoom in the project")
 
-            // First, because "too quick" is the first thing anyone says about a zoom. For
-            // every zoom in the project that has not been timed by hand. Three short words
-            // fit the kit's segmented row beside the name, so it is one.
-            InspectorRow("Zoom speed") {
-                StudioSegmented(selection: Binding(
-                    get: { model.timeline.camera.zoomSpeed },
-                    set: { model.setZoomSpeed($0) }
-                ), items: Array(ZoomSpeed.allCases), title: \.title)
-                .fixedSize()
-            }
-            .help("How long every zoom takes to go in and come out — \(String(format: "%.1f", model.timeline.camera.zoomSpeed.transition)) s each way. Zooms you have timed by hand keep their own.")
+            // Zoom speed is not here: it sits beside the selected zoom's own Speed, in
+            // front, where "too quick" is first said.
 
             Group {
                 InspectorSlider(model: model, "Steadiness", systemImage: "hand.raised",

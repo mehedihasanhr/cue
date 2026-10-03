@@ -77,13 +77,17 @@ struct RecorderBar: View {
                 // not claim moves the panel.
                 WindowDragBackground()
                 // Coloured smoke in the glass, saying what the bar is doing before a word
-                // of it is read.
-                BarSmoke(mood: mood)
+                // of it is read — once there is something to say. Before a take the glass is
+                // plain and neutral: a tint over somebody's desktop while nothing is
+                // happening read as decoration, not information.
+                if mood != .ready { BarSmoke(mood: mood) }
             }
         }
         .studioGlass(cornerRadius: StudioPalette.barRadius)
         .clipShape(RoundedRectangle(cornerRadius: StudioPalette.barRadius, style: .continuous))
-        .overlay { BarEdgeLight(mood: mood, cornerRadius: StudioPalette.barRadius) }
+        .overlay {
+            if mood != .ready { BarEdgeLight(mood: mood, cornerRadius: StudioPalette.barRadius) }
+        }
         // One soft shadow, small enough to end inside the window. A wide one was cut off
         // flat at the window's edges, and a coloured one spread a smudge over a white page.
         .shadow(color: .black.opacity(0.22), radius: 8, y: 4)
@@ -166,8 +170,8 @@ struct RecorderBar: View {
 
     private var separator: some View {
         Rectangle()
-            .fill(.white.opacity(0.11))
-            .frame(width: 1, height: 28)
+            .fill(.white.opacity(0.1))
+            .frame(width: 1, height: 38)
             .padding(.horizontal, 10)
     }
 
@@ -188,21 +192,25 @@ struct RecorderBar: View {
 
     private var closeButton: some View {
         Button(action: close) {
+            // A solid white disc with a dark cross, the system's own close for a floating
+            // HUD: the one control on the bar that is not about the recording, set apart by
+            // being the one solid thing on it.
             Image(systemName: "xmark")
-                .font(.system(size: 10.5, weight: .bold))
-                .foregroundStyle(.white.opacity(0.8))
-                .frame(width: 28, height: 28)
-                .background(.white.opacity(0.08), in: Circle())
-                .overlay(Circle().strokeBorder(.white.opacity(0.08)))
+                .font(.system(size: 10, weight: .heavy))
+                .foregroundStyle(Color(white: 0.12))
+                .frame(width: 24, height: 24)
+                .background(.white.opacity(0.92), in: Circle())
+                .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
         }
         .buttonStyle(BarButtonStyle(pressedScale: 0.88))
         .help("Close the recorder")
-        .padding(.leading, 4)
+        .padding(.leading, 8)
+        .padding(.trailing, 2)
     }
 
     /// The four modes in one inset strip, with one glass chip that slides to the choice.
     private var modes: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 6) {
             ForEach(RecorderModel.Mode.allCases) { mode in
                 ModeButton(mode: mode,
                            accent: mood.accent,
@@ -214,9 +222,6 @@ struct RecorderBar: View {
                 }
             }
         }
-        .padding(3)
-        .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.white.opacity(0.06)))
         // The highlight used to vanish from one tile and appear on another, which reads
         // as two events. One chip that slides says the same thing as a single move, and
         // points at where the choice went.
@@ -387,7 +392,7 @@ struct RecorderBar: View {
             // The whole round button is the label, in the button menu style with a plain
             // button, as the input chips are: as a borderless menu with the circle drawn
             // behind it, only the glyph took the click, and often not even that.
-            BarCircleIcon(symbol: "gearshape", size: 14)
+            SettingsGlyph()
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
@@ -838,38 +843,41 @@ private struct ModeButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 7) {
+            // A tile: the glyph over its name, the way a toolbar in a Mac app lays out its
+            // buttons. Four of them read as one row of choices at a glance, and they take
+            // half the width the icon-and-word pills did.
+            VStack(spacing: 4) {
                 // Fitted to one height rather than set at a point size: a monitor, a
                 // window, a dashed box and a phone are four shapes, and at one size each
-                // inks to a different height. Scaled into the same box, every one stands
-                // the same height beside its title.
+                // inks to a different height.
                 Image(systemName: mode.symbol)
                     .resizable()
                     .scaledToFit()
-                    .fontWeight(.medium)
+                    .fontWeight(.light)
                     .frame(height: BarIcon.mode)
-                    .frame(width: 22)
-                Text(mode.title).font(.system(size: 12.5, weight: isSelected ? .semibold : .medium))
+                    .frame(width: 30)
+                Text(mode.title)
+                    .font(.system(size: 11, weight: .regular))
+                    .tracking(0.2)
+                    .lineLimit(1)
             }
-            .foregroundStyle(isAvailable ? (isSelected ? StudioPalette.chosen : StudioPalette.offered)
+            .foregroundStyle(isAvailable ? (isSelected ? Color.white.opacity(0.95) : StudioPalette.offered)
                                          : StudioPalette.unavailable)
-            .padding(.horizontal, 12)
-            .frame(height: 38)
+            .frame(width: 60, height: 54)
             .background {
-                let shape = RoundedRectangle(cornerRadius: 11, style: .continuous)
+                let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
                 if isSelected {
-                    // The one chip, matched across the row: choosing a mode moves it
-                    // rather than extinguishing one tile and lighting another. Glass on
-                    // glass — a lighter pane with a lit top edge and a little lift.
+                    // The one chip, matched across the row: choosing a mode moves it rather
+                    // than extinguishing one tile and lighting another. A pane of lighter
+                    // glass and nothing more — no colour, so the choice reads without
+                    // shouting over the desktop behind the bar.
                     shape
-                        .fill(LinearGradient(colors: [accent.opacity(0.62), accent.opacity(0.4)],
-                                             startPoint: .top, endPoint: .bottom))
-                        .overlay(shape.strokeBorder(LinearGradient(colors: [.white.opacity(0.32), .white.opacity(0.04)],
+                        .fill(.white.opacity(0.1))
+                        .overlay(shape.strokeBorder(LinearGradient(colors: [.white.opacity(0.14), .white.opacity(0.02)],
                                                                    startPoint: .top, endPoint: .bottom)))
-                        .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
                         .matchedGeometryEffect(id: "selected", in: chip)
                 } else if isHovering, isAvailable {
-                    shape.fill(.white.opacity(0.07))
+                    shape.fill(.white.opacity(0.06))
                 }
             }
             .contentShape(Rectangle())
@@ -880,6 +888,7 @@ private struct ModeButton: View {
             withAnimation(StudioMotion.hover) { isHovering = hovering }
         }
         .help(isAvailable ? mode.help : "\(mode.title) isn't built yet")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
@@ -929,30 +938,31 @@ private struct InputChipLabel: View {
     let label: String
 
     var body: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 9) {
             // One height for the three, for the reason the modes' glyphs have one.
             Image(systemName: symbol)
                 .resizable()
                 .scaledToFit()
+                .fontWeight(.light)
                 .contentTransition(.symbolEffect(.replace))
                 .frame(height: BarIcon.input)
-                .frame(width: 24)
+                .frame(width: 26)
             Text(label)
-                .font(.system(size: 12.5, weight: .medium))
+                .font(.system(size: 13.5, weight: .regular))
+                .tracking(0.15)
                 .lineLimit(1)
         }
-        .foregroundStyle(isAvailable ? (isOn ? StudioPalette.chosen : StudioPalette.offered)
+        // Words and a glyph on the glass, with no pane: on is plain white, off is the
+        // same dimmed white the unchosen modes are. What will be recorded still reads
+        // across the room — by brightness and by the glyph losing its slash — without three
+        // coloured boxes competing with the one thing the bar is for.
+        .foregroundStyle(isAvailable ? (isOn ? Color.white : StudioPalette.offered)
                                      : StudioPalette.unavailable)
-        .padding(.horizontal, 11)
-        .frame(height: 38)
+        .padding(.horizontal, 10)
+        .frame(height: 40)
         .background {
-            let shape = RoundedRectangle(cornerRadius: 11, style: .continuous)
-            // On is a lit pane, so what will be recorded is visible across the room; off
-            // is bare glass that only shows itself under the pointer.
-            // Switched on, it wears the bar's colour — the same as the chosen mode.
-            shape.fill(isOn ? AnyShapeStyle(accent.opacity(0.3))
-                            : AnyShapeStyle(.white.opacity(isHovering && isAvailable ? 0.07 : 0)))
-                .overlay(shape.strokeBorder(isOn ? accent.opacity(0.5) : .clear))
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(.white.opacity(isHovering && isAvailable ? 0.07 : 0))
         }
         .contentShape(Rectangle())
         .animation(StudioMotion.state, value: isOn)
@@ -1032,27 +1042,51 @@ private struct StopPill: View {
 
 /// The heights the bar's glyphs are fitted to.
 private enum BarIcon {
-    static let mode: CGFloat = 14
-    static let input: CGFloat = 15
+    static let mode: CGFloat = 22
+    static let input: CGFloat = 18
 }
 
-/// The red record button: a red disc in a white ring, lit from above, glowing under the
-/// pointer.
+/// The red record button: a red disc in a fine white ring, brightening under the pointer.
 private struct RecordGlyph: View {
     @State private var isHovering = false
 
     var body: some View {
         ZStack {
             Circle()
-                .strokeBorder(.white.opacity(0.9), lineWidth: 2.5)
+                .strokeBorder(.white.opacity(isHovering ? 0.95 : 0.8), lineWidth: 2)
             Circle()
-                .fill(LinearGradient(colors: [Color(red: 1, green: 0.36, blue: 0.36), Color(red: 0.88, green: 0.1, blue: 0.14)],
+                .fill(LinearGradient(colors: [Color(red: 1, green: 0.3, blue: 0.3), Color(red: 0.86, green: 0.1, blue: 0.13)],
                                      startPoint: .top, endPoint: .bottom))
-                .padding(isHovering ? 5 : 6)
+                .padding(isHovering ? 4 : 5)
         }
-        .frame(width: 38, height: 38)
-        .shadow(color: .red.opacity(isHovering ? 0.75 : 0.4), radius: isHovering ? 12 : 7)
+        .frame(width: 34, height: 34)
+        // A small, tight glow: a lamp on the control, not a light thrown over the desktop.
+        .shadow(color: .red.opacity(isHovering ? 0.45 : 0.2), radius: isHovering ? 6 : 3)
         .contentShape(Circle())
+        .onHover { hovering in
+            withAnimation(StudioMotion.hover) { isHovering = hovering }
+        }
+    }
+}
+
+/// The settings menu's face: a gear and a chevron, bare on the glass like the inputs, so
+/// it reads as "more choices" rather than as one more button.
+private struct SettingsGlyph: View {
+    @State private var isHovering = false
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "gearshape")
+                .font(.system(size: 19, weight: .light))
+            Image(systemName: "chevron.down")
+                .font(.system(size: 9, weight: .bold))
+        }
+        .foregroundStyle(.white.opacity(isHovering ? 0.95 : 0.7))
+        .padding(.horizontal, 9)
+        .frame(height: 40)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(.white.opacity(isHovering ? 0.07 : 0)))
+        .contentShape(Rectangle())
         .onHover { hovering in
             withAnimation(StudioMotion.hover) { isHovering = hovering }
         }

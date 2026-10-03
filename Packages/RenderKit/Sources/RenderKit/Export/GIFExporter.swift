@@ -76,7 +76,7 @@ struct GIFExporter {
         // The user's cap, then the format's own: a GIF nobody can send is not an export.
         var sized = settings
         sized.maximumDimension = min(settings.maximumDimension ?? .greatestFiniteMagnitude, Self.maximumDimension)
-        let outputSize = sized.outputSize(fitting: projectSize)
+        let outputSize = sized.outputSize(fitting: builder.sharpOutputSize(for: timeline.style))
         let scale = sized.scale(from: projectSize, to: outputSize)
 
         let frameRate = settings.effectiveFrameRate

@@ -115,7 +115,9 @@ public actor VideoExporter {
         let builder = sourceSize == .zero ? self.builder : self.builder.resized(to: sourceSize)
 
         let projectSize = builder.outputSize(for: timeline.style)
-        let outputSize = settings.outputSize(fitting: projectSize)
+        // Drawn at the size that keeps the recording pixel for pixel inside its frame,
+        // then brought down under the user's cap if there is one.
+        let outputSize = settings.outputSize(fitting: builder.sharpOutputSize(for: timeline.style))
         let scale = settings.scale(from: projectSize, to: outputSize)
         let frameRate = settings.effectiveFrameRate
         let totalFrames = max(1, Int((timeline.duration.seconds * Double(frameRate)).rounded()))
@@ -429,6 +431,12 @@ public actor VideoExporter {
             // A keyframe every two seconds: scrubbing the finished file stays responsive
             // without the size penalty of an all-intra stream.
             compression[AVVideoMaxKeyFrameIntervalDurationKey] = 2
+            // An export is not live: quality over speed, and H.264's High profile, whose
+            // 8×8 transform keeps small text far cleaner than Main's 4×4 alone.
+            compression[kVTCompressionPropertyKey_PrioritizeEncodingSpeedOverQuality as String] = false
+            if codec == .h264 {
+                compression[AVVideoProfileLevelKey] = AVVideoProfileLevelH264HighAutoLevel
+            }
         }
         if settings.keepsTransparency {
             // Core Image draws with its colours already multiplied by their alpha, and the

@@ -126,7 +126,11 @@ struct ProResExportTests {
         let asset = AVURLAsset(url: file)
         let video = try #require(try await asset.loadTracks(withMediaType: .video).first)
         #expect(try await codecType(of: video) == kCMVideoCodecType_AppleProRes4444)
-        #expect(try await video.load(.naturalSize) == CGSize(width: 640, height: 360))
+        // Uncapped, so grown round its margin until the 640 × 360 recording is drawn pixel
+        // for pixel inside it.
+        let expected = SceneBuilder(videoSize: CGSize(width: 640, height: 360)).sharpOutputSize(for: FrameStyle())
+        #expect(expected.width >= 640)
+        #expect(try await video.load(.naturalSize) == expected)
         #expect(abs(try await video.load(.nominalFrameRate) - 24) < 0.5)
         #expect(abs(try await asset.load(.duration).seconds - 1.5) < 0.1)
         #expect(try await asset.loadTracks(withMediaType: .audio).isEmpty, "no sound was asked for")

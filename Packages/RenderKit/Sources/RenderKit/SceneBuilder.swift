@@ -84,6 +84,46 @@ public struct SceneBuilder: Sendable {
         return CGSize(width: width, height: height)
     }
 
+    /// The size a finished file is drawn at: the output frame, grown until the recording
+    /// inside it is drawn pixel for pixel.
+    ///
+    /// Padding, a window's bar or a device all shrink the picture to fit inside the frame,
+    /// so an export the recording's own size drew a 3024-pixel recording about 2660 pixels
+    /// across — every line of text resampled smaller, and soft for it. Grown by the same
+    /// factor, the recording keeps every pixel it was captured with and the frame is added
+    /// round it, the way a screenshot with a margin keeps the screenshot sharp. The scene is
+    /// still laid out at `outputSize(for:)` and scaled up whole, so nothing moves.
+    public func sharpOutputSize(for style: FrameStyle) -> CGSize {
+        let size = outputSize(for: style)
+        let fit = pictureFit(in: size, style: style)
+        guard fit > 0, fit < 1 else { return size }
+        // Not past what a finished video is ever asked to be: a 6K recording in a deep
+        // margin would otherwise ask the encoder for a frame it refuses.
+        let grow = min(1 / fit, Self.largestOutput / max(size.width, size.height))
+        guard grow > 1 else { return size }
+        return CGSize(width: max(2, (size.width * grow / 2).rounded() * 2),
+                      height: max(2, (size.height * grow / 2).rounded() * 2))
+    }
+
+    /// The longest side an export is grown to, and no further.
+    static let largestOutput: CGFloat = 6_144
+
+    /// How much the picture is scaled to fit inside a canvas this size, once the padding
+    /// and any window or device round it have taken their room.
+    func pictureFit(in output: CGSize, style: FrameStyle) -> CGFloat {
+        let shorter = min(output.width, output.height)
+        let inset = shorter * style.padding
+        let available = CGSize(width: max(1, output.width - inset * 2),
+                               height: max(1, output.height - inset * 2))
+        let source = croppedVideoSize(for: style)
+        guard source.width > 0, source.height > 0 else { return 1 }
+        let bar = SceneRenderer.barFraction(for: style.chrome.kind)
+        let device = DeviceLayer(style.chrome, pictureSize: source)
+        let whole = device.map { DeviceGeometry.bodySize($0, picture: source) }
+            ?? CGSize(width: source.width, height: source.height + bar * min(source.width, source.height))
+        return min(available.width / whole.width, available.height / whole.height)
+    }
+
     /// Everything about one frame of the finished video but its dressing — the window
     /// round the picture and the camera's motion blur, which `descriptor(for:at:cursor:)`
     /// adds from what this has worked out.

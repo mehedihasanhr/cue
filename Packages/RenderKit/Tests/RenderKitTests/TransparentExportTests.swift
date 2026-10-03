@@ -73,7 +73,8 @@ struct TransparentExportTests {
     private func expectSeeThrough(_ file: URL) async throws {
         for seconds in [0.0, 0.7] {
             let frame = try await DressingFixtures.frame(of: file, at: seconds)
-            #expect(frame.width == Int(size.width))
+            // Grown round its margin, so the recording inside is drawn pixel for pixel.
+            #expect(frame.width == Int(SceneBuilder(videoSize: size).sharpOutputSize(for: timeline().style).width))
             #expect(frame.alpha(2, 2) < 0.02, "the corner is see-through at \(seconds)s")
             #expect(frame.alpha(frame.width - 3, frame.height / 2) < 0.02)
             #expect(frame.alpha(frame.width / 2, frame.height / 2) > 0.98, "the picture is solid at \(seconds)s")

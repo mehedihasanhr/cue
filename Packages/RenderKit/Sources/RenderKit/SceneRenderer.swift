@@ -361,7 +361,11 @@ public final class SceneRenderer: @unchecked Sendable {
             // (`SceneBuilder.pictureCrop(at:)`) must not bring a trace of it back. Its own
             // edge pixels, repeated outwards, are what the filter should see, and the result
             // is cut back to exactly where the picture goes.
-            image = image.clampedToExtent().transformed(by: placement).cropped(to: target)
+            image = magnified(image.clampedToExtent(), by: placement).cropped(to: target)
+        } else if max(sx, sy) > Self.lanczosFrom {
+            // The edge pixels repeated outwards here too: Lanczos reaches three pixels past
+            // the edge, and past it is nothing.
+            image = magnified(image.clampedToExtent(), by: placement).cropped(to: target)
         } else {
             image = image.transformed(by: placement)
         }
@@ -751,6 +755,30 @@ public final class SceneRenderer: @unchecked Sendable {
     /// whose strength follows the magnification restores the edge — none at all at 1×, so a
     /// picture shown at its own size or smaller is untouched, and its full strength by 1.4×.
     /// Its radius grows with the scale, because the blur it undoes does.
+    /// From how much magnification the picture is enlarged with Lanczos rather than
+    /// bilinear sampling.
+    static let lanczosFrom: CGFloat = 1.02
+
+    /// The picture placed by `placement`, enlarged with a Lanczos filter once it is being
+    /// magnified.
+    ///
+    /// Core Image's own resampling is bilinear, which blends each output pixel from the
+    /// nearest four: at the 1.8× of an ordinary zoom that turns a one-pixel stroke of text
+    /// into a two-pixel ramp, and the zoomed picture — the stretch the zoom exists to show
+    /// close up — is the softest part of the video. Lanczos looks three pixels out each way
+    /// and keeps the edge an edge. Below the threshold the picture is drawn at its own size
+    /// or smaller, where bilinear is already exact enough and the extra taps buy nothing.
+    func magnified(_ image: CIImage, by placement: CGAffineTransform) -> CIImage {
+        let sx = placement.a, sy = placement.d
+        guard max(sx, sy) > Self.lanczosFrom, sx > 0, sy > 0 else { return image.transformed(by: placement) }
+        // Lanczos scales about the origin — height by `scale`, width by `scale × aspect` —
+        // which is exactly the scale part of `placement`; its slide is applied after.
+        return image
+            .applyingFilter("CILanczosScaleTransform", parameters: [kCIInputScaleKey: Double(sy),
+                                                                    kCIInputAspectRatioKey: Double(sx / sy)])
+            .transformed(by: CGAffineTransform(translationX: placement.tx, y: placement.ty))
+    }
+
     func sharpenedForMagnification(_ image: CIImage, scale: CGFloat) -> CIImage {
         let start: CGFloat = 1.05, full: CGFloat = 1.4
         guard scale > start else { return image }

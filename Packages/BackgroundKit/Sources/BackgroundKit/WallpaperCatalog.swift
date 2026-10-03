@@ -32,11 +32,18 @@ public final class WallpaperCatalog {
     /// `Solid Colors/` is a folder, and a flat listing silently drops every one of them.
     /// The `.madesktop` stubs beside them are not images and are filtered out by
     /// extension.
+    ///
+    /// Hidden folders are skipped. Since macOS Sonoma most desktop pictures are not on disk
+    /// at all — the folder holds a `.madesktop` stub for each, and a hidden `.thumbnails`
+    /// folder of 356-pixel previews — and listing those previews offered wallpapers that
+    /// were drawn behind a 3000-pixel recording at a ninth of their size. What macOS has
+    /// downloaded in full is added from its asset store instead.
     @ObservationIgnored public private(set) lazy var systemWallpapers: [Wallpaper] = {
         let manager = FileManager.default
         let top = (try? manager.contentsOfDirectory(at: Self.systemFolder,
-                                                    includingPropertiesForKeys: [.isDirectoryKey])) ?? []
-        var found: [Wallpaper] = []
+                                                    includingPropertiesForKeys: [.isDirectoryKey],
+                                                    options: [.skipsHiddenFiles])) ?? []
+        var found: [Wallpaper] = Self.downloadedPictures().map { Wallpaper(name: $0, bookmark: nil) }
         for url in top {
             let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
             if isDirectory {
@@ -48,7 +55,13 @@ public final class WallpaperCatalog {
                 found.append(Wallpaper(name: url.lastPathComponent, bookmark: nil))
             }
         }
-        return found.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+        // Pictures first, then the plain colours from the folders: a row of the first eight
+        // that opened on Black and Blue Violet showed nothing anyone opens wallpapers for.
+        return found.sorted { a, b in
+            let aInFolder = a.name.hasPrefix("Solid Colors/"), bInFolder = b.name.hasPrefix("Solid Colors/")
+            if aInFolder != bInFolder { return !aInFolder }
+            return a.title.localizedStandardCompare(b.title) == .orderedAscending
+        }
     }()
 
     /// Wallpapers the user added from disk this session (persisted in the document as bookmarks).
@@ -128,6 +141,35 @@ public final class WallpaperCatalog {
             kCGImageSourceThumbnailMaxPixelSize: maxPixels,
         ]
         return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+    }
+
+    /// Where macOS keeps the desktop pictures it has downloaded in full.
+    nonisolated static let downloadedFolder = URL(fileURLWithPath: "/System/Library/AssetsV2/com_apple_MobileAsset_DesktopPicture",
+                                                  isDirectory: true)
+
+    /// The full-size pictures macOS has downloaded, as names relative to `systemFolder`
+    /// — which keeps them in the `system:` namespace a document already understands.
+    nonisolated static func downloadedPictures() -> [String] {
+        guard let walker = FileManager.default.enumerator(at: downloadedFolder,
+                                                          includingPropertiesForKeys: nil,
+                                                          options: [.skipsHiddenFiles]) else { return [] }
+        var names: [String] = []
+        for case let url as URL in walker where imageExtensions.contains(url.pathExtension.lowercased()) {
+            let relative = url.path(percentEncoded: false)
+                .replacingOccurrences(of: downloadedFolder.path(percentEncoded: false), with: "")
+                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            names.append("../AssetsV2/com_apple_MobileAsset_DesktopPicture/" + relative)
+        }
+        return names
+    }
+
+    /// The full-size picture for one of the system's 356-pixel previews, when macOS has
+    /// downloaded it. A project saved while the picker still offered the previews names
+    /// `.thumbnails/Big Sur Coastline.heic`; this is how it gets the real picture back.
+    nonisolated static func fullSizeName(forPreview name: String) -> String? {
+        guard name.hasPrefix(".thumbnails/") else { return nil }
+        let title = (name as NSString).lastPathComponent
+        return downloadedPictures().first { ($0 as NSString).lastPathComponent == title }
     }
 
     func url(for wallpaper: Wallpaper) -> URL? {
