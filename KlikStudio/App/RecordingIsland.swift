@@ -47,8 +47,10 @@ final class RecordingIsland {
     func show(below barFrame: NSRect?) {
         let panel = panel ?? makePanel()
         let screen = barFrame.flatMap { Self.screen(at: CGPoint(x: $0.midX, y: $0.midY)) } ?? NSScreen.main ?? NSScreen.screens[0]
-        let center = lastCenter ?? CGPoint(x: barFrame?.midX ?? screen.frame.midX,
-                                           y: screen.frame.minY + Self.wide.compact.height / 2)
+        // The right edge, half way up, the first time: out of the way of the dock, the
+        // menu bar and most of what gets recorded.
+        let center = lastCenter ?? CGPoint(x: screen.frame.maxX - Self.tall.compact.width / 2,
+                                           y: screen.frame.midY)
         let landing = resting(for: center)
         state.isHovering = false
         if StudioMotion.reduceMotion {
@@ -61,12 +63,34 @@ final class RecordingIsland {
             animate(to: landing)
         }
         panel.orderFrontRegardless()
+        // On screen with the island, empty until a drag fills it. Putting a window up in
+        // the middle of a drag cut the drag short: the island stopped following the
+        // pointer as soon as the frame appeared.
+        if let screen = Self.screen(at: center) { deviceFrame.show(on: screen, below: panel) }
     }
 
     func hide() {
         settle?.invalidate()
         settle = nil
+        state.bezel = 0
+        deviceFrame.hide()
         panel?.orderOut(nil)
+    }
+
+    // MARK: - The device's frame
+
+    /// The black frame drawn round the screen while the island is carried, for it to
+    /// cling to and pour back into — the bezel of the device it lives on, made visible.
+    private lazy var deviceFrame = DeviceFrame(state: state)
+    /// How deep the frame comes into the screen.
+    fileprivate static let bezel: CGFloat = 8
+
+    private func showFrame() {
+        withAnimation(.easeOut(duration: 0.22)) { state.bezel = Self.bezel }
+    }
+
+    private func fadeFrame() {
+        withAnimation(.easeIn(duration: 0.3)) { state.bezel = 0 }
     }
 
     // MARK: - The window
@@ -108,16 +132,36 @@ final class RecordingIsland {
         settle?.invalidate()
         settle = nil
         dragStart = (mouse, center)
+        if !StudioMotion.reduceMotion { showFrame() }
     }
 
     private func dragMoved(to mouse: CGPoint) {
         guard let start = dragStart else { return }
-        place(at: clamped(CGPoint(x: start.center.x + mouse.x - start.mouse.x,
-                                  y: start.center.y + mouse.y - start.mouse.y)))
+        // Collapsed while carried: the buttons are no use mid-air, and a small drop is
+        // what pours into the frame.
+        if !state.isCarried {
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) { state.isCarried = true }
+        }
+        let wanted = clamped(CGPoint(x: start.center.x + mouse.x - start.mouse.x,
+                                     y: start.center.y + mouse.y - start.mouse.y))
+        place(at: magnetized(wanted))
+    }
+
+    /// Held by the nearest edge while it is close: the island lags the pointer, slowly
+    /// at first and then all at once, so it has to be pulled off the frame rather than
+    /// simply lifted — the neck stretching while it does.
+    private func magnetized(_ point: CGPoint) -> CGPoint {
+        let near = nearest(at: point)
+        guard near.distance > 0, near.distance < Self.snap else { return point }
+        let held = Self.snap * pow(near.distance / Self.snap, 2)
+        return Self.offset(point, into: near.edge, by: near.distance - held)
     }
 
     private func dragEnded(click: Bool) {
         dragStart = nil
+        if state.isCarried {
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) { state.isCarried = false }
+        }
         if click {
             expand()
             return
@@ -207,6 +251,7 @@ final class RecordingIsland {
         settle?.invalidate()
         guard !StudioMotion.reduceMotion else {
             place(at: target)
+            fadeFrame()
             return
         }
         velocity = .zero
@@ -231,6 +276,7 @@ final class RecordingIsland {
         if done {
             settle?.invalidate()
             settle = nil
+            fadeFrame()
         }
     }
 
@@ -261,10 +307,18 @@ private final class IslandState {
     var isHovering = false
     /// Upright, along a side edge, rather than lying along the top or bottom.
     var isStanding = false
+    /// Being dragged: kept at its smallest whatever the pointer is over.
+    var isCarried = false
+    /// Open to show pause and stop: under the pointer, and not while carried.
+    var isOpen: Bool { isHovering && !isCarried }
+    /// How far the device's frame reaches into the screen: none at rest, the frame's
+    /// depth while the island is carried. The island's ink pours into the frame's inner
+    /// edge, so the two have to agree on it at every moment of a fade.
+    var bezel: CGFloat = 0
 
     var size: CGSize {
         let shape = isStanding ? RecordingIsland.tall : RecordingIsland.wide
-        return isHovering ? shape.open : shape.compact
+        return isOpen ? shape.open : shape.compact
     }
 }
 
@@ -288,7 +342,7 @@ private struct IslandView: View {
                 // not take — so an ink that ignored hits let every move under the island
                 // reach the app beneath, which lit up its own hover states, and let presses
                 // meant for the island land there too.
-                IslandInk(size: state.size, gap: state.gap, edge: state.edge)
+                IslandInk(size: state.size, gap: state.gap, bezel: state.bezel, edge: state.edge)
                 controls
                     .frame(width: island.width, height: island.height)
                     // Behind the buttons, so a press anywhere else on the island is the
@@ -308,37 +362,27 @@ private struct IslandView: View {
     }
 
     /// The clock, then pause and stop once it opens — in a row while it lies down, in a
-    /// column while it stands.
-    @ViewBuilder
+    /// column while it stands. One set of views in a layout that changes, so turning
+    /// moves the dot, the time and the buttons to their new places rather than fading one
+    /// arrangement out and another in.
     private var controls: some View {
-        if state.isStanding {
-            VStack(spacing: 0) {
-                clock(stacked: true)
-                    .frame(height: RecordingIsland.tall.compact.height)
-                    .allowsHitTesting(false)
-                if state.isHovering {
-                    VStack(spacing: 2) { pauseButton; stopButton }
-                        .buttonStyle(BarButtonStyle())
-                        .disabled(!studio.session.state.isTaking)
-                        .transition(.opacity.combined(with: .scale(scale: 0.8, anchor: .top)))
-                }
-                Spacer(minLength: 0)
+        let standing = state.isStanding
+        let line = standing ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 0))
+        let pair = standing ? AnyLayout(VStackLayout(spacing: 2)) : AnyLayout(HStackLayout(spacing: 2))
+        let rest = standing ? RecordingIsland.tall.compact : RecordingIsland.wide.compact
+        return line {
+            clock(stacked: standing)
+                .padding(.leading, standing ? 0 : 14)
+                .frame(width: rest.width, height: rest.height, alignment: standing ? .center : .leading)
+                .allowsHitTesting(false)
+            if state.isOpen {
+                pair { pauseButton; stopButton }
+                    .buttonStyle(BarButtonStyle())
+                    .disabled(!studio.session.state.isTaking)
+                    .padding(.trailing, standing ? 0 : 10)
+                    .transition(.opacity.combined(with: .scale(scale: 0.8, anchor: standing ? .top : .leading)))
             }
-        } else {
-            HStack(spacing: 0) {
-                clock(stacked: false)
-                    .padding(.leading, 14)
-                    .frame(width: RecordingIsland.wide.compact.width, alignment: .leading)
-                    .allowsHitTesting(false)
-                if state.isHovering {
-                    HStack(spacing: 2) { pauseButton; stopButton }
-                        .buttonStyle(BarButtonStyle())
-                        .disabled(!studio.session.state.isTaking)
-                        .padding(.trailing, 10)
-                        .transition(.opacity.combined(with: .scale(scale: 0.8, anchor: .leading)))
-                }
-                Spacer(minLength: 0)
-            }
+            Spacer(minLength: 0)
         }
     }
 
@@ -412,11 +456,15 @@ private struct IslandView: View {
 private struct IslandInk: View, Animatable {
     var size: CGSize
     let gap: CGFloat
+    var bezel: CGFloat
     let edge: Edge
 
-    var animatableData: AnimatablePair<CGFloat, CGFloat> {
-        get { AnimatablePair(size.width, size.height) }
-        set { size = CGSize(width: newValue.first, height: newValue.second) }
+    var animatableData: AnimatablePair<AnimatablePair<CGFloat, CGFloat>, CGFloat> {
+        get { AnimatablePair(AnimatablePair(size.width, size.height), bezel) }
+        set {
+            size = CGSize(width: newValue.first.first, height: newValue.first.second)
+            bezel = newValue.second
+        }
     }
 
     /// The island in the window. Its resting middle is the window's middle, and it opens
@@ -430,19 +478,38 @@ private struct IslandInk: View, Animatable {
         Canvas { context, size in
             let island = Self.rect(in: size, size: self.size)
             context.addFilter(.alphaThreshold(min: 0.5, color: .black))
-            context.addFilter(.blur(radius: 6))
+            context.addFilter(.blur(radius: 7))
             context.drawLayer { layer in
                 layer.fill(Path(roundedRect: island, cornerRadius: 15, style: .continuous), with: .color(.black))
                 // The screen's edge: a block just past it, of which nothing shows but the
                 // part that flows in to meet the island.
                 let depth: CGFloat = 80, flare: CGFloat = 20
+                // Its near side is the frame's inner edge, `bezel` in from the screen's.
+                let reach = gap - bezel
                 let block: CGRect = switch edge {
-                case .bottom: CGRect(x: island.minX - flare, y: island.maxY + gap, width: island.width + flare * 2, height: depth)
-                case .top: CGRect(x: island.minX - flare, y: island.minY - gap - depth, width: island.width + flare * 2, height: depth)
-                case .leading: CGRect(x: island.minX - gap - depth, y: island.minY - flare, width: depth, height: island.height + flare * 2)
-                case .trailing: CGRect(x: island.maxX + gap, y: island.minY - flare, width: depth, height: island.height + flare * 2)
+                case .bottom: CGRect(x: island.minX - flare, y: island.maxY + reach, width: island.width + flare * 2, height: depth)
+                case .top: CGRect(x: island.minX - flare, y: island.minY - reach - depth, width: island.width + flare * 2, height: depth)
+                case .leading: CGRect(x: island.minX - reach - depth, y: island.minY - flare, width: depth, height: island.height + flare * 2)
+                case .trailing: CGRect(x: island.maxX + reach, y: island.minY - flare, width: depth, height: island.height + flare * 2)
                 }
                 layer.fill(Path(block), with: .color(.black))
+                // The neck: a column of ink between the island and the frame, thinning as
+                // the island is pulled away until it parts. The blur and the cut above
+                // turn it into the stretched drop of the liquid; without it the two
+                // parted at a few points, before anything had visibly stretched.
+                let breakAt: CGFloat = 44
+                if reach > 0, reach < breakAt {
+                    let base = min(island.width, island.height) * 0.62
+                    let width = base * pow(1 - reach / breakAt, 0.75)
+                    let overlap: CGFloat = 8
+                    let neck: CGRect = switch edge {
+                    case .bottom: CGRect(x: island.midX - width / 2, y: island.maxY - overlap, width: width, height: reach + overlap * 2)
+                    case .top: CGRect(x: island.midX - width / 2, y: island.minY - reach - overlap, width: width, height: reach + overlap * 2)
+                    case .leading: CGRect(x: island.minX - reach - overlap, y: island.midY - width / 2, width: reach + overlap * 2, height: width)
+                    case .trailing: CGRect(x: island.maxX - overlap, y: island.midY - width / 2, width: reach + overlap * 2, height: width)
+                    }
+                    if width > 1.5 { layer.fill(Path(neck), with: .color(.black)) }
+                }
             }
         }
     }
@@ -499,5 +566,78 @@ private struct IslandHandle: NSViewRepresentable {
             let top = NSScreen.screens.first?.frame.maxY ?? 0
             return CGPoint(x: global.x, y: top - global.y)
         }
+    }
+}
+
+/// The device's black frame round the screen, shown while the island is carried.
+///
+/// A window of its own, the size of the screen, that the pointer passes straight through.
+/// The island draws the same edge into its own ink, just where this frame's inner edge
+/// is, so the neck it pulls out of the frame is one piece with it.
+@MainActor
+private final class DeviceFrame {
+    private let state: IslandState
+    private var panel: NSPanel?
+
+    init(state: IslandState) {
+        self.state = state
+    }
+
+    func show(on screen: NSScreen, below island: NSWindow) {
+        let panel = panel ?? make()
+        panel.setFrame(screen.frame, display: false)
+        panel.order(.below, relativeTo: island.windowNumber)
+    }
+
+    func hide() {
+        panel?.orderOut(nil)
+    }
+
+    private func make() -> NSPanel {
+        let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
+                            backing: .buffered, defer: false)
+        let hosting = NSHostingView(rootView: DeviceFrameView(state: state))
+        hosting.sizingOptions = []
+        panel.contentView = hosting
+        panel.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = false
+        panel.ignoresMouseEvents = true
+        panel.hidesOnDeactivate = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        panel.isExcludedFromWindowsMenu = true
+        panel.animationBehavior = .none
+        self.panel = panel
+        return panel
+    }
+}
+
+private struct DeviceFrameView: View {
+    let state: IslandState
+
+    var body: some View {
+        Bezel(depth: state.bezel)
+            .fill(.black, style: FillStyle(eoFill: true))
+            .ignoresSafeArea()
+    }
+}
+
+/// The screen with a rounded hole in it: a band `depth` deep all the way round, its inner
+/// corners rounded like a display's, and nothing at all at a depth of zero.
+nonisolated private struct Bezel: Shape {
+    var depth: CGFloat
+
+    var animatableData: CGFloat {
+        get { depth }
+        set { depth = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path(rect)
+        let radius = depth * 1.75
+        path.addRoundedRect(in: rect.insetBy(dx: depth, dy: depth),
+                            cornerSize: CGSize(width: radius, height: radius), style: .continuous)
+        return path
     }
 }
