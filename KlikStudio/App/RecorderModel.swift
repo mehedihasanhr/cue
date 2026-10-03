@@ -97,6 +97,9 @@ final class RecorderModel {
     private(set) var mode: Mode = .display
     /// How many times the bar has been put on screen, so it can spring in each time.
     var presentations = 0
+    /// The bar put away for the rest of a take, its controls left to the menu bar icon.
+    /// Cleared whenever the bar is shown again, and when the take is over.
+    var isMinimized = false
     /// What will be recorded when the button is pressed.
     private(set) var target: CaptureTarget?
     /// What that target is called, for the bar to show.

@@ -24,9 +24,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         var toggleNotes: () -> Void = {}
         var showRecordings: () -> Void = {}
         var openSettings: () -> Void = {}
+        var showBar: () -> Void = {}
     }
 
     var actions = Actions()
+    /// The bar is put away, so the menu offers it back first.
+    var isBarMinimized = false
     private let studio: StudioService
     private let preferences: RecorderPreferences
     private var item: NSStatusItem?
@@ -110,6 +113,13 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
         menu.addItem(heading(for: state))
         menu.addItem(.separator())
+
+        if isBarMinimized {
+            menu.addItem(entry("Show Recorder Bar", enabled: true, why: "") { [weak self] in
+                self?.actions.showBar()
+            })
+            menu.addItem(.separator())
+        }
 
         let notReady = "Finish or stop the recording first."
         menu.addItem(entry("Record Screen", enabled: idle, why: notReady) { [weak self] in

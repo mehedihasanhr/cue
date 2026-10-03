@@ -20,6 +20,8 @@ struct RecorderBar: View {
     @Environment(StudioSettings.self) private var settings
     let model: RecorderModel
     let close: () -> Void
+    /// Hides the bar for the rest of the take, leaving it to the menu bar icon.
+    let minimize: () -> Void
     let showLibrary: () -> Void
     let openSettings: () -> Void
     /// Raises the screen-filling overlay that names what was chosen. Record lives there
@@ -43,10 +45,6 @@ struct RecorderBar: View {
     @State private var widths: [Shape: CGFloat] = [:]
     /// Whether the bar has arrived on screen — false for the instant before it springs in.
     @State private var hasArrived = false
-    /// The take's bar folded down to the clock, pause and stop, for a recording that wants
-    /// as little of the screen as possible. Kept for the next take: whoever folded it once
-    /// wants the room again.
-    @State private var isMinimized = false
 
     /// The four things the bar can be. Every state of the session maps onto exactly one of
     /// them — `SessionStateTests` holds that to be true, because a state with no shape is
@@ -58,8 +56,6 @@ struct RecorderBar: View {
         case starting
         /// Recording, held, or finishing.
         case take
-        /// The same take, folded down to the clock, pause and stop.
-        case mini
         /// It went wrong, and the reason has to be readable.
         case failure
         /// Restart was asked for a take long enough to be worth asking about.
@@ -78,7 +74,6 @@ struct RecorderBar: View {
         ZStack {
             layer(.setup) { setupControls }
             layer(.take) { recordingControls }
-            layer(.mini) { miniControls }
             layer(.starting) { startingControls }
             // Mounted with a stand-in when nothing has failed, for the same reason the
             // hidden timer below exists: an unmeasured layer has no width, so the bar would
@@ -183,7 +178,7 @@ struct RecorderBar: View {
         switch shape {
         case .setup: .ready
         case .starting: .live
-        case .take, .mini: studio.session.isPaused ? .held : .live
+        case .take: studio.session.isPaused ? .held : .live
         case .failure, .confirmRestart: .alert
         }
     }
@@ -219,7 +214,7 @@ struct RecorderBar: View {
         if studio.restartPending, studio.session.state.isTaking { return .confirmRestart }
         return switch studio.session.state {
         case .preparing, .countdown: .starting
-        case .recording, .paused, .finishing: isMinimized ? .mini : .take
+        case .recording, .paused, .finishing: .take
         case .failed: .failure
         // `.finished` deliberately has no shape of its own. The take is written and the
         // editor is already coming up over the bar; what the bar owes the user at that
@@ -511,11 +506,11 @@ struct RecorderBar: View {
             .help("Discard this recording")
             .modifier(slidingHover("take.discard", isEnabled: studio.session.state.isTaking))
 
-            Button { setMinimized(true) } label: {
+            Button(action: hide) {
                 BarTileIcon(symbol: "arrow.down.right.and.arrow.up.left")
             }
             .buttonStyle(BarButtonStyle())
-            .help("Minimize the bar")
+            .help("Hide the bar \u{2014} the menu bar icon keeps the time, pause and stop")
             .accessibilityLabel("Minimize")
             .modifier(slidingHover("take.minimize"))
 
@@ -527,31 +522,12 @@ struct RecorderBar: View {
         .animation(StudioMotion.state, value: studio.session.diskWarning)
     }
 
-    /// The take folded down: the clock, pause, stop, and the way back to the whole bar.
-    private var miniControls: some View {
-        HStack(spacing: 0) {
-            timer
-                .padding(.trailing, 6)
-            pauseButton
-                .modifier(slidingHover("mini.pause", isEnabled: studio.session.state.isTaking))
-            Button { setMinimized(false) } label: {
-                BarTileIcon(symbol: "arrow.up.left.and.arrow.down.right")
-            }
-            .buttonStyle(BarButtonStyle())
-            .help("Show the whole bar")
-            .accessibilityLabel("Expand")
-            .modifier(slidingHover("mini.expand"))
-            stopButton
-        }
-        .backgroundPreferenceValue(HoverAnchors.self, hoverPane)
-    }
-
-    private func setMinimized(_ minimized: Bool) {
-        // The pane belongs to the row being left; it must not glide into the other one.
+    private func hide() {
+        // The pane is the row's, and must not be found still lit when the bar comes back.
         hoverClear?.cancel()
         hovered = nil
         paneTarget = nil
-        withAnimation(StudioMotion.shape) { isMinimized = minimized }
+        minimize()
     }
 
     private var pauseButton: some View {

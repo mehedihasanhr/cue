@@ -71,6 +71,7 @@ final class RecorderBarPanel {
             }
         }
 
+        model.isMinimized = false
         model.presentations += 1
         if let panel {
             panel.orderFrontRegardless()
@@ -80,6 +81,7 @@ final class RecorderBarPanel {
 
         let bar = RecorderBar(model: model,
                               close: { [weak self] in self?.hide() },
+                              minimize: { [weak self] in self?.minimize() },
                               showLibrary: { [weak self] in self?.showLibrary() },
                               openSettings: { [weak self] in self?.openSettings() },
                               showTargets: { [weak self] mode in
@@ -159,6 +161,13 @@ final class RecorderBarPanel {
         targets.hide()
         panel?.orderOut(nil)
         onVisibilityChange(false)
+    }
+
+    /// Puts the bar away for the rest of the take. The menu bar icon carries on with the
+    /// clock, pause and stop, and offers the bar back.
+    func minimize() {
+        model.isMinimized = true
+        hide()
     }
 
     /// The bar's window, for what sits beside it — the camera preview follows it about.

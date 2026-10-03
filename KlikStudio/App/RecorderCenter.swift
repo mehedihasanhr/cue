@@ -55,7 +55,8 @@ final class RecorderCenter {
             cancelCountdown: { [weak self] in self?.studio.cancel() },
             toggleNotes: { [weak self] in self?.toggleNotes() },
             showRecordings: { [weak self] in self?.showLibrary() },
-            openSettings: { [weak self] in self?.openSettings() })
+            openSettings: { [weak self] in self?.openSettings() },
+            showBar: { [weak self] in self?.bar.show() })
         bar.onVisibilityChange = { [weak self] visible in
             self?.isBarVisible = visible
             self?.sync()
@@ -120,6 +121,7 @@ final class RecorderCenter {
         var shortcuts: RecorderShortcuts
         var usesShortcuts: Bool
         var showsMenuBarIcon: Bool
+        var isBarMinimized: Bool
         var showsNotes: Bool
         var showsCameraPreview: Bool
         var keepsCameraPreview: Bool
@@ -150,6 +152,7 @@ final class RecorderCenter {
                       shortcuts: preferences.shortcuts,
                       usesShortcuts: preferences.usesGlobalShortcuts,
                       showsMenuBarIcon: preferences.showsMenuBarIcon,
+                      isBarMinimized: bar.model.isMinimized,
                       showsNotes: preferences.showsSpeakerNotes,
                       showsCameraPreview: preferences.showsCameraPreview,
                       keepsCameraPreview: preferences.keepsCameraPreviewWhileRecording,
@@ -166,14 +169,21 @@ final class RecorderCenter {
         case .idle, .finished: true
         case .preparing, .countdown, .recording, .paused, .finishing, .failed: false
         }
-        if barShownForTake, isOver {
+        // The live flag, not the snapshot in `inputs`: putting the bar back hides or shows
+        // it, which calls straight back into here before the snapshot is read again — and
+        // a stale "still minimized" there went round that loop until the stack ran out.
+        if isOver, barShownForTake || bar.model.isMinimized {
             barShownForTake = false
+            bar.model.isMinimized = false
             restoreBar()
         }
 
         hotkeys.update(shortcuts: inputs.shortcuts, isEnabled: inputs.usesShortcuts, state: state)
 
-        statusItem.setVisible(inputs.showsMenuBarIcon)
+        // Always there while the bar is minimized, whatever the setting says: it is the
+        // only way left to see the clock, stop the take or get the bar back.
+        statusItem.isBarMinimized = inputs.isBarMinimized
+        statusItem.setVisible(inputs.showsMenuBarIcon || inputs.isBarMinimized)
         statusItem.refresh()
 
         notes.setVisible(inputs.showsNotes)
