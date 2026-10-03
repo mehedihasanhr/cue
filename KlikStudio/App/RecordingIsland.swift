@@ -32,6 +32,10 @@ final class RecordingIsland {
     fileprivate static let height: CGFloat = 36
     fileprivate static let compactWidth: CGFloat = 92
     fileprivate static let openWidth: CGFloat = 176
+    /// How far the island reaches past its resting middle when it opens: to both sides
+    /// alike while it floats or sits on the top or bottom edge, and all of it away from
+    /// the wall when it is docked to a side.
+    fileprivate static let reach: CGFloat = openWidth - compactWidth / 2
     /// How close to an edge a drop has to be for the island to melt into it.
     private static let snap: CGFloat = 56
 
@@ -44,7 +48,7 @@ final class RecordingIsland {
     /// Shows the island, docked under the bar it replaces unless it was left elsewhere.
     func show(below barFrame: NSRect?) {
         let panel = panel ?? makePanel()
-        let screen = barFrame.flatMap(Self.screen(containing:)) ?? NSScreen.main ?? NSScreen.screens[0]
+        let screen = barFrame.flatMap { Self.screen(at: CGPoint(x: $0.midX, y: $0.midY)) } ?? NSScreen.main ?? NSScreen.screens[0]
         let center = lastCenter ?? CGPoint(x: barFrame?.midX ?? screen.frame.midX,
                                            y: screen.frame.minY + Self.height / 2)
         let landing = resting(for: center)
@@ -54,10 +58,8 @@ final class RecordingIsland {
         } else {
             // Out of the edge it is docked to, the way a drop wells up; a floating island
             // just appears where it was.
-            let docked = gap(at: landing)
-            place(at: docked.distance < 1
-                  ? CGPoint(x: landing.x, y: landing.y + (docked.edge == .bottom ? -Self.height : Self.height))
-                  : landing)
+            let near = nearest(at: landing)
+            place(at: near.distance < 1 ? Self.offset(landing, into: near.edge, by: Self.height) : landing)
             animate(to: landing)
         }
         panel.orderFrontRegardless()
@@ -72,14 +74,14 @@ final class RecordingIsland {
     // MARK: - The window
 
     private func makePanel() -> NSPanel {
-        let size = NSSize(width: Self.openWidth + Self.margin * 2, height: Self.height + Self.margin * 2)
-        let panel = NSPanel(contentRect: NSRect(origin: .zero, size: size),
-                            styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
-                            backing: .buffered, defer: false)
+        let size = NSSize(width: Self.reach * 2 + Self.margin * 2, height: Self.height + Self.margin * 2)
+        let panel = IslandPanel(contentRect: NSRect(origin: .zero, size: size),
+                                styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
+                                backing: .buffered, defer: false)
         let view = IslandView(state: state,
-                              drag: { [weak self] in self?.drag() },
-                              drop: { [weak self] in self?.drop() },
-                              expand: { [weak self] in self?.expand() })
+                              began: { [weak self] in self?.dragBegan() },
+                              moved: { [weak self] in self?.dragMoved() },
+                              ended: { [weak self] click in self?.dragEnded(click: click) })
             .environment(studio)
         let hosting = NSHostingView(rootView: view)
         hosting.sizingOptions = []
@@ -94,6 +96,7 @@ final class RecordingIsland {
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
         panel.becomesKeyOnlyIfNeeded = true
+        panel.acceptsMouseMovedEvents = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         panel.isExcludedFromWindowsMenu = true
         panel.animationBehavior = .none
@@ -103,55 +106,83 @@ final class RecordingIsland {
 
     // MARK: - Moving
 
-    private func drag() {
-        let mouse = NSEvent.mouseLocation
-        if dragStart == nil {
-            settle?.invalidate()
-            settle = nil
-            dragStart = (mouse, center)
-        }
-        guard let start = dragStart else { return }
-        let wanted = CGPoint(x: start.center.x + mouse.x - start.mouse.x,
-                             y: start.center.y + mouse.y - start.mouse.y)
-        place(at: clamped(wanted))
+    private func dragBegan() {
+        settle?.invalidate()
+        settle = nil
+        dragStart = (NSEvent.mouseLocation, center)
     }
 
-    private func drop() {
+    private func dragMoved() {
+        guard let start = dragStart else { return }
+        let mouse = NSEvent.mouseLocation
+        place(at: clamped(CGPoint(x: start.center.x + mouse.x - start.mouse.x,
+                                  y: start.center.y + mouse.y - start.mouse.y)))
+    }
+
+    private func dragEnded(click: Bool) {
         dragStart = nil
+        if click {
+            expand()
+            return
+        }
         let landing = resting(for: center)
         lastCenter = landing
         animate(to: landing)
     }
 
-    /// Where an island let go at `point` comes to rest: melted into the top or bottom edge
-    /// when it is near one, and otherwise where it is, kept on the screen.
+    /// Where an island let go at `point` comes to rest: melted into whichever edge it is
+    /// near, and otherwise where it is, kept on the screen.
     private func resting(for point: CGPoint) -> CGPoint {
         let point = clamped(point)
-        let screen = Self.screen(containing: CGRect(origin: point, size: .zero)) ?? NSScreen.screens[0]
-        let half = Self.height / 2
-        let near = gap(at: point)
-        guard near.distance < Self.snap else { return point }
-        return CGPoint(x: point.x, y: near.edge == .bottom ? screen.frame.minY + half : screen.frame.maxY - half)
+        guard let frame = Self.screen(at: point)?.frame else { return point }
+        let near = nearest(at: point)
+        guard near.distance < Self.snap else {
+            // Floating: room to open to both sides without leaving the screen.
+            let half = Self.openWidth / 2
+            return CGPoint(x: min(max(point.x, frame.minX + half), frame.maxX - half), y: point.y)
+        }
+        let halfWidth = Self.compactWidth / 2, half = Self.height / 2
+        return switch near.edge {
+        case .bottom: CGPoint(x: min(max(point.x, frame.minX + Self.openWidth / 2), frame.maxX - Self.openWidth / 2), y: frame.minY + half)
+        case .top: CGPoint(x: min(max(point.x, frame.minX + Self.openWidth / 2), frame.maxX - Self.openWidth / 2), y: frame.maxY - half)
+        case .leading: CGPoint(x: frame.minX + halfWidth, y: point.y)
+        case .trailing: CGPoint(x: frame.maxX - halfWidth, y: point.y)
+        }
     }
 
-    /// Kept on the screen it is over, its full width inside, never pushed past an edge.
+    /// Kept on the screen it is over, never pushed past an edge.
     private func clamped(_ point: CGPoint) -> CGPoint {
-        let screen = Self.screen(containing: CGRect(origin: point, size: .zero)) ?? NSScreen.main ?? NSScreen.screens[0]
-        let frame = screen.frame
-        let halfWidth = Self.openWidth / 2, half = Self.height / 2
+        guard let frame = Self.screen(at: point)?.frame else { return point }
+        let halfWidth = Self.compactWidth / 2, half = Self.height / 2
         return CGPoint(x: min(max(point.x, frame.minX + halfWidth), frame.maxX - halfWidth),
                        y: min(max(point.y, frame.minY + half), frame.maxY - half))
     }
 
-    /// The nearer of the top and bottom edges of the island's screen, and how far away it is.
-    private func gap(at point: CGPoint) -> (edge: VerticalEdge, distance: CGFloat) {
-        let screen = Self.screen(containing: CGRect(origin: point, size: .zero)) ?? NSScreen.main ?? NSScreen.screens[0]
-        let half = Self.height / 2
-        let below = point.y - half - screen.frame.minY
-        let above = screen.frame.maxY - (point.y + half)
-        return below <= above ? (.bottom, below) : (.top, above)
+    /// The nearest of the screen's four edges to the island at rest size, and how far
+    /// its near side is from it.
+    private func nearest(at point: CGPoint) -> (edge: Edge, distance: CGFloat) {
+        guard let frame = Self.screen(at: point)?.frame else { return (.bottom, .infinity) }
+        let halfWidth = Self.compactWidth / 2, half = Self.height / 2
+        let gaps: [(Edge, CGFloat)] = [
+            (.bottom, point.y - half - frame.minY),
+            (.top, frame.maxY - (point.y + half)),
+            (.leading, point.x - halfWidth - frame.minX),
+            (.trailing, frame.maxX - (point.x + halfWidth)),
+        ]
+        let best = gaps.min { $0.1 < $1.1 }!
+        return (best.0, best.1)
     }
 
+    private static func offset(_ point: CGPoint, into edge: Edge, by amount: CGFloat) -> CGPoint {
+        switch edge {
+        case .bottom: CGPoint(x: point.x, y: point.y - amount)
+        case .top: CGPoint(x: point.x, y: point.y + amount)
+        case .leading: CGPoint(x: point.x - amount, y: point.y)
+        case .trailing: CGPoint(x: point.x + amount, y: point.y)
+        }
+    }
+
+    /// The island's resting middle, which is the window's middle.
     private var center: CGPoint {
         guard let frame = panel?.frame else { return .zero }
         return CGPoint(x: frame.midX, y: frame.midY)
@@ -161,7 +192,7 @@ final class RecordingIsland {
         guard let panel else { return }
         let size = panel.frame.size
         panel.setFrameOrigin(CGPoint(x: (point.x - size.width / 2).rounded(), y: (point.y - size.height / 2).rounded()))
-        let near = gap(at: point)
+        let near = nearest(at: point)
         state.edge = near.edge
         state.gap = near.distance
     }
@@ -200,9 +231,8 @@ final class RecordingIsland {
         }
     }
 
-    private static func screen(containing rect: CGRect) -> NSScreen? {
-        let point = CGPoint(x: rect.midX, y: rect.midY)
-        return NSScreen.screens.first { $0.frame.contains(point) }
+    private static func screen(at point: CGPoint) -> NSScreen? {
+        NSScreen.screens.first { $0.frame.contains(point) }
             ?? NSScreen.screens.min { distance($0.frame, point) < distance($1.frame, point) }
     }
 
@@ -211,12 +241,19 @@ final class RecordingIsland {
     }
 }
 
+/// Takes clicks without ever becoming key, so pressing the island never takes the
+/// keyboard from the app being recorded.
+private final class IslandPanel: NSPanel {
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+}
+
 /// What the island's view draws from, set by the window as it moves.
 @MainActor @Observable
 private final class IslandState {
     /// The edge the island is nearest, and how far its near side is from it. Zero is
     /// docked: melted into the edge.
-    var edge: VerticalEdge = .bottom
+    var edge: Edge = .bottom
     var gap: CGFloat = 0
     var isHovering = false
 }
@@ -224,29 +261,39 @@ private final class IslandState {
 private struct IslandView: View {
     @Environment(StudioService.self) private var studio
     let state: IslandState
-    let drag: () -> Void
-    let drop: () -> Void
-    let expand: () -> Void
+    let began: () -> Void
+    let moved: () -> Void
+    let ended: (_ click: Bool) -> Void
 
     private var width: CGFloat {
         state.isHovering ? RecordingIsland.openWidth : RecordingIsland.compactWidth
     }
 
     var body: some View {
-        ZStack {
-            IslandInk(width: width, gap: state.gap, edge: state.edge)
-                .allowsHitTesting(false)
-            controls
-                .frame(width: width, height: RecordingIsland.height)
-                .contentShape(Capsule())
-                .onHover { inside in
-                    withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) { state.isHovering = inside }
-                }
-                .gesture(DragGesture(minimumDistance: 3, coordinateSpace: .global)
-                    .onChanged { _ in drag() }
-                    .onEnded { _ in drop() })
+        GeometryReader { proxy in
+            let island = IslandInk.rect(in: proxy.size, width: width, edge: state.edge, gap: state.gap)
+            ZStack(alignment: .topLeading) {
+                // Hit-testable on purpose. The window server lets the pointer through any
+                // point of a panel that is either see-through or that SwiftUI says it does
+                // not take — so an ink that ignored hits let every move under the island
+                // reach the app beneath, which lit up its own hover states, and let presses
+                // meant for the island land there too.
+                IslandInk(width: width, gap: state.gap, edge: state.edge)
+                controls
+                    .frame(width: island.width, height: island.height)
+                    // Behind the buttons, so a press anywhere else on the island is the
+                    // island's own: a drag moves it, a click brings the bar back.
+                    .background(IslandHandle(began: began, moved: moved, ended: ended))
+                    .onHover { inside in
+                        withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) { state.isHovering = inside }
+                    }
+                    // Placed, not offset: an offset moves what is drawn but leaves the
+                    // grip's AppKit view where layout put it, in the window's corner — so
+                    // the island neither took its own drags nor stopped the pointer from
+                    // reaching, and lighting up, whatever was underneath.
+                    .position(x: island.midX, y: island.midY)
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .preferredColorScheme(.dark)
     }
 
@@ -255,11 +302,8 @@ private struct IslandView: View {
             clock
                 .padding(.leading, 14)
                 .frame(width: RecordingIsland.compactWidth, alignment: .leading)
-                .contentShape(Rectangle())
-                .onTapGesture(perform: expand)
+                .allowsHitTesting(false)
                 .help("Show the recorder bar")
-                .accessibilityAddTraits(.isButton)
-                .accessibilityLabel("Show the recorder bar")
             if state.isHovering {
                 HStack(spacing: 2) {
                     Button { studio.togglePause() } label: {
@@ -331,28 +375,88 @@ private struct IslandView: View {
 private struct IslandInk: View, Animatable {
     var width: CGFloat
     let gap: CGFloat
-    let edge: VerticalEdge
+    let edge: Edge
 
     var animatableData: CGFloat {
         get { width }
         set { width = newValue }
     }
 
+    /// The island in the window: its resting middle is the window's middle, and it opens
+    /// away from a side it is docked to, or to both sides alike.
+    static func rect(in size: CGSize, width: CGFloat, edge: Edge, gap: CGFloat) -> CGRect {
+        let height = RecordingIsland.height, compact = RecordingIsland.compactWidth
+        let docked = gap < 1
+        let minX: CGFloat = switch edge {
+        case .leading where docked: size.width / 2 - compact / 2
+        case .trailing where docked: size.width / 2 + compact / 2 - width
+        default: size.width / 2 - width / 2
+        }
+        return CGRect(x: minX, y: (size.height - height) / 2, width: width, height: height)
+    }
+
     var body: some View {
         Canvas { context, size in
-            let height = RecordingIsland.height
-            let island = CGRect(x: (size.width - width) / 2, y: (size.height - height) / 2, width: width, height: height)
+            let island = Self.rect(in: size, width: width, edge: edge, gap: gap)
             context.addFilter(.alphaThreshold(min: 0.5, color: .black))
             context.addFilter(.blur(radius: 6))
             context.drawLayer { layer in
                 layer.fill(Path(roundedRect: island, cornerRadius: 15, style: .continuous), with: .color(.black))
-                let reach: CGFloat = 80
-                let edgeY = edge == .bottom ? island.maxY + gap : island.minY - gap
-                let block = CGRect(x: island.minX - 20,
-                                   y: edge == .bottom ? edgeY : edgeY - reach,
-                                   width: island.width + 40, height: reach)
+                // The screen's edge: a block just past it, of which nothing shows but the
+                // part that flows in to meet the island.
+                let depth: CGFloat = 80, flare: CGFloat = 20
+                let block: CGRect = switch edge {
+                case .bottom: CGRect(x: island.minX - flare, y: island.maxY + gap, width: island.width + flare * 2, height: depth)
+                case .top: CGRect(x: island.minX - flare, y: island.minY - gap - depth, width: island.width + flare * 2, height: depth)
+                case .leading: CGRect(x: island.minX - gap - depth, y: island.minY - flare, width: depth, height: island.height + flare * 2)
+                case .trailing: CGRect(x: island.maxX + gap, y: island.minY - flare, width: depth, height: island.height + flare * 2)
+                }
                 layer.fill(Path(block), with: .color(.black))
             }
+        }
+    }
+}
+
+/// The island's own grip: a drag moves the window with the pointer, event by event, and a
+/// press that does not travel is a click.
+///
+/// AppKit's tracking loop rather than a SwiftUI drag gesture. The gesture reported its
+/// moves in the coordinates of a window that was itself moving under it, and lost them
+/// to the buttons and the click it shared the island with; here every mouse event moves
+/// the window once, in screen points, and nothing else is listening.
+private struct IslandHandle: NSViewRepresentable {
+    let began: () -> Void
+    let moved: () -> Void
+    let ended: (_ click: Bool) -> Void
+
+    func makeNSView(context: Context) -> HandleView {
+        let view = HandleView()
+        view.handle = self
+        return view
+    }
+
+    func updateNSView(_ view: HandleView, context: Context) {
+        view.handle = self
+    }
+
+    final class HandleView: NSView {
+        var handle: IslandHandle?
+
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+        override var mouseDownCanMoveWindow: Bool { false }
+
+        override func mouseDown(with event: NSEvent) {
+            guard let handle, let window else { return }
+            let start = NSEvent.mouseLocation
+            var travelled = false
+            handle.began()
+            while let next = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
+                if next.type == .leftMouseUp { break }
+                let now = NSEvent.mouseLocation
+                if !travelled, hypot(now.x - start.x, now.y - start.y) > 3 { travelled = true }
+                if travelled { handle.moved() }
+            }
+            handle.ended(!travelled)
         }
     }
 }
