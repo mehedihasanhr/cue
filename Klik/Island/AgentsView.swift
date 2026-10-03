@@ -632,8 +632,13 @@ private struct AgentSessionCard: View {
     let store: AgentStore
     @State private var hovered = false
 
+    /// At work it stays on one line; finished, or waiting on the user, it shows in full.
+    private var expanded: Bool { session.state != .running || !requests.isEmpty }
+
     var body: some View {
-        full
+        Group {
+            if expanded { full } else { line }
+        }
         .contextMenu { Button("Dismiss", action: dismiss) }
         .onHover { hovered = $0 }
         .animation(IslandView.contentAnimation, value: hovered)
@@ -652,7 +657,7 @@ private struct AgentSessionCard: View {
                             .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                 }
-                .padding(.leading, 34)
+                .padding(.leading, 30)
                 .animation(IslandView.listAnimation, value: session.workers.map(\.id))
             }
             ForEach(requests) { request in
@@ -662,7 +667,45 @@ private struct AgentSessionCard: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 13)
-        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    /// Logo, name, status, agent, source and running time, on one line.
+    private var line: some View {
+        HStack(spacing: 10) {
+            AgentTile(agent: session.agent, working: true, side: 16)
+                .overlay {
+                    if hovered { dismissButton }
+                }
+            name(size: 13.5, weight: .medium, color: .white.opacity(0.9))
+            Spacer(minLength: 8)
+            Text(session.usedTool ? "Working" : "Thinking")
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(SessionTone.working)
+                .fixedSize()
+            HStack(spacing: 5) {
+                AgentChip(text: session.agent.shortName)
+                if let source {
+                    AgentChip(text: source)
+                }
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    Text(Self.elapsed(since: session.turnStartedAt ?? session.startedAt, now: context.date))
+                        .font(.system(size: 11, weight: .medium))
+                        .monospacedDigit()
+                        .foregroundStyle(.white.opacity(0.4))
+                        .frame(minWidth: 24, alignment: .trailing)
+                }
+            }
+            .fixedSize()
+        }
+        .lineLimit(1)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.white.opacity(hovered ? 0.05 : 0), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .contentShape(Rectangle())
+        .onTapGesture { store.focus(session) }
+        .accessibilityAddTraits(.isButton)
+        .help(session.activity.map { "\($0)\n\(jumpHelp)" } ?? jumpHelp)
     }
 
     private var jumpHelp: String {
@@ -710,7 +753,7 @@ private struct AgentSessionCard: View {
 
     private var summary: some View {
         HStack(alignment: .top, spacing: 12) {
-            AgentTile(agent: session.agent, working: session.state == .running, side: 22)
+            AgentTile(agent: session.agent, working: session.state == .running, side: 18)
                 .overlay(alignment: .topLeading) {
                     dismissButton
                         .offset(x: -6, y: -6)
