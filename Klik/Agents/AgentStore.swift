@@ -244,6 +244,17 @@ final class AgentStore {
         withdraw { _ in true }
     }
 
+    /// Drops one session the user closed by hand (its end was never reported). It
+    /// comes back with the next event if the agent is still at work.
+    func dismiss(_ session: AgentSession) {
+        let key = session.id
+        withdraw { $0.sessionKey == key }
+        book.remove { $0.id == key }
+        agentPIDs[key] = nil
+        codexGrants[key] = nil
+        hosts[key] = nil
+    }
+
     /// Forgets one agent profile's sessions (it was disconnected).
     func forget(_ agent: AgentKind, profile: String?) {
         let keys = Set(book.sessions.filter { $0.agent == agent && $0.profile == profile }.map(\.id))

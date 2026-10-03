@@ -345,7 +345,10 @@ nonisolated struct AgentSessionBook: Equatable, Sendable {
             if event.notificationType == "idle_prompt" { session.state = .idle }
         case .stop:
             session.state = .idle
-            if let message = event.message { session.activity = Self.oneLine(message) }
+            // A subagent that does not run in the background ends with the turn, even
+            // when its own stop was never reported.
+            session.workers.removeAll { $0.kind == .subagent && !$0.background }
+            if let message = event.message, let line = Self.readableLine(message) { session.activity = line }
         case .sessionEnd, .subagentStart, .subagentStop, .other:
             break
         }
@@ -384,13 +387,17 @@ nonisolated struct AgentSessionBook: Equatable, Sendable {
         }
     }
 
-    /// Brings the background shell commands in line with Claude Code's own list
-    /// (subagents come and go by their own start and stop).
+    /// Brings the background shell commands and subagents in line with Claude Code's
+    /// own list, so one that ended without reporting its stop does not linger.
     private func syncBackground(_ tasks: [JSONValue], in session: inout AgentSession, at now: Date) {
         let running = tasks.filter { ($0["status"]?.string ?? "running") == "running" }
         let shells = running.filter { $0["type"]?.string == "shell" }
+        let subagents = running.filter { $0["type"]?.string == "subagent" }
         session.workers.removeAll { worker in
-            worker.kind == .shell && !shells.contains { $0["id"]?.string == worker.id }
+            switch worker.kind {
+            case .shell: !shells.contains { $0["id"]?.string == worker.id }
+            case .subagent: worker.background && !subagents.contains { $0["id"]?.string == worker.id }
+            }
         }
         for task in shells {
             guard let id = task["id"]?.string, !session.workers.contains(where: { $0.id == id }) else { continue }
@@ -399,7 +406,7 @@ nonisolated struct AgentSessionBook: Equatable, Sendable {
                                                detail: command, background: true, startedAt: now))
         }
         // A background subagent listed here but never seen starting (Klik started later).
-        for task in running where task["type"]?.string == "subagent" {
+        for task in subagents {
             guard let id = task["id"]?.string, !session.workers.contains(where: { $0.id == id }) else { continue }
             session.workers.append(AgentWorker(id: id, kind: .subagent, title: task["description"]?.string ?? "Subagent",
                                                detail: task["agent_type"]?.string, background: true, startedAt: now))
@@ -425,6 +432,23 @@ nonisolated struct AgentSessionBook: Equatable, Sendable {
     private static func oneLine(_ text: String) -> String {
         let line = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? text
         return String(line.trimmingCharacters(in: .whitespaces).prefix(160))
+    }
+
+    /// The reply's first line as plain text, or nil when the reply is data rather than
+    /// prose: Codex ends its own background turns (follow-up suggestions, titles) with
+    /// raw JSON such as `{"suggestions":[]}`, which must not replace the real reply.
+    static func readableLine(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let first = trimmed.first, first == "{" || first == "[",
+           (try? JSONSerialization.jsonObject(with: Data(trimmed.utf8))) != nil {
+            return nil
+        }
+        // Markdown marks read as noise in one line of plain text.
+        var line = oneLine(trimmed)
+        while let hash = line.first, hash == "#" || hash == ">" { line = String(line.dropFirst()) }
+        for mark in ["**", "__", "`"] { line = line.replacingOccurrences(of: mark, with: "") }
+        line = line.trimmingCharacters(in: .whitespaces)
+        return line.isEmpty ? nil : line
     }
 }
 
