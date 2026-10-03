@@ -114,6 +114,53 @@ enum Drive {
             print(result == .success ? "resized to \(Int(width)) × \(Int(height))" : "could not resize: \(result.rawValue)")
             return result == .success ? 0 : 1
 
+        case "drag":
+            // `studiolab drag <app> x1 y1 x2 y2`: a mouse drag in global points (origin top
+            // left), posted to the app's process only — never to whatever is on the screen.
+            let numbers = rest.compactMap(Double.init)
+            guard numbers.count == 4 else { return usage() }
+            // `--hid`: real events, through the window server, as a hand would make them —
+            // for testing what an inactive app does with a first click. Refused unless one of
+            // the app's own windows covers both ends, so it can never land on anything else.
+            let real = rest.contains("--hid")
+            let from = CGPoint(x: numbers[0], y: numbers[1]), to = CGPoint(x: numbers[2], y: numbers[3])
+            // Aimed at the app's frontmost window under the point, as the window server
+            // would: a mouse event sent to a process without a window number reaches no view.
+            let target = windowList(of: app.processIdentifier)
+                .filter { $0.onScreen && $0.bounds.contains(from) }
+                .max { $0.layer < $1.layer }
+            if real {
+                guard let target, target.layer >= 1000, target.bounds.contains(to) else {
+                    print("refused: no overlay of the app's covers the drag")
+                    return 1
+                }
+            }
+            let home = CGEvent(source: nil)?.location
+            defer { if real, let home { CGWarpMouseCursorPosition(home) } }
+            func post(_ type: CGEventType, _ at: CGPoint) {
+                let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: at, mouseButton: .left)
+                if real {
+                    event?.post(tap: .cghidEventTap)
+                    usleep(16_000)
+                    return
+                }
+                if let target {
+                    event?.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(target.id))
+                    event?.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(target.id))
+                }
+                event?.setIntegerValueField(.mouseEventClickState, value: 1)
+                event?.postToPid(app.processIdentifier)
+                usleep(16_000)
+            }
+            post(.leftMouseDown, from)
+            for step in 1...20 {
+                let t = CGFloat(step) / 20
+                post(.leftMouseDragged, CGPoint(x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t))
+            }
+            post(.leftMouseUp, to)
+            print("dragged \(from) → \(to)")
+            return 0
+
         case "key":
             guard let code = rest.first.flatMap(UInt16.init) else { return usage() }
             var flags: CGEventFlags = []

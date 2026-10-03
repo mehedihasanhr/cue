@@ -567,7 +567,7 @@ private struct WindowPickerPanel: View {
             // that is 600 points tall around four windows is mostly nothing.
             ViewThatFits(in: .vertical) {
                 sections
-                ScrollView { sections }.scrollIndicators(.automatic)
+                ScrollView { sections.background(ThinScrollers()) }.scrollIndicators(.automatic)
             }
         }
     }
@@ -987,6 +987,52 @@ private struct StartButton: View {
         .help(RecorderCenter.shared?.help("Start recording", .record) ?? "Start recording")
         .onHover { hovering in
             withAnimation(StudioMotion.hover) { isHovering = hovering }
+        }
+    }
+}
+
+/// The thin scroll bar that shows only while scrolling, whatever the system setting.
+///
+/// With a mouse connected — or "Show scroll bars: Always" — macOS gives a scroll view the
+/// old full-width bar in its own gutter. Down the side of the window picker that was a
+/// slab of grey taking room from the cards. SwiftUI offers no style for it, so this finds
+/// the `NSScrollView` the `ScrollView` is drawn with and asks for the overlay bar, again
+/// whenever the system setting changes.
+struct ThinScrollers: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { Finder() }
+    func updateNSView(_ view: NSView, context: Context) {}
+
+    private final class Finder: NSView {
+        private var observer: (any NSObjectProtocol)?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            DispatchQueue.main.async { [weak self] in self?.apply() }
+            guard observer == nil else { return }
+            observer = NotificationCenter.default.addObserver(
+                forName: NSScroller.preferredScrollerStyleDidChangeNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.apply() }
+            }
+        }
+
+        override func viewWillMove(toWindow newWindow: NSWindow?) {
+            super.viewWillMove(toWindow: newWindow)
+            guard newWindow == nil, let observer else { return }
+            NotificationCenter.default.removeObserver(observer)
+            self.observer = nil
+        }
+
+        private func apply() {
+            var view: NSView? = superview
+            while let current = view {
+                if let scroll = current as? NSScrollView {
+                    scroll.scrollerStyle = .overlay
+                    scroll.autohidesScrollers = true
+                    return
+                }
+                view = current.superview
+            }
         }
     }
 }

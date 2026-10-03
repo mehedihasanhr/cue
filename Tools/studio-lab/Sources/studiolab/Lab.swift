@@ -27,7 +27,7 @@ enum LabMain {
 
         // Operating another app needs no run loop of its own, and must not become an app
         // with a Dock icon while it does it.
-        if let command = arguments.first, ["tree", "menus", "press", "set", "key", "shot", "windows", "resize"].contains(command) {
+        if let command = arguments.first, ["tree", "menus", "press", "set", "key", "shot", "windows", "resize", "drag"].contains(command) {
             exit(MainActor.assumeIsolated { Drive.run(arguments) })
         }
 
