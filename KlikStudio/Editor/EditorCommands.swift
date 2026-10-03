@@ -28,17 +28,23 @@ struct EditorCommands: SwiftUI.Commands {
 
     /// In the order of the tool rail, so a command is found where its tool is: the
     /// frame and its masks, then what happens over time, then playback.
+    ///
+    /// The editor's own menus only while there is an editor. With just the recorder bar
+    /// up — or nothing at all, mid-take — a menu bar of Frame, Mask, Zoom and seven more,
+    /// every item dimmed, was a wall of things that could not be done.
     var body: some SwiftUI.Commands {
         file
         edit
-        view
-        frameAndMasks
-        zoom
-        audio
-        captions
-        keyboard
-        camera
-        playback
+        if editor != nil {
+            view
+            frameAndMasks
+            zoom
+            audio
+            captions
+            keyboard
+            camera
+            playback
+        }
     }
 
     // MARK: - File
