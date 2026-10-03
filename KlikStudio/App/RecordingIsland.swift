@@ -33,7 +33,11 @@ final class RecordingIsland {
     /// Lying along the top or bottom edge, and while it is carried.
     fileprivate static let wide = (compact: CGSize(width: 92, height: 36), open: CGSize(width: 176, height: 36))
     /// Standing along the left or right edge.
-    fileprivate static let tall = (compact: CGSize(width: 44, height: 64), open: CGSize(width: 44, height: 128))
+    fileprivate static let tall = (compact: CGSize(width: 44, height: 64), open: CGSize(width: 44, height: 118))
+    /// The clock's share of the upright island once it opens: just enough for the dot and
+    /// the time, so pause sits straight under them rather than below the clock's resting
+    /// slot with a gap between.
+    fileprivate static let tallClockOpen: CGFloat = 47
     /// How close to a side the island has to come to stand up.
     private static let snap: CGFloat = 56
 
@@ -370,10 +374,12 @@ private struct IslandView: View {
         let line = standing ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 0))
         let pair = standing ? AnyLayout(VStackLayout(spacing: 2)) : AnyLayout(HStackLayout(spacing: 2))
         let rest = standing ? RecordingIsland.tall.compact : RecordingIsland.wide.compact
+        let tight = standing && state.isOpen
         return line {
             clock(stacked: standing)
                 .padding(.leading, standing ? 0 : 14)
-                .frame(width: rest.width, height: rest.height, alignment: standing ? .center : .leading)
+                .frame(width: rest.width, height: tight ? RecordingIsland.tallClockOpen : rest.height,
+                       alignment: tight ? .bottom : (standing ? .center : .leading))
                 .allowsHitTesting(false)
             if state.isOpen {
                 pair { pauseButton; stopButton }
