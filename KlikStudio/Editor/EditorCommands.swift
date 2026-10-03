@@ -29,7 +29,7 @@ struct EditorCommands: SwiftUI.Commands {
     /// In the order of the tool rail, so a command is found where its tool is: the
     /// frame and its masks, then what happens over time, then playback.
     ///
-    /// The editor's own menus only while there is an editor. With just the recorder bar
+    /// The editor's own menu only while there is an editor. With just the recorder bar
     /// up — or nothing at all, mid-take — a menu bar of Frame, Mask, Zoom and seven more,
     /// every item dimmed, was a wall of things that could not be done.
     var body: some SwiftUI.Commands {
@@ -37,13 +37,18 @@ struct EditorCommands: SwiftUI.Commands {
         edit
         if editor != nil {
             view
-            frameAndMasks
-            zoom
-            audio
-            captions
-            keyboard
-            camera
-            playback
+            // One menu for the editor, a submenu per tool, rather than eight across the
+            // menu bar: the bar stays the app's own, and every item keeps its shortcut and
+            // its place in the Command Menu, which walks into submenus.
+            CommandMenu("Editor") {
+                frameAndMasks
+                zoom
+                audio
+                captions
+                keyboard
+                camera
+                playback
+            }
         }
     }
 
@@ -196,9 +201,9 @@ struct EditorCommands: SwiftUI.Commands {
     /// A menu of its own. These were eleven items in the middle of Edit, between Paste and
     /// Add Sound, which made Edit thirty lines long and the zoom commands something to be
     /// found rather than looked up.
-    @CommandsBuilder
-    private var zoom: some SwiftUI.Commands {
-        CommandMenu("Zoom") {
+    @ViewBuilder
+    private var zoom: some View {
+        Menu("Zoom") {
             Button("Add Zoom at Playhead") { editor?.addZoomAtPlayhead() }
                 .editorShortcut(.addZoom, shortcuts)
                 .disabled(editor == nil)
@@ -277,9 +282,9 @@ struct EditorCommands: SwiftUI.Commands {
 
     // MARK: - Audio
 
-    @CommandsBuilder
-    private var audio: some SwiftUI.Commands {
-        CommandMenu("Audio") {
+    @ViewBuilder
+    private var audio: some View {
+        Menu("Audio") {
             Button("Add Sound…") { editor?.addSound() }
                 .editorShortcut(.addSound, shortcuts)
                 .disabled(editor == nil)
@@ -321,9 +326,9 @@ struct EditorCommands: SwiftUI.Commands {
         return editor.captionAtPlayhead
     }
 
-    @CommandsBuilder
-    private var captions: some SwiftUI.Commands {
-        CommandMenu("Captions") {
+    @ViewBuilder
+    private var captions: some View {
+        Menu("Captions") {
             Button(editor?.timeline.captions.isEmpty == false ? "Listen Again" : "Generate Captions") {
                 editor?.generateCaptions()
             }
@@ -374,9 +379,9 @@ struct EditorCommands: SwiftUI.Commands {
 
     // MARK: - Playback
 
-    @CommandsBuilder
-    private var playback: some SwiftUI.Commands {
-        CommandMenu("Playback") {
+    @ViewBuilder
+    private var playback: some View {
+        Menu("Playback") {
             Button(editor?.isPlaying == true ? "Pause" : "Play") { editor?.togglePlayback() }
                 .editorShortcut(.playPause, shortcuts)
                 .disabled(editor == nil)

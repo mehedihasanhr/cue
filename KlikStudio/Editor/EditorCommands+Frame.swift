@@ -11,9 +11,9 @@ extension EditorCommands {
     private var front: EditorModel? { windows.front?.model }
     private var library: LookLibrary { .shared }
 
-    @CommandsBuilder
-    var frameAndMasks: some SwiftUI.Commands {
-        CommandMenu("Frame") {
+    @ViewBuilder
+    var frameAndMasks: some View {
+        Menu("Frame") {
             Button("Save Look…") {
                 // The name is asked for on the Frame panel, in the row the tiles are
                 // in, so the panel comes forward with it.
@@ -165,7 +165,7 @@ extension EditorCommands {
             .disabled(front == nil)
         }
 
-        CommandMenu("Mask") {
+        Menu("Mask") {
             ForEach(BlurRegion.Style.allCases, id: \.self) { style in
                 Button("Add \(style.title) at Playhead") { front?.addMask(style) }
                     .disabled(front == nil)

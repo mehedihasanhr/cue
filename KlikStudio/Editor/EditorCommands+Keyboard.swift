@@ -10,9 +10,9 @@ import TimelineKit
 extension EditorCommands {
     private var frontEditor: EditorModel? { windows.front?.model }
 
-    @CommandsBuilder
-    var keyboard: some SwiftUI.Commands {
-        CommandMenu("Keyboard") {
+    @ViewBuilder
+    var keyboard: some View {
+        Menu("Keyboard") {
             // ⌥⌘K beside Add Zoom's ⌘K and Add Caption's ⌥⌘C: the same "put one here" aimed
             // at a different lane. ⌥⌘K is otherwise unused in this app.
             Button("Add Shortcut at Playhead") { frontEditor?.addKeyCueAtPlayhead() }

@@ -14,9 +14,9 @@ extension EditorCommands {
     /// Whether the front editor has a camera to act on.
     private var hasCamera: Bool { cameraEditor?.canLayOutCamera == true }
 
-    @CommandsBuilder
-    var camera: some SwiftUI.Commands {
-        CommandMenu("Camera") {
+    @ViewBuilder
+    var camera: some View {
+        Menu("Camera") {
             // Over the selected stretch when there is one, and for a few seconds from the
             // playhead when there is not — see `EditorModel.addCameraLayout`.
             // No shortcuts: the keys near these are taken, and four more chords to learn for
