@@ -88,6 +88,13 @@ final class AgentStore {
         if hosts[key] == nil, event.name != .sessionEnd, event.parentPID > 0, let app = AgentProcess.hostApp(of: event.parentPID) {
             hosts[key] = AgentHost(app: app)
         }
+        if event.name == .stop, event.subagentID == nil {
+            // A finished session leaves the list a minute later; check right on time
+            // rather than at the next round of the timer.
+            DispatchQueue.main.asyncAfter(deadline: .now() + AgentSessionBook.finishedLinger + 0.5) { [weak self] in
+                self?.prune()
+            }
+        }
         switch event.name {
         case .permissionRequest:
             ask(event, from: connection)
@@ -231,6 +238,7 @@ final class AgentStore {
                 codexGrants[key] = nil
             }
         }
+        forgetKeys(book.pruneFinished(at: .now))
         let before = book.sessions.map(\.id)
         book.pruneStale(at: .now)
         if book.sessions.count != before.count {
@@ -250,9 +258,7 @@ final class AgentStore {
         let key = session.id
         withdraw { $0.sessionKey == key }
         book.remove { $0.id == key }
-        agentPIDs[key] = nil
-        codexGrants[key] = nil
-        hosts[key] = nil
+        forgetKeys([key])
     }
 
     /// Forgets one agent profile's sessions (it was disconnected).
@@ -260,10 +266,16 @@ final class AgentStore {
         let keys = Set(book.sessions.filter { $0.agent == agent && $0.profile == profile }.map(\.id))
         withdraw { keys.contains($0.sessionKey) }
         book.remove { keys.contains($0.id) }
+        forgetKeys(keys)
+    }
+
+    /// What is kept about sessions beside the book, for ones that have left it.
+    private func forgetKeys(_ keys: some Sequence<String>) {
         for key in keys {
             agentPIDs[key] = nil
             codexGrants[key] = nil
             hosts[key] = nil
+            turnStarts[key] = nil
         }
     }
 

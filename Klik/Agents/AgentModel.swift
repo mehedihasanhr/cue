@@ -260,6 +260,8 @@ nonisolated struct AgentSession: Identifiable, Equatable, Sendable {
     var turnStartedAt: Date?
     /// It has used a tool since the prompt: "Working" rather than "Thinking".
     var usedTool = false
+    /// When it last finished its turn (or started, never prompted); nil while at work.
+    var finishedAt: Date?
     var parentPID: Int32
     var terminal: String?
     /// Work it has handed off and that is still going: subagents and background
@@ -351,6 +353,9 @@ nonisolated struct AgentSessionBook: Equatable, Sendable {
             if let tool = event.toolName {
                 session.activity = AgentToolSummary(tool: tool, input: event.toolInput).line
                 session.usedTool = true
+                // A plan to approve or a question to answer waits on the user even when
+                // no permission request comes with it (bypass mode skips that hook).
+                if event.name == .preToolUse, tool == "ExitPlanMode" || tool == "AskUserQuestion" { session.state = .waiting }
             }
         case .permissionRequest:
             session.state = .waiting
@@ -364,6 +369,12 @@ nonisolated struct AgentSessionBook: Equatable, Sendable {
             if let message = event.message, let line = Self.readableLine(message) { session.activity = line }
         case .sessionEnd, .subagentStart, .subagentStop, .other:
             break
+        }
+        // The clock starts when the turn ends; a later idle reminder must not restart it.
+        if session.state != .idle {
+            session.finishedAt = nil
+        } else if session.finishedAt == nil || event.name == .stop || event.name == .sessionStart {
+            session.finishedAt = now
         }
         store(session)
     }
@@ -436,6 +447,20 @@ nonisolated struct AgentSessionBook: Equatable, Sendable {
 
     mutating func remove(where shouldRemove: (AgentSession) -> Bool) {
         sessions.removeAll(where: shouldRemove)
+    }
+
+    /// How long a finished session stays on the list before it leaves on its own.
+    static let finishedLinger: TimeInterval = 60
+
+    /// Drops sessions that finished their turn a minute ago and have nothing left
+    /// running in the background; a new prompt brings one back. Returns their ids.
+    mutating func pruneFinished(at now: Date) -> [String] {
+        let done = sessions.filter { session in
+            guard session.state == .idle, session.workers.isEmpty, let finishedAt = session.finishedAt else { return false }
+            return now.timeIntervalSince(finishedAt) >= Self.finishedLinger
+        }.map(\.id)
+        if !done.isEmpty { sessions.removeAll { done.contains($0.id) } }
+        return done
     }
 
     mutating func pruneStale(at now: Date) {
@@ -603,6 +628,8 @@ nonisolated struct AgentToolSummary: Equatable, Sendable {
     let detail: String?
     /// The agent's own few words for the call ("Run the tests"), when it gave some.
     let purpose: String?
+    /// An AskUserQuestion call's first question.
+    let question: String?
     /// What a Codex "always" grant matches: the same tool with the same command.
     let grantKey: String
 
@@ -612,6 +639,7 @@ nonisolated struct AgentToolSummary: Equatable, Sendable {
         self.detail = Self.detail(of: input).map { String($0.prefix(600)) }
         let purpose = input["description"]?.string?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.purpose = purpose?.isEmpty == false ? purpose : nil
+        question = input["questions"]?.array?.first?["question"]?.string.map { String($0.prefix(120)) }
         grantKey = "\(tool)|\(input["command"]?.commandLine ?? (tool == "apply_patch" ? "" : input.compact))"
     }
 
@@ -620,6 +648,11 @@ nonisolated struct AgentToolSummary: Equatable, Sendable {
     /// and the raw command only when nothing better is known.
     var line: String {
         if let purpose { return String(purpose.prefix(120)) }
+        switch tool {
+        case "ExitPlanMode": return "Plan ready for review"
+        case "AskUserQuestion": return question ?? "Has a question for you"
+        default: break
+        }
         guard let detail, !detail.isEmpty else { return tool }
         let first = String((detail.split(whereSeparator: \.isNewline).first.map(String.init) ?? detail).prefix(120))
         switch tool {

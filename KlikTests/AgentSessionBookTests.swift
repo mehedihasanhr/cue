@@ -93,4 +93,52 @@ final class AgentSessionBookTests: XCTestCase {
         XCTAssertEqual(book.sessions.first?.usedTool, true)
         XCTAssertEqual(book.sessions.first?.turnStartedAt, now)
     }
+
+    private func finish(_ book: inout AgentSessionBook) {
+        book.apply(AgentEvent(agent: .claude, name: .userPromptSubmit, sessionID: "s1", prompt: "go"), at: now)
+        book.apply(AgentEvent(agent: .claude, name: .stop, sessionID: "s1"), at: now)
+    }
+
+    func testFinishedSessionLeavesAfterAMinute() {
+        var book = AgentSessionBook()
+        finish(&book)
+        XCTAssertEqual(book.pruneFinished(at: now.addingTimeInterval(59)), [])
+        XCTAssertEqual(book.sessions.count, 1)
+        XCTAssertEqual(book.pruneFinished(at: now.addingTimeInterval(60)), ["claude:s1"])
+        XCTAssertTrue(book.sessions.isEmpty)
+    }
+
+    func testIdleReminderDoesNotRestartTheClock() {
+        var book = AgentSessionBook()
+        finish(&book)
+        book.apply(AgentEvent(agent: .claude, name: .notification, sessionID: "s1", notificationType: "idle_prompt"),
+                   at: now.addingTimeInterval(50))
+        XCTAssertEqual(book.pruneFinished(at: now.addingTimeInterval(60)), ["claude:s1"])
+    }
+
+    func testNewPromptKeepsTheSession() {
+        var book = AgentSessionBook()
+        finish(&book)
+        book.apply(AgentEvent(agent: .claude, name: .userPromptSubmit, sessionID: "s1", prompt: "more"), at: now.addingTimeInterval(30))
+        XCTAssertEqual(book.pruneFinished(at: now.addingTimeInterval(120)), [])
+        XCTAssertEqual(book.sessions.count, 1)
+    }
+
+    func testFinishedSessionWithBackgroundWorkStays() {
+        var book = AgentSessionBook()
+        book.apply(event(.userPromptSubmit), at: now)
+        book.apply(event(.stop, backgroundTasks: [task("a1")]), at: now)
+        XCTAssertEqual(book.pruneFinished(at: now.addingTimeInterval(120)), [])
+    }
+
+    func testPlanApprovalWaitsOnTheUserWithoutARequest() {
+        var book = AgentSessionBook()
+        book.apply(AgentEvent(agent: .claude, name: .userPromptSubmit, sessionID: "s1", prompt: "go"), at: now)
+        book.apply(AgentEvent(agent: .claude, name: .preToolUse, sessionID: "s1", toolName: "ExitPlanMode",
+                              toolInput: .object(["plan": .string("# Plan")])), at: now)
+        XCTAssertEqual(book.sessions.first?.state, .waiting)
+        XCTAssertEqual(book.sessions.first?.activity, "Plan ready for review")
+        book.apply(AgentEvent(agent: .claude, name: .postToolUse, sessionID: "s1", toolName: "ExitPlanMode"), at: now)
+        XCTAssertEqual(book.sessions.first?.state, .running)
+    }
 }
