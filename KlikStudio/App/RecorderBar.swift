@@ -82,23 +82,12 @@ struct RecorderBar: View {
             layer(.confirmRestart) { confirmRestartControls }
         }
         .frame(width: barWidth, height: StudioPalette.barHeight)
-        .background {
-            ZStack {
-                // Behind everything and hit-testable, so a drag anywhere the controls do
-                // not claim moves the panel.
-                WindowDragBackground()
-                // Coloured smoke in the glass, saying what the bar is doing before a word
-                // of it is read — once there is something to say. Before a take the glass is
-                // plain and neutral: a tint over somebody's desktop while nothing is
-                // happening read as decoration, not information.
-                if mood != .ready { BarSmoke(mood: mood) }
-            }
-        }
+        // Behind everything and hit-testable, so a drag anywhere the controls do not claim
+        // moves the panel.
+        .background { WindowDragBackground() }
+        // The same plain glass before, during and after a take.
         .studioGlass(cornerRadius: StudioPalette.barRadius)
         .clipShape(RoundedRectangle(cornerRadius: StudioPalette.barRadius, style: .continuous))
-        .overlay {
-            if mood != .ready { BarEdgeLight(mood: mood, cornerRadius: StudioPalette.barRadius) }
-        }
         // One soft shadow, small enough to end inside the window. A wide one was cut off
         // flat at the window's edges, and a coloured one spread a smudge over a white page.
         .shadow(color: .black.opacity(0.22), radius: 8, y: 4)
