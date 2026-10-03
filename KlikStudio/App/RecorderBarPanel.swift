@@ -40,6 +40,12 @@ final class RecorderBarPanel {
     /// The screen-filling overlay that names the target. Owned here rather than by the
     /// bar, because it outlives any one view and starting a take has to take it down.
     private lazy var targets = TargetOverlayController(model: model)
+    /// The bar minimized: the clock on a small island at the screen's edge.
+    private lazy var island: RecordingIsland = {
+        let island = RecordingIsland(studio: studio)
+        island.expand = { [weak self] in self?.show() }
+        return island
+    }()
 
     init(settings: StudioSettings, studio: StudioService) {
         self.settings = settings
@@ -72,6 +78,7 @@ final class RecorderBarPanel {
         }
 
         model.isMinimized = false
+        island.hide()
         model.presentations += 1
         if let panel {
             panel.orderFrontRegardless()
@@ -166,8 +173,16 @@ final class RecorderBarPanel {
     /// Puts the bar away for the rest of the take. The menu bar icon carries on with the
     /// clock, pause and stop, and offers the bar back.
     func minimize() {
+        let frame = panel?.frame
         model.isMinimized = true
         hide()
+        island.show(below: frame)
+    }
+
+    /// The take is over: the island goes, and the bar is the app's to show or not.
+    func leaveMinimized() {
+        model.isMinimized = false
+        island.hide()
     }
 
     /// The bar's window, for what sits beside it — the camera preview follows it about.

@@ -174,7 +174,7 @@ final class RecorderCenter {
         // a stale "still minimized" there went round that loop until the stack ran out.
         if isOver, barShownForTake || bar.model.isMinimized {
             barShownForTake = false
-            bar.model.isMinimized = false
+            bar.leaveMinimized()
             restoreBar()
         }
 

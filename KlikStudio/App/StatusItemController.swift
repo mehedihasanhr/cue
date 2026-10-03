@@ -28,8 +28,13 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     }
 
     var actions = Actions()
-    /// The bar is put away, so the menu offers it back first.
-    var isBarMinimized = false
+    /// The bar is put away. A click on the icon brings it back, as clicking a minimized
+    /// window's tile in the Dock does; the menu is still a right-click away, and offers
+    /// the bar first.
+    var isBarMinimized = false {
+        didSet { if isBarMinimized != oldValue { attachMenu() } }
+    }
+    private let menu = NSMenu()
     private let studio: StudioService
     private let preferences: RecorderPreferences
     private var item: NSStatusItem?
@@ -44,17 +49,37 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     func setVisible(_ visible: Bool) {
         if visible, item == nil {
             let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-            let menu = NSMenu()
             menu.delegate = self
             menu.autoenablesItems = false
-            item.menu = menu
             item.button?.imagePosition = .imageLeading
+            item.button?.target = self
+            item.button?.action = #selector(clicked)
+            item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
             self.item = item
+            attachMenu()
             shown = nil
             refresh()
         } else if !visible, let item {
             NSStatusBar.system.removeStatusItem(item)
             self.item = nil
+        }
+    }
+
+    /// The menu opens by itself on a click only while it is attached; detached, a click
+    /// reaches `clicked` instead.
+    private func attachMenu() {
+        item?.menu = isBarMinimized ? nil : menu
+    }
+
+    @objc private func clicked() {
+        guard let item, let button = item.button else { return }
+        if NSApp.currentEvent?.type == .rightMouseUp {
+            // The usual way to open a status item's menu by hand: attach it for one click.
+            item.menu = menu
+            button.performClick(nil)
+            attachMenu()
+        } else {
+            actions.showBar()
         }
     }
 
