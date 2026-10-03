@@ -13,10 +13,9 @@ extension StudioSettings {
     private static let settingPrefixes = ["recording.", "editor.", "recorder.", "export.", "app.", "captions.",
                                           "audio.", "preview."]
 
-    /// Keys inside those families that are the user's *content* or a window's layout
-    /// rather than a preference: the speaker notes someone typed, how wide they dragged
-    /// the editor's panel.
-    private static let keptKeys: Set<String> = ["recorder.notes", "editor.settingsWidth"]
+    /// Keys inside those families that are the user's *content* rather than a preference:
+    /// the speaker notes someone typed.
+    private static let keptKeys: Set<String> = ["recorder.notes"]
 
     /// Puts every setting back to what a fresh install has, and leaves the recordings
     /// folder, the speaker notes and every recording alone.

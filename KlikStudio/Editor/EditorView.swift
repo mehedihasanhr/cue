@@ -17,24 +17,14 @@ struct EditorView: View {
     /// The sheet's own state — the settings and which job it last started. The export
     /// itself lives in `exports` above, so nothing here is holding the work.
     @State private var export = ExportModel()
-    /// How wide the inspector is. Remembered across windows and launches, because
-    /// somebody who widened it to read a caption meant it, and dragging it back every
-    /// morning is not a setting — it is a chore. The key is the one the column had when it
-    /// sat on the left, so the width somebody chose then carries over.
-    @AppStorage("editor.settingsWidth") private var settingsWidth: Double = 320
-
-    /// How far the inspector can be dragged. The narrow end is the settings column's old
-    /// narrowest — a slider's track and its name still need about three hundred points —
-    /// plus the tool rail down its left edge; the wide end is set by the picture, which at
-    /// the window's minimum width should keep about half of it.
-    private static let inspectorWidths: ClosedRange<Double> = 352...532
-
-    /// The stored width, held to the range. A width saved by an older layout with a
-    /// narrower minimum would otherwise squeeze the panel beside the rail until the
-    /// splitter was next touched.
-    private var clampedWidth: Double {
-        min(max(settingsWidth, Self.inspectorWidths.lowerBound), Self.inspectorWidths.upperBound)
-    }
+    /// How wide the inspector is: one width, always.
+    ///
+    /// It could be dragged wider, and was remembered at whatever width it was left — so it
+    /// opened stretched in one window and narrow in the next, every slider and row a
+    /// different length from one day to another, and a column of controls that is laid out
+    /// for one width looked loose at the other. A slider's track and its name need about
+    /// three hundred points, plus the tool rail down the column's left edge.
+    static let inspectorWidth: CGFloat = 352
 
     var body: some View {
         Group {
@@ -91,11 +81,9 @@ struct EditorView: View {
                     // Splitter and column come and go together, so a hidden inspector leaves
                     // no stray hairline at the window's edge.
                     HStack(spacing: 0) {
-                        ColumnSplitter(width: $settingsWidth,
-                                       range: Self.inspectorWidths,
-                                       edge: .trailing)
+                        StudioDivider(axis: .vertical)
                         InspectorPanel(model: model)
-                            .frame(width: CGFloat(clampedWidth), alignment: .leading)
+                            .frame(width: Self.inspectorWidth, alignment: .leading)
                             // A fixed width is a proposal, not a promise: a control that will
                             // not shrink below it draws straight out over the picture, and —
                             // centred in the frame — slides sideways every time a number in
@@ -166,56 +154,5 @@ struct EditorView: View {
         } message: {
             Text(model.soundReattachWarning ?? "")
         }
-    }
-}
-
-/// The line between the picture and the inspector, which can be dragged.
-///
-/// A hairline is the right thing to look at and the wrong thing to aim at, so the grab
-/// area is ten points wide and invisible. The pointer changes over it, which is the only
-/// promise a splitter gets to make before it is used.
-private struct ColumnSplitter: View {
-    /// Which side of the window the column it sizes is on. A column on the trailing side
-    /// grows as the splitter is dragged *left*, so the drag is read the other way round.
-    enum Edge { case leading, trailing }
-
-    @Binding var width: Double
-    let range: ClosedRange<Double>
-    var edge: Edge = .leading
-
-    /// The width the drag started from. Tracked so the column follows the pointer exactly
-    /// rather than drifting: adding each frame's translation to the running width applies
-    /// the same movement twice.
-    @State private var startWidth: Double?
-
-    var body: some View {
-        StudioDivider(axis: .vertical)
-            .overlay {
-                Color.clear
-                    .frame(width: 10)
-                    .contentShape(Rectangle())
-                    .onHover { inside in
-                        if inside {
-                            NSCursor.resizeLeftRight.push()
-                        } else {
-                            NSCursor.pop()
-                        }
-                    }
-                    .gesture(
-                        DragGesture(minimumDistance: 0)
-                            .onChanged { value in
-                                // Started from the width as drawn, which is the clamped one:
-                                // starting from a stale stored value below the range would
-                                // swallow the first part of the drag.
-                                let start = startWidth ?? min(max(width, range.lowerBound), range.upperBound)
-                                startWidth = start
-                                let delta = edge == .leading ? value.translation.width
-                                                             : -value.translation.width
-                                width = min(max(start + delta, range.lowerBound), range.upperBound)
-                            }
-                            .onEnded { _ in startWidth = nil }
-                    )
-            }
-            .accessibilityHidden(true)
     }
 }
