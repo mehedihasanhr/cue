@@ -13,11 +13,11 @@ extension EditorCommands {
     var markerNavigation: some View {
         Button("Previous Marker") { markerEditor?.goToPreviousMarker() }
             .editorShortcut(.previousMarker, shortcuts)
-            .disabled(markerEditor?.previousMarker == nil)
+            .disabled(markerEditor?.hasMarkerBefore != true)
             .help(markerHelp)
         Button("Next Marker") { markerEditor?.goToNextMarker() }
             .editorShortcut(.nextMarker, shortcuts)
-            .disabled(markerEditor?.nextMarker == nil)
+            .disabled(markerEditor?.hasMarkerAfter != true)
             .help(markerHelp)
     }
 

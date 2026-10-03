@@ -19,7 +19,22 @@ import UniformTypeIdentifiers
 @Observable
 final class EditorModel {
     let document: EditorDocument
-    private(set) var playhead: CMTime = .zero
+    private(set) var playhead: CMTime = .zero {
+        didSet {
+            // Followed exactly while still, and only every quarter second while playing.
+            if !isPlaying || abs((playhead - settledPlayhead).seconds) >= 0.25 {
+                settledPlayhead = playhead
+            }
+        }
+    }
+    /// The playhead as the things that only need to know roughly where it is see it —
+    /// the menu bar's enabled items, the zoom, caption and shortcut "at the playhead".
+    ///
+    /// Read from the live playhead, those made SwiftUI rebuild every menu in the menu bar
+    /// on every frame of playback, on the main thread, a few milliseconds at a time —
+    /// enough to drop frames, and a dropped frame in the middle of a zoom is a jolt.
+    /// Exact whenever playback is stopped, which is when any of them is acted on.
+    private(set) var settledPlayhead: CMTime = .zero
     private(set) var preview: NSImage?
     /// The description the preview was drawn from.
     ///
@@ -130,7 +145,19 @@ final class EditorModel {
     private var webcamFrames: FrameSource?
     private var renderTask: Task<Void, Never>?
     private var ticker: PlaybackTicker?
-    private var lastTick: Date?
+    /// Where playback was anchored: the playhead, and the media clock, at the moment it
+    /// started or last changed rate.
+    ///
+    /// The playhead is worked out from this on every tick — anchor plus time since, times
+    /// the rate — rather than by adding each tick's interval to the last playhead. That sum
+    /// rounded every interval to a six-hundredth of a second, and the roundings did not
+    /// cancel: playback ran five per cent slow, and the picture advanced by uneven steps,
+    /// which during a zoom — when the whole picture moves — showed as shaking.
+    private var anchor: (wall: CFTimeInterval, playhead: CMTime)?
+    /// The playhead the last tick set. Anything else found there on the next tick was put
+    /// there by something else — a step, a jump to a marker, a click on the ruler — and
+    /// playback carries on from it rather than snapping back.
+    private var tickedPlayhead: CMTime?
 
     private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "editor")
 
@@ -382,7 +409,7 @@ final class EditorModel {
         // it. See `ZoomPreview`.
         if case .zoom = selection { zoomPreview = .result }
         isPlaying = true
-        lastTick = .now
+        anchor = (CACurrentMediaTime(), playhead)
         viewport.followsPlayhead = true
         // Sound only at normal speed, forwards — see `EditorModel+Shuttle` for why.
         if rate == 1 { audio?.play(from: playhead, timeline: timeline) } else { audio?.pause() }
@@ -393,9 +420,11 @@ final class EditorModel {
         Task { await frames?.setQuality(.preview(previewPixelSize)) }
 
         ticker = PlaybackTicker { [weak self] in
-            guard let self, let last = self.lastTick else { return }
-            let now = Date.now
-            self.lastTick = now
+            guard let self, var anchor = self.anchor else { return }
+            if let ticked = self.tickedPlayhead, ticked != self.playhead {
+                anchor = (CACurrentMediaTime(), self.playhead)
+                self.anchor = anchor
+            }
             // The sound is the clock when there is sound. A wall-clock playhead drifts
             // against the audio over a long take — slowly, and then unmistakably, because
             // one of them is being resampled by a real audio device and the other is not.
@@ -405,8 +434,8 @@ final class EditorModel {
             // rate, which is the only way this player plays backwards: every frame shown
             // is a seek. See `EditorModel+Shuttle`.
             let next = self.audio?.clock
-                ?? self.playhead + CMTime(seconds: now.timeIntervalSince(last) * self.playbackRate,
-                                          preferredTimescale: 600)
+                ?? anchor.playhead + CMTime(seconds: (CACurrentMediaTime() - anchor.wall) * self.playbackRate,
+                                            preferredTimescale: 60_000)
             if self.playbackRate < 0, next <= .zero {
                 self.playhead = .zero
                 self.stop()
@@ -415,6 +444,7 @@ final class EditorModel {
                 self.stop()
             } else {
                 self.playhead = next
+                self.tickedPlayhead = next
                 self.viewport.reveal(self.playhead, duration: self.duration)
                 // `refresh` coalesces, so the ticker can simply say what the playhead is now
                 // and let it decide whether that is a frame worth drawing. It used to have to
@@ -427,6 +457,7 @@ final class EditorModel {
 
     private func stop() {
         isPlaying = false
+        settledPlayhead = playhead
         // The rate is a property of playing, not of the editor: stopping puts it back.
         playbackRate = 1
         // Playback stopping ends a take, whether the playhead ran into the end of the edit
@@ -436,8 +467,10 @@ final class EditorModel {
         audio?.pause()
         ticker?.stop()
         ticker = nil
-        lastTick = nil
+        anchor = nil
+        tickedPlayhead = nil
         Task { [weak self] in
+            await self?.frames?.endPlayback()
             await self?.frames?.setQuality(.exact)
             // The one render that has to be perfect. Playback is over, `isPlaying` is
             // already false, so `previewFidelity` is 1 and this draws the frame the export
@@ -455,7 +488,7 @@ final class EditorModel {
         }
         playbackRate = rate
         // The wall clock takes over from here, not from the last tick the sound drove.
-        lastTick = .now
+        anchor = (CACurrentMediaTime(), playhead)
         if rate == 1 { audio?.play(from: playhead, timeline: timeline) } else { audio?.pause() }
     }
 
@@ -571,6 +604,10 @@ final class EditorModel {
         // read at, so a scrub across a cut into one is as quick as a scrub within the take.
         let media = importedMedia
         let quality: FrameSource.Quality = isPlaying || isScrubbing ? .preview(previewPixelSize) : .exact
+        // Ordinary forward playback reads the file straight through rather than seeking for
+        // every frame — see `FrameSource.playbackFrame(at:)`. Scrubbing, the shuttle's other
+        // speeds and a still frame keep the exact seek.
+        let readsThrough = isPlaying && playbackRate == 1 && !isScrubbing
         // The only place the preview is allowed to differ from the export, and only while
         // the picture is moving.
         let drawn = scene.scaled(by: previewFidelity)
@@ -600,6 +637,8 @@ final class EditorModel {
                 nil
             } else if let path = drawn.sourceMedia {
                 await media.frame(from: path, at: drawn.sourceTime, quality: quality)
+            } else if readsThrough {
+                await frames?.playbackFrame(at: drawn.sourceTime)
             } else {
                 await frames?.frame(at: drawn.sourceTime)
             }
@@ -617,8 +656,11 @@ final class EditorModel {
                 }
             }
             guard !Task.isCancelled else { return }
-            let image = renderer.cgImage(for: drawn, source: source, webcam: camera,
-                                         blending: blending, blendingWebcam: blendingCamera)
+            // Off the main thread. Drawn here it held the main thread for the length of every
+            // frame — the same thread the playback clock ticks on and the window draws on —
+            // so each heavy frame made the next tick late, and the picture stepped unevenly.
+            let image = await Self.draw(renderer, drawn, source: source, webcam: camera,
+                                        blending: blending, blendingWebcam: blendingCamera)
             guard !Task.isCancelled, let image else { return }
             // Sized in the *full* frame's points even when the pixels are fewer, so the pane's
             // layout and its aspect-fit arithmetic do not move when the fidelity does. The
@@ -629,12 +671,20 @@ final class EditorModel {
             // build. Playback is the other way round — it is heading straight for those
             // frames, so it pays for them gladly.
             guard isPlaying || !hasPendingRender else { return }
+            // Reading straight through has the next frames coming anyway.
+            guard !readsThrough else { return }
             if let path = drawn.sourceMedia {
                 await media.prefetch(from: path, around: drawn.sourceTime, forward: isPlaying && playbackRate > 0)
             } else {
                 await frames?.prefetch(around: drawn.sourceTime, forward: isPlaying && playbackRate > 0)
             }
         }
+    }
+
+    @concurrent
+    private nonisolated static func draw(_ renderer: SceneRenderer, _ scene: SceneDescriptor, source: CIImage?,
+                                         webcam: CIImage?, blending: CIImage?, blendingWebcam: CIImage?) async -> CGImage? {
+        renderer.cgImage(for: scene, source: source, webcam: webcam, blending: blending, blendingWebcam: blendingWebcam)
     }
 
     /// The recorded pointer, smoothed, computed only when it has to be.
@@ -1363,7 +1413,7 @@ final class EditorModel {
         if case .zoom(let id) = selection, let zoom = timeline.zooms.first(where: { $0.id == id }) {
             return zoom
         }
-        return timeline.zooms.last { $0.contains(playhead) }
+        return timeline.zooms.last { $0.contains(settledPlayhead) }
     }
 
     /// The zoom this one would be merged with: the next one along the lane.
@@ -1385,7 +1435,7 @@ final class EditorModel {
     /// `ZoomLane.split` refuses it.
     var canSplitZoom: Bool {
         guard let zoom = activeZoom else { return false }
-        return ZoomLane.split(zoom, at: playhead) != nil
+        return ZoomLane.split(zoom, at: settledPlayhead) != nil
     }
 
     /// One long push-in becomes two, cut at the playhead.
@@ -1734,7 +1784,7 @@ final class EditorModel {
     /// The caption on screen at the playhead, which is the one the inspector should
     /// have focused for editing.
     var captionAtPlayhead: CaptionCue? {
-        timeline.captions.last { $0.contains(playhead) }
+        timeline.captions.last { $0.contains(settledPlayhead) }
     }
 
     // MARK: - Things drawn on the picture

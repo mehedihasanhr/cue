@@ -11,6 +11,14 @@ import TimelineKit
 /// does the seeking; the cache is what makes the second pass over the same stretch free.
 public actor FrameSource {
     private let generator: AVAssetImageGenerator
+    private let asset: AVAsset
+    private let track: AVAssetTrack?
+    private let transform: CGAffineTransform
+    /// The straight-through reader playback uses — see `playbackFrame(at:)`. Opened on the
+    /// first frame of a play and let go of when it stops.
+    private var playback: ExportFrameReader?
+    /// The last moment playback asked for, to tell a jump from the next frame.
+    private var lastPlaybackTime: CMTime = .negativeInfinity
     private var cache: [Int: CIImage] = [:]
     private var order: [Int] = []
     private let capacity: Int
@@ -68,6 +76,9 @@ public actor FrameSource {
         // rectangle is transformed rather than the size.
         let transform = try await track?.load(.preferredTransform) ?? .identity
         naturalSize = CGRect(origin: .zero, size: size).applying(transform).standardized.size
+        self.asset = asset
+        self.track = track
+        self.transform = transform
 
         generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
@@ -81,8 +92,12 @@ public actor FrameSource {
         // Read beside everything else rather than before it: opening a recording should
         // not wait on a pass over every frame, and until it is done the provisional keys
         // are already exact enough to be safe.
-        if let track {
+        // On a separate opening of the file, because the track above now belongs to this
+        // actor and the playback reader.
+        if track != nil {
             Task.detached(priority: .utility) { [weak self] in
+                let asset = AVURLAsset(url: url)
+                guard let track = try? await asset.loadTracks(withMediaType: .video).first else { return }
                 let times = await Self.readFrameTimes(of: track, in: asset)
                 await self?.adopt(frameTimes: times)
             }
@@ -183,6 +198,33 @@ public actor FrameSource {
         store(frame, for: key)
         guard request == generation else { return nil }
         return frame
+    }
+
+    /// The frame for a moment of ordinary forward playback, read straight through the file.
+    ///
+    /// Playback used to go through the same exact seek scrubbing does, one
+    /// `AVAssetImageGenerator` request per frame — and every one of those decodes forward
+    /// from the keyframe before it. On a 3K HEVC recording that came to eight frames a
+    /// second, delivered unevenly, and a zoom drawn at eight uneven frames a second shakes.
+    /// A reader that walks the file in order decodes each frame once, as a player does.
+    ///
+    /// A jump — backwards, or more than a second ahead — reopens the reader where it
+    /// landed rather than decoding everything in between.
+    public func playbackFrame(at time: CMTime) -> CIImage? {
+        guard let track else { return nil }
+        let jumped = time < lastPlaybackTime - CMTime(value: 1, timescale: 30)
+            || time > lastPlaybackTime + CMTime(seconds: 1, preferredTimescale: 600)
+        if playback == nil || jumped {
+            playback = ExportFrameReader(asset: asset, track: track, transform: transform)
+        }
+        lastPlaybackTime = time
+        return try? playback?.frame(at: time)
+    }
+
+    /// Lets go of the playback reader, once the picture has stopped.
+    public func endPlayback() {
+        playback = nil
+        lastPlaybackTime = .negativeInfinity
     }
 
     /// Warms the cache around a time, so a scrub that carries on in the same direction

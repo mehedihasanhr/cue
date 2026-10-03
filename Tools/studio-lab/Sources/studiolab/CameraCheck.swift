@@ -20,6 +20,8 @@ enum CameraCheck {
         let zoom: Double
         let center: CGPoint
         let crop: CGRect
+        /// How far the shutter smears the picture this frame, in output pixels.
+        var blur: Double = 0
     }
 
     static func run(_ arguments: [String]) async -> Int32 {
@@ -61,7 +63,12 @@ enum CameraCheck {
         for frame in 0..<count {
             let time = Double(frame) / rate
             let scene = builder.descriptor(for: timeline, at: CMTime(seconds: time, preferredTimescale: 60_000), cursor: cursor)
-            samples.append(Sample(time: time, zoom: scene.zoom, center: scene.zoomCenter, crop: scene.sourceCrop))
+            var sample = Sample(time: time, zoom: scene.zoom, center: scene.zoomCenter, crop: scene.sourceCrop)
+            if let motion = scene.cameraMotion {
+                let reach = hypot(scene.outputSize.width, scene.outputSize.height) / 2
+                sample.blur = max(hypot(motion.travel.dx, motion.travel.dy), abs(motion.growth) * reach)
+            }
+            samples.append(sample)
         }
 
         // `--trace from to`: the camera every tenth of a second over a stretch.
@@ -69,8 +76,8 @@ enum CameraCheck {
            let from = Double(arguments[flag + 1]), let to = Double(arguments[flag + 2]) {
             for sample in samples where sample.time >= from && sample.time <= to
                 && (to - from < 1 || Int((sample.time * 60).rounded()) % 6 == 0) {
-                print(String(format: "  %6.2f s  zoom %.3f  centre %.4f, %.4f", sample.time, sample.zoom,
-                             sample.center.x, sample.center.y))
+                print(String(format: "  %6.2f s  zoom %.3f  centre %.4f, %.4f  blur %.2f", sample.time, sample.zoom,
+                             sample.center.x, sample.center.y, sample.blur))
             }
         }
         var cropChanges = 0

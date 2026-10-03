@@ -361,15 +361,18 @@ public final class SceneRenderer: @unchecked Sendable {
             // (`SceneBuilder.pictureCrop(at:)`) must not bring a trace of it back. Its own
             // edge pixels, repeated outwards, are what the filter should see, and the result
             // is cut back to exactly where the picture goes.
-            image = magnified(image.clampedToExtent(), by: placement).cropped(to: target)
-        } else if max(sx, sy) > Self.lanczosFrom {
+            image = (scene.prefersSpeed ? image.clampedToExtent().transformed(by: placement)
+                                        : magnified(image.clampedToExtent(), by: placement)).cropped(to: target)
+        } else if max(sx, sy) > Self.lanczosFrom, !scene.prefersSpeed {
             // The edge pixels repeated outwards here too: Lanczos reaches three pixels past
             // the edge, and past it is nothing.
             image = magnified(image.clampedToExtent(), by: placement).cropped(to: target)
         } else {
             image = image.transformed(by: placement)
         }
-        image = sharpenedForMagnification(image, scale: max(sx, sy))
+        if !scene.prefersSpeed {
+            image = sharpenedForMagnification(image, scale: max(sx, sy))
+        }
 
         // The colour correction: on the recording, placed, and on nothing laid over it
         // afterwards. Not on a title's panel, which is a colour somebody chose.

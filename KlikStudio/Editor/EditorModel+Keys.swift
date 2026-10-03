@@ -23,7 +23,7 @@ extension EditorModel {
 
     /// The shortcut on screen at the playhead.
     var keyCueAtPlayhead: KeyCue? {
-        timeline.keyCues.last { $0.contains(playhead) }
+        timeline.keyCues.last { $0.contains(settledPlayhead) }
     }
 
     /// The shortcut the menu acts on: the one selected, or failing that the one at the

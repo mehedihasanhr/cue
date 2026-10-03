@@ -17,6 +17,11 @@ extension EditorModel {
     var previousMarker: CMTime? { RecordedMarkers.previous(before: playhead, in: markerTimes) }
     var nextMarker: CMTime? { RecordedMarkers.next(after: playhead, in: markerTimes) }
 
+    /// Whether there is a marker either side, for the menu bar: asked of the settled
+    /// playhead, so playback does not rebuild the menus on every frame. See `settledPlayhead`.
+    var hasMarkerBefore: Bool { RecordedMarkers.previous(before: settledPlayhead, in: markerTimes) != nil }
+    var hasMarkerAfter: Bool { RecordedMarkers.next(after: settledPlayhead, in: markerTimes) != nil }
+
     func goToPreviousMarker() {
         guard let time = previousMarker else { return }
         scrub(to: time)

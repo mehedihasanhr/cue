@@ -179,6 +179,11 @@ public struct SceneDescriptor: Equatable, Sendable {
     /// the one in front. The frame round it — background, corners, shadow — is drawn as
     /// ever, so the video does not jump; only what the window showed is withheld.
     public var hidesPicture: Bool = false
+    /// A frame drawn smaller while the picture moves (`scaled(by:)` below one), where the
+    /// time a frame takes matters more than the last fraction of sharpness: the renderer
+    /// enlarges a zoom with plain bilinear sampling and skips the sharpening pass. Never
+    /// set on a frame at rest or one being exported.
+    public var prefersSpeed: Bool = false
 
     /// The rectangle the picture is actually allowed to occupy.
     ///
@@ -246,6 +251,7 @@ public struct SceneDescriptor: Equatable, Sendable {
     public func scaled(by factor: Double) -> SceneDescriptor {
         guard factor > 0, factor != 1 else { return self }
         var copy = self
+        copy.prefersSpeed = factor < 1
         // Rounded, because this size becomes a `CGImage`'s and a pixel buffer's, and a
         // fractional one there is a rounding decision made somewhere we cannot see.
         copy.outputSize = CGSize(width: max(1, (outputSize.width * factor).rounded()),

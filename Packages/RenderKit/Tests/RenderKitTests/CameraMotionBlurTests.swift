@@ -33,6 +33,36 @@ struct CameraMotionBlurTests {
         SceneBuilder(videoSize: videoSize).descriptor(for: timeline, at: DressingFixtures.time(seconds))
     }
 
+    /// Switched on at full strength at the threshold, the smear went from nothing to the
+    /// threshold's two and a half pixels between one frame and the next at the start and end
+    /// of every zoom — a jolt in sharpness that read as the camera shaking.
+    @Test("The smear grows from nothing as the camera gathers speed, and fades back to nothing")
+    func smearEasesIn() {
+        let edit = timeline()
+        let output = scene(edit, at: 0).outputSize
+        let reach = hypot(output.width, output.height) / 2
+        let least = SceneBuilder.leastVisibleSmear * min(output.width, output.height) / 1_080
+        func smear(_ seconds: Double) -> Double {
+            guard let motion = scene(edit, at: seconds).cameraMotion else { return 0 }
+            return max(hypot(motion.travel.dx, motion.travel.dy), abs(motion.growth) * reach)
+        }
+        // Every 240th of a second through the push-in and the pull-out.
+        for range in [(1.0, 1.5), (3.5, 4.0)] {
+            var seconds = range.0, previous = 0.0
+            while seconds <= range.1 {
+                let now = smear(seconds)
+                if previous == 0, now > 0 {
+                    #expect(now < least * 0.5, "the smear starts small at \(seconds)s, not at \(now) px")
+                }
+                if now == 0, previous > 0 {
+                    #expect(previous < least * 0.5, "the smear ends small before \(seconds)s, not at \(previous) px")
+                }
+                previous = now
+                seconds += 1.0 / 240
+            }
+        }
+    }
+
     @Test("Pushing in streaks outwards, pulling out the other way, and in between nothing")
     func onlyWhileMoving() throws {
         let edit = timeline()

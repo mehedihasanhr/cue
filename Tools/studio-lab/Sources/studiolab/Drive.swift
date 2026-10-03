@@ -94,6 +94,26 @@ enum Drive {
             print(result == .success ? "set \(summary(of: target))" : "could not set: \(result.rawValue)")
             return result == .success ? 0 : 1
 
+        case "resize":
+            // `studiolab resize <app> <width> <height>`: the app's first titled window, by
+            // Accessibility, so a layout can be checked at a size without touching the screen.
+            guard rest.count >= 2, let width = Double(rest[0]), let height = Double(rest[1]) else { return usage() }
+            var windows: CFTypeRef?
+            AXUIElementCopyAttributeValue(element, kAXWindowsAttribute as CFString, &windows)
+            guard let window = (windows as? [AXUIElement])?.first(where: { window in
+                var title: CFTypeRef?
+                AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &title)
+                return !((title as? String) ?? "").isEmpty
+            }) else {
+                print("no titled window")
+                return 1
+            }
+            var size = CGSize(width: width, height: height)
+            let value = AXValueCreate(.cgSize, &size)!
+            let result = AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, value)
+            print(result == .success ? "resized to \(Int(width)) × \(Int(height))" : "could not resize: \(result.rawValue)")
+            return result == .success ? 0 : 1
+
         case "key":
             guard let code = rest.first.flatMap(UInt16.init) else { return usage() }
             var flags: CGEventFlags = []

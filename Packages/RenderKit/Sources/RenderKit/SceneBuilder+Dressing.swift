@@ -173,7 +173,16 @@ extension SceneBuilder {
         // other sizes.
         let reach = hypot(now.width, now.height) / 2
         let least = Self.leastVisibleSmear * shorter / 1_080
-        guard hypot(travel.dx, travel.dy) >= least || abs(growth) * reach >= least else { return nil }
-        return CameraMotionLayer(travel: travel, growth: growth, center: CGPoint(x: now.midX, y: now.midY))
+        let smear = max(hypot(travel.dx, travel.dy), abs(growth) * reach)
+        guard smear > least else { return nil }
+        // Eased in from nothing rather than switched on at full strength. Cut off at the
+        // threshold, the blur went from none to two and a half pixels between one frame and
+        // the next at the start and end of every zoom — a jolt in the picture's sharpness
+        // that read as the camera shaking. Taking the threshold off the top makes the
+        // smear grow from zero as the camera gathers speed, and fade to zero as it settles.
+        let eased = (smear - least) / smear
+        return CameraMotionLayer(travel: CGVector(dx: travel.dx * eased, dy: travel.dy * eased),
+                                 growth: growth * eased,
+                                 center: CGPoint(x: now.midX, y: now.midY))
     }
 }
