@@ -431,6 +431,12 @@ public actor VideoExporter {
             // A keyframe every two seconds: scrubbing the finished file stays responsive
             // without the size penalty of an all-intra stream.
             compression[AVVideoMaxKeyFrameIntervalDurationKey] = 2
+            // An export is not live: quality over speed, and H.264's High profile, whose
+            // 8×8 transform keeps small text far cleaner than Main's 4×4 alone.
+            compression[kVTCompressionPropertyKey_PrioritizeEncodingSpeedOverQuality as String] = false
+            if codec == .h264 {
+                compression[AVVideoProfileLevelKey] = AVVideoProfileLevelH264HighAutoLevel
+            }
         }
         if settings.keepsTransparency {
             // Core Image draws with its colours already multiplied by their alpha, and the

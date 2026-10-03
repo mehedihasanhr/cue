@@ -126,18 +126,22 @@ public enum ExportQuality: String, Sendable, CaseIterable, Codable {
     ///
     /// Scaled by frame rate rather than fixed, because the same picture at 60 fps needs
     /// roughly twice what it needs at 30. At 1080p60 the four come to about 2.7 Mb/s
-    /// (Smaller File, HEVC), 6.2 (Good), 11 (Better) and 19 (Best): screen recordings are
-    /// mostly still, flat and sharp-edged, so this is well under what camera footage of
-    /// the same size would want, and still enough that text survives a scroll.
+    /// (Smaller File, HEVC), 8.7 (Good), 17 (Better) and 31 (Best).
+    ///
+    /// Higher than a still screen needs, on purpose: a zoom moves the whole picture, so
+    /// for the length of every push-in and pan nearly every pixel changes from one frame to
+    /// the next — the one stretch a screen recording looks like camera footage to the
+    /// encoder. At the old 0.09 the zoomed text came out ringed with blocks exactly where
+    /// the zoom was meant to show it close up.
     public func bitrate(forPixels pixels: Int, frameRate: Int) -> Int {
         let perPixel: Double = switch self {
         case .smaller: 0.022
-        case .good: 0.05
-        case .better: 0.09
-        case .best: 0.15
+        case .good: 0.07
+        case .better: 0.14
+        case .best: 0.25
         }
         let raw = Double(pixels) * perPixel * Double(max(1, frameRate))
-        return max(self == .smaller ? ExportSettings.minimumBitrate : 1_000_000, min(Int(raw), 120_000_000))
+        return max(self == .smaller ? ExportSettings.minimumBitrate : 1_000_000, min(Int(raw), 200_000_000))
     }
 
     public var title: String {

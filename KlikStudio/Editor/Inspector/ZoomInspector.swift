@@ -12,7 +12,7 @@ import TimelineKit
 /// Scale in a list that long is the kind of friction that makes people stop adjusting zooms
 /// at all.
 ///
-/// So: **Scale, Duration, Smoothness, Follow, on/off, Reset framing**, and an Advanced
+/// So: **Scale, Duration, Speed, Follow, on/off, Reset framing**, and an Advanced
 /// section holding the ones that answer a question you had to already have. A disclosure
 /// rather than tabs, because tabs are a second navigation system inside a panel that is
 /// already reached by selecting something — and because an expandable section leaves the
@@ -80,23 +80,37 @@ struct ZoomInspector: View {
                         value: duration(zoom), range: 0.3...12,
                         format: { String(format: "%.1fs", $0) })
 
-        // "Smoothness" rather than "Ramp": the thing being set is how gently the camera
-        // arrives, and a ramp is the mechanism rather than the effect. The number stays in
-        // seconds because that is what it is, and because it has to be readable against the
-        // duration above it.
-        InspectorSlider(model: model, "Smoothness", systemImage: "timelapse",
-                        value: smoothness(zoom), range: 0...2,
-                        format: { String(format: "%.2fs", $0) })
+        // How fast the camera goes from the whole picture into the zoom, and back out.
+        // Faster to the right, as every speed control reads, although what is stored is
+        // the ramp's length in seconds — so the readout says the seconds, which is what has
+        // to be judged against the duration above it.
+        InspectorSlider(model: model, "Speed", systemImage: "hare",
+                        value: speed(zoom), range: Self.rampRange,
+                        format: { String(format: "%.1fs in · out", Self.seconds(fromSpeed: $0)) })
             .disabled(zoom.isInstant)
-            .help(zoom.isInstant ? "Instant, so Smoothness is not used. The camera cuts in and out." : "How gently the camera arrives and leaves")
+            .help(zoom.isInstant
+                  ? "Instant, so Speed is not used. The camera cuts in and out."
+                  : "How fast the camera pushes in from the whole picture and pulls back out. Right is faster.")
 
-        // A cut instead of a movement. Under Smoothness because it is the other answer to
+        // The same thing for every zoom at once, beside the one-zoom control rather than
+        // behind Advanced: "all my zooms are too slow" is the commoner complaint, and the
+        // answer to it should not be eight trips through this panel.
+        InspectorRow("All zooms") {
+            StudioSegmented(selection: Binding(
+                get: { model.timeline.camera.zoomSpeed },
+                set: { model.setZoomSpeed($0) }
+            ), items: Array(ZoomSpeed.allCases), title: \.title)
+            .fixedSize()
+        }
+        .help("Sets the speed of every zoom in the project — \(String(format: "%.1f", model.timeline.camera.zoomSpeed.transition)) s in and out — and of the zooms added from now on.")
+
+        // A cut instead of a movement. Under Speed because it is the other answer to
         // the same question, and because it is what greys that slider out.
         InspectorSwitch("Instant", isOn: Binding(
             get: { zoom.isInstant },
             set: { _ in model.toggleZoomInstant() }
         ))
-        .help("Cut straight in on the first frame and straight out after the last, with no movement. Smoothness is kept for switching back.")
+        .help("Cut straight in on the first frame and straight out after the last, with no movement. Speed is kept for switching back.")
 
         InspectorSwitch("Follow the pointer", isOn: Binding(
             get: { zoom.followsCursor },
@@ -196,7 +210,7 @@ struct ZoomInspector: View {
         .help("A locked zoom cannot be dragged or resized on the timeline, and the next auto-zoom run leaves it alone. You can still change it here, and still delete it.")
 
         // One ramp at one end and nothing at the other: this is half of a split, and saying
-        // so is what stops the Smoothness slider above looking broken.
+        // so is what stops the Speed slider above looking broken.
         if zoom.ramps.in != zoom.ramps.out {
             InspectorNote(zoom.ramps.in == .zero
                           ? "Cut from the zoom before it — no ramp at its start."
@@ -268,13 +282,23 @@ struct ZoomInspector: View {
         }
     }
 
-    private func smoothness(_ zoom: ZoomRegion) -> Binding<Double> {
+    /// The ramp's length, from fastest to slowest, in seconds.
+    static let rampRange: ClosedRange<Double> = 0.2...2.0
+
+    /// A ramp turned round, so the slider runs slow → fast: the speed `v` stands for the
+    /// ramp `low + high − v`.
+    static func seconds(fromSpeed speed: Double) -> Double {
+        rampRange.lowerBound + rampRange.upperBound - speed
+    }
+
+    private func speed(_ zoom: ZoomRegion) -> Binding<Double> {
         Binding {
-            model.timeline.zooms.indices.contains(index)
-                ? model.timeline.zooms[index].transition.seconds : 0
-        } set: { seconds in
-            change("Zoom Smoothness") {
-                $0.zooms[index].transition = CMTime(seconds: seconds, preferredTimescale: 600)
+            let seconds = model.timeline.zooms.indices.contains(index)
+                ? model.timeline.zooms[index].transition.seconds : ZoomSpeed.medium.transition
+            return Self.seconds(fromSpeed: min(max(seconds, Self.rampRange.lowerBound), Self.rampRange.upperBound))
+        } set: { speed in
+            change("Zoom Speed") {
+                $0.zooms[index].transition = CMTime(seconds: Self.seconds(fromSpeed: speed), preferredTimescale: 600)
             }
         }
     }
