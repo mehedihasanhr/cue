@@ -42,10 +42,23 @@ final class RecorderBarPanel {
     private lazy var targets = TargetOverlayController(model: model)
     /// The bar minimized: the clock on a small island at the screen's edge.
     private lazy var island: RecordingIsland = {
-        let island = RecordingIsland(studio: studio, settings: settings)
+        let island = RecordingIsland(studio: studio, settings: settings, model: model)
         island.expand = { [weak self] in self?.show() }
-        island.hovered = { [weak self] frame, edge in self?.peek(beside: frame, edge: edge) }
-        island.carried = { [weak self] in self?.endPeek() }
+        // A mode chosen on the island, as the bar's own does: Window and Device show the
+        // overlay that names the target, Area raises its own.
+        island.choose = { [weak self] mode in
+            guard let self else { return }
+            self.model.choose(mode)
+            if mode.isAvailable, mode != .area { self.targets.show() }
+        }
+        island.restart = { [weak self] in
+            guard let self else { return }
+            self.studio.requestRestart()
+            // A take long enough to ask about is asked about on the bar.
+            if self.studio.restartPending { self.show() }
+        }
+        island.showLibrary = { [weak self] in self?.showLibrary() }
+        island.openSettings = { [weak self] in self?.openSettings() }
         // Records what the bar has chosen, from the island; with nothing chosen yet the
         // bar comes back to ask, as its own Record button does.
         island.record = { [weak self] in
@@ -92,7 +105,6 @@ final class RecorderBarPanel {
 
         model.isMinimized = false
         island.hide()
-        stopPeeking()
         model.presentations += 1
         if let panel {
             panel.orderFrontRegardless()
@@ -189,11 +201,6 @@ final class RecorderBarPanel {
     /// Puts the bar away for the rest of the take. The menu bar icon carries on with the
     /// clock, pause and stop, and offers the bar back.
     func minimize() {
-        // From a bar that is only peeking out of the island, back into it.
-        if isPeeking {
-            endPeek()
-            return
-        }
         let frame = panel?.frame
         model.isMinimized = true
         hide()
@@ -204,100 +211,6 @@ final class RecorderBarPanel {
     func leaveMinimized() {
         model.isMinimized = false
         island.hide()
-        stopPeeking()
-    }
-
-    // MARK: - Peeking out of the island
-
-    /// Shown beside the island while the pointer is on one or the other, rather than
-    /// brought back: everything the bar offers, from the island, without unminimizing.
-    private(set) var isPeeking = false
-    /// Where the bar lives when it is properly shown, kept while it peeks elsewhere.
-    private var homeAnchor: CGPoint?
-    private var peekWatch: Timer?
-    private var outsideSince: Date?
-    private var menusOpen = 0
-    private var menuObservers: [any NSObjectProtocol] = []
-
-    /// Puts the bar beside the island — on the side away from the edge the island is on —
-    /// and keeps it there until the pointer has left both for a moment.
-    func peek(beside island: NSRect, edge: Edge) {
-        guard model.isMinimized, let panel else { return }
-        let size = wantedSize.width > 1 ? wantedSize : panel.frame.size
-        // The bar's window carries 14 points of clear room for its shadow, so it can
-        // overlap the island by most of that and still leave a hair of space between.
-        let gap: CGFloat = -8
-        var frame: NSRect = switch edge {
-        case .trailing: NSRect(x: island.minX - gap - size.width, y: island.midY - size.height / 2, width: size.width, height: size.height)
-        case .leading: NSRect(x: island.maxX + gap, y: island.midY - size.height / 2, width: size.width, height: size.height)
-        case .bottom: NSRect(x: island.midX - size.width / 2, y: island.maxY + gap, width: size.width, height: size.height)
-        case .top: NSRect(x: island.midX - size.width / 2, y: island.minY - gap - size.height, width: size.width, height: size.height)
-        }
-        let center = CGPoint(x: island.midX, y: island.midY)
-        if let visible = (NSScreen.screens.first { $0.frame.contains(center) } ?? NSScreen.main)?.visibleFrame {
-            frame.origin.x = min(max(frame.minX, visible.minX), visible.maxX - frame.width)
-            frame.origin.y = min(max(frame.minY, visible.minY), visible.maxY - frame.height)
-        }
-        if !isPeeking { homeAnchor = anchor }
-        isPeeking = true
-        anchor = CGPoint(x: frame.midX, y: frame.minY)
-        place(panel, size: size, display: false)
-        if !panel.isVisible {
-            model.presentations += 1
-            panel.orderFrontRegardless()
-        }
-        watch(island)
-    }
-
-    /// The bar goes back into the island.
-    func endPeek() {
-        guard isPeeking else { return }
-        panel?.orderOut(nil)
-        stopPeeking()
-    }
-
-    private func stopPeeking() {
-        guard isPeeking else { return }
-        isPeeking = false
-        peekWatch?.invalidate()
-        peekWatch = nil
-        outsideSince = nil
-        if let homeAnchor { anchor = homeAnchor }
-        homeAnchor = nil
-    }
-
-    /// Ends the peek once the pointer has been away from the island and the bar for a
-    /// moment — not while one of the bar's menus is open, or the target overlay is up,
-    /// since those are the bar still being used.
-    private func watch(_ island: NSRect) {
-        if menuObservers.isEmpty {
-            let center = NotificationCenter.default
-            menuObservers = [
-                center.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { [weak self] _ in
-                    MainActor.assumeIsolated { self?.menusOpen += 1 }
-                },
-                center.addObserver(forName: NSMenu.didEndTrackingNotification, object: nil, queue: .main) { [weak self] _ in
-                    MainActor.assumeIsolated { self?.menusOpen = max(0, (self?.menusOpen ?? 1) - 1) }
-                },
-            ]
-        }
-        peekWatch?.invalidate()
-        outsideSince = nil
-        let timer = Timer(timeInterval: 0.12, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, let panel = self.panel else { return }
-                let zone = island.union(panel.frame).insetBy(dx: -6, dy: -6)
-                if zone.contains(NSEvent.mouseLocation) || self.menusOpen > 0 || self.targets.isVisible {
-                    self.outsideSince = nil
-                } else if let since = self.outsideSince {
-                    if Date.now.timeIntervalSince(since) > 0.35 { self.endPeek() }
-                } else {
-                    self.outsideSince = .now
-                }
-            }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        peekWatch = timer
     }
 
     /// The bar's window, for what sits beside it — the camera preview follows it about.

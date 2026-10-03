@@ -17,7 +17,9 @@ import SwiftUI
 final class RecordingIsland {
     private let studio: StudioService
     private let settings: StudioSettings
+    private let model: RecorderModel
     private let state = IslandState()
+    private var menuObservers: [any NSObjectProtocol] = []
     private var panel: NSPanel?
     private var settle: Timer?
     private var velocity = CGVector.zero
@@ -36,24 +38,49 @@ final class RecordingIsland {
     var expand: () -> Void = {}
     /// Starts a take from the island, before one is under way.
     var record: () -> Void = {}
-    /// The pointer came onto the island: where it is on the screen, and its edge.
-    var hovered: (_ frame: NSRect, _ edge: Edge) -> Void = { _, _ in }
-    /// It is being dragged.
-    var carried: () -> Void = {}
+    /// What the opened island's buttons reach back into the app for.
+    var choose: (RecorderModel.Mode) -> Void = { _ in }
+    var restart: () -> Void = {}
+    var showLibrary: () -> Void = {}
+    var openSettings: () -> Void = {}
 
     /// Room around the island for the neck to reach the edge through.
     fileprivate static let margin: CGFloat = 44
-    /// Lying along the top or bottom edge, and while it is carried. `open` is the room
-    /// kept for it along the edge — from its corners and in its window.
-    fileprivate static let wide = (compact: CGSize(width: 92, height: 36), open: CGSize(width: 176, height: 36))
+    /// Lying along the top or bottom edge, and while it is carried. `open` is the most it
+    /// grows to along the edge, which is the room kept for it from the screen's corners
+    /// and in its window.
+    fileprivate static let wide = (compact: CGSize(width: 92, height: 40), open: CGSize(width: openLength, height: 40))
     /// Standing along the left or right edge.
-    fileprivate static let tall = (compact: CGSize(width: 44, height: 64), open: CGSize(width: 44, height: 118))
+    fileprivate static let tall = (compact: CGSize(width: 44, height: 64), open: CGSize(width: 44, height: openLength))
+
+    /// One button's square on the opened island, and the rule between groups.
+    fileprivate static let tile: CGFloat = 32
+    fileprivate static let rule: CGFloat = 9
+    /// Opened before a take: the record button, the four modes, the three inputs, the
+    /// gear — in groups.
+    fileprivate static let openLength: CGFloat = 44 + rule + tile * 4 + rule + tile * 3 + rule + tile + 6
+    /// Opened during one: the clock, then pause, marker, restart, discard and stop.
+    fileprivate static func takeLength(standing: Bool) -> CGFloat {
+        (standing ? 50 : wide.compact.width) + rule + tile * 5 + 6
+    }
     /// How close to a side the island has to come to stand up.
     private static let snap: CGFloat = 56
 
-    init(studio: StudioService, settings: StudioSettings) {
+    init(studio: StudioService, settings: StudioSettings, model: RecorderModel) {
         self.studio = studio
         self.settings = settings
+        self.model = model
+        // Kept open while one of its menus is: the menu takes the pointer, and an island
+        // that closed under it would take the menu's button away mid-choice.
+        let center = NotificationCenter.default
+        menuObservers = [
+            center.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.state.menusOpen += 1 }
+            },
+            center.addObserver(forName: NSMenu.didEndTrackingNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { if let state = self?.state { state.menusOpen = max(0, state.menusOpen - 1) } }
+            },
+        ]
     }
 
     var isVisible: Bool { panel?.isVisible ?? false }
@@ -111,7 +138,7 @@ final class RecordingIsland {
     // MARK: - The window
 
     private func makePanel() -> NSPanel {
-        let size = NSSize(width: Self.wide.open.width + Self.margin * 2, height: Self.tall.open.height + Self.margin * 2)
+        let size = NSSize(width: Self.openLength + Self.margin * 2, height: Self.openLength + Self.margin * 2)
         let panel = IslandPanel(contentRect: NSRect(origin: .zero, size: size),
                                 styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
                                 backing: .buffered, defer: false)
@@ -119,10 +146,15 @@ final class RecordingIsland {
                               began: { [weak self] in self?.dragBegan(at: $0) },
                               moved: { [weak self] in self?.dragMoved(to: $0) },
                               ended: { [weak self] click in self?.dragEnded(click: click) },
-                              record: { [weak self] in self?.record() },
-                              hovered: { [weak self] in self?.pointerArrived() })
+                              actions: IslandActions(record: { [weak self] in self?.record() },
+                                                     choose: { [weak self] in self?.choose($0) },
+                                                     restart: { [weak self] in self?.restart() },
+                                                     showLibrary: { [weak self] in self?.showLibrary() },
+                                                     openSettings: { [weak self] in self?.openSettings() },
+                                                     expand: { [weak self] in self?.expand() }))
             .environment(studio)
             .environment(settings)
+            .environment(model)
         let hosting = NSHostingView(rootView: view)
         hosting.sizingOptions = []
         panel.contentView = hosting
@@ -153,17 +185,8 @@ final class RecordingIsland {
         if !StudioMotion.reduceMotion { showFrame() }
     }
 
-    private func pointerArrived() {
-        guard dragStart == nil, let panel else { return }
-        let size = state.size
-        let frame = NSRect(x: panel.frame.midX - size.width / 2, y: panel.frame.midY - size.height / 2,
-                           width: size.width, height: size.height)
-        hovered(frame, state.edge)
-    }
-
     private func dragMoved(to mouse: CGPoint) {
         guard let start = dragStart else { return }
-        if !state.isCarried { carried() }
         // Collapsed while carried: the buttons are no use mid-air, and a small drop is
         // what pours into the frame.
         if !state.isCarried {
@@ -348,10 +371,19 @@ private final class IslandState {
     /// edge, so the two have to agree on it at every moment of a fade.
     var bezel: CGFloat = 0
 
-    /// One size per shape. Hovering does not open the island itself: it brings the whole
-    /// bar out beside it (see `RecorderBarPanel.peek`), which is where every option is.
+    /// Its size along the edge it is on: small at rest, long enough for every option while
+    /// it is open.
+    /// One of its menus is open.
+    var menusOpen = 0
+    /// Open to show every option: under the pointer, or with one of its menus up — and
+    /// never while it is carried.
+    var isOpen: Bool { (isHovering || menusOpen > 0) && !isCarried }
+
     var size: CGSize {
-        isStanding ? RecordingIsland.tall.compact : RecordingIsland.wide.compact
+        let compact = isStanding ? RecordingIsland.tall.compact : RecordingIsland.wide.compact
+        guard isOpen else { return compact }
+        let length = isTaking ? RecordingIsland.takeLength(standing: isStanding) : RecordingIsland.openLength
+        return isStanding ? CGSize(width: compact.width, height: length) : CGSize(width: length, height: compact.height)
     }
 }
 
@@ -366,8 +398,7 @@ private struct IslandView: View {
     let began: (CGPoint) -> Void
     let moved: (CGPoint) -> Void
     let ended: (_ click: Bool) -> Void
-    let record: () -> Void
-    let hovered: () -> Void
+    let actions: IslandActions
 
     var body: some View {
         GeometryReader { proxy in
@@ -385,8 +416,7 @@ private struct IslandView: View {
                     // island's own: a drag moves it, a click brings the bar back.
                     .background(IslandHandle(began: began, moved: moved, ended: ended))
                     .onHover { inside in
-                        state.isHovering = inside
-                        if inside { hovered() }
+                        withAnimation(.spring(response: 0.34, dampingFraction: 0.8)) { state.isHovering = inside }
                     }
                     // Placed, not offset: an offset moves what is drawn but leaves the
                     // grip's AppKit view where layout put it, in the window's corner — so
@@ -401,19 +431,31 @@ private struct IslandView: View {
         }
     }
 
-    /// The clock — or, before a take, the record button — beside its dot in a row while
-    /// the island lies down, above it in a column while it stands. One set of views in a
-    /// layout that changes, so turning moves them rather than fading one arrangement out.
+    /// At rest, the clock — or before a take, the record button. Opened, every option
+    /// after it in groups: in a column while the island stands on a side, a row while it
+    /// lies along the top or bottom. One set of views in a layout that changes, so turning
+    /// moves them rather than fading one arrangement out and another in.
     private var controls: some View {
         let standing = state.isStanding
+        let line = standing ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 0))
         let rest = standing ? RecordingIsland.tall.compact : RecordingIsland.wide.compact
-        return clock(stacked: standing)
-            .padding(.leading, standing ? 0 : 14)
-            .frame(width: rest.width, height: rest.height, alignment: standing ? .center : .leading)
+        let open = state.isOpen
+        return line {
+            clock(stacked: standing, open: open)
+                .padding(.leading, standing || (open && !state.isTaking) ? 0 : 14)
+                .frame(width: standing ? rest.width : (open && !state.isTaking ? 44 : rest.width),
+                       height: standing ? (open ? (state.isTaking ? 50 : 44) : rest.height) : rest.height,
+                       alignment: standing || (open && !state.isTaking) ? .center : .leading)
+            if open {
+                IslandOptions(standing: standing, isTaking: state.isTaking, actions: actions)
+                    .transition(.opacity)
+            }
+            Spacer(minLength: 0)
+        }
     }
 
     @ViewBuilder
-    private func clock(stacked: Bool) -> some View {
+    private func clock(stacked: Bool, open: Bool = false) -> some View {
         switch studio.session.state {
         case .recording(let started):
             TimelineView(.periodic(from: started, by: 1)) { context in
@@ -427,7 +469,7 @@ private struct IslandView: View {
             ProgressView().controlSize(.small)
                 .allowsHitTesting(false)
         default:
-            ready(stacked: stacked)
+            ready(stacked: stacked || open)
         }
     }
 
@@ -435,7 +477,7 @@ private struct IslandView: View {
     private func ready(stacked: Bool) -> some View {
         let layout = stacked ? AnyLayout(VStackLayout(spacing: 6)) : AnyLayout(HStackLayout(spacing: 8))
         return layout {
-            Button(action: record) {
+            Button(action: actions.record) {
                 ZStack {
                     Circle().strokeBorder(.white.opacity(0.85), lineWidth: 1.5)
                     Circle()
@@ -695,5 +737,153 @@ nonisolated private struct Bezel: Shape {
         path.addRoundedRect(in: rect.insetBy(dx: depth, dy: depth),
                             cornerSize: CGSize(width: radius, height: radius), style: .continuous)
         return path
+    }
+}
+
+/// What the opened island's buttons do, handed in by the window that owns it.
+private struct IslandActions {
+    let record: () -> Void
+    let choose: (RecorderModel.Mode) -> Void
+    let restart: () -> Void
+    let showLibrary: () -> Void
+    let openSettings: () -> Void
+    let expand: () -> Void
+}
+
+/// Every option, compact, for the opened island.
+///
+/// Before a take: the four modes, the three inputs as one-press switches, and the gear.
+/// During one: pause, marker, restart, discard and stop. A device or the apps whose sound
+/// is heard are still chosen on the full bar — the gear's Show Recorder Bar, or a click
+/// on the island — since a list of them has no room here.
+private struct IslandOptions: View {
+    @Environment(StudioService.self) private var studio
+    @Environment(StudioSettings.self) private var settings
+    @Environment(RecorderModel.self) private var model
+    let standing: Bool
+    let isTaking: Bool
+    let actions: IslandActions
+
+    var body: some View {
+        let line = standing ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 0))
+        line {
+            rule
+            if isTaking { takeOptions } else { setupOptions }
+        }
+    }
+
+    @ViewBuilder
+    private var setupOptions: some View {
+        ForEach(RecorderModel.Mode.allCases) { mode in
+            IslandTile(symbol: mode.symbol, name: mode.title, isSelected: model.mode == mode) {
+                actions.choose(mode)
+            }
+            .disabled(!mode.isAvailable)
+        }
+        rule
+        IslandTile(symbol: settings.recordsCamera ? "video" : "video.slash",
+                   name: settings.recordsCamera ? "Camera on" : "Camera off", isOn: settings.recordsCamera) {
+            model.setCamera(!settings.recordsCamera)
+        }
+        IslandTile(symbol: settings.recordsMicrophone ? "mic" : "mic.slash",
+                   name: settings.recordsMicrophone ? "Microphone on" : "Microphone off", isOn: settings.recordsMicrophone) {
+            settings.recordsMicrophone.toggle()
+        }
+        IslandTile(symbol: settings.recordsSystemAudio ? "music.note.tv" : "music.note.tv",
+                   name: settings.recordsSystemAudio ? "System audio on" : "System audio off", isOn: settings.recordsSystemAudio) {
+            settings.recordsSystemAudio.toggle()
+        }
+        rule
+        Menu {
+            Button("Show Recorder Bar", action: actions.expand)
+            Divider()
+            Button("Recordings\u{2026}", action: actions.showLibrary)
+            Button("Settings\u{2026}", action: actions.openSettings)
+        } label: {
+            IslandGlyph(symbol: "gearshape", isOn: true)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("More")
+    }
+
+    @ViewBuilder
+    private var takeOptions: some View {
+        let taking = studio.session.state.isTaking
+        IslandTile(symbol: studio.session.isPaused ? "play" : "pause",
+                   name: studio.session.isPaused ? "Resume" : "Pause") { studio.togglePause() }
+            .disabled(!taking)
+        IslandTile(symbol: "flag", name: "Add marker") { studio.addMarker() }
+            .disabled(!taking)
+        IslandTile(symbol: "arrow.counterclockwise", name: "Start again", action: actions.restart)
+            .disabled(!taking)
+        IslandTile(symbol: "trash", name: "Discard this recording") { studio.cancel() }
+            .disabled(!taking)
+        Button { studio.stop() } label: {
+            ZStack {
+                Circle().strokeBorder(.white.opacity(0.85), lineWidth: 1.5)
+                RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                    .fill(Color(red: 0.93, green: 0.2, blue: 0.22))
+                    .frame(width: 9, height: 9)
+            }
+            .frame(width: 22, height: 22)
+            .frame(width: RecordingIsland.tile, height: RecordingIsland.tile)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(BarButtonStyle(pressedScale: 0.88))
+        .disabled(!taking)
+        .help("Stop and keep this recording")
+        .accessibilityLabel("Stop")
+    }
+
+    /// The hairline between groups, across the island.
+    private var rule: some View {
+        Rectangle()
+            .fill(.white.opacity(0.14))
+            .frame(width: standing ? 18 : 1, height: standing ? 1 : 18)
+            .frame(width: standing ? RecordingIsland.tile : RecordingIsland.rule,
+                   height: standing ? RecordingIsland.rule : RecordingIsland.tile)
+    }
+}
+
+/// One option on the opened island: a glyph in a square, lit under the pointer.
+private struct IslandTile: View {
+    let symbol: String
+    let name: String
+    var isSelected = false
+    var isOn = true
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            IslandGlyph(symbol: symbol, isOn: isOn, isSelected: isSelected)
+        }
+        .buttonStyle(BarButtonStyle(pressedScale: 0.9))
+        .help(name)
+        .accessibilityLabel(name)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+private struct IslandGlyph: View {
+    let symbol: String
+    var isOn = true
+    var isSelected = false
+    @State private var isHovering = false
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 14, weight: .regular))
+            .foregroundStyle(.white.opacity(!isEnabled ? 0.3 : (isOn || isSelected ? 0.92 : 0.5)))
+            .frame(width: RecordingIsland.tile, height: RecordingIsland.tile)
+            .background {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(.white.opacity(isSelected ? 0.14 : (isHovering && isEnabled ? 0.08 : 0)))
+            }
+            .contentShape(Rectangle())
+            .onHover { inside in withAnimation(StudioMotion.hover) { isHovering = inside } }
     }
 }
