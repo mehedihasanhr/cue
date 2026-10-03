@@ -22,13 +22,15 @@ nonisolated struct AddOn: Sendable, Hashable, Identifiable {
     let minimumSupported: SemanticVersion
 }
 
-/// How a downloaded release is handed to the user.
+/// How a downloaded release is installed.
 ///
-/// Klik cannot install an app for them: a sandboxed process cannot create a
-/// non-quarantined executable, and it cannot clear the quarantine flag afterwards.
-/// Handing the download to macOS — a mounted image to drag from, or an installer
-/// package to run — is both the supported path and the one users already recognise.
+/// `archive` is installed by Klik itself, into a folder the user grants it — see
+/// `AddOnPlacer`. A disk image or a package is handed to macOS, which mounts it or runs
+/// it for the user to finish.
 nonisolated enum AddOnInstaller: String, Sendable, Codable {
+    /// An Apple Archive (`.aar`) of the app, unpacked in-process. The one a sandboxed
+    /// app can install on its own: it cannot mount an image or run an installer.
+    case archive
     case diskImage
     case package
 }
@@ -70,12 +72,18 @@ nonisolated enum AddOnCatalog {
 
     static func addOn(id: String) -> AddOn? { all.first { $0.id == id } }
 
-    /// Where published releases are listed.
+    /// Where published releases are listed: the feed attached to the newest release of
+    /// the public releases repository. GitHub serves `latest/download/<name>` from
+    /// whichever release is newest, so publishing a release is publishing its feed.
     ///
-    /// `nil` until the first add-on ships: with no feed there is nothing to download,
-    /// and Settings says so plainly instead of offering a button that cannot work.
-    /// Point this at the published feed in the same commit that publishes one.
-    static let feedURL: URL? = nil
+    /// A debug build can be pointed elsewhere with `KLIK_ADDON_FEED`, for testing an
+    /// install against a feed served from this machine.
+    static var feedURL: URL? {
+        #if DEBUG
+        if let override = ProcessInfo.processInfo.environment["KLIK_ADDON_FEED"] { return URL(string: override) }
+        #endif
+        return URL(string: "https://github.com/mehedihasanhr/klik-releases/releases/latest/download/addons.json")
+    }
 }
 
 /// The published feed, decoded.
@@ -177,6 +185,7 @@ nonisolated enum AddOnError: Error, LocalizedError, Equatable {
     case tooOld(installed: SemanticVersion, required: SemanticVersion)
     case untrusted(String)
     case launchFailed(String)
+    case installFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -190,6 +199,7 @@ nonisolated enum AddOnError: Error, LocalizedError, Equatable {
         case .tooOld(let installed, let required): "Klik Studio \(installed) is installed, but \(required) or later is needed."
         case .untrusted(let reason): "The installed add-on isn't signed by Klik's developer (\(reason))."
         case .launchFailed(let reason): "The add-on wouldn't start: \(reason)"
+        case .installFailed(let reason): "Klik couldn't install it: \(reason)"
         }
     }
 }

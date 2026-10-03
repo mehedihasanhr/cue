@@ -85,6 +85,24 @@ final class AddOnTests: XCTestCase {
         }
     }
 
+    /// The feed as `Scripts/make-addon-release.sh` writes it: versions as strings, and
+    /// an archive Klik installs itself.
+    func testThePublishedFeedShapeReads() throws {
+        let json = """
+        {"formatVersion": 1, "releases": [{
+            "addOn": "studio", "version": "1.2.0",
+            "download": "https://github.com/mehedihasanhr/klik-releases/releases/download/studio-1.2.0/KlikStudio-1.2.0.aar",
+            "bytes": 1234, "sha256": "\(String(repeating: "b", count: 64))",
+            "minimumHost": "0.5.0", "installer": "archive", "notes": null
+        }]}
+        """
+        let feed = try AddOnFeed.decode(Data(json.utf8))
+        let release = try XCTUnwrap(feed.latest(for: AddOnCatalog.studio, hostVersion: SemanticVersion("0.7.0")!))
+        XCTAssertEqual(release.version, SemanticVersion(1, 2, 0))
+        XCTAssertEqual(release.installer, .archive)
+        XCTAssertEqual(AddOnDownloads.fileURL(for: release).pathExtension, "aar")
+    }
+
     func testAFeedRoundTrips() throws {
         let original = feed([("studio", "1.4.0", "0.5.0")])
         let decoded = try AddOnFeed.decode(JSONEncoder().encode(original))

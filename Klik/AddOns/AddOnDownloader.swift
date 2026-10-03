@@ -21,7 +21,11 @@ nonisolated enum AddOnDownloads {
     }()
 
     static func fileURL(for release: AddOnRelease) -> URL {
-        let suffix = release.installer == .package ? "pkg" : "dmg"
+        let suffix = switch release.installer {
+        case .archive: "aar"
+        case .package: "pkg"
+        case .diskImage: "dmg"
+        }
         return folder.appendingPathComponent("\(release.addOn)-\(release.version).\(suffix)")
     }
 
@@ -57,49 +61,25 @@ final class URLSessionAddOnDownloader: NSObject, AddOnDownloading {
         try FileManager.default.createDirectory(at: AddOnDownloads.folder, withIntermediateDirectories: true)
         AddOnDownloads.sweepPartials()
 
-        let (bytes, response) = try await URLSession.shared.bytes(from: release.download)
+        // A download task to a file, with the session's own progress. It replaced reading
+        // the response a byte at a time, which managed a few hundred kilobytes a second
+        // even from this machine — half a minute for an add-on of a few megabytes.
+        let watcher = DownloadProgress(progress)
+        let (temporary, response) = try await URLSession.shared.download(from: release.download, delegate: watcher)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            try? FileManager.default.removeItem(at: temporary)
             throw AddOnError.http(http.statusCode)
         }
-
         let partial = AddOnDownloads.folder.appendingPathComponent("\(release.id).\(UUID().uuidString).partial")
-        FileManager.default.createFile(atPath: partial.path(percentEncoded: false), contents: nil)
-        guard let handle = try? FileHandle(forWritingTo: partial) else {
-            throw AddOnError.launchFailed("couldn't write to \(partial.lastPathComponent)")
-        }
-        defer { try? handle.close() }
-
-        // Hash as the bytes arrive: the file is never read back to verify it, so a
-        // multi-hundred-megabyte download is never resident in memory.
-        var hasher = SHA256()
-        var buffer = Data()
-        buffer.reserveCapacity(1 << 20)
-        var written = 0
-
-        for try await byte in bytes {
-            buffer.append(byte)
-            if buffer.count >= 1 << 20 {
-                hasher.update(data: buffer)
-                try handle.write(contentsOf: buffer)
-                written += buffer.count
-                buffer.removeAll(keepingCapacity: true)
-                if release.bytes > 0 { progress(Double(written) / Double(release.bytes)) }
-                try Task.checkCancellation()
-            }
-        }
-        if !buffer.isEmpty {
-            hasher.update(data: buffer)
-            try handle.write(contentsOf: buffer)
-            written += buffer.count
-        }
-        try handle.close()
+        try FileManager.default.moveItem(at: temporary, to: partial)
         progress(1)
 
+        let written = (try? partial.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1
         guard written == release.bytes else {
             try? FileManager.default.removeItem(at: partial)
             throw AddOnError.wrongSize(expected: release.bytes, got: written)
         }
-        let digest = hasher.finalize().map { String(format: "%02x", $0) }.joined()
+        let digest = try await Self.sha256(of: partial)
         guard digest == release.sha256.lowercased() else {
             try? FileManager.default.removeItem(at: partial)
             throw AddOnError.wrongDigest
@@ -109,5 +89,36 @@ final class URLSessionAddOnDownloader: NSObject, AddOnDownloading {
         try? FileManager.default.removeItem(at: destination)
         try FileManager.default.moveItem(at: partial, to: destination)
         return destination
+    }
+
+    /// The file's digest, read a megabyte at a time off the main thread, so a large
+    /// download is never resident in memory at once.
+    private static func sha256(of file: URL) async throws -> String {
+        try await Task.detached {
+            let handle = try FileHandle(forReadingFrom: file)
+            defer { try? handle.close() }
+            var hasher = SHA256()
+            while let chunk = try handle.read(upToCount: 1 << 20), !chunk.isEmpty {
+                hasher.update(data: chunk)
+            }
+            return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+        }.value
+    }
+}
+
+/// Passes a download task's progress on, as a fraction, on the main actor.
+private final class DownloadProgress: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    private let report: @MainActor (Double) -> Void
+    private var observation: NSKeyValueObservation?
+
+    init(_ report: @escaping @MainActor (Double) -> Void) {
+        self.report = report
+    }
+
+    func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
+        observation = task.progress.observe(\.fractionCompleted) { [report] progress, _ in
+            let fraction = progress.fractionCompleted
+            Task { @MainActor in report(fraction) }
+        }
     }
 }

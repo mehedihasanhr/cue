@@ -56,6 +56,22 @@ nonisolated struct SemanticVersion: Sendable, Hashable, Comparable, Codable, Los
         return suffix.isEmpty ? release : "\(release)-\(suffix)"
     }
 
+    /// Written as the string people read — `"1.2.0"` — in the add-on feed, which is
+    /// edited by hand at release time.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let string = try container.decode(String.self)
+        guard let version = SemanticVersion(string) else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Not a version: \(string)")
+        }
+        self = version
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(description)
+    }
+
     static func < (lhs: Self, rhs: Self) -> Bool {
         (lhs.major, lhs.minor, lhs.patch) < (rhs.major, rhs.minor, rhs.patch)
     }

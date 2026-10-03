@@ -62,6 +62,8 @@ struct AddOnRow: View {
             addOn.summary
         case .downloading(let progress):
             "Downloading… \(Int(progress * 100))%"
+        case .installing:
+            "Installing…"
         case .readyToInstall:
             "Downloaded. Finish installing it, then come back."
         case .failed(let message):
@@ -102,6 +104,8 @@ struct AddOnRow: View {
                 ProgressView().controlSize(.small)
                 Button("Cancel") { registry.cancelInstall(addOn) }
             }
+        case .installing:
+            ProgressView().controlSize(.small)
         case .readyToInstall:
             Button("Open Installer") { registry.openDownload(addOn) }
         case .failed:

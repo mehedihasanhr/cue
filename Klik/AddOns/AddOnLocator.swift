@@ -31,18 +31,46 @@ struct LaunchServicesAddOnLocator: AddOnLocating {
     }
 
     func locate(_ addOn: AddOn) -> InstalledAddOn? {
-        guard let url = localBuild ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: addOn.bundleID) else {
-            return nil
-        }
-        guard let bundle = Bundle(url: url),
-              let string = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
-              let version = SemanticVersion(string)
-        else {
-            Log.addOns.error("\(addOn.bundleID, privacy: .public) at \(url.path, privacy: .public) has no readable version")
-            return InstalledAddOn(url: url, version: SemanticVersion(0), untrustedReason: "no version")
+        // A copy the user chose is the answer, readable or not: when it can't be used,
+        // they need to hear why.
+        if let localBuild {
+            guard let version = Self.version(at: localBuild) else {
+                Log.addOns.error("\(addOn.bundleID, privacy: .public) at \(localBuild.path, privacy: .public) has no readable version")
+                return InstalledAddOn(url: localBuild, version: SemanticVersion(0), untrustedReason: "no version")
+            }
+            return InstalledAddOn(url: localBuild, version: version, untrustedReason: Self.untrustedReason(for: localBuild))
         }
 
-        return InstalledAddOn(url: url, version: version, untrustedReason: Self.untrustedReason(for: url))
+        // Otherwise the newest copy Klik can read, of every copy LaunchServices knows.
+        // Asking for just one handed back whichever it liked — a build in a developer
+        // folder, say — which the sandbox will not let Klik read, so the add-on showed
+        // as untrusted and Install was never offered. A copy Klik cannot read is one it
+        // cannot use either, so it is passed over rather than reported.
+        // One in the Trash is not installed, though LaunchServices keeps it on the list
+        // and macOS refuses to open it from there.
+        let known = NSWorkspace.shared.urlsForApplications(withBundleIdentifier: addOn.bundleID)
+        let readable = (known + Self.placed(addOn))
+            .filter { !$0.pathComponents.contains(".Trash") }
+            .compactMap { url in Self.version(at: url).map { (url: url, version: $0) } }
+        guard let newest = readable.max(by: { $0.version < $1.version }) else { return nil }
+        return InstalledAddOn(url: newest.url, version: newest.version, untrustedReason: Self.untrustedReason(for: newest.url))
+    }
+
+    /// Where Klik itself installed an add-on this session. The process that does the
+    /// installing goes on getting LaunchServices' old answer for a while — a newly placed
+    /// copy is missing from it for seconds — so Settings went back to offering Install
+    /// with the app sitting in Applications.
+    static var placedCopies: [String: URL] = [:]
+
+    private static func placed(_ addOn: AddOn) -> [URL] {
+        guard let url = placedCopies[addOn.bundleID],
+              FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) else { return [] }
+        return [url]
+    }
+
+    private static func version(at url: URL) -> SemanticVersion? {
+        (Bundle(url: url)?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
+            .flatMap(SemanticVersion.init)
     }
 
     /// Why this bundle should not be trusted, or `nil` when it should be.

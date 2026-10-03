@@ -42,8 +42,10 @@ final class AddOnRegistry {
         /// Resolved against what is installed and what is published.
         case resolved(AddOnAvailability)
         case downloading(progress: Double)
-        /// Downloaded and verified. macOS does the installing from here — Klik opens
-        /// the image or package and the user finishes it.
+        /// Downloaded and verified, and being put in place by Klik — see `AddOnPlacer`.
+        case installing
+        /// Downloaded and verified, as an image or package: macOS does the installing
+        /// from here — Klik opens it and the user finishes it.
         case readyToInstall(URL)
         case failed(String)
 
@@ -123,17 +125,21 @@ final class AddOnRegistry {
         resolveInstalled()
     }
 
-    /// Downloads the offered release and hands it to macOS to install.
+    /// Downloads the offered release and installs it.
     ///
-    /// Klik stops at opening the image or package on purpose: a sandboxed process
-    /// cannot create a non-quarantined executable and cannot clear the quarantine flag,
-    /// so an app it unpacked itself would meet Gatekeeper on first launch anyway. The
-    /// familiar installer is both safer and less surprising.
+    /// An archive is installed by Klik into the folder the user grants it — asked first,
+    /// before anything is downloaded, so declining costs nothing. An image or package is
+    /// opened for macOS to install.
     func install(_ addOn: AddOn) {
         guard inFlight[addOn.id] == nil else { return }
         guard let release = availability(of: addOn).offeredRelease else {
             states[addOn.id] = .failed(AddOnError.notPublished.localizedDescription)
             return
+        }
+        var folder: URL?
+        if release.installer == .archive {
+            guard let granted = AddOnPlacer.installFolder(for: addOn, release: release) else { return }
+            folder = granted
         }
 
         states[addOn.id] = .downloading(progress: 0)
@@ -149,9 +155,20 @@ final class AddOnRegistry {
             defer { inFlight[addOn.id] = nil }
             do {
                 let url = try await task.value
-                states[addOn.id] = .readyToInstall(url)
                 Log.addOns.notice("Downloaded \(addOn.id, privacy: .public) \(release.version.description, privacy: .public)")
-                NSWorkspace.shared.open(url)
+                if let folder {
+                    states[addOn.id] = .installing
+                    let placed = try await AddOnPlacer.place(url, addOn: addOn, in: folder)
+                    Log.addOns.notice("Installed \(addOn.id, privacy: .public) at \(placed.path, privacy: .public)")
+                    // Done before looking again: `resolveInstalled` leaves alone an add-on
+                    // still in flight, so it sat on "Installing…" with the app in place.
+                    inFlight[addOn.id] = nil
+                    LaunchServicesAddOnLocator.placedCopies[addOn.bundleID] = placed
+                    resolveInstalled()
+                } else {
+                    states[addOn.id] = .readyToInstall(url)
+                    NSWorkspace.shared.open(url)
+                }
             } catch is CancellationError {
                 resolveInstalled()
             } catch {
