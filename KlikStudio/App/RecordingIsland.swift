@@ -6,9 +6,10 @@ import SwiftUI
 ///
 /// It rises out of the screen's bottom edge and sits melted into the bezel, the way the
 /// notch sits in the top one. Pulled away, it stretches off the edge like a drop of ink
-/// and snaps free; let go near the top or bottom edge, it melts back in; anywhere else
-/// it floats where it was put. Under the pointer it widens to offer pause and stop, and
-/// clicking the clock brings the whole bar back.
+/// and snaps free; let go near any edge, it melts back in; anywhere else it floats where
+/// it was put. It lies along the edge it is on — a wide pill on the top or bottom, a tall
+/// one on either side — and under the pointer it grows along that edge to offer pause and
+/// stop. Clicking the clock brings the whole bar back.
 ///
 /// Its own window rather than a shape of the bar's: the bar's window is laid out around
 /// a strip, and this one has to reach the screen's edge to melt into it.
@@ -29,14 +30,12 @@ final class RecordingIsland {
 
     /// Room around the island for the neck to reach the edge through.
     fileprivate static let margin: CGFloat = 44
-    fileprivate static let height: CGFloat = 36
-    fileprivate static let compactWidth: CGFloat = 92
-    fileprivate static let openWidth: CGFloat = 176
-    /// How far the island reaches past its resting middle when it opens: to both sides
-    /// alike while it floats or sits on the top or bottom edge, and all of it away from
-    /// the wall when it is docked to a side.
-    fileprivate static let reach: CGFloat = openWidth - compactWidth / 2
-    /// How close to an edge a drop has to be for the island to melt into it.
+    /// Lying along the top or bottom edge, or floating.
+    fileprivate static let wide = (compact: CGSize(width: 92, height: 36), open: CGSize(width: 176, height: 36))
+    /// Standing along the left or right edge.
+    fileprivate static let tall = (compact: CGSize(width: 44, height: 64), open: CGSize(width: 44, height: 128))
+    /// How close to an edge a drop has to be for the island to melt into it — and how
+    /// close to a side for it to stand up.
     private static let snap: CGFloat = 56
 
     init(studio: StudioService) {
@@ -50,7 +49,7 @@ final class RecordingIsland {
         let panel = panel ?? makePanel()
         let screen = barFrame.flatMap { Self.screen(at: CGPoint(x: $0.midX, y: $0.midY)) } ?? NSScreen.main ?? NSScreen.screens[0]
         let center = lastCenter ?? CGPoint(x: barFrame?.midX ?? screen.frame.midX,
-                                           y: screen.frame.minY + Self.height / 2)
+                                           y: screen.frame.minY + Self.wide.compact.height / 2)
         let landing = resting(for: center)
         state.isHovering = false
         if StudioMotion.reduceMotion {
@@ -59,7 +58,8 @@ final class RecordingIsland {
             // Out of the edge it is docked to, the way a drop wells up; a floating island
             // just appears where it was.
             let near = nearest(at: landing)
-            place(at: near.distance < 1 ? Self.offset(landing, into: near.edge, by: Self.height) : landing)
+            let thickness = near.edge.isSide ? Self.tall.compact.width : Self.wide.compact.height
+            place(at: near.distance < 1 ? Self.offset(landing, into: near.edge, by: thickness) : landing)
             animate(to: landing)
         }
         panel.orderFrontRegardless()
@@ -74,7 +74,7 @@ final class RecordingIsland {
     // MARK: - The window
 
     private func makePanel() -> NSPanel {
-        let size = NSSize(width: Self.reach * 2 + Self.margin * 2, height: Self.height + Self.margin * 2)
+        let size = NSSize(width: Self.wide.open.width + Self.margin * 2, height: Self.tall.open.height + Self.margin * 2)
         let panel = IslandPanel(contentRect: NSRect(origin: .zero, size: size),
                                 styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
                                 backing: .buffered, defer: false)
@@ -131,38 +131,38 @@ final class RecordingIsland {
     }
 
     /// Where an island let go at `point` comes to rest: melted into whichever edge it is
-    /// near, and otherwise where it is, kept on the screen.
+    /// near, and otherwise where it is, kept on the screen with room to open.
     private func resting(for point: CGPoint) -> CGPoint {
         let point = clamped(point)
         guard let frame = Self.screen(at: point)?.frame else { return point }
         let near = nearest(at: point)
-        guard near.distance < Self.snap else {
-            // Floating: room to open to both sides without leaving the screen.
-            let half = Self.openWidth / 2
-            return CGPoint(x: min(max(point.x, frame.minX + half), frame.maxX - half), y: point.y)
-        }
-        let halfWidth = Self.compactWidth / 2, half = Self.height / 2
+        let wide = Self.wide, tall = Self.tall
+        func across(_ x: CGFloat) -> CGFloat { min(max(x, frame.minX + wide.open.width / 2), frame.maxX - wide.open.width / 2) }
+        func along(_ y: CGFloat) -> CGFloat { min(max(y, frame.minY + tall.open.height / 2), frame.maxY - tall.open.height / 2) }
+        guard near.distance < Self.snap else { return CGPoint(x: across(point.x), y: point.y) }
         return switch near.edge {
-        case .bottom: CGPoint(x: min(max(point.x, frame.minX + Self.openWidth / 2), frame.maxX - Self.openWidth / 2), y: frame.minY + half)
-        case .top: CGPoint(x: min(max(point.x, frame.minX + Self.openWidth / 2), frame.maxX - Self.openWidth / 2), y: frame.maxY - half)
-        case .leading: CGPoint(x: frame.minX + halfWidth, y: point.y)
-        case .trailing: CGPoint(x: frame.maxX - halfWidth, y: point.y)
+        case .bottom: CGPoint(x: across(point.x), y: frame.minY + wide.compact.height / 2)
+        case .top: CGPoint(x: across(point.x), y: frame.maxY - wide.compact.height / 2)
+        case .leading: CGPoint(x: frame.minX + tall.compact.width / 2, y: along(point.y))
+        case .trailing: CGPoint(x: frame.maxX - tall.compact.width / 2, y: along(point.y))
         }
     }
 
     /// Kept on the screen it is over, never pushed past an edge.
     private func clamped(_ point: CGPoint) -> CGPoint {
         guard let frame = Self.screen(at: point)?.frame else { return point }
-        let halfWidth = Self.compactWidth / 2, half = Self.height / 2
+        let halfWidth = Self.tall.compact.width / 2, half = Self.wide.compact.height / 2
         return CGPoint(x: min(max(point.x, frame.minX + halfWidth), frame.maxX - halfWidth),
                        y: min(max(point.y, frame.minY + half), frame.maxY - half))
     }
 
-    /// The nearest of the screen's four edges to the island at rest size, and how far
-    /// its near side is from it.
+    /// The nearest of the screen's four edges, and how far the island's near side is from
+    /// it. Each edge is measured with the island in the shape it takes there — lying down
+    /// for the top and bottom, standing for the sides — so the shape it is in does not
+    /// change which edge is nearest, and it cannot flip back and forth on the threshold.
     private func nearest(at point: CGPoint) -> (edge: Edge, distance: CGFloat) {
         guard let frame = Self.screen(at: point)?.frame else { return (.bottom, .infinity) }
-        let halfWidth = Self.compactWidth / 2, half = Self.height / 2
+        let halfWidth = Self.tall.compact.width / 2, half = Self.wide.compact.height / 2
         let gaps: [(Edge, CGFloat)] = [
             (.bottom, point.y - half - frame.minY),
             (.top, frame.maxY - (point.y + half)),
@@ -195,6 +195,12 @@ final class RecordingIsland {
         let near = nearest(at: point)
         state.edge = near.edge
         state.gap = near.distance
+        let standing = near.edge.isSide && near.distance < Self.snap
+        if standing != state.isStanding {
+            withAnimation(StudioMotion.reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.78)) {
+                state.isStanding = standing
+            }
+        }
     }
 
     /// Springs the island to `target`, moving the window a step a frame so the neck to the
@@ -256,6 +262,17 @@ private final class IslandState {
     var edge: Edge = .bottom
     var gap: CGFloat = 0
     var isHovering = false
+    /// Upright, along a side edge, rather than lying along the top or bottom.
+    var isStanding = false
+
+    var size: CGSize {
+        let shape = isStanding ? RecordingIsland.tall : RecordingIsland.wide
+        return isHovering ? shape.open : shape.compact
+    }
+}
+
+extension Edge {
+    fileprivate var isSide: Bool { self == .leading || self == .trailing }
 }
 
 private struct IslandView: View {
@@ -265,20 +282,16 @@ private struct IslandView: View {
     let moved: () -> Void
     let ended: (_ click: Bool) -> Void
 
-    private var width: CGFloat {
-        state.isHovering ? RecordingIsland.openWidth : RecordingIsland.compactWidth
-    }
-
     var body: some View {
         GeometryReader { proxy in
-            let island = IslandInk.rect(in: proxy.size, width: width, edge: state.edge, gap: state.gap)
+            let island = IslandInk.rect(in: proxy.size, size: state.size)
             ZStack(alignment: .topLeading) {
                 // Hit-testable on purpose. The window server lets the pointer through any
                 // point of a panel that is either see-through or that SwiftUI says it does
                 // not take — so an ink that ignored hits let every move under the island
                 // reach the app beneath, which lit up its own hover states, and let presses
                 // meant for the island land there too.
-                IslandInk(width: width, gap: state.gap, edge: state.edge)
+                IslandInk(size: state.size, gap: state.gap, edge: state.edge)
                 controls
                     .frame(width: island.width, height: island.height)
                     // Behind the buttons, so a press anywhere else on the island is the
@@ -297,71 +310,98 @@ private struct IslandView: View {
         .preferredColorScheme(.dark)
     }
 
+    /// The clock, then pause and stop once it opens — in a row while it lies down, in a
+    /// column while it stands.
+    @ViewBuilder
     private var controls: some View {
-        HStack(spacing: 0) {
-            clock
-                .padding(.leading, 14)
-                .frame(width: RecordingIsland.compactWidth, alignment: .leading)
-                .allowsHitTesting(false)
-                .help("Show the recorder bar")
-            if state.isHovering {
-                HStack(spacing: 2) {
-                    Button { studio.togglePause() } label: {
-                        Image(systemName: studio.session.isPaused ? "play.fill" : "pause.fill")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.9))
-                            .frame(width: 30, height: 30)
-                            .contentShape(Rectangle())
-                    }
-                    .help(studio.session.isPaused ? "Resume" : "Pause")
-                    .accessibilityLabel(studio.session.isPaused ? "Resume" : "Pause")
-                    Button { studio.stop() } label: {
-                        ZStack {
-                            Circle().strokeBorder(.white.opacity(0.8), lineWidth: 1.5)
-                            RoundedRectangle(cornerRadius: 2.5, style: .continuous)
-                                .fill(Color(red: 0.93, green: 0.2, blue: 0.22))
-                                .frame(width: 9, height: 9)
-                        }
-                        .frame(width: 24, height: 24)
-                        .frame(width: 30, height: 30)
-                        .contentShape(Rectangle())
-                    }
-                    .help("Stop and keep this recording")
-                    .accessibilityLabel("Stop")
+        if state.isStanding {
+            VStack(spacing: 0) {
+                clock(stacked: true)
+                    .frame(height: RecordingIsland.tall.compact.height)
+                    .allowsHitTesting(false)
+                if state.isHovering {
+                    VStack(spacing: 2) { pauseButton; stopButton }
+                        .buttonStyle(BarButtonStyle())
+                        .disabled(!studio.session.state.isTaking)
+                        .transition(.opacity.combined(with: .scale(scale: 0.8, anchor: .top)))
                 }
-                .buttonStyle(BarButtonStyle())
-                .disabled(!studio.session.state.isTaking)
-                .padding(.trailing, 10)
-                .transition(.opacity.combined(with: .scale(scale: 0.8, anchor: .leading)))
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+        } else {
+            HStack(spacing: 0) {
+                clock(stacked: false)
+                    .padding(.leading, 14)
+                    .frame(width: RecordingIsland.wide.compact.width, alignment: .leading)
+                    .allowsHitTesting(false)
+                if state.isHovering {
+                    HStack(spacing: 2) { pauseButton; stopButton }
+                        .buttonStyle(BarButtonStyle())
+                        .disabled(!studio.session.state.isTaking)
+                        .padding(.trailing, 10)
+                        .transition(.opacity.combined(with: .scale(scale: 0.8, anchor: .leading)))
+                }
+                Spacer(minLength: 0)
+            }
         }
+    }
+
+    private var pauseButton: some View {
+        Button { studio.togglePause() } label: {
+            Image(systemName: studio.session.isPaused ? "play.fill" : "pause.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.9))
+                .frame(width: 30, height: 30)
+                .contentShape(Rectangle())
+        }
+        .help(studio.session.isPaused ? "Resume" : "Pause")
+        .accessibilityLabel(studio.session.isPaused ? "Resume" : "Pause")
+    }
+
+    private var stopButton: some View {
+        Button { studio.stop() } label: {
+            ZStack {
+                Circle().strokeBorder(.white.opacity(0.8), lineWidth: 1.5)
+                RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                    .fill(Color(red: 0.93, green: 0.2, blue: 0.22))
+                    .frame(width: 9, height: 9)
+            }
+            .frame(width: 24, height: 24)
+            .frame(width: 30, height: 30)
+            .contentShape(Rectangle())
+        }
+        .help("Stop and keep this recording")
+        .accessibilityLabel("Stop")
     }
 
     @ViewBuilder
-    private var clock: some View {
+    private func clock(stacked: Bool) -> some View {
         switch studio.session.state {
         case .recording(let started):
             TimelineView(.periodic(from: started, by: 1)) { context in
-                time(RecorderModel.elapsed(since: started, at: context.date), paused: false)
+                time(RecorderModel.elapsed(since: started, at: context.date), paused: false, stacked: stacked)
             }
         case .paused(let started, let pausedAt):
-            time(RecorderModel.elapsed(since: started, at: pausedAt), paused: true)
+            time(RecorderModel.elapsed(since: started, at: pausedAt), paused: true, stacked: stacked)
         default:
-            time("0:00", paused: false)
+            time("0:00", paused: false, stacked: stacked)
         }
     }
 
-    private func time(_ text: String, paused: Bool) -> some View {
-        HStack(spacing: 7) {
+    /// The dot beside the time, or above it while the island stands.
+    private func time(_ text: String, paused: Bool, stacked: Bool) -> some View {
+        let layout = stacked ? AnyLayout(VStackLayout(spacing: 7)) : AnyLayout(HStackLayout(spacing: 7))
+        return layout {
             Circle()
                 .fill(paused ? BarMood.held.accent : BarMood.live.accent)
                 .frame(width: 8, height: 8)
             Text(text)
-                .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                .font(.system(size: stacked ? 11.5 : 13, weight: .semibold).monospacedDigit())
                 .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
                 .contentTransition(.numericText())
         }
+        .padding(.horizontal, stacked ? 4 : 0)
     }
 }
 
@@ -373,31 +413,25 @@ private struct IslandView: View {
 /// the neck breaks. The edge itself is a block drawn just past the screen's edge, where
 /// nothing of it shows but the part that flows up to meet the island.
 private struct IslandInk: View, Animatable {
-    var width: CGFloat
+    var size: CGSize
     let gap: CGFloat
     let edge: Edge
 
-    var animatableData: CGFloat {
-        get { width }
-        set { width = newValue }
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(size.width, size.height) }
+        set { size = CGSize(width: newValue.first, height: newValue.second) }
     }
 
-    /// The island in the window: its resting middle is the window's middle, and it opens
-    /// away from a side it is docked to, or to both sides alike.
-    static func rect(in size: CGSize, width: CGFloat, edge: Edge, gap: CGFloat) -> CGRect {
-        let height = RecordingIsland.height, compact = RecordingIsland.compactWidth
-        let docked = gap < 1
-        let minX: CGFloat = switch edge {
-        case .leading where docked: size.width / 2 - compact / 2
-        case .trailing where docked: size.width / 2 + compact / 2 - width
-        default: size.width / 2 - width / 2
-        }
-        return CGRect(x: minX, y: (size.height - height) / 2, width: width, height: height)
+    /// The island in the window. Its resting middle is the window's middle, and it opens
+    /// along the edge it is on, to both sides alike.
+    static func rect(in bounds: CGSize, size: CGSize) -> CGRect {
+        CGRect(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2,
+               width: size.width, height: size.height)
     }
 
     var body: some View {
         Canvas { context, size in
-            let island = Self.rect(in: size, width: width, edge: edge, gap: gap)
+            let island = Self.rect(in: size, size: self.size)
             context.addFilter(.alphaThreshold(min: 0.5, color: .black))
             context.addFilter(.blur(radius: 6))
             context.drawLayer { layer in
