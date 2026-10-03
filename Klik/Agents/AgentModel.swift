@@ -256,6 +256,10 @@ nonisolated struct AgentSession: Identifiable, Equatable, Sendable {
     var title: String?
     var startedAt: Date
     var updatedAt: Date
+    /// When the current (or last) prompt was sent: how long it has been at work.
+    var turnStartedAt: Date?
+    /// It has used a tool since the prompt: "Working" rather than "Thinking".
+    var usedTool = false
     var parentPID: Int32
     var terminal: String?
     /// Work it has handed off and that is still going: subagents and background
@@ -337,12 +341,17 @@ nonisolated struct AgentSessionBook: Equatable, Sendable {
             session.state = .idle
         case .userPromptSubmit:
             session.state = .running
+            session.turnStartedAt = now
+            session.usedTool = false
             session.activity = event.prompt.map(Self.oneLine)
             if session.title == nil, let prompt = event.prompt { session.title = Self.title(from: prompt) }
         case .preToolUse, .postToolUse:
             // A late status event must not hide a question that is still open.
             if session.state != .waiting || event.name == .postToolUse { session.state = .running }
-            if let tool = event.toolName { session.activity = AgentToolSummary(tool: tool, input: event.toolInput).line }
+            if let tool = event.toolName {
+                session.activity = AgentToolSummary(tool: tool, input: event.toolInput).line
+                session.usedTool = true
+            }
         case .permissionRequest:
             session.state = .waiting
         case .notification:

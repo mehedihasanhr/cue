@@ -82,4 +82,15 @@ final class AgentSessionBookTests: XCTestCase {
         let bare = AgentToolSummary(tool: "Bash", input: .object(["command": .string("ls")]))
         XCTAssertEqual(bare.line, "Bash · ls")
     }
+
+    func testTurnTimeAndThinkingUntilTheFirstTool() {
+        var book = AgentSessionBook()
+        let later = now.addingTimeInterval(30)
+        book.apply(AgentEvent(agent: .claude, name: .userPromptSubmit, sessionID: "s1", prompt: "go"), at: now)
+        XCTAssertEqual(book.sessions.first?.turnStartedAt, now)
+        XCTAssertEqual(book.sessions.first?.usedTool, false)
+        book.apply(AgentEvent(agent: .claude, name: .preToolUse, sessionID: "s1", toolName: "Bash"), at: later)
+        XCTAssertEqual(book.sessions.first?.usedTool, true)
+        XCTAssertEqual(book.sessions.first?.turnStartedAt, now)
+    }
 }

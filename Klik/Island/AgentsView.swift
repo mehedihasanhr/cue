@@ -765,9 +765,9 @@ private struct AgentSessionCard: View {
         HStack(spacing: 5) {
             switch session.state {
             case .running:
-                Text("Working")
+                Text(session.usedTool ? "Working" : "Thinking")
                 TimelineView(.periodic(from: .now, by: 1)) { context in
-                    Text(Self.elapsed(since: session.updatedAt, now: context.date))
+                    Text(Self.elapsed(since: session.turnStartedAt ?? session.startedAt, now: context.date))
                         .monospacedDigit()
                         .opacity(0.6)
                 }
@@ -798,9 +798,12 @@ private struct AgentSessionCard: View {
         return "\(minutes / (24 * 60))d"
     }
 
+    /// "8s", "4m", "1h 5m".
     private static func elapsed(since date: Date, now: Date) -> String {
         let seconds = max(0, Int(now.timeIntervalSince(date)))
-        return seconds < 60 ? "\(seconds)s" : "\(seconds / 60)m"
+        if seconds < 60 { return "\(seconds)s" }
+        if seconds < 3600 { return "\(seconds / 60)m" }
+        return "\(seconds / 3600)h \(seconds / 60 % 60)m"
     }
 
     private static func terminalName(_ program: String) -> String {
