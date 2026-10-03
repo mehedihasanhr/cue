@@ -1,10 +1,15 @@
 #!/bin/bash
 #
-# Packages a built Klik.app as a DMG people can install from.
+# Packages a built app — Klik, or the Klik Studio add-on — as a DMG people can
+# install from.
 #
 #   xcodebuild -project Klik.xcodeproj -scheme Klik -configuration Release \
 #       -derivedDataPath build/release build
 #   Scripts/make-dmg.sh
+#
+#   xcodebuild -project KlikStudio/KlikStudio.xcodeproj -scheme KlikStudio \
+#       -configuration Release -derivedDataPath build/release-studio build
+#   Scripts/make-dmg.sh "build/release-studio/Build/Products/Release/Klik Studio.app"
 #
 # The image holds the app beside a shortcut to /Applications, which is what makes
 # "drag it across to install" work. Without that shortcut the image opens with
@@ -22,10 +27,15 @@ APP=${1:-"$ROOT/build/release/Build/Products/Release/Klik.app"}
 OUT_DIR="$ROOT/dist"
 
 [ -d "$APP" ] || { echo "no app at $APP — build Release first"; exit 1; }
+# Absolute, because `defaults read` takes a relative path as a domain name.
+APP="$(cd "$(dirname "$APP")" && pwd)/$(basename "$APP")"
 
+BUNDLE="$(basename "$APP")"
+NAME="$(/usr/bin/defaults read "$APP/Contents/Info.plist" CFBundleName 2>/dev/null || basename "$APP" .app)"
 VERSION="$(/usr/bin/defaults read "$APP/Contents/Info.plist" CFBundleShortVersionString)"
 BUILD="$(/usr/bin/defaults read "$APP/Contents/Info.plist" CFBundleVersion)"
-DMG="$OUT_DIR/Klik-$VERSION.dmg"
+# No spaces in the file name: it ends up in a download URL.
+DMG="$OUT_DIR/${NAME// /}-$VERSION.dmg"
 
 # Refuse to ship something the signature does not cover.
 codesign --verify --deep --strict "$APP"
@@ -43,27 +53,27 @@ trap cleanup EXIT
 mkdir -p "$OUT_DIR"
 # ditto rather than cp: it keeps the bundle's symlinks, extended attributes and
 # its signature intact.
-ditto "$APP" "$STAGE/Klik.app"
+ditto "$APP" "$STAGE/$BUNDLE"
 ln -s /Applications "$STAGE/Applications"
 
 rm -f "$DMG"
 # `hdiutil create` still works but announces that this form is deprecated, so
 # prefer what macOS points at and keep hdiutil for anything older.
 if diskutil help image create from >/dev/null 2>&1; then
-    diskutil image create from --format UDZO --volumeName "Klik" "$STAGE" "$DMG" >/dev/null 2>"$ERRORS" \
+    diskutil image create from --format UDZO --volumeName "$NAME" "$STAGE" "$DMG" >/dev/null 2>"$ERRORS" \
         || { cat "$ERRORS" >&2; exit 1; }
 else
-    hdiutil create -volname "Klik" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null 2>"$ERRORS" \
+    hdiutil create -volname "$NAME" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null 2>"$ERRORS" \
         || { cat "$ERRORS" >&2; exit 1; }
 fi
 
-echo "Klik $VERSION (build $BUILD)  ->  $DMG  ($(du -h "$DMG" | cut -f1))"
+echo "$NAME $VERSION (build $BUILD)  ->  $DMG  ($(du -h "$DMG" | cut -f1))"
 
 # Check the image rather than trusting it: mount it and look at what is inside.
 hdiutil attach "$DMG" -nobrowse -quiet -mountpoint "$MOUNT"
 [ -L "$MOUNT/Applications" ] || { echo "the /Applications shortcut is missing"; exit 1; }
-codesign --verify --deep --strict "$MOUNT/Klik.app"
-STRAY="$(find "$MOUNT" -maxdepth 1 -mindepth 1 ! -name Klik.app ! -name Applications ! -name .fseventsd \
+codesign --verify --deep --strict "$MOUNT/$BUNDLE"
+STRAY="$(find "$MOUNT" -maxdepth 1 -mindepth 1 ! -name "$BUNDLE" ! -name Applications ! -name .fseventsd \
     ! -name .Trashes ! -name .Spotlight-V100 ! -name .DS_Store | wc -l | tr -d ' ')"
 [ "$STRAY" = "0" ] || { echo "unexpected files in the image:"; ls -a "$MOUNT"; exit 1; }
 echo "  contents: $(ls "$MOUNT" | tr '\n' ' ')"
