@@ -17,20 +17,20 @@ extension EditorWindows {
     func readyToQuit() -> NSApplication.TerminateReply {
         // A fresh take nobody kept is asked about first: kept with its edits, or deleted.
         if let model = front?.model, model.isUnsaved {
-            switch RecordingKeep.alert(for: model.name).runModal() {
-            case .alertFirstButtonReturn:
+            switch RecordingKeep.askModally(about: model.name) {
+            case .save:
                 Task { @MainActor in
                     let saved = await model.autosaver.flush()
                     if saved { model.keep() } else if let failure = model.autosaver.failure { model.report(EditorProblem(failure)) }
                     NSApp.reply(toApplicationShouldTerminate: saved)
                 }
                 return .terminateLater
-            case .alertSecondButtonReturn:
+            case .delete:
                 // Quitting cancels any export first (see the app delegate), so nothing is
                 // left reading the package.
                 try? FileManager.default.removeItem(at: model.packageURL)
                 return .terminateNow
-            default:
+            case .cancel:
                 return .terminateCancel
             }
         }

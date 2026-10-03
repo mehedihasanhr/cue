@@ -53,6 +53,9 @@ final class RecordingIsland {
     /// Standing along the left or right edge.
     fileprivate static let tall = (compact: CGSize(width: 44, height: 64), open: CGSize(width: 44, height: openLength))
 
+    /// Lying flat before a take, round the record button alone.
+    fileprivate static let wideReady = CGSize(width: 56, height: 40)
+
     /// One button's square on the opened island, and the rule between groups.
     fileprivate static let tile: CGFloat = 32
     fileprivate static let rule: CGFloat = 9
@@ -380,7 +383,9 @@ private final class IslandState {
     var isOpen: Bool { (isHovering || menusOpen > 0) && !isCarried }
 
     var size: CGSize {
-        let compact = isStanding ? RecordingIsland.tall.compact : RecordingIsland.wide.compact
+        // Before a take there is only the record button to hold: a small pill round it.
+        let compact = isStanding ? RecordingIsland.tall.compact
+            : (isTaking ? RecordingIsland.wide.compact : RecordingIsland.wideReady)
         guard isOpen else { return compact }
         let length = isTaking ? RecordingIsland.takeLength(standing: isStanding) : RecordingIsland.openLength
         return isStanding ? CGSize(width: compact.width, height: length) : CGSize(width: length, height: compact.height)
@@ -440,12 +445,14 @@ private struct IslandView: View {
         let line = standing ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 0))
         let rest = standing ? RecordingIsland.tall.compact : RecordingIsland.wide.compact
         let open = state.isOpen
+        // Before a take the island holds the record button alone, centred.
+        let ready = !state.isTaking
         return line {
             clock(stacked: standing, open: open)
-                .padding(.leading, standing || (open && !state.isTaking) ? 0 : 14)
-                .frame(width: standing ? rest.width : (open && !state.isTaking ? 44 : rest.width),
+                .padding(.leading, standing || ready ? 0 : 14)
+                .frame(width: standing ? rest.width : (ready ? (open ? 44 : RecordingIsland.wideReady.width) : rest.width),
                        height: standing ? (open ? (state.isTaking ? 50 : 44) : rest.height) : rest.height,
-                       alignment: standing || (open && !state.isTaking) ? .center : .leading)
+                       alignment: standing || ready ? .center : .leading)
             if open {
                 IslandOptions(standing: standing, isTaking: state.isTaking, actions: actions)
                     .transition(.opacity)
@@ -491,12 +498,6 @@ private struct IslandView: View {
             .buttonStyle(BarButtonStyle(pressedScale: 0.88))
             .help("Start recording")
             .accessibilityLabel("Start recording")
-            if !stacked {
-                Text("Record")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.9))
-                    .allowsHitTesting(false)
-            }
         }
     }
 

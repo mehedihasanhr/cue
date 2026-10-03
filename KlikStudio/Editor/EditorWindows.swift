@@ -280,10 +280,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     /// Save / Don't Save / Cancel for a fresh take nobody has kept: kept with its edits,
     /// or deleted for good.
     private func askToKeep(_ model: EditorModel, before sender: NSWindow) {
-        RecordingKeep.alert(for: model.name).beginSheetModal(for: sender) { [weak self] response in
+        RecordingKeep.ask(about: model.name, over: sender) { [weak self] answer in
             guard let self else { return }
-            switch response {
-            case .alertFirstButtonReturn:
+            switch answer {
+            case .save:
                 Task { @MainActor in
                     guard await model.autosaver.flush() else {
                         if let failure = model.autosaver.failure { model.report(EditorProblem(failure)) }
@@ -293,11 +293,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
                     model.keep()
                     self.closeDeliberately()
                 }
-            case .alertSecondButtonReturn:
+            case .delete:
                 let package = model.packageURL
                 self.closeDeliberately()
                 RecordingKeep.discard(package, after: self.exports)
-            default:
+            case .cancel:
                 self.windows.closeCancelled()
             }
         }
