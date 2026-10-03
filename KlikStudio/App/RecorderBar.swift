@@ -32,6 +32,17 @@ struct RecorderBar: View {
     @State private var widths: [Shape: CGFloat] = [:]
     /// Whether the bar has arrived on screen — false for the instant before it springs in.
     @State private var hasArrived = false
+    /// Whether the setup bar shows its words as well as its icons.
+    ///
+    /// At rest it is a short row of icons: it sits over somebody's work the whole time it is
+    /// open, and the words are only needed while choosing. The pointer over the bar opens
+    /// it out; leaving lets it close half a second later, so passing over an edge does not
+    /// make it flap. Held open while one of its menus is up, so a chip does not slide out
+    /// from under its own menu.
+    @State private var isExpanded = false
+    @State private var isPointerOver = false
+    @State private var isMenuOpen = false
+    @State private var collapse: Task<Void, Never>?
 
     /// The four things the bar can be. Every state of the session maps onto exactly one of
     /// them — `SessionStateTests` holds that to be true, because a state with no shape is
@@ -71,6 +82,18 @@ struct RecorderBar: View {
             layer(.confirmRestart) { confirmRestartControls }
         }
         .frame(width: barWidth, height: StudioPalette.barHeight)
+        .onHover { inside in
+            isPointerOver = inside
+            settleExpansion()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in
+            isMenuOpen = true
+            settleExpansion()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didEndTrackingNotification)) { _ in
+            isMenuOpen = false
+            settleExpansion()
+        }
         .background {
             ZStack {
                 // Behind everything and hit-testable, so a drag anywhere the controls do
@@ -103,6 +126,21 @@ struct RecorderBar: View {
         .blur(radius: hasArrived ? 0 : 6)
         .onAppear(perform: arrive)
         .onChange(of: model.presentations) { _, _ in arrive() }
+    }
+
+    /// Opens at once; closes after a moment, unless the pointer or a menu comes back.
+    private func settleExpansion() {
+        collapse?.cancel()
+        if isPointerOver || isMenuOpen {
+            guard !isExpanded else { return }
+            withAnimation(StudioMotion.reduceMotion ? nil : StudioMotion.shape) { isExpanded = true }
+            return
+        }
+        collapse = Task {
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled, !isPointerOver, !isMenuOpen else { return }
+            withAnimation(StudioMotion.reduceMotion ? nil : StudioMotion.shape) { isExpanded = false }
+        }
     }
 
     private func arrive() {
@@ -214,6 +252,7 @@ struct RecorderBar: View {
             ForEach(RecorderModel.Mode.allCases) { mode in
                 ModeButton(mode: mode,
                            accent: mood.accent,
+                           showsTitle: isExpanded,
                            isSelected: model.mode == mode,
                            isAvailable: mode.isAvailable,
                            chip: modeChip) {
@@ -237,7 +276,7 @@ struct RecorderBar: View {
     /// display picker and the record button moved to the overlay.
     private var inputs: some View {
         HStack(spacing: 4) {
-            InputChipMenu(accent: mood.accent,
+            InputChipMenu(accent: mood.accent, showsLabel: isExpanded,
                           symbol: "video.slash",
                           onSymbol: "video.fill",
                           isOn: settings.recordsCamera,
@@ -245,7 +284,7 @@ struct RecorderBar: View {
                 cameraMenu
             }
 
-            InputChipMenu(accent: mood.accent,
+            InputChipMenu(accent: mood.accent, showsLabel: isExpanded,
                           symbol: "mic.slash",
                           onSymbol: "mic.fill",
                           isOn: settings.recordsMicrophone,
@@ -261,7 +300,7 @@ struct RecorderBar: View {
                     .transition(.opacity)
             }
 
-            InputChipMenu(accent: mood.accent,
+            InputChipMenu(accent: mood.accent, showsLabel: isExpanded,
                           symbol: "music.note.tv",
                           onSymbol: "music.note.tv.fill",
                           isOn: settings.recordsSystemAudio,
@@ -838,6 +877,8 @@ private struct ModeButton: View {
     let mode: RecorderModel.Mode
     /// The bar's colour, which the chosen mode wears.
     let accent: Color
+    /// The name under the glyph, shown while the bar is opened out.
+    let showsTitle: Bool
     let isSelected: Bool
     let isAvailable: Bool
     let chip: Namespace.ID
@@ -859,14 +900,17 @@ private struct ModeButton: View {
                     .fontWeight(.light)
                     .frame(height: BarIcon.mode)
                     .frame(width: 30)
-                Text(mode.title)
-                    .font(.system(size: 11, weight: .regular))
-                    .tracking(0.2)
-                    .lineLimit(1)
+                if showsTitle {
+                    Text(mode.title)
+                        .font(.system(size: 11, weight: .regular))
+                        .tracking(0.2)
+                        .lineLimit(1)
+                        .transition(BarIcon.wordTransition)
+                }
             }
             .foregroundStyle(isAvailable ? (isSelected ? Color.white.opacity(0.95) : StudioPalette.offered)
                                          : StudioPalette.unavailable)
-            .frame(width: 60, height: 54)
+            .frame(width: showsTitle ? 60 : 44, height: showsTitle ? 54 : 44)
             .background {
                 let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
                 if isSelected {
@@ -890,7 +934,8 @@ private struct ModeButton: View {
         .onHover { hovering in
             withAnimation(StudioMotion.hover) { isHovering = hovering }
         }
-        .help(isAvailable ? mode.help : "\(mode.title) isn't built yet")
+        .help(isAvailable ? "\(mode.title): \(mode.help)" : "\(mode.title) isn't built yet")
+        .accessibilityLabel(mode.title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
@@ -899,6 +944,8 @@ private struct ModeButton: View {
 /// device — or, for system audio, which apps.
 private struct InputChipMenu<Content: View>: View {
     let accent: Color
+    /// The words beside the glyph, shown while the bar is opened out.
+    let showsLabel: Bool
     let symbol: String
     let onSymbol: String
     let isOn: Bool
@@ -915,7 +962,8 @@ private struct InputChipMenu<Content: View>: View {
             content
         } label: {
             InputChipLabel(accent: accent, symbol: isOn ? onSymbol : symbol,
-                           isOn: isOn, isAvailable: true, isHovering: isHovering, label: label)
+                           isOn: isOn, isAvailable: true, isHovering: isHovering, label: label,
+                           showsLabel: showsLabel)
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
@@ -939,6 +987,7 @@ private struct InputChipLabel: View {
     let isAvailable: Bool
     let isHovering: Bool
     let label: String
+    var showsLabel = true
 
     var body: some View {
         HStack(spacing: 9) {
@@ -950,10 +999,14 @@ private struct InputChipLabel: View {
                 .contentTransition(.symbolEffect(.replace))
                 .frame(height: BarIcon.input)
                 .frame(width: 26)
-            Text(label)
-                .font(.system(size: 13.5, weight: .regular))
-                .tracking(0.15)
-                .lineLimit(1)
+            if showsLabel {
+                Text(label)
+                    .font(.system(size: 13.5, weight: .regular))
+                    .tracking(0.15)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .transition(BarIcon.wordTransition)
+            }
         }
         // Words and a glyph on the glass, with no pane: on is plain white, off is the
         // same dimmed white the unchosen modes are. What will be recorded still reads
@@ -1047,6 +1100,15 @@ private struct StopPill: View {
 private enum BarIcon {
     static let mode: CGFloat = 22
     static let input: CGFloat = 18
+
+    /// How a word arrives as the bar opens out and leaves as it closes. In after the bar has
+    /// made most of the room for it — at full size from the first frame, it was drawn over
+    /// its neighbours while they were still moving apart — and out at once, before they
+    /// close in on it.
+    static let wordTransition: AnyTransition = .asymmetric(
+        insertion: .opacity.animation(.easeOut(duration: 0.18).delay(0.14)),
+        removal: .opacity.animation(.easeOut(duration: 0.08))
+    )
 }
 
 /// The red record button: a red disc in a fine white ring, brightening under the pointer.
