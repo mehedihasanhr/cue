@@ -43,6 +43,10 @@ struct RecorderBar: View {
     @State private var widths: [Shape: CGFloat] = [:]
     /// Whether the bar has arrived on screen — false for the instant before it springs in.
     @State private var hasArrived = false
+    /// The take's bar folded down to the clock, pause and stop, for a recording that wants
+    /// as little of the screen as possible. Kept for the next take: whoever folded it once
+    /// wants the room again.
+    @State private var isMinimized = false
 
     /// The four things the bar can be. Every state of the session maps onto exactly one of
     /// them — `SessionStateTests` holds that to be true, because a state with no shape is
@@ -54,6 +58,8 @@ struct RecorderBar: View {
         case starting
         /// Recording, held, or finishing.
         case take
+        /// The same take, folded down to the clock, pause and stop.
+        case mini
         /// It went wrong, and the reason has to be readable.
         case failure
         /// Restart was asked for a take long enough to be worth asking about.
@@ -72,6 +78,7 @@ struct RecorderBar: View {
         ZStack {
             layer(.setup) { setupControls }
             layer(.take) { recordingControls }
+            layer(.mini) { miniControls }
             layer(.starting) { startingControls }
             // Mounted with a stand-in when nothing has failed, for the same reason the
             // hidden timer below exists: an unmeasured layer has no width, so the bar would
@@ -176,7 +183,7 @@ struct RecorderBar: View {
         switch shape {
         case .setup: .ready
         case .starting: .live
-        case .take: studio.session.isPaused ? .held : .live
+        case .take, .mini: studio.session.isPaused ? .held : .live
         case .failure, .confirmRestart: .alert
         }
     }
@@ -212,7 +219,7 @@ struct RecorderBar: View {
         if studio.restartPending, studio.session.state.isTaking { return .confirmRestart }
         return switch studio.session.state {
         case .preparing, .countdown: .starting
-        case .recording, .paused, .finishing: .take
+        case .recording, .paused, .finishing: isMinimized ? .mini : .take
         case .failed: .failure
         // `.finished` deliberately has no shape of its own. The take is written and the
         // editor is already coming up over the bar; what the bar owes the user at that
@@ -483,15 +490,8 @@ struct RecorderBar: View {
             }
             separator
 
-            Button { studio.togglePause() } label: {
-                BarTileIcon(symbol: studio.session.isPaused ? "play" : "pause")
-                    .contentTransition(.symbolEffect(.replace))
-                    .animation(StudioMotion.state, value: studio.session.isPaused)
-            }
-            .buttonStyle(BarButtonStyle())
-            .disabled(!studio.session.state.isTaking)
-            .help(settings.recorder.help(studio.session.isPaused ? "Resume" : "Pause", .pause))
-            .modifier(slidingHover("take.pause", isEnabled: studio.session.state.isTaking))
+            pauseButton
+                .modifier(slidingHover("take.pause", isEnabled: studio.session.state.isTaking))
 
             markerButton
                 .modifier(slidingHover("take.marker", isEnabled: studio.session.state.isTaking))
@@ -511,21 +511,71 @@ struct RecorderBar: View {
             .help("Discard this recording")
             .modifier(slidingHover("take.discard", isEnabled: studio.session.state.isTaking))
 
+            Button { setMinimized(true) } label: {
+                BarTileIcon(symbol: "arrow.down.right.and.arrow.up.left")
+            }
+            .buttonStyle(BarButtonStyle())
+            .help("Minimize the bar")
+            .accessibilityLabel("Minimize")
+            .modifier(slidingHover("take.minimize"))
+
             separator
 
-            Button { studio.stop() } label: {
-                StopGlyph()
-            }
-            .buttonStyle(BarButtonStyle(pressedScale: 0.9))
-            // The same property the bridge's `stop()` guards on, which is the whole point of
-            // it having a name. These two used to disagree about `.paused`: the button was
-            // live, the guard refused, and the take went to the bin.
-            .disabled(!studio.session.state.isTaking)
-            .help(settings.recorder.help("Stop and keep this recording", .record))
-            .padding(.trailing, 4)
+            stopButton
         }
         .backgroundPreferenceValue(HoverAnchors.self, hoverPane)
         .animation(StudioMotion.state, value: studio.session.diskWarning)
+    }
+
+    /// The take folded down: the clock, pause, stop, and the way back to the whole bar.
+    private var miniControls: some View {
+        HStack(spacing: 0) {
+            timer
+                .padding(.trailing, 6)
+            pauseButton
+                .modifier(slidingHover("mini.pause", isEnabled: studio.session.state.isTaking))
+            Button { setMinimized(false) } label: {
+                BarTileIcon(symbol: "arrow.up.left.and.arrow.down.right")
+            }
+            .buttonStyle(BarButtonStyle())
+            .help("Show the whole bar")
+            .accessibilityLabel("Expand")
+            .modifier(slidingHover("mini.expand"))
+            stopButton
+        }
+        .backgroundPreferenceValue(HoverAnchors.self, hoverPane)
+    }
+
+    private func setMinimized(_ minimized: Bool) {
+        // The pane belongs to the row being left; it must not glide into the other one.
+        hoverClear?.cancel()
+        hovered = nil
+        paneTarget = nil
+        withAnimation(StudioMotion.shape) { isMinimized = minimized }
+    }
+
+    private var pauseButton: some View {
+        Button { studio.togglePause() } label: {
+            BarTileIcon(symbol: studio.session.isPaused ? "play" : "pause")
+                .contentTransition(.symbolEffect(.replace))
+                .animation(StudioMotion.state, value: studio.session.isPaused)
+        }
+        .buttonStyle(BarButtonStyle())
+        .disabled(!studio.session.state.isTaking)
+        .help(settings.recorder.help(studio.session.isPaused ? "Resume" : "Pause", .pause))
+    }
+
+    private var stopButton: some View {
+        Button { studio.stop() } label: {
+            StopGlyph()
+        }
+        .buttonStyle(BarButtonStyle(pressedScale: 0.9))
+        // The same property the bridge's `stop()` guards on, which is the whole point of
+        // it having a name. These two used to disagree about `.paused`: the button was
+        // live, the guard refused, and the take went to the bin.
+        .disabled(!studio.session.state.isTaking)
+        .help(settings.recorder.help("Stop and keep this recording", .record))
+        .padding(.trailing, 4)
     }
 
     /// The camera, while it is filming.
