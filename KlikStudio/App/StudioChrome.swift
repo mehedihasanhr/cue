@@ -55,11 +55,11 @@ enum StudioPalette {
     static let brand = Color(red: 0x0E / 255, green: 0x4F / 255, blue: 0xEC / 255)
 
     static let barRadius: CGFloat = 18
-    static let barHeight: CGFloat = 62
+    static let barHeight: CGFloat = 64
 
     /// Three weights of white: what is chosen, what is on offer, what cannot be had.
     static let chosen = Color.white
-    static let offered = Color.white.opacity(0.62)
+    static let offered = Color.white.opacity(0.58)
     static let unavailable = Color.white.opacity(0.3)
 }
 
@@ -85,7 +85,7 @@ extension View {
                 // its own colours. A neutral tint rather than the blue-black it was, which
                 // laid a cold cast over warm wallpapers and made the bar look painted on.
                 Rectangle().fill(.ultraThinMaterial)
-                Color.black.opacity(0.58)
+                Color.black.opacity(0.32)
             }
             .clipShape(shape)
         }

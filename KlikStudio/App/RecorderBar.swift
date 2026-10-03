@@ -210,7 +210,7 @@ struct RecorderBar: View {
 
     /// The four modes in one inset strip, with one glass chip that slides to the choice.
     private var modes: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 6) {
             ForEach(RecorderModel.Mode.allCases) { mode in
                 ModeButton(mode: mode,
                            accent: mood.accent,
@@ -853,16 +853,17 @@ private struct ModeButton: View {
                 Image(systemName: mode.symbol)
                     .resizable()
                     .scaledToFit()
-                    .fontWeight(.regular)
+                    .fontWeight(.light)
                     .frame(height: BarIcon.mode)
-                    .frame(width: 26)
+                    .frame(width: 30)
                 Text(mode.title)
-                    .font(.system(size: 10.5, weight: .medium))
+                    .font(.system(size: 11, weight: .regular))
+                    .tracking(0.2)
                     .lineLimit(1)
             }
-            .foregroundStyle(isAvailable ? (isSelected ? Color.white : StudioPalette.offered)
+            .foregroundStyle(isAvailable ? (isSelected ? Color.white.opacity(0.95) : StudioPalette.offered)
                                          : StudioPalette.unavailable)
-            .frame(width: 56, height: 50)
+            .frame(width: 60, height: 54)
             .background {
                 let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
                 if isSelected {
@@ -871,7 +872,7 @@ private struct ModeButton: View {
                     // glass and nothing more — no colour, so the choice reads without
                     // shouting over the desktop behind the bar.
                     shape
-                        .fill(.white.opacity(0.13))
+                        .fill(.white.opacity(0.1))
                         .overlay(shape.strokeBorder(LinearGradient(colors: [.white.opacity(0.14), .white.opacity(0.02)],
                                                                    startPoint: .top, endPoint: .bottom)))
                         .matchedGeometryEffect(id: "selected", in: chip)
@@ -942,12 +943,13 @@ private struct InputChipLabel: View {
             Image(systemName: symbol)
                 .resizable()
                 .scaledToFit()
-                .fontWeight(.regular)
+                .fontWeight(.light)
                 .contentTransition(.symbolEffect(.replace))
                 .frame(height: BarIcon.input)
-                .frame(width: 24)
+                .frame(width: 26)
             Text(label)
-                .font(.system(size: 13, weight: .regular))
+                .font(.system(size: 13.5, weight: .regular))
+                .tracking(0.15)
                 .lineLimit(1)
         }
         // Words and a glyph on the glass, with no pane: on is plain white, off is the
@@ -1040,8 +1042,8 @@ private struct StopPill: View {
 
 /// The heights the bar's glyphs are fitted to.
 private enum BarIcon {
-    static let mode: CGFloat = 19
-    static let input: CGFloat = 16
+    static let mode: CGFloat = 22
+    static let input: CGFloat = 18
 }
 
 /// The red record button: a red disc in a fine white ring, brightening under the pointer.
@@ -1075,7 +1077,7 @@ private struct SettingsGlyph: View {
     var body: some View {
         HStack(spacing: 5) {
             Image(systemName: "gearshape")
-                .font(.system(size: 17, weight: .regular))
+                .font(.system(size: 19, weight: .light))
             Image(systemName: "chevron.down")
                 .font(.system(size: 9, weight: .bold))
         }
