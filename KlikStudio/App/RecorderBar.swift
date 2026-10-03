@@ -469,43 +469,37 @@ struct RecorderBar: View {
 
     /// Timer, pause, stop, discard — and nothing else.
     ///
-    /// Three groups, in the order a take is thought about: how long and what is live; the
-    /// two things that decide the take, pause and a red Stop that is plainly the way out;
-    /// and the quieter extras — a marker, a restart, the bin — as matching round glass.
+    /// Laid out like the setup bar, so a take does not turn the bar into another object:
+    /// what is live on the left, the take's actions as the same bare glyph tiles under the
+    /// same gliding pane, and Stop at the far right — the ringed red button, where Record
+    /// was a moment ago.
     private var recordingControls: some View {
-        HStack(spacing: 8) {
-            timer
-            takeMeter
-            cameraLive
-            diskWarning
+        HStack(spacing: 0) {
+            HStack(spacing: 8) {
+                timer
+                takeMeter
+                cameraLive
+                diskWarning
+            }
             separator
+
             Button { studio.togglePause() } label: {
-                BarCircleIcon(symbol: studio.session.isPaused ? "play.fill" : "pause.fill",
-                              size: 13, prominent: true)
+                BarTileIcon(symbol: studio.session.isPaused ? "play" : "pause")
                     .contentTransition(.symbolEffect(.replace))
                     .animation(StudioMotion.state, value: studio.session.isPaused)
             }
             .buttonStyle(BarButtonStyle())
             .disabled(!studio.session.state.isTaking)
             .help(settings.recorder.help(studio.session.isPaused ? "Resume" : "Pause", .pause))
-
-            Button { studio.stop() } label: {
-                StopPill()
-            }
-            .buttonStyle(BarButtonStyle(pressedScale: 0.95))
-            // The same property the bridge's `stop()` guards on, which is the whole point of
-            // it having a name. These two used to disagree about `.paused`: the button was
-            // live, the guard refused, and the take went to the bin.
-            .disabled(!studio.session.state.isTaking)
-            .help(settings.recorder.help("Stop and keep this recording", .record))
-
-            separator
+            .modifier(slidingHover("take.pause", isEnabled: studio.session.state.isTaking))
 
             markerButton
+                .modifier(slidingHover("take.marker", isEnabled: studio.session.state.isTaking))
             restartButton
+                .modifier(slidingHover("take.restart", isEnabled: studio.session.state.isTaking))
 
             Button { studio.cancel() } label: {
-                BarCircleIcon(symbol: "trash", size: 12, hoverTint: .red)
+                BarTileIcon(symbol: "trash")
             }
             .buttonStyle(BarButtonStyle())
             // The same predicate again, and for a sharper reason than the other two: this
@@ -515,9 +509,22 @@ struct RecorderBar: View {
             // is a different button, on the layout that owns that state.
             .disabled(!studio.session.state.isTaking)
             .help("Discard this recording")
-            .padding(.trailing, 2)
+            .modifier(slidingHover("take.discard", isEnabled: studio.session.state.isTaking))
+
+            separator
+
+            Button { studio.stop() } label: {
+                StopGlyph()
+            }
+            .buttonStyle(BarButtonStyle(pressedScale: 0.9))
+            // The same property the bridge's `stop()` guards on, which is the whole point of
+            // it having a name. These two used to disagree about `.paused`: the button was
+            // live, the guard refused, and the take went to the bin.
+            .disabled(!studio.session.state.isTaking)
+            .help(settings.recorder.help("Stop and keep this recording", .record))
+            .padding(.trailing, 4)
         }
-        .padding(.horizontal, 6)
+        .backgroundPreferenceValue(HoverAnchors.self, hoverPane)
         .animation(StudioMotion.state, value: studio.session.diskWarning)
     }
 
@@ -598,15 +605,14 @@ struct RecorderBar: View {
         }
     }
 
-    /// The time, in a capsule of the take's own colour: red while it runs, amber while it
-    /// is held — with the word, because a stopped clock alone looks like a stuck one.
+    /// The time, bare on the glass beside a small dot: red while it runs, amber while it is
+    /// held — with the word, because a stopped clock alone looks like a stuck one.
     private func elapsed(_ text: String) -> some View {
         let paused = studio.session.isPaused
-        let tint = paused ? BarMood.held.accent : BarMood.live.accent
         return HStack(spacing: 8) {
-            RecordingDot(color: tint)
+            RecordingDot(color: paused ? BarMood.held.accent : BarMood.live.accent)
             Text(text)
-                .font(.system(size: 15, weight: .semibold).monospacedDigit())
+                .font(.system(size: 15, weight: .medium).monospacedDigit())
                 .foregroundStyle(.white)
                 .contentTransition(.numericText())
                 // A slot wide enough for "00:00". Without it the bar grows by a digit at
@@ -615,18 +621,15 @@ struct RecorderBar: View {
                 .frame(minWidth: 46, alignment: .leading)
             if paused {
                 Text("PAUSED")
-                    .font(.system(size: 9.5, weight: .bold))
+                    .font(.system(size: 9.5, weight: .semibold))
                     .tracking(0.6)
-                    .foregroundStyle(tint)
-                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                    .foregroundStyle(StudioPalette.offered)
+                    .transition(.opacity)
             }
         }
-        .padding(.horizontal, 12)
-        .frame(height: 34)
-        .background(tint.opacity(0.16), in: Capsule())
-        .overlay(Capsule().strokeBorder(tint.opacity(0.35)))
+        .frame(height: BarIcon.tile)
         .animation(StudioMotion.state, value: paused)
-        .padding(.leading, 4)
+        .padding(.leading, 12)
     }
 }
 
@@ -776,7 +779,7 @@ extension RecorderBar {
             }
 
             Button { studio.dismissFailure() } label: {
-                BarCircleIcon(symbol: "xmark", size: 10.5)
+                BarTileIcon(symbol: "xmark")
             }
             .buttonStyle(BarButtonStyle())
             .help("Dismiss")
@@ -813,7 +816,7 @@ extension RecorderBar {
     /// Drops a marker, and says how many this take has.
     fileprivate var markerButton: some View {
         Button { studio.addMarker() } label: {
-            BarCircleIcon(symbol: "flag.fill", size: 12, count: studio.session.markerCount)
+            BarTileIcon(symbol: "flag", count: studio.session.markerCount)
                 .animation(StudioMotion.state, value: studio.session.markerCount)
         }
         .buttonStyle(BarButtonStyle())
@@ -824,7 +827,7 @@ extension RecorderBar {
     /// Throws this take away and starts again with the same target and settings.
     fileprivate var restartButton: some View {
         Button { studio.requestRestart() } label: {
-            BarCircleIcon(symbol: "arrow.counterclockwise", size: 12.5)
+            BarTileIcon(symbol: "arrow.counterclockwise")
         }
         .buttonStyle(BarButtonStyle())
         .disabled(!studio.session.state.isTaking)
@@ -991,74 +994,53 @@ private struct InputChipLabel: View {
     }
 }
 
-/// A round glass button's face: the bar's secondary actions, all one size and one
-/// manner, brightening under the pointer. A count rides alongside when there is one —
-/// the markers dropped so far — and widens the circle into a capsule to hold it.
-private struct BarCircleIcon: View {
+/// A take's action as a glyph tile, the same as the setup bar's modes and inputs: white on
+/// the glass, dimmed when it cannot be used, lit by the row's one gliding pane rather than a
+/// fill of its own. A count rides alongside when there is one — the markers dropped so far —
+/// and widens the tile to hold it.
+private struct BarTileIcon: View {
     let symbol: String
-    var size: CGFloat = 12.5
-    /// Pause: the one secondary action that decides the take, a step brighter.
-    var prominent = false
-    /// The colour it turns under the pointer, for the one that destroys something.
-    var hoverTint: Color?
     var count = 0
-    @State private var isHovering = false
     @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 5) {
             Image(systemName: symbol)
-                .font(.system(size: size, weight: .semibold))
+                .font(BarIcon.font)
             if count > 0 {
                 Text("\(count)")
-                    .font(.system(size: 11.5, weight: .semibold).monospacedDigit())
+                    .font(.system(size: 13, weight: .medium).monospacedDigit())
                     .contentTransition(.numericText())
             }
         }
-        .foregroundStyle(isHovering ? (hoverTint ?? .white) : .white.opacity(prominent ? 0.95 : 0.8))
+        .foregroundStyle(isEnabled ? Color.white.opacity(0.9) : StudioPalette.unavailable)
         .padding(.horizontal, count > 0 ? 10 : 0)
-        .frame(minWidth: 34, minHeight: 34)
-        .background(fill, in: Capsule())
-        .overlay(Capsule().strokeBorder(.white.opacity(0.07)))
-        .opacity(isEnabled ? 1 : 0.45)
-        .contentShape(Capsule())
-        .onHover { hovering in
-            withAnimation(StudioMotion.hover) { isHovering = hovering && isEnabled }
-        }
-    }
-
-    private var fill: Color {
-        if isHovering, let hoverTint { return hoverTint.opacity(0.18) }
-        let base = prominent ? 0.14 : 0.08
-        return .white.opacity(isHovering ? base + 0.07 : base)
+        .frame(minWidth: BarIcon.tile, minHeight: BarIcon.tile)
+        .contentShape(Rectangle())
     }
 }
 
-/// Stop: a red capsule with the stop square and the word, so the way out of a take is the
-/// one unmistakable thing on the bar.
-private struct StopPill: View {
+/// Stop: the record button's twin — the same white ring, with the red square inside it
+/// where the disc was — so the way out of a take is the button that started it.
+private struct StopGlyph: View {
     @State private var isHovering = false
 
     var body: some View {
-        HStack(spacing: 7) {
-            RoundedRectangle(cornerRadius: 2.5, style: .continuous)
-                .fill(.white)
-                .frame(width: 10, height: 10)
-            Text("Stop")
-                .font(.system(size: 12.5, weight: .semibold))
-                .foregroundStyle(.white)
+        ZStack {
+            Circle()
+                .strokeBorder(.white.opacity(isHovering ? 0.95 : 0.8), lineWidth: 2)
+            RoundedRectangle(cornerRadius: 3.5, style: .continuous)
+                .fill(LinearGradient(colors: [Color(red: 1, green: 0.3, blue: 0.3), Color(red: 0.86, green: 0.1, blue: 0.13)],
+                                     startPoint: .top, endPoint: .bottom))
+                .frame(width: isHovering ? 15 : 14, height: isHovering ? 15 : 14)
         }
-        .padding(.horizontal, 14)
-        .frame(height: 34)
-        .background(LinearGradient(colors: [Color(red: 1, green: 0.33, blue: 0.35), Color(red: 0.86, green: 0.13, blue: 0.17)],
-                                   startPoint: .top, endPoint: .bottom),
-                    in: Capsule())
-        .overlay(Capsule().strokeBorder(.white.opacity(0.18)))
-        .shadow(color: .red.opacity(isHovering ? 0.5 : 0.25), radius: isHovering ? 8 : 4)
-        .contentShape(Capsule())
+        .frame(width: 34, height: 34)
+        .shadow(color: .red.opacity(isHovering ? 0.45 : 0.2), radius: isHovering ? 6 : 3)
+        .contentShape(Circle())
         .onHover { hovering in
             withAnimation(StudioMotion.hover) { isHovering = hovering }
         }
+        .padding(.horizontal, 5)
     }
 }
 
