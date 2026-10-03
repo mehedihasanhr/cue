@@ -48,11 +48,19 @@ final class URLSessionAddOnDownloader: NSObject, AddOnDownloading {
     func download(_ release: AddOnRelease,
                   progress: @escaping @MainActor (Double) -> Void) async throws(AddOnError) -> URL {
         do {
-            return try await fetch(release, progress: progress)
+            do {
+                return try await fetch(release, progress: progress)
+            } catch let error as URLError where error.code == .networkConnectionLost || error.code == .timedOut {
+                // Once more, from the start: a connection dropped part way through a
+                // download from GitHub's CDN is usually fine the second time.
+                return try await fetch(release, progress: progress)
+            }
         } catch let error as AddOnError {
             throw error
+        } catch let error as URLError {
+            throw .downloadFailed(error.localizedDescription)
         } catch {
-            throw .launchFailed(error.localizedDescription)
+            throw .installFailed(error.localizedDescription)
         }
     }
 

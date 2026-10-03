@@ -208,9 +208,25 @@ final class AddOnRegistry {
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
         NSWorkspace.shared.openApplication(at: installed.url, configuration: configuration) { _, error in
-            if let error {
-                Log.addOns.error("Couldn't launch \(addOn.id, privacy: .public): \(error.localizedDescription, privacy: .public)")
-            }
+            guard let error else { return }
+            Log.addOns.error("Couldn't launch \(addOn.id, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            Task { @MainActor in Self.explainRefusedLaunch(of: addOn) }
         }
+    }
+
+    /// Says why macOS would not open the add-on, and where to let it.
+    ///
+    /// The usual reason is Gatekeeper: a build that is not notarized, installed by a
+    /// sandboxed app that cannot clear the quarantine flag, is refused until the user
+    /// allows it once in Privacy & Security. Without this, Open simply did nothing.
+    private static func explainRefusedLaunch(of addOn: AddOn) {
+        let alert = NSAlert()
+        alert.messageText = "macOS didn\u{2019}t open \(addOn.name)."
+        alert.informativeText = "\(addOn.name) isn\u{2019}t notarized yet, so macOS asks before opening it the first time. In System Settings \u{203A} Privacy & Security, choose Open Anyway next to \(addOn.name), then open it again."
+        alert.addButton(withTitle: "Open Privacy & Security")
+        alert.addButton(withTitle: "Not Now")
+        guard alert.runModal() == .alertFirstButtonReturn,
+              let pane = URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension") else { return }
+        NSWorkspace.shared.open(pane)
     }
 }

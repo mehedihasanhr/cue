@@ -186,6 +186,7 @@ nonisolated enum AddOnError: Error, LocalizedError, Equatable {
     case untrusted(String)
     case launchFailed(String)
     case installFailed(String)
+    case downloadFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -200,6 +201,7 @@ nonisolated enum AddOnError: Error, LocalizedError, Equatable {
         case .untrusted(let reason): "The installed add-on isn't signed by Klik's developer (\(reason))."
         case .launchFailed(let reason): "The add-on wouldn't start: \(reason)"
         case .installFailed(let reason): "Klik couldn't install it: \(reason)"
+        case .downloadFailed(let reason): "The download didn't finish (\(reason)). Try again."
         }
     }
 }
