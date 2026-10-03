@@ -249,12 +249,6 @@ struct IslandView: View {
                 // Invisible once collapsed (nothing peeks out beside the notch, nor sits
                 // on a plain menu bar); the tap target stays.
                 shape.fill(faded && !preferences.islandNotchBackground ? Color.clear : Color.black)
-                // Every open panel sits on the same slow smoke; brief flashes stay plain.
-                if Self.hasBackdrop(phase) {
-                    SmokeField(palette: asking && phase == .agents ? Smoke.asking : Smoke.calm,
-                               intensity: asking && phase == .agents ? 1.1 : 0.85, fadeTop: geometry.stripHeight + 18)
-                        .transition(.opacity.animation(Self.contentAnimation))
-                }
                 content(for: phase, strip: geometry.stripHeight)
                     .compositingGroup()
                     .padding(.horizontal, flare) // the body; the flares lie outside it
@@ -271,16 +265,6 @@ struct IslandView: View {
                                  lineWidth: 1)
                         .allowsHitTesting(false)
                 }
-            }
-            // Behind the clipped shape, so it shows around the outside of it.
-            // One glow, always there: it follows the shape as the island opens and
-            // closes, and only its strength changes. Open panels get a still halo, the
-            // agents list a breathing one; the closed island is a plain notch.
-            .background {
-                AgentGlow(shape: shape, asking: asking && phase == .agents,
-                          fadeTop: geometry.stripHeight + 36,
-                          breathing: phase == .agents,
-                          strength: Self.hasBackdrop(phase) ? 1 : 0)
             }
             // While an agent works, a soft shadow breathes around the closed notch;
             // the notch itself stays plain black.
@@ -437,7 +421,7 @@ struct IslandView: View {
         }
     }
 
-    /// The panels that stay open to be used: they get the smoke, the rim and the halo.
+    /// The panels that stay open to be used: they get the rim.
     static func hasBackdrop(_ phase: IslandModel.Phase) -> Bool {
         switch phase {
         case .expanded, .agents, .clock, .record, .taskDetail, .prompt: true

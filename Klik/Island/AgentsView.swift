@@ -83,19 +83,19 @@ private struct AgentTile: View {
                     .scaledToFit()
                     .scaleEffect(1.18)
                     .frame(width: side, height: side)
-                    .clipShape(RoundedRectangle(cornerRadius: side * 0.26, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: side * 0.22, style: .continuous))
             } else {
                 AgentGlyph(agent: agent, size: side * 0.53, spinning: working)
                     .frame(width: side, height: side)
                     .background {
-                        RoundedRectangle(cornerRadius: side * 0.3, style: .continuous)
+                        RoundedRectangle(cornerRadius: side * 0.22, style: .continuous)
                             .fill(.white.opacity(0.06))
-                            .overlay(RoundedRectangle(cornerRadius: side * 0.3, style: .continuous).strokeBorder(.white.opacity(0.1), lineWidth: 0.5))
+                            .overlay(RoundedRectangle(cornerRadius: side * 0.22, style: .continuous).strokeBorder(.white.opacity(0.1), lineWidth: 0.5))
                     }
             }
         }
         .overlay {
-            if working { WorkingRing(radius: side * 0.3) }
+            if working { WorkingRing(radius: side * 0.22) }
         }
     }
 }
@@ -138,8 +138,8 @@ private struct Spin: ViewModifier {
 }
 
 /// The closed notch while an agent works: a thin line of red light along its left,
-/// bottom and right edges, breathing softly, with a brighter glint gliding to and
-/// fro along it. Amber and quicker while an agent waits on the user. The notch
+/// bottom and right edges, breathing softly. Amber and quicker while an agent
+/// waits on the user. The notch
 /// itself stays plain black; the light only shows outside its edge.
 struct NotchGlow: View {
     let shape: NotchShape
@@ -147,35 +147,19 @@ struct NotchGlow: View {
     let asking: Bool
 
     private static let red = Color(red: 1.0, green: 0.26, blue: 0.22)
-    private static let redCore = Color(red: 1.0, green: 0.66, blue: 0.58)
-    private static let amberCore = Color(red: 1.0, green: 0.88, blue: 0.66)
-    /// How much of the rim the glint covers.
-    private static let glint: CGFloat = 0.22
 
     var body: some View {
         let outline = NotchOutline(flare: shape.flare, bottomRadius: shape.bottomRadius)
         let color = asking ? askingTint : Self.red
-        let core = asking ? Self.amberCore : Self.redCore
         Group {
             if IslandView.reduceMotion {
                 rim(outline, color: color, level: 0.8)
             } else {
-                TimelineView(.animation(minimumInterval: 1.0 / 60)) { context in
+                // One slow, even breath of the whole rim; nothing travels along it.
+                TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
                     let t = context.date.timeIntervalSinceReferenceDate
-                    let breath = 0.5 + 0.5 * sin(t * 2 * .pi / (asking ? 0.9 : 2.2))
-                    // To and fro, lingering a moment at each end.
-                    let sweep = 0.5 - 0.5 * cos(t * 2 * .pi / (asking ? 1.6 : 2.8))
-                    let start = sweep * (1 - Self.glint)
-                    ZStack {
-                        rim(outline, color: color, level: 0.55 + 0.45 * breath)
-                        outline.trim(from: start, to: start + Self.glint)
-                            .stroke(color, style: SwiftUI.StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
-                            .blur(radius: 5)
-                            .opacity(0.7)
-                        outline.trim(from: start + Self.glint * 0.2, to: start + Self.glint * 0.8)
-                            .stroke(core, style: SwiftUI.StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                            .blur(radius: 0.6)
-                    }
+                    let breath = 0.5 - 0.5 * cos(t * 2 * .pi / (asking ? 1.4 : 3.0))
+                    rim(outline, color: color, level: 0.3 + 0.7 * breath)
                 }
             }
         }
@@ -519,28 +503,6 @@ struct SmokeField: View {
     }
 }
 
-/// A card's glass: one even, slightly blue-grey fill with a soft hairline edge.
-/// Drawn rather than taken from the system's Liquid Glass, which brightens its rim
-/// whenever the island's window becomes active — the card must look the same
-/// whether or not the island has the keyboard. Hovered or asking, it lifts a touch.
-private struct GlassPane: View {
-    let tint: Color
-    var lit = false
-    var asking = false
-    private let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
-
-    /// #202328: the card colour measured off the unfocused island.
-    private static let fill = Color(red: 0x20 / 255, green: 0x23 / 255, blue: 0x28 / 255)
-
-    var body: some View {
-        let raised = lit || asking
-        shape
-            .fill(Self.fill.opacity(0.9))
-            .overlay(shape.fill(.white.opacity(raised ? 0.035 : 0)))
-            .overlay(shape.strokeBorder(.white.opacity(0.08), lineWidth: 0.75))
-    }
-}
-
 /// The header's status light: green while all is well, orange when asked.
 private struct LiveDot: View {
     let color: Color
@@ -555,55 +517,6 @@ private struct LiveDot: View {
                 guard !IslandView.reduceMotion else { return }
                 withAnimation(.easeInOut(duration: 1.4).repeatForever()) { glow = true }
             }
-    }
-}
-
-/// A faint ice-blue glow around the open list, breathing in and out: slow while
-/// the agents work, a little quicker and amber while one is asking. Two shadows of the island's
-/// own shape, a wide soft one and a close one, so it reads as light, not a border.
-struct AgentGlow<S: Shape>: View {
-    let shape: S
-    let asking: Bool
-    /// How far down from the top the glow fades in.
-    var fadeTop: CGFloat = 64
-    /// Off: a still, faint halo (the panel, the clock), half way between breaths.
-    var breathing = true
-    /// 0 hides it. It stays in place at 0 rather than coming and going, so it always
-    /// has the island's current shape and grows with it — a glow made fresh would
-    /// appear at its final size first, a second layer ahead of the island.
-    var strength: Double = 1
-    @State private var inhale = false
-
-    private var color: Color { asking ? Color(red: 1.0, green: 0.7, blue: 0.32) : Color(red: 0.45, green: 0.66, blue: 0.86) }
-
-    var body: some View {
-        shape
-            .fill(.black)
-            .shadow(color: color.opacity(breathing ? (inhale ? 0.38 : 0.12) : 0.2), radius: breathing ? (inhale ? 24 : 14) : 20)
-            .shadow(color: color.opacity(breathing ? (inhale ? 0.18 : 0.06) : 0.08), radius: breathing ? (inhale ? 6 : 3) : 4)
-            // None along the top, where the shape flares into the menu bar: the glow
-            // starts below the notch and reaches past the sides and bottom.
-            .mask(alignment: .top) {
-                VStack(spacing: 0) {
-                    LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
-                        .frame(height: fadeTop)
-                    Color.black
-                }
-                .padding(.horizontal, -60)
-                .padding(.bottom, -60)
-            }
-            .opacity(strength)
-            .onAppear { breathe() }
-            .onChange(of: asking) { breathe() }
-            .onChange(of: breathing) { breathe() }
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-    }
-
-    private func breathe() {
-        guard breathing, !IslandView.reduceMotion else { inhale = true; return }
-        inhale = false
-        withAnimation(.easeInOut(duration: asking ? 1.6 : 3.2).repeatForever(autoreverses: true)) { inhale = true }
     }
 }
 
@@ -640,9 +553,15 @@ struct AgentsView: View {
                     .frame(maxWidth: .infinity, minHeight: 40)
             } else {
                 ScrollView(.vertical) {
-                    VStack(spacing: 8) {
+                    VStack(spacing: 0) {
                         ForEach(store.sessions) { session in
-                            AgentSessionCard(session: session, requests: store.requests(for: session), store: store)
+                            // Rows sit on the island's black, parted by a hairline.
+                            VStack(spacing: 0) {
+                                if session.id != store.sessions.first?.id {
+                                    Rectangle().fill(.white.opacity(0.16)).frame(height: 0.5)
+                                }
+                                AgentSessionCard(session: session, requests: store.requests(for: session), store: store)
+                            }
                                 .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.97, anchor: .top)),
                                                         removal: .opacity.combined(with: .scale(scale: 0.97))))
                         }
@@ -658,7 +577,7 @@ struct AgentsView: View {
                         }
                     }
                 }
-                .scrollIndicators(overflows ? .automatic : .never)
+                .scrollIndicators(.never)
                 // Until it has measured itself the list takes the room it is given, so
                 // the cards are there from the first frame and open with the island,
                 // rather than the island opening empty and the cards following.
@@ -736,8 +655,9 @@ private struct AgentSessionCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Button { store.focus(session) } label: { summary }
-                .buttonStyle(.plain)
+            summary
+                .onTapGesture { store.focus(session) }
+                .accessibilityAddTraits(.isButton)
                 .help("Show in \(store.hosts[session.id]?.name ?? session.terminal.map(Self.terminalName) ?? "its terminal")")
             if !session.workers.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
@@ -746,7 +666,7 @@ private struct AgentSessionCard: View {
                             .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                 }
-                .padding(.leading, 38)
+                .padding(.leading, 30)
                 .animation(IslandView.listAnimation, value: session.workers.map(\.id))
             }
             ForEach(requests) { request in
@@ -754,60 +674,99 @@ private struct AgentSessionCard: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
             }
         }
-        .padding(10)
-        .background { GlassPane(tint: session.agent.tint, lit: hovered, asking: !requests.isEmpty) }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 11)
+        // The row that needs the user stands out with an amber outline.
+        .background {
+            if !requests.isEmpty {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(askingTint.opacity(0.05))
+                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(askingTint.opacity(0.45), lineWidth: 1))
+                    .padding(.vertical, 4)
+            }
+        }
+        .contextMenu { Button("Dismiss", action: dismiss) }
         .onHover { hovered = $0 }
         .animation(IslandView.contentAnimation, value: hovered)
     }
 
+    private func dismiss() {
+        withAnimation(IslandView.listAnimation) { store.dismiss(session) }
+    }
+
+    /// The terminal or app the session runs in, as a click on the row brings forward.
+    private var source: String? {
+        store.hosts[session.id]?.name ?? session.terminal.map(Self.terminalName)
+    }
+
     private var summary: some View {
-        HStack(alignment: .center, spacing: 10) {
-            AgentTile(agent: session.agent, working: session.state == .running)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
+        HStack(alignment: .top, spacing: 10) {
+            AgentTile(agent: session.agent, working: session.state == .running, side: 20)
+                .padding(.top, 1)
+                // Closes a row whose session ended without saying so.
+                .overlay(alignment: .topLeading) {
+                    Button(action: dismiss) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 6.5, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.85))
+                            .frame(width: 14, height: 14)
+                            .background(Color(white: 0.22), in: Circle())
+                            .overlay(Circle().strokeBorder(.white.opacity(0.12), lineWidth: 0.5))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Dismiss")
+                    .offset(x: -6, y: -6)
+                    .opacity(hovered ? 1 : 0)
+                    .allowsHitTesting(hovered)
+                }
+            // Name, what it is doing, and how it stands, top to bottom. The small
+            // details sit beside the name only, so the activity gets the full width.
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(session.project)
-                        .font(.system(size: 12.5, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.white)
-                    Text(session.profile.map { "\(session.agent.shortName) · \($0)" } ?? session.agent.shortName)
-                        .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.45))
-                    Spacer(minLength: 6)
-                    stateLabel
+                        .layoutPriority(1)
+                    Spacer(minLength: 8)
+                    details
                 }
                 Text(session.activity ?? Self.placeholder(for: session.state))
                     .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.55))
+                    .foregroundStyle(.white.opacity(0.5))
                     .truncationMode(.tail)
+                stateLabel
             }
             .lineLimit(1)
-            // Where it runs: the terminal's or app's own icon, which a click brings forward.
-            if let icon = store.hosts[session.id]?.icon {
-                Image(nsImage: icon)
-                    .resizable()
-                    .interpolation(.high)
-                    .frame(width: 20, height: 20)
-                    .opacity(hovered ? 1 : 0.7)
-                    .overlay(alignment: .bottomTrailing) {
-                        Image(systemName: "arrow.up.forward")
-                            .font(.system(size: 6.5, weight: .heavy))
-                            .foregroundStyle(.white)
-                            .padding(2)
-                            .background(.black.opacity(0.7), in: Circle())
-                            .offset(x: 3, y: 3)
-                            .opacity(hovered ? 1 : 0)
-                    }
-            } else {
-                Icon("arrow.up.forward.app", size: 13, weight: .medium)
-                    .foregroundStyle(.white.opacity(hovered ? 0.8 : 0.35))
-            }
         }
         .contentShape(Rectangle())
+    }
+
+    /// Which agent, where it runs, and how long ago it started: quiet, compact.
+    private var details: some View {
+        HStack(spacing: 4) {
+            AgentChip(text: session.agent.shortName)
+            if let source {
+                AgentChip(text: source)
+            }
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                Text(Self.age(since: session.startedAt, now: context.date))
+                    .font(.system(size: 9.5, weight: .medium))
+                    .monospacedDigit()
+                    .foregroundStyle(.white.opacity(0.35))
+            }
+        }
+        .help(session.profile.map { "\(session.agent.name) · \($0)" } ?? session.agent.name)
     }
 
     @ViewBuilder
     private var stateLabel: some View {
         HStack(spacing: 5) {
             StatusText(state: session.state)
+            if session.state == .idle {
+                Text("— click to jump")
+                    .foregroundStyle(.white.opacity(0.35))
+                    .fontWeight(.medium)
+            }
             if session.state == .running {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     Text(Self.elapsed(since: session.updatedAt, now: context.date))
@@ -827,6 +786,15 @@ private struct AgentSessionCard: View {
         }
     }
 
+    /// "now", "12m", "3h", "2d".
+    private static func age(since date: Date, now: Date) -> String {
+        let minutes = max(0, Int(now.timeIntervalSince(date))) / 60
+        if minutes < 1 { return "now" }
+        if minutes < 60 { return "\(minutes)m" }
+        if minutes < 24 * 60 { return "\(minutes / 60)h" }
+        return "\(minutes / (24 * 60))d"
+    }
+
     private static func elapsed(since date: Date, now: Date) -> String {
         let seconds = max(0, Int(now.timeIntervalSince(date)))
         return seconds < 60 ? "\(seconds)s" : "\(seconds / 60)m"
@@ -840,6 +808,20 @@ private struct AgentSessionCard: View {
         case "WarpTerminal": "Warp"
         default: program
         }
+    }
+}
+
+/// A small label on the right of a session row: the agent, or where it runs.
+private struct AgentChip: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 9.5, weight: .medium))
+            .foregroundStyle(.white.opacity(0.5))
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1.5)
+            .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
     }
 }
 
@@ -881,9 +863,7 @@ private struct AgentWorkerRow: View {
         }
         .lineLimit(1)
         .truncationMode(.tail)
-        .padding(.vertical, 4)
-        .padding(.horizontal, 8)
-        .background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .padding(.vertical, 3)
     }
 }
 
@@ -991,8 +971,7 @@ private struct PermissionCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
-                    .background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(.white.opacity(0.06), lineWidth: 0.5))
+                    .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .help(detail)
             }
             HStack(spacing: 6) {
