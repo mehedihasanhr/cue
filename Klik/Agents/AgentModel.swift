@@ -251,6 +251,9 @@ nonisolated struct AgentSession: Identifiable, Equatable, Sendable {
     var state: State = .idle
     /// What it is doing ("Bash · npm test") or last said.
     var activity: String?
+    /// What the session is about: the start of its first prompt ("fix the auth
+    /// bug"). Tells apart two sessions in the same folder.
+    var title: String?
     var startedAt: Date
     var updatedAt: Date
     var parentPID: Int32
@@ -335,6 +338,7 @@ nonisolated struct AgentSessionBook: Equatable, Sendable {
         case .userPromptSubmit:
             session.state = .running
             session.activity = event.prompt.map(Self.oneLine)
+            if session.title == nil, let prompt = event.prompt { session.title = Self.title(from: prompt) }
         case .preToolUse, .postToolUse:
             // A late status event must not hide a question that is still open.
             if session.state != .waiting || event.name == .postToolUse { session.state = .running }
@@ -432,6 +436,18 @@ nonisolated struct AgentSessionBook: Equatable, Sendable {
     private static func oneLine(_ text: String) -> String {
         let line = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? text
         return String(line.trimmingCharacters(in: .whitespaces).prefix(160))
+    }
+
+    /// A short name for a session from one of its prompts, or nil for a prompt that
+    /// says nothing about the work: a slash command, or text the app wrapped in tags.
+    static func title(from prompt: String) -> String? {
+        var line = oneLine(prompt)
+        guard let first = line.first, first != "/", first != "<" else { return nil }
+        // Pasted images show up as "[Image #1]"; they are not words.
+        line = line.replacingOccurrences(of: #"\[Image #\d+\]"#, with: "", options: .regularExpression)
+        line = line.split(separator: " ", omittingEmptySubsequences: true).joined(separator: " ")
+        guard !line.isEmpty else { return nil }
+        return line.count > 48 ? String(line.prefix(47)).trimmingCharacters(in: .whitespaces) + "…" : line
     }
 
     /// The reply's first line as plain text, or nil when the reply is data rather than
@@ -576,6 +592,8 @@ nonisolated enum AgentReply {
 nonisolated struct AgentToolSummary: Equatable, Sendable {
     let tool: String
     let detail: String?
+    /// The agent's own few words for the call ("Run the tests"), when it gave some.
+    let purpose: String?
     /// What a Codex "always" grant matches: the same tool with the same command.
     let grantKey: String
 
@@ -583,13 +601,26 @@ nonisolated struct AgentToolSummary: Equatable, Sendable {
         self.tool = Self.displayName(tool)
         let input = input ?? .null
         self.detail = Self.detail(of: input).map { String($0.prefix(600)) }
+        let purpose = input["description"]?.string?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.purpose = purpose?.isEmpty == false ? purpose : nil
         grantKey = "\(tool)|\(input["command"]?.commandLine ?? (tool == "apply_patch" ? "" : input.compact))"
     }
 
+    /// What the agent is doing, in words where it can: its own description of the
+    /// call ("Clean up asking panel"), or the tool as a verb ("Reading …/a/b.swift"),
+    /// and the raw command only when nothing better is known.
     var line: String {
+        if let purpose { return String(purpose.prefix(120)) }
         guard let detail, !detail.isEmpty else { return tool }
-        let first = detail.split(whereSeparator: \.isNewline).first.map(String.init) ?? detail
-        return "\(tool) · \(first.prefix(120))"
+        let first = String((detail.split(whereSeparator: \.isNewline).first.map(String.init) ?? detail).prefix(120))
+        switch tool {
+        case "Read": return "Reading \(first)"
+        case "Edit", "MultiEdit", "Write", "NotebookEdit", "Edit files": return "Editing \(first)"
+        case "Grep", "Glob": return "Searching for \(first)"
+        case "WebFetch": return "Reading \(first)"
+        case "WebSearch": return "Searching the web for \(first)"
+        default: return "\(tool) · \(first)"
+        }
     }
 
     /// The one thing that says what the call does: its command, file, address or query.
