@@ -81,11 +81,13 @@ extension View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         return background {
             ZStack {
-                // Smoked glass: the desktop behind shows through, blurred and darkened, in
-                // its own colours. A neutral tint rather than the blue-black it was, which
-                // laid a cold cast over warm wallpapers and made the bar look painted on.
+                // Smoked glass: the desktop behind is blurred and darkened, in its own
+                // colours. Dark enough to stay dark over a white page — at a third, the bar
+                // went mid-grey over a light window and its white icons lost their contrast
+                // — while the desktop still tints it through the blur. Neutral, not the
+                // blue-black it once was, which laid a cold cast over warm wallpapers.
                 Rectangle().fill(.ultraThinMaterial)
-                Color.black.opacity(0.32)
+                Color.black.opacity(0.7)
             }
             .clipShape(shape)
         }
