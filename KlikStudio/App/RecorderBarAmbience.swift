@@ -31,16 +31,6 @@ enum BarMood: Equatable {
 
     fileprivate var edge: Color { accent }
 
-    /// How long the edge light takes to go once round. Quicker while a take is live: the
-    /// bar is the one thing on screen saying "this is being recorded".
-    fileprivate var lap: Double {
-        switch self {
-        case .ready: 16
-        case .live: 9
-        case .held, .alert: 18
-        }
-    }
-
     /// How strongly the smoke shows through the glass.
     fileprivate var glow: Double {
         switch self {
@@ -51,32 +41,23 @@ enum BarMood: Equatable {
     }
 }
 
-/// A faint coloured haze drifting behind the bar's controls — a tint, not a show.
+/// A faint coloured haze behind the bar's controls — a tint, not a show.
 ///
-/// Three soft lights, each a blurred ellipse wandering between two places on its own
-/// clock. The clocks are deliberately not multiples of one another, so the three never
-/// fall back into the same arrangement and the drift reads as weather rather than a loop.
-/// Animated by SwiftUI's own repeating animations rather than redrawn from a timeline:
-/// the movement is interpolated by the renderer, and nothing here is laid out again per
-/// frame — this sits on screen through a whole take, over the thing being recorded.
-///
-/// Still under Reduce Motion: the same light, not moving.
+/// Three soft lights, each a blurred ellipse. They used to drift, on repeating
+/// animations, for the whole of every take — see the note on `body`.
 struct BarSmoke: View {
     let mood: BarMood
-    @State private var drifting = false
 
     private struct Wisp {
-        let from: UnitPoint
-        let to: UnitPoint
+        let at: UnitPoint
         let width: CGFloat
         let height: CGFloat
-        let period: Double
     }
 
     private static let wisps: [Wisp] = [
-        Wisp(from: UnitPoint(x: 0.08, y: 0.7), to: UnitPoint(x: 0.42, y: 0.25), width: 0.42, height: 1.5, period: 9.3),
-        Wisp(from: UnitPoint(x: 0.88, y: 0.3), to: UnitPoint(x: 0.55, y: 0.8), width: 0.38, height: 1.4, period: 12.1),
-        Wisp(from: UnitPoint(x: 0.5, y: 1.0), to: UnitPoint(x: 0.75, y: 0.1), width: 0.3, height: 1.2, period: 7.7),
+        Wisp(at: UnitPoint(x: 0.2, y: 0.55), width: 0.42, height: 1.5),
+        Wisp(at: UnitPoint(x: 0.75, y: 0.5), width: 0.38, height: 1.4),
+        Wisp(at: UnitPoint(x: 0.55, y: 0.75), width: 0.3, height: 1.2),
     ]
 
     var body: some View {
@@ -85,13 +66,10 @@ struct BarSmoke: View {
             ZStack {
                 ForEach(Self.wisps.indices, id: \.self) { index in
                     let wisp = Self.wisps[index]
-                    let at = drifting ? wisp.to : wisp.from
                     Ellipse()
                         .fill(mood.smoke[index])
                         .frame(width: size.width * wisp.width, height: size.height * wisp.height)
-                        .scaleEffect(drifting ? 1.15 : 0.9)
-                        .position(x: size.width * at.x, y: size.height * at.y)
-                        .animation(drift(wisp.period), value: drifting)
+                        .position(x: size.width * wisp.at.x, y: size.height * wisp.at.y)
                 }
             }
             .blur(radius: size.height * 0.42)
@@ -101,24 +79,19 @@ struct BarSmoke: View {
         .animation(.easeInOut(duration: 0.8), value: mood)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-        .onAppear { if !StudioMotion.reduceMotion { drifting = true } }
-    }
-
-    private func drift(_ period: Double) -> Animation {
-        .easeInOut(duration: period).repeatForever(autoreverses: true)
+        // Held still. Drifting, it was a repeating animation for the length of every take:
+        // the bar redrawn at the display's rate, and the window server re-blurring the glass
+        // behind it each time — a large share of the heat a recording made, for a tint.
     }
 }
 
-/// A faint light that travels round the bar's edge.
+/// A faint light caught on one stretch of the bar's edge, in the mood's colour.
 ///
 /// An angular gradient — one bright arc, the rest of the turn dark — stroked along the
-/// bar's outline and turned. Round a long, thin bar the arc dashes along the short ends and
-/// slows down the long ones, which is what makes it read as light running round a rim
-/// rather than a spinner.
+/// bar's outline at a fixed angle.
 struct BarEdgeLight: View {
     let mood: BarMood
     let cornerRadius: CGFloat
-    @State private var turned = false
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -137,8 +110,8 @@ struct BarEdgeLight: View {
         .animation(.easeInOut(duration: 0.8), value: mood)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-        .onAppear { spin() }
-        .onChange(of: mood) { _, _ in spin() }
+        // Not turned: a light running round the rim redrew the bar every frame of a take,
+        // which is where a recorder's attention — and the laptop's power — should not go.
     }
 
     /// The light itself: a square of angular gradient — one bright arc, the rest of the
@@ -159,20 +132,8 @@ struct BarEdgeLight: View {
                 ],
                 center: .center)
                 .frame(width: side, height: side)
-                .rotationEffect(.degrees(turned ? 360 : 0))
+                .rotationEffect(.degrees(-35))
                 .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
-        }
-    }
-
-    /// Round and round at the mood's pace. Restarted when the mood changes, because a
-    /// repeating animation keeps the duration it was started with.
-    private func spin() {
-        guard !StudioMotion.reduceMotion else { return }
-        var still = Transaction()
-        still.disablesAnimations = true
-        withTransaction(still) { turned = false }
-        DispatchQueue.main.async {
-            withAnimation(.linear(duration: mood.lap).repeatForever(autoreverses: false)) { turned = true }
         }
     }
 }

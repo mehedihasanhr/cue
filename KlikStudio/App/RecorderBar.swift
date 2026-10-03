@@ -516,11 +516,14 @@ struct RecorderBar: View {
     private var timer: some View {
         switch studio.session.state {
         case .recording(let started):
-            TimelineView(.periodic(from: .now, by: 0.25)) { context in
-                elapsed(RecorderModel.elapsed(since: started, at: context.date), blinking: true)
+            // Once a second, on the second the take began: the clock shows whole seconds, and
+            // four redraws a second of a glass bar over the thing being recorded is three
+            // that change nothing.
+            TimelineView(.periodic(from: started, by: 1)) { context in
+                elapsed(RecorderModel.elapsed(since: started, at: context.date))
             }
         case .paused(let started, let pausedAt):
-            elapsed(RecorderModel.elapsed(since: started, at: pausedAt), blinking: false)
+            elapsed(RecorderModel.elapsed(since: started, at: pausedAt))
         case .finishing:
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
@@ -532,17 +535,17 @@ struct RecorderBar: View {
             // full time so the bar can measure it, and without this it measures ~70pt
             // narrower than it will be the instant a take starts — so pressing Record
             // contracted the bar too far and then popped it back open.
-            elapsed("0:00", blinking: false).hidden()
+            elapsed("0:00").hidden()
         }
     }
 
     /// The time, in a capsule of the take's own colour: red while it runs, amber while it
     /// is held — with the word, because a stopped clock alone looks like a stuck one.
-    private func elapsed(_ text: String, blinking: Bool) -> some View {
+    private func elapsed(_ text: String) -> some View {
         let paused = studio.session.isPaused
         let tint = paused ? BarMood.held.accent : BarMood.live.accent
         return HStack(spacing: 8) {
-            RecordingDot(color: tint, isBreathing: blinking)
+            RecordingDot(color: tint)
             Text(text)
                 .font(.system(size: 15, weight: .semibold).monospacedDigit())
                 .foregroundStyle(.white)
@@ -1093,31 +1096,17 @@ private struct SettingsGlyph: View {
     }
 }
 
-/// The "this is live" dot.
+/// The "this is live" dot: red while recording, amber while held.
 ///
-/// It was a hard 0.35 ⇄ 1 step sampled off the timer's clock. At two flips a second that
-/// is a strobe, not a pulse: it pulls the eye off the thing being recorded, and it is the
-/// shape of oscillation the motion-sensitivity guidance exists to discourage. A breath of
-/// the same period says the same thing and stops asking for attention.
+/// Still, not breathing. A repeating animation redraws the whole bar at the display's rate
+/// for the length of the take, and the clock beside it already says the take is live.
 private struct RecordingDot: View {
     let color: Color
-    let isBreathing: Bool
-    @State private var dim = false
 
     var body: some View {
         Circle()
             .fill(color)
             .frame(width: 10, height: 10)
-            .opacity(dim ? 0.4 : 1)
-            .animation(breath, value: dim)
-            .onAppear { dim = isBreathing }
-            .onChange(of: isBreathing) { _, breathing in dim = breathing }
-    }
-
-    private var breath: Animation {
-        isBreathing && !StudioMotion.reduceMotion
-            ? .easeInOut(duration: 0.7).repeatForever(autoreverses: true)
-            : .easeOut(duration: 0.2)
     }
 }
 

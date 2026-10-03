@@ -294,6 +294,7 @@ public final class CursorTracker: @unchecked Sendable {
             self?.record(event)
         }
 
+        let pacing = ShapePacing()
         let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 // `currentSystem` is nil when the pointer is over another app's window
@@ -303,6 +304,19 @@ public final class CursorTracker: @unchecked Sendable {
                 // both are things that change at the speed of a hand, and neither is worth
                 // asking about 120 times a second.
                 self.mapper.refresh()
+                // The shape is asked for only when it can have changed. `currentSystem`
+                // copies the cursor's images out of the window server, and recognising them
+                // compares pixels — twenty times a second for the whole take, pointer still
+                // or not, it was the largest thing the recorder did on the main thread, and
+                // a share of the window server's own load besides. A shape changes as the
+                // pointer moves over something; the few that change by themselves — a
+                // spinner, a text cursor appearing — are caught by the half-second look.
+                let pointer = NSEvent.mouseLocation
+                let now = CACurrentMediaTime()
+                let moved = pointer != pacing.pointer
+                guard (moved && now - pacing.checked >= 0.1) || now - pacing.checked >= 0.5 else { return }
+                pacing.pointer = pointer
+                pacing.checked = now
                 guard let cursor = NSCursor.currentSystem else { return }
                 let current = CursorShape(cursor)
                 self.shape.withLock { $0 = current }
@@ -314,6 +328,13 @@ public final class CursorTracker: @unchecked Sendable {
         }
         RunLoop.main.add(timer, forMode: .common)
         shapeTimer = timer
+    }
+
+    /// When the shape was last asked for, and where the pointer was. Read and written only
+    /// on the main thread, by the shape timer.
+    private final class ShapePacing: @unchecked Sendable {
+        var pointer: CGPoint?
+        var checked: CFTimeInterval = 0
     }
 
     @MainActor
