@@ -25,7 +25,7 @@ final class EditorWindows {
 
     /// The one editor. Opening the recording it already shows brings it forward; opening
     /// another replaces it, so every take does not leave a window behind it.
-    private var current: EditorWindowController?
+    private(set) var current: EditorWindowController?
 
     /// A recording waiting for `current` to finish closing — it may be asking whether to
     /// save first — before it takes the window's place.
@@ -179,10 +179,12 @@ final class EditorWindows {
 final class EditorWindowController: NSWindowController, NSWindowDelegate {
     let session: EditorSession
     private let windows: EditorWindows
+    private let exports: ExportJobs
 
     init(session: EditorSession, settings: StudioSettings, exports: ExportJobs, windows: EditorWindows) {
         self.session = session
         self.windows = windows
+        self.exports = exports
 
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1_280, height: 860),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -241,7 +243,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     /// silently threw away everything since the last ⌘S — which is the one thing an
     /// editor is not allowed to do.
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        guard !isClosingDeliberately, let model = session.model, model.isDirty else { return true }
+        guard !isClosingDeliberately, let model = session.model else { return true }
+        if model.isUnsaved {
+            askToKeep(model, before: sender)
+            return false
+        }
+        guard model.isDirty else { return true }
 
         // With autosave on, the edits are written now and the window closes on its own
         // once they are; the sheet below is only for a write that failed, which is the
@@ -261,6 +268,39 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
         askToSave(model, before: sender)
         return false
+    }
+
+    /// Closes the window with no more questions, for a caller that has already settled
+    /// what happens to the recording.
+    func closeDeliberately() {
+        isClosingDeliberately = true
+        window?.close()
+    }
+
+    /// Save / Don't Save / Cancel for a fresh take nobody has kept: kept with its edits,
+    /// or deleted for good.
+    private func askToKeep(_ model: EditorModel, before sender: NSWindow) {
+        RecordingKeep.alert(for: model.name).beginSheetModal(for: sender) { [weak self] response in
+            guard let self else { return }
+            switch response {
+            case .alertFirstButtonReturn:
+                Task { @MainActor in
+                    guard await model.autosaver.flush() else {
+                        if let failure = model.autosaver.failure { model.report(EditorProblem(failure)) }
+                        self.windows.closeCancelled()
+                        return
+                    }
+                    model.keep()
+                    self.closeDeliberately()
+                }
+            case .alertSecondButtonReturn:
+                let package = model.packageURL
+                self.closeDeliberately()
+                RecordingKeep.discard(package, after: self.exports)
+            default:
+                self.windows.closeCancelled()
+            }
+        }
     }
 
     /// The Save / Discard / Cancel sheet, for edits that are not on disk.

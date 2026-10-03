@@ -328,7 +328,7 @@ extension RecordingPackage {
     /// is the library's business: the package knows how to write a manifest atomically,
     /// and this is one field of one, read and written back through that same
     /// replace-in-one-step path a finished recording uses.
-    func rewriteName(_ name: String) throws {
+    public func rewriteName(_ name: String) throws {
         var manifest = try readManifest()
         guard manifest.name != name else { return }
         manifest.name = name

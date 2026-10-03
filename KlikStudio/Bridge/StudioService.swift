@@ -29,6 +29,9 @@ final class StudioService: StudioRecording {
     }
 
     private(set) var lastRequest: RecordingRequest?
+    /// The requests this app made for itself — the bar, the menus, the shortcuts — as
+    /// against ones Klik sent. Only a take of this app's own is a draft until kept.
+    @ObservationIgnored private var ownRequests: Set<UUID> = []
     private(set) var lastResult: RecordingResult?
     /// Called when a recording should be opened for editing.
     ///
@@ -198,6 +201,11 @@ final class StudioService: StudioRecording {
             case .success(let url):
                 if let request { finish(request, outcome: .finished, project: url) }
                 if request?.opensEditorWhenFinished ?? settings.opensEditorAfterRecording {
+                    // This app's own take is a draft until it is kept — see
+                    // `RecordingKeep`. One Klik asked for is Klik's, and already reported.
+                    if request.map({ ownRequests.contains($0.correlationID) }) ?? true {
+                        RecordingKeep.markUnsaved(url)
+                    }
                     openEditor?(url)
                 }
             case .failure(let error):
@@ -342,6 +350,7 @@ final class StudioService: StudioRecording {
                                        countdownSeconds: settings.countdownSeconds,
                                        opensEditorWhenFinished: settings.opensEditorAfterRecording)
         request.target = Self.requestTarget(for: target)
+        ownRequests.insert(request.correlationID)
         return request
     }
 

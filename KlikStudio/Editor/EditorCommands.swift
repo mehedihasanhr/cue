@@ -63,7 +63,10 @@ struct EditorCommands: SwiftUI.Commands {
             // window's view.
             Button("Save") { editor?.save() }
                 .editorShortcut(.save, shortcuts)
-                .disabled(editor?.isDirty != true)
+                .disabled(editor?.isDirty != true && editor?.isUnsaved != true)
+            Button("Save As…") { windows.saveAs() }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+                .disabled(editor == nil)
             Divider()
             Button("Export…") {
                 windows.front?.exportsSelection = false

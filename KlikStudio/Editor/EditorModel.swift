@@ -219,6 +219,7 @@ final class EditorModel {
         // edit — see `EditorDocument.adoptRecordedKeys`.
         document.adoptRecordedKeys()
         Task { await openSource() }
+        isUnsaved = RecordingKeep.isUnsaved(document.package.url)
     }
 
     /// Set at init, run once the frame source is up, so the zooms it proposes are
@@ -228,6 +229,8 @@ final class EditorModel {
     var timeline: Timeline { document.timeline }
     var duration: CMTime { document.timeline.duration }
     var isDirty: Bool { document.isDirty }
+    /// A fresh take nobody has kept yet: Save keeps it, and closing asks.
+    private(set) var isUnsaved = false
     var name: String { document.manifest.name }
     var videoSize: CGSize { builder.videoSize }
     var packageURL: URL { document.package.url }
@@ -2457,8 +2460,17 @@ final class EditorModel {
             // as the window closes — see `silence()`.
             if await !autosaver.flush(), let failure = autosaver.failure {
                 errorMessage = failure
+                return
             }
+            keep()
         }
+    }
+
+    /// Keeps a fresh take in the library.
+    func keep() {
+        guard isUnsaved else { return }
+        RecordingKeep.keep(packageURL)
+        isUnsaved = false
     }
 
     /// Deletes imported background pictures no longer referred to.

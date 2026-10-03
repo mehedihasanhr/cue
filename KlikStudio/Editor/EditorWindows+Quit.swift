@@ -15,6 +15,25 @@ extension EditorWindows {
     /// with the failure showing, which is the only honest thing to do with work that is
     /// not on disk.
     func readyToQuit() -> NSApplication.TerminateReply {
+        // A fresh take nobody kept is asked about first: kept with its edits, or deleted.
+        if let model = front?.model, model.isUnsaved {
+            switch RecordingKeep.alert(for: model.name).runModal() {
+            case .alertFirstButtonReturn:
+                Task { @MainActor in
+                    let saved = await model.autosaver.flush()
+                    if saved { model.keep() } else if let failure = model.autosaver.failure { model.report(EditorProblem(failure)) }
+                    NSApp.reply(toApplicationShouldTerminate: saved)
+                }
+                return .terminateLater
+            case .alertSecondButtonReturn:
+                // Quitting cancels any export first (see the app delegate), so nothing is
+                // left reading the package.
+                try? FileManager.default.removeItem(at: model.packageURL)
+                return .terminateNow
+            default:
+                return .terminateCancel
+            }
+        }
         guard let model = front?.model, model.isDirty else { return .terminateNow }
 
         if model.autosaver.isEnabled {
