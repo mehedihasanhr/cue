@@ -16,6 +16,7 @@ import SwiftUI
 @MainActor
 final class RecordingIsland {
     private let studio: StudioService
+    private let settings: StudioSettings
     private let state = IslandState()
     private var panel: NSPanel?
     private var settle: Timer?
@@ -27,6 +28,8 @@ final class RecordingIsland {
 
     /// Brings the whole bar back.
     var expand: () -> Void = {}
+    /// Starts a take from the island, before one is under way.
+    var record: () -> Void = {}
 
     /// Room around the island for the neck to reach the edge through.
     fileprivate static let margin: CGFloat = 44
@@ -41,8 +44,9 @@ final class RecordingIsland {
     /// How close to a side the island has to come to stand up.
     private static let snap: CGFloat = 56
 
-    init(studio: StudioService) {
+    init(studio: StudioService, settings: StudioSettings) {
         self.studio = studio
+        self.settings = settings
     }
 
     var isVisible: Bool { panel?.isVisible ?? false }
@@ -107,8 +111,10 @@ final class RecordingIsland {
         let view = IslandView(state: state,
                               began: { [weak self] in self?.dragBegan(at: $0) },
                               moved: { [weak self] in self?.dragMoved(to: $0) },
-                              ended: { [weak self] click in self?.dragEnded(click: click) })
+                              ended: { [weak self] click in self?.dragEnded(click: click) },
+                              record: { [weak self] in self?.record() })
             .environment(studio)
+            .environment(settings)
         let hosting = NSHostingView(rootView: view)
         hosting.sizingOptions = []
         panel.contentView = hosting
@@ -313,8 +319,10 @@ private final class IslandState {
     var isStanding = false
     /// Being dragged: kept at its smallest whatever the pointer is over.
     var isCarried = false
-    /// Open to show pause and stop: under the pointer, and not while carried.
-    var isOpen: Bool { isHovering && !isCarried }
+    /// A take is under way, so there are pause and stop to offer.
+    var isTaking = false
+    /// Open to show pause and stop: under the pointer during a take, and not while carried.
+    var isOpen: Bool { isHovering && !isCarried && isTaking }
     /// How far the device's frame reaches into the screen: none at rest, the frame's
     /// depth while the island is carried. The island's ink pours into the frame's inner
     /// edge, so the two have to agree on it at every moment of a fade.
@@ -332,10 +340,12 @@ extension Edge {
 
 private struct IslandView: View {
     @Environment(StudioService.self) private var studio
+    @Environment(StudioSettings.self) private var settings
     let state: IslandState
     let began: (CGPoint) -> Void
     let moved: (CGPoint) -> Void
     let ended: (_ click: Bool) -> Void
+    let record: () -> Void
 
     var body: some View {
         GeometryReader { proxy in
@@ -363,6 +373,9 @@ private struct IslandView: View {
             }
         }
         .preferredColorScheme(.dark)
+        .onChange(of: studio.session.state.isTaking, initial: true) { _, taking in
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) { state.isTaking = taking }
+        }
     }
 
     /// The clock, then pause and stop once it opens — in a row while it lies down, in a
@@ -429,9 +442,63 @@ private struct IslandView: View {
             }
         case .paused(let started, let pausedAt):
             time(RecorderModel.elapsed(since: started, at: pausedAt), paused: true, stacked: stacked)
+        case .preparing, .countdown:
+            countdown(stacked: stacked)
+        case .finishing:
+            ProgressView().controlSize(.small)
         default:
-            time("0:00", paused: false, stacked: stacked)
+            ready(stacked: stacked)
         }
+    }
+
+    /// Before a take: the record button, which starts one from here.
+    private func ready(stacked: Bool) -> some View {
+        let layout = stacked ? AnyLayout(VStackLayout(spacing: 6)) : AnyLayout(HStackLayout(spacing: 8))
+        return layout {
+            Button(action: record) {
+                ZStack {
+                    Circle().strokeBorder(.white.opacity(0.85), lineWidth: 1.5)
+                    Circle()
+                        .fill(LinearGradient(colors: [Color(red: 1, green: 0.3, blue: 0.3), Color(red: 0.86, green: 0.1, blue: 0.13)],
+                                             startPoint: .top, endPoint: .bottom))
+                        .padding(4)
+                }
+                .frame(width: 24, height: 24)
+                .contentShape(Circle())
+            }
+            .buttonStyle(BarButtonStyle(pressedScale: 0.88))
+            .help("Start recording")
+            .accessibilityLabel("Start recording")
+            if !stacked {
+                Text("Record")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+
+    /// The seconds before the first frame, as a ring that drains around the number.
+    @ViewBuilder
+    private func countdown(stacked: Bool) -> some View {
+        let remaining = studio.session.state.countdownRemaining
+        ZStack {
+            Circle().stroke(.white.opacity(0.18), lineWidth: 2)
+            if let remaining {
+                Circle()
+                    .trim(from: 0, to: Double(remaining) / Double(max(1, settings.countdownSeconds)))
+                    .stroke(.white, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .animation(.easeInOut(duration: 0.6), value: remaining)
+                Text("\(remaining)")
+                    .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(.white)
+                    .contentTransition(.numericText(countsDown: true))
+            } else {
+                ProgressView().controlSize(.mini)
+            }
+        }
+        .frame(width: 26, height: 26)
     }
 
     /// The dot beside the time, or above it while the island stands.

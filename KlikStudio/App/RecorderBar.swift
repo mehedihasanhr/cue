@@ -241,6 +241,13 @@ struct RecorderBar: View {
             inputs
             separator
             settingsMenu
+            Button(action: hide) {
+                BarTileIcon(symbol: "arrow.down.right.and.arrow.up.left")
+            }
+            .buttonStyle(BarButtonStyle())
+            .help("Minimize to the screen\u{2019}s edge \u{2014} record from there, or click it to bring the bar back")
+            .accessibilityLabel("Minimize")
+            .modifier(slidingHover("setup.minimize"))
             recordButton
         }
         .backgroundPreferenceValue(HoverAnchors.self, hoverPane)

@@ -31,6 +31,10 @@ final class RecorderCenter {
     /// The bar was brought up for a take started from elsewhere, over an editor perhaps,
     /// and goes back to the rule once the take is over.
     private var barShownForTake = false
+    /// The bar was minimized while a take was under way — before it, from the island, or
+    /// during it — and comes back when the take is over. A bar minimized with nothing
+    /// recording stays minimized: that is where it was asked to be.
+    private var minimizedForTake = false
 
     /// The one center, for the views that need the meter or the shortcuts' state.
     private(set) static weak var shared: RecorderCenter?
@@ -172,8 +176,10 @@ final class RecorderCenter {
         // The live flag, not the snapshot in `inputs`: putting the bar back hides or shows
         // it, which calls straight back into here before the snapshot is read again — and
         // a stale "still minimized" there went round that loop until the stack ran out.
-        if isOver, barShownForTake || bar.model.isMinimized {
+        if state.isBusy, bar.model.isMinimized { minimizedForTake = true }
+        if isOver, barShownForTake || minimizedForTake {
             barShownForTake = false
+            minimizedForTake = false
             bar.leaveMinimized()
             restoreBar()
         }

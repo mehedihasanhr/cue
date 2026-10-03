@@ -42,8 +42,19 @@ final class RecorderBarPanel {
     private lazy var targets = TargetOverlayController(model: model)
     /// The bar minimized: the clock on a small island at the screen's edge.
     private lazy var island: RecordingIsland = {
-        let island = RecordingIsland(studio: studio)
+        let island = RecordingIsland(studio: studio, settings: settings)
         island.expand = { [weak self] in self?.show() }
+        // Records what the bar has chosen, from the island; with nothing chosen yet the
+        // bar comes back to ask, as its own Record button does.
+        island.record = { [weak self] in
+            guard let self else { return }
+            if self.model.canRecord {
+                self.model.record()
+            } else {
+                self.show()
+                self.begin(self.model.mode)
+            }
+        }
         return island
     }()
 
