@@ -54,6 +54,9 @@ enum StudioPalette {
     /// Klik blue (#0E4FEC), the fill of the app icon and the app's one accent.
     static let brand = Color(red: 0x0E / 255, green: 0x4F / 255, blue: 0xEC / 255)
 
+    /// The bar's glass: #292929, translucent enough that the page behind shows through.
+    static let barGlass = Color(red: 0x29 / 255, green: 0x29 / 255, blue: 0x29 / 255).opacity(0.64)
+
     static let barRadius: CGFloat = 18
     static let barHeight: CGFloat = 64
 
@@ -81,13 +84,11 @@ extension View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         return background {
             ZStack {
-                // Smoked glass: the desktop behind is blurred and darkened, in its own
-                // colours. Dark enough to stay dark over a white page — at a third, the bar
-                // went mid-grey over a light window and its white icons lost their contrast
-                // — while the desktop still tints it through the blur. Neutral, not the
-                // blue-black it once was, which laid a cold cast over warm wallpapers.
+                // #292929 at 64%, over the blur, like the system's own floating panels: about
+                // #555 over a white page and #222 over a black one, so the bar takes on the
+                // light of whatever is behind it while the white icons keep their contrast.
                 Rectangle().fill(.ultraThinMaterial)
-                Color.black.opacity(0.7)
+                StudioPalette.barGlass
             }
             .clipShape(shape)
         }
