@@ -29,8 +29,11 @@ struct RecorderBar: View {
     /// One hover pane for the whole setup row, which travels to whatever the pointer is
     /// over rather than each control lighting up on its own — so sweeping along the bar
     /// reads as one thing following the hand, the way a tab bar's hover does.
-    @Namespace private var hoverSpace
+    ///
+    /// `hovered` is whether it shows and for which control; `paneTarget` is where it sits,
+    /// which stays put while it fades out so it does not slide away as it goes.
     @State private var hovered: String?
+    @State private var paneTarget: String?
     /// Clears the pane once the pointer has really left, rather than in the few points of
     /// gap between two controls — where it would blink out and back in.
     @State private var hoverClear: Task<Void, Never>?
@@ -118,12 +121,21 @@ struct RecorderBar: View {
         if inside {
             hoverClear?.cancel()
             guard hovered != id else { return }
-            // Fades in where it first appears; after that it slides — with the same spring
-            // as the mode chip, so the two panes on the bar move alike. Under Reduce Motion
-            // it moves in a step instead of travelling.
-            let animation: Animation? = hovered == nil ? StudioMotion.hover
-                : (StudioMotion.reduceMotion ? nil : StudioMotion.selection)
-            withAnimation(animation) { hovered = id }
+            if hovered == nil {
+                // Appears where the pointer is: put there without travelling — from
+                // wherever it last faded out — and faded in.
+                var still = Transaction()
+                still.disablesAnimations = true
+                withTransaction(still) { paneTarget = id }
+                withAnimation(StudioMotion.hover) { hovered = id }
+            } else {
+                // Already showing: it glides to the next control. Under Reduce Motion it
+                // steps there instead of travelling.
+                withAnimation(StudioMotion.reduceMotion ? nil : StudioMotion.glide) {
+                    paneTarget = id
+                    hovered = id
+                }
+            }
         } else if hovered == id {
             hoverClear?.cancel()
             hoverClear = Task {
@@ -134,9 +146,26 @@ struct RecorderBar: View {
         }
     }
 
-    private func slidingHover(_ id: String, isEnabled: Bool = true) -> SlidingHover {
-        SlidingHover(id: id, isShown: hovered == id, space: hoverSpace) { inside in
-            setHover(id, inside && isEnabled)
+    private func slidingHover(_ id: String, isEnabled: Bool = true) -> HoverTarget {
+        HoverTarget(id: id) { inside in setHover(id, inside && isEnabled) }
+    }
+
+    /// The pane itself: one view for the whole row, laid behind it and moved to the bounds
+    /// the hovered control reported. Being one view rather than one per control is what
+    /// makes it glide — a pane drawn by each control and matched between them was removed
+    /// from one and inserted in the next, and SwiftUI cross-faded the two copies as they
+    /// moved, so it dimmed and doubled mid-way instead of travelling as one thing.
+    private func hoverPane(_ anchors: [String: Anchor<CGRect>]) -> some View {
+        GeometryReader { proxy in
+            if let target = paneTarget, let anchor = anchors[target] {
+                let rect = proxy[anchor]
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(.white.opacity(0.08))
+                    .frame(width: rect.width, height: rect.height)
+                    .offset(x: rect.minX, y: rect.minY)
+                    .opacity(hovered == nil ? 0 : 1)
+                    .allowsHitTesting(false)
+            }
         }
     }
 
@@ -223,6 +252,7 @@ struct RecorderBar: View {
             settingsMenu
             recordButton
         }
+        .backgroundPreferenceValue(HoverAnchors.self, hoverPane)
     }
 
     private var closeButton: some View {
@@ -1135,25 +1165,23 @@ private struct WindowDragBackground: NSViewRepresentable {
     }
 }
 
-/// The setup row's one hover pane, behind whichever control the pointer is over.
-///
-/// Drawn by the control that has it and matched across all of them, so when the pointer
-/// moves on the pane travels to the next control instead of one fading out and another in.
-private struct SlidingHover: ViewModifier {
+/// Where each of the setup row's controls is, for the hover pane to travel between.
+private struct HoverAnchors: PreferenceKey {
+    static let defaultValue: [String: Anchor<CGRect>] = [:]
+    static func reduce(value: inout [String: Anchor<CGRect>], nextValue: () -> [String: Anchor<CGRect>]) {
+        value.merge(nextValue()) { $1 }
+    }
+}
+
+/// One of the setup row's controls, as far as the hover pane is concerned: it says where it
+/// is, and when the pointer arrives or leaves.
+private struct HoverTarget: ViewModifier {
     let id: String
-    let isShown: Bool
-    let space: Namespace.ID
     let report: (Bool) -> Void
 
     func body(content: Content) -> some View {
         content
-            .background {
-                if isShown {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(.white.opacity(0.08))
-                        .matchedGeometryEffect(id: "hover", in: space)
-                }
-            }
+            .anchorPreference(key: HoverAnchors.self, value: .bounds) { [id: $0] }
             .onHover(perform: report)
     }
 }

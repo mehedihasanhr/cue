@@ -29,6 +29,11 @@ enum StudioMotion {
                      : .spring(response: 0.3, dampingFraction: 0.86, blendDuration: 0)
     }
 
+    /// The hover pane gliding from one control to the next. A critically damped spring —
+    /// no overshoot, since it is following the pointer rather than landing anywhere — and
+    /// quick, because the pointer is quicker still.
+    static var glide: Animation { .smooth(duration: 0.22) }
+
     /// Setup ⇄ recording, where the bar loses two thirds of its width.
     static var shape: Animation {
         reduceMotion ? .easeOut(duration: 0.15) : .snappy(duration: shapeDuration, extraBounce: 0.02)
