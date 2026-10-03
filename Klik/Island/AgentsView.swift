@@ -218,38 +218,13 @@ struct AgentDone: Equatable {
 
 private let doneGreen = Color(red: 0.36, green: 0.86, blue: 0.56)
 
-/// The island's rim when a turn finishes: the running agent's red glow comes back
-/// green, blooms once and settles while the card is up.
-struct CompletionGlow: View {
-    let shape: NotchShape
-    let size: CGSize
-    @State private var lit = false
-
-    var body: some View {
-        shape.fill(doneGreen)
-            .scaleEffect(x: 1 + 8 / size.width, y: 1 + 6 / size.height, anchor: .top)
-            .blur(radius: 6)
-            .keyframeAnimator(initialValue: 0.0, trigger: lit) { view, value in
-                view.opacity(value)
-            } keyframes: { _ in
-                CubicKeyframe(0.9, duration: 0.3)
-                CubicKeyframe(0.9, duration: 0.35)
-                CubicKeyframe(0.3, duration: 0.9)
-            }
-            .frame(width: size.width, height: size.height)
-            .onAppear { lit = true }
-    }
-}
-
-/// A finished turn on the island. It plays as one short moment: a ring closes
-/// around the agent's icon and a check lands on its corner, the words come into
+/// A finished turn on the island. It plays as one short moment: a check lands on
+/// the agent icon's corner, the words come into
 /// focus one after the other, and the turn's time counts up to its total.
 struct AgentDoneRow: View {
     let done: AgentDone
-    @State private var ring = false
     @State private var badge = false
     @State private var words = false
-    @State private var aura: Double = 0
     @State private var shownSeconds = 0
 
     private var subtitle: String {
@@ -277,29 +252,12 @@ struct AgentDoneRow: View {
             timePill
         }
         .padding(.horizontal, 16)
-        .background(alignment: .leading) {
-            // A green light behind the icon, as if the check were lit from inside.
-            RadialGradient(colors: [doneGreen.opacity(0.3), .clear], center: .center, startRadius: 2, endRadius: 90)
-                .frame(width: 180, height: 120)
-                .offset(x: -40)
-                .opacity(aura)
-                .allowsHitTesting(false)
-        }
         .onAppear(perform: play)
     }
 
     private var tile: some View {
         AgentTile(agent: done.agent, working: false, side: 28)
             .padding(3)
-            .overlay {
-                Circle()
-                    .trim(from: 0, to: ring ? 1 : 0)
-                    .stroke(AngularGradient(colors: [doneGreen.opacity(0.15), doneGreen], center: .center),
-                            style: SwiftUI.StrokeStyle(lineWidth: 1.5, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                    .padding(-3)
-                    .opacity(badge ? 0.55 : 1)
-            }
             .overlay(alignment: .bottomTrailing) {
                 Image(systemName: "checkmark")
                     .font(.system(size: 7.5, weight: .black))
@@ -333,12 +291,10 @@ struct AgentDoneRow: View {
         let total = max(1, Int(done.took.components.seconds))
         guard !IslandView.reduceMotion else {
             shownSeconds = total
-            withAnimation(.easeOut(duration: 0.2)) { ring = true; badge = true; words = true; aura = 0.5 }
+            withAnimation(.easeOut(duration: 0.2)) { badge = true; words = true }
             return
         }
-        withAnimation(.easeOut(duration: 0.25)) { aura = 1 }
-        withAnimation(.easeOut(duration: 0.55).delay(0.05)) { ring = true }
-        withAnimation(.spring(duration: 0.4, bounce: 0.3).delay(0.5)) { badge = true }
+        withAnimation(.spring(duration: 0.4, bounce: 0.3).delay(0.15)) { badge = true }
         words = true
         // Counts up in a handful of steps, quick at first and settling on the total.
         Task { @MainActor in
@@ -348,9 +304,6 @@ struct AgentDoneRow: View {
                 let progress = 1 - pow(1 - Double(step) / Double(steps), 3)
                 withAnimation(.snappy(duration: 0.18)) { shownSeconds = max(1, Int(Double(total) * progress)) }
             }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
-            withAnimation(.easeOut(duration: 0.8)) { aura = 0.5 }
         }
     }
 }
@@ -553,15 +506,9 @@ struct AgentsView: View {
                     .frame(maxWidth: .infinity, minHeight: 40)
             } else {
                 ScrollView(.vertical) {
-                    VStack(spacing: 0) {
+                    VStack(spacing: 6) {
                         ForEach(store.sessions) { session in
-                            // Rows sit on the island's black, parted by a hairline.
-                            VStack(spacing: 0) {
-                                if session.id != store.sessions.first?.id {
-                                    Rectangle().fill(.white.opacity(0.16)).frame(height: 0.5)
-                                }
-                                AgentSessionCard(session: session, requests: store.requests(for: session), store: store)
-                            }
+                            AgentSessionCard(session: session, requests: store.requests(for: session), store: store)
                                 .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.97, anchor: .top)),
                                                         removal: .opacity.combined(with: .scale(scale: 0.97))))
                         }
@@ -604,25 +551,42 @@ struct AgentsView: View {
 
 
 
+    /// A count of sessions and how they stand: "2 sessions | 1 working  1 needs you".
     private var header: some View {
-        HStack(spacing: 8) {
-            LiveDot(color: store.requests.isEmpty ? .green : askingTint)
-            Text("AGENTS")
-                .font(.system(size: 11, weight: .bold, design: .rounded))
-                .tracking(2.2)
-                .foregroundStyle(.white.opacity(0.92))
-            Text(String(format: "%02d", store.sessions.count))
-                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.55))
-                .padding(.horizontal, 6)
-                .frame(height: 17)
-                .background(.white.opacity(0.07), in: Capsule())
-                .overlay(Capsule().strokeBorder(.white.opacity(0.1), lineWidth: 0.5))
+        let sessions = store.sessions
+        let working = sessions.filter { $0.state == .running }.count
+        let asking = sessions.filter { $0.state == .waiting }.count
+        return HStack(spacing: 8) {
+            LiveDot(color: store.requests.isEmpty ? SessionTone.done : askingTint)
+            HStack(spacing: 4) {
+                Text("\(sessions.count)")
+                    .foregroundStyle(.white)
+                Text(sessions.count == 1 ? "session" : "sessions")
+                    .foregroundStyle(.white.opacity(0.55))
+            }
+            if working + asking > 0 {
+                Rectangle().fill(.white.opacity(0.18)).frame(width: 1, height: 12)
+            }
+            if working > 0 {
+                HStack(spacing: 4) {
+                    Text("\(working)").foregroundStyle(SessionTone.working)
+                    Text("working").foregroundStyle(.white.opacity(0.55))
+                }
+            }
+            if asking > 0 {
+                HStack(spacing: 4) {
+                    Text("\(asking)").foregroundStyle(askingTint)
+                    Text(asking == 1 ? "needs you" : "need you").foregroundStyle(.white.opacity(0.55))
+                }
+            }
             Spacer()
             HeaderButton(symbol: "square.grid.2x2", help: "Open the panel", action: openPanel)
             HeaderButton(symbol: "xmark", help: "Close", action: close)
         }
+        .font(.system(size: 12.5, weight: .semibold))
+        .monospacedDigit()
         .frame(height: 24)
+        .padding(.leading, 6)
     }
 }
 
@@ -647,6 +611,21 @@ private struct HeaderButton: View {
 
 // MARK: - One session
 
+/// How a session stands, in colour.
+private enum SessionTone {
+    static let working = Color(red: 0.36, green: 0.58, blue: 1.0)
+    static let done = Color(red: 0.36, green: 0.82, blue: 0.48)
+
+    static func color(_ state: AgentSession.State) -> Color {
+        switch state {
+        case .running: working
+        case .waiting: askingTint
+        case .idle: done
+        }
+    }
+}
+
+/// One session on a soft card: its icon, name, what it is doing and how it stands.
 private struct AgentSessionCard: View {
     let session: AgentSession
     let requests: [AgentRequest]
@@ -654,11 +633,18 @@ private struct AgentSessionCard: View {
     @State private var hovered = false
 
     var body: some View {
+        full
+        .contextMenu { Button("Dismiss", action: dismiss) }
+        .onHover { hovered = $0 }
+        .animation(IslandView.contentAnimation, value: hovered)
+    }
+
+    private var full: some View {
         VStack(alignment: .leading, spacing: 10) {
             summary
                 .onTapGesture { store.focus(session) }
                 .accessibilityAddTraits(.isButton)
-                .help("Show in \(store.hosts[session.id]?.name ?? session.terminal.map(Self.terminalName) ?? "its terminal")")
+                .help(jumpHelp)
             if !session.workers.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(session.workers) { worker in
@@ -666,7 +652,7 @@ private struct AgentSessionCard: View {
                             .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                 }
-                .padding(.leading, 30)
+                .padding(.leading, 34)
                 .animation(IslandView.listAnimation, value: session.workers.map(\.id))
             }
             ForEach(requests) { request in
@@ -674,24 +660,47 @@ private struct AgentSessionCard: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 11)
-        // The row that needs the user stands out with an amber outline.
-        .background {
-            if !requests.isEmpty {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(askingTint.opacity(0.05))
-                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(askingTint.opacity(0.45), lineWidth: 1))
-                    .padding(.vertical, 4)
-            }
-        }
-        .contextMenu { Button("Dismiss", action: dismiss) }
-        .onHover { hovered = $0 }
-        .animation(IslandView.contentAnimation, value: hovered)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 13)
+        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private var jumpHelp: String {
+        "Show in \(store.hosts[session.id]?.name ?? session.terminal.map(Self.terminalName) ?? "its terminal")"
     }
 
     private func dismiss() {
         withAnimation(IslandView.listAnimation) { store.dismiss(session) }
+    }
+
+    /// Closes a session that ended without saying so.
+    private var dismissButton: some View {
+        Button(action: dismiss) {
+            Image(systemName: "xmark")
+                .font(.system(size: 6.5, weight: .bold))
+                .foregroundStyle(.white.opacity(0.85))
+                .frame(width: 14, height: 14)
+                .background(Color(white: 0.22), in: Circle())
+                .overlay(Circle().strokeBorder(.white.opacity(0.12), lineWidth: 0.5))
+        }
+        .buttonStyle(.plain)
+        .help("Dismiss")
+    }
+
+    /// The folder, then what the session is about, so two in one folder read apart.
+    private func name(size: CGFloat, weight: Font.Weight, color: Color) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(session.project)
+                .font(.system(size: size, weight: weight))
+                .foregroundStyle(color)
+                .layoutPriority(1)
+            if let title = session.title {
+                Text(title)
+                    .font(.system(size: size - 1, weight: .regular))
+                    .foregroundStyle(.white.opacity(0.45))
+                    .truncationMode(.tail)
+            }
+        }
     }
 
     /// The terminal or app the session runs in, as a click on the row brings forward.
@@ -700,82 +709,76 @@ private struct AgentSessionCard: View {
     }
 
     private var summary: some View {
-        HStack(alignment: .top, spacing: 10) {
-            AgentTile(agent: session.agent, working: session.state == .running, side: 20)
-                .padding(.top, 1)
-                // Closes a row whose session ended without saying so.
+        HStack(alignment: .top, spacing: 12) {
+            AgentTile(agent: session.agent, working: session.state == .running, side: 22)
                 .overlay(alignment: .topLeading) {
-                    Button(action: dismiss) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 6.5, weight: .bold))
-                            .foregroundStyle(.white.opacity(0.85))
-                            .frame(width: 14, height: 14)
-                            .background(Color(white: 0.22), in: Circle())
-                            .overlay(Circle().strokeBorder(.white.opacity(0.12), lineWidth: 0.5))
-                    }
-                    .buttonStyle(.plain)
-                    .help("Dismiss")
-                    .offset(x: -6, y: -6)
-                    .opacity(hovered ? 1 : 0)
-                    .allowsHitTesting(hovered)
+                    dismissButton
+                        .offset(x: -6, y: -6)
+                        .opacity(hovered ? 1 : 0)
+                        .allowsHitTesting(hovered)
                 }
-            // Name, what it is doing, and how it stands, top to bottom. The small
-            // details sit beside the name only, so the activity gets the full width.
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(session.project)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .layoutPriority(1)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    name(size: 14.5, weight: .semibold, color: .white)
                     Spacer(minLength: 8)
                     details
                 }
-                Text(session.activity ?? Self.placeholder(for: session.state))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.5))
-                    .truncationMode(.tail)
-                stateLabel
+                // While it asks, the question says it all; the command is shown below.
+                if let ask = requests.first?.ask {
+                    Text(ask)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(askingTint)
+                } else {
+                    Text(session.activity ?? Self.placeholder(for: session.state))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .truncationMode(.tail)
+                    stateLabel
+                }
             }
             .lineLimit(1)
         }
         .contentShape(Rectangle())
     }
 
-    /// Which agent, where it runs, and how long ago it started: quiet, compact.
+    /// Which agent, where it runs, and how long ago it started.
     private var details: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 5) {
             AgentChip(text: session.agent.shortName)
             if let source {
                 AgentChip(text: source)
             }
             TimelineView(.periodic(from: .now, by: 30)) { context in
                 Text(Self.age(since: session.startedAt, now: context.date))
-                    .font(.system(size: 9.5, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .monospacedDigit()
-                    .foregroundStyle(.white.opacity(0.35))
+                    .foregroundStyle(.white.opacity(0.4))
+                    .frame(minWidth: 24, alignment: .trailing)
             }
         }
+        .fixedSize()
         .help(session.profile.map { "\(session.agent.name) · \($0)" } ?? session.agent.name)
     }
 
-    @ViewBuilder
+    /// "Working 12s", "Needs you", "Done — click to jump".
     private var stateLabel: some View {
         HStack(spacing: 5) {
-            StatusText(state: session.state)
-            if session.state == .idle {
-                Text("— click to jump")
-                    .foregroundStyle(.white.opacity(0.35))
-                    .fontWeight(.medium)
-            }
-            if session.state == .running {
+            switch session.state {
+            case .running:
+                Text("Working")
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     Text(Self.elapsed(since: session.updatedAt, now: context.date))
                         .monospacedDigit()
-                        .foregroundStyle(.white.opacity(0.4))
+                        .opacity(0.6)
                 }
+            case .waiting:
+                Text("Needs you")
+            case .idle:
+                Text("Done — click to jump")
             }
         }
-        .font(.system(size: 10.5, weight: .semibold))
+        .font(.system(size: 12, weight: .medium))
+        .foregroundStyle(SessionTone.color(session.state))
     }
 
     private static func placeholder(for state: AgentSession.State) -> String {
@@ -817,11 +820,11 @@ private struct AgentChip: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 9.5, weight: .medium))
-            .foregroundStyle(.white.opacity(0.5))
-            .padding(.horizontal, 5)
-            .padding(.vertical, 1.5)
-            .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+            .font(.system(size: 10.5, weight: .medium))
+            .foregroundStyle(.white.opacity(0.55))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 }
 
@@ -953,25 +956,20 @@ private struct PermissionCard: View {
     let store: AgentStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label {
-                Text(title).font(.system(size: 11.5, weight: .semibold))
-            } icon: {
-                Image(systemName: "hand.raised.fill").font(.system(size: 10, weight: .semibold))
-            }
-            .foregroundStyle(askingTint)
+        VStack(alignment: .leading, spacing: 12) {
             if let detail = summary.detail, !detail.isEmpty {
-                // Whole lines only (five at most); the full command is in the tooltip.
+                // Whole lines only (four at most); the full command is in the tooltip.
                 Text(detail)
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.88))
-                    .lineLimit(5)
+                    .foregroundStyle(.white.opacity(0.75))
+                    .lineSpacing(2)
+                    .lineLimit(4)
                     .truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     .help(detail)
             }
             HStack(spacing: 6) {
@@ -986,12 +984,22 @@ private struct PermissionCard: View {
         }
     }
 
-    private var title: String {
-        switch summary.tool {
-        case "Bash": "Run this command?"
-        case "Edit", "MultiEdit", "Write", "NotebookEdit", "Edit files": "Make this edit?"
-        case "WebFetch": "Fetch this page?"
-        default: "Use \(summary.tool)?"
+}
+
+extension AgentRequest {
+    /// What it asks, in a few words, shown in place of the session's status line;
+    /// nil when the card below carries its own questions.
+    var ask: String? {
+        switch kind {
+        case .permission(let summary):
+            switch summary.tool {
+            case "Bash": "Run this command?"
+            case "Edit", "MultiEdit", "Write", "NotebookEdit", "Edit files": "Make this edit?"
+            case "WebFetch": "Fetch this page?"
+            default: "Use \(summary.tool)?"
+            }
+        case .plan: "Ready to start on this plan?"
+        case .questions: nil
         }
     }
 }
@@ -1002,13 +1010,7 @@ private struct PlanCard: View {
     let store: AgentStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label {
-                Text("Ready to start on this plan?").font(.system(size: 11.5, weight: .semibold))
-            } icon: {
-                Image(systemName: "list.bullet.clipboard").font(.system(size: 10, weight: .semibold))
-            }
-            .foregroundStyle(askingTint)
+        VStack(alignment: .leading, spacing: 12) {
             if !plan.isEmpty {
                 ScrollView(.vertical) {
                     Text((try? AttributedString(markdown: plan, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(plan))
@@ -1016,12 +1018,13 @@ private struct PlanCard: View {
                         .foregroundStyle(.white.opacity(0.85))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(8)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
                 }
                 .scrollIndicators(.never)
                 .frame(maxHeight: 150)
                 .fixedSize(horizontal: false, vertical: true)
-                .background(.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
             HStack(spacing: 6) {
                 AnswerButton("Keep planning", role: .quiet) { store.answer(request, .deny) }
@@ -1195,15 +1198,11 @@ private struct AnswerButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 11.5, weight: role == .primary ? .semibold : .medium))
-                .foregroundStyle(role == .primary ? .black : .white.opacity(role == .quiet ? 0.7 : 0.9))
-                .padding(.horizontal, 12)
-                .frame(height: 26)
+                .font(.system(size: 12, weight: role == .primary ? .semibold : .medium))
+                .foregroundStyle(role == .primary ? .black : .white.opacity(role == .quiet ? 0.6 : 0.9))
+                .padding(.horizontal, 14)
+                .frame(height: 28)
                 .background(background, in: Capsule())
-                .overlay {
-                    if role == .secondary { Capsule().strokeBorder(.white.opacity(0.14), lineWidth: 0.5) }
-                }
-                .shadow(color: role == .primary ? .white.opacity(hovered ? 0.45 : 0.22) : .clear, radius: hovered ? 10 : 6)
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -1212,8 +1211,8 @@ private struct AnswerButton: View {
 
     private var background: Color {
         switch role {
-        case .primary: .white.opacity(hovered ? 1 : 0.92)
-        case .secondary: .white.opacity(hovered ? 0.2 : 0.13)
+        case .primary: .white.opacity(hovered ? 1 : 0.9)
+        case .secondary: .white.opacity(hovered ? 0.16 : 0.1)
         case .quiet: .white.opacity(hovered ? 0.1 : 0)
         }
     }

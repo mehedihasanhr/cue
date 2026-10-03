@@ -273,10 +273,6 @@ struct IslandView: View {
                     NotchGlow(shape: shape, size: CGSize(width: size.width + flare * 2, height: size.height), asking: asking)
                         .transition(.opacity.animation(.easeOut(duration: 0.4)))
                         .allowsHitTesting(false)
-                } else if case .status(let status) = phase, status.agentDone != nil {
-                    CompletionGlow(shape: shape, size: CGSize(width: size.width + flare * 2, height: size.height))
-                        .transition(.opacity.animation(.easeOut(duration: 0.3)))
-                        .allowsHitTesting(false)
                 }
             }
             .contentShape(shape)
