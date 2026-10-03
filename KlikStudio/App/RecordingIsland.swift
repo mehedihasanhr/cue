@@ -21,6 +21,12 @@ final class RecordingIsland {
     private var panel: NSPanel?
     private var settle: Timer?
     private var velocity = CGVector.zero
+    /// Where the spring has the island, unrounded. Read back from the window it is a
+    /// whole number of points, and near the target the rounding undid each step — the
+    /// spring never came to rest, so the island never counted as settled: it ignored the
+    /// pointer, and the device frame never faded.
+    private var springPoint = CGPoint.zero
+    private var settleStarted = Date.distantPast
     /// Where the pointer and the island were when a drag began.
     private var dragStart: (mouse: CGPoint, center: CGPoint)?
     /// Where it was left, so the next minimize puts it back there.
@@ -30,17 +36,18 @@ final class RecordingIsland {
     var expand: () -> Void = {}
     /// Starts a take from the island, before one is under way.
     var record: () -> Void = {}
+    /// The pointer came onto the island: where it is on the screen, and its edge.
+    var hovered: (_ frame: NSRect, _ edge: Edge) -> Void = { _, _ in }
+    /// It is being dragged.
+    var carried: () -> Void = {}
 
     /// Room around the island for the neck to reach the edge through.
     fileprivate static let margin: CGFloat = 44
-    /// Lying along the top or bottom edge, and while it is carried.
+    /// Lying along the top or bottom edge, and while it is carried. `open` is the room
+    /// kept for it along the edge — from its corners and in its window.
     fileprivate static let wide = (compact: CGSize(width: 92, height: 36), open: CGSize(width: 176, height: 36))
     /// Standing along the left or right edge.
     fileprivate static let tall = (compact: CGSize(width: 44, height: 64), open: CGSize(width: 44, height: 118))
-    /// The clock's share of the upright island once it opens: just enough for the dot and
-    /// the time, so pause sits straight under them rather than below the clock's resting
-    /// slot with a gap between.
-    fileprivate static let tallClockOpen: CGFloat = 47
     /// How close to a side the island has to come to stand up.
     private static let snap: CGFloat = 56
 
@@ -112,7 +119,8 @@ final class RecordingIsland {
                               began: { [weak self] in self?.dragBegan(at: $0) },
                               moved: { [weak self] in self?.dragMoved(to: $0) },
                               ended: { [weak self] click in self?.dragEnded(click: click) },
-                              record: { [weak self] in self?.record() })
+                              record: { [weak self] in self?.record() },
+                              hovered: { [weak self] in self?.pointerArrived() })
             .environment(studio)
             .environment(settings)
         let hosting = NSHostingView(rootView: view)
@@ -145,8 +153,17 @@ final class RecordingIsland {
         if !StudioMotion.reduceMotion { showFrame() }
     }
 
+    private func pointerArrived() {
+        guard dragStart == nil, let panel else { return }
+        let size = state.size
+        let frame = NSRect(x: panel.frame.midX - size.width / 2, y: panel.frame.midY - size.height / 2,
+                           width: size.width, height: size.height)
+        hovered(frame, state.edge)
+    }
+
     private func dragMoved(to mouse: CGPoint) {
         guard let start = dragStart else { return }
+        if !state.isCarried { carried() }
         // Collapsed while carried: the buttons are no use mid-air, and a small drop is
         // what pours into the frame.
         if !state.isCarried {
@@ -265,6 +282,8 @@ final class RecordingIsland {
             return
         }
         velocity = .zero
+        springPoint = center
+        settleStarted = .now
         let timer = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.step(toward: target) }
         }
@@ -276,12 +295,15 @@ final class RecordingIsland {
         // A spring a little short of critical damping: it lands with the smallest give,
         // like a drop settling, rather than bouncing on the edge.
         let stiffness: CGFloat = 260, damping: CGFloat = 2 * sqrt(260) * 0.82, dt: CGFloat = 1.0 / 120
-        var point = center
+        var point = springPoint
         velocity.dx += (stiffness * (target.x - point.x) - damping * velocity.dx) * dt
         velocity.dy += (stiffness * (target.y - point.y) - damping * velocity.dy) * dt
         point.x += velocity.dx * dt
         point.y += velocity.dy * dt
-        let done = hypot(target.x - point.x, target.y - point.y) < 0.5 && hypot(velocity.dx, velocity.dy) < 5
+        springPoint = point
+        // At rest, or out of time: a spring this stiff is there well inside a second.
+        let done = (hypot(target.x - point.x, target.y - point.y) < 0.5 && hypot(velocity.dx, velocity.dy) < 5)
+            || Date.now.timeIntervalSince(settleStarted) > 1.5
         place(at: done ? target : point)
         if done {
             settle?.invalidate()
@@ -321,16 +343,15 @@ private final class IslandState {
     var isCarried = false
     /// A take is under way, so there are pause and stop to offer.
     var isTaking = false
-    /// Open to show pause and stop: under the pointer during a take, and not while carried.
-    var isOpen: Bool { isHovering && !isCarried && isTaking }
     /// How far the device's frame reaches into the screen: none at rest, the frame's
     /// depth while the island is carried. The island's ink pours into the frame's inner
     /// edge, so the two have to agree on it at every moment of a fade.
     var bezel: CGFloat = 0
 
+    /// One size per shape. Hovering does not open the island itself: it brings the whole
+    /// bar out beside it (see `RecorderBarPanel.peek`), which is where every option is.
     var size: CGSize {
-        let shape = isStanding ? RecordingIsland.tall : RecordingIsland.wide
-        return isOpen ? shape.open : shape.compact
+        isStanding ? RecordingIsland.tall.compact : RecordingIsland.wide.compact
     }
 }
 
@@ -346,6 +367,7 @@ private struct IslandView: View {
     let moved: (CGPoint) -> Void
     let ended: (_ click: Bool) -> Void
     let record: () -> Void
+    let hovered: () -> Void
 
     var body: some View {
         GeometryReader { proxy in
@@ -363,7 +385,8 @@ private struct IslandView: View {
                     // island's own: a drag moves it, a click brings the bar back.
                     .background(IslandHandle(began: began, moved: moved, ended: ended))
                     .onHover { inside in
-                        withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) { state.isHovering = inside }
+                        state.isHovering = inside
+                        if inside { hovered() }
                     }
                     // Placed, not offset: an offset moves what is drawn but leaves the
                     // grip's AppKit view where layout put it, in the window's corner — so
@@ -378,59 +401,15 @@ private struct IslandView: View {
         }
     }
 
-    /// The clock, then pause and stop once it opens — in a row while it lies down, in a
-    /// column while it stands. One set of views in a layout that changes, so turning
-    /// moves the dot, the time and the buttons to their new places rather than fading one
-    /// arrangement out and another in.
+    /// The clock — or, before a take, the record button — beside its dot in a row while
+    /// the island lies down, above it in a column while it stands. One set of views in a
+    /// layout that changes, so turning moves them rather than fading one arrangement out.
     private var controls: some View {
         let standing = state.isStanding
-        let line = standing ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 0))
-        let pair = standing ? AnyLayout(VStackLayout(spacing: 2)) : AnyLayout(HStackLayout(spacing: 2))
         let rest = standing ? RecordingIsland.tall.compact : RecordingIsland.wide.compact
-        let tight = standing && state.isOpen
-        return line {
-            clock(stacked: standing)
-                .padding(.leading, standing ? 0 : 14)
-                .frame(width: rest.width, height: tight ? RecordingIsland.tallClockOpen : rest.height,
-                       alignment: tight ? .bottom : (standing ? .center : .leading))
-                .allowsHitTesting(false)
-            if state.isOpen {
-                pair { pauseButton; stopButton }
-                    .buttonStyle(BarButtonStyle())
-                    .disabled(!studio.session.state.isTaking)
-                    .padding(.trailing, standing ? 0 : 10)
-                    .transition(.opacity.combined(with: .scale(scale: 0.8, anchor: standing ? .top : .leading)))
-            }
-            Spacer(minLength: 0)
-        }
-    }
-
-    private var pauseButton: some View {
-        Button { studio.togglePause() } label: {
-            Image(systemName: studio.session.isPaused ? "play.fill" : "pause.fill")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.9))
-                .frame(width: 30, height: 30)
-                .contentShape(Rectangle())
-        }
-        .help(studio.session.isPaused ? "Resume" : "Pause")
-        .accessibilityLabel(studio.session.isPaused ? "Resume" : "Pause")
-    }
-
-    private var stopButton: some View {
-        Button { studio.stop() } label: {
-            ZStack {
-                Circle().strokeBorder(.white.opacity(0.8), lineWidth: 1.5)
-                RoundedRectangle(cornerRadius: 2.5, style: .continuous)
-                    .fill(Color(red: 0.93, green: 0.2, blue: 0.22))
-                    .frame(width: 9, height: 9)
-            }
-            .frame(width: 24, height: 24)
-            .frame(width: 30, height: 30)
-            .contentShape(Rectangle())
-        }
-        .help("Stop and keep this recording")
-        .accessibilityLabel("Stop")
+        return clock(stacked: standing)
+            .padding(.leading, standing ? 0 : 14)
+            .frame(width: rest.width, height: rest.height, alignment: standing ? .center : .leading)
     }
 
     @ViewBuilder
@@ -446,6 +425,7 @@ private struct IslandView: View {
             countdown(stacked: stacked)
         case .finishing:
             ProgressView().controlSize(.small)
+                .allowsHitTesting(false)
         default:
             ready(stacked: stacked)
         }
@@ -499,6 +479,7 @@ private struct IslandView: View {
             }
         }
         .frame(width: 26, height: 26)
+        .allowsHitTesting(false)
     }
 
     /// The dot beside the time, or above it while the island stands.
@@ -516,6 +497,8 @@ private struct IslandView: View {
                 .contentTransition(.numericText())
         }
         .padding(.horizontal, stacked ? 4 : 0)
+        // Presses go through to the island's grip — a drag moves it, a click opens the bar.
+        .allowsHitTesting(false)
     }
 }
 
