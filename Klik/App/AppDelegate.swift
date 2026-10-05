@@ -1354,6 +1354,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             presentError(NSError(domain: "Klik", code: 2, userInfo: [NSLocalizedDescriptionKey: "The capture file could not be opened."]))
             return
         }
+        // One editor at a time: a new capture replaces the one before, which keeps its
+        // annotations (saved into the library, as Done does) rather than piling up windows.
+        for (id, older) in editorWindows where id != item.id {
+            older.done()
+        }
         // Decoding the wallpaper thumbnails costs seconds of CPU, so it waits for the
         // first editor rather than running at every login; it's done long before the
         // Background tool is reached, and a no-op once cached.
