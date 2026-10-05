@@ -12,7 +12,7 @@ struct ClockDetail: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             let now = context.date
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
                 header(now)
                 if let clock, let today = clock.today, let status = clock.status {
                     times(today, status: status, now: now)
@@ -48,71 +48,74 @@ struct ClockDetail: View {
         ClockStatus(kind: .time, time: .now, prayer: clock?.status, today: clock?.today).tint
     }
 
+    /// The time, and under it the day in both calendars as one line: the Hijri date
+    /// follows the Gregorian one it belongs to. The period's colour lives here only.
     private func header(_ now: Date) -> some View {
-        HStack(alignment: .center, spacing: 14) {
+        HStack(alignment: .center, spacing: 12) {
             ZStack {
                 LiquidFill(colors: tint).clipShape(Circle())
-                Circle().strokeBorder(.white.opacity(0.25), lineWidth: 1)
+                Circle().strokeBorder(.white.opacity(0.2), lineWidth: 0.5)
                 Image(systemName: clock?.status?.current?.symbol ?? "clock.fill")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .shadow(color: .black.opacity(0.25), radius: 1, y: 1)
             }
-            .frame(width: 44, height: 44)
-            .shadow(color: (tint.first ?? .white).opacity(0.5), radius: 10)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
+            .frame(width: 34, height: 34)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(alignment: .firstTextBaseline, spacing: 3) {
                     Text(Self.digits(now))
-                        .font(.system(size: 30, weight: .bold, design: .rounded))
+                        .font(.system(size: 24, weight: .semibold, design: .rounded))
                         .monospacedDigit()
                     if let meridiem = Self.meridiem(now) {
-                        Text(meridiem).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white.opacity(0.6))
+                        Text(meridiem).font(.system(size: 11.5, weight: .medium)).foregroundStyle(.white.opacity(0.55))
                     }
                 }
-                Text(now.formatted(.dateTime.weekday(.wide).day().month(.wide).year()))
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(.white.opacity(0.6))
+                HStack(spacing: 6) {
+                    Text(now.formatted(.dateTime.weekday(.wide).day().month(.wide)))
+                        .foregroundStyle(.white.opacity(0.7))
+                    Text("·").foregroundStyle(.white.opacity(0.3))
+                    Text(Self.hijri(now))
+                        .foregroundStyle(.white.opacity(0.5))
+                }
+                .font(.system(size: 11.5))
+                .lineLimit(1)
             }
             Spacer(minLength: 0)
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(Self.hijri(now))
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.85))
-                Text(TimeZone.current.localizedName(for: .shortStandard, locale: .current) ?? TimeZone.current.identifier)
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.white.opacity(0.45))
-            }
+            Text(TimeZone.current.localizedName(for: .shortStandard, locale: .current) ?? TimeZone.current.identifier)
+                .font(.system(size: 10.5))
+                .foregroundStyle(.white.opacity(0.4))
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(now.formatted(date: .complete, time: .standard)), \(Self.hijri(now))")
     }
 
-    /// The six times side by side, the current one lit.
+    /// The six times side by side: the current one on a soft fill, the next one
+    /// outlined, the rest plain text (dimmer once passed).
     private func times(_ today: PrayerTimes, status: PrayerStatus, now: Date) -> some View {
-        EqualColumns(spacing: 6) {
+        EqualColumns(spacing: 4) {
             ForEach(today.ordered, id: \.prayer) { entry in
                 let current = status.current == entry.prayer || (status.current == nil && entry.prayer == .sunrise)
                 let next = !current && status.next == entry.prayer && entry.time > now
                 let past = entry.time <= now && !current
-                VStack(spacing: 3) {
-                    Image(systemName: entry.prayer.symbol).font(.system(size: 11, weight: .semibold))
-                    Text(next ? "Next · \(entry.prayer.title)" : entry.prayer.title).font(.system(size: 10, weight: .semibold))
-                    Text(PrayerClock.clock(entry.time)).font(.system(size: 12, weight: .bold)).monospacedDigit()
+                VStack(spacing: 2) {
+                    Text(next ? "Next" : entry.prayer.title)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.white.opacity(current || next ? 0.7 : 0.5))
+                    Text(next ? entry.prayer.title : PrayerClock.clock(entry.time))
+                        .font(.system(size: 12.5, weight: current || next ? .semibold : .medium))
+                        .monospacedDigit()
+                    if next {
+                        Text(PrayerClock.clock(entry.time)).font(.system(size: 10.5, weight: .medium)).monospacedDigit()
+                            .foregroundStyle(.white.opacity(0.7))
+                    }
                 }
                 .lineLimit(1)
                 .fixedSize()
-                .padding(.horizontal, 10)
-                .foregroundStyle(current ? .white : .white.opacity(past ? 0.45 : 0.9))
-                .shadow(color: .black.opacity(current ? 0.35 : 0), radius: 1, y: 1)
+                .padding(.horizontal, 8)
+                .foregroundStyle(.white.opacity(past ? 0.4 : (current || next ? 1 : 0.8)))
                 .frame(maxWidth: .infinity)
-                .frame(height: 58)
-                .background {
-                    if current {
-                        LiquidFill(colors: tint).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    } else {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(next ? 0.1 : 0.07))
-                    }
-                }
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.white.opacity(next ? 0.35 : 0), lineWidth: 1))
+                .frame(height: 48)
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.white.opacity(current ? 0.12 : 0)))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.white.opacity(next ? 0.16 : 0), lineWidth: 1))
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("\(entry.prayer.title) \(PrayerClock.clock(entry.time))\(current ? ", now" : next ? ", next" : past ? ", passed" : "")")
             }
@@ -124,83 +127,73 @@ struct ClockDetail: View {
         let start = status.forbidden?.start ?? status.starts
         let end = status.forbidden?.end ?? status.ends
         let progress = min(max(now.timeIntervalSince(start) / max(end.timeIntervalSince(start), 1), 0), 1)
-        return VStack(alignment: .leading, spacing: 5) {
+        // What is happening and how long it lasts; what comes next is already in the row above.
+        return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 if let forbidden = status.forbidden {
-                    Label("Prayer not allowed · \(forbidden.kind.title.lowercased())", systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
+                    Text("Prayer not allowed · \(forbidden.kind.title.lowercased())")
+                        .foregroundStyle(Self.caution)
                 } else if let current = status.current {
-                    Text("\(current.title) · until \(PrayerClock.clock(status.ends))")
+                    Text("\(current.title) until \(PrayerClock.clock(status.ends))")
                 } else {
-                    Text("After sunrise · \(status.next.title) at \(PrayerClock.clock(status.nextStarts))")
+                    Text("\(status.next.title) at \(PrayerClock.clock(status.nextStarts))")
                 }
                 Spacer(minLength: 8)
-                Text(status.forbidden.map { "\(PrayerClock.countdown(to: $0.end, from: now)) to go" }
-                     ?? (status.current != nil ? "\(PrayerClock.countdown(to: status.ends, from: now)) left · then \(status.next.title)"
-                         : "in \(PrayerClock.countdown(to: status.nextStarts, from: now))"))
-                    .foregroundStyle(.white.opacity(0.6))
+                Text("\(PrayerClock.countdown(to: status.forbidden?.end ?? (status.current != nil ? status.ends : status.nextStarts), from: now)) left")
+                    .monospacedDigit()
+                    .foregroundStyle(.white.opacity(0.55))
             }
-            .font(.system(size: 11.5, weight: .semibold))
+            .font(.system(size: 11.5, weight: .medium))
             .lineLimit(1)
             Capsule()
-                .fill(.white.opacity(0.12))
-                .frame(height: 5)
+                .fill(.white.opacity(0.1))
+                .frame(height: 3)
                 .overlay(alignment: .leading) {
                     GeometryReader { proxy in
                         Capsule()
-                            .fill(LinearGradient(colors: status.forbidden == nil ? tint : [.orange, .red], startPoint: .leading, endPoint: .trailing))
+                            .fill(status.forbidden == nil ? Color.white.opacity(0.7) : Self.caution)
                             .frame(width: proxy.size.width * progress)
                     }
                 }
         }
     }
 
-    /// The three windows prayer is not allowed in, as columns wide enough for their
-    /// times; the live one in orange.
+    /// The windows prayer is not allowed in, as one row of compact chips; the live
+    /// one in the caution colour.
     private func windows(_ today: PrayerTimes, status: PrayerStatus) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text("Times to avoid")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.45))
+        HStack(spacing: 6) {
+            Text("Avoid")
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(.white.opacity(0.4))
                 .accessibilityAddTraits(.isHeader)
-            EqualColumns(spacing: 6) {
-                ForEach(today.forbidden, id: \.start) { window in
-                    let live = status.forbidden == window
-                    HStack(spacing: 8) {
-                        Image(systemName: window.kind.symbol)
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(live ? .orange : .white.opacity(0.5))
-                            .frame(width: 16)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(window.kind.shortTitle)
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(live ? .orange : .white.opacity(0.6))
-                            Text(Self.range(window.start, window.end))
-                                .font(.system(size: 11.5, weight: .bold))
-                                .monospacedDigit()
-                                .foregroundStyle(.white.opacity(live ? 1 : 0.85))
-                        }
-                        .fixedSize()
-                        Spacer(minLength: 0)
-                        if live {
-                            Text("now")
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundStyle(.black)
-                                .padding(.horizontal, 6).padding(.vertical, 2)
-                                .background(.orange, in: Capsule())
-                        }
-                    }
-                    .lineLimit(1)
-                    .padding(.horizontal, 10)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 40)
-                    .background((live ? Color.orange : Color.white).opacity(live ? 0.16 : 0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("\(window.kind.shortTitle), \(PrayerClock.clock(window.start)) to \(PrayerClock.clock(window.end))\(live ? ", now" : "")")
+            ForEach(today.forbidden, id: \.start) { window in
+                let live = status.forbidden == window
+                HStack(spacing: 5) {
+                    Image(systemName: window.kind.symbol)
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(live ? Self.caution : .white.opacity(0.45))
+                    Text(window.kind.shortTitle)
+                        .foregroundStyle(live ? Self.caution : .white.opacity(0.6))
+                    Text(Self.range(window.start, window.end))
+                        .monospacedDigit()
+                        .foregroundStyle(.white.opacity(live ? 0.95 : 0.8))
                 }
+                .font(.system(size: 11, weight: .medium))
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, 8)
+                .frame(height: 24)
+                .background((live ? Self.caution : Color.white).opacity(live ? 0.14 : 0.05),
+                            in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(window.kind.shortTitle), \(PrayerClock.clock(window.start)) to \(PrayerClock.clock(window.end))\(live ? ", now" : "")")
             }
+            Spacer(minLength: 0)
         }
     }
+
+    /// One soft amber for "not now", in place of reds and oranges.
+    private static let caution = Color(red: 1.0, green: 0.72, blue: 0.32)
 
     /// "5:46–6:01 AM", or "11:42 AM–12:02 PM" when the window crosses noon.
     private static func range(_ start: Date, _ end: Date) -> String {
@@ -232,9 +225,9 @@ struct ClockDetail: View {
             Button(action: openSettings) {
                 Label("Time settings", systemImage: "gearshape")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.7))
-                    .padding(.horizontal, 10).frame(height: 26)
-                    .background(.white.opacity(0.08), in: Capsule())
+                    .foregroundStyle(.white.opacity(0.6))
+                    .padding(.horizontal, 8).frame(height: 24)
+                    .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
             .buttonStyle(.plain)
         }
