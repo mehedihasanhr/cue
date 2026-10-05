@@ -98,20 +98,24 @@ struct WindowChromeTests {
         #expect(pixels.isClose(left, top(bar.maxY, in: scene) + 1, to: blue))
     }
 
-    @Test("A border under a bar keeps an even width into the square corners")
-    func borderUnderTheBar() throws {
+    @Test("A border goes round the window as one piece, outside its edge")
+    func borderRoundTheWindow() throws {
         var edit = timeline(.window)
         edit.style.borderWidth = 0.01
         edit.style.borderColor = .white
         let (scene, pixels) = try render(edit)
         let width = try #require(scene.border?.width)
+        let bar = try #require(scene.chromeBarFrame)
         let left = scene.videoFrame.minX
-        let topRow = top(scene.videoFrame.maxY, in: scene)
-        // Just inside the rim, diagonally in from the square corner: picture, not a rim
-        // that has thickened into a curve the corner no longer has.
-        let x = Int(left + width + 3), y = topRow + Int(width + 3)
-        #expect(pixels.isClose(x, y, to: red), "\(pixels.colour(x, y))")
-        #expect(pixels.isClose(Int(left + width / 2), topRow + 30, to: .white), "the rim itself is there")
+        // Beside the picture and beside the bar: the rim, outside both.
+        #expect(pixels.isClose(Int(left - width / 2), top(scene.videoFrame.midY, in: scene), to: .white),
+                "\(pixels.colour(Int(left - width / 2), top(scene.videoFrame.midY, in: scene)))")
+        #expect(pixels.isClose(Int(left - width / 2), top(bar.midY, in: scene), to: .white),
+                "the rim runs up past the bar")
+        // The picture's own edge is not covered.
+        #expect(pixels.isClose(Int(left + 2), top(scene.videoFrame.midY, in: scene), to: red))
+        // Over the top of the bar, not between the bar and the picture.
+        #expect(pixels.isClose(Int(bar.midX), top(bar.maxY + width / 2, in: scene), to: .white))
     }
 
     @Test("A dark window has a dark bar")

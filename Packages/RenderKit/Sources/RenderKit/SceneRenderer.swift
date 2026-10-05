@@ -78,7 +78,8 @@ public final class SceneRenderer: @unchecked Sendable {
         if let source = scene.title == nil ? source : titlePanel(scene), scene.videoOpacity > 0.001 {
             // The window's bar, when there is one, is part of the picture for everything
             // that follows: it casts the shadow with it and sits under what is drawn on top.
-            var video = chromed(videoLayer(scene, source: source), in: scene)
+            // The border round both, outside their edge — see `outlined(_:in:)`.
+            var video = outlined(chromed(videoLayer(scene, source: source), in: scene), in: scene)
             if scene.videoOpacity < 1 { video = Self.faded(video, to: scene.videoOpacity) }
             if scene.shadowOpacity > 0, scene.shadowRadius > 0 {
                 image = shadow(under: video, scene: scene).composited(over: image)
@@ -386,10 +387,8 @@ public final class SceneRenderer: @unchecked Sendable {
             image = cameraBlurred(image, by: motion)
         }
         image = roundedPicture(image, in: scene)
-        // Over the picture and inside its edge, taking its shape — see `bordered(_:by:in:)`.
-        if let border = scene.border {
-            image = bordered(image, by: border, in: scene)
-        }
+        // No border here: it is drawn outside the picture's edge, round the picture and its
+        // window bar together — see `outlined(_:in:)`.
         // Cropped to where the video is allowed to be. Ordinarily that is the hole the
         // padding left, so a zoomed-in picture magnifies inside it and never spills over
         // the frame around it. When the whole frame zooms it is that hole grown and moved,
@@ -458,7 +457,9 @@ public final class SceneRenderer: @unchecked Sendable {
     private func shadow(under video: CIImage, scene: SceneDescriptor) -> CIImage {
         // The window's bar too, when there is one: it is part of what stands off the
         // background.
-        let rect = scene.shadowCaster
+        // And the border, which is outside the picture's edge and stands off with it.
+        let border = scene.deviceGeometry == nil ? borderWidth(in: scene) : 0
+        let rect = scene.shadowCaster.insetBy(dx: -border, dy: -border)
         guard !rect.isNull, rect.width > 1 else { return CIImage.empty() }
         // A turned picture casts a turned shadow, and a deeper one under it.
         if let projection = scene.perspectiveProjection {
@@ -471,7 +472,7 @@ public final class SceneRenderer: @unchecked Sendable {
         // Core Image folds "a block of colour, blurred, cropped" into a colour with no edges
         // at all: a square frame with a shadow came out with the whole background black.
         // A pixel of rounding is invisible under a blur and keeps the shape a shape.
-        filter.radius = Float(max(1, min(scene.shadowCornerRadius, min(rect.width, rect.height) / 2)))
+        filter.radius = Float(max(1, min(scene.shadowCornerRadius + border, min(rect.width, rect.height) / 2)))
         filter.color = CIColor(red: 0, green: 0, blue: 0, alpha: scene.shadowOpacity)
         guard let shape = filter.outputImage else { return CIImage.empty() }
 

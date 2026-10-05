@@ -52,7 +52,8 @@ struct ColorGradeRenderTests {
         let top = Double(pixels.height) - frame.maxY
         return Reading(picture: pixels.colour(Int(frame.midX), Int(top + frame.height * 0.7)),
                        background: pixels.colour(4, 4),
-                       border: pixels.colour(Int(frame.midX), Int(top + 2)),
+                       // Just above the picture's top edge: the border is outside it.
+                       border: pixels.colour(Int(frame.midX), Int(top - 2)),
                        note: pixels.colour(Int(0.25 * Double(pixels.width)), Int(0.25 * Double(pixels.height))))
     }
 
