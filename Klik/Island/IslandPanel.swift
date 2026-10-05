@@ -267,11 +267,12 @@ struct IslandPanel: View {
                 Icon(symbol, size: 12, weight: .semibold)
                 if !title.isEmpty { Text(title).font(.system(size: 11, weight: .medium)).lineLimit(1) }
             }
-            .foregroundStyle(selected ? IslandStyle.selectedText : .white.opacity(0.75))
+            .foregroundStyle(selected ? .white : .white.opacity(0.55))
             .padding(.horizontal, title.isEmpty ? 7 : 9)
-            .frame(height: 22)
-            .background(selected ? IslandStyle.selectedFill : .white.opacity(0.1), in: Capsule())
-            .contentShape(Capsule())
+            .frame(height: 24)
+            .background(.white.opacity(selected ? 0.12 : 0.04),
+                        in: RoundedRectangle(cornerRadius: IslandChrome.chipRadius, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: IslandChrome.chipRadius, style: .continuous))
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -362,14 +363,14 @@ struct IslandPanel: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
                 HStack(spacing: 8) {
-                    Icon("magnifyingglass", size: 18, weight: .medium)
-                        .foregroundStyle(searching ? IslandStyle.accent : .white.opacity(0.6))
+                    Icon("magnifyingglass", size: 14, weight: .medium)
+                        .foregroundStyle(searching ? IslandStyle.accent : .white.opacity(0.55))
                     TextField("Search everything", text: $search)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 14))
+                        .font(.system(size: 13.5))
                         .foregroundStyle(.white)
                         .focused($searchFocused)
                         .onExitCommand { clearSearch() }
@@ -384,20 +385,21 @@ struct IslandPanel: View {
                             .foregroundStyle(.white.opacity(0.55))
                             .fixedSize()
                         Button(action: clearSearch) {
-                            Icon("xmark.circle.fill", size: 18).foregroundStyle(.white.opacity(0.6))
+                            Icon("xmark.circle.fill", size: 15).foregroundStyle(.white.opacity(0.5))
                         }
                         .buttonStyle(.plain)
                         .help("Clear the search")
                     }
                 }
-                .padding(.horizontal, 14)
-                .frame(height: 40)
-                .frame(maxWidth: searching ? .infinity : nil)
-                .background(.white.opacity(searching ? 0.12 : 0.08), in: Capsule(style: .continuous))
-                .overlay(Capsule(style: .continuous).strokeBorder(searching ? IslandStyle.accent.opacity(0.7) : .clear, lineWidth: 1))
+                // The search field leads the bar: it takes the room the quieter tools leave.
+                .padding(.horizontal, 12)
+                .frame(height: IslandChrome.controlHeight)
+                .frame(minWidth: 240, maxWidth: .infinity)
+                .background(.white.opacity(searching ? 0.11 : 0.08), in: RoundedRectangle(cornerRadius: IslandChrome.controlRadius, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: IslandChrome.controlRadius, style: .continuous)
+                    .strokeBorder(searching ? IslandStyle.accent.opacity(0.6) : .white.opacity(0.06), lineWidth: 1))
                 .background(KeyOnFocus(focused: searchFocused))
                 if !searching {
-                    Spacer(minLength: 8)
                     if let focusTimer, focusTimer.isRunning {
                         FocusPill(timer: focusTimer, onShowTask: onShowTask)
                     }
@@ -405,7 +407,6 @@ struct IslandPanel: View {
                         PrayerPill(clock: clock, expanded: $prayerExpanded, onShowClock: onShowClock)
                     }
                     captureBar
-                    circle("gearshape", help: "Settings", action: actions.openSettings)
                 }
             }
             .animation(.easeOut(duration: 0.18), value: searching)
@@ -418,7 +419,7 @@ struct IslandPanel: View {
                     withAnimation(.easeOut(duration: 0.15)) { self.detail = nil }
                 }
             } else {
-            HStack(spacing: 8) {
+            HStack(spacing: 2) {
                 ForEach(Array(tabs.enumerated()), id: \.element) { index, value in
                     tabPill(value, count: count(for: value), shortcut: index + 1)
                 }
@@ -428,9 +429,6 @@ struct IslandPanel: View {
                                 help: "Lay the picked captures out in one picture and copy it", action: compareSelected)
                     smallButton("Deselect", symbol: "xmark", help: "Drop the comparison picks") { compareSelection = [] }
                 }
-                if tab == .captures, library.items.contains(where: { !$0.pinned }) {
-                    smallButton("Clear", symbol: "trash", help: "Remove every unpinned capture") { library.unpinned.forEach(actions.delete) }
-                }
                 if tab == .snippets {
                     smallButton("New", symbol: "plus", help: "A new snippet") { onPrompt(IslandPrompt(kind: .snippet(nil, initialText: "", assetID: nil))) }
                 }
@@ -439,12 +437,6 @@ struct IslandPanel: View {
                 }
                 if tab == .colors {
                     smallButton("Pick", symbol: "eyedropper", help: "Pick a color from the screen", action: actions.pickColor)
-                    if colors.items.contains(where: { !$0.pinned }) {
-                        smallButton("Clear", symbol: "trash", help: "Remove every unpinned color") { colors.clear() }
-                    }
-                }
-                if tab == .clipboard, clipboard.items.contains(where: { !$0.pinned }) {
-                    smallButton("Clear", symbol: "trash", help: "Remove every unpinned entry") { clipboard.clear() }
                 }
                 if tab == .assets {
                     smallButton("Paste", symbol: "doc.on.clipboard", help: "Save the image or files on the clipboard as assets") {
@@ -454,8 +446,11 @@ struct IslandPanel: View {
                             FeedbackHUD.show("No image or file on the clipboard", symbol: "tray")
                         }
                     }
-                    if assets.items.contains(where: { !$0.pinned && $0.groupID == nil }) {
-                        smallButton("Clear", symbol: "trash", help: "Remove every recent asset") { assets.clear() }
+                }
+                // Clearing is rare and can't be undone: it waits behind "…".
+                if let clear = clearAction {
+                    OverflowMenu(help: "More") {
+                        Button(clear.title, role: .destructive, action: clear.perform)
                     }
                 }
             }
@@ -803,29 +798,43 @@ struct IslandPanel: View {
 
     /// The island takes the wider of the header (the prayer pill can open wide) and
     /// the tab row, so neither is ever squeezed.
-    private func reportWidth() {
-        onIdealWidth(max(headerWidth, tabRowWidth) + Self.horizontalPadding * 2)
+    /// The current tab's "remove everything not kept", when there is anything to remove.
+    private var clearAction: (title: String, perform: () -> Void)? {
+        switch tab {
+        case .captures where library.items.contains(where: { !$0.pinned }):
+            ("Clear Unpinned Captures", { library.unpinned.forEach(actions.delete) })
+        case .clipboard where clipboard.items.contains(where: { !$0.pinned }):
+            ("Clear Unpinned Entries", { clipboard.clear() })
+        case .colors where colors.items.contains(where: { !$0.pinned }):
+            ("Clear Unpinned Colors", { colors.clear() })
+        case .assets where assets.items.contains(where: { !$0.pinned && $0.groupID == nil }):
+            ("Clear Recent Assets", { assets.clear() })
+        default:
+            nil
+        }
     }
 
-    private func circle(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
-        HoverButton(symbol: symbol, help: help, size: 40, action: action)
+    private func reportWidth() {
+        onIdealWidth(max(headerWidth, tabRowWidth) + Self.horizontalPadding * 2)
     }
 
     /// The capture tools as one group, so they read as a toolbar rather than five
     /// loose buttons; each names itself in a tooltip.
     private var captureBar: some View {
+        // The two captures used most stay out; the rest, and Settings, wait behind "…".
         HStack(spacing: 0) {
-            HoverButton(symbol: "display", help: "Capture full screen", size: 36, action: actions.captureFullScreen)
-            HoverButton(symbol: "viewfinder", help: "Capture area", size: 36, action: actions.captureArea)
-            HoverButton(symbol: "macwindow", help: "Capture window (with its shadow)", size: 36, action: actions.captureWindow)
-            HoverButton(symbol: "rectangle.expand.vertical", help: "Scrolling capture", size: 36, action: actions.captureScrolling)
-            Rectangle().fill(.white.opacity(0.12)).frame(width: 1, height: 18).padding(.horizontal, 3)
-            HoverButton(symbol: "text.viewfinder", help: "Capture text", size: 36, action: actions.captureText)
-            HoverButton(symbol: "eyedropper", help: "Pick a color", size: 36, action: actions.pickColor)
+            HoverButton(symbol: "viewfinder", help: "Capture area", size: 30, quiet: true, action: actions.captureArea)
+            HoverButton(symbol: "display", help: "Capture full screen", size: 30, quiet: true, action: actions.captureFullScreen)
+            OverflowMenu(help: "More tools", size: 30) {
+                Button("Capture Window", systemImage: "macwindow", action: actions.captureWindow)
+                Button("Scrolling Capture", systemImage: "rectangle.expand.vertical", action: actions.captureScrolling)
+                Button("Capture Text", systemImage: "text.viewfinder", action: actions.captureText)
+                Button("Pick a Color", systemImage: "eyedropper", action: actions.pickColor)
+                Divider()
+                Button("Settings…", systemImage: "gearshape", action: actions.openSettings)
+            }
         }
-        .padding(.horizontal, 3)
-        .frame(height: 40)
-        .background(.white.opacity(0.08), in: Capsule(style: .continuous))
+        .frame(height: IslandChrome.controlHeight)
     }
 
     private func tabPill(_ value: IslandTab, count: Int, shortcut: Int) -> some View {
@@ -980,25 +989,16 @@ struct IslandPanel: View {
     }
 
     private func smallButton(_ title: String, symbol: String, help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Label { Text(title) } icon: { Icon(symbol, weight: .medium) }
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.white.opacity(0.7))
-                .padding(.horizontal, 10)
-                .frame(height: 28)
-                .background(.white.opacity(0.08), in: Capsule())
-                .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .help(help)
+        QuietButton(title: title, symbol: symbol, destructive: symbol == "trash", action: action)
+            .help(help)
     }
 
     /// Shown over the row while a drag hovers the island.
     private var dropHint: some View {
-        RoundedRectangle(cornerRadius: 18, style: .continuous)
+        RoundedRectangle(cornerRadius: IslandChrome.cardRadius, style: .continuous)
             .fill(.black.opacity(0.75))
-            .background(IslandStyle.accent.opacity(0.22), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(IslandStyle.accent.opacity(0.8), style: SwiftUI.StrokeStyle(lineWidth: 1.5, dash: [8, 6])))
+            .background(IslandStyle.accent.opacity(0.22), in: RoundedRectangle(cornerRadius: IslandChrome.cardRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: IslandChrome.cardRadius, style: .continuous).strokeBorder(IslandStyle.accent.opacity(0.8), style: SwiftUI.StrokeStyle(lineWidth: 1.5, dash: [8, 6])))
             .overlay {
                 VStack(spacing: 6) {
                     Icon("tray.and.arrow.down.fill", size: 35).foregroundStyle(.white)
@@ -1105,7 +1105,7 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
 
     static var cardSize: CGSize { CGSize(width: 156, height: 124) }
     static var spacing: CGFloat { 10 }
-    static var groupSpacing: CGFloat { 22 }
+    static var groupSpacing: CGFloat { 20 }
     static var headerHeight: CGFloat { 24 }
 
     @State private var offset: CGFloat = 0
@@ -1170,8 +1170,8 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
             ZStack(alignment: .topLeading) {
                 ForEach(layout.groups.filter { visible.overlaps($0.x...($0.x + $0.width)) }) { group in
                     Text(group.title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.9))
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.55))
                         .frame(height: Self.headerHeight, alignment: .leading)
                         .offset(x: group.x - offset)
                         .accessibilityAddTraits(.isHeader)
@@ -1179,7 +1179,7 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
                 ForEach(layout.cards.filter { visible.contains($0.x) }) { placed in
                     card(placed.item)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            RoundedRectangle(cornerRadius: IslandChrome.cardRadius, style: .continuous)
                                 .strokeBorder(IslandStyle.selectedRing, lineWidth: IslandStyle.selectedRingWidth)
                                 .opacity(isSelected(placed.item) ? 1 : 0)
                                 .allowsHitTesting(false)
@@ -1220,14 +1220,14 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
             )
             // Fades at the edges say there is more to scroll to.
             .overlay(alignment: .leading) {
-                LinearGradient(colors: [.black, .black.opacity(0)], startPoint: .leading, endPoint: .trailing)
-                    .frame(width: 28)
+                LinearGradient(colors: [.black.opacity(0.9), .black.opacity(0)], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: 40)
                     .opacity(offset > 0 ? 1 : 0)
                     .allowsHitTesting(false)
             }
             .overlay(alignment: .trailing) {
-                LinearGradient(colors: [.black.opacity(0), .black], startPoint: .leading, endPoint: .trailing)
-                    .frame(width: 28)
+                LinearGradient(colors: [.black.opacity(0), .black.opacity(0.9)], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: 40)
                     .opacity(offset < maxOffset - 1 ? 1 : 0)
                     .allowsHitTesting(false)
             }
@@ -1247,6 +1247,70 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
     }
 }
 
+// MARK: - Chrome
+
+/// One set of measures for the panel: a control height, and radii that step down
+/// from cards to controls to chips.
+enum IslandChrome {
+    static let controlHeight: CGFloat = 32
+    static let cardRadius: CGFloat = 14
+    static let controlRadius: CGFloat = 10
+    static let chipRadius: CGFloat = 8
+}
+
+/// "…": rarer actions in a menu, so the bar shows only what is used most.
+struct OverflowMenu<Items: View>: View {
+    var help: String
+    var size: CGFloat = 26
+    @ViewBuilder let items: () -> Items
+    @State private var hovering = false
+
+    var body: some View {
+        Menu {
+            items()
+        } label: {
+            Icon("ellipsis", size: 14, weight: .semibold)
+                .foregroundStyle(.white.opacity(hovering ? 0.95 : 0.55))
+                .frame(width: size, height: size)
+                .background(.white.opacity(hovering ? 0.1 : 0), in: RoundedRectangle(cornerRadius: IslandChrome.chipRadius, style: .continuous))
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .onHover { hovering = $0 }
+        .help(help)
+        .accessibilityLabel(help)
+    }
+}
+
+/// A utility action as text: no fill until hovered. A destructive one turns red
+/// only under the pointer, so it never draws the eye on its own.
+struct QuietButton: View {
+    let title: String
+    let symbol: String
+    var destructive = false
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Label { Text(title) } icon: { Icon(symbol, size: 11, weight: .medium) }
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(hovering ? (destructive ? Color.red.opacity(0.9) : .white.opacity(0.9)) : .white.opacity(0.45))
+                .padding(.horizontal, 8)
+                .frame(height: 26)
+                .background((destructive ? Color.red.opacity(0.12) : .white.opacity(0.07)).opacity(hovering ? 1 : 0),
+                            in: RoundedRectangle(cornerRadius: IslandChrome.chipRadius, style: .continuous))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+}
+
 // MARK: - Cards
 
 /// Rounded card chrome shared by captures and clipboard items: blue border on hover,
@@ -1260,7 +1324,7 @@ struct CardChrome<Content: View, Actions: View, Menu: View>: View {
     @ViewBuilder let actionRow: () -> Actions
     @ViewBuilder let menu: () -> Menu
 
-    private static var radius: CGFloat { 18 }
+    private static var radius: CGFloat { IslandChrome.cardRadius }
 
     var body: some View {
         content()
@@ -1279,9 +1343,9 @@ struct CardChrome<Content: View, Actions: View, Menu: View>: View {
                     .allowsHitTesting(hovering)
             }
             .frame(width: DayStrip<CaptureItem, EmptyView>.cardSize.width, height: DayStrip<CaptureItem, EmptyView>.cardSize.height)
-            .background(.white.opacity(0.07))
+            .background(.white.opacity(0.06))
             .clipShape(RoundedRectangle(cornerRadius: Self.radius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Self.radius, style: .continuous).strokeBorder(hovering ? IslandStyle.hoverRing : .white.opacity(0.1), lineWidth: IslandStyle.hoverRingWidth))
+            .overlay(RoundedRectangle(cornerRadius: Self.radius, style: .continuous).strokeBorder(hovering ? IslandStyle.hoverRing : .white.opacity(0.07), lineWidth: IslandStyle.hoverRingWidth))
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
             .animation(.easeOut(duration: 0.12), value: hovering)
@@ -1371,11 +1435,11 @@ struct Badge: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 8.5, weight: .medium))
-            .foregroundStyle(.white.opacity(0.85))
+            .font(.system(size: 8, weight: .medium).monospacedDigit())
+            .foregroundStyle(.white.opacity(0.65))
             .padding(.horizontal, 5)
             .padding(.vertical, 1.5)
-            .background(.white.opacity(0.16), in: Capsule())
+            .background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
             .fixedSize()
     }
 }
@@ -1385,16 +1449,19 @@ struct HoverButton: View {
     let symbol: String
     let help: String
     var size: CGFloat = 36
+    /// A utility: a smaller, dimmer glyph on no fill until the pointer is over it.
+    var quiet = false
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            Icon(symbol, size: size >= 40 ? 19 : 18, weight: .medium)
-                .foregroundStyle(.white.opacity(hovering ? 1 : 0.85))
+            Icon(symbol, size: quiet ? 15 : (size >= 40 ? 19 : 18), weight: .medium)
+                .foregroundStyle(.white.opacity(hovering ? 1 : (quiet ? 0.6 : 0.85)))
                 .frame(width: size, height: size)
-                .background(.white.opacity(hovering ? 0.16 : (size >= 40 ? 0.1 : 0)), in: Circle())
-                .contentShape(Circle())
+                .background(.white.opacity(hovering ? (quiet ? 0.1 : 0.16) : (size >= 40 && !quiet ? 0.1 : 0)),
+                            in: RoundedRectangle(cornerRadius: quiet ? IslandChrome.chipRadius : size / 2, style: .continuous))
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -1416,22 +1483,22 @@ struct TabPill: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) {
-                Text(tab.title).font(.system(size: 13))
+            HStack(spacing: 5) {
+                Text(tab.title).font(.system(size: 12, weight: selected ? .semibold : .medium))
                 if count > 0 {
                     Text("\(count)")
-                        .font(.system(size: 11).monospacedDigit())
-                        .opacity(selected ? 0.55 : 0.5)
+                        .font(.system(size: 10.5, weight: .medium).monospacedDigit())
+                        .opacity(0.5)
                 }
             }
-            .foregroundStyle(selected ? IslandStyle.selectedText : .white.opacity(hovering ? 1 : 0.75))
+            .foregroundStyle(selected ? .white : .white.opacity(hovering ? 0.9 : 0.55))
             .fixedSize()
-            .padding(.horizontal, 12)
-            .frame(height: 28)
-            .background(selected ? IslandStyle.selectedFill : Color.white.opacity(hovering ? 0.06 : 0), in: Capsule())
-            // The others are outlines.
-            .overlay(Capsule().strokeBorder(Color.white.opacity(selected ? 0 : 0.14)))
-            .contentShape(Capsule())
+            .padding(.horizontal, 10)
+            .frame(height: 26)
+            // The chosen one on a soft fill, the rest plain text that lights on hover.
+            .background(Color.white.opacity(selected ? 0.12 : (hovering ? 0.06 : 0)),
+                        in: RoundedRectangle(cornerRadius: IslandChrome.chipRadius, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: IslandChrome.chipRadius, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -1629,7 +1696,7 @@ struct CaptureCard: View {
         }
         .overlay(alignment: .topTrailing) { compareToggle }
         .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: IslandChrome.cardRadius, style: .continuous)
                 .strokeBorder(IslandStyle.selectedRing, lineWidth: IslandStyle.selectedRingWidth)
                 .opacity(compareIndex == nil ? 0 : 1)
                 .allowsHitTesting(false)
@@ -1822,10 +1889,13 @@ struct ClipboardCard: View {
                 if let code {
                     Text(CodeSnippet.highlighted(item.text.trimmingCharacters(in: .whitespacesAndNewlines), as: code))
                         .font(.system(size: 10.5, design: .monospaced))
-                        .lineLimit(7)
+                        .lineLimit(6)
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        .padding(12)
+                        .padding([.horizontal, .top], 12)
+                        .padding(.bottom, 30) // the caption's room
+                        // Code sits in a darker well, so it reads apart from prose at a glance.
+                        .background(.black.opacity(0.35))
                         .overlay(alignment: .topTrailing) {
                             if !hovering {
                                 Badge(text: "\(code.title) · \(item.text.split(whereSeparator: \.isNewline).count) lines")
@@ -1834,12 +1904,14 @@ struct ClipboardCard: View {
                         }
                 } else {
                     Text(item.text.trimmingCharacters(in: .whitespacesAndNewlines))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.white.opacity(0.92))
-                        .lineLimit(7)
+                        .font(.system(size: 11.5))
+                        .lineSpacing(1)
+                        .foregroundStyle(.white.opacity(0.9))
+                        .lineLimit(5)
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        .padding(12)
+                        .padding([.horizontal, .top], 12)
+                        .padding(.bottom, 30) // the caption's room
                 }
             }
             .onAppear { if language == nil { language = .some(CodeSnippet.detect(item.text)) } }
@@ -2351,7 +2423,7 @@ private struct CompareDrop: ViewModifier {
         let lit = targeted && accepting
         content
             .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: IslandChrome.cardRadius, style: .continuous)
                     .strokeBorder(IslandStyle.selectedRing, lineWidth: IslandStyle.selectedRingWidth)
                     .opacity(lit ? 1 : 0)
                     .allowsHitTesting(false)
