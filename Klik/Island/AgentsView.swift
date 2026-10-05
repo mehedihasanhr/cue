@@ -137,66 +137,147 @@ private struct Spin: ViewModifier {
     }
 }
 
-/// The closed notch while an agent works: a thin line of red light along its left,
-/// bottom and right edges, breathing softly. Amber and quicker while an agent
-/// waits on the user. The notch
-/// itself stays plain black; the light only shows outside its edge.
+/// The closed notch while agents run: one thin line of light that runs along the
+/// top edge of the screen, down around the notch and out the other side, fading
+/// away into the edge on both sides so it never reads as a border. Soft blue-green
+/// while agents work, with a highlight drifting left to right now and then; amber,
+/// gently pulsing, while one waits on the user. Nothing when idle (the island does
+/// not draw it then). The notch itself stays black: the light shows only outside it.
 struct NotchGlow: View {
     let shape: NotchShape
     let size: CGSize
     let asking: Bool
 
-    private static let red = Color(red: 1.0, green: 0.26, blue: 0.22)
+    static let working = Color(red: 0.38, green: 0.78, blue: 0.95)
+    /// How far the light reaches along the top edge on each side of the notch.
+    static let wing: CGFloat = 140
+    /// A sweep crosses in this long, then the line rests until the next.
+    private static let sweep = 2.4
+    private static let sweepRest = 1.6
+
+    /// Room under the notch for the half of the line, and its glow, that hang below
+    /// its bottom edge; without it the frame (and the fade's mask) would cut them off.
+    private static let below: CGFloat = 12
 
     var body: some View {
-        let outline = NotchOutline(flare: shape.flare, bottomRadius: shape.bottomRadius)
-        let color = asking ? askingTint : Self.red
+        let path = NotchLightPath(flare: shape.flare, bottomRadius: shape.bottomRadius, wing: Self.wing,
+                                  notchHeight: size.height, part: .whole)
+        let bottom = NotchLightPath(flare: shape.flare, bottomRadius: shape.bottomRadius, wing: Self.wing,
+                                    notchHeight: size.height, part: .bottom)
+        let color = asking ? askingTint : Self.working
+        let width = size.width + Self.wing * 2
         Group {
             if IslandView.reduceMotion {
-                rim(outline, color: color, level: 0.8)
+                line(path, bottom, color: color, level: 0.7)
             } else {
-                // One slow, even breath of the whole rim; nothing travels along it.
                 TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
                     let t = context.date.timeIntervalSinceReferenceDate
-                    let breath = 0.5 - 0.5 * cos(t * 2 * .pi / (asking ? 1.4 : 3.0))
-                    rim(outline, color: color, level: 0.3 + 0.7 * breath)
+                    if asking {
+                        // A slow pulse, never fully dark.
+                        let pulse = 0.5 - 0.5 * cos(t * 2 * .pi / 1.6)
+                        line(path, bottom, color: color, level: 0.4 + 0.6 * pulse)
+                    } else {
+                        let phase = t.truncatingRemainder(dividingBy: Self.sweep + Self.sweepRest) / Self.sweep
+                        let progress = min(1, phase)
+                        let eased = progress < 0.5 ? 2 * progress * progress : 1 - pow(-2 * progress + 2, 2) / 2
+                        ZStack {
+                            line(path, bottom, color: color, level: 0.5)
+                            line(path, bottom, color: color, level: 1)
+                                .mask(highlight(at: -0.15 + 1.3 * eased))
+                                .opacity(progress < 1 ? 1 : 0)
+                        }
+                    }
                 }
             }
         }
+        // Strongest at the notch, gone by the ends of the wings: it melts into the edge.
+        .mask(fade(width: width))
         // The inner half of every stroke sits under the black, so the light reads
         // as coming from behind the notch's edge.
-        .overlay { shape.fill(.black) }
-        .frame(width: size.width, height: size.height)
+        .overlay(alignment: .top) { shape.fill(.black).frame(width: size.width, height: size.height) }
+        .frame(width: width, height: size.height + Self.below, alignment: .top)
+        // Hung from the notch's top: the extra room is all below it.
+        .padding(.bottom, -Self.below)
+        .allowsHitTesting(false)
     }
 
-    private func rim(_ outline: NotchOutline, color: Color, level: Double) -> some View {
+    /// About 2 pt of line outside the edge with a faint glow, a touch brighter
+    /// along the bottom, where the eye looks, than up the sides.
+    private func line(_ path: NotchLightPath, _ bottom: NotchLightPath, color: Color, level: Double) -> some View {
         ZStack {
-            outline.stroke(color, style: SwiftUI.StrokeStyle(lineWidth: 5, lineJoin: .round))
-                .blur(radius: 4)
+            path.stroke(color, style: SwiftUI.StrokeStyle(lineWidth: 8, lineCap: .round, lineJoin: .round))
+                .blur(radius: 6)
+                .opacity(0.2 * level)
+            path.stroke(color, style: SwiftUI.StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+                .opacity(0.6 * level)
+            bottom.stroke(color, style: SwiftUI.StrokeStyle(lineWidth: 10, lineCap: .round, lineJoin: .round))
+                .blur(radius: 6)
+                .opacity(0.3 * level)
+            bottom.stroke(color, style: SwiftUI.StrokeStyle(lineWidth: 4.5, lineCap: .round, lineJoin: .round))
                 .opacity(0.35 * level)
-            outline.stroke(color, style: SwiftUI.StrokeStyle(lineWidth: 2, lineJoin: .round))
-                .opacity(0.75 * level)
         }
+    }
+
+    /// A soft band of light centred at `position` (0 left end, 1 right end).
+    private func highlight(at position: Double) -> some View {
+        LinearGradient(stops: [
+            .init(color: .clear, location: position - 0.14),
+            .init(color: .black, location: position),
+            .init(color: .clear, location: position + 0.14),
+        ], startPoint: .leading, endPoint: .trailing)
+    }
+
+    private func fade(width: CGFloat) -> some View {
+        let wing = Double(Self.wing / width)
+        return LinearGradient(stops: [
+            .init(color: .clear, location: 0),
+            .init(color: .black.opacity(0.35), location: wing * 0.45),
+            .init(color: .black, location: wing),
+            .init(color: .black, location: 1 - wing),
+            .init(color: .black.opacity(0.35), location: 1 - wing * 0.45),
+            .init(color: .clear, location: 1),
+        ], startPoint: .leading, endPoint: .trailing)
     }
 }
 
-/// The notch's visible edges (left side, bottom, right side) as one open line,
-/// so a stretch of it can be lit with `trim`. Matches `NotchShape` with no top radius.
-private nonisolated struct NotchOutline: Shape {
+/// The line the light follows: along the top edge from the left, down the notch's
+/// side, along its bottom, up the other side and out along the top edge again.
+/// `rect` is the notch's rect (flares included) widened by `wing` on each side.
+private nonisolated struct NotchLightPath: Shape {
+    enum Part { case whole, bottom }
+
     let flare: CGFloat
     let bottomRadius: CGFloat
+    let wing: CGFloat
+    /// The notch's own height; `rect` is taller, with room for the light below it.
+    let notchHeight: CGFloat
+    var part: Part = .whole
 
     func path(in rect: CGRect) -> Path {
-        let flare = min(self.flare, rect.width / 4)
-        let body = rect.insetBy(dx: flare, dy: 0)
+        let notch = CGRect(x: rect.minX + wing, y: rect.minY, width: rect.width - wing * 2, height: notchHeight)
+        let flare = min(self.flare, notch.width / 4)
+        let body = notch.insetBy(dx: flare, dy: 0)
         let bottom = min(bottomRadius, body.width / 2, body.height / 2)
+        let top = rect.minY
         var path = Path()
-        path.move(to: CGPoint(x: body.minX, y: body.minY + flare))
+        if part == .bottom {
+            // The bottom edge with its two curves only.
+            path.move(to: CGPoint(x: body.minX, y: body.maxY - bottom))
+            path.addQuadCurve(to: CGPoint(x: body.minX + bottom, y: body.maxY), control: CGPoint(x: body.minX, y: body.maxY))
+            path.addLine(to: CGPoint(x: body.maxX - bottom, y: body.maxY))
+            path.addQuadCurve(to: CGPoint(x: body.maxX, y: body.maxY - bottom), control: CGPoint(x: body.maxX, y: body.maxY))
+            return path
+        }
+        path.move(to: CGPoint(x: rect.minX, y: top))
+        path.addLine(to: CGPoint(x: notch.minX, y: top))
+        path.addQuadCurve(to: CGPoint(x: body.minX, y: top + flare), control: CGPoint(x: body.minX, y: top))
         path.addLine(to: CGPoint(x: body.minX, y: body.maxY - bottom))
         path.addQuadCurve(to: CGPoint(x: body.minX + bottom, y: body.maxY), control: CGPoint(x: body.minX, y: body.maxY))
         path.addLine(to: CGPoint(x: body.maxX - bottom, y: body.maxY))
         path.addQuadCurve(to: CGPoint(x: body.maxX, y: body.maxY - bottom), control: CGPoint(x: body.maxX, y: body.maxY))
-        path.addLine(to: CGPoint(x: body.maxX, y: body.minY + flare))
+        path.addLine(to: CGPoint(x: body.maxX, y: top + flare))
+        path.addQuadCurve(to: CGPoint(x: notch.maxX, y: top), control: CGPoint(x: body.maxX, y: top))
+        path.addLine(to: CGPoint(x: rect.maxX, y: top))
         return path
     }
 }
@@ -680,6 +761,9 @@ private struct AgentSessionCard: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
             }
         }
+        // Always the list's full width: a finished card with little to say must not
+        // shrink to its text.
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
         .padding(.top, 6)
         .padding(.bottom, 4)
@@ -782,6 +866,9 @@ private struct AgentSessionCard: View {
                     Text(ask)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.white.opacity(0.88))
+                } else if !requests.isEmpty {
+                    // A question: "Answer required" beside the name says it; the question below is the focus.
+                    EmptyView()
                 } else {
                     Text(session.activity ?? Self.placeholder(for: session.state))
                         .font(.system(size: 12))
@@ -1111,6 +1198,9 @@ private struct PlanCard: View {
 
 /// AskUserQuestion: each question with its options. A single question with a single
 /// answer goes as soon as an option is clicked; otherwise Submit sends them all.
+/// AskUserQuestion: each question, a short line of context, and its options as
+/// radio (or check) rows in one quiet list. Nothing is sent until Continue, so a
+/// pick can be changed; the terminal can still answer instead.
 private struct QuestionsCard: View {
     let request: AgentRequest
     let questions: [AgentRequest.Question]
@@ -1119,43 +1209,69 @@ private struct QuestionsCard: View {
     @State private var chosen: [String: [String]] = [:]
     @State private var other: [String: String] = [:]
     @State private var typing: String?
-
-    private var answersAtOnce: Bool { questions.count == 1 && questions[0].multiSelect == false }
+    /// Questions whose long wording has been opened in full.
+    @State private var expanded: Set<String> = []
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             ForEach(questions) { question in
-                VStack(alignment: .leading, spacing: 6) {
-                    if let header = question.header, !header.isEmpty {
-                        Text(header.uppercased())
-                            .font(.system(size: 9.5, weight: .bold))
-                            .tracking(0.4)
-                            .foregroundStyle(askingTint)
-                    }
-                    Text(question.question)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .fixedSize(horizontal: false, vertical: true)
-                    VStack(spacing: 4) {
-                        ForEach(question.options) { option in
+                VStack(alignment: .leading, spacing: 5) {
+                    prompt(question)
+                    VStack(spacing: 0) {
+                        ForEach(Array(question.options.enumerated()), id: \.element.id) { index, option in
+                            if index > 0 { separator }
                             OptionRow(label: option.label, description: option.description, multi: question.multiSelect,
                                       selected: chosen[question.question, default: []].contains(option.label)) {
                                 pick(option.label, in: question)
                             }
                         }
+                        separator
                         otherRow(for: question)
                     }
+                    .background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
             }
             HStack(spacing: 6) {
-                AnswerButton("Answer in terminal", role: .quiet) { store.answerInTerminal(request) }
                 Spacer(minLength: 0)
-                if !answersAtOnce {
-                    AnswerButton("Submit", role: .primary) { submit() }
-                        .disabled(!complete)
-                        .opacity(complete ? 1 : 0.45)
+                AnswerButton("Answer in Terminal", role: .quiet) { store.answerInTerminal(request) }
+                    .help("Leave this to the terminal; the agent waits there")
+                AnswerButton("Continue", role: .primary) { submit() }
+                    .disabled(!complete)
+                    .opacity(complete ? 1 : 0.4)
+            }
+        }
+    }
+
+    private var separator: some View {
+        Rectangle().fill(.white.opacity(0.06)).frame(height: 0.5).padding(.leading, 30)
+    }
+
+    /// The question first; a long one shows its opening and opens in full on "More".
+    /// Its short topic, when there is one, sits quietly above it.
+    @ViewBuilder
+    private func prompt(_ question: AgentRequest.Question) -> some View {
+        if let header = question.header, !header.isEmpty {
+            Text(header)
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(.white.opacity(0.45))
+        }
+        let long = question.question.count > 140
+        let open = expanded.contains(question.question)
+        Text(question.question)
+            .font(.system(size: 12.5, weight: .semibold))
+            .foregroundStyle(.white)
+            .lineLimit(long && !open ? 2 : nil)
+            .fixedSize(horizontal: false, vertical: true)
+            .help(long && !open ? question.question : "")
+        if long {
+            Button(open ? "Less" : "More") {
+                withAnimation(.easeOut(duration: 0.15)) {
+                    if open { expanded.remove(question.question) } else { expanded.insert(question.question) }
                 }
             }
+            .buttonStyle(.plain)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(.white.opacity(0.5))
         }
     }
 
@@ -1165,15 +1281,14 @@ private struct QuestionsCard: View {
             HStack(spacing: 6) {
                 TextField("Type an answer", text: Binding(get: { other[question.question] ?? "" }, set: { other[question.question] = $0 }))
                     .textFieldStyle(.plain)
-                    .font(.system(size: 11.5))
+                    .font(.system(size: 12))
                     .foregroundStyle(.white)
                     .onSubmit { useOther(in: question) }
                 AnswerButton("Use", role: .secondary) { useOther(in: question) }
             }
-            .padding(.leading, 10)
-            .padding(.vertical, 4)
-            .padding(.trailing, 4)
-            .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .padding(.leading, 30)
+            .padding(.trailing, 6)
+            .padding(.vertical, 5)
         } else {
             OptionRow(label: "Other…", description: nil, multi: question.multiSelect,
                       selected: chosen[question.question, default: []].contains { label in !question.options.contains { $0.label == label } }) {
@@ -1194,7 +1309,6 @@ private struct QuestionsCard: View {
             labels = [label]
         }
         chosen[question.question] = labels
-        if answersAtOnce { submit() }
     }
 
     private func useOther(in question: AgentRequest.Question) {
@@ -1204,7 +1318,6 @@ private struct QuestionsCard: View {
         var labels = (chosen[question.question] ?? []).filter { label in question.options.contains { $0.label == label } }
         if question.multiSelect { labels.append(text) } else { labels = [text] }
         chosen[question.question] = labels
-        if answersAtOnce { submit() }
     }
 
     private func submit() {
@@ -1213,6 +1326,8 @@ private struct QuestionsCard: View {
     }
 }
 
+/// One choice: a radio (or check) mark, its label, and a one-line note. Chosen
+/// reads as a filled mark and brighter text, not a coloured block.
 private struct OptionRow: View {
     let label: String
     let description: String?
@@ -1225,29 +1340,35 @@ private struct OptionRow: View {
         Button(action: action) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Image(systemName: multi ? (selected ? "checkmark.square.fill" : "square") : (selected ? "largecircle.fill.circle" : "circle"))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(selected ? askingTint : .white.opacity(0.45))
-                VStack(alignment: .leading, spacing: 1) {
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundStyle(.white.opacity(selected ? 0.95 : 0.35))
+                    .frame(width: 14)
+                // Label and its note on one line: the note is the quiet tail, in full in the tooltip.
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(label)
-                        .font(.system(size: 11.5, weight: .medium))
-                        .foregroundStyle(.white)
+                        .font(.system(size: 12, weight: selected ? .semibold : .regular))
+                        .foregroundStyle(.white.opacity(selected ? 1 : 0.85))
+                        .fixedSize()
                     if let description, !description.isEmpty {
                         Text(description)
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(.white.opacity(0.5))
-                            .fixedSize(horizontal: false, vertical: true)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.white.opacity(0.45))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                     }
                 }
+                .help(description ?? "")
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.white.opacity(selected ? 0.14 : hovered ? 0.1 : 0.05), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background(.white.opacity(selected ? 0.06 : hovered ? 0.04 : 0), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovered = $0 }
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
