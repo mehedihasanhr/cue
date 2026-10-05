@@ -536,8 +536,25 @@ nonisolated struct AgentRequest: Identifiable, Equatable, Sendable {
     let toolInput: JSONValue
     let suggestions: JSONValue?
     let receivedAt: Date
+    /// The agent's own app when the session runs there (Codex's): the island asks
+    /// first, and can hand the question back to the app to ask instead.
+    var appName: String?
 
     var sessionKey: String { "\(agent.rawValue):\(sessionID)" }
+
+    /// Whether `event` shows this question was answered somewhere else (the
+    /// terminal): the very tool it asked about has run. A question or a plan is the
+    /// only one of its kind open at a time, and its tool may come back with the
+    /// answers added, so its name is enough; a permission matches on its input too,
+    /// so a parallel tool finishing does not settle another's question.
+    func isSettled(by event: AgentEvent) -> Bool {
+        guard event.name == .postToolUse, event.agent == agent, event.sessionID == sessionID,
+              event.toolName == toolName else { return false }
+        switch kind {
+        case .questions, .plan: return true
+        case .permission: return event.toolInput == toolInput
+        }
+    }
 
     /// Whether "always" means anything: Claude Code offers its own rules, and Klik
     /// remembers Codex's for the rest of the session.

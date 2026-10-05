@@ -1119,8 +1119,13 @@ private struct PermissionCard: View {
                     .background(.black.opacity(0.28), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .help(detail)
             }
-            // All the answers together on the right, the default one last.
+            // All the answers together on the right, the default one last; a session in
+            // the agent's own app can be sent back there to answer.
             HStack(spacing: 6) {
+                if let app = request.appName {
+                    AnswerButton("Ask in \(app)", role: .quiet) { store.answerInTerminal(request) }
+                        .help("Answer in \(app) instead; it asks there")
+                }
                 Spacer(minLength: 0)
                 AnswerButton("Deny", role: .quiet) { store.answer(request, .deny) }
                 if request.canAllowAlways {
@@ -1209,8 +1214,6 @@ private struct QuestionsCard: View {
     @State private var chosen: [String: [String]] = [:]
     @State private var other: [String: String] = [:]
     @State private var typing: String?
-    /// Questions whose long wording has been opened in full.
-    @State private var expanded: Set<String> = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1246,8 +1249,7 @@ private struct QuestionsCard: View {
         Rectangle().fill(.white.opacity(0.06)).frame(height: 0.5).padding(.leading, 30)
     }
 
-    /// The question first; a long one shows its opening and opens in full on "More".
-    /// Its short topic, when there is one, sits quietly above it.
+    /// The question, in full, with its short topic, when there is one, quietly above it.
     @ViewBuilder
     private func prompt(_ question: AgentRequest.Question) -> some View {
         if let header = question.header, !header.isEmpty {
@@ -1255,24 +1257,11 @@ private struct QuestionsCard: View {
                 .font(.system(size: 10.5, weight: .medium))
                 .foregroundStyle(.white.opacity(0.45))
         }
-        let long = question.question.count > 140
-        let open = expanded.contains(question.question)
+        // In full: a decision needs the whole question.
         Text(question.question)
             .font(.system(size: 12.5, weight: .semibold))
             .foregroundStyle(.white)
-            .lineLimit(long && !open ? 2 : nil)
             .fixedSize(horizontal: false, vertical: true)
-            .help(long && !open ? question.question : "")
-        if long {
-            Button(open ? "Less" : "More") {
-                withAnimation(.easeOut(duration: 0.15)) {
-                    if open { expanded.remove(question.question) } else { expanded.insert(question.question) }
-                }
-            }
-            .buttonStyle(.plain)
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(.white.opacity(0.5))
-        }
     }
 
     @ViewBuilder
@@ -1343,21 +1332,19 @@ private struct OptionRow: View {
                     .font(.system(size: 12, weight: .regular))
                     .foregroundStyle(.white.opacity(selected ? 0.95 : 0.35))
                     .frame(width: 14)
-                // Label and its note on one line: the note is the quiet tail, in full in the tooltip.
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                // The label, and under it its note in full: what each choice means is
+                // what the decision rests on.
+                VStack(alignment: .leading, spacing: 2) {
                     Text(label)
                         .font(.system(size: 12, weight: selected ? .semibold : .regular))
-                        .foregroundStyle(.white.opacity(selected ? 1 : 0.85))
-                        .fixedSize()
+                        .foregroundStyle(.white.opacity(selected ? 1 : 0.88))
                     if let description, !description.isEmpty {
                         Text(description)
                             .font(.system(size: 11))
-                            .foregroundStyle(.white.opacity(0.45))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
+                            .foregroundStyle(.white.opacity(0.55))
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .help(description ?? "")
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 8)

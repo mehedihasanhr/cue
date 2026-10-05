@@ -141,4 +141,15 @@ final class AgentSessionBookTests: XCTestCase {
         book.apply(AgentEvent(agent: .claude, name: .postToolUse, sessionID: "s1", toolName: "ExitPlanMode"), at: now)
         XCTAssertEqual(book.sessions.first?.state, .running)
     }
+
+    func testAPermissionIsSettledByItsOwnToolRunning() throws {
+        let input: JSONValue = .object(["command": .string("npm test")])
+        let asked = AgentEvent(agent: .claude, name: .permissionRequest, sessionID: "s1", toolName: "Bash", toolInput: input)
+        let request = try XCTUnwrap(AgentRequest(asked, at: now))
+        XCTAssertTrue(request.isSettled(by: AgentEvent(agent: .claude, name: .postToolUse, sessionID: "s1", toolName: "Bash", toolInput: input)))
+        XCTAssertFalse(request.isSettled(by: AgentEvent(agent: .claude, name: .postToolUse, sessionID: "s1", toolName: "Bash",
+                                                        toolInput: .object(["command": .string("ls")]))))
+        XCTAssertFalse(request.isSettled(by: AgentEvent(agent: .claude, name: .postToolUse, sessionID: "s2", toolName: "Bash", toolInput: input)))
+        XCTAssertFalse(request.isSettled(by: AgentEvent(agent: .claude, name: .preToolUse, sessionID: "s1", toolName: "Bash", toolInput: input)))
+    }
 }
