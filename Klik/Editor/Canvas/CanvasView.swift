@@ -74,6 +74,9 @@ final class CanvasView: NSView, NSTextViewDelegate, NSUserInterfaceValidations {
         imageRect.offsetBy(dx: model.document.contentOffset.x, dy: model.document.contentOffset.y)
     }
 
+    /// Selections and handles in the editor's one accent, the same as the active tool.
+    static let accent = NSColor(EditorChrome.accent)
+
     // MARK: - Drawing
 
     override func draw(_ dirtyRect: NSRect) {
@@ -85,7 +88,7 @@ final class CanvasView: NSView, NSTextViewDelegate, NSUserInterfaceValidations {
         }
         drawBackdrop(document, context: context)
         renderer.drawContent(document, context: context)
-        renderer.drawAnnotations(document, draft: model.draft, context: context)
+        renderer.drawAnnotations(document, draft: model.draft, editingTextID: model.editingTextID, context: context)
 
         let lineScale = 1 / magnification
 
@@ -155,7 +158,7 @@ final class CanvasView: NSView, NSTextViewDelegate, NSUserInterfaceValidations {
     private func drawSelection(_ annotation: Annotation, context: CGContext, lineScale: CGFloat) {
         context.saveGState()
         context.translateBy(x: model.document.contentOffset.x, y: model.document.contentOffset.y)
-        context.setStrokeColor(NSColor.controlAccentColor.cgColor)
+        context.setStrokeColor(CanvasView.accent.cgColor)
         context.setLineWidth(lineScale)
 
         if annotation.hasEndpoints {
@@ -175,7 +178,7 @@ final class CanvasView: NSView, NSTextViewDelegate, NSUserInterfaceValidations {
                 width = 2
             }
             context.saveGState()
-            context.setStrokeColor(NSColor.controlAccentColor.withAlphaComponent(0.35).cgColor)
+            context.setStrokeColor(CanvasView.accent.withAlphaComponent(0.35).cgColor)
             context.setLineWidth(width + 10 * lineScale)
             context.setLineCap(.round)
             context.addPath(path)
@@ -183,7 +186,7 @@ final class CanvasView: NSView, NSTextViewDelegate, NSUserInterfaceValidations {
             context.restoreGState()
 
             for point in [a, b] {
-                drawHandle(at: point, context: context, lineScale: lineScale, fill: .controlAccentColor, stroke: .white)
+                drawHandle(at: point, context: context, lineScale: lineScale, fill: CanvasView.accent, stroke: .white)
             }
             if let middle = model.bendHandle(of: annotation) {
                 drawHandle(at: middle, context: context, lineScale: lineScale, radius: 4, fill: .systemPink, stroke: .white)
@@ -211,14 +214,14 @@ final class CanvasView: NSView, NSTextViewDelegate, NSUserInterfaceValidations {
                 context.move(to: CGPoint(x: bounds.midX, y: bounds.minY))
                 context.addLine(to: CGPoint(x: knob.x, y: knob.y + 4.5 * lineScale))
                 context.strokePath()
-                drawHandle(at: knob, context: context, lineScale: lineScale, radius: 4.5, fill: .controlAccentColor, stroke: .white)
+                drawHandle(at: knob, context: context, lineScale: lineScale, radius: 4.5, fill: CanvasView.accent, stroke: .white)
             }
         }
         context.restoreGState()
     }
 
     private func drawHandle(at point: CGPoint, context: CGContext, lineScale: CGFloat, radius: CGFloat = 4.5,
-                            fill: NSColor = .white, stroke: NSColor = .controlAccentColor) {
+                            fill: NSColor = .white, stroke: NSColor = CanvasView.accent) {
         let radius = radius * lineScale
         let rect = CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2)
         context.setFillColor(fill.cgColor)
@@ -439,8 +442,9 @@ final class CanvasView: NSView, NSTextViewDelegate, NSUserInterfaceValidations {
             editor.textContainer?.lineFragmentPadding = 0
             editor.textContainer?.widthTracksTextView = false
             editor.textContainer?.containerSize = CGSize(width: 4000, height: 4000)
-            editor.isHorizontallyResizable = true
-            editor.isVerticallyResizable = true
+            // The model alone sizes the editor, to the box it measures from the text.
+            editor.isHorizontallyResizable = false
+            editor.isVerticallyResizable = false
             editor.string = text
             addSubview(editor)
             textEditor = editor
