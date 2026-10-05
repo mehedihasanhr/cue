@@ -1203,9 +1203,10 @@ private struct PlanCard: View {
 
 /// AskUserQuestion: each question with its options. A single question with a single
 /// answer goes as soon as an option is clicked; otherwise Submit sends them all.
-/// AskUserQuestion: each question, a short line of context, and its options as
-/// radio (or check) rows in one quiet list. Nothing is sent until Continue, so a
-/// pick can be changed; the terminal can still answer instead.
+/// AskUserQuestion, one question at a time the way the CLI asks: the question in
+/// full and its options as radio (or check) rows. A single choice moves on to the
+/// next question by itself; Back returns to change one. Nothing is sent until the
+/// last question is answered and Continue pressed; the terminal can still answer.
 private struct QuestionsCard: View {
     let request: AgentRequest
     let questions: [AgentRequest.Question]
@@ -1214,11 +1215,18 @@ private struct QuestionsCard: View {
     @State private var chosen: [String: [String]] = [:]
     @State private var other: [String: String] = [:]
     @State private var typing: String?
+    /// The question on screen.
+    @State private var step = 0
+
+    private var current: AgentRequest.Question { questions[min(step, questions.count - 1)] }
+    private var isLast: Bool { step >= questions.count - 1 }
+    private func answered(_ question: AgentRequest.Question) -> Bool { !(chosen[question.question] ?? []).isEmpty }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(questions) { question in
+            let question = current
                 VStack(alignment: .leading, spacing: 5) {
+                    if questions.count > 1 { progress }
                     prompt(question)
                     VStack(spacing: 0) {
                         ForEach(Array(question.options.enumerated()), id: \.element.id) { index, option in
@@ -1233,16 +1241,48 @@ private struct QuestionsCard: View {
                     }
                     .background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
-            }
+                .id(step)
+                .transition(.opacity)
             HStack(spacing: 6) {
+                if step > 0 {
+                    AnswerButton("Back", role: .quiet) { go(to: step - 1) }
+                }
                 Spacer(minLength: 0)
                 AnswerButton("Answer in Terminal", role: .quiet) { store.answerInTerminal(request) }
                     .help("Leave this to the terminal; the agent waits there")
-                AnswerButton("Continue", role: .primary) { submit() }
-                    .disabled(!complete)
-                    .opacity(complete ? 1 : 0.4)
+                if isLast {
+                    AnswerButton("Continue", role: .primary) { submit() }
+                        .disabled(!complete)
+                        .opacity(complete ? 1 : 0.4)
+                } else {
+                    AnswerButton("Next", role: .primary) { go(to: step + 1) }
+                        .disabled(!answered(question))
+                        .opacity(answered(question) ? 1 : 0.4)
+                }
             }
         }
+    }
+
+    /// "2 of 3" and a dot per question: filled once answered, brighter for this one.
+    private var progress: some View {
+        HStack(spacing: 6) {
+            Text("\(step + 1) of \(questions.count)")
+                .font(.system(size: 10.5, weight: .medium))
+                .monospacedDigit()
+                .foregroundStyle(.white.opacity(0.45))
+            HStack(spacing: 4) {
+                ForEach(Array(questions.enumerated()), id: \.offset) { index, question in
+                    Circle()
+                        .fill(.white.opacity(index == step ? 0.9 : answered(question) ? 0.45 : 0.15))
+                        .frame(width: 5, height: 5)
+                }
+            }
+        }
+    }
+
+    private func go(to index: Int) {
+        typing = nil
+        withAnimation(.easeOut(duration: 0.15)) { step = min(max(index, 0), questions.count - 1) }
     }
 
     private var separator: some View {
@@ -1298,6 +1338,17 @@ private struct QuestionsCard: View {
             labels = [label]
         }
         chosen[question.question] = labels
+        // One choice made: on to the next question, as the CLI does.
+        if !question.multiSelect, !isLast { advanceSoon() }
+    }
+
+    /// A beat to see the pick land before the next question replaces it.
+    private func advanceSoon() {
+        let from = step
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(220))
+            if step == from { go(to: from + 1) }
+        }
     }
 
     private func useOther(in question: AgentRequest.Question) {
@@ -1307,6 +1358,7 @@ private struct QuestionsCard: View {
         var labels = (chosen[question.question] ?? []).filter { label in question.options.contains { $0.label == label } }
         if question.multiSelect { labels.append(text) } else { labels = [text] }
         chosen[question.question] = labels
+        if !question.multiSelect, !isLast { advanceSoon() }
     }
 
     private func submit() {
