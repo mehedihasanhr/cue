@@ -24,7 +24,10 @@ struct EditorView: View {
     /// different length from one day to another, and a column of controls that is laid out
     /// for one width looked loose at the other. A slider's track and its name need about
     /// three hundred points, plus the tool rail down the column's left edge.
-    static let inspectorWidth: CGFloat = 352
+    static let inspectorWidth: CGFloat = 300
+
+    /// The dark gap between two panels, and round the canvas.
+    static let seam: CGFloat = 6
 
     var body: some View {
         Group {
@@ -52,62 +55,62 @@ struct EditorView: View {
         }
     }
 
-    /// Picture on the left, its settings on the right, time along the bottom.
+    /// The tools down the left, the picture and its time in the middle, the settings on
+    /// the right.
     ///
-    /// Three bands, top to bottom. The upper one is the picture and the inspector side by
-    /// side, the same height, with the tools as a rail down the inspector's left edge —
-    /// between the picture and the settings — so choosing a tool and seeing what it opened
-    /// happen side by side in one column. Under it, one slim transport bar across the
-    /// full width; under that, the timeline, also full width, because its width is what
-    /// decides how finely an edit can be placed and nothing up here earns a share of it.
+    /// Under a slim title strip, three columns. The rail of tools runs the full height of
+    /// the window at its left edge. The middle column is the canvas — the picture in a
+    /// dark well, with its own floating controls — and under it the transport and the
+    /// timeline, which take the middle column's width rather than the window's. The
+    /// inspector runs the full height at the right, Export at its head, because Export is
+    /// the end of everything the column sets up.
     ///
-    /// The previous arrangement ran a tool rail down the far left and stacked the panel
-    /// beside it, with the transport in a column of its own under the panel: the timeline
-    /// lost the panel's width to a block that was mostly an empty gap, and the picture sat
-    /// boxed in between two strips of chrome.
+    /// Seams rather than lines: each column is a flat panel and the window's darker
+    /// background shows between them, so the layout is drawn by the gaps.
     private func loaded(_ model: EditorModel) -> some View {
         VStack(spacing: 0) {
             // The window's own title bar is transparent and empty — `EditorWindowController`
-            // makes it so — and this is the top of the window: the name, and Export.
+            // makes it so — and this is the top of the window: the traffic lights and the
+            // name.
             EditorToolbar(model: model,
                           exports: exports,
                           showsInspector: $session.showsInspector) { session.isExporting = true }
 
-            HStack(spacing: 0) {
-                PreviewPane(model: model)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            HStack(spacing: Self.seam) {
+                EditorRail(model: model)
+
+                VStack(spacing: 0) {
+                    PreviewPane(model: model) { session.present(true) }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding([.top, .trailing, .bottom], Self.seam)
+                        .background(StudioTheme.Surface.seam)
+
+                    TransportBar(model: model)
+                    TimelineStrip(model: model)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: TimelineStrip.height(for: model.timeline,
+                                                            hasSound: model.waveform.state != .unavailable))
+                }
+                .frame(maxWidth: .infinity)
 
                 if session.showsInspector {
-                    // Splitter and column come and go together, so a hidden inspector leaves
-                    // no stray hairline at the window's edge.
-                    HStack(spacing: 0) {
-                        StudioDivider(axis: .vertical)
-                        InspectorPanel(model: model)
-                            .frame(width: Self.inspectorWidth, alignment: .leading)
-                            // A fixed width is a proposal, not a promise: a control that will
-                            // not shrink below it draws straight out over the picture, and —
-                            // centred in the frame — slides sideways every time a number in
-                            // the panel grows a digit. Pinned to the leading edge and clipped,
-                            // the column is a column whatever it is given.
-                            .clipped()
-                    }
-                    .transition(.move(edge: .trailing))
+                    InspectorPanel(model: model) { session.isExporting = true }
+                        .frame(width: Self.inspectorWidth, alignment: .leading)
+                        // A fixed width is a proposal, not a promise: a control that will
+                        // not shrink below it draws straight out over the picture, and —
+                        // centred in the frame — slides sideways every time a number in
+                        // the panel grows a digit. Pinned to the leading edge and clipped,
+                        // the column is a column whatever it is given.
+                        .clipped()
+                        .transition(.move(edge: .trailing))
                 }
             }
             // The picture is the thing that moves when the column comes or goes, so the
             // two are animated as one change rather than the column sliding over a picture
             // that has already jumped to its new size.
             .animation(StudioMotion.shape, value: session.showsInspector)
-
-            StudioDivider()
-            TransportBar(model: model) { session.present(true) }
-            StudioDivider()
-
-            TimelineStrip(model: model)
-                .frame(maxWidth: .infinity)
-                .frame(height: TimelineStrip.height(for: model.timeline,
-                                                    hasSound: model.waveform.state != .unavailable))
         }
+        .background(StudioTheme.Surface.seam)
         // Asking for a tool is asking to see its settings. However it was asked for — a
         // rail tab, the View menu, its shortcut, a Frame menu item that needs its panel — a
         // hidden inspector comes back for it, rather than the request landing in a column

@@ -49,9 +49,10 @@ struct PointerStyleSection: View {
                 // One calm mid-tone, like a desktop: dark enough for a white pointer to
                 // stand out on and light enough for a black one. A hard diagonal of light
                 // and dark showed both, but read as a bevelled button.
-                LinearGradient(colors: [Color(red: 0.66, green: 0.72, blue: 0.84),
-                                        Color(red: 0.5, green: 0.56, blue: 0.72)],
-                               startPoint: .topLeading, endPoint: .bottomTrailing)
+                // Neutral rather than slate blue: a column of tinted tiles was the loudest
+                // thing in a grey panel.
+                LinearGradient(colors: [Color(white: 0.46), Color(white: 0.38)],
+                               startPoint: .top, endPoint: .bottom)
                 preview(appearance)
             }
         }

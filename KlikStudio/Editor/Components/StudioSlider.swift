@@ -42,6 +42,14 @@ struct StudioSlider: View {
     var valueText: ((Double) -> String)?
     /// Told at the start and end of a gesture, which is how one drag becomes one undo.
     var onEditingChanged: (Bool) -> Void
+    /// Drawn as a scrub field — a filled row whose set part is a lighter grey ending in a
+    /// thin white bar, its name and value written inside it — instead of a track and knob.
+    var scrub: Scrub?
+
+    struct Scrub {
+        let title: String
+        let value: String
+    }
 
     init(value: Binding<Double>,
          in range: ClosedRange<Double>,
@@ -50,7 +58,9 @@ struct StudioSlider: View {
          defaultValue: Double? = nil,
          reset: (() -> Void)? = nil,
          valueText: ((Double) -> String)? = nil,
+         scrub: Scrub? = nil,
          onEditingChanged: @escaping (Bool) -> Void = { _ in }) {
+        self.scrub = scrub
         _value = value
         self.range = range
         self.step = step
@@ -74,7 +84,7 @@ struct StudioSlider: View {
         case resetting
     }
 
-    private var metrics: SliderMetrics { SliderMetrics(size) }
+    private var metrics: SliderMetrics { scrub == nil ? SliderMetrics(size) : .scrub }
 
     private var fraction: Double { SliderMath.fraction(of: value, in: range) }
 
@@ -88,15 +98,22 @@ struct StudioSlider: View {
             let knobX = SliderMath.knobOffset(fraction: fraction, trackLength: width, knob: metrics.knob)
 
             ZStack(alignment: .leading) {
-                SliderTrack(metrics: metrics,
-                            fillFrom: 0,
-                            fillTo: knobX + metrics.knob / 2,
-                            isLit: isHovering || drag != nil)
+                if let scrub {
+                    ScrubFace(scrub: scrub,
+                              fillTo: knobX + metrics.knob,
+                              isLit: isHovering || drag != nil,
+                              isFocused: isFocused)
+                } else {
+                    SliderTrack(metrics: metrics,
+                                fillFrom: 0,
+                                fillTo: knobX + metrics.knob / 2,
+                                isLit: isHovering || drag != nil)
 
-                SliderKnob(metrics: metrics,
-                           isDragging: drag != nil,
-                           isFocused: isFocused)
-                    .offset(x: knobX)
+                    SliderKnob(metrics: metrics,
+                               isDragging: drag != nil,
+                               isFocused: isFocused)
+                        .offset(x: knobX)
+                }
             }
             .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
@@ -147,7 +164,7 @@ struct StudioSlider: View {
                     let centre = knobX + metrics.knob / 2
                     // A little slack around the knob, because a 14-point circle is a
                     // small thing to hit exactly and missing it should not jump the value.
-                    let onKnob = abs(gesture.startLocation.x - centre) <= metrics.knob / 2 + 3
+                    let onKnob = abs(gesture.startLocation.x - centre) <= metrics.knob / 2 + (scrub == nil ? 3 : 6)
                     if onKnob, canReset, NSApp.currentEvent?.clickCount == 2 {
                         drag = .resetting
                         resetToDefault()
@@ -205,12 +222,9 @@ struct StudioSlider: View {
 
 // MARK: - A labelled slider
 
-/// A slider with its name: the name on the left, the value on the right in secondary
-/// monospaced digits, the track its own full width underneath.
-///
-/// Two lines rather than one, because side by side a name column and a number column leave
-/// the track about half the panel, which is half the precision. The value brightens while
-/// the slider is being moved, so the number you are setting is the one that stands out.
+/// A slider with its name, as one scrub row: the name and value written inside a filled
+/// field whose set part is lighter. The whole width of the panel is the track, so nothing
+/// is lost to a name column beside it.
 struct StudioLabeledSlider: View {
     let title: String
     @Binding var value: Double
@@ -240,33 +254,67 @@ struct StudioLabeledSlider: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: StudioTheme.Spacing.withinControl) {
-            HStack(alignment: .firstTextBaseline, spacing: StudioTheme.Spacing.regular) {
-                Text(title)
-                    .font(.system(size: StudioTheme.FontSize.label))
-                    .foregroundStyle(StudioTheme.Palette.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: StudioTheme.Spacing.regular)
-                Text(format(value))
-                    .font(.system(size: StudioTheme.FontSize.value).monospacedDigit())
-                    .foregroundStyle(isEditing ? StudioTheme.Palette.textPrimary : StudioTheme.Palette.textSecondary)
+        // One filled row with the name and value written inside it, the set part a
+        // lighter grey: the row is the slider, so a column of them is a column of rows the
+        // same height as the switches and pop-ups around them.
+        StudioSlider(value: $value,
+                     in: range,
+                     step: step,
+                     defaultValue: defaultValue,
+                     valueText: format,
+                     scrub: .init(title: title, value: format(value))) { editing in
+            isEditing = editing
+            onEditingChanged(editing)
+        }
+        .accessibilityLabel(title)
+    }
+}
+
+/// A scrub slider's face: the field, its set part, the bar at the end of it, and the name
+/// and value over both.
+struct ScrubFace: View {
+    let scrub: StudioSlider.Scrub
+    let fillTo: CGFloat
+    var isLit = false
+    var isFocused = false
+
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: InspectorMetrics.fieldRadius, style: .continuous)
+        ZStack(alignment: .leading) {
+            shape.fill(isLit ? StudioTheme.Surface.fieldHover : StudioTheme.Surface.field)
+            Rectangle()
+                .fill(StudioTheme.Surface.scrubFill.opacity(isLit ? 1 : 0.9))
+                .frame(width: max(0, fillTo))
+            // The bar the value ends at: the one bright mark in the row.
+            RoundedRectangle(cornerRadius: 1, style: .continuous)
+                .fill(.white)
+                .frame(width: 2, height: 14)
+                .offset(x: max(0, fillTo - 2))
+            HStack(spacing: 8) {
+                Text(scrub.title.uppercased())
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .tracking(0.5)
+                    .foregroundStyle(StudioTheme.Surface.label.opacity(0.85))
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Text(scrub.value)
+                    .font(.system(size: 11.5).monospacedDigit())
+                    .foregroundStyle(isLit ? Color(white: 0.92) : StudioTheme.Surface.value)
                     .lineLimit(1)
                     .fixedSize()
             }
-            .opacity(isEnabled ? 1 : 0.55)
-            .accessibilityHidden(true)
-
-            StudioSlider(value: $value,
-                         in: range,
-                         step: step,
-                         defaultValue: defaultValue,
-                         valueText: format) { editing in
-                isEditing = editing
-                onEditingChanged(editing)
-            }
-            .accessibilityLabel(title)
+            .padding(.horizontal, InspectorMetrics.fieldInset)
+            .allowsHitTesting(false)
         }
-        .animation(StudioMotion.state, value: isEditing)
+        .clipShape(shape)
+        .overlay {
+            shape.strokeBorder(StudioTheme.Palette.focusRing, lineWidth: 2)
+                .opacity(isFocused ? 1 : 0)
+        }
+        .opacity(isEnabled ? 1 : 0.5)
+        .animation(StudioMotion.hover, value: isLit)
     }
 }
 
@@ -277,6 +325,15 @@ struct SliderMetrics {
     let track: CGFloat
     let knob: CGFloat
     let height: CGFloat
+
+    /// A scrub field: the whole row is the track, and the knob is the two-point bar.
+    static let scrub = SliderMetrics(track: InspectorMetrics.scrubHeight, knob: 2, height: InspectorMetrics.scrubHeight)
+
+    init(track: CGFloat, knob: CGFloat, height: CGFloat) {
+        self.track = track
+        self.knob = knob
+        self.height = height
+    }
 
     init(_ size: StudioTheme.ControlSize) {
         switch size {

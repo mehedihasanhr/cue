@@ -1,3 +1,4 @@
+import RecordKit
 import SwiftUI
 import TimelineKit
 
@@ -13,30 +14,39 @@ import TimelineKit
 /// highlighted tool.
 struct InspectorPanel: View {
     let model: EditorModel
+    /// Opens the export sheet. The panel's head is where Export lives: it is the end of
+    /// everything the column below it sets up.
+    var export: () -> Void = {}
     @State private var state = InspectorState()
 
     var body: some View {
-        HStack(spacing: 0) {
-            ToolRail(model: model)
-            StudioDivider(axis: .vertical)
-            VStack(spacing: 0) {
+        VStack(spacing: 0) {
+            ExportHeadButton(action: export)
+                .padding(.horizontal, SidebarMetrics.contentInset)
+                .padding(.top, 10)
+                .padding(.bottom, 4)
+            // Named only while a selection owns the panel, because that is when the panel
+            // has stopped being about the chosen tool and needs a way back out. Otherwise
+            // every section names itself.
+            if selectionOwnsPanel {
                 header
-                ScrollView {
-                    VStack(alignment: .leading, spacing: SidebarSpacing.betweenSections) {
-                        content
-                    }
-                    .padding(.horizontal, SidebarMetrics.contentInset)
-                    .padding(.bottom, 8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                // No scroller. The panel is a column of controls, not a document: the bar
-                // appears over the right-hand end of every slider in it, and the length of
-                // the panel is not something anybody needs reporting.
-                .scrollIndicators(.never)
-                .studioScrollEdges()
+                StudioDivider(isSection: true)
             }
+            ScrollView {
+                VStack(alignment: .leading, spacing: SidebarSpacing.betweenSections) {
+                    content
+                }
+                .padding(.horizontal, SidebarMetrics.contentInset)
+                .padding(.bottom, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            // No scroller. The panel is a column of controls, not a document: the bar
+            // appears over the right-hand end of every slider in it, and the length of
+            // the panel is not something anybody needs reporting.
+            .scrollIndicators(.never)
+            .studioScrollEdges()
         }
-        .studioSurface()
+        .background(StudioTheme.Surface.panel)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(heading.title) settings")
     }
@@ -101,10 +111,11 @@ struct InspectorPanel: View {
         HStack(spacing: 8) {
             Image(systemName: heading.symbol)
                 .font(.system(size: 12))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 18)
+                .foregroundStyle(.white)
+                .frame(width: 16)
             Text(heading.title)
                 .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white)
                 .lineLimit(1)
             Spacer(minLength: 8)
             if selectionOwnsPanel {
@@ -227,4 +238,44 @@ final class InspectorState {
     var backgroundTabOverride: BackgroundTab?
     var showsAllGradients = false
     var showsAllSystemWallpapers = false
+}
+
+/// Export, as the head of the inspector: a raised neutral button with its shortcut beside
+/// the word. Plain enough not to pull the eye off the picture; it is the last thing you
+/// do, not the thing you look at while working.
+struct ExportHeadButton: View {
+    let action: () -> Void
+    @Environment(StudioSettings.self) private var settings
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 11.5, weight: .semibold))
+                Text("Export")
+                    .font(.system(size: 12.5, weight: .semibold))
+                if let shortcut = settings.editorShortcuts[.export]?.displayString {
+                    Text(shortcut)
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(StudioTheme.Surface.label)
+                }
+            }
+            .foregroundStyle(Color(white: 0.92))
+            .frame(maxWidth: .infinity)
+            .frame(height: 32)
+            .background(isHovering ? Color(white: 0x33 / 255) : StudioTheme.Surface.fieldHover,
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.07))
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(StudioPressStyle())
+        .onHover { isHovering = $0 }
+        .animation(StudioMotion.hover, value: isHovering)
+        .help("Export this as a video or a GIF")
+        .accessibilityLabel("Export")
+    }
 }

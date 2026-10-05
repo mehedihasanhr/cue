@@ -45,13 +45,13 @@ enum StudioTheme {
 
         /// A control at rest: a field, a secondary button, the trough of a segmented row.
         static let fill = dynamic(light: .black.withAlphaComponent(0.05),
-                                  dark: .white.withAlphaComponent(0.07))
+                                  dark: NSColor(white: 0x23 / 255, alpha: 1))
         /// The same control under the pointer.
         static let fillHover = dynamic(light: .black.withAlphaComponent(0.08),
-                                       dark: .white.withAlphaComponent(0.11))
+                                       dark: NSColor(white: 0x2A / 255, alpha: 1))
         /// The same control with the mouse down on it.
         static let fillPressed = dynamic(light: .black.withAlphaComponent(0.12),
-                                         dark: .white.withAlphaComponent(0.15))
+                                         dark: NSColor(white: 0x30 / 255, alpha: 1))
         /// A ghost control under the pointer: lighter than `fillHover`, because there was
         /// nothing there a moment ago and a full fill appearing reads as a flash.
         static let ghostHover = dynamic(light: .black.withAlphaComponent(0.06),
@@ -59,7 +59,7 @@ enum StudioTheme {
         /// The chosen segment, lifted out of its trough: white on light, a lighter grey on
         /// dark — the way a system segmented control draws it, without the bevel.
         static let raised = dynamic(light: .white,
-                                    dark: .white.withAlphaComponent(0.16))
+                                    dark: NSColor(white: 0x3A / 255, alpha: 1))
         /// A slider's trough and a switch that is off.
         static let track = dynamic(light: .black.withAlphaComponent(0.10),
                                    dark: .white.withAlphaComponent(0.13))
@@ -67,7 +67,7 @@ enum StudioTheme {
         /// The one-point edge around a control. Strong enough to find a field on the
         /// panel, faint enough that a column of them is not a grid of boxes.
         static let stroke = dynamic(light: .black.withAlphaComponent(0.09),
-                                    dark: .white.withAlphaComponent(0.08))
+                                    dark: .white.withAlphaComponent(0.025))
         /// The edge of something that has to be seen against anything: a colour swatch,
         /// which may be the exact colour of the panel behind it.
         static let strokeStrong = dynamic(light: .black.withAlphaComponent(0.16),
@@ -95,6 +95,42 @@ enum StudioTheme {
                                             .accessibilityHighContrastVibrantDark]) != nil ? dark : light
             })
         }
+    }
+
+    // MARK: - The editor's surfaces
+
+    /// The editor window's own colours: flat neutral greys, darkest at the seams.
+    ///
+    /// The editor is always dark (`EditorWindowController` says so), so these are plain
+    /// values rather than pairs: the window is a frame of near-black seams round a few
+    /// panels one step lighter, and every field on a panel one step lighter again. Three
+    /// steps, nothing between them, so a row, a panel and a gap are never confused.
+    enum Surface {
+        /// The seams: the gaps round the canvas and between the columns.
+        static let seam = Color(white: 0x14 / 255)
+        /// The panels: the rail, the inspector, the transport and the timeline.
+        static let panel = Color(white: 0x18 / 255)
+        /// A field on a panel: a row, a slider's trough, a button at rest.
+        static let field = Color(white: 0x23 / 255)
+        /// The same field under the pointer.
+        static let fieldHover = Color(white: 0x2A / 255)
+        /// A bar button at rest — a shade under a field, because it sits on the transport
+        /// rather than in a row.
+        static let control = Color(white: 0x20 / 255)
+        /// The part of a scrub slider that is set.
+        static let scrubFill = Color(white: 0x45 / 255)
+        /// The part of the timeline past the end of the edit.
+        static let beyondEnd = Color(white: 0x1F / 255)
+        /// The playhead and the timeline scale's fill.
+        static let playhead = Color(red: 0x0C / 255, green: 0x7C / 255, blue: 0xDD / 255)
+        /// The footage on the timeline.
+        static let clip = Color(red: 0x6F / 255, green: 0x38 / 255, blue: 0xE8 / 255)
+        /// The one light button in the window: Export.
+        static let primaryButton = Color(white: 0xF3 / 255)
+        /// A label in a row, a field's name.
+        static let label = Color(white: 0.7)
+        /// A row's value.
+        static let value = Color(white: 0.54)
     }
 
     // MARK: - Shape

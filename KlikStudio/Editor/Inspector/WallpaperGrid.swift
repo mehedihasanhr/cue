@@ -46,7 +46,7 @@ struct WallpaperGrid: View {
         let shown = state.showsAllGradients ? all : Array(all.prefix(collapsedCount))
 
         return VStack(alignment: .leading, spacing: 8) {
-            header("Wallpaper") {
+            header("Gradients") {
                 if all.count > collapsedCount {
                     SectionButton(title: state.showsAllGradients ? "Show less" : "Show all") {
                         withAnimation(StudioMotion.state) { state.showsAllGradients.toggle() }

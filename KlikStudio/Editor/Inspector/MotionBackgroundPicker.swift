@@ -78,9 +78,9 @@ struct MotionBackgroundPicker: View {
     // MARK: - Palettes
 
     private var palettes: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 30, maximum: 34), spacing: 8)],
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 21, maximum: 22), spacing: 6)],
                   alignment: .leading,
-                  spacing: 8) {
+                  spacing: 6) {
             ForEach(GradientPreset.allCases) { preset in
                 let colours = preset.colors.map(\.colorValue)
                 SwatchTile(isSelected: model.hasMovingBackground && animation.colors == colours,

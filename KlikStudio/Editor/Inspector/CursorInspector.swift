@@ -31,34 +31,46 @@ struct CursorInspector: View {
                                     format: { String(format: "%.1f×", $0) })
                     InspectorSlider(model: model, "Smoothing", systemImage: "scribble",
                                     value: style.binding(\.cursor.smoothing, "Smoothing"), range: 0...1)
-
-                    // Only offered when the recording actually kept one. A switch that says
-                    // "use the real pointer" on a recording that has no picture of one is a
-                    // switch that does nothing, and the user would have no way to tell.
-                    if model.hasRecordedPointer {
-                        InspectorSwitch("Use the recorded pointer",
-                                        isOn: style.binding(\.cursor.usesRecordedArtwork, "Recorded Pointer"))
-                            .disabled(model.timeline.cursor.appearance != .asRecorded)
-                            .help("Use the pointer from the recording. Only for the As recorded style. The other styles are drawings of their own.")
-                    }
                     InspectorSwitch("Motion blur", isOn: style.binding(\.cursor.motionBlur, "Motion Blur"))
-                    InspectorSwitch("Keep size while zoomed",
-                                    isOn: style.binding(\.cursor.sizeIsIndependentOfZoom, "Pointer Zoom"))
                 }
                 .disabled(!model.timeline.cursor.isVisible)
             }
             .inspectorSection("Pointer", systemImage: "cursorarrow.rays")
 
             PointerStyleSection(model: model)
-            shape
-            rest
             clicks
-            PointerSwaySection(model: model)
-            PointerSpotlightSection(model: model)
-            PointerMagnifierSection(model: model)
-            PointerLoopSection(model: model)
-            overTime
+
+            // How it behaves rather than how it looks: set once per kind of recording.
+            InspectorAdvancedGroup("pointer", contents: ["Rendering", "Shape", "At rest", "Sway", "Spotlight", "Magnifier", "Loop", "Over time"]) {
+                rendering
+                shape
+                rest
+                PointerSwaySection(model: model)
+                PointerSpotlightSection(model: model)
+                PointerMagnifierSection(model: model)
+                PointerLoopSection(model: model)
+                overTime
+            }
         }
+    }
+
+    /// Which picture of the pointer is drawn, and whether it keeps its size in a zoom.
+    private var rendering: some View {
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
+            // Only offered when the recording actually kept one. A switch that says "use
+            // the real pointer" on a recording that has no picture of one is a switch that
+            // does nothing, and the user would have no way to tell.
+            if model.hasRecordedPointer {
+                InspectorSwitch("Use the recorded pointer",
+                                isOn: style.binding(\.cursor.usesRecordedArtwork, "Recorded Pointer"))
+                    .disabled(model.timeline.cursor.appearance != .asRecorded)
+                    .help("Use the pointer from the recording. Only for the As recorded style. The other styles are drawings of their own.")
+            }
+            InspectorSwitch("Keep size while zoomed",
+                            isOn: style.binding(\.cursor.sizeIsIndependentOfZoom, "Pointer Zoom"))
+        }
+        .disabled(!model.timeline.cursor.isVisible)
+        .inspectorSection("Rendering", systemImage: "paintbrush.pointed")
     }
 
     /// Which pointer is drawn.

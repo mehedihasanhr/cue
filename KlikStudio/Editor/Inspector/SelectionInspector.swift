@@ -239,8 +239,8 @@ struct SelectionInspector: View {
                 }, style: .studio(.secondary, size: .small)) {
                     HStack(spacing: 6) {
                         Text("Set Speed")
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.system(size: 8, weight: .semibold))
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9, weight: .semibold))
                             .foregroundStyle(StudioTheme.Palette.textSecondary)
                     }
                 }

@@ -68,9 +68,11 @@ struct WebcamInspector: View {
 
             Group {
                 layout
-                framing
-                border
-                background
+                InspectorAdvancedGroup("camera", contents: ["Framing", "Border", "Background"]) {
+                    framing
+                    border
+                    background
+                }
             }
             .disabled(!webcam.isEnabled)
         }

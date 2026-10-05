@@ -20,17 +20,22 @@ struct FrameInspector: View {
         // and the rule that closes it. Adding a stack gap on top of that put 26 points
         // under every rule and none above it, which is the lopsided gap this column had.
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenSections) {
-            // First, because a look sets most of what is under it.
-            LooksSection(model: model)
-
+            // No Look section: looks are applied and saved from the Frame menu, and the
+            // panel opens on the background.
             BackgroundPicker(model: model, state: state)
 
-            window
             shape
-            WholeVideoZoomSection(model: model)
-            PerspectiveSection(model: model)
-            ColorGradeSection(model: model)
             if model.timeline.style.crop != nil { crop }
+
+            // Set once and left: behind one heading, so the panel opens on the three
+            // things nearly every edit touches.
+            InspectorAdvancedGroup("frame", contents: ["Window", "Border", "Zoom", "Perspective", "Colour"]) {
+                window
+                finish
+                WholeVideoZoomSection(model: model)
+                PerspectiveSection(model: model)
+                ColorGradeSection(model: model)
+            }
         }
     }
 
@@ -57,9 +62,6 @@ struct FrameInspector: View {
                                 value: style.binding(\.style.cornerRadius, "Corners"), range: 0...0.08)
                 InspectorSlider(model: model, "Shadow", systemImage: "shadow",
                                 value: style.binding(\.style.shadowOpacity, "Shadow"), range: 0...1)
-                InspectorSlider(model: model, "Softness", systemImage: "aqi.medium",
-                                value: style.binding(\.style.shadowRadius, "Shadow Softness"), range: 0...0.08)
-                border
             }
         }
         .inspectorSection("Shape", systemImage: "square.on.square") {
@@ -127,7 +129,18 @@ struct FrameInspector: View {
 
     // MARK: - Border
 
-    /// A line round the picture, inside its edge. Zero is off, and it starts off.
+    /// How the shadow falls and the line round the picture: the finishing touches, under
+    /// Advanced, beside the window.
+    private var finish: some View {
+        VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
+            InspectorSlider(model: model, "Shadow softness", systemImage: "aqi.medium",
+                            value: style.binding(\.style.shadowRadius, "Shadow Softness"), range: 0...0.08)
+            border
+        }
+        .inspectorSection("Border", systemImage: "square.dashed")
+    }
+
+    /// A line round the picture, outside its edge. Zero is off, and it starts off.
     private var border: some View {
         let hasBorder = model.timeline.style.borderWidth > 0
         return VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {

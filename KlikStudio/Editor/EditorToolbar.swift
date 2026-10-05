@@ -34,7 +34,7 @@ struct EditorToolbar: View {
     /// and no taller: this bar is the frame around the work, not part of it. The same
     /// height as the transport bar, so the two strips of chrome either side of the picture
     /// are one size.
-    static let height: CGFloat = 40
+    static let height: CGFloat = 34
 
     /// The gap between two controls in a cluster, and the room either side of the short
     /// rule between two clusters. Two numbers, used everywhere in the bar, so the spacing
@@ -55,13 +55,9 @@ struct EditorToolbar: View {
         .padding(.leading, Self.trafficLightInset)
         .padding(.trailing, SidebarMetrics.contentInset - 4)
         .frame(height: Self.height)
-        .background {
-            // Flat and dark, the way an editor's chrome is: the picture is the bright
-            // thing in this window and everything around it should recede from it.
-            Color.clear
-                .studioSurface()
-                .overlay(alignment: .bottom) { StudioDivider() }
-        }
+        // The window's seam colour, with no rule under it: the strip is the top edge of
+        // the frame the panels sit in, not a panel of its own.
+        .background(StudioTheme.Surface.seam)
         // The whole bar drags the window, the way a real title bar does — minus the
         // controls, which `Button` already claims.
         .background(WindowDragArea())
@@ -77,7 +73,8 @@ struct EditorToolbar: View {
     private var title: some View {
         HStack(spacing: 0) {
             Text(model.name)
-                .font(.system(size: 12))
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(StudioTheme.Surface.label)
             // The extension dimmed rather than dropped: it says what kind of thing
             // this is, without competing with what it is called.
             Text(".\(model.packageURL.pathExtension)")
@@ -93,22 +90,6 @@ struct EditorToolbar: View {
 
     @ViewBuilder
     private var trailing: some View {
-        GlyphButton(symbol: "folder", help: "Show this recording in the Finder") {
-            NSWorkspace.shared.activateFileViewerSelecting([model.packageURL])
-        }
-
-        clusterRule
-
-        GlyphButton(symbol: "arrow.uturn.backward",
-                    help: model.document.undoName.map { "Undo \($0)" } ?? "Undo",
-                    isEnabled: model.document.canUndo) { model.undo() }
-
-        GlyphButton(symbol: "arrow.uturn.forward",
-                    help: "Redo",
-                    isEnabled: model.document.canRedo) { model.redo() }
-
-        clusterRule
-
         // Spelled out rather than left as a glyph. The edits live in the recording and
         // come back when it is opened again, which is worth a word: a downward arrow in
         // a row of grey icons reads as "download" to most people, and the one control
@@ -125,7 +106,7 @@ struct EditorToolbar: View {
         // A secondary button while there is something to save; a ghost — just the word —
         // once there is not, so "Saved" reads as a state rather than as a button waiting
         // to be pressed.
-        .buttonStyle(.studio(saveIsPressable(saving) ? .secondary : .ghost))
+        .buttonStyle(.studio(saveIsPressable(saving) ? .secondary : .ghost, size: .small))
         .disabled(!saveIsPressable(saving))
         // ⌘S is File › Save's, in the menu bar, where it answers whatever has the keyboard.
         .animation(StudioMotion.state, value: saving)
@@ -136,9 +117,6 @@ struct EditorToolbar: View {
         // Where a running export lives: in the chrome, not in a modal sheet. Nothing at
         // all when nothing is exporting.
         ExportStatusPill(jobs: exports)
-
-        StudioButton("Export", systemImage: "square.and.arrow.up", variant: .primary, action: export)
-            .help("Export this as a video or a GIF")
 
         clusterRule
 

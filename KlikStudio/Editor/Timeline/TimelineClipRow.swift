@@ -42,6 +42,24 @@ struct TimelineClipRow: View {
 
     private func isSelected(_ clip: Clip) -> Bool { model.isSelected(.clip(clip.id)) }
 
+    private func endMarks(width: CGFloat) -> some View {
+        HStack {
+            mark
+            Spacer(minLength: 0)
+            mark
+        }
+        .padding(.horizontal, 5)
+        .frame(width: width, height: height)
+        .opacity(width > 24 ? 1 : 0)
+        .allowsHitTesting(false)
+    }
+
+    private var mark: some View {
+        RoundedRectangle(cornerRadius: 1, style: .continuous)
+            .fill(.white.opacity(0.9))
+            .frame(width: 2, height: min(14, height * 0.45))
+    }
+
     // MARK: - A clip
 
     private func clipBody(_ clip: Clip, at index: Int) -> some View {
@@ -50,21 +68,20 @@ struct TimelineClipRow: View {
         let width = max(4, clip.duration.seconds * viewport.pointsPerSecond)
 
         let isDragged = reorder?.id == clip.id
-        return TimelineChipBackground(tint: TimelinePalette.clip, isSelected: isSelected(clip))
+        return TimelineChipBackground(tint: StudioTheme.Surface.clip, isSelected: isSelected(clip), isPrimary: true)
             .overlay {
+                // A solid bar, the way the footage reads at a glance; a title card says
+                // what it says.
                 if let card = clip.title {
                     titleFace(card, width: width)
-                } else {
-                    filmstrip(clip, left: left, width: width)
                 }
             }
-            // The ruler's lines, only where there are no pictures to carry the eye: over
-            // a filmstrip they are one more set of vertical lines among the pictures' own
-            // edges.
-            .overlay { if !model.thumbnails.isAvailable { marks(left: left, width: width) } }
+            // A short white bar inside each end, always: the ends are where a clip is
+            // trimmed, and they say so before the pointer finds them.
+            .overlay { endMarks(width: width) }
             .frame(width: width, height: height)
-            .overlay { badge(clip, width: width) }
-            .overlay { sourceTimes(clip, width: width) }
+            // Its length and speed on hover, where the plain bar has nothing to say.
+            .help(Timecode.length(clip.duration) + (clip.speed == 1 ? "" : " at \(clip.speed.formatted())×"))
             // A clip that holds has no in-point to move, only a length — so only its far
             // end has a grip, and that grip makes it longer or shorter.
             .overlay(alignment: .leading) {
@@ -95,68 +112,6 @@ struct TimelineClipRow: View {
             .position(x: left + width / 2, y: height / 2)
     }
 
-    /// The clip's length and speed, as a small pill in its top-left corner.
-    ///
-    /// It was centred on the clip, a wide dark lozenge sitting in the middle of the
-    /// pictures — the one place on the lane the eye goes to *see* the footage. In the corner
-    /// it reads the way a zoom chip's scale does: a small fact about the piece, out of the
-    /// way of the piece itself, and it stays put under a trim of the far end.
-    ///
-    /// Offered longest first, like every chip's words (see `TimelineChipLabel`): the length
-    /// and the speed, then the length alone, then nothing — never a pill cut in half.
-    private func badge(_ clip: Clip, width: Double) -> some View {
-        let grip = TimelineLayout.gripBar(forChipWidth: width)
-        let room = max(0, TimelineLayout.labelRoom(forChipWidth: width) - 4)
-        return ViewThatFits(in: .horizontal) {
-            pill { details(clip) }
-            pill { Text(Timecode.length(clip.duration)) }
-            Color.clear.frame(width: 0, height: 0)
-        }
-        .frame(width: room, alignment: .leading)
-        .padding(.leading, grip + 4)
-        .padding(.top, 4)
-        .frame(width: width, height: height, alignment: .topLeading)
-    }
-
-    /// Dark glass and white type, the same on pictures, on a plain chip, and in either
-    /// appearance — white on a white web page is nothing, so the words bring their own
-    /// surface.
-    private func pill(@ViewBuilder _ content: () -> some View) -> some View {
-        content()
-            .font(.system(size: 10, weight: .semibold))
-            .monospacedDigit()
-            .foregroundStyle(.white)
-            .lineLimit(1)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(.black.opacity(0.45), in: Capsule())
-            .fixedSize()
-    }
-
-    /// The clip's length, and its speed as a menu — or, for a clip that holds, what it
-    /// holds, since it has no speed to change.
-    @ViewBuilder
-    private func details(_ clip: Clip) -> some View {
-        if !clip.isFootage {
-            HStack(spacing: 4) {
-                Image(systemName: clip.isTitle ? "textformat" : "snowflake")
-                    .font(.system(size: 9, weight: .semibold))
-                Text(clip.isTitle ? "Title" : "Freeze")
-                Text(Timecode.length(clip.duration))
-            }
-        } else {
-            HStack(spacing: 5) {
-                Text(Timecode.length(clip.duration))
-                // A hairline between the two facts, so "34s" and "1×" do not run together
-                // into one number.
-                Rectangle()
-                    .fill(.white.opacity(0.35))
-                    .frame(width: 1, height: 9)
-                SpeedMenu(model: model, clip: clip)
-            }
-        }
-    }
-
     /// A title's own words, in place of pictures of footage it has none of.
     private func titleFace(_ card: TitleCard, width: Double) -> some View {
         let words = card.title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -169,110 +124,6 @@ struct TimelineClipRow: View {
             .padding(.bottom, 4)
             .opacity(width > 90 ? 1 : 0)
             .allowsHitTesting(false)
-    }
-
-    /// Pictures of what the clip shows, one every so often along it.
-    ///
-    /// Inside a frame of the clip's own colour, so it still reads as the orange clip it
-    /// is, and under a shade that deepens towards the bottom, where the times sit. Only
-    /// the pictures on screen are drawn or asked for.
-    private func filmstrip(_ clip: Clip, left: Double, width: Double) -> some View {
-        // A clip of a movie brought in shows that movie's pictures.
-        let thumbnails = model.thumbnails(for: clip)
-        let inset = 2.0
-        let slot = max(24, (height - inset * 2) * thumbnails.aspect)
-        let pointsPerSecond = viewport.pointsPerSecond
-        let visibleWidth = viewport.width
-        // Read here rather than inside the canvas, so a picture arriving redraws this.
-        let version = thumbnails.version
-        return Canvas { context, size in
-            _ = version
-            let from = max(0, -left)
-            let to = min(width, visibleWidth - left)
-            guard to > from, pointsPerSecond > 0 else { return }
-            let spacing = slot / pointsPerSecond * clip.speed
-            let frame = CGRect(x: inset, y: inset, width: size.width - inset * 2, height: size.height - inset * 2)
-            context.clip(to: Path(roundedRect: frame, cornerRadius: max(2, radius - inset), style: .continuous))
-            for index in Int(from / slot)...Int(to / slot) {
-                let x = inset + Double(index) * slot
-                guard x < size.width - inset else { break }
-                // The picture from the middle of the stretch it stands for — which, for a
-                // freeze frame, is the one frame it holds.
-                let middle = min(width, x + slot / 2)
-                let source = clip.isStill
-                    ? clip.sourceStart.seconds
-                    : clip.sourceStart.seconds + middle / pointsPerSecond * clip.speed
-                let latest = clip.isStill ? source : clip.sourceEnd.seconds - 0.05
-                guard let image = thumbnails.image(near: min(source, latest),
-                                                   every: max(spacing, 0.05)) else { continue }
-                context.draw(Image(decorative: image, scale: 2),
-                             in: CGRect(x: x, y: inset, width: slot, height: size.height - inset * 2))
-            }
-            context.fill(Path(frame), with: .linearGradient(
-                Gradient(colors: [.black.opacity(0.12), .black.opacity(0.55)]),
-                startPoint: CGPoint(x: 0, y: inset), endPoint: CGPoint(x: 0, y: size.height - inset)))
-        }
-        .frame(width: width, height: height)
-        .allowsHitTesting(false)
-    }
-
-    /// A faint line at every mark on the ruler, carried down into the footage so a cut
-    /// can be lined up against the time above it without reading the numbers.
-    ///
-    /// Only the marks on screen are built, as one path: a clip zoomed far in is hundreds of
-    /// thousands of points wide, and it is the part in view that needs lines.
-    private func marks(left: Double, width: Double) -> some View {
-        let step = TimelineRuler.step(forPointsPerSecond: viewport.pointsPerSecond)
-        let visible = viewport.visibleSeconds
-        let from = max(viewport.seconds(at: left), visible.lowerBound)
-        let to = min(viewport.seconds(at: left + width), visible.upperBound)
-        let path = Path { path in
-            guard to > from else { return }
-            var second = (from / step).rounded(.up) * step
-            while second < to {
-                let x = viewport.x(forSeconds: second) - left
-                if x > 1, x < width - 1 {
-                    path.addRect(CGRect(x: x, y: 0, width: 1, height: height))
-                }
-                second += step
-            }
-        }
-        return path
-            .fill(.white.opacity(0.13))
-            .frame(width: width, height: height, alignment: .topLeading)
-            .allowsHitTesting(false)
-    }
-
-    /// Where this clip sits in the recording, at the ends where a trim moves it — or, for a
-    /// clip of a movie brought in, in that movie, with the movie's name so the two cannot
-    /// be read as the same clock.
-    private func sourceTimes(_ clip: Clip, width: Double) -> some View {
-        let file = model.mediaName(of: clip).map { "\($0) · " } ?? ""
-        return HStack {
-            if clip.isStill {
-                Text("\(file)Holds \(Timecode.short(clip.sourceStart))")
-                    .lineLimit(1)
-                Spacer()
-            } else if clip.isFootage {
-                Text(file + Timecode.short(clip.sourceStart))
-                    .lineLimit(1)
-                    .truncationMode(.head)
-                Spacer()
-                Text(Timecode.short(clip.sourceEnd))
-            }
-        }
-        .font(.system(size: 9, design: .monospaced))
-        .foregroundStyle(.white.opacity(0.7))
-        // Clear of the handles, and pinned to the two ends rather than centred, so each
-        // number stays under the edge it describes while that edge is dragged.
-        .padding(.horizontal, TimelineHandle.target + 3)
-        // Along the bottom, below the badge. On the badge's own line the start time was
-        // drawn straight through the clip's length, and "0:00" under "12s" read as "0:12s".
-        .frame(maxHeight: .infinity, alignment: .bottom)
-        .padding(.bottom, 4)
-        .opacity(width > 190 ? 1 : 0)
-        .animation(StudioMotion.state, value: width > 190)
-        .allowsHitTesting(false)
     }
 
     @ViewBuilder

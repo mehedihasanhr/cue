@@ -27,11 +27,13 @@ struct CaptionInspector: View {
                 empty
             } else {
                 appearance
-                motion
                 transcript
-                tidy
-                source
-                export
+                InspectorAdvancedGroup("captions", contents: ["Motion", "Tidy up", "Source", "Subtitle file"]) {
+                    motion
+                    tidy
+                    source
+                    export
+                }
             }
         }
         .font(.system(size: 12))
