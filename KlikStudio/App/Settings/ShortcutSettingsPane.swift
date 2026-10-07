@@ -18,15 +18,13 @@ struct ShortcutSettingsPane: View {
         @Bindable var preferences = settings.recorder
 
         SettingsPane(.shortcuts) {
-            SettingsGroup(footer: preferences.usesGlobalShortcuts
-                          ? "Pause, restart and marker only listen while you record, so they don\u{2019}t take keys from other apps the rest of the time."
-                          : "Turned off. The buttons on the bar, the menu bar icon and the Record menu still work.") {
+            SettingsGroup {
                 SettingsToggleRow("Use shortcuts from any app",
                                   subtitle: "Reach the recorder without switching to it.",
                                   isOn: $preferences.usesGlobalShortcuts)
             }
 
-            SettingsGroup("Recorder shortcuts", footer: "Click a shortcut and press the new keys. Escape keeps the old one; Delete removes it.") {
+            SettingsGroup("Recorder shortcuts") {
                 ForEach(RecorderAction.allCases) { action in
                     ShortcutRow(action: action, preferences: preferences, editor: settings.editorShortcuts)
                 }
@@ -54,8 +52,7 @@ struct ShortcutSettingsPane: View {
     @ViewBuilder
     private func editorShortcuts(recorder: RecorderPreferences) -> some View {
         let shortcuts = settings.editorShortcuts
-        SettingsGroup("Editor shortcuts",
-                      footer: "The editor\u{2019}s menu shortcuts, answered while an editor window is in front. Click one and press the new keys: Escape keeps the old one, and the \u{2715} beside it removes it. A key macOS, this app\u{2019}s own menus or the recorder already uses is refused.") {
+        SettingsGroup("Editor shortcuts") {
             SettingsCell(vertical: 8) {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)

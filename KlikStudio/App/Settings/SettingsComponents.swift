@@ -146,8 +146,8 @@ struct AppIconTile: View {
 // MARK: - Page chrome
 
 /// A settings page: groups of rows, top to bottom, starting under the history pill. Every
-/// pane builds on this so the pages all look alike. A row's subtitle and a group's footer
-/// are for what the title cannot say alone.
+/// pane builds on this so the pages all look alike. A row's subtitle is for what its
+/// title cannot say alone.
 struct SettingsPane<Content: View>: View {
     let section: StudioSettingsSection
     @ViewBuilder let content: Content
@@ -170,15 +170,13 @@ struct SettingsPane<Content: View>: View {
     }
 }
 
-/// A card of rows, with a plain title above and, when needed, a note below.
+/// A card of rows, with a plain title above.
 struct SettingsGroup<Content: View>: View {
     var title: String?
-    var footer: String?
     @ViewBuilder let content: Content
 
-    init(_ title: String? = nil, footer: String? = nil, @ViewBuilder content: () -> Content) {
+    init(_ title: String? = nil, @ViewBuilder content: () -> Content) {
         self.title = title
-        self.footer = footer
         self.content = content()
     }
 
@@ -198,14 +196,6 @@ struct SettingsGroup<Content: View>: View {
             .padding(.bottom, -1)
             .background(SettingsPalette.cardFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            if let footer {
-                Text(footer)
-                    .font(SettingsFont.note)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 12)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .dimmedWhenDisabled()
-            }
         }
     }
 }
@@ -343,19 +333,27 @@ struct SettingsSlider: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Group {
-                if let step {
-                    Slider(value: $value, in: range, step: step) { Text(title) }
-                } else {
-                    Slider(value: $value, in: range) { Text(title) }
-                }
-            }
-            .frame(width: 160)
+            // Never the system's stepped slider, which draws a row of tick marks under the
+            // track — one per step, a dotted line under every stepped setting. The value is
+            // snapped to the step here instead, so it lands where it always did.
+            Slider(value: snapped, in: range) { Text(title) }
+                .frame(width: 160)
             Text(format(value))
                 .font(SettingsFont.sub)
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
                 .frame(width: 52, alignment: .trailing)
+        }
+    }
+
+    /// `value`, held to the step when there is one.
+    private var snapped: Binding<Double> {
+        Binding {
+            value
+        } set: { proposed in
+            guard let step, step > 0 else { value = proposed; return }
+            let steps = ((proposed - range.lowerBound) / step).rounded()
+            value = min(range.upperBound, max(range.lowerBound, range.lowerBound + steps * step))
         }
     }
 
@@ -407,11 +405,12 @@ struct RevealButton: View {
     let action: () -> Void
 
     var body: some View {
+        // A push button like the Choose… beside it, so the two stand the same height and
+        // read as a pair; a bare glyph next to a button looked dropped in from elsewhere.
         Button(action: action) {
             Image(systemName: "arrow.up.forward.app")
+                .imageScale(.medium)
         }
-        .buttonStyle(.borderless)
-        .foregroundStyle(.secondary)
         .help(help)
         .accessibilityLabel(help)
     }

@@ -10,8 +10,7 @@ struct AudioSettingsPane: View {
         @Bindable var newProjects = settings.newProjects
 
         SettingsPane(.audio) {
-            SettingsGroup("Voice in new recordings",
-                          footer: "Switched on for every microphone of a recording opened for the first time — never for system audio, where they would treat music as noise. Each can be turned off per recording in the editor's Audio menu.") {
+            SettingsGroup("Voice in new recordings") {
                 SettingsToggleRow("Clean up voice",
                                   subtitle: "Takes out rumble and the hiss between words, and evens out loud syllables.",
                                   symbol: "waveform.badge.magnifyingglass", tint: .pink,
@@ -22,8 +21,7 @@ struct AudioSettingsPane: View {
                                   isOn: $newProjects.evensVolume)
             }
 
-            SettingsGroup("Clicks in new recordings",
-                          footer: "A sound the recording never made — so it is off unless you ask for it, and heard in the editor and the export alike.") {
+            SettingsGroup("Clicks in new recordings") {
                 SettingsToggleRow("Play a sound on each click", symbol: "speaker.wave.2.fill", tint: .blue,
                                   isOn: $newProjects.clickSound)
                 Group {
@@ -42,8 +40,7 @@ struct AudioSettingsPane: View {
                 .disabled(!newProjects.clickSound)
             }
 
-            SettingsGroup("Voiceover",
-                          footer: "Time to draw breath before the timeline starts rolling. The microphone is the one chosen under Recording, and the editor's own sound is silenced while a take is recorded so it doesn't end up inside it.") {
+            SettingsGroup("Voiceover") {
                 SettingsRow("Count in", symbol: "mic.badge.plus", tint: .red) {
                     Picker("Count in", selection: $settings.voiceoverCountInSeconds) {
                         Text("Off").tag(0)

@@ -394,6 +394,15 @@ private struct SecondsSlider: View {
     /// What to show at the low end instead of "0 s".
     let zero: String?
 
+    private var snapped: Binding<Double> {
+        Binding {
+            value
+        } set: { proposed in
+            let steps = ((proposed - range.lowerBound) / step).rounded()
+            value = min(range.upperBound, max(range.lowerBound, range.lowerBound + steps * step))
+        }
+    }
+
     private var caption: String {
         if let zero, value <= range.lowerBound { return zero }
         return String(format: "%.2g s", value)
@@ -401,7 +410,9 @@ private struct SecondsSlider: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Slider(value: $value, in: range, step: step).frame(width: 150)
+            // Continuous, and snapped here: the system's stepped slider draws a tick mark
+            // per step, a dotted line under the track.
+            Slider(value: snapped, in: range).frame(width: 150)
             Text(caption)
                 .font(SettingsFont.sub)
                 .monospacedDigit()

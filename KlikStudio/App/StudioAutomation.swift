@@ -117,8 +117,17 @@ enum StudioAutomation {
     @MainActor
     @discardableResult
     private static func play(_ script: String) async -> String {
+        // `window <words in its title>` as the first line picks the window; otherwise the
+        // biggest, which is the editor.
+        var lines = script.split(whereSeparator: \.isNewline).map(String.init)
+        var titled: String?
+        if let first = lines.first, first.hasPrefix("window ") {
+            titled = String(first.dropFirst(7))
+            lines.removeFirst()
+        }
         guard let window = NSApp.windows
             .filter({ $0.contentView != nil && $0.frame.width > 400 && $0.isVisible })
+            .filter({ titled == nil || $0.title.contains(titled!) })
             .max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }) else { return "no window" }
         var report = "window \(window.title) \(window.frame) content \(window.contentView?.frame ?? .zero)"
             + " key=\(window.isKeyWindow) active=\(NSApp.isActive)"
@@ -131,7 +140,7 @@ enum StudioAutomation {
         // is not key is taken as "bring this window to me", and never reaches the view.
         window.makeKey()
         var pressed = false
-        for line in script.split(whereSeparator: \.isNewline) {
+        for line in lines {
             let parts = line.split(separator: " ").map(String.init)
             guard let verb = parts.first else { continue }
             if verb == "key", parts.count > 1 {

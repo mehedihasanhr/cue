@@ -9,7 +9,7 @@ struct CaptionSettingsPane: View {
         @Bindable var newProjects = settings.newProjects
 
         SettingsPane(.captions) {
-            SettingsGroup(footer: "The same choice as the Language menu in the editor's Captions panel. Recognition runs on this Mac; nothing is sent anywhere.") {
+            SettingsGroup {
                 SettingsRow("Language", subtitle: "The language spoken in your recordings.",
                             symbol: "globe", tint: .blue) {
                     Picker("Language", selection: language) {
@@ -19,8 +19,7 @@ struct CaptionSettingsPane: View {
                 }
             }
 
-            SettingsGroup("How new captions look",
-                          footer: "For recordings opened for the first time. Colours, margin and everything else are set per project in the editor's Captions panel.") {
+            SettingsGroup("How new captions look") {
                 SettingsRow("Position") {
                     Picker("Position", selection: $newProjects.captionPosition) {
                         ForEach(CaptionStyle.Position.allCases, id: \.self) { Text($0.title).tag($0) }
