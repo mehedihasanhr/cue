@@ -215,7 +215,8 @@ final class AgentStore {
             Self.bringForward(app)
         } else if let terminal = session.terminal {
             let names = ["Apple_Terminal": "com.apple.Terminal", "iTerm.app": "com.googlecode.iterm2", "vscode": "com.microsoft.VSCode",
-                         "WarpTerminal": "dev.warp.Warp-Stable", "ghostty": "com.mitchellh.ghostty"]
+                         "WarpTerminal": "dev.warp.Warp-Stable", "ghostty": "com.mitchellh.ghostty",
+                         "WezTerm": "com.github.wez.wezterm"]
             if let id = names[terminal], let app = NSRunningApplication.runningApplications(withBundleIdentifier: id).first {
                 Self.bringForward(app)
             }

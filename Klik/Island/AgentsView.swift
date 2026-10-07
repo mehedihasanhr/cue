@@ -1191,11 +1191,18 @@ private struct PlanCard: View {
             HStack(spacing: 6) {
                 AnswerButton("Keep planning", role: .quiet) { store.answer(request, .deny) }
                 Spacer(minLength: 0)
-                if request.canAllowAlways {
-                    AnswerButton("Approve, auto-edit", role: .secondary) { store.answer(request, .allowAlways) }
-                        .help("Approve and let Claude make edits without asking")
+                if request.canApprovePlan {
+                    // Claude Code takes a plan's approval only from its own dialog, so
+                    // these press that dialog's keys in the agent's pane.
+                    AnswerButton("Approve, review edits", role: .secondary) { store.answer(request, .approvePlan(reviewEdits: true)) }
+                        .help("Approve, and ask before each edit")
+                    AnswerButton("Approve", role: .primary) { store.answer(request, .approvePlan(reviewEdits: false)) }
+                        .help("Approve, as Return does in the terminal")
+                } else {
+                    // No pane to type in (a terminal other than WezTerm or tmux): the
+                    // approval has to be given in the terminal itself.
+                    AnswerButton("Approve in Terminal", role: .primary) { store.answerInTerminal(request) }
                 }
-                AnswerButton("Approve", role: .primary) { store.answer(request, .allowOnce) }
             }
         }
     }

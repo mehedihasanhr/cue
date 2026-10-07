@@ -81,6 +81,7 @@
 				AddOns/RecordingAddOnClient.swift,
 				AddOns/StudioPreferences.swift,
 				Agents/AgentModel.swift,
+				Agents/AgentHooks.swift,
 			);
 			target = 4B4C494B000000000000E002 /* KlikTests */;
 		};
