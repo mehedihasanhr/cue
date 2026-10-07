@@ -2,14 +2,33 @@ import AppKit
 import Observation
 import SwiftUI
 
+enum ScrollingCaptureWindows {
+    /// Never in a screen capture — except, in a debug build launched with
+    /// `KLIK_SHOW_CAPTURE_OVERLAYS=1`, in a screenshot taken to see what the capture looks
+    /// like. ScreenCaptureKit's filter still leaves Klik's windows out of the frames
+    /// being stitched.
+    static var sharing: NSWindow.SharingType {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["KLIK_SHOW_CAPTURE_OVERLAYS"] != nil { return .readOnly }
+        #endif
+        return .none
+    }
+}
+
 // MARK: - Dim overlay (click-through)
 
 /// Dims everything except the capture region and frames it. Ignores mouse events, so
 /// the user can keep scrolling the app underneath.
-final class ScrollingDimWindow: NSWindow {
+///
+/// A non-activating panel rather than a window: over an app in full screen — a terminal,
+/// an editor — only a panel is let onto its Space, and as a plain window the dimming and
+/// the frame were simply missing, leaving the pill and the preview floating over nothing.
+final class ScrollingDimWindow: NSPanel {
     init(screen: NSScreen, region: CGRect) {
-        super.init(contentRect: screen.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-        sharingType = .none
+        super.init(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        isFloatingPanel = true
+        hidesOnDeactivate = false
+        sharingType = ScrollingCaptureWindows.sharing
         setFrame(screen.frame, display: false)
         level = .floating
         isOpaque = false
@@ -140,7 +159,7 @@ final class ScrollingControlPanel {
         panel.level = .statusBar
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
-        panel.sharingType = .none // never part of a screen capture, whatever the filter says
+        panel.sharingType = ScrollingCaptureWindows.sharing // never part of a screen capture, whatever the filter says
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
