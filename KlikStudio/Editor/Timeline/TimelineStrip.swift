@@ -89,11 +89,15 @@ struct TimelineStrip: View {
             }
         }
 
-        var height: CGFloat {
+        /// As tall as its busiest moment: a lane whose regions can overlap — notes, masks —
+        /// stacks the ones that do. See `RegionStacking`.
+        func height(in timeline: Timeline) -> CGFloat {
             switch self {
             case .clips: clipHeight
             case .recordedSound, .source: soundHeight
-            case .zooms, .pointer, .addedSound, .blurs, .annotations, .captions, .keys, .camera: regionHeight
+            case .annotations: stackedHeight(rows: min(stackLimit, RegionStacking.rowCount(of: timeline.annotations)))
+            case .blurs: stackedHeight(rows: min(stackLimit, RegionStacking.rowCount(of: timeline.blurs)))
+            case .zooms, .pointer, .addedSound, .captions, .keys, .camera: regionHeight
             }
         }
 
@@ -149,6 +153,18 @@ struct TimelineStrip: View {
         }
     }
 
+    /// The gap between stacked rows of one lane: less than between lanes, so a lane's rows
+    /// still read as one lane.
+    static let stackGap: CGFloat = 3
+
+    /// The most rows a stacked lane shows at once. Past it the lane scrolls its rows, so a
+    /// busy moment does not push the picture up the window one row at a time.
+    static let stackLimit = 3
+
+    static func stackedHeight(rows: Int) -> CGFloat {
+        CGFloat(rows) * regionHeight + CGFloat(max(0, rows - 1)) * stackGap
+    }
+
     /// The Keys lane's colour, in one place: the heading, the chips and the inspector's
     /// list all draw in it.
     static let keysTint: Color = .mint
@@ -186,7 +202,7 @@ struct TimelineStrip: View {
     static func height(for timeline: Timeline, hasSound: Bool = true) -> CGFloat {
         padding * 2 + rulerHeight + spacing
             + lanes(for: timeline, hasSound: hasSound)
-                .reduce(0) { $0 + $1.height + spacing }
+                .reduce(0) { $0 + $1.height(in: timeline) + spacing }
             - spacing
     }
 
@@ -212,6 +228,14 @@ struct TimelineStrip: View {
             // width would put every cut a gutter's worth to the right of where it is drawn.
             .onChange(of: laneWidth) { _, width in
                 viewport.setWidth(width, duration: model.duration)
+            }
+            .onChange(of: model.duration) { _, duration in
+                // Not mid-drag: a trim being dragged would rescale under the pointer.
+                guard !model.isGesturing else { return }
+                viewport.durationChanged(duration)
+            }
+            .onChange(of: model.isGesturing) { _, gesturing in
+                if !gesturing { viewport.durationChanged(model.duration) }
             }
         }
         .background { Color.clear.studioSurface() }
@@ -462,7 +486,8 @@ struct TimelineStrip: View {
                           title: "Mask",
                           symbol: "drop.halffull",
                           height: Self.regionHeight,
-                          selection: Selection.blur) { blur in
+                          selection: Selection.blur,
+                          stacks: true) { blur in
             // The kind, by name: a chip that said "Blur" over a spotlight would be lying.
             Text(blur.title)
                 .font(.system(size: 11, weight: .semibold))
@@ -478,6 +503,7 @@ struct TimelineStrip: View {
                           symbol: "",
                           height: Self.regionHeight,
                           selection: Selection.annotation,
+                          stacks: true,
                           menu: { item in AnyView(AnnotationMenu(model: model, item: item)) }) { item in
             HStack(spacing: 5) {
                 // What kind it is, as a glyph of its own: the lane's "Aa" says only that
@@ -505,7 +531,7 @@ struct TimelineStrip: View {
         case .arrow: "arrow.up.right"
         case .rectangle: "rectangle"
         case .image: "photo"
-        case .ellipse, .line, .highlight, .step, .callout: kind.name.symbol
+        case .ellipse, .loop, .line, .highlight, .step, .callout: kind.name.symbol
         }
     }
 
@@ -515,7 +541,7 @@ struct TimelineStrip: View {
         case .arrow: "Arrow"
         case .rectangle: "Box"
         case .image: "Image"
-        case .ellipse, .line, .highlight, .step, .callout: kind.label
+        case .ellipse, .loop, .line, .highlight, .step, .callout: kind.label
         }
     }
 

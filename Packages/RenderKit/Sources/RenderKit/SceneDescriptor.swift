@@ -462,10 +462,16 @@ public struct AnnotationLayer: Equatable, Sendable {
     public var offset: CGVector
     /// Thickness, fill, type and shadow — part of the drawing, so part of its cache key.
     public var style: AnnotationStyle
+    /// The part of a traced shape's stroke that is drawn, from the Draw entrance and the
+    /// Erase exit: from `erased` to `drawn` along it, both 0…1. Whole is 0 to 1.
+    public var drawn: Double
+    public var erased: Double
 
     public init(kind: AnnotationItem.Kind, rect: CGRect, color: ColorValue, fontSize: Double, opacity: Double,
                 rotation: Double = 0, scale: Double = 1, offset: CGVector = .zero,
-                style: AnnotationStyle = AnnotationStyle()) {
+                style: AnnotationStyle = AnnotationStyle(), drawn: Double = 1, erased: Double = 0) {
+        self.drawn = drawn
+        self.erased = erased
         self.kind = kind
         self.rect = rect
         self.color = color

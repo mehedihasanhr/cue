@@ -32,6 +32,15 @@ final class TimelineViewport {
     /// a width worth fitting to.
     private var needsFit = true
 
+    /// Whether the scale is still "the whole edit", as opposed to one somebody zoomed to.
+    ///
+    /// The fit used to be taken once, at the first width — so hiding the inspector, or
+    /// making the window bigger, left the edit filling the half of the strip it was fitted
+    /// to and empty lanes after it. While nobody has zoomed, the edit keeps filling the
+    /// strip, as wide as it is and as long as the edit is. Zooming takes it off; Fit, and
+    /// ⌘0, put it back.
+    private(set) var isFitted = true
+
     static let minimumPointsPerSecond = 1.0
     /// At 600 points a second one frame of 60 fps is ten points wide — enough to put a
     /// cut exactly where you mean to.
@@ -62,7 +71,7 @@ final class TimelineViewport {
         // on that would nudge the scroll offset for no reason anyone asked for.
         guard abs(width - self.width) > 0.5 || needsFit else { return }
         self.width = width
-        if needsFit, width > 1 {
+        if (needsFit || isFitted), width > 1 {
             fit(duration)
         } else {
             clamp(duration: duration)
@@ -73,6 +82,7 @@ final class TimelineViewport {
     func fit(_ duration: CMTime) {
         // A fit at a width nobody can see is not a fit; it is the bug above.
         if width > 1 { needsFit = false }
+        isFitted = true
         let seconds = max(0.5, duration.seconds)
         pointsPerSecond = min(Self.maximumPointsPerSecond,
                               max(Self.minimumPointsPerSecond, (width - 24) / seconds))
@@ -84,6 +94,7 @@ final class TimelineViewport {
     /// ⌘-scroll and pinch feel like they are aimed at something.
     func setPointsPerSecond(_ proposed: Double, anchoring time: CMTime, duration: CMTime) {
         let anchorX = x(for: time)
+        isFitted = false
         pointsPerSecond = min(Self.maximumPointsPerSecond, max(Self.minimumPointsPerSecond, proposed))
         scrollOffset = time.seconds - anchorX / pointsPerSecond
         clamp(duration: duration)
@@ -91,6 +102,11 @@ final class TimelineViewport {
 
     func zoom(by factor: Double, anchoring time: CMTime, duration: CMTime) {
         setPointsPerSecond(pointsPerSecond * factor, anchoring: time, duration: duration)
+    }
+
+    /// Fits again when the edit got longer or shorter, if it is being shown whole.
+    func durationChanged(_ duration: CMTime) {
+        if isFitted { fit(duration) } else { clamp(duration: duration) }
     }
 
     func scroll(by points: Double, duration: CMTime) {

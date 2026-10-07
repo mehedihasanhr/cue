@@ -33,6 +33,9 @@ enum AnnotationArtwork {
         let fontSize: Double
         let outputHeight: Double
         let style: AnnotationStyle
+        /// The traced span, to a 480th: finer than a frame of any Draw anybody would choose.
+        let drawn: Int
+        let erased: Int
     }
 
     /// Enough for every annotation on screen at once, several times over. Bounded because
@@ -52,6 +55,7 @@ enum AnnotationArtwork {
         // the cost that buys freshness nobody asked for.
         case .image(let path): "image:\(path)"
         case .ellipse: "ellipse"
+        case .loop: "loop"
         case .line(let from, let to): "line:\(from.x),\(from.y),\(to.x),\(to.y)"
         case .highlight: "highlight"
         case .step(let number): "step:\(number)"
@@ -74,7 +78,9 @@ enum AnnotationArtwork {
                       b: annotation.color.b, a: annotation.color.a,
                       fontSize: annotation.fontSize,
                       outputHeight: outputHeight,
-                      style: annotation.style)
+                      style: annotation.style,
+                      drawn: Int((annotation.drawn * 480).rounded()),
+                      erased: Int((annotation.erased * 480).rounded()))
         // Worked out from the same inputs as the key, so a cached bitmap and the margins
         // it is placed by can never disagree.
         let margins = margins(annotation, width: width, height: height, outputHeight: outputHeight)
@@ -125,8 +131,14 @@ enum AnnotationArtwork {
             margins.top = Int(ceil(max(0, -y)))
             margins.bottom = Int(ceil(max(0, y - h)))
             margins.grow(lineWidth(annotation.kind, outputHeight: outputHeight, thickness: style.thickness) + 1)
-        case .text where style.outlinesText:
-            margins.grow(max(8, outputHeight * annotation.fontSize) * outlineShare + 1)
+        case .text:
+            let size = max(8, outputHeight * annotation.fontSize)
+            if style.outlinesText { margins.grow(size * outlineShare + 1) }
+            // The words are allowed a little past the box's sides rather than wrapping — see
+            // `wrapRoom`.
+            let room = Int(ceil(wrapRoom(size, width: w)))
+            margins.left += room
+            margins.right += room
         default:
             break
         }
@@ -145,6 +157,8 @@ enum AnnotationArtwork {
         let standard: Double = switch kind {
         case .arrow, .line: max(2, outputHeight * 0.006)
         case .callout: max(1.5, outputHeight * 0.0035)
+        // A marker, a little bolder than a box: it is drawn to be noticed.
+        case .loop: max(3, outputHeight * 0.007)
         default: max(2, outputHeight * 0.005)
         }
         return standard * thickness
@@ -208,8 +222,29 @@ enum AnnotationArtwork {
                                     outputHeight: Double) -> Bool {
         let style = annotation.style
         let colour = cgColour(annotation.color)
+        // The part of the stroke on show, for Draw and Erase. See `traced(_:from:to:)`.
+        let from = annotation.erased, to = annotation.drawn
+        let isWhole = from <= 0 && to >= 1
+        let shown = max(0, to - from)
 
         switch annotation.kind {
+        case .loop:
+            let width = lineWidth(annotation.kind, outputHeight: outputHeight, thickness: style.thickness)
+            let path = traced(loopPath(in: bounds, lineWidth: width), from: from, to: to)
+            // In a layer that carries the colour's alpha, so where the loop crosses itself a
+            // see-through colour is one even tint rather than a darker knot.
+            context.saveGState()
+            context.setAlpha(annotation.color.a)
+            context.beginTransparencyLayer(auxiliaryInfo: nil)
+            context.addPath(path)
+            context.setStrokeColor(cgColour(annotation.color, alpha: 1))
+            context.setLineWidth(width)
+            context.setLineCap(.round)
+            context.setLineJoin(.round)
+            context.strokePath()
+            context.endTransparencyLayer()
+            context.restoreGState()
+
         case .rectangle, .ellipse:
             let isEllipse = annotation.kind == .ellipse
             let width = lineWidth(annotation.kind, outputHeight: outputHeight, thickness: style.thickness)
@@ -224,25 +259,33 @@ enum AnnotationArtwork {
             switch style.fill {
             case .solid:
                 // The fill is the whole shape: an outline on top of it in the same colour
-                // would only show where a see-through colour doubled up.
+                // would only show where a see-through colour doubled up. Being drawn on, it
+                // comes up as its outline goes round.
                 context.addPath(shape(bounds))
-                context.setFillColor(colour)
+                context.setFillColor(isWhole ? colour : cgColour(annotation.color, alpha: annotation.color.a * shown))
                 context.fillPath()
                 return true
             case .translucent:
                 let inside = inner.insetBy(dx: min(width / 2, inner.width / 2), dy: min(width / 2, inner.height / 2))
                 context.addPath(shape(inside))
-                context.setFillColor(cgColour(annotation.color, alpha: annotation.color.a * translucentFill))
+                context.setFillColor(cgColour(annotation.color, alpha: annotation.color.a * translucentFill * shown))
                 context.fillPath()
             case .none:
                 break
             }
-            context.addPath(shape(inner))
+            context.addPath(isWhole ? shape(inner)
+                                    : traced(isEllipse ? penEllipse(inner) : penRectangle(inner), from: from, to: to))
             context.setStrokeColor(colour)
             context.setLineWidth(width)
+            if !isWhole { context.setLineCap(.round) }
             context.strokePath()
 
         case .highlight:
+            // Swept on and off left to right, the way a marker goes along a line.
+            if !isWhole {
+                context.clip(to: CGRect(x: bounds.minX + bounds.width * from, y: bounds.minY,
+                                        width: bounds.width * shown, height: bounds.height))
+            }
             let radius = min(min(bounds.width, bounds.height) * 0.25, max(2, outputHeight * 0.006))
             context.addPath(CGPath(roundedRect: bounds, cornerWidth: radius, cornerHeight: radius, transform: nil))
             context.setFillColor(cgColour(annotation.color, alpha: annotation.color.a * highlightStrength))
@@ -250,8 +293,15 @@ enum AnnotationArtwork {
 
         case .arrow(let from, let to), .line(let from, let to):
             let isArrow = annotation.kind.name == .arrow
-            let start = point(from, in: bounds)
-            let end = point(to, in: bounds)
+            let whole = (start: point(from, in: bounds), end: point(to, in: bounds))
+            // The stretch of the shaft on show: drawn on, the tip travels out from the start;
+            // rubbed out, the tail follows it in. The head rides on the tip.
+            func along(_ share: Double) -> CGPoint {
+                CGPoint(x: whole.start.x + (whole.end.x - whole.start.x) * share,
+                        y: whole.start.y + (whole.end.y - whole.start.y) * share)
+            }
+            let start = along(annotation.erased)
+            let end = along(annotation.drawn)
             let width = lineWidth(annotation.kind, outputHeight: outputHeight, thickness: style.thickness)
             // Drawn opaque inside a layer that carries the colour's alpha, so a see-through
             // arrow is one even tint rather than darker where the shaft runs into the head.
@@ -263,8 +313,11 @@ enum AnnotationArtwork {
             context.setFillColor(solid)
             context.setLineWidth(width)
             context.setLineCap(.round)
-            let angle = atan2(end.y - start.y, end.x - start.x)
-            let head = arrowHead(lineWidth: width, outputHeight: outputHeight)
+            let angle = atan2(whole.end.y - whole.start.y, whole.end.x - whole.start.x)
+            // A head no longer than the shaft it is on, so a stroke just starting is a stroke
+            // and not a head on its own.
+            let head = min(arrowHead(lineWidth: width, outputHeight: outputHeight),
+                           max(width, hypot(end.x - start.x, end.y - start.y) * 0.9))
             // The shaft stops inside the head rather than at the tip, where its round end
             // used to poke out past the point.
             let back = isArrow ? min(head * 0.5, hypot(end.x - start.x, end.y - start.y)) : 0
@@ -284,7 +337,25 @@ enum AnnotationArtwork {
             context.restoreGState()
 
         case .step(let number):
-            drawStep(number, colour: annotation.color, in: bounds, context: context)
+            if isWhole {
+                drawStep(number, colour: annotation.color, in: bounds, context: context)
+            } else {
+                // The ring drawn round first, then the badge filled, then its number.
+                let diameter = min(bounds.width, bounds.height)
+                let ring = max(1.5, diameter * 0.08)
+                let circle = CGRect(x: bounds.midX - diameter / 2, y: bounds.midY - diameter / 2,
+                                    width: diameter, height: diameter).insetBy(dx: ring / 2, dy: ring / 2)
+                context.saveGState()
+                context.setAlpha(fillShare(shown))
+                drawStep(number, colour: annotation.color, in: bounds, context: context,
+                         numberAlpha: wordsShare(shown))
+                context.restoreGState()
+                context.addPath(traced(penEllipse(circle), from: from, to: to))
+                context.setStrokeColor(colour)
+                context.setLineWidth(ring)
+                context.setLineCap(.round)
+                context.strokePath()
+            }
 
         case .text(let string):
             drawLabel(string, annotation, in: bounds, context: context, outputHeight: outputHeight)
@@ -314,11 +385,174 @@ enum AnnotationArtwork {
         return true
     }
 
+    // MARK: - Traced strokes
+
+    /// The part of `path` from `from` to `to` of the way along it, both 0…1, as a polyline.
+    /// The whole path, untouched, when that is all of it.
+    ///
+    /// By length rather than by parameter, so a stroke drawn on moves at one speed all the
+    /// way round — an ellipse's parameter runs fast along its long sides.
+    static func traced(_ path: CGPath, from: Double, to: Double) -> CGPath {
+        guard from > 0 || to < 1 else { return path }
+        // Each piece of the outline in turn, as one pen would draw them: a callout's bubble
+        // and its tail are drawn one after the other, never joined by a line across.
+        let pieces = flattened(path).filter { $0.count > 1 }
+        var lengths: [[Double]] = []
+        var total = 0.0
+        for piece in pieces {
+            var running = [total]
+            for index in 1..<piece.count {
+                total += hypot(piece[index].x - piece[index - 1].x, piece[index].y - piece[index - 1].y)
+                running.append(total)
+            }
+            lengths.append(running)
+        }
+        let trimmed = CGMutablePath()
+        let first = total * max(0, min(1, from)), last = total * max(0, min(1, to))
+        guard total > 0, last > first else { return trimmed }
+        for (piece, running) in zip(pieces, lengths) {
+            guard let pieceEnd = running.last, pieceEnd > first, running[0] < last else { continue }
+            func at(_ distance: Double) -> CGPoint {
+                let index = max(1, running.firstIndex { $0 >= distance } ?? running.count - 1)
+                let span = running[index] - running[index - 1]
+                let t = span > 0 ? (distance - running[index - 1]) / span : 0
+                return CGPoint(x: piece[index - 1].x + (piece[index].x - piece[index - 1].x) * t,
+                               y: piece[index - 1].y + (piece[index].y - piece[index - 1].y) * t)
+            }
+            let start = max(first, running[0]), end = min(last, pieceEnd)
+            trimmed.move(to: at(start))
+            for index in piece.indices where running[index] > start && running[index] < end {
+                trimmed.addLine(to: piece[index])
+            }
+            trimmed.addLine(to: at(end))
+        }
+        return trimmed
+    }
+
+    /// A rectangle as a pen draws one: from the top left, clockwise as seen. Core Graphics'
+    /// own starts at the bottom left — this bitmap's y runs upward — so a box drawn on began
+    /// in the wrong corner.
+    static func penRectangle(_ rect: CGRect) -> CGPath {
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.closeSubpath()
+        return path
+    }
+
+    /// An ellipse as a pen draws one: from the top left, clockwise as seen. Core Graphics'
+    /// own starts at the right.
+    static func penEllipse(_ rect: CGRect) -> CGPath {
+        let path = CGMutablePath()
+        let start = 3 * Double.pi / 4
+        let steps = 96
+        for step in 0...steps {
+            // A falling angle is clockwise in this bitmap's upward y.
+            let angle = start - 2 * .pi * Double(step) / Double(steps)
+            let point = CGPoint(x: rect.midX + rect.width / 2 * cos(angle), y: rect.midY + rect.height / 2 * sin(angle))
+            if step == 0 { path.move(to: point) } else { path.addLine(to: point) }
+        }
+        return path
+    }
+
+    /// `path` as points along each of its pieces, curves cut into short straight steps.
+    private static func flattened(_ path: CGPath) -> [[CGPoint]] {
+        var pieces: [[CGPoint]] = []
+        var current = CGPoint.zero, start = CGPoint.zero
+        let steps = 24
+        path.applyWithBlock { element in
+            let e = element.pointee
+            switch e.type {
+            case .moveToPoint:
+                current = e.points[0]; start = current
+                pieces.append([current])
+            case .addLineToPoint:
+                current = e.points[0]
+                if pieces.isEmpty { pieces.append([]) }
+                pieces[pieces.count - 1].append(current)
+            case .addQuadCurveToPoint:
+                let c = e.points[0], end = e.points[1]
+                if pieces.isEmpty { pieces.append([current]) }
+                for step in 1...steps {
+                    let t = Double(step) / Double(steps), u = 1 - t
+                    pieces[pieces.count - 1].append(CGPoint(x: u * u * current.x + 2 * u * t * c.x + t * t * end.x,
+                                                            y: u * u * current.y + 2 * u * t * c.y + t * t * end.y))
+                }
+                current = end
+            case .addCurveToPoint:
+                let c1 = e.points[0], c2 = e.points[1], end = e.points[2]
+                if pieces.isEmpty { pieces.append([current]) }
+                for step in 1...steps {
+                    let t = Double(step) / Double(steps), u = 1 - t
+                    let a = u * u * u, b = 3 * u * u * t, c = 3 * u * t * t, d = t * t * t
+                    pieces[pieces.count - 1].append(CGPoint(x: a * current.x + b * c1.x + c * c2.x + d * end.x,
+                                                            y: a * current.y + b * c1.y + c * c2.y + d * end.y))
+                }
+                current = end
+            case .closeSubpath:
+                if !pieces.isEmpty { pieces[pieces.count - 1].append(start) }
+                current = start
+            @unknown default:
+                break
+            }
+        }
+        return pieces
+    }
+
+    /// How strongly what a traced shape is filled with shows, while its outline goes round:
+    /// nothing until a little of it is drawn, all of it once it is closed.
+    static func fillShare(_ shown: Double) -> Double { min(1, max(0, (shown - 0.35) / 0.65)) }
+
+    /// How strongly the words or the number inside a traced shape show: they arrive last.
+    static func wordsShare(_ shown: Double) -> Double { min(1, max(0, (shown - 0.6) / 0.4)) }
+
+    // MARK: - Loops
+
+    /// A loop drawn round the middle of `bounds` by hand: in at the top left, round once
+    /// clockwise as seen, and on past where it began so its end crosses its start and runs
+    /// out to the right — the circle a marker pen puts round a word.
+    ///
+    /// Its own wobble rather than a random one, so it is the same loop on every frame and in
+    /// every export: a hand is unsteady, but a loop that shimmered as it played would not be.
+    static func loopPath(in bounds: CGRect, lineWidth: Double) -> CGPath {
+        // How far out the two ends reach, past the loop itself: room is kept for them.
+        let reach = 1.22
+        let rx = max(1, (bounds.width / 2 - lineWidth) / reach)
+        let ry = max(1, (bounds.height / 2 - lineWidth) / reach)
+        let centre = CGPoint(x: bounds.midX, y: bounds.midY)
+        // In Core Graphics' upward y: the top left is about 140°, and clockwise on the
+        // picture is a falling angle. Round once and on to the top right, about 30°.
+        let begin = 140.0 * .pi / 180
+        let turn = 2 * Double.pi + 110.0 * .pi / 180
+        // Tipped a few degrees, as a loop drawn freehand always is.
+        let tilt = -4.0 * .pi / 180
+        let steps = 200
+        let path = CGMutablePath()
+        for step in 0...steps {
+            let s = Double(step) / Double(steps)
+            let angle = begin - turn * s
+            // The pen comes in from just outside, settles onto the loop, and on the way
+            // out swings wide — so the end crosses the start and carries on past it.
+            let lead = s < 0.15 ? 0.12 * pow(1 - s / 0.15, 2) : 0
+            let flyout = s > 0.78 ? 0.2 * pow((s - 0.78) / 0.22, 1.6) : 0
+            let wobble = 0.02 * sin(2 * angle + 0.5) + 0.012 * sin(5 * angle + 1.3)
+            let r = 1 + lead + flyout + wobble
+            let x = rx * r * cos(angle), y = ry * r * sin(angle)
+            let point = CGPoint(x: centre.x + x * cos(tilt) - y * sin(tilt),
+                                y: centre.y + x * sin(tilt) + y * cos(tilt))
+            if step == 0 { path.move(to: point) } else { path.addLine(to: point) }
+        }
+        return path
+    }
+
     // MARK: - Steps
 
     /// A round badge with a number centred in it — centred on the ink of the figures, not on
     /// the line they sit on, which would put every number visibly low.
-    private static func drawStep(_ number: Int, colour: ColorValue, in bounds: CGRect, context: CGContext) {
+    private static func drawStep(_ number: Int, colour: ColorValue, in bounds: CGRect, context: CGContext,
+                                 numberAlpha: Double = 1) {
         let diameter = min(bounds.width, bounds.height)
         let circle = CGRect(x: bounds.midX - diameter / 2, y: bounds.midY - diameter / 2,
                             width: diameter, height: diameter)
@@ -336,7 +570,7 @@ enum AnnotationArtwork {
         let font = NSFont.monospacedDigitSystemFont(ofSize: max(4, diameter * share), weight: .bold)
         let text = NSAttributedString(string: figures, attributes: [
             .font: font,
-            NSAttributedString.Key(kCTForegroundColorAttributeName as String): cgColour(ink, alpha: colour.a),
+            NSAttributedString.Key(kCTForegroundColorAttributeName as String): cgColour(ink, alpha: colour.a * numberAlpha),
         ])
         let line = CTLineCreateWithAttributedString(text)
         let glyphs = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
@@ -411,6 +645,34 @@ enum AnnotationArtwork {
         return ring
     }
 
+    /// How far past its box a label's line may run before it wraps, in pixels at `size`.
+    ///
+    /// A label's box is measured at one size and drawn at many — the export's, the preview's
+    /// smaller one while something moves — and set type does not scale exactly with its
+    /// size: a line measured to fit at the export's size came out a few pixels wider than its
+    /// box at half of it, and its last word dropped onto a second line under the box, where it
+    /// was cut off. "This is a dummy text" read "This is a" until the drag let go. The drift is
+    /// rounding, letter by letter, so it grows with the line as well as with the type: a third
+    /// of an em, and a twentieth of the line more.
+    static func wrapRoom(_ size: Double, width: Double) -> Double { size * 0.3 + width * 0.05 }
+
+    /// Where `text` is laid out in `bounds`: widened by `wrapRoom` on the side the words grow
+    /// towards when its longest line only just misses, and exactly `bounds` otherwise.
+    ///
+    /// Only then. Words a box was meant to wrap keep their breaks: given the room as well, a
+    /// wrapped label's next word could climb onto the line above.
+    private static func wrapping(_ text: NSAttributedString, in bounds: CGRect, size: Double,
+                                 alignment: AnnotationStyle.Alignment) -> CGRect {
+        let room = wrapRoom(size, width: bounds.width)
+        let longest = measured(text, width: .greatestFiniteMagnitude).width
+        guard longest > bounds.width, longest <= bounds.width + room else { return bounds }
+        return switch alignment {
+        case .left: CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width + room, height: bounds.height)
+        case .center: bounds.insetBy(dx: -room / 2, dy: 0)
+        case .right: CGRect(x: bounds.minX - room, y: bounds.minY, width: bounds.width + room, height: bounds.height)
+        }
+    }
+
     /// A label: the words where the box says, on a plate when it has one.
     private static func drawLabel(_ string: String, _ annotation: AnnotationLayer, in bounds: CGRect,
                                   context: CGContext, outputHeight: Double) {
@@ -424,7 +686,8 @@ enum AnnotationArtwork {
         guard let plate = style.plate(for: annotation.color) else {
             // Exactly what a label drew before it could have a plate: laid out from the top
             // of its box.
-            draw(text, outline: ring(for: ink, style: style), in: bounds, fontSize: size, context: context)
+            draw(text, outline: ring(for: ink, style: style),
+                 in: wrapping(text, in: bounds, size: size, alignment: style.alignment), fontSize: size, context: context)
             return
         }
 
@@ -434,8 +697,9 @@ enum AnnotationArtwork {
         let padX = min(size * 0.35, bounds.width / 4)
         let padY = min(size * 0.2, bounds.height / 4)
         let layout = bounds.insetBy(dx: padX, dy: padY)
-        let used = measured(text, width: layout.width)
-        let textWidth = min(used.width, layout.width)
+        let laidOut = wrapping(text, in: layout, size: size, alignment: style.alignment)
+        let used = measured(text, width: laidOut.width)
+        let textWidth = min(used.width, laidOut.width)
         let left: Double = switch style.alignment {
         case .left: layout.minX
         case .center: layout.midX - textWidth / 2
@@ -451,7 +715,7 @@ enum AnnotationArtwork {
             context.fillPath()
         }
         draw(text, outline: ring(for: ink, style: style),
-             in: CGRect(x: layout.minX, y: layout.maxY - used.height, width: layout.width, height: used.height),
+             in: CGRect(x: laidOut.minX, y: layout.maxY - used.height, width: laidOut.width, height: used.height),
              fontSize: size, context: context)
     }
 
@@ -471,16 +735,35 @@ enum AnnotationArtwork {
         if let pointer = tailPath(from: bubble, radius: radius, to: point(tail, in: bounds), size: size) {
             shape = shape.union(pointer)
         }
-        context.addPath(shape)
+        // Drawn on, the bubble's outline goes round first — in the plate's colour when it
+        // has one — then it fills, then the words arrive.
+        let shown = max(0, annotation.drawn - annotation.erased)
+        let isWhole = annotation.erased <= 0 && annotation.drawn >= 1
         if let plate {
-            context.setFillColor(cgColour(plate))
+            context.addPath(shape)
+            context.setFillColor(isWhole ? cgColour(plate) : cgColour(plate, alpha: plate.a * fillShare(shown)))
             context.fillPath()
+            if !isWhole {
+                context.addPath(traced(shape, from: annotation.erased, to: annotation.drawn))
+                context.setStrokeColor(cgColour(plate))
+                context.setLineWidth(lineWidth(annotation.kind, outputHeight: outputHeight, thickness: style.thickness))
+                context.setLineJoin(.round)
+                context.setLineCap(.round)
+                context.strokePath()
+            }
         } else {
+            context.addPath(isWhole ? shape : traced(shape, from: annotation.erased, to: annotation.drawn))
             context.setStrokeColor(cgColour(annotation.color))
             context.setLineWidth(stroke)
             context.setLineJoin(.round)
+            if !isWhole { context.setLineCap(.round) }
             context.strokePath()
         }
+        if !isWhole {
+            context.saveGState()
+            context.setAlpha(wordsShare(shown))
+        }
+        defer { if !isWhole { context.restoreGState() } }
 
         let ink = style.textColour(for: annotation.color)
         let text = words(string, font: font(size: size, weight: style.weight, family: style.fontFamily),

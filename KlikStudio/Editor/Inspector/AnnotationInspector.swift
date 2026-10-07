@@ -36,7 +36,8 @@ struct AnnotationInspector: View {
                 timing(item)
                 advanced(item)
             }
-            .inspectorSection("Annotation", systemImage: "character.textbox") {
+            // Named for what it is: the panel's own heading already says Annotation.
+            .inspectorSection(item.kind.name.title, systemImage: item.kind.name.symbol) {
                 HStack(spacing: 2) {
                     headerToggle(on: item.isHidden, symbol: item.isHidden ? "eye.slash" : "eye",
                                  help: item.isHidden ? "Show — it is left out of the preview and the export"
@@ -87,12 +88,19 @@ struct AnnotationInspector: View {
             }
 
             if item.kind.hasWords {
-                StudioTextField("Say something", text: text, axis: .vertical)
-                    .lineLimit(1...4)
+                // Return is a new line here too, as it is on the picture. See `StudioTextArea`.
+                StudioTextArea(text: text,
+                               font: .systemFont(ofSize: 12.5),
+                               colour: .white.withAlphaComponent(0.92),
+                               placeholder: "Say something",
+                               maxLines: 6)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 7)
+                    .background(StudioTheme.Surface.field,
+                                in: RoundedRectangle(cornerRadius: InspectorMetrics.fieldRadius, style: .continuous))
                     .accessibilityLabel("Annotation text")
 
-                InspectorSlider(model: model, "Size", systemImage: "textformat.size",
-                                value: restyled(\.fontSize, "Annotation Size"), range: 0.02...0.2)
+                textSize(item)
             }
 
             if case .step = item.kind {
@@ -179,16 +187,42 @@ struct AnnotationInspector: View {
 
     // MARK: - Animation
 
+    ///
+    /// Each change plays once on the paused picture — the way in when In changes, the way out
+    /// when Out does — so what was chosen is seen without playing the video to find it. The
+    /// play button runs the whole chain: in, a moment held, out.
     private func animation(_ item: AnnotationItem) -> some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
             InspectorRow("In") {
-                InspectorPicker(selection: restyled(\.animation.entrance, "Animate In"),
+                InspectorPicker(selection: previewing(restyled(\.animation.entrance, "Animate In"), .entrance),
                                 options: AnnotationAnimation.Entrance.allCases) { $0.title }
             }
             InspectorRow("Out") {
-                InspectorPicker(selection: restyled(\.animation.exit, "Animate Out"),
+                InspectorPicker(selection: previewing(restyled(\.animation.exit, "Animate Out"), .exit),
                                 options: AnnotationAnimation.Exit.allCases) { $0.title }
             }
+            HStack {
+                Spacer(minLength: 0)
+                SectionButton(title: "▶  Play animation") {
+                    model.previewAnimation(ofAnnotation: id, .chain)
+                }
+                .disabled(item.animation.entrance == .none && item.animation.exit == .none)
+                .help("Play this annotation's way in and way out once, without playing the video")
+            }
+        }
+    }
+
+    /// A binding that plays `part` of the animation once its value changes. Sliders wait for
+    /// the drag to settle, so one drag is one preview rather than forty restarts.
+    private func previewing<Value: Equatable>(_ binding: Binding<Value>,
+                                              _ part: AnnotationAnimationPreview.Part,
+                                              settle: Duration = .zero) -> Binding<Value> {
+        Binding {
+            binding.wrappedValue
+        } set: { value in
+            guard value != binding.wrappedValue else { return }
+            binding.wrappedValue = value
+            model.previewAnimation(ofAnnotation: id, part, after: settle)
         }
     }
 
@@ -239,12 +273,16 @@ struct AnnotationInspector: View {
                 number("H", \.size.height, item)
             }
 
-            InspectorSlider(model: model, "In length", value: restyled(\.animation.entranceDuration, "Animate In"),
+            InspectorSlider(model: model, "In length",
+                            value: previewing(restyled(\.animation.entranceDuration, "Animate In"), .entrance,
+                                              settle: .milliseconds(350)),
                             range: 0...2, format: { String(format: "%.2fs", $0) })
-            InspectorSlider(model: model, "Out length", value: restyled(\.animation.exitDuration, "Animate Out"),
+            InspectorSlider(model: model, "Out length",
+                            value: previewing(restyled(\.animation.exitDuration, "Animate Out"), .exit,
+                                              settle: .milliseconds(350)),
                             range: 0...2, format: { String(format: "%.2fs", $0) })
             InspectorRow("Easing") {
-                InspectorPicker(selection: restyled(\.animation.easing, "Animation Easing"),
+                InspectorPicker(selection: previewing(restyled(\.animation.easing, "Animation Easing"), .chain),
                                 options: Easing.allCases) { $0.rawValue.capitalized }
             }
         }
@@ -261,6 +299,41 @@ struct AnnotationInspector: View {
                 var rect = item.rect
                 rect[keyPath: path] = CGFloat(percent / 100)
                 model.setRegionRect(id, rect: rect)
+            }
+        }
+        .disabled(item.isLocked)
+    }
+
+    /// The words' size on its own, in pixels of the finished video: a step either way, or a
+    /// number typed in. Pulling the box on the picture sizes the box; this sizes the type —
+    /// so a callout's bubble and its words can each be made the size they need to be.
+    ///
+    /// It was a slider over a share of a range, which read "1%" for type that was plainly
+    /// not one per cent of anything, and began above the smallest size a box could give.
+    private func textSize(_ item: AnnotationItem) -> some View {
+        let height = max(1, model.outputSize.height)
+        let pixels = item.fontSize * height
+        let step = max(1, (height / 270).rounded())
+        func set(_ value: Double) {
+            let share = min(0.3, max(0.012, value / height))
+            model.restyleAnnotation(id, "Text Size") { $0.fontSize = share }
+        }
+        return InspectorRow("Text size") {
+            HStack(spacing: 4) {
+                StudioIconButton(systemImage: "textformat.size.smaller", help: "Smaller text", size: .small) {
+                    set(pixels - step)
+                }
+                // A number of pixels, read as one: as a time, "30" was thirty seconds' worth of
+                // something and the type went to the largest it can be.
+                TimeField(seconds: pixels.rounded(), format: { String(format: "%.0f px", $0) }, width: 64,
+                          parse: { Double($0.lowercased().replacingOccurrences(of: "px", with: "")
+                                        .trimmingCharacters(in: .whitespaces)) }) { value in
+                    set(value)
+                }
+                .accessibilityLabel("Text size in pixels")
+                StudioIconButton(systemImage: "textformat.size.larger", help: "Bigger text", size: .small) {
+                    set(pixels + step)
+                }
             }
         }
         .disabled(item.isLocked)
@@ -341,6 +414,8 @@ struct TimeField: View {
     let format: (Double) -> String
     var width: CGFloat = 96
     var alignment: TextAlignment = .trailing
+    /// How what was typed is read, when it is not a time or a percentage — a size in pixels.
+    var parse: ((String) -> Double?)?
     let commit: (Double) -> Void
 
     @State private var text = ""
@@ -360,6 +435,11 @@ struct TimeField: View {
     }
 
     private func submit() {
+        if let parse {
+            if let value = parse(text) { commit(value) }
+            text = format(seconds)
+            return
+        }
         let cleaned = text.replacingOccurrences(of: "%", with: "")
         if let value = Timecode.parse(cleaned) ?? Double(cleaned.trimmingCharacters(in: .whitespaces)),
            value.isFinite, abs(value - seconds) > 0.0005 {

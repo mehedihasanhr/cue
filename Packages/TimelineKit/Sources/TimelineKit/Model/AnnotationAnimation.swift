@@ -13,6 +13,8 @@ import Foundation
 public struct AnnotationAnimation: Codable, Equatable, Sendable {
     public enum Entrance: String, Codable, Sendable, CaseIterable {
         case none, fade, scale, pop, slideUp, slideDown, slideLeft, slideRight
+        /// Drawn on, the way a pen would draw it. A shape without a stroke fades instead.
+        case draw
 
         public var title: String {
             switch self {
@@ -20,6 +22,7 @@ public struct AnnotationAnimation: Codable, Equatable, Sendable {
             case .fade: "Fade"
             case .scale: "Scale"
             case .pop: "Pop"
+            case .draw: "Draw"
             case .slideUp: "Slide Up"
             case .slideDown: "Slide Down"
             case .slideLeft: "Slide Left"
@@ -30,10 +33,13 @@ public struct AnnotationAnimation: Codable, Equatable, Sendable {
 
     public enum Exit: String, Codable, Sendable, CaseIterable {
         case none, fade, scale, slideUp, slideDown, slideLeft, slideRight
+        /// Rubbed out the way it was drawn, from its start. A shape without a stroke fades.
+        case erase
 
         public var title: String {
             switch self {
             case .none: "None"
+            case .erase: "Erase"
             case .fade: "Fade"
             case .scale: "Scale"
             case .slideUp: "Slide Up"
@@ -131,6 +137,8 @@ public struct AnnotationAnimation: Codable, Equatable, Sendable {
         case .scale:
             pose.opacity *= eased
             pose.scale *= 0.6 + 0.4 * eased
+        case .draw:
+            pose.drawn *= eased
         case .pop:
             // Always springy, whatever the chosen curve: a pop without the overshoot is
             // just a scale.
@@ -157,6 +165,8 @@ public struct AnnotationAnimation: Codable, Equatable, Sendable {
         switch exit {
         case .none:
             break
+        case .erase:
+            pose.erased = max(pose.erased, 1 - eased)
         case .fade:
             pose.opacity *= eased
         case .scale:
@@ -186,10 +196,17 @@ public struct AnnotationPose: Equatable, Sendable {
     /// How far from where it was put. `dx` as a fraction of the frame's width, `dy` of its
     /// height, top-left origin like the rect it moves.
     public var offset: CGVector = .zero
+    /// How far along its stroke a traced shape is drawn, 0…1, from the Draw entrance.
+    public var drawn: Double = 1
+    /// How much of its stroke has been rubbed out from its start, 0…1, by the Erase exit.
+    public var erased: Double = 0
 
-    public init(opacity: Double = 1, scale: Double = 1, offset: CGVector = .zero) {
+    public init(opacity: Double = 1, scale: Double = 1, offset: CGVector = .zero,
+                drawn: Double = 1, erased: Double = 0) {
         self.opacity = opacity
         self.scale = scale
         self.offset = offset
+        self.drawn = drawn
+        self.erased = erased
     }
 }

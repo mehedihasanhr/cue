@@ -272,7 +272,7 @@ public enum CopiedRegion: Equatable, Sendable {
             case .rectangle: return "Klik annotation · rectangle · \(length)"
             case .image(let path): return "Klik annotation · \((path as NSString).lastPathComponent) · \(length)"
             case .callout(let text, _): return "Klik callout · “\(text)” · \(length)"
-            case .ellipse, .line, .highlight, .step:
+            case .ellipse, .loop, .line, .highlight, .step:
                 return "Klik annotation · \(r.kind.label.lowercased()) · \(length)"
             }
         case .caption(let r):

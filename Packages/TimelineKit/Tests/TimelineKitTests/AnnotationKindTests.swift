@@ -271,7 +271,7 @@ struct AnnotationKindTests {
 
     @Test func thePictureIsNotSwitchable() {
         #expect(!AnnotationItem.KindName.switchable.contains(.image))
-        #expect(AnnotationItem.KindName.switchable.count == 8)
+        #expect(AnnotationItem.KindName.switchable.count == 9)
     }
 
     @Test func labelsNameWhatIsOnTheLane() {

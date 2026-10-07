@@ -27,6 +27,11 @@ struct PreviewPane: View {
                 // supposed to be judged here.
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(Color(white: 0x11 / 255))
+                    // A click on nothing — the picture, or the space round it — lets go of
+                    // the label or mask that was picked, and its frame goes with it. A click
+                    // on the label brings it back. Every layout tool does this.
+                    .contentShape(Rectangle())
+                    .onTapGesture { model.deselectOnCanvas() }
 
                 if let preview = model.preview {
                     Image(nsImage: preview)
@@ -36,6 +41,9 @@ struct PreviewPane: View {
                         // because this is the scale the rounded corners are judged at.
                         .interpolation(.high)
                         .antialiased(true)
+                        // Clicks go through to the stage under it: the picture is looked at,
+                        // and a click on it is a click on nothing in particular.
+                        .allowsHitTesting(false)
                         .aspectRatio(contentMode: .fit)
                         // Behind the frame, not in it: with a transparent background the
                         // rendered frame really is see-through there — that is what the
@@ -68,6 +76,13 @@ struct PreviewPane: View {
                     // webcam panel is settings. What it needs here is a handle on the picture.
                     WebcamBubbleOverlay(model: model, stage: stage(in: proxy.size))
                 default:
+                    // The labels on the picture can be picked up whatever tool is chosen, the
+                    // way every layout tool's selection arrow moves any layer: selecting one
+                    // and then finding it would not move until the Annotate tool was chosen
+                    // read as a broken drag. Nothing new is drawn from here — see `drawsNew`.
+                    if !model.annotationsAtPlayhead.isEmpty {
+                        RegionCanvas(model: model, stage: stage(in: proxy.size), drawsNew: false)
+                    }
                     // Not a tool, and no mode to enter: selecting a zoom on the timeline is
                     // already an unambiguous statement about which zoom you mean, so its
                     // framing box is simply here. See `EditorModel.framedZoom`.
@@ -162,6 +177,11 @@ struct PreviewPane: View {
 struct CanvasToolBar: View {
     let model: EditorModel
     @State private var isAdding = false
+    /// Whether the bar of shapes is open above the Annotate bar.
+    @State private var showsShapes = false
+    /// The shape the shapes button shows: the one last chosen, so drawing the same kind
+    /// again is one click.
+    @State private var lastShape: EditorModel.NewAnnotation = .box
 
     private enum Mode: Equatable { case tools, crop, mask, annotate, zoom }
 
@@ -176,6 +196,41 @@ struct CanvasToolBar: View {
     }
 
     var body: some View {
+        VStack(spacing: 6) {
+            if mode == .annotate, showsShapes {
+                shapesBar
+                    .transition(.opacity.combined(with: .offset(y: 6)))
+            }
+            mainBar
+        }
+        .animation(StudioMotion.state, value: showsShapes)
+        .onChange(of: mode) { _, mode in if mode != .annotate { showsShapes = false } }
+    }
+
+    /// Every shape, in a bar of its own over the Annotate bar.
+    private var shapesBar: some View {
+        HStack(spacing: 1) {
+            ForEach(EditorModel.NewAnnotation.shapes) { kind in
+                choice(kind.symbol, name: "Draw \(kind.menuTitle.lowercased())",
+                       isOn: model.drawingAnnotation == kind) {
+                    lastShape = kind
+                    showsShapes = false
+                    model.armAnnotation(kind)
+                }
+            }
+        }
+        .padding(3)
+        .background(Color(white: 0x1D / 255), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.2), radius: 4, y: 1)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Shapes")
+    }
+
+    private var mainBar: some View {
         HStack(spacing: 1) {
             switch mode {
             case .tools: tools
@@ -256,13 +311,27 @@ struct CanvasToolBar: View {
 
     @ViewBuilder
     private var annotate: some View {
-        ForEach(EditorModel.NewAnnotation.first + EditorModel.NewAnnotation.second, id: \.self) { kind in
-            iconButton(kind.symbol, name: "Add \(kind.menuTitle.lowercased())") {
-                model.addAnnotation(kind)
-            }
+        annotationChoice(.text)
+        annotationChoice(.arrow)
+        // The shapes, behind one button that opens their bar. It shows the last one chosen,
+        // and is lit while any of them is ready to draw.
+        choice(lastShape.symbol, name: "Shapes",
+               isOn: showsShapes || EditorModel.NewAnnotation.shapes.contains { $0 == model.drawingAnnotation }) {
+            showsShapes.toggle()
         }
+        annotationChoice(.step)
+        annotationChoice(.callout)
         separator
         done { model.choose(.frame) }
+    }
+
+    /// A shape is chosen and then drawn on the picture; a label is added and typed into.
+    private func annotationChoice(_ kind: EditorModel.NewAnnotation) -> some View {
+        choice(kind.symbol, name: kind == .text ? "Add text" : "Draw \(kind.menuTitle.lowercased())",
+               isOn: model.drawingAnnotation == kind) {
+            showsShapes = false
+            model.armAnnotation(kind)
+        }
     }
 
     @ViewBuilder
@@ -288,7 +357,7 @@ struct CanvasToolBar: View {
     private var additions: [[(title: String, symbol: String, perform: () -> Void)]] {
         [
             EditorModel.NewAnnotation.allCases.map { kind in
-                (kind.menuTitle, kind.symbol, { model.addAnnotation(kind) })
+                (kind.menuTitle, kind.symbol, { model.armAnnotation(kind) })
             },
             [
                 ("Picture…", "photo", { model.addPicture(asLogo: false) }),
