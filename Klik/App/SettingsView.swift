@@ -34,7 +34,7 @@ struct GeneralSettingsView: View {
             }
 
             if let sync {
-                SettingsGroup("Sync", footer: "A folder in iCloud Drive or Dropbox shares snippets, colors and tasks with your other Macs.") {
+                SettingsGroup("Sync") {
                     SettingsRow(sync.url?.lastPathComponent ?? "Not syncing",
                                 subtitle: sync.url?.path(percentEncoded: false),
                                 symbol: "arrow.triangle.2.circlepath", tint: .blue) {
@@ -210,7 +210,7 @@ struct AgentSettingsView: View {
     var body: some View {
         @Bindable var preferences = preferences
         SettingsPane(.agents) {
-            SettingsGroup("Agent sessions", footer: "Klik adds a hook to each agent you connect. With Klik not running the hook does nothing, and every question is asked in the terminal as usual.") {
+            SettingsGroup("Agent sessions") {
                 SettingsRow("Show agent sessions", subtitle: "Claude Code and Codex sessions beside the notch. Hover to see them; allow, deny and answer their questions from the island.") {
                     Toggle("Agent sessions", isOn: $preferences.agentSessionsEnabled).toggleStyle(.switch)
                 }
@@ -430,7 +430,7 @@ struct SnippetSettingsView: View {
     var body: some View {
         @Bindable var preferences = preferences
         SettingsPane(.snippets, enabled: $preferences.snippetsEnabled) {
-            SettingsGroup("Snippets", footer: "Type \(preferences.snippetPrefix)keyword in any app to expand a snippet.") {
+            SettingsGroup("Snippets") {
                 SettingsRow("Keyword trigger") {
                     TextField("", text: $preferences.snippetPrefix, prompt: Text(";"))
                         .textFieldStyle(.roundedBorder)
@@ -463,7 +463,7 @@ struct NotesSettingsView: View {
     var body: some View {
         @Bindable var preferences = preferences
         SettingsPane(.notes, enabled: $preferences.notesEnabled) {
-            SettingsGroup("Floating note", footer: "The quick note (⌥⇧M). Pin it from its own bar to keep it above other apps; drag its corner to resize it.") {
+            SettingsGroup("Floating note") {
                 SettingsRow("Glass", subtitle: "Frosted keeps the text easy to read; clear shows what is behind the note.") {
                     HStack(spacing: 8) {
                         Text("Frosted").font(SettingsFont.sub).foregroundStyle(.secondary)
@@ -479,7 +479,7 @@ struct NotesSettingsView: View {
             }
             .disabled(!preferences.notesEnabled)
 
-            SettingsGroup("Where notes live", footer: "One Markdown file per note. A folder in iCloud Drive syncs them; an Obsidian vault shows them there.") {
+            SettingsGroup("Where notes live") {
                 if let notes {
                     SettingsRow(notes.folderIsCustom ? notes.folderURL.lastPathComponent : "Klik's own folder",
                                 subtitle: notes.folderURL.path(percentEncoded: false), symbol: "folder", tint: .yellow) {
@@ -502,7 +502,7 @@ struct NotesSettingsView: View {
             }
             .disabled(!preferences.notesEnabled)
 
-            SettingsGroup("Obsidian", footer: "Through Obsidian's own link; the note lands in the vault named here, or the last one opened.") {
+            SettingsGroup("Obsidian") {
                 sendRow(.obsidian)
                 SettingsRow("Vault name") {
                     TextField("Vault", text: $preferences.notesObsidianVault, prompt: Text("Last opened"))
@@ -512,7 +512,7 @@ struct NotesSettingsView: View {
             }
             .disabled(!preferences.notesEnabled)
 
-            SettingsGroup("Apple Notes", footer: "macOS asks once to let Klik control Notes.") {
+            SettingsGroup("Apple Notes") {
                 sendRow(.appleNotes)
                 SettingsRow("Folder") {
                     TextField("Folder", text: $preferences.notesAppleNotesFolder, prompt: Text("Notes"))
@@ -522,7 +522,7 @@ struct NotesSettingsView: View {
             }
             .disabled(!preferences.notesEnabled)
 
-            SettingsGroup("Notion", footer: "An internal integration's secret, shared with the page or database. Kept in your Keychain.") {
+            SettingsGroup("Notion") {
                 sendRow(.notion)
                 SettingsRow("Integration secret") {
                     SecureField("Secret", text: $preferences.notesNotionToken, prompt: Text("ntn_…"))
@@ -584,7 +584,7 @@ struct TasksSettingsView: View {
     var body: some View {
         @Bindable var preferences = preferences
         SettingsPane(.tasks) {
-            SettingsGroup("Remote server", footer: "Klik POSTs every project and task as JSON to this URL and takes what the server answers with. The format is in the README under Tasks sync.") {
+            SettingsGroup("Remote server") {
                 SettingsRow("Server URL") {
                     TextField("URL", text: $preferences.tasksServerURL, prompt: Text("https://example.com/klik/sync"))
                         .textFieldStyle(.roundedBorder)
@@ -601,7 +601,7 @@ struct TasksSettingsView: View {
                 }
             }
 
-            SettingsGroup("Sync", footer: "A sync follows each change here, and runs on the interval; the server's newer copies replace older ones here.") {
+            SettingsGroup("Sync") {
                 SettingsRow("Keep tasks in step with the server") {
                     Toggle("Sync", isOn: $preferences.tasksSyncEnabled).toggleStyle(.switch)
                 }
@@ -626,7 +626,7 @@ struct TasksSettingsView: View {
                 }
             }
 
-            SettingsGroup("Webhook", footer: "Each change POSTs a JSON event — task.created, task.updated, task.status, task.deleted — with the task, an X-Klik-Event header and, with a secret, X-Klik-Signature: sha256=HMAC of the body.") {
+            SettingsGroup("Webhook") {
                 SettingsRow("Webhook URL") {
                     TextField("URL", text: $preferences.tasksWebhookURL, prompt: Text("https://example.com/hooks/klik"))
                         .textFieldStyle(.roundedBorder)
@@ -838,7 +838,7 @@ struct CaptureSettingsView: View {
     @ViewBuilder
     private var captureText: some View {
         @Bindable var preferences = preferences
-        SettingsGroup("Capture text", footer: "Apple Vision reads the languages macOS ships models for. For the rest — Bangla among them — Klik downloads a language pack and reads them here on the Mac.") {
+        SettingsGroup("Capture text") {
             SettingsRow("Language", subtitle: engineNote, symbol: "text.viewfinder", tint: .green) {
                 SettingsLanguagePicker(tags: $preferences.ocrLanguages, availability: availability)
                     .onChange(of: preferences.ocrLanguages) { _, new in engines?.prepare(for: new) }
@@ -872,7 +872,7 @@ struct CaptureSettingsView: View {
     @ViewBuilder
     private var cloudEngine: some View {
         @Bindable var preferences = preferences
-        SettingsGroup("Cloud engine", footer: "Off unless you turn it on. With it on, the area you select is uploaded to the service below using your key — and nothing else is: not the library, not the file name, not the window title. The key is kept in your keychain and never written to a log.") {
+        SettingsGroup("Cloud engine") {
             SettingsRow("Use a cloud service",
                         subtitle: "For languages this Mac can't read, or when you want the best accuracy.") {
                 Toggle("Use a cloud service", isOn: $preferences.ocrCloudEnabled).toggleStyle(.switch)
@@ -1126,7 +1126,7 @@ struct TimeSettingsView: View {
             }
             .disabled(!preferences.timeEnabled)
 
-            SettingsGroup("Where", footer: preferences.prayerLocationMode == .manual ? "Decimal degrees, e.g. 23.8103, 90.4125." : nil) {
+            SettingsGroup("Where") {
                 SettingsRow("Location") {
                     Picker("Location", selection: $preferences.prayerLocationMode) {
                         ForEach(AppPreferences.PrayerLocationMode.allCases, id: \.self) { Text($0.title).tag($0) }
@@ -1153,7 +1153,7 @@ struct TimeSettingsView: View {
             .disabled(!preferences.timeEnabled || !preferences.prayerTimesEnabled)
 
             if preferences.timeEnabled, preferences.prayerTimesEnabled, let clock, let today = clock.today {
-                SettingsGroup("Today", footer: "Adjust to match your mosque's timetable.") {
+                SettingsGroup("Today") {
                     ForEach(today.ordered, id: \.prayer) { entry in
                         adjustmentRow(entry.prayer, time: entry.time)
                     }
@@ -1218,7 +1218,7 @@ struct ClipboardSettingsView: View {
     var body: some View {
         @Bindable var preferences = preferences
         SettingsPane(.clipboard) {
-            SettingsGroup("History", footer: "Concealed content, like passwords, is never recorded.") {
+            SettingsGroup("History") {
                 SettingsRow("Keep a clipboard history") {
                     Toggle("Keep history", isOn: $preferences.clipboardHistoryEnabled).toggleStyle(.switch)
                 }
@@ -1505,7 +1505,7 @@ struct ShortcutSettingsView: View {
                 }
             }
 
-            SettingsGroup("Global shortcuts", footer: "Click a field and press the keys. ⌫ removes one.") {
+            SettingsGroup("Global shortcuts") {
                 ForEach(HotkeyID.configurable, id: \.self) { id in
                     let entry = shortcuts.entries[id]
                     SettingsRow(id.title, symbol: symbol(for: id), tint: tint(for: id)) {
