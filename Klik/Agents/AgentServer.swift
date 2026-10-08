@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import os
 
 /// One hook run, connected to Klik: its event, and the way back to it. An event
 /// that waits for an answer keeps its connection until `reply`.
@@ -64,6 +65,10 @@ nonisolated final class AgentServer: @unchecked Sendable {
     let path: String
     private var fd: Int32 = -1
     private var source: (any DispatchSourceRead)?
+    /// The socket file this server made. Another copy of Klik starting up replaces
+    /// the file with its own; when that copy quits, hooks would find nobody there.
+    private var boundInode: ino_t = 0
+    private var watchdog: (any DispatchSourceTimer)?
     private let queue = DispatchQueue(label: "com.stackrover.klik.agents.server")
     private let onEvent: @Sendable (AgentEvent, AgentConnection) -> Void
 
@@ -105,6 +110,7 @@ nonisolated final class AgentServer: @unchecked Sendable {
             throw .system("bind", code)
         }
         chmod(path, 0o600)
+        boundInode = Self.inode(of: path) ?? 0
         guard listen(fd, 32) == 0 else {
             let code = errno
             Darwin.close(fd)
@@ -117,16 +123,43 @@ nonisolated final class AgentServer: @unchecked Sendable {
         source.setEventHandler { [weak self] in self?.accept() }
         self.source = source
         source.resume()
+        if watchdog == nil {
+            let timer = DispatchSource.makeTimerSource(queue: queue)
+            timer.schedule(deadline: .now() + 5, repeating: 5)
+            timer.setEventHandler { [weak self] in self?.rebindIfReplaced() }
+            watchdog = timer
+            timer.resume()
+        }
     }
 
     func stop() {
+        watchdog?.cancel()
+        watchdog = nil
+        close()
+    }
+
+    private func close() {
         source?.cancel()
         source = nil
         if fd >= 0 {
             Darwin.close(fd)
             fd = -1
-            unlink(path)
+            // Only our own file: another copy's live socket must stay.
+            if Self.inode(of: path) == boundInode { unlink(path) }
         }
+    }
+
+    /// Takes the socket path back when its file is gone or belongs to someone else
+    /// (another copy of Klik ran and quit), so hooks reach this one again.
+    private func rebindIfReplaced() {
+        guard fd >= 0, Self.inode(of: path) != boundInode else { return }
+        close()
+        do { try start() } catch { Log.app.error("Agent sessions: rebinding the socket failed: \(error.description, privacy: .public)") }
+    }
+
+    private static func inode(of path: String) -> ino_t? {
+        var info = stat()
+        return stat(path, &info) == 0 ? info.st_ino : nil
     }
 
     private func accept() {

@@ -64,8 +64,9 @@ public struct FrameStyle: Codable, Equatable, Sendable {
     /// video frame like `cornerRadius`. Zero — the default, and what every project
     /// written before it existed decodes to — is no border at all.
     ///
-    /// Drawn *inside* the picture's edge, so turning it on moves nothing: the frame, the
-    /// shadow and the corners stay exactly where the padding put them.
+    /// Drawn *outside* the picture's edge, round the window bar too when there is one, so
+    /// it covers none of the recording: the picture stays exactly where the padding put it
+    /// and the ring reaches out into the padding, with the shadow falling from its edge.
     public var borderWidth: Double
     public var borderColor: ColorValue
     /// A window drawn round the picture — a title bar, or a browser's bar. `.none`, the

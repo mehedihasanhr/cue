@@ -122,9 +122,16 @@ nonisolated enum AgentHooks {
 
     // MARK: Script
 
-    /// The hook script. It adds which agent ran it, the process that did, and the
-    /// terminal, then hands the event to Klik and prints the reply. It never fails
-    /// the agent: any trouble (Klik not running) exits quietly.
+    /// What Klik replies when the answer has to be typed into the agent's terminal
+    /// rather than returned: `KLIK-KEYS 1`. Claude Code takes a plan's approval only
+    /// from its own dialog (a hook's "allow" for ExitPlanMode is ignored; its "deny"
+    /// is honoured), so the script presses the dialog's key in the agent's own pane.
+    static let keysReplyPrefix = "KLIK-KEYS "
+
+    /// The hook script. It adds which agent ran it, the process that did, the terminal
+    /// and its pane, then hands the event to Klik and prints the reply — or, for a
+    /// reply of keys, types them into that pane. It never fails the agent: any trouble
+    /// (Klik not running) exits quietly.
     static func script(socketPath: String) -> String {
         """
     #!/bin/sh
@@ -135,9 +142,35 @@ nonisolated enum AgentHooks {
     agent=$(printf %s "${1:-claude}" | tr -cd 'a-z')
     profile=$(basename "$(dirname "$(dirname "$0")")" | tr -cd 'A-Za-z0-9._ -')
     term=$(printf %s "$TERM_PROGRAM" | tr -cd 'A-Za-z0-9._ -')
+    # The pane the agent runs in, so an answer can be typed there (see below).
+    pane=''
+    [ -n "$WEZTERM_PANE" ] && pane="wezterm:$(printf %s "$WEZTERM_PANE" | tr -cd '0-9')"
+    [ -z "$pane" ] && [ -n "$TMUX_PANE" ] && pane="tmux:$(printf %s "$TMUX_PANE" | tr -cd '%0-9')"
     event=$(tr -d '\\r\\n')
     [ -n "$event" ] || exit 0
-    printf '{"klik":{"agent":"%s","profile":"%s","pid":%d,"ppid":%d,"term":"%s"},"event":%s}\\n' "$agent" "$profile" "$$" "$PPID" "$term" "$event" | /usr/bin/nc -U "$sock" 2>/dev/null
+    reply=$(printf '{"klik":{"agent":"%s","profile":"%s","pid":%d,"ppid":%d,"term":"%s","pane":"%s"},"event":%s}\\n' "$agent" "$profile" "$$" "$PPID" "$term" "$pane" "$event" | /usr/bin/nc -U "$sock" 2>/dev/null)
+    case "$reply" in
+    '\(keysReplyPrefix)'*)
+        # An answer only the agent's own dialog accepts: press its key in this pane.
+        keys=$(printf %s "${reply#\(keysReplyPrefix)}" | tr -cd '0-9')
+        [ -n "$keys" ] || exit 0
+        # The dialog appears only once this hook has returned, so press the key a moment
+        # later, from the background, with nothing left holding the agent's pipe open.
+        (
+            sleep 1
+            case "$pane" in
+            wezterm:*)
+                wez=$(command -v wezterm || echo /opt/homebrew/bin/wezterm)
+                [ -x "$wez" ] || wez=/Applications/WezTerm.app/Contents/MacOS/wezterm
+                "$wez" cli send-text --no-paste --pane-id "${pane#wezterm:}" "$keys" ;;
+            tmux:*)
+                tmux send-keys -t "${pane#tmux:}" -l "$keys" ;;
+            esac
+        ) </dev/null >/dev/null 2>&1 &
+        ;;
+    *)
+        printf %s "$reply" ;;
+    esac
     exit 0
 
     """

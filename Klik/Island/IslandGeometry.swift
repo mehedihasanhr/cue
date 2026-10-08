@@ -74,8 +74,9 @@ nonisolated struct IslandGeometry: Equatable {
     /// pictures, and anything narrower puts two to a row on a laptop.
     static let recordWidth: CGFloat = 460
     static let formContentHeight: CGFloat = 300
-    /// The agent sessions list: the form's width, room for a command on one line.
-    static let agentsWidth: CGFloat = formWidth
+    /// The agent sessions list: wider than a form, so a session's name, what it is
+    /// about and a command each fit on one line.
+    static let agentsWidth: CGFloat = 540
     static let panelHorizontalPadding: CGFloat = 4
     static let panelBottomPadding: CGFloat = 8 // with the panel's own 16, the same 24 as its sides
 

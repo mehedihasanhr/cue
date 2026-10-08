@@ -25,18 +25,28 @@ struct SelectionInspector: View {
                 if let index = model.timeline.zooms.firstIndex(where: { $0.id == id }) {
                     ZoomInspector(model: model, index: index)
                 }
+            // Each panel made fresh for the thing it is about, `.id(id)`: kept alive across a
+            // change of selection, a control holding on to the last one's binding — the colour
+            // panel, a field mid-edit — went on writing to it, so styling a box recoloured the
+            // label selected before it.
             case .blur(let id):
                 MaskInspector(model: model, id: id)
+                    .id(id)
             case .annotation(let id):
                 AnnotationInspector(model: model, id: id)
+                    .id(id)
             case .cursorRegion(let id):
                 CursorRegionInspector(model: model, id: id)
+                    .id(id)
             case .caption(let id):
                 CaptionCueInspector(model: model, id: id)
+                    .id(id)
             case .keyCue(let id):
                 KeyCueInspector(model: model, id: id)
+                    .id(id)
             case .cameraLayout(let id):
                 CameraLayoutInspector(model: model, id: id)
+                    .id(id)
             case .sound, .soundTrack:
                 // The whole panel, because selecting the lane is how most people will
                 // arrive at these settings — and because the Sources section it opens with
@@ -239,8 +249,8 @@ struct SelectionInspector: View {
                 }, style: .studio(.secondary, size: .small)) {
                     HStack(spacing: 6) {
                         Text("Set Speed")
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.system(size: 8, weight: .semibold))
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9, weight: .semibold))
                             .foregroundStyle(StudioTheme.Palette.textSecondary)
                     }
                 }

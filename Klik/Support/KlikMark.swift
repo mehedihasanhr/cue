@@ -42,16 +42,25 @@ nonisolated enum KlikMark {
     nonisolated(unsafe) private static let body = SVGPath.path(bodyData)
     nonisolated(unsafe) private static let eyes = [SVGPath.path(leftEyeData), SVGPath.path(rightEyeData)]
 
-    /// The mark in `rect`.
-    static func path(in rect: CGRect) -> CGPath {
+    /// The mark in `rect`, its eyes `eyesOpen` from 0 (shut) to 1 (the artwork as
+    /// drawn). A closing eye is its hole losing height about its own middle.
+    static func path(in rect: CGRect, eyesOpen: CGFloat = 1) -> CGPath {
         let scale = min(rect.width / size.width, rect.height / size.height)
         let drawn = CGSize(width: size.width * scale, height: size.height * scale)
         let fit = CGAffineTransform(translationX: rect.midX - drawn.width / 2, y: rect.midY - drawn.height / 2)
             .scaledBy(x: scale, y: scale)
+        let open = min(max(eyesOpen, 0), 1)
         let combined = CGMutablePath()
         combined.addPath(body, transform: fit)
         for eye in eyes {
-            combined.addPath(eye, transform: fit)
+            guard open < 1 else { combined.addPath(eye, transform: fit); continue }
+            // Shut is a thin slit, never nothing: a hole of zero height draws a hairline.
+            let lid = max(open, 0.06)
+            let box = eye.boundingBoxOfPath
+            let squash = CGAffineTransform(translationX: 0, y: box.midY)
+                .scaledBy(x: 1, y: lid)
+                .translatedBy(x: 0, y: -box.midY)
+            combined.addPath(eye, transform: squash.concatenating(fit))
         }
         return combined
     }

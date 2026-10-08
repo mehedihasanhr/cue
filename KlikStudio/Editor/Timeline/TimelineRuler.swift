@@ -52,8 +52,8 @@ struct TimelineRuler: View {
                 // Held inside the ruler at the very start, where centring would put half
                 // of "0s" off the edge.
                 let label = context.resolve(Text(Timecode.ruler(second, step: step))
-                    .font(.system(size: 9.5, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.secondary))
+                    .font(.system(size: 10.5, weight: .regular))
+                    .foregroundStyle(Color(white: 0.55)))
                 let labelWidth = label.measure(in: size).width
                 let labelX = max(x, labelWidth / 2 + 1)
                 // Faded out from under the playhead's knob, which is drawn over this
@@ -65,11 +65,8 @@ struct TimelineRuler: View {
                 if opacity > 0 {
                     var faded = context
                     faded.opacity = opacity
-                    faded.draw(label, at: CGPoint(x: labelX, y: 6), anchor: .center)
+                    faded.draw(label, at: CGPoint(x: labelX, y: size.height / 2), anchor: .center)
                 }
-
-                context.fill(Path(ellipseIn: CGRect(x: x - 1.5, y: size.height - 5, width: 3, height: 3)),
-                             with: .color(.secondary.opacity(0.7)))
 
                 // Smaller, fainter dots between each pair of labels, so the eye can
                 // subdivide without another row of numbers — one halfway when the numbers
@@ -79,12 +76,13 @@ struct TimelineRuler: View {
                     guard time <= end else { break }
                     let between = viewport.x(forSeconds: time)
                     guard between < size.width else { break }
-                    let isHalf = parts % 2 == 0 && part == parts / 2
-                    let diameter: CGFloat = isHalf ? 2.2 : 1.6
+                    // One row with the numbers, dots between them, the way a ruler in a
+                    // motion editor reads.
+                    let diameter: CGFloat = 2.2
                     context.fill(Path(ellipseIn: CGRect(x: between - diameter / 2,
-                                                        y: size.height - 3.5 - diameter / 2,
+                                                        y: size.height / 2 - diameter / 2,
                                                         width: diameter, height: diameter)),
-                                 with: .color(.secondary.opacity(isHalf ? 0.45 : 0.3)))
+                                 with: .color(Color(white: 0.4)))
                 }
             }
 

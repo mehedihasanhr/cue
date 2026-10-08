@@ -107,6 +107,10 @@ final class AgentStore {
                 agentPIDs[key] = nil
                 hosts[key] = nil
             }
+        case .postToolUse:
+            // Answered in the terminal: the tool it asked about has run. The hook is
+            // still waiting (Claude Code no longer stops it), so let it go too.
+            withdraw { $0.isSettled(by: event) }
         default:
             // An answer given in the terminal shows as the hook hanging up (see
             // `hungUp`): tools run side by side, so a tool finishing says nothing
@@ -116,7 +120,7 @@ final class AgentStore {
     }
 
     private func ask(_ event: AgentEvent, from connection: AgentConnection) {
-        guard let request = AgentRequest(event, at: .now), canAsk() else {
+        guard var request = AgentRequest(event, at: .now), canAsk() else {
             connection.reply()
             return
         }
@@ -126,12 +130,24 @@ final class AgentStore {
             book.resume(request.sessionID, agent: request.agent, stillWaiting: false)
             return
         }
+        // Asked on the island first. Codex's own app shows no approval while the hook
+        // holds the question, so the card can hand it back to the app (with Klik
+        // closed, the hook lets go at once and the app asks as usual).
+        if request.agent == .codex, let host = hosts[request.sessionKey], Self.isAgentApp(host) {
+            request.appName = host.name
+        }
         connections[request.id] = connection
         if event.hookPID > 0 { hookPIDs[request.id] = event.hookPID }
         requests.append(request)
         Log.app.info("Agent sessions: \(request.agent.rawValue, privacy: .public) asks about \(request.toolName, privacy: .public)")
         watchHooks()
         onRequest(request)
+    }
+
+    /// Whether a session's host is the agent's own app rather than a terminal.
+    private static func isAgentApp(_ host: AgentHost) -> Bool {
+        guard let bundle = NSRunningApplication(processIdentifier: host.pid)?.bundleIdentifier else { return false }
+        return bundle.hasPrefix("com.openai.")
     }
 
     /// Checks every second whether the hooks behind open questions still run; the
@@ -165,6 +181,9 @@ final class AgentStore {
 
     /// Leaves the question to the terminal and brings it forward.
     func answerInTerminal(_ request: AgentRequest) {
+        // Codex waits on the hook and shows nothing meanwhile: let it go, so the
+        // agent asks in its own window. Claude Code's prompt is already showing.
+        if request.agent == .codex { withdraw { $0.id == request.id } }
         if let session = book.sessions.first(where: { $0.id == request.sessionKey }) { focus(session) }
     }
 
@@ -196,7 +215,8 @@ final class AgentStore {
             Self.bringForward(app)
         } else if let terminal = session.terminal {
             let names = ["Apple_Terminal": "com.apple.Terminal", "iTerm.app": "com.googlecode.iterm2", "vscode": "com.microsoft.VSCode",
-                         "WarpTerminal": "dev.warp.Warp-Stable", "ghostty": "com.mitchellh.ghostty"]
+                         "WarpTerminal": "dev.warp.Warp-Stable", "ghostty": "com.mitchellh.ghostty",
+                         "WezTerm": "com.github.wez.wezterm"]
             if let id = names[terminal], let app = NSRunningApplication.runningApplications(withBundleIdentifier: id).first {
                 Self.bringForward(app)
             }

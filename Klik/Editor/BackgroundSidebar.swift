@@ -116,7 +116,7 @@ struct BackgroundSidebar: View {
                             .fill(Color(nsColor: color.nsColor))
                             .frame(width: 22, height: 22)
                             .overlay(Circle().strokeBorder(.primary.opacity(0.15)))
-                            .overlay(Circle().strokeBorder(Color.accentColor, lineWidth: selected ? 2 : 0).padding(-3))
+                            .overlay(Circle().strokeBorder(EditorChrome.accent, lineWidth: selected ? 2 : 0).padding(-3))
                     }
                     .buttonStyle(.plain)
                 }
@@ -206,7 +206,7 @@ struct BackgroundSidebar: View {
                                 .frame(width: 22, height: 18, alignment: Alignment(horizontal: [.leading, .center, .trailing][column], vertical: [.top, .center, .bottom][rowIndex]))
                                 .padding(2)
                                 .background(RoundedRectangle(cornerRadius: 4).fill(.primary.opacity(selected ? 0.12 : 0.05)))
-                                .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(selected ? Color.accentColor : .primary.opacity(0.12)))
+                                .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(selected ? EditorChrome.accent : .primary.opacity(0.12)))
                         }
                         .buttonStyle(.plain)
                     }
@@ -242,7 +242,7 @@ struct BackgroundSidebar: View {
                 .frame(width: 38, height: 38)
                 .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(.primary.opacity(0.12)))
-                .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(Color.accentColor, lineWidth: selected ? 2 : 0).padding(-3))
+                .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(EditorChrome.accent, lineWidth: selected ? 2 : 0).padding(-3))
         }
         .buttonStyle(.plain)
         .help(help)

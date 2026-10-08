@@ -5,11 +5,16 @@ import TimelineKit
 ///
 /// Picked rather than taken from the system palette: `.orange` and `.purple` are tuned to
 /// be tints, and filled solid across a whole lane they read as a warning and as a toy.
-/// A warmer amber for the footage and a blue-leaning violet for zooms are the same two ideas
-/// at a strength a chip can carry edge to edge, with white on top of it, in either appearance.
+/// A violet for the footage and a steel blue for zooms are two ideas at a strength a chip
+/// can carry edge to edge, with white on top of it. No orange or yellow: those read as
+/// warnings, and nothing on the timeline is one.
 enum TimelinePalette {
-    static let clip = Color(red: 0.86, green: 0.55, blue: 0.12)
-    static let zoom = Color(red: 0.42, green: 0.31, blue: 0.96)
+    static let clip = StudioTheme.Surface.clip
+    /// A muted steel blue: apart from the footage's violet, calmer than the playhead's
+    /// blue, and nothing like the orange that means a warning.
+    static let zoom = Color(red: 0.36, green: 0.52, blue: 0.78)
+    /// The pointer's lane: a quiet slate, for the same reason.
+    static let pointer = Color(red: 0.56, green: 0.6, blue: 0.68)
 }
 
 /// What a chip on the timeline is drawn as: a solid, faintly top-lit fill with a light
@@ -25,10 +30,14 @@ struct TimelineChipBackground: View {
     /// before the click does.
     var isHovered = false
     var radius: CGFloat = TimelineChipBackground.radius
+    /// The footage: solid and lit. Everything else on the timeline — zooms, masks, notes,
+    /// captions — is a wash of its colour with a fine edge until it is chosen, so the
+    /// recording is the one thing the eye lands on and the rest reads as marks on it.
+    var isPrimary = false
 
     /// One radius for every chip, run and lane well, so the strip reads as one family of
     /// shapes rather than one per lane.
-    static let radius: CGFloat = 7
+    static let radius: CGFloat = 6
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -42,12 +51,26 @@ struct TimelineChipBackground: View {
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        shape
-            .fill(tint.gradient)
-            .overlay(shape.fill(.white.opacity(isSelected ? 0.1 : (isHovered ? 0.07 : 0))))
-            .overlay(shape.strokeBorder(isSelected ? Self.ring(in: colorScheme) : .white.opacity(0.22),
-                                        lineWidth: isSelected ? 2 : 1))
-            .animation(StudioMotion.state, value: isHovered)
+        Group {
+            if isPrimary {
+                shape
+                    .fill(tint)
+                    // A faint light along the top edge, so the main track has a little
+                    // body the quieter lanes do not.
+                    .overlay(shape.fill(LinearGradient(colors: [.white.opacity(0.12), .clear],
+                                                       startPoint: .top, endPoint: .center)))
+                    .overlay(shape.fill(.white.opacity(isSelected ? 0.1 : (isHovered ? 0.06 : 0))))
+                    .overlay(shape.strokeBorder(isSelected ? Self.ring(in: colorScheme) : .white.opacity(0.14),
+                                                lineWidth: isSelected ? 2 : 1))
+            } else {
+                shape
+                    .fill(tint.opacity(isSelected ? 0.9 : (isHovered ? 0.4 : 0.24)))
+                    .overlay(shape.strokeBorder(isSelected ? Self.ring(in: colorScheme) : tint.opacity(0.42),
+                                                lineWidth: isSelected ? 1.5 : 1))
+            }
+        }
+        .animation(StudioMotion.state, value: isHovered)
+        .animation(StudioMotion.state, value: isSelected)
     }
 }
 
@@ -58,7 +81,7 @@ struct TimelineLaneWell: View {
 
     var body: some View {
         RoundedRectangle(cornerRadius: TimelineChipBackground.radius, style: .continuous)
-            .fill(Color.secondary.opacity(0.07))
+            .fill(Color.white.opacity(0.025))
             .frame(height: height)
     }
 }
@@ -128,8 +151,8 @@ struct TimelineChipLabel<Detail: View, Compact: View>: View {
             details(withSymbol: true)
             details(withSymbol: false)
             compact()
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white)
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(.white.opacity(0.88))
                 .fixedSize()
             // Nothing, rather than a cut-off fragment: a chip too narrow for its short form
             // is a coloured mark, and its tooltip still says what it is.
@@ -145,8 +168,8 @@ struct TimelineChipLabel<Detail: View, Compact: View>: View {
             // runs out, and what the chip says keeps the space.
             if hasTwoLines, room >= 56 { name }
             detail()
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white)
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(.white.opacity(0.88))
                 .truncationMode(.tail)
         }
         .frame(width: room)
@@ -169,8 +192,8 @@ struct TimelineChipLabel<Detail: View, Compact: View>: View {
             }
             detail()
         }
-        .font(.system(size: 11, weight: .semibold))
-        .foregroundStyle(.white)
+        .font(.system(size: 10.5, weight: .medium))
+        .foregroundStyle(.white.opacity(0.88))
         .fixedSize()
     }
 }

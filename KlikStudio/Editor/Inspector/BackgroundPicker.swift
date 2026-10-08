@@ -36,7 +36,52 @@ enum BackgroundTab: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
+/// The five kinds of background as the panel offers them: the first level of choice.
+///
+/// A solid colour and a gradient are one kind here — Color — told apart one level down,
+/// because they are the same idea at two degrees: what is behind the picture is a colour,
+/// or a run between colours. Six peers in a grid of tabs said they were six unrelated
+/// things.
+enum BackgroundKindChoice: String, CaseIterable, Identifiable, Hashable {
+    case wallpaper, image, color, motion, none
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .wallpaper: "Wallpaper"
+        case .image: "Image"
+        case .color: "Color"
+        case .motion: "Motion"
+        case .none: "None"
+        }
+    }
+
+    init(_ tab: BackgroundTab) {
+        switch tab {
+        case .wallpaper: self = .wallpaper
+        case .image: self = .image
+        case .gradient, .color: self = .color
+        case .motion: self = .motion
+        case .transparent: self = .none
+        }
+    }
+}
+
+/// A colour background's two forms: one colour, or a run between several.
+enum ColorFill: String, CaseIterable, Identifiable, Hashable {
+    case solid, gradient
+    var id: String { rawValue }
+    var title: String { self == .solid ? "Solid" : "Gradient" }
+}
+
 /// What the recording sits on.
+///
+/// Two levels. The kind is a pop-up on the section's heading — Wallpaper, Image, Color,
+/// Motion or None — and under the heading are only the settings that kind has: the
+/// wallpapers to pick from, the picture and its buttons, Solid or Gradient and their
+/// swatches, the moving background's presets and pace. A segmented control appears only
+/// where its choices are close relatives — Solid and Gradient, Drift and Aurora — and never
+/// for the kind itself, which is a mode rather than a variation.
 struct BackgroundPicker: View {
     let model: EditorModel
     let state: InspectorState
@@ -47,15 +92,12 @@ struct BackgroundPicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenGroups) {
-            // Six kinds, every title whole and in one size of type: on as many rows as the
-            // column needs — two, at the panel's usual width. See `InspectorTabs`.
-            InspectorTabs(selection: tab, items: BackgroundTab.allCases) { $0.title }
-                .accessibilityLabel("Kind of background")
-
             switch tab.wrappedValue {
             case .wallpaper: WallpaperGrid(model: model, state: state)
-            case .gradient: gradients
-            case .color: colors
+            case .gradient, .color:
+                InspectorTabs(selection: fill, items: ColorFill.allCases) { $0.title }
+                    .accessibilityLabel("Solid colour or gradient")
+                if fill.wrappedValue == .solid { colors } else { gradients }
             case .image: image
             case .motion: MotionBackgroundPicker(model: model)
             case .transparent: transparent
@@ -71,7 +113,38 @@ struct BackgroundPicker: View {
                                 range: 0...0.04)
             }
         }
-        .inspectorSection("Background", systemImage: "photo")
+        .inspectorSection("Background", systemImage: "photo") {
+            InspectorPicker(selection: kind, options: BackgroundKindChoice.allCases) { $0.title }
+                .accessibilityLabel("Kind of background")
+                .help("What the recording sits on")
+        }
+    }
+
+    /// The first level: which kind of background. Moving between the two forms of colour
+    /// is the second level's business, so choosing Color while a gradient is showing keeps
+    /// the gradient.
+    private var kind: Binding<BackgroundKindChoice> {
+        Binding {
+            BackgroundKindChoice(tab.wrappedValue)
+        } set: { chosen in
+            guard chosen != BackgroundKindChoice(tab.wrappedValue) else { return }
+            switch chosen {
+            case .wallpaper: tab.wrappedValue = .wallpaper
+            case .image: tab.wrappedValue = .image
+            case .color: tab.wrappedValue = .gradient
+            case .motion: tab.wrappedValue = .motion
+            case .none: tab.wrappedValue = .transparent
+            }
+        }
+    }
+
+    /// The second level under Color.
+    private var fill: Binding<ColorFill> {
+        Binding {
+            tab.wrappedValue == .color ? .solid : .gradient
+        } set: { chosen in
+            tab.wrappedValue = chosen == .solid ? .color : .gradient
+        }
     }
 
     /// Derived from the document so that undoing a background change moves the tab back
@@ -118,7 +191,7 @@ struct BackgroundPicker: View {
     /// nothing you can see until one of them is moved.
     private var gradients: some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenGroups) {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 30, maximum: 34), spacing: 8)],
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 26, maximum: 28), spacing: 8)],
                       alignment: .leading,
                       spacing: 8) {
                 ForEach(BackgroundPreset.allCases) { preset in

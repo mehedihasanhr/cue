@@ -64,14 +64,15 @@ struct LooksSection: View {
             HStack(spacing: 4) {
                 Text(current?.name ?? "Custom")
                     .lineLimit(1)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 8, weight: .semibold))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(StudioTheme.Palette.textSecondary)
             }
         }
-        // Drawn as the kit's pop-up field, so it reads as the same control as every
-        // `StudioMenuPicker` in the panel even though what it opens is a picture list.
-        .buttonStyle(.studio(.secondary, size: .small))
+        // Drawn as the kit's pop-up on a heading — its words and a chevron — so it reads as
+        // the same control as every `StudioMenuPicker` beside a heading.
+        .buttonStyle(.studio(.ghost, size: .small))
+        .padding(.trailing, -8)
         .fixedSize()
         .help("Dress this recording in a built-in or saved look, or save this one")
         .accessibilityLabel("Look")

@@ -107,6 +107,7 @@ final class StudioAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         StudioAutomation.applyAppearance()
+        StudioAutomation.listenForPointer()
         Self.shared = self
         guard let handOff = Self.handOff else { return }
         configure(settings: handOff.settings, studio: handOff.studio)

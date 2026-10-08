@@ -713,8 +713,15 @@ public struct SceneBuilder: Sendable {
     private func annotationLayers(_ timeline: Timeline, at time: CMTime) -> [AnnotationLayer] {
         timeline.annotations.compactMap { item in
             guard !item.isHidden, item.contains(time) else { return nil }
-            let pose = item.pose(atOffset: (time - item.start).seconds)
-            guard pose.opacity > 0.001 else { return nil }
+            var pose = item.pose(atOffset: (time - item.start).seconds)
+            // Draw and Erase trace a pen stroke. Words and pictures have none to trace, so
+            // they fade over the same time instead.
+            if !item.kind.canBeTraced {
+                pose.opacity *= max(0, pose.drawn - pose.erased)
+                pose.drawn = 1
+                pose.erased = 0
+            }
+            guard pose.opacity > 0.001, pose.drawn - pose.erased > 0.001 else { return nil }
             // A picture is kept inside the project and named relative to it, so a project
             // can be moved; the renderer is handed where it is now.
             var kind = item.kind
@@ -729,7 +736,9 @@ public struct SceneBuilder: Sendable {
                                    rotation: item.rotation,
                                    scale: pose.scale,
                                    offset: pose.offset,
-                                   style: item.style)
+                                   style: item.style,
+                                   drawn: min(1, max(0, pose.drawn)),
+                                   erased: min(1, max(0, pose.erased)))
         }
     }
 

@@ -20,9 +20,20 @@ struct RegionCanvas: View {
     let model: EditorModel
     /// Where the picture is, in this view's coordinates.
     let stage: CGRect
+    /// Whether a drag on empty picture draws a new region, which is what the Mask and
+    /// Annotate tools are for. Without them the canvas only offers the labels already on the
+    /// picture — to pick up, resize, turn and type into — and leaves empty picture, and the
+    /// masks, to whatever is underneath.
+    var drawsNew = true
 
     @State private var draft: CGRect?
+    /// Where a line or an arrow being drawn starts and ends, on the flat picture.
+    @State private var draftEnds: (from: CGPoint, to: CGPoint)?
     @State private var gestureOrigin: CGRect?
+    /// Which box `gestureOrigin` belongs to. A drag whose end never arrived — its handle
+    /// taken away mid-drag — left its origin behind, and the next drag, on another box,
+    /// started from it.
+    @State private var gestureID: UUID?
     /// A label's type size when a resize began, for scaling it from a corner.
     @State private var fontOrigin: Double?
     /// The lines a box being dragged has lined up with, while it is being dragged.
@@ -33,7 +44,14 @@ struct RegionCanvas: View {
     @State private var isPointing = false
     /// The annotation being typed into, if any.
     @State private var editingID: UUID?
-    @FocusState private var isTyping: Bool
+    /// Whether opening for typing selects the words, so the first key replaces them — for
+    /// a label just added with its placeholder in it.
+    @State private var selectsAllOnEdit = false
+    /// The box under the pointer, so a label can be found before it is clicked when the
+    /// canvas is not showing every outline.
+    @State private var hoveredID: UUID?
+    /// Escape, watched for the whole window while a shape is chosen. See `watchEscape()`.
+    @State private var escapeMonitor: Any?
 
     private var geometry: CanvasGeometry {
         CanvasGeometry(stage: stage, scene: model.scene)
@@ -59,11 +77,26 @@ struct RegionCanvas: View {
         ZStack(alignment: .topLeading) {
             // A transparent catcher under everything, so a drag that starts on empty
             // picture draws a new region rather than falling through to the pane.
+            // The whole pane, always: the boxes below are placed by offsets from this stack's
+            // top left, and without something the pane's size in it the stack shrank to its
+            // boxes and sat in the middle of the pane — every box drawn, and clicked, somewhere
+            // other than its label. Without a tool to draw with it takes no clicks itself.
             Color.clear
-                .contentShape(Rectangle())
-                .gesture(createDrag)
+                .allowsHitTesting(false)
+            if drawsNew {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .gesture(createDrag)
+                    // A click with a shape chosen puts one down there at its usual size —
+                    // a step is mostly placed rather than drawn.
+                    .simultaneousGesture(placeTap)
+                    .onHover { inside in
+                        guard model.drawingAnnotation != nil else { return }
+                        if inside { NSCursor.crosshair.push() } else { NSCursor.pop() }
+                    }
+            }
 
-            ForEach(model.blursAtPlayhead) { blur in
+            ForEach(drawsNew ? model.blursAtPlayhead : []) { blur in
                 // Where the mask is now: a following one moves. See `BlurRegion.rect(at:)`.
                 let rect = geometry.view(blur: model.coveredRect(of: blur))
                 box(id: blur.id,
@@ -91,7 +124,11 @@ struct RegionCanvas: View {
                     .allowsHitTesting(false)
             }
 
-            if let draft {
+            if let draftEnds {
+                tilt.line(from: draftEnds.from, to: draftEnds.to)
+                    .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [5, 4]))
+                    .allowsHitTesting(false)
+            } else if let draft {
                 if tilt.isTilted {
                     let outline = tilt.outline(of: draft)
                     outline.fill(Color.accentColor.opacity(0.12))
@@ -110,24 +147,76 @@ struct RegionCanvas: View {
             hint
         }
         .coordinateSpace(.named(Self.space))
-        .onExitCommand { model.tool = .frame }
+        .onExitCommand {
+            // Escape puts a chosen shape down first, and only then leaves the tool.
+            if model.drawingAnnotation != nil { model.drawingAnnotation = nil } else { model.tool = .frame }
+        }
+        // A label or callout just added from a button opens for typing, its placeholder
+        // selected, as soon as it is on the canvas.
+        .onAppear(perform: typePending)
+        .onChange(of: model.annotationToType) { typePending() }
+        // Which label the renderer leaves out follows exactly one thing: which one this
+        // canvas is typing into. Two editors each setting it on appearing and clearing it on
+        // disappearing raced when typing moved from one label straight to another.
+        .onChange(of: editingID) { model.editingAnnotation = editingID }
+        // Let go of from anywhere — a click on the stage, Escape, the timeline — a label
+        // stops being typed into as well.
+        .onChange(of: model.selection) {
+            if let editingID, model.selection != .annotation(editingID) { endEditing() }
+        }
+        .onAppear(perform: watchEscape)
+        .onDisappear {
+            editingID = nil
+            model.editingAnnotation = nil
+            if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }
+            escapeMonitor = nil
+        }
+    }
+
+    /// Escape puts a chosen shape down, and a second one leaves the tool, wherever the
+    /// keyboard is.
+    ///
+    /// `onExitCommand` only hears Escape when the canvas has the keyboard, and nothing on
+    /// it ever takes the keyboard — so with a shape chosen, Escape did nothing at all and
+    /// the hint promising it was wrong. Only taken while a shape is chosen; otherwise it
+    /// goes on to whatever else wants it, typing in a label included.
+    private func watchEscape() {
+        guard escapeMonitor == nil else { return }
+        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.keyCode == 53 else { return event }
+            if model.drawingAnnotation != nil {
+                model.drawingAnnotation = nil
+                return nil
+            }
+            // Then out of the tool, as the hint says — unless the keyboard is in a field,
+            // where Escape belongs to the field.
+            guard drawsNew, editingID == nil, !(NSApp.keyWindow?.firstResponder is NSText) else { return event }
+            model.tool = .frame
+            return nil
+        }
     }
 
     /// What to do, for as long as there is nothing to look at yet.
     @ViewBuilder
     private var hint: some View {
-        if model.blursAtPlayhead.isEmpty, model.annotationsAtPlayhead.isEmpty, draft == nil {
-            Text(isBlurring ? "Drag over anything to \(model.newMaskStyle == .spotlight ? "spotlight" : "hide") it"
-                            : "Drag to place a label")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.white.opacity(0.85))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(.black.opacity(0.45), in: Capsule())
-                .position(x: stage.midX, y: stage.maxY - 26)
-                .allowsHitTesting(false)
-                .transition(.opacity)
+        if drawsNew, let armed = model.drawingAnnotation, draft == nil {
+            hintText("Drag to draw \(armed == .arrow ? "an" : "a") \(armed.menuTitle.lowercased()) · click to place one · esc to cancel")
+        } else if drawsNew, model.blursAtPlayhead.isEmpty, model.annotationsAtPlayhead.isEmpty, draft == nil {
+            hintText(isBlurring ? "Drag over anything to \(model.newMaskStyle == .spotlight ? "spotlight" : "hide") it"
+                                : "Drag to place a label")
         }
+    }
+
+    private func hintText(_ words: String) -> some View {
+        Text(words)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(.white.opacity(0.85))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(.black.opacity(0.45), in: Capsule())
+            .position(x: stage.midX, y: stage.maxY - 26)
+            .allowsHitTesting(false)
+            .transition(.opacity)
     }
 
     // MARK: - An existing region
@@ -140,8 +229,12 @@ struct RegionCanvas: View {
     private func box(id: UUID, rect: CGRect, kind: Kind, isSelected: Bool) -> some View {
         let rotation = Self.rotation(of: kind)
         let isLocked = Self.isLocked(kind)
+        // Outside the Annotate tool the picture is being looked at, not laid out, so a label
+        // shows its outline only when it is picked or pointed at — and is still there to
+        // click wherever it is.
+        let isQuiet = !drawsNew && !isSelected && hoveredID != id
         return ZStack(alignment: .topLeading) {
-            placedOutline(kind: kind, isSelected: isSelected, rect: rect, rotation: rotation)
+            placedOutline(kind: kind, isSelected: isSelected, isQuiet: isQuiet, rect: rect, rotation: rotation)
                 // Double-click to type has to come first: registered after the single
                 // tap, SwiftUI hands the first click to selection and the second never
                 // arrives as a pair.
@@ -153,16 +246,21 @@ struct RegionCanvas: View {
                     if case .annotation(let item) = kind, item.kind.hasWords { beginEditing(id) }
                 }
                 .onTapGesture {
-                    // A label that is already selected opens for typing on a single click,
-                    // the way a name does in Finder. Double-click still works from cold,
-                    // and neither is the only way in: the inspector has the same field.
-                    if case .annotation(let item) = kind, item.kind.hasWords, isSelected {
+                    // A click on something already there is about that thing, shape tool
+                    // or not: the tool lets go, and what was clicked is picked.
+                    model.drawingAnnotation = nil
+                    // Something with words opens for typing on one click, picked and framed
+                    // at the same time: the words are what a label is clicked to change. A
+                    // drag still moves it — a press that travels is a move, not a click —
+                    // and a click on empty picture puts it down again.
+                    if case .annotation(let item) = kind, item.kind.hasWords, !item.isLocked {
                         beginEditing(id)
                     } else {
                         select(id: id, kind: kind)
                     }
                 }
                 .onHover { inside in
+                    if inside { hoveredID = id } else if hoveredID == id { hoveredID = nil }
                     // Says it can be picked up — unless it is locked, where saying so would
                     // be a promise the drag then breaks.
                     guard !isLocked else { return }
@@ -213,9 +311,9 @@ struct RegionCanvas: View {
             switch item.kind.name {
             case .arrow, .line: []
             case .step: AnnotationGeometry.Handle.allCases.filter(\.isCorner)
-            // A label's height is its lines, so nothing pulls its top or bottom: the sides
-            // set where it wraps and the corners scale its type. See `AnnotationFit`.
-            case .text: AnnotationGeometry.Handle.allCases.filter { $0.isCorner || $0.direction.y == 0 }
+            // All eight: the sides set its width, the top and bottom its height, and the
+            // corners scale its type. See `AnnotationFit`.
+            case .text: AnnotationGeometry.Handle.allCases
             default: AnnotationGeometry.Handle.allCases
             }
         }
@@ -312,13 +410,19 @@ struct RegionCanvas: View {
     /// through the turn: a quadrilateral, drawn as lines, and the quadrilateral is what
     /// takes the click.
     @ViewBuilder
-    private func placedOutline(kind: Kind, isSelected: Bool, rect: CGRect, rotation: Double) -> some View {
+    private func placedOutline(kind: Kind, isSelected: Bool, isQuiet: Bool, rect: CGRect, rotation: Double) -> some View {
         if tilt.isTilted {
             let shape = tilt.outline(of: rect, rotation: rotation)
             tiltedOutline(kind: kind, isSelected: isSelected, shape: shape, rect: rect)
+                .opacity(isQuiet ? 0 : 1)
+                .background(Color.white.opacity(0.001).clipShape(shape))
                 .contentShape(shape)
         } else {
             outline(kind: kind, isSelected: isSelected)
+                .opacity(isQuiet ? 0 : 1)
+                // Something to land on when the outline is not drawn: a view nobody can see
+                // takes no clicks.
+                .background(Color.white.opacity(0.001))
                 .frame(width: rect.width, height: rect.height)
                 .contentShape(Rectangle())
                 .rotationEffect(.degrees(rotation))
@@ -434,18 +538,37 @@ struct RegionCanvas: View {
         // plated label's in from the plate's edge. See `AnnotationArtwork`.
         let inset: (x: CGFloat, y: CGFloat) = isCallout ? (size * 0.5, size * 0.3)
             : plate != nil ? (size * 0.35, size * 0.2) : (0, 0)
-        return TextField("Type your label", text: text(of: item.id), axis: .vertical)
-            .textFieldStyle(.plain)
-            .multilineTextAlignment(Self.alignment(item.style.alignment))
-            // The renderer's font, exactly: `NSFont.systemFont(ofSize: outputHeight *
-            // fontSize, weight:)`. The stage *is* the finished frame on screen, so its
-            // height stands in for the output's. This used to be half the box's height,
-            // which is a different number entirely — which is why what you typed was never
-            // the size of what appeared.
-            .font(.system(size: size, weight: Self.weight(item.style.weight)))
-            .foregroundStyle(Color(item.style.textColour(for: item.color).rgba.nsColor))
-            .padding(.horizontal, inset.x)
-            .padding(.vertical, inset.y)
+        // AppKit's text view, so Return starts a new line and the label grows a line at a
+        // time — see `StudioTextArea`. The renderer's own font, family and weight included:
+        // the stage *is* the finished frame on screen, so its height stands in for the
+        // output's, and what is typed is the size and shape it will export.
+        let words = text(of: item.id)
+        let font = AnnotationFit.font(for: item.style, pointSize: size)
+        let measured = StudioTextArea(text: words,
+                                      font: font,
+                                      colour: item.style.textColour(for: item.color).rgba.nsColor,
+                                      alignment: Self.nsAlignment(item.style.alignment),
+                                      placeholder: "Type your label",
+                                      takesFocus: true,
+                                      selectsAll: selectsAllOnEdit,
+                                      onEnd: { endEditing() })
+        // A little room past the box on the side the words grow towards, and below it. The
+        // box is measured with the renderer's text maths, and AppKit's text view lays the same
+        // words out a hair wider and taller — enough that a label measured to fit wrapped its
+        // last letter onto a line of its own while it was being typed ("Tex" / "t"). The slack
+        // is only on screen while typing; the box and the export are as measured.
+        let slack = item.fixedWidth ? 2 : size * 0.6
+        let lead: CGFloat, trail: CGFloat
+        switch item.style.alignment {
+        case .left: (lead, trail) = (0, slack)
+        case .center: (lead, trail) = (slack / 2, slack / 2)
+        case .right: (lead, trail) = (slack, 0)
+        }
+        return measured
+            .padding(.leading, inset.x - lead)
+            .padding(.trailing, inset.x - trail)
+            .padding(.top, inset.y)
+            .padding(.bottom, inset.y - size * 0.5)
             // No plate behind it unless the annotation has one. The point of typing on the
             // picture is seeing what the label will look like on the picture, and a dark
             // rectangle under it is the one thing guaranteed not to be in the export. What
@@ -469,14 +592,6 @@ struct RegionCanvas: View {
             // with it, so the words being typed sit on the plate the export will draw them on.
             // Nothing at all when the picture is square-on.
             .projectionEffect(tilt.projection)
-            .focused($isTyping)
-            .onSubmit { endEditing() }
-            .onExitCommand { endEditing() }
-            .onAppear {
-                isTyping = true
-                model.editingAnnotation = item.id
-            }
-            .onDisappear { model.editingAnnotation = nil }
             .accessibilityLabel("Annotation text")
     }
 
@@ -496,6 +611,14 @@ struct RegionCanvas: View {
         }
     }
 
+    private static func nsAlignment(_ alignment: AnnotationStyle.Alignment) -> NSTextAlignment {
+        switch alignment {
+        case .left: .natural
+        case .center: .center
+        case .right: .right
+        }
+    }
+
     private static func frameAlignment(_ alignment: AnnotationStyle.Alignment) -> Alignment {
         switch alignment {
         case .left: .topLeading
@@ -512,8 +635,9 @@ struct RegionCanvas: View {
         }
     }
 
-    private func beginEditing(_ id: UUID) {
+    private func beginEditing(_ id: UUID, selectingAll: Bool = false) {
         model.select(.annotation(id))
+        selectsAllOnEdit = selectingAll
         editingID = id
         model.editingAnnotation = id
     }
@@ -525,7 +649,7 @@ struct RegionCanvas: View {
     private func endEditing() {
         defer {
             editingID = nil
-            isTyping = false
+            selectsAllOnEdit = false
             model.editingAnnotation = nil
         }
         guard let editingID,
@@ -533,6 +657,13 @@ struct RegionCanvas: View {
               case .text(let string) = item.kind,
               string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         model.deleteSelection(editingID)
+    }
+
+    private func typePending() {
+        guard let id = model.annotationToType else { return }
+        model.annotationToType = nil
+        guard model.annotation(id)?.kind.hasWords == true else { return }
+        beginEditing(id, selectingAll: true)
     }
 
     private func select(id: UUID, kind: Kind) {
@@ -553,13 +684,25 @@ struct RegionCanvas: View {
             .rotationEffect(.degrees(rotation))
             // At the corner as the picture is turned; the drag is brought back off it.
             .position(tilt.drawn(point))
+            // A double-click lets that side go back to following the words.
+            .onTapGesture(count: 2) {
+                guard label else { return }
+                model.fitLabelToText(id, width: handle.direction.x != 0 || handle.isCorner,
+                                     height: handle.direction.y != 0 || handle.isCorner)
+            }
             .gesture(resizeDrag(handle, id: id, kind: kind))
-            .help(label ? (handle.isCorner ? "Drag to scale the text" : "Drag to set where the text wraps")
+            .help(label ? Self.labelHelp(for: handle)
                         : (handle.isCorner ? "Drag to resize · ⇧ keeps the shape" : "Drag to resize"))
     }
 
     /// The pointer a handle shows: the resize arrows that match the way it pulls, once it is
     /// turned — a side handle on a box stood on end pulls up and down, not left and right.
+    private static func labelHelp(for handle: AnnotationGeometry.Handle) -> String {
+        if handle.isCorner { return "Drag to scale the text · double-click to fit the box to the text" }
+        if handle.direction.y == 0 { return "Drag to set the width the text wraps at · double-click to fit it to the text" }
+        return "Drag to set the height · double-click to fit it to the text"
+    }
+
     private static func cursor(for handle: AnnotationGeometry.Handle, rotation: Double) -> NSCursor {
         guard !handle.isCorner else { return .crosshair }
         let across = handle.direction.x != 0
@@ -588,30 +731,104 @@ struct RegionCanvas: View {
 
     // MARK: - Gestures
 
-    /// Dragging on empty picture makes a new region.
+    /// Dragging on empty picture makes a new region: the shape chosen on the canvas bar if
+    /// there is one, otherwise a mask or a label.
     private var createDrag: some Gesture {
         DragGesture(minimumDistance: 4, coordinateSpace: .named(Self.space))
             .onChanged { value in
                 // Both ends taken back to the flat picture, where the box is stored: dragged
                 // across a turned picture, what is drawn is the box's turned outline.
-                guard let start = tilt.flat(value.startLocation), let end = tilt.flat(value.location) else { return }
-                draft = CGRect(x: min(start.x, end.x),
-                               y: min(start.y, end.y),
-                               width: abs(end.x - start.x),
-                               height: abs(end.y - start.y))
-                    .intersection(stage)
+                guard let start = tilt.flat(value.startLocation), var end = tilt.flat(value.location) else { return }
+                let armed = model.drawingAnnotation
+                if armed == .arrow || armed == .line {
+                    // ⇧ holds it to 15° steps, as moving one of its ends does.
+                    if NSEvent.modifierFlags.contains(.shift) { end = Self.snapped(end, around: start) }
+                    draftEnds = (start, end)
+                }
+                var rect = CGRect(x: min(start.x, end.x),
+                                  y: min(start.y, end.y),
+                                  width: abs(end.x - start.x),
+                                  height: abs(end.y - start.y))
+                // A step is round, and ⇧ keeps any shape square, as it does in every drawing app.
+                if armed == .step || (armed != nil && NSEvent.modifierFlags.contains(.shift)) {
+                    let side = max(rect.width, rect.height)
+                    rect = CGRect(x: end.x < start.x ? start.x - side : start.x,
+                                  y: end.y < start.y ? start.y - side : start.y,
+                                  width: side, height: side)
+                }
+                draft = rect.intersection(stage)
             }
             .onEnded { _ in
-                defer { draft = nil }
+                defer {
+                    draft = nil
+                    draftEnds = nil
+                }
+                if let armed = model.drawingAnnotation {
+                    if let ends = draftEnds {
+                        guard hypot(ends.to.x - ends.from.x, ends.to.y - ends.from.y) > 8 else { return }
+                        let placed = AnnotationGeometry.ends(from: ends.from, to: ends.to, minimumSide: 16)
+                        model.drawAnnotation(armed, rect: geometry.annotation(view: placed.rect),
+                                             ends: (placed.from, placed.to))
+                    } else if let drawn = draft, drawn.width > 6, drawn.height > 6 {
+                        model.drawAnnotation(armed, rect: geometry.annotation(view: drawn))
+                    }
+                    return
+                }
                 guard let drawn = draft, drawn.width > 6, drawn.height > 6 else { return }
                 if isBlurring {
                     model.addBlur(rect: geometry.blur(view: drawn))
                 } else {
                     // Straight into typing: a label drawn and then abandoned because the
                     // caret was somewhere else is an empty box in the export.
-                    beginEditing(model.addAnnotation(.text(""), rect: geometry.annotation(view: drawn)))
+                    beginEditing(model.addTextBox(drawn: geometry.annotation(view: drawn)))
                 }
             }
+    }
+
+    /// A click on empty picture with a shape chosen: one of its usual size, centred there.
+    private var placeTap: some Gesture {
+        SpatialTapGesture(coordinateSpace: .named(Self.space))
+            .onEnded { value in
+                // Nothing chosen to draw: a click on empty picture lets go of what is picked.
+                guard let armed = model.drawingAnnotation else {
+                    if editingID != nil { endEditing() }
+                    model.deselectOnCanvas()
+                    return
+                }
+                guard let point = tilt.flat(value.location) else { return }
+                // On something already there, the click is that thing's — it picks it, and
+                // nothing new is dropped on top of it.
+                if let hit = existing(at: value.location) {
+                    model.drawingAnnotation = nil
+                    if hit.kind.hasWords, !hit.isLocked { beginEditing(hit.id) } else { model.select(.annotation(hit.id)) }
+                    return
+                }
+                let centre = geometry.annotation(view: CGRect(origin: point, size: .zero)).origin
+                let aspect = model.outputSize.height > 0 ? model.outputSize.width / model.outputSize.height : 16.0 / 9
+                var rect = armed.rect(aspect: aspect)
+                rect.origin = CGPoint(x: centre.x - rect.width / 2, y: centre.y - rect.height / 2)
+                model.drawAnnotation(armed, rect: rect)
+            }
+    }
+
+    /// The annotation showing now under a point on the canvas, the top one where they stack.
+    private func existing(at location: CGPoint) -> AnnotationItem? {
+        guard let point = tilt.flat(location) else { return nil }
+        return model.annotationsAtPlayhead.last { item in
+            let rect = geometry.view(annotation: item.rect).insetBy(dx: -4, dy: -4)
+            // Measured in the box's own turn, as it is drawn.
+            let local = AnnotationGeometry.local(point, in: rect, rotation: item.rotation)
+            return (0...1).contains(local.x) && (0...1).contains(local.y)
+        }
+    }
+
+    /// `point` turned to the nearest 15° about `centre`, at the same distance.
+    private static func snapped(_ point: CGPoint, around centre: CGPoint) -> CGPoint {
+        let angle = atan2(point.y - centre.y, point.x - centre.x)
+        let step = Double.pi / 12
+        let turned = (angle / step).rounded() * step
+        let length = hypot(point.x - centre.x, point.y - centre.y)
+        return CGPoint(x: centre.x + length * cos(turned), y: centre.y + length * sin(turned))
     }
 
     private func moveDrag(id: UUID, kind: Kind) -> some Gesture {
@@ -661,7 +878,9 @@ struct RegionCanvas: View {
                     let font = fontOrigin ?? model.annotation(id)?.fontSize ?? item.fontSize
                     fontOrigin = font
                     let scale = handle.isCorner && start.height > 0 ? rect.height / start.height : 1
-                    model.resizeLabel(id, rect: geometry.annotation(view: rect), fontSize: font * scale)
+                    model.resizeLabel(id, rect: geometry.annotation(view: rect), fontSize: font * scale,
+                                      fixesWidth: !handle.isCorner && handle.direction.x != 0,
+                                      fixesHeight: !handle.isCorner && handle.direction.y != 0)
                 } else {
                     store(rect, id: id, kind: kind)
                 }
@@ -787,7 +1006,12 @@ struct RegionCanvas: View {
 
     /// Opens one undo entry for a whole gesture, however many commands it applies.
     private func begin(id: UUID, kind: Kind, name: String = "Move") -> CGRect {
-        if let gestureOrigin { return gestureOrigin }
+        if let gestureOrigin, gestureID == id { return gestureOrigin }
+        if gestureOrigin != nil {
+            // Left over from a drag on something else: close it before this one opens.
+            fontOrigin = nil
+            model.finishInteraction()
+        }
         let rect: CGRect = switch kind {
         case .blur:
             geometry.view(blur: model.timeline.blurs.first { $0.id == id }.map(model.coveredRect(of:)) ?? .zero)
@@ -795,6 +1019,9 @@ struct RegionCanvas: View {
             geometry.view(annotation: model.timeline.annotations.first { $0.id == id }?.rect ?? .zero)
         }
         gestureOrigin = rect
+        gestureID = id
+        // Picked up with a shape tool chosen: it is being moved, not drawn over.
+        model.drawingAnnotation = nil
         select(id: id, kind: kind)
         model.document.beginInteraction(name)
         return rect
@@ -809,6 +1036,7 @@ struct RegionCanvas: View {
 
     private func end() {
         gestureOrigin = nil
+        gestureID = nil
         fontOrigin = nil
         model.finishInteraction()
     }

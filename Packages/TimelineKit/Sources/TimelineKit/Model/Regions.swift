@@ -512,6 +512,9 @@ public struct AnnotationItem: TimelineRegion {
         /// Words in a bubble, with a tail whose tip is normalised to the rect and may lie
         /// outside it — that is the point of a tail.
         case callout(String, tail: CGPoint)
+        /// A loop drawn round something by hand, the way a marker circles a word on a
+        /// printout: a little more than once round, its end running on past its start.
+        case loop
     }
 
     /// What an annotation is pinned to.
@@ -549,6 +552,13 @@ public struct AnnotationItem: TimelineRegion {
     /// Line thickness, fill, type and shadow. Its defaults draw exactly what every
     /// annotation drew before any of it could be set.
     public var style: AnnotationStyle
+    /// A text label's width was set by hand — a side pulled, or a box drawn — so its words
+    /// wrap at the box's width and the box keeps that width as they are typed. Off, the box
+    /// is as wide as its words. Only text labels read it. See `AnnotationFit`.
+    public var fixedWidth: Bool
+    /// A text label's height was set by hand — its top or bottom pulled — so the box is that
+    /// tall, or as tall as its lines if they need more. Off, it is exactly its lines.
+    public var fixedHeight: Bool
 
     public init(id: UUID = UUID(), start: CMTime, duration: CMTime, kind: Kind,
                 rect: CGRect, color: ColorValue = .init(r: 1, g: 0.23, b: 0.19),
@@ -559,7 +569,11 @@ public struct AnnotationItem: TimelineRegion {
                 isLocked: Bool = false,
                 isHidden: Bool = false,
                 attachment: Attachment = .canvas,
-                style: AnnotationStyle = AnnotationStyle()) {
+                style: AnnotationStyle = AnnotationStyle(),
+                fixedWidth: Bool = false,
+                fixedHeight: Bool = false) {
+        self.fixedWidth = fixedWidth
+        self.fixedHeight = fixedHeight
         self.id = id
         self.start = start
         self.duration = duration
@@ -600,12 +614,15 @@ public struct AnnotationItem: TimelineRegion {
         isHidden = value(.isHidden, default: false)
         attachment = value(.attachment, default: .canvas)
         style = value(.style, default: AnnotationStyle())
+        fixedWidth = value(.fixedWidth, default: false)
+        fixedHeight = value(.fixedHeight, default: false)
         sanitise()
     }
 
     enum CodingKeys: String, CodingKey {
         case id, start, duration, kind, rect, color, fontSize
         case rotation, opacity, animation, isLocked, isHidden, attachment, style
+        case fixedWidth, fixedHeight
     }
 
     /// Makes every number one the renderer can draw.

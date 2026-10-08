@@ -8,7 +8,7 @@ extension AnnotationItem {
     /// that is drawn, and also what stops a menu offering it directly. This is the choice
     /// before the payload exists.
     public enum KindName: String, CaseIterable, Sendable, Identifiable {
-        case text, arrow, rectangle, ellipse, line, highlight, step, callout, image
+        case text, arrow, rectangle, ellipse, loop, line, highlight, step, callout, image
 
         public var id: String { rawValue }
 
@@ -18,6 +18,7 @@ extension AnnotationItem {
             case .arrow: "Arrow"
             case .rectangle: "Box"
             case .ellipse: "Ellipse"
+            case .loop: "Loop"
             case .line: "Line"
             case .highlight: "Highlight"
             case .step: "Step"
@@ -29,7 +30,7 @@ extension AnnotationItem {
         /// What an annotation can be switched to from the inspector. A picture is not on
         /// the list: turning a logo into a box would throw the logo away.
         public static let switchable: [KindName] = [.text, .callout, .arrow, .line, .rectangle, .ellipse,
-                                                    .highlight, .step]
+                                                    .loop, .highlight, .step]
     }
 
     /// The number a newly added step gets, the arithmetic of which is in
@@ -72,6 +73,7 @@ extension AnnotationItem.Kind {
         case .rectangle: .rectangle
         case .image: .image
         case .ellipse: .ellipse
+        case .loop: .loop
         case .line: .line
         case .highlight: .highlight
         case .step: .step
@@ -128,8 +130,19 @@ extension AnnotationItem.Kind {
     /// Drawn as an outline or a stroke, so its thickness can be set.
     public var hasThickness: Bool {
         switch self {
-        case .arrow, .line, .rectangle, .ellipse: true
+        case .arrow, .line, .rectangle, .ellipse, .loop: true
         default: false
+        }
+    }
+
+    /// A shape, so it can be drawn on — and rubbed out — a stroke at a time: the Draw
+    /// entrance and the Erase exit trace its outline. A highlight is swept on like a marker;
+    /// a step's ring and a callout's bubble go round and then fill, their words last. Only a
+    /// label and a picture, which have no outline to follow, fade instead.
+    public var canBeTraced: Bool {
+        switch self {
+        case .text, .image: false
+        default: true
         }
     }
 
@@ -165,6 +178,7 @@ extension AnnotationItem.Kind {
             return .line(from: ends.from, to: ends.to)
         case .rectangle: return .rectangle
         case .ellipse: return .ellipse
+        case .loop: return .loop
         case .highlight: return .highlight
         case .step:
             if case .step = self { return self }

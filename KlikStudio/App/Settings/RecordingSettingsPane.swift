@@ -21,8 +21,7 @@ struct RecordingSettingsPane: View {
         @Bindable var recorder = settings.recorder
 
         SettingsPane(.recording) {
-            SettingsGroup("Capture",
-                          footer: "Automatic uses HEVC where this Mac has a hardware encoder — about half the file size for the same picture.") {
+            SettingsGroup("Capture") {
                 SettingsRow("Countdown", subtitle: "Time to get out of the way before the take starts.") {
                     Picker("Countdown", selection: $settings.countdownSeconds) {
                         Text("Off").tag(0)
@@ -57,7 +56,7 @@ struct RecordingSettingsPane: View {
                 }
             }
 
-            SettingsGroup("Pointer and input", footer: pointerFooter) {
+            SettingsGroup("Pointer and input") {
                 SettingsToggleRow("Record clicks and scrolls",
                                   subtitle: "What auto-zoom, click marks and click sounds are made from.",
                                   symbol: "cursorarrow.click.2", tint: .blue,
@@ -72,7 +71,7 @@ struct RecordingSettingsPane: View {
                 KeyboardRecordingRows()
             }
 
-            SettingsGroup("Sound", footer: microphoneFooter) {
+            SettingsGroup("Sound") {
                 SettingsToggleRow("Record system audio",
                                   subtitle: "Everything the Mac plays — the app being demonstrated, a video, an alert. The bar\u{2019}s system audio menu can narrow it to the apps you choose.",
                                   symbol: "speaker.wave.2.fill", tint: .pink,
@@ -105,8 +104,7 @@ struct RecordingSettingsPane: View {
                 }
             }
 
-            SettingsGroup("Camera",
-                          footer: "Off until you turn it on, here or on the bar. The preview is a small round picture beside the bar, mirrored like the bubble, and is never in the recording.") {
+            SettingsGroup("Camera") {
                 SettingsToggleRow("Record the camera",
                                   subtitle: "A bubble of you over the recording, which you can move, resize or hide in the editor.",
                                   symbol: "video.fill", tint: .green,
@@ -136,8 +134,7 @@ struct RecordingSettingsPane: View {
                     .disabled(!recorder.showsCameraPreview)
             }
 
-            SettingsGroup("While recording",
-                          footer: "Desktop icons are left out of display and area recordings; the Finder's own settings aren't changed. Speaker notes float over your screen and are never recorded.") {
+            SettingsGroup("While recording") {
                 SettingsToggleRow("Hide desktop icons", symbol: "menubar.dock.rectangle", tint: .indigo,
                                   isOn: $recorder.hidesDesktopIcons)
                 SettingsToggleRow("Show speaker notes", symbol: "note.text", tint: .yellow,
@@ -168,19 +165,6 @@ struct RecordingSettingsPane: View {
             microphones = MicrophoneRecorder.devices
             cameras = WebcamRecorder.devices
         }
-    }
-
-    private var pointerFooter: String {
-        settings.burnsCursorIntoVideo
-            ? "With the pointer burned in, the editor can't resize it, smooth it, or zoom to follow it — there's nothing but pixels to work with."
-            : "The pointer is recorded as data beside the video, which is what lets the editor smooth it, resize it and zoom to follow it."
-    }
-
-    private var microphoneFooter: String? {
-        guard settings.recordsMicrophone else { return nil }
-        return settings.microphoneIDs.count > 1
-            ? "Each microphone is recorded to its own track, so you can set their levels separately when you edit."
-            : "Tick more than one to record each to its own track. None ticked records the system's default input."
     }
 
     private var cameraBinding: Binding<Bool> {

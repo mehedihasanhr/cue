@@ -2,8 +2,8 @@ import CoreMedia
 import SwiftUI
 import TimelineKit
 
-/// The edit, seen sideways: a column of lane headings, and beside it the lanes themselves
-/// with the playhead across all of them.
+/// The edit, seen sideways: the ruler, and under it the lanes with the playhead across all
+/// of them.
 ///
 /// Scrub in the ruler or on empty background; click a row to select, drag it to move.
 /// Everything that moves snaps to the cuts and to the other regions, in points rather
@@ -11,29 +11,25 @@ import TimelineKit
 /// point where the whole recording is on screen, where the tolerance is capped in time
 /// so free positioning is still possible.
 ///
-/// The lanes are described once, by `Lane`, and drawn twice — once as headings in the
-/// gutter, once as contents beside it. That is not an abstraction for its own sake: two
-/// stacks of rows built from two lists is a layout that lines up until somebody adds a
-/// lane to one of them, and a heading a row out of step with the thing it names is worse
-/// than no heading at all.
+/// The lanes are described once, by `Lane`: which rows there are, how tall each is and
+/// what colour it reads as — a question `height(for:)` asks before anything is drawn.
 struct TimelineStrip: View {
     let model: EditorModel
 
-    /// The heading under the pointer, for the ones a click selects something on.
-    @State private var hoveredLane: Lane.ID?
-
     private var viewport: TimelineViewport { model.viewport }
 
-    private static let rulerHeight: CGFloat = 20
-    private static let clipHeight: CGFloat = 54
+    private static let rulerHeight: CGFloat = 30
+    private static let clipHeight: CGFloat = 42
     /// Shorter than the clips and taller than a region lane: the sound is a thing you
     /// read rather than a chip you read the label off, and a waveform squeezed into 28
     /// points is a smear.
-    private static let soundHeight: CGFloat = 38
+    private static let soundHeight: CGFloat = 30
     /// Tall enough for a chip's two lines — what it is, and what it says.
-    private static let regionHeight: CGFloat = 36
+    private static let regionHeight: CGFloat = 24
     private static let spacing: CGFloat = 6
-    private static let padding: CGFloat = 10
+    private static let padding: CGFloat = 4
+    /// The room either side of the lanes, so the first clip does not sit on the rail.
+    private static let sideInset: CGFloat = 8
     /// The lanes' own coordinate space.
     ///
     /// Named because two gestures need a frame of reference that does not move: the ruler,
@@ -45,14 +41,6 @@ struct TimelineStrip: View {
     /// How wide the playhead's grab column is. The line is 1.5 points; this is what you
     /// can actually hit.
     private static let playheadGrab: CGFloat = 18
-
-    /// A stripe and a glyph, and nothing else.
-    ///
-    /// The headings carried their names at first, which cost 148 points of every screen —
-    /// and the names were the part you stop reading: after the first look you know the blue
-    /// row is the screen and the green one is you. The name is still there on hover, for
-    /// the take with two microphones on it where the glyphs are the same.
-    private static let gutterWidth: CGFloat = 46
 
     // MARK: - What rows there are
 
@@ -101,11 +89,15 @@ struct TimelineStrip: View {
             }
         }
 
-        var height: CGFloat {
+        /// As tall as its busiest moment: a lane whose regions can overlap — notes, masks —
+        /// stacks the ones that do. See `RegionStacking`.
+        func height(in timeline: Timeline) -> CGFloat {
             switch self {
             case .clips: clipHeight
             case .recordedSound, .source: soundHeight
-            case .zooms, .pointer, .addedSound, .blurs, .annotations, .captions, .keys, .camera: regionHeight
+            case .annotations: stackedHeight(rows: min(stackLimit, RegionStacking.rowCount(of: timeline.annotations)))
+            case .blurs: stackedHeight(rows: min(stackLimit, RegionStacking.rowCount(of: timeline.blurs)))
+            case .zooms, .pointer, .addedSound, .captions, .keys, .camera: regionHeight
             }
         }
 
@@ -150,7 +142,7 @@ struct TimelineStrip: View {
             case .recordedSound: .green
             case .source(let id): timeline.soundTrack(id)?.source == .systemAudio ? .blue : .green
             case .zooms: TimelinePalette.zoom
-            case .pointer: .orange
+            case .pointer: TimelinePalette.pointer
             case .addedSound: .green
             case .blurs: .teal
             case .annotations: .pink
@@ -159,6 +151,18 @@ struct TimelineStrip: View {
             case .camera: TimelineStrip.cameraTint
             }
         }
+    }
+
+    /// The gap between stacked rows of one lane: less than between lanes, so a lane's rows
+    /// still read as one lane.
+    static let stackGap: CGFloat = 3
+
+    /// The most rows a stacked lane shows at once. Past it the lane scrolls its rows, so a
+    /// busy moment does not push the picture up the window one row at a time.
+    static let stackLimit = 3
+
+    static func stackedHeight(rows: Int) -> CGFloat {
+        CGFloat(rows) * regionHeight + CGFloat(max(0, rows - 1)) * stackGap
     }
 
     /// The Keys lane's colour, in one place: the heading, the chips and the inspector's
@@ -198,7 +202,7 @@ struct TimelineStrip: View {
     static func height(for timeline: Timeline, hasSound: Bool = true) -> CGFloat {
         padding * 2 + rulerHeight + spacing
             + lanes(for: timeline, hasSound: hasSound)
-                .reduce(0) { $0 + $1.height + spacing }
+                .reduce(0) { $0 + $1.height(in: timeline) + spacing }
             - spacing
     }
 
@@ -210,16 +214,14 @@ struct TimelineStrip: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let laneWidth = max(0, proxy.size.width - Self.gutterWidth - 1)
-            HStack(spacing: 0) {
-                gutter
-                    .frame(width: Self.gutterWidth)
-                StudioDivider(axis: .vertical)
-                lanesColumn
-                    .frame(width: laneWidth, alignment: .topLeading)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background { Color.clear.studioSurface() }
+            // No gutter of lane names: each lane is told apart by its colour, and its
+            // name is on every chip's tooltip. The lanes get the whole width.
+            let laneWidth = max(0, proxy.size.width - Self.sideInset * 2)
+            lanesColumn
+                .frame(width: laneWidth, alignment: .topLeading)
+                .padding(.horizontal, Self.sideInset)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .background { Color.clear.studioSurface() }
             .onAppear { viewport.setWidth(laneWidth, duration: model.duration) }
             // The viewport measures the lanes, not the window: it maps seconds to points
             // inside the part of the strip that shows the edit, and handing it the whole
@@ -227,122 +229,16 @@ struct TimelineStrip: View {
             .onChange(of: laneWidth) { _, width in
                 viewport.setWidth(width, duration: model.duration)
             }
+            .onChange(of: model.duration) { _, duration in
+                // Not mid-drag: a trim being dragged would rescale under the pointer.
+                guard !model.isGesturing else { return }
+                viewport.durationChanged(duration)
+            }
+            .onChange(of: model.isGesturing) { _, gesturing in
+                if !gesturing { viewport.durationChanged(model.duration) }
+            }
         }
         .background { Color.clear.studioSurface() }
-    }
-
-    // MARK: - The gutter
-
-    private var gutter: some View {
-        VStack(alignment: .leading, spacing: Self.spacing) {
-            // Nothing beside the ruler. A heading for a row of numbers would be a word
-            // explaining a clock.
-            Color.clear.frame(height: Self.rulerHeight)
-            ForEach(lanes) { lane in
-                heading(lane)
-            }
-        }
-        .padding(.vertical, Self.padding)
-        .padding(.leading, 9)
-        .padding(.trailing, 4)
-        .frame(maxHeight: .infinity, alignment: .topLeading)
-        .contentShape(Rectangle())
-    }
-
-    private func heading(_ lane: Lane) -> some View {
-        let timeline = model.timeline
-        let muted = isMuted(lane)
-        let mutable = canMute(lane)
-        let selectable = mutable || selection(of: lane) != nil
-        let hovered = selectable && hoveredLane == lane.id
-        return HStack(spacing: 0) {
-            // A stripe in the lane's own colour, full height: at a glance down the gutter
-            // this is what says which rows are sound and which are the picture, before any
-            // of the words are read.
-            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                .fill(lane.tint(in: timeline).opacity(muted ? 0.3 : 0.9))
-                .frame(width: 3)
-            // Every glyph centred in the same column, at the same size and weight, so the
-            // gutter reads as one aligned list however wide each symbol happens to be.
-            // A sound row's heading is its mute switch, so it shows a speaker — on or
-            // struck through — rather than the source's own glyph.
-            Image(systemName: mutable ? (muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                                      : lane.symbol(in: timeline))
-                .font(.system(size: 12, weight: .medium))
-                .symbolRenderingMode(.monochrome)
-                .imageScale(.medium)
-                .foregroundStyle(muted ? AnyShapeStyle(.tertiary) : AnyShapeStyle(lane.tint(in: timeline)))
-                .frame(maxWidth: .infinity)
-        }
-        .frame(height: lane.height)
-        .background {
-            // Only the headings a click does something on light up under the pointer; the
-            // rest are labels, and a label that reacts to the pointer promises a click.
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                .fill(Color.secondary.opacity(hovered ? 0.1 : 0))
-                .padding(.leading, 5)
-        }
-        .contentShape(Rectangle())
-        .onHover { inside in
-            hoveredLane = inside ? lane.id : (hoveredLane == lane.id ? nil : hoveredLane)
-        }
-        .onTapGesture {
-            if mutable {
-                toggleMute(lane)
-            } else if let selection = selection(of: lane) {
-                model.select(selection)
-            }
-        }
-        .help(mutable ? "\(muted ? "Unmute" : "Mute") \(lane.title(in: timeline))"
-                      : lane.title(in: timeline))
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(mutable ? "\(muted ? "Unmute" : "Mute") \(lane.title(in: timeline))"
-                                    : lane.title(in: timeline))
-        .accessibilityValue(muted ? "Muted" : "")
-        .accessibilityAddTraits(selectable ? .isButton : [])
-        .accessibilityAction { if mutable { toggleMute(lane) } }
-    }
-
-    /// The rows with a sound of their own, whose heading turns it on and off.
-    private func canMute(_ lane: Lane) -> Bool {
-        switch lane {
-        case .recordedSound: true
-        case .source(let id): model.timeline.soundTrack(id) != nil
-        default: false
-        }
-    }
-
-    /// The same undoable edit the row's own menu makes.
-    private func toggleMute(_ lane: Lane) {
-        switch lane {
-        case .recordedSound:
-            let muted = model.timeline.sound.isMuted
-            model.apply(Commands.Restyle(muted ? "Unmute" : "Mute") { $0.sound.isMuted = !muted })
-        case .source(let id):
-            model.toggleSoundMute(id)
-        default:
-            break
-        }
-    }
-
-    /// Whether this row's sound is off, which is the one piece of state a heading shows.
-    /// Every other lane answers `false` — a blur cannot be muted.
-    private func isMuted(_ lane: Lane) -> Bool {
-        switch lane {
-        case .recordedSound: !model.timeline.sound.isAudible
-        case .source(let id): model.timeline.soundTrack(id).map { !model.timeline.isAudible($0) } ?? false
-        default: false
-        }
-    }
-
-    /// What clicking a heading selects, for the rows that are one thing. The lanes that
-    /// hold many regions select nothing: there is no single zoom a heading could mean.
-    private func selection(of lane: Lane) -> Selection? {
-        switch lane {
-        case .recordedSound: .sound
-        case .source(let id): .soundTrack(id)
-        default: nil
-        }
     }
 
     // MARK: - The lanes
@@ -361,6 +257,7 @@ struct TimelineStrip: View {
             // only way out of one that does not involve the Escape key.
             Color.clear
                 .studioSurface()
+                .overlay(alignment: .topLeading) { beyondEnd }
                 .contentShape(Rectangle())
                 .onTapGesture { model.clearSelection() }
         }
@@ -572,7 +469,7 @@ struct TimelineStrip: View {
     private var cursorRow: some View {
         TimelineRegionRow(model: model,
                           regions: model.timeline.cursorRegions,
-                          tint: .orange,
+                          tint: TimelinePalette.pointer,
                           title: "Pointer",
                           symbol: "cursorarrow.slash",
                           height: Self.regionHeight,
@@ -589,7 +486,8 @@ struct TimelineStrip: View {
                           title: "Mask",
                           symbol: "drop.halffull",
                           height: Self.regionHeight,
-                          selection: Selection.blur) { blur in
+                          selection: Selection.blur,
+                          stacks: true) { blur in
             // The kind, by name: a chip that said "Blur" over a spotlight would be lying.
             Text(blur.title)
                 .font(.system(size: 11, weight: .semibold))
@@ -605,6 +503,7 @@ struct TimelineStrip: View {
                           symbol: "",
                           height: Self.regionHeight,
                           selection: Selection.annotation,
+                          stacks: true,
                           menu: { item in AnyView(AnnotationMenu(model: model, item: item)) }) { item in
             HStack(spacing: 5) {
                 // What kind it is, as a glyph of its own: the lane's "Aa" says only that
@@ -632,7 +531,7 @@ struct TimelineStrip: View {
         case .arrow: "arrow.up.right"
         case .rectangle: "rectangle"
         case .image: "photo"
-        case .ellipse, .line, .highlight, .step, .callout: kind.name.symbol
+        case .ellipse, .loop, .line, .highlight, .step, .callout: kind.name.symbol
         }
     }
 
@@ -642,18 +541,28 @@ struct TimelineStrip: View {
         case .arrow: "Arrow"
         case .rectangle: "Box"
         case .image: "Image"
-        case .ellipse, .line, .highlight, .step, .callout: kind.label
+        case .ellipse, .loop, .line, .highlight, .step, .callout: kind.label
         }
     }
 
     // MARK: - Chrome
 
+    /// Past the end of the edit, a shade lighter, so where it stops is plain at any zoom.
+    private var beyondEnd: some View {
+        GeometryReader { proxy in
+            let x = max(0, viewport.x(for: model.duration))
+            StudioTheme.Surface.beyondEnd
+                .frame(width: max(0, proxy.size.width - x + Self.sideInset))
+                .offset(x: x)
+        }
+        .allowsHitTesting(false)
+    }
+
     private var playhead: some View {
         let x = viewport.x(for: model.playhead)
         return ZStack(alignment: .top) {
             // A column of nothing either side of the line, so the playhead can be taken
-            // hold of anywhere down the timeline rather than only at the small triangle on
-            // top. A 1.5-point line is not a target; this is.
+            // hold of anywhere down the timeline. A 1.5-point line is not a target; this is.
             Color.clear
                 .contentShape(Rectangle())
                 .onHover { inside in
@@ -663,29 +572,41 @@ struct TimelineStrip: View {
                 .gesture(scrubbing)
 
             Rectangle()
-                .fill(StudioPalette.brand)
+                .fill(StudioTheme.Surface.playhead)
                 .frame(width: 1.5)
                 .allowsHitTesting(false)
 
-            // A round knob at the top, inside the ruler, so the line itself can stay out
-            // of the way of everything under it. A ring of the surface colour round it
-            // lifts it off the ruler's numbers when it passes over them.
-            Circle()
-                .fill(StudioPalette.brand)
-                .frame(width: 11, height: 11)
-                .overlay(Circle().strokeBorder(.white.opacity(0.9), lineWidth: 1.5))
-                .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
-                .padding(.top, 2)
+            // The time it is at, on a pill at the top in the ruler: the playhead says
+            // where it is without a trip to the transport bar.
+            Text(Self.playheadLabel(model.playhead.seconds))
+                .font(.system(size: 10.5, weight: .semibold))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, 7)
+                .frame(minWidth: 34, minHeight: 20)
+                .background(StudioTheme.Surface.playhead, in: Capsule())
+                .padding(.top, 5)
                 .allowsHitTesting(false)
         }
         // The width is stated rather than left to whichever child happens to be widest,
         // and everything in the stack centres in it — so the offset below places the *line*
-        // at the playhead's time. Left implicit, the stack took the triangle's ten points
-        // and the line sat four points to the right of the moment it was marking.
+        // at the playhead's time.
         .frame(width: Self.playheadGrab)
         .frame(maxHeight: .infinity, alignment: .top)
         .offset(x: x - Self.playheadGrab / 2)
         .opacity(x >= -4 ? 1 : 0)
+    }
+
+    /// "1.6", "12.4", "1:02.5": seconds to a tenth, minutes once there are some.
+    static func playheadLabel(_ seconds: Double) -> String {
+        let tenths = Int((max(0, seconds) * 10).rounded(.down))
+        let minutes = tenths / 600
+        let rest = Double(tenths % 600) / 10
+        let text = rest.formatted(.number.precision(.fractionLength(1)))
+        guard minutes > 0 else { return text }
+        return "\(minutes):" + (rest < 10 ? "0" : "") + text
     }
 
     /// Dragging the head itself. Same gesture as the ruler's, in the same space, so

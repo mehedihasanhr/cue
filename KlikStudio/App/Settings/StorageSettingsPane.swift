@@ -14,7 +14,7 @@ struct StorageSettingsPane: View {
 
     var body: some View {
         SettingsPane(.storage) {
-            SettingsGroup("Recordings", footer: "Sizes are what the Finder's Get Info shows. Recordings are moved to the Trash from Recordings, never from here.") {
+            SettingsGroup("Recordings") {
                 SettingsRow(settings.library.lastPathComponent,
                             subtitle: libraryLine,
                             symbol: "film.stack.fill", tint: .orange) {
@@ -32,8 +32,7 @@ struct StorageSettingsPane: View {
                 }
             }
 
-            SettingsGroup("Caches",
-                          footer: "Waveforms, filmstrip frames, poster images and screen analysis, kept inside each recording so it opens quickly. Everything here is made again the next time it is needed; your recordings and edits are not touched. A recording open in the editor, or being recorded, keeps its own.") {
+            SettingsGroup("Caches") {
                 SettingsRow("Cached previews", subtitle: cacheLine, symbol: "square.stack.3d.up.fill", tint: .teal) {
                     HStack(spacing: 8) {
                         if isClearing { ProgressView().controlSize(.small) }
@@ -43,7 +42,7 @@ struct StorageSettingsPane: View {
                 }
             }
 
-            SettingsGroup("Reset", footer: "Every setting in this window goes back to how it was when Klik Studio was installed — shortcuts, defaults for new recordings, export choices. Your recordings, the recordings folder, your looks and your speaker notes are kept.") {
+            SettingsGroup("Reset") {
                 SettingsRow("Reset all settings", subtitle: didReset ? "Done. Everything is back to its default." : nil,
                             symbol: "arrow.counterclockwise", tint: .red) {
                     Button("Reset All Settings…") { confirmsReset = true }

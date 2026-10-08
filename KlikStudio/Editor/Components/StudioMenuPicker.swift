@@ -52,6 +52,7 @@ struct StudioMenuPicker<Value: Hashable>: View {
     var size: StudioTheme.ControlSize = .small
     /// Stretches the field across the width it is offered.
     var fillsWidth = false
+    @Environment(\.inspectorFieldEmbedded) private var isEmbedded
     /// Whether the field keeps the width of its longest choice. Off for a list too long to
     /// lay out in full on every redraw — every font on this Mac — where the field takes the
     /// current choice's width instead.
@@ -99,7 +100,9 @@ struct StudioMenuPicker<Value: Hashable>: View {
                 }
                 // Every title laid out and all but the current one hidden: the field takes
                 // the width of the longest, and keeps it.
-                ZStack(alignment: .leading) {
+                // In a row or on a heading the words sit against the chevron, so a short
+                // choice is not a word floating in the middle of the longest one's room.
+                ZStack(alignment: isEmbedded ? .trailing : .leading) {
                     if sizesToLongest {
                         ForEach(allItems) { item in
                             Text(item.title)
@@ -112,15 +115,17 @@ struct StudioMenuPicker<Value: Hashable>: View {
                             .lineLimit(1)
                     }
                 }
-                .font(.system(size: size.fontSize))
-                .foregroundStyle(StudioTheme.Palette.textPrimary)
+                .font(.system(size: isEmbedded ? 12 : size.fontSize))
+                .foregroundStyle(isEmbedded ? StudioTheme.Surface.value : StudioTheme.Palette.textPrimary)
                 if fillsWidth { Spacer(minLength: 0) }
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 8, weight: .semibold))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(StudioTheme.Palette.textSecondary)
             }
         }
-        .buttonStyle(StudioButtonStyle(variant: .secondary, size: size, fillsWidth: fillsWidth))
+        // Inside a filled row the row is the field, so the pop-up is only its words.
+        .buttonStyle(StudioButtonStyle(variant: isEmbedded ? .ghost : .secondary, size: size, fillsWidth: fillsWidth))
+        .padding(.trailing, isEmbedded ? -8 : 0)
         // Its own width when there is room, and narrower — the title cut short — when
         // there is not. Held at its full width, a long value ("This Mac's language")
         // pushed the whole panel wider than its column, past the window's edge.

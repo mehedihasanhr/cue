@@ -515,7 +515,8 @@ enum SettingsFont {
 
 /// A settings page: groups of rows, top to bottom, starting under the history
 /// pill. Every pane builds on these so the pages all look alike. A row's
-/// subtitle and a group's footer are for what the title cannot say alone.
+/// subtitle is for what its title cannot say alone; a group's footer only ever
+/// carries something that went wrong, never help text.
 /// A page about a feature that can be turned off takes `enabled`: the switch
 /// sits at the top right, level with the history pill.
 struct SettingsPane<Content: View>: View {

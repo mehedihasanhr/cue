@@ -9,7 +9,7 @@ struct ShareSettingsView: View {
     var body: some View {
         @Bindable var settings = settings
         SettingsPane(.sharing) {
-            SettingsGroup("Share links", footer: "Keys are kept in your Keychain.") {
+            SettingsGroup("Share links") {
                 SettingsRow("Upload to") {
                     Picker("Upload to", selection: $settings.provider) {
                         ForEach(ShareSettings.Provider.allCases, id: \.self) { Text($0.title).tag($0) }
@@ -22,7 +22,7 @@ struct ShareSettingsView: View {
             }
 
             if settings.provider == .s3 {
-                SettingsGroup("S3-compatible bucket", footer: "With R2, set the public bucket domain as the URL base.") {
+                SettingsGroup("S3-compatible bucket") {
                     field("Endpoint", text: $settings.endpoint, prompt: "s3.amazonaws.com · <account>.r2.cloudflarestorage.com")
                     field("Region", text: $settings.region, prompt: "us-east-1 · auto")
                     field("Bucket", text: $settings.bucket)
@@ -36,7 +36,7 @@ struct ShareSettingsView: View {
             }
 
             if settings.provider == .custom {
-                SettingsGroup("Custom endpoint", footer: "{name} in the URL becomes the file name.") {
+                SettingsGroup("Custom endpoint") {
                     field("URL", text: $settings.customURL, prompt: "https://example.com/upload/{name}")
                     SettingsRow("Method") {
                         Picker("Method", selection: $settings.customMethod) {

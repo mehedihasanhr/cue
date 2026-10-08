@@ -9,7 +9,7 @@ import TimelineKit
 /// all of them.
 enum SidebarMetrics {
     /// The tool rail's width.
-    static let railWidth: CGFloat = 52
+    static let railWidth: CGFloat = 56
     /// The band across the top of the sidebar: the panel's heading, and the blank beside
     /// it over the rail, so the line underneath runs the whole width of the column.
     static let headerHeight: CGFloat = 38
@@ -28,13 +28,13 @@ enum SidebarSpacing {
     /// A label and the track it belongs to.
     static let withinControl: CGFloat = 5
     /// Two controls that do the same sort of thing — four sliders in a row.
-    static let betweenControls: CGFloat = 14
+    static let betweenControls: CGFloat = 4
     /// Two kinds of thing inside one section — the Shape picker and the sliders.
-    static let betweenGroups: CGFloat = 26
+    static let betweenGroups: CGFloat = 12
     /// Above and below the rule that closes a section off. The same number on both
     /// sides, so the rule sits in the middle of the space rather than under the block
     /// above it.
-    static let sectionPadding: CGFloat = 16
+    static let sectionPadding: CGFloat = 18
     /// Sections are separated by their own rule and its padding, so the stack that holds
     /// them adds nothing of its own.
     static let betweenSections: CGFloat = 0
@@ -63,11 +63,12 @@ private struct StudioSurface: ViewModifier {
 
     func body(content: Content) -> some View {
         content.background {
-            ZStack {
+            if colorScheme == .dark {
+                // Flat, not material: the editor's panels are one neutral grey, the same
+                // in every column, so the seams between them are what draws the layout.
+                StudioTheme.Surface.panel
+            } else {
                 Rectangle().fill(.bar)
-                if colorScheme == .dark {
-                    Rectangle().fill(.black.opacity(StudioChromeTint.amount))
-                }
             }
         }
     }
@@ -149,6 +150,17 @@ enum InspectorMetrics {
     /// The least a one-line row is tall: the kit's small control height, so a pop-up
     /// field, a stepper and a switch all sit on the same line with no slack.
     static let rowHeight: CGFloat = StudioTheme.Height.small
+    /// A row: a switch, a pop-up with its name, a colour well.
+    static let fieldHeight: CGFloat = 30
+    /// A scrub slider: a little slimmer than a row, because it is drawn as a field and a
+    /// field at full row height reads as a button.
+    static let scrubHeight: CGFloat = 28
+    /// The gap between two rows.
+    static let rowGap: CGFloat = 4
+    /// How far a row's words sit in from the column's edge — the same for a plain row and
+    /// a scrub field, so every name in a section starts on one line.
+    static let fieldInset: CGFloat = 8
+    static let fieldRadius: CGFloat = 6
     /// How far a row's name stays from its control, at the narrowest.
     static let labelGap: CGFloat = 10
 }
@@ -168,8 +180,8 @@ struct InspectorHeading: View {
 
     var body: some View {
         Text(title)
-            .font(.system(size: StudioTheme.FontSize.heading, weight: .semibold))
-            .foregroundStyle(StudioTheme.Palette.textPrimary)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(Color(white: 0.97))
             .lineLimit(1)
             .accessibilityAddTraits(.isHeader)
     }
@@ -210,31 +222,50 @@ struct InspectorSubheading: View {
 /// without start their controls at the same depth.
 struct InspectorSection<Content: View, Trailing: View>: View {
     let title: String
+    var systemImage: String?
     let content: Content
     let trailing: Trailing
 
     init(_ title: String,
+         systemImage: String? = nil,
          @ViewBuilder content: () -> Content,
          @ViewBuilder trailing: () -> Trailing) {
         self.title = title
+        self.systemImage = systemImage
         self.content = content()
         self.trailing = trailing()
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
+            VStack(alignment: .leading, spacing: InspectorMetrics.rowGap) {
                 HStack(alignment: .center, spacing: 8) {
+                    if let systemImage {
+                        Image(systemName: systemImage)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Color(white: 0.5))
+                            .frame(width: 14)
+                    }
                     InspectorHeading(title)
                     Spacer(minLength: 8)
+                    // Bare words on a heading, like a pop-up in a row: the heading is not a
+                    // row of boxes.
                     trailing
                         .lineLimit(1)
+                        .environment(\.inspectorFieldEmbedded, true)
                 }
-                .frame(minHeight: InspectorMetrics.rowHeight)
+                .frame(minHeight: 22)
+                .padding(.bottom, 6)
                 content
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, SidebarSpacing.sectionPadding)
+            // One hairline under every section, edge to edge: enough to say where a
+            // section ends, quiet enough that the column reads as one surface.
+            Rectangle()
+                .fill(Color.white.opacity(0.06))
+                .frame(height: 1)
+                .padding(.horizontal, -SidebarMetrics.contentInset)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(title)
@@ -256,7 +287,7 @@ extension View {
     func inspectorSection(_ title: String,
                           systemImage: String,
                           @ViewBuilder trailing: () -> some View = { EmptyView() }) -> some View {
-        InspectorSection(title, content: { self }, trailing: trailing)
+        InspectorSection(title, systemImage: systemImage, content: { self }, trailing: trailing)
     }
 }
 
@@ -276,8 +307,8 @@ struct InspectorLabel: View {
 
     var body: some View {
         Text(title)
-            .font(.system(size: StudioTheme.FontSize.label))
-            .foregroundStyle(StudioTheme.Palette.textSecondary)
+            .font(.system(size: 12))
+            .foregroundStyle(StudioTheme.Surface.label)
             .opacity(isEnabled ? 1 : 0.55)
             // Wraps rather than truncates: a name cut to "Keep size wh…" is a name you
             // have to hover to read, and the column is narrow enough that some will meet
@@ -319,9 +350,26 @@ struct InspectorRow<Control: View>: View {
                 .labelsHidden()
                 .layoutPriority(1)
                 .accessibilityLabel(title)
+                .environment(\.inspectorFieldEmbedded, true)
         }
-        .frame(minHeight: InspectorMetrics.rowHeight)
+        .inspectorField()
         .accessibilityElement(children: .contain)
+    }
+}
+
+extension EnvironmentValues {
+    /// Whether a control is drawn inside a filled row, and so should not draw a field of
+    /// its own: a pop-up in a row is its title and a chevron, not a box in a box.
+    @Entry var inspectorFieldEmbedded = false
+}
+
+extension View {
+    /// A row of the panel: its height and inset, and no box. Space and the hairline under
+    /// the section do the grouping; a filled box round every row made the column a stack
+    /// of containers.
+    func inspectorField(minHeight: CGFloat = InspectorMetrics.fieldHeight) -> some View {
+        padding(.horizontal, InspectorMetrics.fieldInset)
+            .frame(maxWidth: .infinity, minHeight: minHeight)
     }
 }
 
@@ -346,8 +394,8 @@ struct InspectorValue: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 12).monospacedDigit())
-            .foregroundStyle(.primary)
+            .font(.system(size: 11.5).monospacedDigit())
+            .foregroundStyle(StudioTheme.Surface.value)
             .lineLimit(1)
             .minimumScaleFactor(0.7)
     }
@@ -378,7 +426,7 @@ struct InspectorSwitch: View {
             StudioSwitch(title, isOn: $isOn)
                 .layoutPriority(1)
         }
-        .frame(minHeight: InspectorMetrics.rowHeight)
+        .inspectorField()
     }
 }
 
@@ -428,9 +476,22 @@ struct SectionButton: View {
     let title: String
     let action: () -> Void
 
+    @State private var isHovering = false
+    @Environment(\.isEnabled) private var isEnabled
+
+    /// Grey, brightening under the pointer: a link-blue word on every heading was the most
+    /// colourful thing in the panel, for the least important controls in it.
     var body: some View {
-        Button(title, action: action)
-            .buttonStyle(.studio(.text, size: .small))
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(Color(white: isHovering && isEnabled ? 0.85 : 0.5))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(StudioPressStyle())
+        .opacity(isEnabled ? 1 : 0.5)
+        .onHover { isHovering = $0 }
+        .animation(StudioMotion.hover, value: isHovering)
     }
 }
 
@@ -490,8 +551,10 @@ struct InspectorNudgeRow: View {
                           incrementHelp: laterHelp,
                           decrement: earlier,
                           increment: later)
+                .environment(\.inspectorFieldEmbedded, true)
         }
-        .frame(minHeight: InspectorMetrics.rowHeight)
+        .padding(.trailing, -6)
+        .inspectorField()
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(title) \(value)")
     }
@@ -633,21 +696,23 @@ struct SwatchTile<Content: View>: View {
             Color.clear
                 .aspectRatio(1, contentMode: .fit)
                 .overlay { content }
-                .clipShape(StudioTheme.squircle(StudioTheme.Radius.small))
+                .clipShape(StudioTheme.squircle(6))
                 .overlay {
-                    // Strong enough to outline a black swatch on the dark panel, which at
-                    // eight per cent simply vanished.
-                    StudioTheme.squircle(StudioTheme.Radius.small)
-                        .strokeBorder(StudioTheme.Palette.strokeStrong)
+                    // A faint edge, enough to find a black swatch on the dark panel.
+                    StudioTheme.squircle(6)
+                        .strokeBorder(Color.white.opacity(0.1))
                 }
+                // The ones not chosen a little dimmer, so the grid is a quiet row of
+                // choices and the chosen one is the swatch the eye finds.
+                .opacity(isSelected || isHovering ? 1 : 0.82)
                 .overlay {
-                    // The chosen one ringed in the accent a step outside its edge; the one
-                    // under the pointer, in the neutral edge colour, so hovering never
-                    // looks like choosing.
-                    StudioTheme.squircle(StudioTheme.Radius.small + 2)
-                        .strokeBorder(isSelected ? StudioTheme.Palette.accent : StudioTheme.Palette.strokeStrong,
-                                      lineWidth: isSelected ? 2 : (isHovering ? 1.5 : 0))
-                        .padding(-3)
+                    // The chosen one ringed in a thin light line a step outside its edge;
+                    // the one under the pointer, fainter, so hovering never looks like
+                    // choosing.
+                    StudioTheme.squircle(8)
+                        .strokeBorder(Color.white.opacity(isSelected ? 0.85 : 0.22),
+                                      lineWidth: isSelected ? 1.5 : (isHovering ? 1 : 0))
+                        .padding(-2.5)
                 }
                 .animation(StudioMotion.selection, value: isSelected)
                 .animation(StudioMotion.hover, value: isHovering)
@@ -687,6 +752,69 @@ final class InteractionCoalescer {
             guard !Task.isCancelled else { return }
             model.finishInteraction()
             self?.isOpen = false
+        }
+    }
+}
+
+/// The secondary sections of a panel, folded under one "Advanced" heading.
+///
+/// A panel opens on what is set most often; what is set once and left — a border, a
+/// perspective, a colour grade — waits behind this until asked for. The heading is the one
+/// word; what is inside is on its tooltip. It starts folded every time its panel appears:
+/// the panel opens on the common settings, always.
+struct InspectorAdvancedGroup<Content: View>: View {
+    let contents: [String]
+    let content: Content
+    @State private var isOpen = false
+    @State private var isHovering = false
+
+    /// - Parameters:
+    ///   - id: which panel this is.
+    ///   - contents: the names of the sections inside, for the tooltip.
+    init(_ id: String, contents: [String], @ViewBuilder content: () -> Content) {
+        self.contents = contents
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Air above, more than between two sections, so the basic settings visibly
+            // end before the advanced ones begin.
+            Color.clear.frame(height: 10)
+            Button {
+                withAnimation(StudioMotion.state) { isOpen.toggle() }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(Color(white: 0.55))
+                        .rotationEffect(.degrees(isOpen ? 90 : 0))
+                        .frame(width: 14)
+                    Text("Advanced")
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(Color(white: isHovering ? 0.94 : 0.72))
+                    Spacer(minLength: 0)
+                }
+                .frame(minHeight: 40)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(StudioPressStyle())
+            .onHover { isHovering = $0 }
+            .animation(StudioMotion.hover, value: isHovering)
+            .help(isOpen ? "Hide the advanced settings" : "Show \(contents.joined(separator: ", "))")
+            .accessibilityLabel("Advanced")
+            .accessibilityValue(isOpen ? "Expanded" : "Collapsed")
+
+            if isOpen {
+                Rectangle()
+                    .fill(Color.white.opacity(0.06))
+                    .frame(height: 1)
+                    .padding(.horizontal, -SidebarMetrics.contentInset)
+                VStack(alignment: .leading, spacing: SidebarSpacing.betweenSections) {
+                    content
+                }
+                .transition(.opacity)
+            }
         }
     }
 }

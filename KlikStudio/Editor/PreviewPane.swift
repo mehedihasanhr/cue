@@ -1,5 +1,6 @@
 import AVFoundation
 import SwiftUI
+import TimelineKit
 
 /// The frame under the playhead, rendered exactly as it will be exported.
 ///
@@ -8,10 +9,13 @@ import SwiftUI
 /// laid-out image.
 struct PreviewPane: View {
     let model: EditorModel
+    /// Plays the edit with the screen to itself. See `FullScreenPreview`.
+    var presentFullScreen: () -> Void = {}
 
-    /// Room around the picture, so a shadow has somewhere to fall and a crop handle at
-    /// the very edge is still grabbable.
-    private let inset: CGFloat = 30
+    /// Room around the picture, so a crop handle at the very edge is still grabbable.
+    private let inset: CGFloat = 22
+    /// Room under the picture for the floating tool bar, so it never sits over the work.
+    private let toolBarRoom: CGFloat = 50
 
     var body: some View {
         GeometryReader { proxy in
@@ -21,7 +25,13 @@ struct PreviewPane: View {
                 // window a third colour competing with the frame standing on it — and
                 // the frame carries its own background, which is the thing that is
                 // supposed to be judged here.
-                Color.clear.studioSurface()
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color(white: 0x11 / 255))
+                    // A click on nothing — the picture, or the space round it — lets go of
+                    // the label or mask that was picked, and its frame goes with it. A click
+                    // on the label brings it back. Every layout tool does this.
+                    .contentShape(Rectangle())
+                    .onTapGesture { model.deselectOnCanvas() }
 
                 if let preview = model.preview {
                     Image(nsImage: preview)
@@ -31,6 +41,9 @@ struct PreviewPane: View {
                         // because this is the scale the rounded corners are judged at.
                         .interpolation(.high)
                         .antialiased(true)
+                        // Clicks go through to the stage under it: the picture is looked at,
+                        // and a click on it is a click on nothing in particular.
+                        .allowsHitTesting(false)
                         .aspectRatio(contentMode: .fit)
                         // Behind the frame, not in it: with a transparent background the
                         // rendered frame really is see-through there — that is what the
@@ -40,9 +53,13 @@ struct PreviewPane: View {
                                 Checkerboard()
                             }
                         }
-                        .clipShape(RoundedRectangle(cornerRadius: model.tool.flattensPreview ? 0 : 10, style: .continuous))
-                        .shadow(color: .black.opacity(model.tool.flattensPreview ? 0 : 0.5), radius: 18, y: 8)
-                        .padding(inset)
+                        .clipShape(RoundedRectangle(cornerRadius: model.tool.flattensPreview ? 0 : 6, style: .continuous))
+                        // Just enough to lift it off the well; the frame's own shadow, if
+                        // it has one, is the one that matters.
+                        .shadow(color: .black.opacity(model.tool.flattensPreview ? 0 : 0.22), radius: 8, y: 3)
+                        .padding(.horizontal, inset)
+                        .padding(.top, inset)
+                        .padding(.bottom, toolBarRoom)
                         .transition(.opacity)
                 } else {
                     ProgressView().controlSize(.large)
@@ -59,6 +76,13 @@ struct PreviewPane: View {
                     // webcam panel is settings. What it needs here is a handle on the picture.
                     WebcamBubbleOverlay(model: model, stage: stage(in: proxy.size))
                 default:
+                    // The labels on the picture can be picked up whatever tool is chosen, the
+                    // way every layout tool's selection arrow moves any layer: selecting one
+                    // and then finding it would not move until the Annotate tool was chosen
+                    // read as a broken drag. Nothing new is drawn from here — see `drawsNew`.
+                    if !model.annotationsAtPlayhead.isEmpty {
+                        RegionCanvas(model: model, stage: stage(in: proxy.size), drawsNew: false)
+                    }
                     // Not a tool, and no mode to enter: selecting a zoom on the timeline is
                     // already an unambiguous statement about which zoom you mean, so its
                     // framing box is simply here. See `EditorModel.framedZoom`.
@@ -78,9 +102,13 @@ struct PreviewPane: View {
                 // sits on the picture rather than in the inspector because it is about the
                 // picture, and it is the last thing in the stack so the framing handles
                 // never end up underneath it.
-                if model.canChooseZoomPreview {
-                    ZoomPreviewSwitch(model: model)
-                }
+                CanvasToolBar(model: model)
+                    .padding(.bottom, 9)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+
+                fullScreenButton
+                    .padding(10)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             }
             // How big the picture is allowed to be, told to the thing that renders it.
             //
@@ -107,12 +135,317 @@ struct PreviewPane: View {
     /// given a pixel size as a point size — true enough for `.resizable()`, which only
     /// needs the ratio, but not something to build a coordinate mapping on.
     private func stage(in size: CGSize) -> CGRect {
-        let available = CGRect(origin: .zero, size: size).insetBy(dx: inset, dy: inset)
+        let available = CGRect(x: inset, y: inset,
+                               width: size.width - inset * 2,
+                               height: size.height - inset - toolBarRoom)
         guard available.width > 0, available.height > 0 else { return available }
         let ratio = model.previewSize
         guard ratio.width > 0, ratio.height > 0 else { return available }
         return AVMakeRect(aspectRatio: ratio, insideRect: available)
     }
+
+    /// Full screen, in the canvas's corner: a black square, the one thing on the canvas
+    /// that is about the window rather than the picture.
+    private var fullScreenButton: some View {
+        Button(action: presentFullScreen) {
+            Image(systemName: "arrow.up.left.and.arrow.down.right")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color(white: 0.8))
+                .frame(width: 28, height: 28)
+                .background(Color(white: 0x1C / 255).opacity(0.9),
+                            in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(StudioPressStyle())
+        .help("Play full screen (⇧⌘F)")
+        .accessibilityLabel("Full screen preview")
+    }
 }
 
+/// The bar floating under the picture: what you can do to the picture *now*.
+///
+/// It changes with the job in hand rather than listing every tool all the time:
+/// - **Nothing in particular** — the four tools that work on the picture, and Add.
+/// - **Cropping** — reset the crop, and Done.
+/// - **Masking** — which kind the next drag draws, Add one in the middle, and Done.
+/// - **Annotating** — one press for each common kind, and Done.
+/// - **Framing a zoom** — whether the picture shows the framing box or the result, and
+///   Done to put the zoom down.
+///
+/// It steps out of the way while the edit plays: a bar of tools over a picture you are
+/// watching is something in front of the picture.
+struct CanvasToolBar: View {
+    let model: EditorModel
+    @State private var isAdding = false
+    /// Whether the bar of shapes is open above the Annotate bar.
+    @State private var showsShapes = false
+    /// The shape the shapes button shows: the one last chosen, so drawing the same kind
+    /// again is one click.
+    @State private var lastShape: EditorModel.NewAnnotation = .box
 
+    private enum Mode: Equatable { case tools, crop, mask, annotate, zoom }
+
+    private var mode: Mode {
+        if model.canChooseZoomPreview { return .zoom }
+        switch model.tool {
+        case .crop: return .crop
+        case .blur: return .mask
+        case .annotate: return .annotate
+        default: return .tools
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 6) {
+            if mode == .annotate, showsShapes {
+                shapesBar
+                    .transition(.opacity.combined(with: .offset(y: 6)))
+            }
+            mainBar
+        }
+        .animation(StudioMotion.state, value: showsShapes)
+        .onChange(of: mode) { _, mode in if mode != .annotate { showsShapes = false } }
+    }
+
+    /// Every shape, in a bar of its own over the Annotate bar.
+    private var shapesBar: some View {
+        HStack(spacing: 1) {
+            ForEach(EditorModel.NewAnnotation.shapes) { kind in
+                choice(kind.symbol, name: "Draw \(kind.menuTitle.lowercased())",
+                       isOn: model.drawingAnnotation == kind) {
+                    lastShape = kind
+                    showsShapes = false
+                    model.armAnnotation(kind)
+                }
+            }
+        }
+        .padding(3)
+        .background(Color(white: 0x1D / 255), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.2), radius: 4, y: 1)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Shapes")
+    }
+
+    private var mainBar: some View {
+        HStack(spacing: 1) {
+            switch mode {
+            case .tools: tools
+            case .crop: crop
+            case .mask: mask
+            case .annotate: annotate
+            case .zoom: zoom
+            }
+        }
+        .padding(3)
+        // A shade lighter than the well it sits in, with a hairline edge and almost no
+        // shadow: part of the canvas, not a palette floating over it.
+        .background(Color(white: 0x1D / 255), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.2), radius: 4, y: 1)
+        .opacity(model.isPlaying ? 0 : 1)
+        .allowsHitTesting(!model.isPlaying)
+        .animation(StudioMotion.state, value: mode)
+        .animation(StudioMotion.state, value: model.isPlaying)
+        .animation(StudioMotion.selection, value: model.tool)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Canvas tools")
+    }
+
+    // MARK: - The modes
+
+    @ViewBuilder
+    private var tools: some View {
+        toolButton(.frame, symbol: "cursorarrow", name: "Select")
+        toolButton(.crop, symbol: "crop", name: "Crop")
+        toolButton(.blur, symbol: "drop.halffull", name: "Mask")
+        toolButton(.annotate, symbol: "textformat", name: "Annotate")
+        separator
+        Button { isAdding.toggle() } label: {
+            Label("Add", systemImage: "plus")
+        }
+        .buttonStyle(CanvasAddButtonStyle())
+        .popover(isPresented: $isAdding, arrowEdge: .top) {
+            StudioMenuList(sections: additions.map { group in
+                .init(title: nil, rows: group.map { item in
+                    .init(title: item.title, systemImage: item.symbol, thumbnail: nil,
+                          isChecked: false, isEnabled: true, action: item.perform)
+                })
+            }, showsChecks: false)
+        }
+        .help("Put a label, a shape, a step, a callout, a picture or a logo on the picture")
+    }
+
+    @ViewBuilder
+    private var crop: some View {
+        caption("Crop", symbol: "crop")
+        iconButton("arrow.counterclockwise", name: "Show the whole recording again") {
+            model.setCrop(nil)
+        }
+        .disabled(model.timeline.style.crop == nil)
+        separator
+        done { model.choose(.frame) }
+    }
+
+    @ViewBuilder
+    private var mask: some View {
+        ForEach(BlurRegion.Style.allCases, id: \.self) { style in
+            choice(style.symbol, name: style.title, isOn: model.newMaskStyle == style) {
+                model.newMaskStyle = style
+            }
+        }
+        separator
+        Button { model.addMask(model.newMaskStyle) } label: {
+            Label("Add", systemImage: "plus")
+        }
+        .buttonStyle(CanvasAddButtonStyle())
+        .help("Put a \(model.newMaskStyle.title.lowercased()) in the middle of the picture, or drag over the picture to draw one")
+        done(isPrimary: false) { model.choose(.frame) }
+    }
+
+    @ViewBuilder
+    private var annotate: some View {
+        annotationChoice(.text)
+        annotationChoice(.arrow)
+        // The shapes, behind one button that opens their bar. It shows the last one chosen,
+        // and is lit while any of them is ready to draw.
+        choice(lastShape.symbol, name: "Shapes",
+               isOn: showsShapes || EditorModel.NewAnnotation.shapes.contains { $0 == model.drawingAnnotation }) {
+            showsShapes.toggle()
+        }
+        annotationChoice(.step)
+        annotationChoice(.callout)
+        separator
+        done { model.choose(.frame) }
+    }
+
+    /// A shape is chosen and then drawn on the picture; a label is added and typed into.
+    private func annotationChoice(_ kind: EditorModel.NewAnnotation) -> some View {
+        choice(kind.symbol, name: kind == .text ? "Add text" : "Draw \(kind.menuTitle.lowercased())",
+               isOn: model.drawingAnnotation == kind) {
+            showsShapes = false
+            model.armAnnotation(kind)
+        }
+    }
+
+    @ViewBuilder
+    private var zoom: some View {
+        ForEach(EditorModel.ZoomPreview.allCases) { preview in
+            Button {
+                if preview == .framing { model.frameSelectedZoom() } else { model.previewZoomResult() }
+            } label: {
+                Label(preview.title, systemImage: preview.symbol)
+            }
+            .buttonStyle(CanvasSegmentStyle(isOn: model.zoomPreview == preview))
+            .help(preview == .framing
+                  ? "Show the whole recording with this zoom's framing box on it"
+                  : "Show this zoom as it will play and as it will export")
+        }
+        separator
+        done { model.clearSelection() }
+    }
+
+    // MARK: - Pieces
+
+    /// What the Add button offers: the annotation kinds, then pictures.
+    private var additions: [[(title: String, symbol: String, perform: () -> Void)]] {
+        [
+            EditorModel.NewAnnotation.allCases.map { kind in
+                (kind.menuTitle, kind.symbol, { model.armAnnotation(kind) })
+            },
+            [
+                ("Picture…", "photo", { model.addPicture(asLogo: false) }),
+                ("Logo…", "seal", { model.addPicture(asLogo: true) }),
+            ],
+        ]
+    }
+
+    private var separator: some View {
+        Rectangle()
+            .fill(Color.white.opacity(0.1))
+            .frame(width: 1, height: 16)
+            .padding(.horizontal, 4)
+    }
+
+    /// The mode's name, so the bar says what it is for while its buttons change.
+    private func caption(_ title: String, symbol: String) -> some View {
+        Label(title, systemImage: symbol)
+            .font(.system(size: 11.5, weight: .medium))
+            .foregroundStyle(Color(white: 0.6))
+            .padding(.horizontal, 8)
+            .frame(height: 28)
+    }
+
+    private func done(isPrimary: Bool = true, action: @escaping () -> Void) -> some View {
+        Group {
+            if isPrimary {
+                Button("Done", action: action).buttonStyle(CanvasAddButtonStyle())
+            } else {
+                Button("Done", action: action).buttonStyle(CanvasSegmentStyle(isOn: false))
+            }
+        }
+        .help("Finish, and go back to selecting")
+    }
+
+    private func toolButton(_ tool: EditorTool, symbol: String, name: String) -> some View {
+        choice(symbol, name: name, isOn: model.tool == tool) { model.choose(tool) }
+    }
+
+    private func choice(_ symbol: String, name: String, isOn: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(isOn ? .white : Color(white: 0.66))
+                .frame(width: 28, height: 28)
+                .background(isOn ? StudioTheme.Surface.fieldHover : .clear,
+                            in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(StudioPressStyle())
+        .help(name)
+        .accessibilityLabel(name)
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+    }
+
+    private func iconButton(_ symbol: String, name: String, action: @escaping () -> Void) -> some View {
+        choice(symbol, name: name, isOn: false, action: action)
+    }
+}
+
+/// A word on the canvas bar that is one of a pair — Framing or Result.
+private struct CanvasSegmentStyle: ButtonStyle {
+    let isOn: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .labelStyle(.titleAndIcon)
+            .font(.system(size: 11.5, weight: .medium))
+            .foregroundStyle(isOn ? .white : Color(white: 0.66))
+            .padding(.horizontal, 9)
+            .frame(height: 28)
+            .background(isOn ? StudioTheme.Surface.fieldHover : .clear,
+                        in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .opacity(configuration.isPressed ? 0.8 : 1)
+            .contentShape(Rectangle())
+    }
+}
+
+/// The canvas bar's one light button.
+private struct CanvasAddButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 11.5, weight: .semibold))
+            .foregroundStyle(Color(white: 0.07))
+            .padding(.horizontal, 10)
+            .frame(height: 28)
+            .background(Color(white: 0.9).opacity(configuration.isPressed ? 0.8 : 1),
+                        in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .contentShape(Rectangle())
+    }
+}

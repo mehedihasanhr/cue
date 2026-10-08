@@ -14,8 +14,7 @@ struct GeneralSettingsPane: View {
         @Bindable var recorder = settings.recorder
 
         SettingsPane(.general) {
-            SettingsGroup("Recordings",
-                          footer: "Klik can ask for a different folder per recording. If Klik Studio can't write there, it keeps the recording here instead.") {
+            SettingsGroup("Recordings") {
                 SettingsRow(settings.isUsingDefaultLibrary ? "Movies › Klik Studio" : settings.library.lastPathComponent,
                             subtitle: settings.library.path(percentEncoded: false),
                             symbol: "folder.fill", tint: .orange) {
@@ -49,7 +48,7 @@ struct GeneralSettingsPane: View {
                 }
             }
 
-            SettingsGroup("Menu bar and Dock", footer: dockFooter) {
+            SettingsGroup("Menu bar and Dock") {
                 SettingsToggleRow("Show in the menu bar",
                                   subtitle: "Whether you are recording and for how long, with a menu to start, pause, mark and stop. Never in the recording.",
                                   isOn: $recorder.showsMenuBarIcon)
@@ -60,7 +59,7 @@ struct GeneralSettingsPane: View {
                     .disabled(!recorder.showsMenuBarIcon)
             }
 
-            SettingsGroup("Appearance", footer: "The recorder bar keeps its dark glass either way: it sits over whatever is being recorded.") {
+            SettingsGroup("Appearance") {
                 SettingsRow("Theme", subtitle: "Settings, Recordings and the editor.") {
                     Picker("Theme", selection: $app.appearance) {
                         ForEach(StudioAppPreferences.Appearance.allCases) { Text($0.title).tag($0) }
@@ -74,12 +73,6 @@ struct GeneralSettingsPane: View {
             // Somebody may have just approved the login item in System Settings.
             login = StudioLoginItem.state
         }
-    }
-
-    private var dockFooter: String? {
-        settings.recorder.showsMenuBarIcon
-            ? nil
-            : "With the menu bar icon off, the Dock icon stays — otherwise the recorder bar would be the only way back to the app."
     }
 
     /// Shown on while the menu bar icon is off, because it is on then whatever was stored.

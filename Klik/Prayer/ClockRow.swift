@@ -224,7 +224,7 @@ struct PrayerPill: View {
         let status = clock.status
         let forbidden = status?.forbidden != nil
         HStack(spacing: 8) {
-            Icon(forbidden ? "exclamationmark.triangle.fill" : (status?.current ?? status?.next ?? .dhuhr).symbol, size: 14, weight: .semibold)
+            Icon(forbidden ? "exclamationmark.triangle.fill" : (status?.current ?? status?.next ?? .dhuhr).symbol, size: 13, weight: .medium)
                 .foregroundStyle(forbidden ? .orange : .white.opacity(0.85))
             if expanded, let today = clock.today {
                 times(today, status: status)
@@ -245,18 +245,20 @@ struct PrayerPill: View {
                 .transition(.opacity)
             } else if let pill = clock.pill {
                 Text(pill)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 12, weight: .medium))
+                    .monospacedDigit()
                     .lineLimit(1)
                     .transition(IslandView.reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.9, anchor: .leading)))
             }
         }
-        .foregroundStyle(.white.opacity(0.9))
-        .padding(.horizontal, 12)
-        .frame(height: 40)
+        .foregroundStyle(.white.opacity(0.78))
+        .padding(.horizontal, 10)
+        .frame(height: IslandChrome.controlHeight)
         .fixedSize()
-        .background(.white.opacity(forbidden ? 0.14 : (expanded ? 0.12 : 0.08)), in: Capsule())
-        .overlay(Capsule().strokeBorder(hovering || expanded ? Color.white.opacity(0.18) : .clear))
-        .contentShape(Capsule())
+        // Quiet until it matters: no fill unless hovered, opened or a forbidden time.
+        .background(.white.opacity(forbidden ? 0.12 : (expanded || hovering ? 0.08 : 0)),
+                    in: RoundedRectangle(cornerRadius: IslandChrome.controlRadius, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: IslandChrome.controlRadius, style: .continuous))
         .onHover { hovering = $0 }
         .onTapGesture {
             withAnimation(IslandView.reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.38, dampingFraction: 0.86)) { expanded.toggle() }

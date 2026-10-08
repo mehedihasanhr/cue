@@ -221,7 +221,11 @@ enum Drive {
     // MARK: - Finding things
 
     private static func application(named name: String) -> NSRunningApplication? {
-        NSWorkspace.shared.runningApplications.first {
+        // "pid:1234" picks one copy when two of the same app are running.
+        if name.hasPrefix("pid:"), let pid = pid_t(name.dropFirst(4)) {
+            return NSRunningApplication(processIdentifier: pid)
+        }
+        return NSWorkspace.shared.runningApplications.first {
             $0.localizedName == name || $0.bundleIdentifier == name
         }
     }

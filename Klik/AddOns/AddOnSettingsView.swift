@@ -35,11 +35,9 @@ struct AddOnSettingsView: View {
         .task { await registry.refresh() }
     }
 
-    private var footer: String {
-        if let error = registry.feedError {
-            return "Klik couldn't check for add-ons: \(error)"
-        }
-        return "Add-ons are separate apps. Klik stays small because they aren't part of it, and removing one is removing an app."
+    /// Only when something went wrong: a note that the add-ons could not be checked.
+    private var footer: String? {
+        registry.feedError.map { "Klik couldn't check for add-ons: \($0)" }
     }
 }
 

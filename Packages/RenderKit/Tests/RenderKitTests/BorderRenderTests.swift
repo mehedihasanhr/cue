@@ -94,36 +94,41 @@ struct BorderRenderTests {
 
     // MARK: - Drawn, square corners
 
-    /// The frame's left edge is at x = 160. Sixteen pixels of band, then picture.
-    @Test func theBandIsOnTheEdgeWithPictureInsideAndBackgroundOutside() throws {
+    /// The frame's left edge is at x = 160. Sixteen pixels of band outside it, then
+    /// background; the picture starts right at the edge.
+    @Test func theBandIsOutsideTheEdgeWithThePictureWhole() throws {
         let scene = builder().descriptor(for: timeline(border: 0.02), at: .zero)
         let image = try #require(SceneRenderer().cgImage(for: scene, source: red))
         #expect(image.width == 1_600 && image.height == 1_000)
 
-        #expect(isGreen(try #require(pixel(image, x: 160 + 8, y: 500))), "on the edge: the border")
-        #expect(isRed(try #require(pixel(image, x: 160 + 16 + 6, y: 500))), "just inside: the picture")
-        #expect(isBlue(try #require(pixel(image, x: 160 - 6, y: 500))), "just outside: the background")
+        #expect(isGreen(try #require(pixel(image, x: 160 - 8, y: 500))), "just outside the edge: the border")
+        #expect(isRed(try #require(pixel(image, x: 160 + 2, y: 500))), "just inside: the picture, uncovered")
+        #expect(isBlue(try #require(pixel(image, x: 160 - 16 - 6, y: 500))), "past the band: the background")
         // All four sides.
-        #expect(isGreen(try #require(pixel(image, x: 1_440 - 8, y: 500))))
-        #expect(isGreen(try #require(pixel(image, x: 800, y: 100 + 8))))
-        #expect(isGreen(try #require(pixel(image, x: 800, y: 900 - 8))))
+        #expect(isGreen(try #require(pixel(image, x: 1_440 + 8, y: 500))))
+        #expect(isGreen(try #require(pixel(image, x: 800, y: 100 - 8))))
+        #expect(isGreen(try #require(pixel(image, x: 800, y: 900 + 8))))
+        #expect(isRed(try #require(pixel(image, x: 800, y: 900 - 2))), "the picture's own top row is not covered")
         #expect(isRed(try #require(pixel(image, x: 800, y: 500))), "the middle is untouched")
     }
 
     @Test func thePictureIsWhereItWasWithoutTheBorder() throws {
         let plain = builder().descriptor(for: timeline(border: 0), at: .zero)
         let bare = try #require(SceneRenderer().cgImage(for: plain, source: red))
-        // Without a border the first picture pixel is at the frame's edge; with one, the
-        // picture is still there under the band — nothing was inset to make room.
-        #expect(isRed(try #require(pixel(bare, x: 160 + 8, y: 500))))
+        let bordered = try #require(SceneRenderer().cgImage(
+            for: builder().descriptor(for: timeline(border: 0.02), at: .zero), source: red))
+        // The first picture pixel is at the frame's edge with or without a border: nothing
+        // was inset or covered to make room.
+        #expect(isRed(try #require(pixel(bare, x: 160 + 2, y: 500))))
+        #expect(isRed(try #require(pixel(bordered, x: 160 + 2, y: 500))))
         #expect(isBlue(try #require(pixel(bare, x: 160 - 6, y: 500))))
     }
 
     // MARK: - Drawn, rounded corners
 
     /// Corner radius 0.1 of an 800-tall frame is 80 pixels: the top-left arc is centred
-    /// at (240, 820). Walking the diagonal towards the corner crosses picture, band, and
-    /// then background — and the corner itself is background, not border.
+    /// at (240, 820). Walking the diagonal away from the centre crosses picture, then the
+    /// band — concentric, so 16 wide here too — then background.
     @Test func theBandFollowsTheRoundedCornerExactly() throws {
         let scene = builder().descriptor(for: timeline(border: 0.02, cornerRadius: 0.1), at: .zero)
         #expect(scene.cornerRadius == 80)
@@ -133,14 +138,14 @@ struct BorderRenderTests {
         func along(_ distance: Double) -> CGPoint {
             CGPoint(x: centre.x - distance / 2.0.squareRoot(), y: centre.y + distance / 2.0.squareRoot())
         }
-        let outside = along(80 + 6), band = along(80 - 8), inside = along(80 - 16 - 6)
-        #expect(isBlue(try #require(pixel(image, x: outside.x, y: outside.y))), "past the arc: background")
-        #expect(isGreen(try #require(pixel(image, x: band.x, y: band.y))), "on the arc: the border")
-        #expect(isRed(try #require(pixel(image, x: inside.x, y: inside.y))), "inside the inner arc: picture")
-        #expect(isBlue(try #require(pixel(image, x: 165, y: 895))), "the square corner is not filled in")
+        let outside = along(80 + 16 + 6), band = along(80 + 8), inside = along(80 - 6)
+        #expect(isBlue(try #require(pixel(image, x: outside.x, y: outside.y))), "past the outer arc: background")
+        #expect(isGreen(try #require(pixel(image, x: band.x, y: band.y))), "between the arcs: the border")
+        #expect(isRed(try #require(pixel(image, x: inside.x, y: inside.y))), "inside the arc: picture")
+        #expect(isBlue(try #require(pixel(image, x: 150, y: 910))), "the square corner is not filled in")
         // Along a straight side the band is still sixteen wide.
-        #expect(isGreen(try #require(pixel(image, x: 160 + 8, y: 500))))
-        #expect(isRed(try #require(pixel(image, x: 160 + 22, y: 500))))
+        #expect(isGreen(try #require(pixel(image, x: 160 - 8, y: 500))))
+        #expect(isRed(try #require(pixel(image, x: 160 + 2, y: 500))))
     }
 
     // MARK: - With the camera moving
@@ -155,9 +160,9 @@ struct BorderRenderTests {
         let scene = builder().descriptor(for: edit, at: time(5))
         #expect(scene.zoom == 2)
         let image = try #require(SceneRenderer().cgImage(for: scene, source: red))
-        #expect(isGreen(try #require(pixel(image, x: 160 + 8, y: 500))))
-        #expect(isRed(try #require(pixel(image, x: 160 + 22, y: 500))))
-        #expect(isBlue(try #require(pixel(image, x: 160 - 6, y: 500))))
+        #expect(isGreen(try #require(pixel(image, x: 160 - 8, y: 500))))
+        #expect(isRed(try #require(pixel(image, x: 160 + 2, y: 500))))
+        #expect(isBlue(try #require(pixel(image, x: 160 - 22, y: 500))))
     }
 
     /// When the whole frame zooms the border travels with the edge, and grows with it.
@@ -172,9 +177,9 @@ struct BorderRenderTests {
         let scene = builder().descriptor(for: edit, at: time(5))
         let image = try #require(SceneRenderer().cgImage(for: scene, source: red))
         // 0.02 of the 400-tall frame is 8, grown to 10.
-        #expect(isGreen(try #require(pixel(image, x: 400 + 5, y: 500))))
-        #expect(isRed(try #require(pixel(image, x: 400 + 10 + 5, y: 500))))
-        #expect(isBlue(try #require(pixel(image, x: 400 - 5, y: 500))))
-        #expect(isRed(try #require(pixel(image, x: 480 + 5, y: 500))), "where the band was before the zoom is picture now: the frame grew past it")
+        #expect(isGreen(try #require(pixel(image, x: 400 - 5, y: 500))))
+        #expect(isRed(try #require(pixel(image, x: 400 + 2, y: 500))))
+        #expect(isBlue(try #require(pixel(image, x: 400 - 10 - 5, y: 500))))
+        #expect(isRed(try #require(pixel(image, x: 480 + 5, y: 500))), "where the edge was before the zoom is picture now: the frame grew past it")
     }
 }

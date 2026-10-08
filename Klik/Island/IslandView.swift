@@ -258,16 +258,17 @@ struct IslandView: View {
             .frame(width: size.width + flare * 2, height: size.height, alignment: .top)
             .clipShape(shape)
             // The rim of every open panel: a hairline that catches the light toward
-            // the bottom edge, clear where the shape meets the menu bar.
+            // the bottom edge, clear where the shape meets the menu bar. Always there,
+            // only faded, so it shrinks with the shape as the island closes rather than
+            // being left behind at the open size while it fades.
             .overlay {
-                if Self.hasBackdrop(phase) {
-                    shape.stroke(LinearGradient(colors: [.clear, .white.opacity(0.05), .white.opacity(0.16)], startPoint: .top, endPoint: .bottom),
-                                 lineWidth: 1)
-                        .allowsHitTesting(false)
-                }
+                shape.stroke(LinearGradient(colors: [.clear, .white.opacity(0.05), .white.opacity(0.16)], startPoint: .top, endPoint: .bottom),
+                             lineWidth: 1)
+                    .opacity(Self.hasBackdrop(phase) ? 1 : 0)
+                    .allowsHitTesting(false)
             }
-            // While an agent works, a soft shadow breathes around the closed notch;
-            // the notch itself stays plain black.
+            // While agents run, a thin line of light under the closed notch; the
+            // notch itself stays plain black.
             .background(alignment: .top) {
                 if collapsed, geometry.screen.hasNotch, model.agents?.isBusy == true {
                     NotchGlow(shape: shape, size: CGSize(width: size.width + flare * 2, height: size.height), asking: asking)

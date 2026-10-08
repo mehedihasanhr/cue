@@ -16,15 +16,13 @@ struct CropInspector: View {
     var body: some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenGroups) {
             size
-            HStack(spacing: 8) {
-                Spacer(minLength: 0)
-
-                Button("Done") { model.tool = .frame }
-                    .buttonStyle(.studio(.primary, size: .small))
-                    .keyboardShortcut(.defaultAction)
-                    .help("Keep this crop and put the frame back the way it will export")
-            }
-            .buttonStyle(.studio(.secondary, size: .small))
+            // Done is on the bar under the picture, beside the handles. Kept here unseen
+            // only so Return still finishes the crop.
+            Button("Done") { model.tool = .frame }
+                .keyboardShortcut(.defaultAction)
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
         }
     }
 

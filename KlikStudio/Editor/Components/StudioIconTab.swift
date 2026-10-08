@@ -25,17 +25,17 @@ struct StudioIconTab: View {
 
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
-                .symbolVariant(isSelected ? .fill : .none)
+                .font(.system(size: 14, weight: .medium))
+                .imageScale(.medium)
                 .foregroundStyle(ink)
                 .frame(width: Self.size, height: Self.size)
                 .background {
                     if isSelected {
                         shape
-                            .fill(StudioTheme.Palette.accentSoft)
+                            .fill(StudioTheme.Surface.fieldHover)
                             .matchedGeometryEffect(id: "tool-tab", in: namespace)
                     } else if isHovering {
-                        shape.fill(StudioTheme.Palette.ghostHover)
+                        shape.fill(StudioTheme.Surface.field)
                     }
                 }
                 .contentShape(shape)
@@ -51,7 +51,9 @@ struct StudioIconTab: View {
 
     private var ink: Color {
         if !isAvailable { return StudioTheme.Palette.textTertiary }
-        if isSelected { return StudioTheme.Palette.accent }
-        return isHovering ? StudioTheme.Palette.textPrimary : StudioTheme.Palette.textSecondary
+        // White when chosen or under the pointer, a soft grey otherwise — the rail is
+        // neutral, so the accent stays for what is set on the picture.
+        if isSelected || isHovering { return .white }
+        return Color(white: 0.62)
     }
 }

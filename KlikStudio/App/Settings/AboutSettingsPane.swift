@@ -48,7 +48,7 @@ struct AboutSettingsPane: View {
 
             // Folded away because almost nobody needs it, and open in one click when Klik
             // says the add-on is there and nothing happens.
-            SettingsGroup("Connection with Klik", footer: "What Klik last asked for, and what this build told it it can do.") {
+            SettingsGroup("Connection with Klik") {
                 SettingsRow("Details", symbol: "link", tint: .blue) {
                     Button(showsConnection ? "Hide" : "Show") { showsConnection.toggle() }
                 }

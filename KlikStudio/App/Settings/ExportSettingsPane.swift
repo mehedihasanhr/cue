@@ -18,8 +18,7 @@ struct ExportSettingsPane: View {
         @Bindable var export = export
 
         SettingsPane(.export) {
-            SettingsGroup("The export sheet starts with",
-                          footer: "The sheet remembers what you last exported with, so these change whenever you export something different — and whatever you choose here is what it opens on next.") {
+            SettingsGroup("The export sheet starts with") {
                 SettingsRow("Preset", subtitle: export.preset?.detail ?? "Your own settings.") {
                     Picker("Preset", selection: preset) {
                         if export.preset == nil { Text("Custom").tag(ExportPreset?.none) }

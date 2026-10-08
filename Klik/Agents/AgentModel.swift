@@ -164,6 +164,9 @@ nonisolated struct AgentEvent: Sendable, Equatable {
     var parentPID: Int32
     /// `TERM_PROGRAM` of the agent's terminal.
     var terminal: String?
+    /// The terminal pane the agent runs in ("wezterm:3", "tmux:%1"), where the hook
+    /// script can type an answer only the agent's own dialog takes.
+    var pane: String?
 
     private struct Envelope: Decodable {
         struct Klik: Decodable {
@@ -172,6 +175,7 @@ nonisolated struct AgentEvent: Sendable, Equatable {
             var pid: Int32?
             var ppid: Int32?
             var term: String?
+            var pane: String?
         }
         var klik: Klik
         var event: JSONValue
@@ -203,12 +207,13 @@ nonisolated struct AgentEvent: Sendable, Equatable {
         parentPID = envelope.klik.ppid ?? 0
         let term = envelope.klik.term?.trimmingCharacters(in: .whitespaces)
         terminal = term?.isEmpty == false ? term : nil
+        pane = envelope.klik.pane.flatMap { $0.isEmpty ? nil : $0 }
     }
 
     init(agent: AgentKind, name: Name, sessionID: String, cwd: String? = nil, toolName: String? = nil, toolInput: JSONValue? = nil,
          suggestions: JSONValue? = nil, prompt: String? = nil, message: String? = nil, notificationType: String? = nil,
          subagentID: String? = nil, subagentType: String? = nil, backgroundTasks: [JSONValue]? = nil,
-         parentPID: Int32 = 0, terminal: String? = nil) {
+         parentPID: Int32 = 0, terminal: String? = nil, pane: String? = nil) {
         self.subagentID = subagentID
         self.subagentType = subagentType
         self.backgroundTasks = backgroundTasks
@@ -224,6 +229,7 @@ nonisolated struct AgentEvent: Sendable, Equatable {
         self.notificationType = notificationType
         self.parentPID = parentPID
         self.terminal = terminal
+        self.pane = pane
     }
 
     /// Only a permission request waits for an answer; everything else is news.
@@ -536,8 +542,27 @@ nonisolated struct AgentRequest: Identifiable, Equatable, Sendable {
     let toolInput: JSONValue
     let suggestions: JSONValue?
     let receivedAt: Date
+    /// The agent's own app when the session runs there (Codex's): the island asks
+    /// first, and can hand the question back to the app to ask instead.
+    var appName: String?
+    /// The terminal pane the agent runs in, when the hook script can type there.
+    let pane: String?
 
     var sessionKey: String { "\(agent.rawValue):\(sessionID)" }
+
+    /// Whether `event` shows this question was answered somewhere else (the
+    /// terminal): the very tool it asked about has run. A question or a plan is the
+    /// only one of its kind open at a time, and its tool may come back with the
+    /// answers added, so its name is enough; a permission matches on its input too,
+    /// so a parallel tool finishing does not settle another's question.
+    func isSettled(by event: AgentEvent) -> Bool {
+        guard event.name == .postToolUse, event.agent == agent, event.sessionID == sessionID,
+              event.toolName == toolName else { return false }
+        switch kind {
+        case .questions, .plan: return true
+        case .permission: return event.toolInput == toolInput
+        }
+    }
 
     /// Whether "always" means anything: Claude Code offers its own rules, and Klik
     /// remembers Codex's for the rest of the session.
@@ -549,6 +574,13 @@ nonisolated struct AgentRequest: Identifiable, Equatable, Sendable {
         }
     }
 
+    /// Whether a plan can be approved from here. Claude Code takes a plan's approval
+    /// only from its own dialog, so Klik needs the pane to press the dialog's key in.
+    var canApprovePlan: Bool {
+        guard case .plan = kind else { return false }
+        return agent == .claude && pane != nil
+    }
+
     init?(_ event: AgentEvent, id: UUID = UUID(), at now: Date) {
         guard event.name == .permissionRequest, let toolName = event.toolName else { return nil }
         let input = event.toolInput ?? .object([:])
@@ -558,6 +590,7 @@ nonisolated struct AgentRequest: Identifiable, Equatable, Sendable {
         self.toolName = toolName
         toolInput = input
         suggestions = event.suggestions
+        pane = event.pane
         receivedAt = now
         switch toolName {
         case "AskUserQuestion":
@@ -586,6 +619,10 @@ nonisolated enum AgentDecision: Equatable, Sendable {
     case allowOnce
     case allowAlways
     case deny
+    /// Approves a plan through Claude Code's own dialog: its first option (switch to
+    /// bypass permissions, or auto-accept edits — what Return picks there), or the
+    /// second, approving with edits still asked about one by one.
+    case approvePlan(reviewEdits: Bool)
     /// The chosen labels (or typed text) for each question, by its text.
     case answers([String: [String]])
 }
@@ -593,6 +630,11 @@ nonisolated enum AgentDecision: Equatable, Sendable {
 nonisolated enum AgentReply {
     /// The hook's stdout for `decision`: the agent reads it as the user's answer.
     static func json(for request: AgentRequest, _ decision: AgentDecision) -> Data {
+        if case .approvePlan(let reviewEdits) = decision {
+            // Not JSON: the script reads this as keys to press in the agent's pane, and
+            // gives the agent no answer, so its dialog stays up to take them.
+            return Data((AgentHooks.keysReplyPrefix + (reviewEdits ? "2" : "1")).utf8)
+        }
         var verdict: [String: JSONValue] = [:]
         switch decision {
         case .allowOnce:
@@ -604,6 +646,8 @@ nonisolated enum AgentReply {
         case .deny:
             verdict["behavior"] = .string("deny")
             verdict["message"] = .string(request.toolName == "ExitPlanMode" ? "The user wants to keep planning." : "The user denied this from Klik.")
+        case .approvePlan:
+            break
         case .answers(let answers):
             verdict["behavior"] = .string("allow")
             var input: [String: JSONValue] = if case .object(let object) = request.toolInput { object } else { [:] }

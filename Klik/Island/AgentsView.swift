@@ -137,66 +137,147 @@ private struct Spin: ViewModifier {
     }
 }
 
-/// The closed notch while an agent works: a thin line of red light along its left,
-/// bottom and right edges, breathing softly. Amber and quicker while an agent
-/// waits on the user. The notch
-/// itself stays plain black; the light only shows outside its edge.
+/// The closed notch while agents run: one thin line of light that runs along the
+/// top edge of the screen, down around the notch and out the other side, fading
+/// away into the edge on both sides so it never reads as a border. Soft blue-green
+/// while agents work, with a highlight drifting left to right now and then; amber,
+/// gently pulsing, while one waits on the user. Nothing when idle (the island does
+/// not draw it then). The notch itself stays black: the light shows only outside it.
 struct NotchGlow: View {
     let shape: NotchShape
     let size: CGSize
     let asking: Bool
 
-    private static let red = Color(red: 1.0, green: 0.26, blue: 0.22)
+    static let working = Color(red: 0.38, green: 0.78, blue: 0.95)
+    /// How far the light reaches along the top edge on each side of the notch.
+    static let wing: CGFloat = 140
+    /// A sweep crosses in this long, then the line rests until the next.
+    private static let sweep = 2.4
+    private static let sweepRest = 1.6
+
+    /// Room under the notch for the half of the line, and its glow, that hang below
+    /// its bottom edge; without it the frame (and the fade's mask) would cut them off.
+    private static let below: CGFloat = 12
 
     var body: some View {
-        let outline = NotchOutline(flare: shape.flare, bottomRadius: shape.bottomRadius)
-        let color = asking ? askingTint : Self.red
+        let path = NotchLightPath(flare: shape.flare, bottomRadius: shape.bottomRadius, wing: Self.wing,
+                                  notchHeight: size.height, part: .whole)
+        let bottom = NotchLightPath(flare: shape.flare, bottomRadius: shape.bottomRadius, wing: Self.wing,
+                                    notchHeight: size.height, part: .bottom)
+        let color = asking ? askingTint : Self.working
+        let width = size.width + Self.wing * 2
         Group {
             if IslandView.reduceMotion {
-                rim(outline, color: color, level: 0.8)
+                line(path, bottom, color: color, level: 0.7)
             } else {
-                // One slow, even breath of the whole rim; nothing travels along it.
                 TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
                     let t = context.date.timeIntervalSinceReferenceDate
-                    let breath = 0.5 - 0.5 * cos(t * 2 * .pi / (asking ? 1.4 : 3.0))
-                    rim(outline, color: color, level: 0.3 + 0.7 * breath)
+                    if asking {
+                        // A slow pulse, never fully dark.
+                        let pulse = 0.5 - 0.5 * cos(t * 2 * .pi / 1.6)
+                        line(path, bottom, color: color, level: 0.4 + 0.6 * pulse)
+                    } else {
+                        let phase = t.truncatingRemainder(dividingBy: Self.sweep + Self.sweepRest) / Self.sweep
+                        let progress = min(1, phase)
+                        let eased = progress < 0.5 ? 2 * progress * progress : 1 - pow(-2 * progress + 2, 2) / 2
+                        ZStack {
+                            line(path, bottom, color: color, level: 0.5)
+                            line(path, bottom, color: color, level: 1)
+                                .mask(highlight(at: -0.15 + 1.3 * eased))
+                                .opacity(progress < 1 ? 1 : 0)
+                        }
+                    }
                 }
             }
         }
+        // Strongest at the notch, gone by the ends of the wings: it melts into the edge.
+        .mask(fade(width: width))
         // The inner half of every stroke sits under the black, so the light reads
         // as coming from behind the notch's edge.
-        .overlay { shape.fill(.black) }
-        .frame(width: size.width, height: size.height)
+        .overlay(alignment: .top) { shape.fill(.black).frame(width: size.width, height: size.height) }
+        .frame(width: width, height: size.height + Self.below, alignment: .top)
+        // Hung from the notch's top: the extra room is all below it.
+        .padding(.bottom, -Self.below)
+        .allowsHitTesting(false)
     }
 
-    private func rim(_ outline: NotchOutline, color: Color, level: Double) -> some View {
+    /// About 2 pt of line outside the edge with a faint glow, a touch brighter
+    /// along the bottom, where the eye looks, than up the sides.
+    private func line(_ path: NotchLightPath, _ bottom: NotchLightPath, color: Color, level: Double) -> some View {
         ZStack {
-            outline.stroke(color, style: SwiftUI.StrokeStyle(lineWidth: 5, lineJoin: .round))
-                .blur(radius: 4)
+            path.stroke(color, style: SwiftUI.StrokeStyle(lineWidth: 8, lineCap: .round, lineJoin: .round))
+                .blur(radius: 6)
+                .opacity(0.2 * level)
+            path.stroke(color, style: SwiftUI.StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+                .opacity(0.6 * level)
+            bottom.stroke(color, style: SwiftUI.StrokeStyle(lineWidth: 10, lineCap: .round, lineJoin: .round))
+                .blur(radius: 6)
+                .opacity(0.3 * level)
+            bottom.stroke(color, style: SwiftUI.StrokeStyle(lineWidth: 4.5, lineCap: .round, lineJoin: .round))
                 .opacity(0.35 * level)
-            outline.stroke(color, style: SwiftUI.StrokeStyle(lineWidth: 2, lineJoin: .round))
-                .opacity(0.75 * level)
         }
+    }
+
+    /// A soft band of light centred at `position` (0 left end, 1 right end).
+    private func highlight(at position: Double) -> some View {
+        LinearGradient(stops: [
+            .init(color: .clear, location: position - 0.14),
+            .init(color: .black, location: position),
+            .init(color: .clear, location: position + 0.14),
+        ], startPoint: .leading, endPoint: .trailing)
+    }
+
+    private func fade(width: CGFloat) -> some View {
+        let wing = Double(Self.wing / width)
+        return LinearGradient(stops: [
+            .init(color: .clear, location: 0),
+            .init(color: .black.opacity(0.35), location: wing * 0.45),
+            .init(color: .black, location: wing),
+            .init(color: .black, location: 1 - wing),
+            .init(color: .black.opacity(0.35), location: 1 - wing * 0.45),
+            .init(color: .clear, location: 1),
+        ], startPoint: .leading, endPoint: .trailing)
     }
 }
 
-/// The notch's visible edges (left side, bottom, right side) as one open line,
-/// so a stretch of it can be lit with `trim`. Matches `NotchShape` with no top radius.
-private nonisolated struct NotchOutline: Shape {
+/// The line the light follows: along the top edge from the left, down the notch's
+/// side, along its bottom, up the other side and out along the top edge again.
+/// `rect` is the notch's rect (flares included) widened by `wing` on each side.
+private nonisolated struct NotchLightPath: Shape {
+    enum Part { case whole, bottom }
+
     let flare: CGFloat
     let bottomRadius: CGFloat
+    let wing: CGFloat
+    /// The notch's own height; `rect` is taller, with room for the light below it.
+    let notchHeight: CGFloat
+    var part: Part = .whole
 
     func path(in rect: CGRect) -> Path {
-        let flare = min(self.flare, rect.width / 4)
-        let body = rect.insetBy(dx: flare, dy: 0)
+        let notch = CGRect(x: rect.minX + wing, y: rect.minY, width: rect.width - wing * 2, height: notchHeight)
+        let flare = min(self.flare, notch.width / 4)
+        let body = notch.insetBy(dx: flare, dy: 0)
         let bottom = min(bottomRadius, body.width / 2, body.height / 2)
+        let top = rect.minY
         var path = Path()
-        path.move(to: CGPoint(x: body.minX, y: body.minY + flare))
+        if part == .bottom {
+            // The bottom edge with its two curves only.
+            path.move(to: CGPoint(x: body.minX, y: body.maxY - bottom))
+            path.addQuadCurve(to: CGPoint(x: body.minX + bottom, y: body.maxY), control: CGPoint(x: body.minX, y: body.maxY))
+            path.addLine(to: CGPoint(x: body.maxX - bottom, y: body.maxY))
+            path.addQuadCurve(to: CGPoint(x: body.maxX, y: body.maxY - bottom), control: CGPoint(x: body.maxX, y: body.maxY))
+            return path
+        }
+        path.move(to: CGPoint(x: rect.minX, y: top))
+        path.addLine(to: CGPoint(x: notch.minX, y: top))
+        path.addQuadCurve(to: CGPoint(x: body.minX, y: top + flare), control: CGPoint(x: body.minX, y: top))
         path.addLine(to: CGPoint(x: body.minX, y: body.maxY - bottom))
         path.addQuadCurve(to: CGPoint(x: body.minX + bottom, y: body.maxY), control: CGPoint(x: body.minX, y: body.maxY))
         path.addLine(to: CGPoint(x: body.maxX - bottom, y: body.maxY))
         path.addQuadCurve(to: CGPoint(x: body.maxX, y: body.maxY - bottom), control: CGPoint(x: body.maxX, y: body.maxY))
-        path.addLine(to: CGPoint(x: body.maxX, y: body.minY + flare))
+        path.addLine(to: CGPoint(x: body.maxX, y: top + flare))
+        path.addQuadCurve(to: CGPoint(x: notch.maxX, y: top), control: CGPoint(x: body.maxX, y: top))
+        path.addLine(to: CGPoint(x: rect.maxX, y: top))
         return path
     }
 }
@@ -486,6 +567,8 @@ struct AgentsView: View {
     let maxHeight: CGFloat
 
     @State private var listHeight: CGFloat = 0
+    /// How far the list is scrolled down.
+    @State private var scrollOffset: CGFloat = 0
     /// The list has been laid out once. Until then its height is unknown and
     /// nothing is reported, so the island opens straight to its full size, in one
     /// movement, the way the panel does — not to the header first and then again.
@@ -493,8 +576,12 @@ struct AgentsView: View {
     /// The header, the gap under it and the padding around it all.
     private static let chrome: CGFloat = 24 + 12 + 14
 
+    private static let scrollSpace = "agentsList"
+
     private var listLimit: CGFloat { max(120, maxHeight - Self.chrome) }
     private var overflows: Bool { listHeight > listLimit + 1 }
+    /// More below the fold: the list is taller than its window and not scrolled to the end.
+    private var moreBelow: Bool { overflows && scrollOffset + listLimit < listHeight - 2 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -506,9 +593,17 @@ struct AgentsView: View {
                     .frame(maxWidth: .infinity, minHeight: 40)
             } else {
                 ScrollView(.vertical) {
-                    VStack(spacing: 6) {
-                        ForEach(store.sessions) { session in
-                            AgentSessionCard(session: session, requests: store.requests(for: session), store: store)
+                    VStack(spacing: 0) {
+                        ForEach(Array(store.sessions.enumerated()), id: \.element.id) { index, session in
+                            VStack(spacing: 0) {
+                                // Plain rows, parted by a hairline; a card is set apart by its own fill.
+                                if index > 0, !AgentSessionCard.showsCard(store.sessions[index - 1], requests: store.requests(for: store.sessions[index - 1])),
+                                   !AgentSessionCard.showsCard(session, requests: store.requests(for: session)) {
+                                    Rectangle().fill(.white.opacity(0.07)).frame(height: 0.5).padding(.leading, 50)
+                                }
+                                AgentSessionCard(session: session, requests: store.requests(for: session), store: store)
+                                    .padding(.vertical, AgentSessionCard.showsCard(session, requests: store.requests(for: session)) ? 4 : 0)
+                            }
                                 .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.97, anchor: .top)),
                                                         removal: .opacity.combined(with: .scale(scale: 0.97))))
                         }
@@ -523,19 +618,25 @@ struct AgentsView: View {
                             measured = true
                         }
                     }
+                    .onGeometryChange(for: CGFloat.self) { -$0.frame(in: .named(Self.scrollSpace)).minY } action: { offset in
+                        scrollOffset = offset
+                    }
                 }
+                .coordinateSpace(name: Self.scrollSpace)
                 .scrollIndicators(.never)
                 // Until it has measured itself the list takes the room it is given, so
                 // the cards are there from the first frame and open with the island,
                 // rather than the island opening empty and the cards following.
                 .frame(height: measured ? min(listHeight, listLimit) : nil)
-                // More below: the last card fades out at the bottom edge.
+                // More below: the bottom edge fades out. Scrolled to the end, it doesn't,
+                // so the last row reads in full.
                 .mask {
                     VStack(spacing: 0) {
                         Color.black
-                        LinearGradient(colors: [.black, .black.opacity(overflows ? 0.15 : 1)], startPoint: .top, endPoint: .bottom)
-                            .frame(height: 28)
+                        LinearGradient(colors: [.black, .black.opacity(moreBelow ? 0 : 1)], startPoint: .top, endPoint: .bottom)
+                            .frame(height: 56)
                     }
+                    .animation(.easeOut(duration: 0.2), value: moreBelow)
                 }
             }
         }
@@ -556,34 +657,22 @@ struct AgentsView: View {
         let sessions = store.sessions
         let working = sessions.filter { $0.state == .running }.count
         let asking = sessions.filter { $0.state == .waiting }.count
-        return HStack(spacing: 8) {
-            LiveDot(color: store.requests.isEmpty ? SessionTone.done : askingTint)
-            HStack(spacing: 4) {
-                Text("\(sessions.count)")
-                    .foregroundStyle(.white)
-                Text(sessions.count == 1 ? "session" : "sessions")
-                    .foregroundStyle(.white.opacity(0.55))
-            }
-            if working + asking > 0 {
-                Rectangle().fill(.white.opacity(0.18)).frame(width: 1, height: 12)
-            }
+        return HStack(spacing: 16) {
+            // Plain counts set apart by space alone; only what needs the user is in colour.
+            Text("\(sessions.count) \(sessions.count == 1 ? "session" : "sessions")")
+                .foregroundStyle(.white.opacity(0.92))
             if working > 0 {
-                HStack(spacing: 4) {
-                    Text("\(working)").foregroundStyle(SessionTone.working)
-                    Text("working").foregroundStyle(.white.opacity(0.55))
-                }
+                Text("\(working) working").foregroundStyle(.white.opacity(0.5))
             }
             if asking > 0 {
-                HStack(spacing: 4) {
-                    Text("\(asking)").foregroundStyle(askingTint)
-                    Text(asking == 1 ? "needs you" : "need you").foregroundStyle(.white.opacity(0.55))
-                }
+                Text("\(asking) \(asking == 1 ? "needs" : "need") you").foregroundStyle(askingTint)
             }
             Spacer()
             HeaderButton(symbol: "square.grid.2x2", help: "Open the panel", action: openPanel)
             HeaderButton(symbol: "xmark", help: "Close", action: close)
         }
         .font(.system(size: 12.5, weight: .semibold))
+        .tracking(-0.1)
         .monospacedDigit()
         .frame(height: 24)
         .padding(.leading, 6)
@@ -613,7 +702,7 @@ private struct HeaderButton: View {
 
 /// How a session stands, in colour.
 private enum SessionTone {
-    static let working = Color(red: 0.36, green: 0.58, blue: 1.0)
+    static let working = Color(red: 0.47, green: 0.67, blue: 1.0)
     static let done = Color(red: 0.36, green: 0.82, blue: 0.48)
 
     static func color(_ state: AgentSession.State) -> Color {
@@ -633,7 +722,12 @@ private struct AgentSessionCard: View {
     @State private var hovered = false
 
     /// At work it stays on one line; finished, or waiting on the user, it shows in full.
-    private var expanded: Bool { session.state != .running || !requests.isEmpty }
+    private var expanded: Bool { Self.showsCard(session, requests: requests) }
+
+    /// Finished, or waiting on the user: shown in full on a card; at work: a plain row.
+    static func showsCard(_ session: AgentSession, requests: [AgentRequest]) -> Bool {
+        session.state != .running || !requests.isEmpty
+    }
 
     var body: some View {
         Group {
@@ -645,7 +739,7 @@ private struct AgentSessionCard: View {
     }
 
     private var full: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 4) {
             summary
                 .onTapGesture { store.focus(session) }
                 .accessibilityAddTraits(.isButton)
@@ -657,51 +751,51 @@ private struct AgentSessionCard: View {
                             .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                 }
-                .padding(.leading, 30)
+                .padding(.leading, 38)
                 .animation(IslandView.listAnimation, value: session.workers.map(\.id))
             }
             ForEach(requests) { request in
+                // In line with the text, not the logo.
                 AgentRequestCard(request: request, store: store)
+                    .padding(.leading, 38)
                     .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 13)
-        .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        // Always the list's full width: a finished card with little to say must not
+        // shrink to its text.
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.top, 6)
+        .padding(.bottom, 4)
+        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(alignment: .topTrailing) {
+            dismissButton
+                .padding(8)
+                .opacity(hovered && requests.isEmpty ? 1 : 0)
+                .allowsHitTesting(hovered && requests.isEmpty)
+        }
     }
 
-    /// Logo, name, status, agent, source and running time, on one line.
+    /// Logo, name and what it is about, and how it stands: the logo already says
+    /// which agent; where it runs and for how long are in the tooltip.
     private var line: some View {
-        HStack(spacing: 10) {
-            AgentTile(agent: session.agent, working: true, side: 16)
-                .overlay {
-                    if hovered { dismissButton }
-                }
-            name(size: 13.5, weight: .medium, color: .white.opacity(0.9))
-            Spacer(minLength: 8)
-            Text(session.usedTool ? "Working" : "Thinking")
-                .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(SessionTone.working)
-                .fixedSize()
-            HStack(spacing: 5) {
-                AgentChip(text: session.agent.shortName)
-                if let source {
-                    AgentChip(text: source)
-                }
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    Text(Self.elapsed(since: session.turnStartedAt ?? session.startedAt, now: context.date))
-                        .font(.system(size: 11, weight: .medium))
-                        .monospacedDigit()
-                        .foregroundStyle(.white.opacity(0.4))
-                        .frame(minWidth: 24, alignment: .trailing)
-                }
+        HStack(spacing: 12) {
+            AgentTile(agent: session.agent, working: false, side: 26)
+            name(size: 13.5, weight: .semibold, color: .white.opacity(hovered ? 1 : 0.92))
+            Spacer(minLength: 12)
+            // On hover the status makes way for the dismiss button, in the same place.
+            ZStack(alignment: .trailing) {
+                StatusLabel(text: session.usedTool ? "Working" : "Thinking", tone: SessionTone.working)
+                    .opacity(hovered ? 0 : 1)
+                dismissButton
+                    .opacity(hovered ? 1 : 0)
+                    .allowsHitTesting(hovered)
             }
-            .fixedSize()
         }
         .lineLimit(1)
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(.white.opacity(hovered ? 0.05 : 0), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(.white.opacity(hovered ? 0.045 : 0), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .contentShape(Rectangle())
         .onTapGesture { store.focus(session) }
         .accessibilityAddTraits(.isButton)
@@ -720,27 +814,38 @@ private struct AgentSessionCard: View {
     private var dismissButton: some View {
         Button(action: dismiss) {
             Image(systemName: "xmark")
-                .font(.system(size: 6.5, weight: .bold))
-                .foregroundStyle(.white.opacity(0.85))
-                .frame(width: 14, height: 14)
-                .background(Color(white: 0.22), in: Circle())
-                .overlay(Circle().strokeBorder(.white.opacity(0.12), lineWidth: 0.5))
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.7))
+                .frame(width: 20, height: 20)
+                .background(.white.opacity(0.1), in: Circle())
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .help("Dismiss")
     }
 
-    /// The folder, then what the session is about, so two in one folder read apart.
-    private func name(size: CGFloat, weight: Font.Weight, color: Color) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(session.project)
-                .font(.system(size: size, weight: weight))
-                .foregroundStyle(color)
-                .layoutPriority(1)
+    /// The folder, and under it what the session is about, so two in one folder read apart.
+    private func name(size: CGFloat, weight: Font.Weight, color: Color, attention: String? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(session.project)
+                    .font(.system(size: size, weight: weight))
+                    .foregroundStyle(color)
+                // What it needs from the user, beside its name: "api  ● Permission required".
+                if let attention {
+                    HStack(spacing: 5) {
+                        RippleDot(color: askingTint)
+                            .alignmentGuide(.firstTextBaseline) { $0[.bottom] + 1 }
+                        Text(attention)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(askingTint)
+                    }
+                }
+            }
             if let title = session.title {
                 Text(title)
-                    .font(.system(size: size - 1, weight: .regular))
-                    .foregroundStyle(.white.opacity(0.45))
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundStyle(.white.opacity(0.76))
                     .truncationMode(.tail)
             }
         }
@@ -753,28 +858,21 @@ private struct AgentSessionCard: View {
 
     private var summary: some View {
         HStack(alignment: .top, spacing: 12) {
-            AgentTile(agent: session.agent, working: session.state == .running, side: 18)
-                .overlay(alignment: .topLeading) {
-                    dismissButton
-                        .offset(x: -6, y: -6)
-                        .opacity(hovered ? 1 : 0)
-                        .allowsHitTesting(hovered)
-                }
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    name(size: 14.5, weight: .semibold, color: .white)
-                    Spacer(minLength: 8)
-                    details
-                }
+            AgentTile(agent: session.agent, working: false, side: 26)
+            VStack(alignment: .leading, spacing: 1) {
+                name(size: 14, weight: .semibold, color: .white, attention: requests.first?.attention)
                 // While it asks, the question says it all; the command is shown below.
                 if let ask = requests.first?.ask {
                     Text(ask)
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(askingTint)
+                        .foregroundStyle(.white.opacity(0.88))
+                } else if !requests.isEmpty {
+                    // A question: "Answer required" beside the name says it; the question below is the focus.
+                    EmptyView()
                 } else {
                     Text(session.activity ?? Self.placeholder(for: session.state))
                         .font(.system(size: 12))
-                        .foregroundStyle(.white.opacity(0.5))
+                        .foregroundStyle(.white.opacity(0.76))
                         .truncationMode(.tail)
                     stateLabel
                 }
@@ -784,44 +882,23 @@ private struct AgentSessionCard: View {
         .contentShape(Rectangle())
     }
 
-    /// Which agent, where it runs, and how long ago it started.
-    private var details: some View {
-        HStack(spacing: 5) {
-            AgentChip(text: session.agent.shortName)
-            if let source {
-                AgentChip(text: source)
-            }
-            TimelineView(.periodic(from: .now, by: 30)) { context in
-                Text(Self.age(since: session.startedAt, now: context.date))
-                    .font(.system(size: 11, weight: .medium))
-                    .monospacedDigit()
-                    .foregroundStyle(.white.opacity(0.4))
-                    .frame(minWidth: 24, alignment: .trailing)
-            }
-        }
-        .fixedSize()
-        .help(session.profile.map { "\(session.agent.name) · \($0)" } ?? session.agent.name)
-    }
-
-    /// "Working 12s", "Needs you", "Done — click to jump".
+    /// "● Working 12s", "Needs you", "● Done — click to jump": a coloured dot and a
+    /// quiet label, bright colour kept for what needs the user.
+    @ViewBuilder
     private var stateLabel: some View {
-        HStack(spacing: 5) {
-            switch session.state {
-            case .running:
-                Text(session.usedTool ? "Working" : "Thinking")
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    Text(Self.elapsed(since: session.turnStartedAt ?? session.startedAt, now: context.date))
-                        .monospacedDigit()
-                        .opacity(0.6)
-                }
-            case .waiting:
-                Text("Needs you")
-            case .idle:
-                Text("Done — click to jump")
+        switch session.state {
+        case .running:
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                StatusLabel(text: "\(session.usedTool ? "Working" : "Thinking") \(Self.elapsed(since: session.turnStartedAt ?? session.startedAt, now: context.date))",
+                            tone: SessionTone.working)
             }
+        case .waiting:
+            Text("Needs you")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(askingTint)
+        case .idle:
+            StatusLabel(text: "Done — click to jump", tone: SessionTone.done)
         }
-        .font(.system(size: 12, weight: .medium))
-        .foregroundStyle(SessionTone.color(session.state))
     }
 
     private static func placeholder(for state: AgentSession.State) -> String {
@@ -830,15 +907,6 @@ private struct AgentSessionCard: View {
         case .waiting: "Waiting for you"
         case .idle: "Waiting for a prompt"
         }
-    }
-
-    /// "now", "12m", "3h", "2d".
-    private static func age(since date: Date, now: Date) -> String {
-        let minutes = max(0, Int(now.timeIntervalSince(date))) / 60
-        if minutes < 1 { return "now" }
-        if minutes < 60 { return "\(minutes)m" }
-        if minutes < 24 * 60 { return "\(minutes / 60)h" }
-        return "\(minutes / (24 * 60))d"
     }
 
     /// "8s", "4m", "1h 5m".
@@ -860,17 +928,50 @@ private struct AgentSessionCard: View {
     }
 }
 
-/// A small label on the right of a session row: the agent, or where it runs.
-private struct AgentChip: View {
-    let text: String
+/// A still dot with a soft ring that widens and fades from it, then rests a moment:
+/// asks for attention without pulsing at the user.
+private struct RippleDot: View {
+    let color: Color
+    var size: CGFloat = 5
+
+    private static let ripple = 1.8
+    private static let rest = 0.9
 
     var body: some View {
-        Text(text)
-            .font(.system(size: 10.5, weight: .medium))
-            .foregroundStyle(.white.opacity(0.55))
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
-            .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        Circle().fill(color)
+            .frame(width: size, height: size)
+            .background {
+                if !IslandView.reduceMotion {
+                    TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
+                        let elapsed = context.date.timeIntervalSinceReferenceDate
+                            .truncatingRemainder(dividingBy: Self.ripple + Self.rest)
+                        let progress = min(1, elapsed / Self.ripple)
+                        let eased = 1 - pow(1 - progress, 3) // ease-out
+                        Circle()
+                            .fill(color)
+                            .frame(width: size, height: size)
+                            .scaleEffect(1 + 2.2 * eased)
+                            .opacity(0.35 * (1 - eased))
+                    }
+                }
+            }
+    }
+}
+
+/// A small coloured dot and a muted label: how a session stands, without shouting.
+private struct StatusLabel: View {
+    let text: String
+    let tone: Color
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle().fill(tone).frame(width: 4, height: 4)
+            Text(text)
+                .font(.system(size: 11, weight: .regular))
+                .monospacedDigit()
+                .foregroundStyle(.white.opacity(0.55))
+        }
+        .fixedSize()
     }
 }
 
@@ -1002,25 +1103,31 @@ private struct PermissionCard: View {
     let store: AgentStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 4) {
             if let detail = summary.detail, !detail.isEmpty {
-                // Whole lines only (four at most); the full command is in the tooltip.
+                // Whole lines only (three at most); the full command is in the tooltip.
                 Text(detail)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.75))
-                    .lineSpacing(2)
-                    .lineLimit(4)
+                    .font(.system(size: 11.5, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.82))
+                    .lineSpacing(1.5)
+                    .lineLimit(3)
                     .truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.black.opacity(0.28), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .help(detail)
             }
+            // All the answers together on the right, the default one last; a session in
+            // the agent's own app can be sent back there to answer.
             HStack(spacing: 6) {
-                AnswerButton("Deny", role: .quiet) { store.answer(request, .deny) }
+                if let app = request.appName {
+                    AnswerButton("Ask in \(app)", role: .quiet) { store.answerInTerminal(request) }
+                        .help("Answer in \(app) instead; it asks there")
+                }
                 Spacer(minLength: 0)
+                AnswerButton("Deny", role: .quiet) { store.answer(request, .deny) }
                 if request.canAllowAlways {
                     AnswerButton(request.agent == .codex ? "Allow for session" : "Always allow", role: .secondary) { store.answer(request, .allowAlways) }
                         .help(request.agent == .codex ? "Allow this command again without asking until the session ends" : "Allow this and don’t ask again, the way Claude Code’s own prompt offers")
@@ -1033,6 +1140,15 @@ private struct PermissionCard: View {
 }
 
 extension AgentRequest {
+    /// The kind of attention it needs, in a word or two.
+    var attention: String {
+        switch kind {
+        case .permission: "Permission required"
+        case .plan: "Approval required"
+        case .questions: "Answer required"
+        }
+    }
+
     /// What it asks, in a few words, shown in place of the session's status line;
     /// nil when the card below carries its own questions.
     var ask: String? {
@@ -1075,11 +1191,18 @@ private struct PlanCard: View {
             HStack(spacing: 6) {
                 AnswerButton("Keep planning", role: .quiet) { store.answer(request, .deny) }
                 Spacer(minLength: 0)
-                if request.canAllowAlways {
-                    AnswerButton("Approve, auto-edit", role: .secondary) { store.answer(request, .allowAlways) }
-                        .help("Approve and let Claude make edits without asking")
+                if request.canApprovePlan {
+                    // Claude Code takes a plan's approval only from its own dialog, so
+                    // these press that dialog's keys in the agent's pane.
+                    AnswerButton("Approve, review edits", role: .secondary) { store.answer(request, .approvePlan(reviewEdits: true)) }
+                        .help("Approve, and ask before each edit")
+                    AnswerButton("Approve", role: .primary) { store.answer(request, .approvePlan(reviewEdits: false)) }
+                        .help("Approve, as Return does in the terminal")
+                } else {
+                    // No pane to type in (a terminal other than WezTerm or tmux): the
+                    // approval has to be given in the terminal itself.
+                    AnswerButton("Approve in Terminal", role: .primary) { store.answerInTerminal(request) }
                 }
-                AnswerButton("Approve", role: .primary) { store.answer(request, .allowOnce) }
             }
         }
     }
@@ -1087,6 +1210,10 @@ private struct PlanCard: View {
 
 /// AskUserQuestion: each question with its options. A single question with a single
 /// answer goes as soon as an option is clicked; otherwise Submit sends them all.
+/// AskUserQuestion, one question at a time the way the CLI asks: the question in
+/// full and its options as radio (or check) rows. A single choice moves on to the
+/// next question by itself; Back returns to change one. Nothing is sent until the
+/// last question is answered and Continue pressed; the terminal can still answer.
 private struct QuestionsCard: View {
     let request: AgentRequest
     let questions: [AgentRequest.Question]
@@ -1095,44 +1222,93 @@ private struct QuestionsCard: View {
     @State private var chosen: [String: [String]] = [:]
     @State private var other: [String: String] = [:]
     @State private var typing: String?
+    /// The question on screen.
+    @State private var step = 0
 
-    private var answersAtOnce: Bool { questions.count == 1 && questions[0].multiSelect == false }
+    private var current: AgentRequest.Question { questions[min(step, questions.count - 1)] }
+    private var isLast: Bool { step >= questions.count - 1 }
+    private func answered(_ question: AgentRequest.Question) -> Bool { !(chosen[question.question] ?? []).isEmpty }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ForEach(questions) { question in
-                VStack(alignment: .leading, spacing: 6) {
-                    if let header = question.header, !header.isEmpty {
-                        Text(header.uppercased())
-                            .font(.system(size: 9.5, weight: .bold))
-                            .tracking(0.4)
-                            .foregroundStyle(askingTint)
-                    }
-                    Text(question.question)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .fixedSize(horizontal: false, vertical: true)
-                    VStack(spacing: 4) {
-                        ForEach(question.options) { option in
+        VStack(alignment: .leading, spacing: 8) {
+            let question = current
+                VStack(alignment: .leading, spacing: 5) {
+                    if questions.count > 1 { progress }
+                    prompt(question)
+                    VStack(spacing: 0) {
+                        ForEach(Array(question.options.enumerated()), id: \.element.id) { index, option in
+                            if index > 0 { separator }
                             OptionRow(label: option.label, description: option.description, multi: question.multiSelect,
                                       selected: chosen[question.question, default: []].contains(option.label)) {
                                 pick(option.label, in: question)
                             }
                         }
+                        separator
                         otherRow(for: question)
                     }
+                    .background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
-            }
+                .id(step)
+                .transition(.opacity)
             HStack(spacing: 6) {
-                AnswerButton("Answer in terminal", role: .quiet) { store.answerInTerminal(request) }
+                if step > 0 {
+                    AnswerButton("Back", role: .quiet) { go(to: step - 1) }
+                }
                 Spacer(minLength: 0)
-                if !answersAtOnce {
-                    AnswerButton("Submit", role: .primary) { submit() }
+                AnswerButton("Answer in Terminal", role: .quiet) { store.answerInTerminal(request) }
+                    .help("Leave this to the terminal; the agent waits there")
+                if isLast {
+                    AnswerButton("Continue", role: .primary) { submit() }
                         .disabled(!complete)
-                        .opacity(complete ? 1 : 0.45)
+                        .opacity(complete ? 1 : 0.4)
+                } else {
+                    AnswerButton("Next", role: .primary) { go(to: step + 1) }
+                        .disabled(!answered(question))
+                        .opacity(answered(question) ? 1 : 0.4)
                 }
             }
         }
+    }
+
+    /// "2 of 3" and a dot per question: filled once answered, brighter for this one.
+    private var progress: some View {
+        HStack(spacing: 6) {
+            Text("\(step + 1) of \(questions.count)")
+                .font(.system(size: 10.5, weight: .medium))
+                .monospacedDigit()
+                .foregroundStyle(.white.opacity(0.45))
+            HStack(spacing: 4) {
+                ForEach(Array(questions.enumerated()), id: \.offset) { index, question in
+                    Circle()
+                        .fill(.white.opacity(index == step ? 0.9 : answered(question) ? 0.45 : 0.15))
+                        .frame(width: 5, height: 5)
+                }
+            }
+        }
+    }
+
+    private func go(to index: Int) {
+        typing = nil
+        withAnimation(.easeOut(duration: 0.15)) { step = min(max(index, 0), questions.count - 1) }
+    }
+
+    private var separator: some View {
+        Rectangle().fill(.white.opacity(0.06)).frame(height: 0.5).padding(.leading, 30)
+    }
+
+    /// The question, in full, with its short topic, when there is one, quietly above it.
+    @ViewBuilder
+    private func prompt(_ question: AgentRequest.Question) -> some View {
+        if let header = question.header, !header.isEmpty {
+            Text(header)
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(.white.opacity(0.45))
+        }
+        // In full: a decision needs the whole question.
+        Text(question.question)
+            .font(.system(size: 12.5, weight: .semibold))
+            .foregroundStyle(.white)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     @ViewBuilder
@@ -1141,15 +1317,14 @@ private struct QuestionsCard: View {
             HStack(spacing: 6) {
                 TextField("Type an answer", text: Binding(get: { other[question.question] ?? "" }, set: { other[question.question] = $0 }))
                     .textFieldStyle(.plain)
-                    .font(.system(size: 11.5))
+                    .font(.system(size: 12))
                     .foregroundStyle(.white)
                     .onSubmit { useOther(in: question) }
                 AnswerButton("Use", role: .secondary) { useOther(in: question) }
             }
-            .padding(.leading, 10)
-            .padding(.vertical, 4)
-            .padding(.trailing, 4)
-            .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .padding(.leading, 30)
+            .padding(.trailing, 6)
+            .padding(.vertical, 5)
         } else {
             OptionRow(label: "Other…", description: nil, multi: question.multiSelect,
                       selected: chosen[question.question, default: []].contains { label in !question.options.contains { $0.label == label } }) {
@@ -1170,7 +1345,17 @@ private struct QuestionsCard: View {
             labels = [label]
         }
         chosen[question.question] = labels
-        if answersAtOnce { submit() }
+        // One choice made: on to the next question, as the CLI does.
+        if !question.multiSelect, !isLast { advanceSoon() }
+    }
+
+    /// A beat to see the pick land before the next question replaces it.
+    private func advanceSoon() {
+        let from = step
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(220))
+            if step == from { go(to: from + 1) }
+        }
     }
 
     private func useOther(in question: AgentRequest.Question) {
@@ -1180,7 +1365,7 @@ private struct QuestionsCard: View {
         var labels = (chosen[question.question] ?? []).filter { label in question.options.contains { $0.label == label } }
         if question.multiSelect { labels.append(text) } else { labels = [text] }
         chosen[question.question] = labels
-        if answersAtOnce { submit() }
+        if !question.multiSelect, !isLast { advanceSoon() }
     }
 
     private func submit() {
@@ -1189,6 +1374,8 @@ private struct QuestionsCard: View {
     }
 }
 
+/// One choice: a radio (or check) mark, its label, and a one-line note. Chosen
+/// reads as a filled mark and brighter text, not a coloured block.
 private struct OptionRow: View {
     let label: String
     let description: String?
@@ -1201,29 +1388,33 @@ private struct OptionRow: View {
         Button(action: action) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Image(systemName: multi ? (selected ? "checkmark.square.fill" : "square") : (selected ? "largecircle.fill.circle" : "circle"))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(selected ? askingTint : .white.opacity(0.45))
-                VStack(alignment: .leading, spacing: 1) {
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundStyle(.white.opacity(selected ? 0.95 : 0.35))
+                    .frame(width: 14)
+                // The label, and under it its note in full: what each choice means is
+                // what the decision rests on.
+                VStack(alignment: .leading, spacing: 2) {
                     Text(label)
-                        .font(.system(size: 11.5, weight: .medium))
-                        .foregroundStyle(.white)
+                        .font(.system(size: 12, weight: selected ? .semibold : .regular))
+                        .foregroundStyle(.white.opacity(selected ? 1 : 0.88))
                     if let description, !description.isEmpty {
                         Text(description)
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(.white.opacity(0.5))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.white.opacity(0.55))
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.white.opacity(selected ? 0.14 : hovered ? 0.1 : 0.05), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background(.white.opacity(selected ? 0.06 : hovered ? 0.04 : 0), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovered = $0 }
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
@@ -1243,13 +1434,14 @@ private struct AnswerButton: View {
 
     var body: some View {
         Button(action: action) {
+            // A Mac's push buttons: small rounded rectangles, the default one in the accent.
             Text(title)
                 .font(.system(size: 12, weight: role == .primary ? .semibold : .medium))
-                .foregroundStyle(role == .primary ? .black : .white.opacity(role == .quiet ? 0.6 : 0.9))
-                .padding(.horizontal, 14)
-                .frame(height: 28)
-                .background(background, in: Capsule())
-                .contentShape(Capsule())
+                .foregroundStyle(role == .primary ? .white : .white.opacity(role == .quiet ? 0.65 : 0.8))
+                .padding(.horizontal, 12)
+                .frame(height: 26)
+                .background(background, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { hovered = $0 }
@@ -1257,8 +1449,8 @@ private struct AnswerButton: View {
 
     private var background: Color {
         switch role {
-        case .primary: .white.opacity(hovered ? 1 : 0.9)
-        case .secondary: .white.opacity(hovered ? 0.16 : 0.1)
+        case .primary: Color(red: 0.2, green: 0.45, blue: 1.0).opacity(hovered ? 1 : 0.9)
+        case .secondary: .white.opacity(hovered ? 0.12 : 0.07)
         case .quiet: .white.opacity(hovered ? 0.1 : 0)
         }
     }

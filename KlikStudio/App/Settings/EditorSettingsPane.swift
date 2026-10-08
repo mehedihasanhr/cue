@@ -13,14 +13,12 @@ struct EditorSettingsPane: View {
         @Bindable var newProjects = settings.newProjects
 
         SettingsPane(.editor) {
-            SettingsGroup(footer: settings.savesAutomatically
-                          ? "Edits are written into the recording a couple of seconds after you make them, and when the window closes. The Save button in the editor says when they are."
-                          : "You are asked whether to save when you close a recording you have edited. ⌘S saves at any time.") {
+            SettingsGroup {
                 SettingsToggleRow("Save edits automatically", symbol: "externaldrive.fill.badge.checkmark", tint: .green,
                                   isOn: $settings.savesAutomatically)
             }
 
-            SettingsGroup("Suggested zooms", footer: focusFooter) {
+            SettingsGroup("Suggested zooms") {
                 SettingsToggleRow("Suggest zooms when a recording opens",
                                   subtitle: "From the recorded clicks, on a recording nobody has edited yet. The toolbar's Auto Zoom runs it again any time.",
                                   symbol: "plus.magnifyingglass", tint: .blue,
@@ -40,7 +38,7 @@ struct EditorSettingsPane: View {
                     .disabled(!settings.zoomsOnFocus)
             }
 
-            SettingsGroup("New recordings", footer: lookFooter) {
+            SettingsGroup("New recordings") {
                 if let look = settings.newRecordingLook {
                     SettingsRow("Look", subtitle: "Chosen with Use for New Recordings in the editor's Frame panel.",
                                 symbol: "paintpalette.fill", tint: .purple) {
@@ -70,8 +68,7 @@ struct EditorSettingsPane: View {
                 percentRow("Background blur", value: $settings.backgroundBlur, range: 0...0.04)
             }
 
-            SettingsGroup("Pointer in new recordings",
-                          footer: "Applied when a recording is first opened. Change any of it per project in the editor's Pointer panel.") {
+            SettingsGroup("Pointer in new recordings") {
                 SettingsRow("Size") {
                     SettingsSlider("Pointer size", value: $settings.cursorScale, in: 0.5...3, format: SettingsSlider.multiple)
                 }
@@ -110,31 +107,6 @@ struct EditorSettingsPane: View {
                 SettingsSlider.percent((value - range.lowerBound) / (range.upperBound - range.lowerBound))
             }
         }
-    }
-
-    private var lookFooter: String {
-        if let look = settings.newRecordingLook {
-            return "New recordings start from the look “\(look.name)”, with these settings for everything this window shows."
-        }
-        return "What a new recording's frame starts as. Every one of these can be changed per project in the editor."
-    }
-
-    /// Says what the focus toggles will actually get you, which depends on a grant the
-    /// app cannot give itself. Better here than as a dialog at the moment of recording.
-    private var focusFooter: String {
-        guard settings.zoomsOnFocus else {
-            return "Zooms are suggested from the recorded clicks alone."
-        }
-        // Focus is recorded by Recording's "Record what has focus", fields included —
-        // no longer only while keyboard shortcuts are recorded, see
-        // `RecordingConfiguration.capturesFieldFocus`. With that switch off there is
-        // nothing for these zooms to follow, and saying so beats promising one.
-        guard settings.recordsFocus else {
-            return "Focus isn't being recorded, so zooms come from clicks alone. Turn on Record what has focus under Recording."
-        }
-        return AccessibilityAccess.isGranted
-            ? "Windows and apps are tracked with the permission recording already has. Text fields need Accessibility, which Klik Studio has."
-            : "Text fields need Accessibility — without it, zooms come from clicks and from windows coming forward. Turn Klik Studio on in System Settings › Privacy & Security › Accessibility."
     }
 
     /// What decides a new recording's background: a named preset, or the look.

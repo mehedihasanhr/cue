@@ -66,6 +66,8 @@ struct LibraryWindow: View {
         }
         // The folder can be changed in Settings while this window is open.
         .task(id: settings.library) { await catalog?.look(at: settings.library) }
+        // Deleted, added or renamed takes show up on the list without reopening the window.
+        .task(id: catalog == nil) { await catalog?.follow() }
         .onChange(of: studio.session.state) { _, state in
             // A take that has just finished belongs at the top of this list without
             // anybody asking for it.

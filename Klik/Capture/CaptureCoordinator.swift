@@ -80,8 +80,10 @@ final class CaptureCoordinator {
     func captureScrolling(fromMenu: Bool) {
         start(fromMenu: fromMenu) { [self] in
             guard let selection = try await CaptureSession(shortcuts: shortcuts).run(mode: .scrolling, using: service) else { return }
-            // Let the overlay windows disappear and the target app regain focus.
-            try? await Task.sleep(for: .milliseconds(250))
+            // Let the overlay windows go and the target app regain focus — briefly: until the
+            // dimming is up, the page shows bare, and a quarter of a second of it read as
+            // the capture flickering off and back on.
+            try? await Task.sleep(for: .milliseconds(60))
             let session = ScrollingCaptureSession()
             if let image = try await session.run(selection: selection, service: service, shortcuts: shortcuts) {
                 onCaptured?(image)

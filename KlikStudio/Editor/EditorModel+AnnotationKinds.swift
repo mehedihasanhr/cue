@@ -9,6 +9,7 @@ extension EditorModel.NewAnnotation {
         case .arrow: .arrow
         case .box: .rectangle
         case .ellipse: .ellipse
+        case .loop: .loop
         case .line: .line
         case .highlight: .highlight
         case .step: .step
@@ -29,7 +30,11 @@ extension EditorModel.NewAnnotation {
     /// others are one click further.
     static let first: [Self] = [.text, .arrow, .box]
     static let second: [Self] = [.step, .callout]
-    static let more: [Self] = [.ellipse, .line, .highlight]
+    static let more: [Self] = [.ellipse, .loop, .line, .highlight]
+
+    /// The shapes, which share one button on the canvas bar and open a bar of their own:
+    /// eight icons in a row is a palette, and the bar is a toolbar.
+    static let shapes: [Self] = [.box, .ellipse, .loop, .line, .highlight]
 
     /// Where one lands when it is added rather than drawn: the middle of the frame, at a
     /// size that reads without being resized first.
@@ -47,6 +52,8 @@ extension EditorModel.NewAnnotation {
         case .arrow: return CGRect(x: 0.3, y: 0.35, width: 0.4, height: 0.3)
         case .box: return CGRect(x: 0.3, y: 0.32, width: 0.4, height: 0.36)
         case .ellipse: return centred(width: 0.46 / aspect, height: 0.34)
+        // Round a word or two: wider than tall, like the words it goes round.
+        case .loop: return centred(width: 0.3, height: 0.16)
         // A band as tall as a line of ordinary text on screen: what a marker goes over.
         case .highlight: return centred(width: 0.4, height: 0.075)
         case .line: return centred(width: 0.4, height: 0.06)
@@ -64,6 +71,7 @@ extension EditorModel.NewAnnotation {
         case .arrow: .arrow(from: CGPoint(x: 0, y: 1), to: CGPoint(x: 1, y: 0))
         case .box: .rectangle
         case .ellipse: .ellipse
+        case .loop: .loop
         case .line: .line(from: CGPoint(x: 0, y: 0.5), to: CGPoint(x: 1, y: 0.5))
         case .highlight: .highlight
         case .step: .step(nextStep)
@@ -78,6 +86,11 @@ extension EditorModel.NewAnnotation {
             item.color = AnnotationItem.markerYellow
         case .callout:
             AnnotationItem.dressAsCallout(&item)
+        case .loop:
+            // A loop is drawn on, the way it would be drawn on paper.
+            item.animation.entrance = .draw
+            item.animation.entranceDuration = 0.6
+            item.animation.easing = .easeInOut
         default:
             break
         }
@@ -105,6 +118,7 @@ nonisolated extension AnnotationItem.KindName {
         case .arrow: "arrow.up.right"
         case .rectangle: "rectangle"
         case .ellipse: "circle"
+        case .loop: "lasso"
         case .line: "line.diagonal"
         case .highlight: "highlighter"
         case .step: "number.circle"

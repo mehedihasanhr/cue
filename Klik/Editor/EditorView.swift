@@ -2,6 +2,24 @@ import BackgroundKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// The editor chrome's shared measures, so every bar, button and label agrees.
+enum EditorChrome {
+    /// Icons in the toolbars and bars.
+    static let iconSize: CGFloat = 14
+    /// Labels, values and buttons in the options bar.
+    static let labelSize: CGFloat = 12
+    /// The status bar and other quiet text.
+    static let captionSize: CGFloat = 11
+    static let buttonSize = CGSize(width: 32, height: 28)
+    static let buttonRadius: CGFloat = 7
+    static let groupRadius: CGFloat = 10
+    static let groupFill = Color.primary.opacity(0.04)
+    static let hoverFill = Color.primary.opacity(0.08)
+    static let edge = Color.primary.opacity(0.06)
+    /// The one accent: the active tool, prominent buttons and selections.
+    static let accent = Color.brand
+}
+
 /// Window-control actions supplied by the window controller.
 struct WindowButtons {
     var close: () -> Void
@@ -129,16 +147,6 @@ struct PreviewToolbar: View {
                 TrafficLights(onClose: windowButtons.close, onMinimize: windowButtons.minimize, onZoom: windowButtons.zoom)
                 Spacer()
                 ToolGroup {
-                    IconButton(symbol: "minus.magnifyingglass", help: "Zoom out (⌘−)") { model.applyZoom(.zoomOut) }
-                    Text("\(Int((model.zoom * 100).rounded()))%")
-                        .font(.system(size: 11, weight: .medium))
-                        .monospacedDigit()
-                        .foregroundStyle(.primary.opacity(0.8))
-                        .frame(width: 40)
-                    IconButton(symbol: "plus.magnifyingglass", help: "Zoom in (⌘+)") { model.applyZoom(.zoomIn) }
-                    IconButton(symbol: "arrow.down.left.and.arrow.up.right", help: "Fit to window (⌘0)") { model.applyZoom(.fit) }
-                }
-                ToolGroup {
                     IconButton(symbol: copied ? "checkmark" : "doc.on.doc", help: "Copy to clipboard (⌘C)", tint: copied ? .green : nil) {
                         // Feedback first; the copy is a pasteboard promise and doesn't block.
                         withAnimation(.easeOut(duration: 0.15)) { copied = true }
@@ -153,7 +161,7 @@ struct PreviewToolbar: View {
                         render: { model.renderedImage().flatMap(DocumentExporter.pngData) },
                         thumbnail: { model.renderedImage().map { NSImage(cgImage: $0, size: model.document.outputSize) } }
                     )
-                    .frame(width: 32, height: 28)
+                    .frame(width: EditorChrome.buttonSize.width, height: EditorChrome.buttonSize.height)
                     .help("Drag into another app")
                     IconButton(symbol: "trash", help: "Delete capture", tint: .red.opacity(0.9), action: onDelete)
                 }
@@ -164,10 +172,6 @@ struct PreviewToolbar: View {
         .padding(.horizontal, 10)
         .frame(height: EditorToolbar.height)
         .background(Color(nsColor: .windowBackgroundColor))
-    }
-
-    private var toolbarDivider: some View {
-        Rectangle().fill(.primary.opacity(0.12)).frame(width: 1, height: 16).padding(.horizontal, 5)
     }
 }
 
@@ -187,21 +191,23 @@ struct EditorToolbar: View {
     let windowButtons: WindowButtons
     @State private var copied = false
 
-    private let annotationTools: [EditorTool] = [.pencil, .highlighter, .highlight, .shape, .arrow, .text, .blur, .counter]
+    /// Tools grouped by what they are for: framing, drawing, pointing out, hiding.
+    private let toolGroups: [[EditorTool]] = [
+        [.select],
+        [.background, .crop],
+        [.pencil, .highlighter, .highlight],
+        [.shape, .arrow, .text, .counter],
+        [.blur],
+    ]
 
     var body: some View {
         ZStack {
             WindowDragArea()
-            // Tools centred in the bar, grouped into pills: frame tools, then annotation tools.
-            HStack(spacing: 8) {
-                ToolGroup { ToolButton(tool: .select, model: model) }
-                ToolGroup {
-                    ToolButton(tool: .background, model: model)
-                    ToolButton(tool: .crop, model: model)
-                }
-                ToolGroup {
-                    ForEach(annotationTools) { tool in
-                        ToolButton(tool: tool, model: model)
+            // Tools centred in the bar, one pill per kind of tool.
+            HStack(spacing: 6) {
+                ForEach(toolGroups, id: \.self) { tools in
+                    ToolGroup {
+                        ForEach(tools) { tool in ToolButton(tool: tool, model: model) }
                     }
                 }
             }
@@ -224,31 +230,24 @@ struct EditorToolbar: View {
                         }
                     }
                     IconButton(symbol: "rectangle.split.2x1", help: "Compare with other images — or drop them on the canvas", action: onAddImages)
-                    IconButton(symbol: "square.and.arrow.up", help: "Export… (⇧⌘S)", action: onExport)
                     DragOutView(
                         fileName: fileName,
                         render: { model.renderedImage().flatMap(DocumentExporter.pngData) },
                         thumbnail: { model.renderedImage().map { NSImage(cgImage: $0, size: model.document.outputSize) } }
                     )
-                    .frame(width: 32, height: 28)
+                    .frame(width: EditorChrome.buttonSize.width, height: EditorChrome.buttonSize.height)
                     .help("Drag into another app")
-                }
-                ToolGroup {
                     IconButton(symbol: "trash", help: "Delete capture", tint: .red.opacity(0.9), action: onDelete)
                 }
-                ToolbarPillButton(title: "Save as…", prominent: false, action: onExport)
+                ToolbarPillButton(title: "Export…", prominent: false, action: onExport)
                     .help("Export a copy (⇧⌘S)")
                 ToolbarPillButton(title: "Done", prominent: true, action: onDone)
-                    .help("Save and close (⌘S)")
+                    .help("Save and close")
             }
         }
         .padding(.horizontal, 10)
         .frame(height: EditorToolbar.height)
         .background(Color(nsColor: .windowBackgroundColor))
-    }
-
-    private var toolbarDivider: some View {
-        Rectangle().fill(.primary.opacity(0.12)).frame(width: 1, height: 16).padding(.horizontal, 5)
     }
 }
 
@@ -263,17 +262,17 @@ struct ToolbarPillButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 5) {
-                if let symbol { Image(systemName: symbol).font(.system(size: 12, weight: .semibold)) }
-                Text(title).font(.system(size: 12.5, weight: .semibold))
+                if let symbol { Image(systemName: symbol).font(.system(size: EditorChrome.labelSize, weight: .semibold)) }
+                Text(title).font(.system(size: 13, weight: .semibold))
             }
             .foregroundStyle(prominent ? Color.white : Color.primary.opacity(0.9))
             .padding(.horizontal, 14)
             .frame(height: 34)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(prominent ? Color.brand.opacity(hovering ? 0.88 : 1) : Color.primary.opacity(hovering ? 0.08 : 0.035))
+                RoundedRectangle(cornerRadius: EditorChrome.groupRadius, style: .continuous)
+                    .fill(prominent ? EditorChrome.accent.opacity(hovering ? 0.88 : 1) : (hovering ? EditorChrome.hoverFill : EditorChrome.groupFill))
             )
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.primary.opacity(prominent ? 0 : 0.05)))
+            .overlay(RoundedRectangle(cornerRadius: EditorChrome.groupRadius, style: .continuous).strokeBorder(prominent ? .clear : EditorChrome.edge))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -288,10 +287,10 @@ struct ToolGroup<Content: View>: View {
         HStack(spacing: 2) { content }
             .padding(3)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(.primary.opacity(0.035))
+                RoundedRectangle(cornerRadius: EditorChrome.groupRadius, style: .continuous)
+                    .fill(EditorChrome.groupFill)
             )
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.primary.opacity(0.05)))
+            .overlay(RoundedRectangle(cornerRadius: EditorChrome.groupRadius, style: .continuous).strokeBorder(EditorChrome.edge))
     }
 }
 
@@ -304,13 +303,13 @@ private struct ToolButton: View {
         let active = model.tool == tool
         Button { model.tool = tool } label: {
             Image(systemName: symbol)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: EditorChrome.iconSize, weight: .semibold))
                 .symbolRenderingMode(.monochrome)
-                .frame(width: 32, height: 28)
+                .frame(width: EditorChrome.buttonSize.width, height: EditorChrome.buttonSize.height)
                 .foregroundStyle(active ? Color.white : Color.primary.opacity(0.85))
                 .background(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(active ? Color.accentColor : (hovering ? Color.primary.opacity(0.1) : Color.clear))
+                    RoundedRectangle(cornerRadius: EditorChrome.buttonRadius, style: .continuous)
+                        .fill(active ? EditorChrome.accent : (hovering ? EditorChrome.hoverFill : Color.clear))
                 )
                 .contentTransition(.symbolEffect(.replace))
         }
@@ -337,11 +336,11 @@ struct IconButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 13.5, weight: .semibold))
-                .frame(width: 32, height: 28)
+                .font(.system(size: EditorChrome.iconSize, weight: .semibold))
+                .frame(width: EditorChrome.buttonSize.width, height: EditorChrome.buttonSize.height)
                 .foregroundStyle(tint ?? (enabled ? Color.primary.opacity(0.85) : Color.primary.opacity(0.3)))
                 .contentTransition(.symbolEffect(.replace))
-                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(hovering && enabled ? Color.primary.opacity(0.1) : Color.clear))
+                .background(RoundedRectangle(cornerRadius: EditorChrome.buttonRadius, style: .continuous).fill(hovering && enabled ? EditorChrome.hoverFill : Color.clear))
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
@@ -356,130 +355,141 @@ struct OptionsBar: View {
     @Bindable var model: EditorViewModel
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
+            // Which tool this row sets, and its key, so the shortcuts are learnt by using it.
+            HStack(spacing: 6) {
+                Text(model.tool.title)
+                    .font(.system(size: EditorChrome.labelSize, weight: .semibold))
+                KeyCap(String(model.tool.key).uppercased())
+            }
+            separator
             switch model.tool {
             case .select:
                 if model.selected != nil {
                     colorPicker
-                    Divider().frame(height: 18)
-                    Button("Delete", role: .destructive) { model.deleteSelected() }
-                    Button("Duplicate") { model.duplicateSelected() }
+                    separator
+                    OptionButton(title: "Duplicate", symbol: "plus.square.on.square") { model.duplicateSelected() }
+                    OptionButton(title: "Delete", symbol: "trash", role: .destructive) { model.deleteSelected() }
                 }
             case .background:
                 EmptyView()
             case .crop:
                 hint("Drag the handles, then press ↩ to crop")
                 Spacer()
-                Button("Reset") { model.resetCrop() }
-                Button("Crop") { model.applyCrop() }.buttonStyle(.borderedProminent).tint(.brand)
+                OptionButton(title: "Reset") { model.resetCrop() }
+                OptionButton(title: "Crop", symbol: "crop", role: .prominent) { model.applyCrop() }
             case .pencil:
                 colorPicker
-                strokePicker(width: $model.strokeWidth, range: 1...24)
+                separator
+                strokePicker(width: $model.strokeWidth, range: EditorDefaults.strokeRange)
             case .highlighter:
                 colorPicker
-                strokePicker(width: $model.highlighterWidth, range: 6...48)
+                separator
+                strokePicker(width: $model.highlighterWidth, range: EditorDefaults.highlighterRange)
             case .highlight:
-                HStack(spacing: 5) {
-                    ForEach([RGBA.yellow, .green, .orange, .pink, .blue, .purple], id: \.self) { swatch in
-                        Button { model.highlightColor = swatch } label: {
-                            Circle()
-                                .fill(Color(nsColor: swatch.nsColor))
-                                .frame(width: 16, height: 16)
-                                .overlay(Circle().strokeBorder(.primary.opacity(model.highlightColor == swatch ? 0.95 : 0.3), lineWidth: model.highlightColor == swatch ? 2 : 1))
-                                .padding(2)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
+                swatches([RGBA.yellow, .green, .orange, .pink, .blue, .purple], selection: $model.highlightColor)
+                separator
                 hint("Drag a box over text to highlight it")
             case .shape:
                 Picker("", selection: $model.shapeKind) {
                     ForEach(ShapeKind.allCases) { kind in Image(systemName: kind.symbol).tag(kind) }
                 }
-                .pickerStyle(.segmented).frame(width: 120)
+                .pickerStyle(.segmented).fixedSize()
+                separator
                 colorPicker
-                strokePicker(width: $model.strokeWidth, range: 1...24)
+                separator
+                strokePicker(width: $model.strokeWidth, range: EditorDefaults.strokeRange)
                 if model.shapeKind != .line {
-                    Picker("Fill", selection: $model.fillMode) {
+                    separator
+                    Picker("", selection: $model.fillMode) {
                         Text("Outline").tag(FillMode.none)
                         Text("Filled").tag(FillMode.solid)
                         Text("Tinted").tag(FillMode.translucent)
                     }
-                    .pickerStyle(.segmented).frame(width: 190)
+                    .pickerStyle(.segmented).fixedSize()
                 }
             case .arrow:
                 colorPicker
-                strokePicker(width: $model.strokeWidth, range: 1...24)
+                separator
+                strokePicker(width: $model.strokeWidth, range: EditorDefaults.strokeRange)
+                separator
                 Picker("", selection: $model.arrowStyle) {
                     Image(systemName: "arrow.right").tag(ArrowStyle.single)
                     Image(systemName: "arrow.left.and.right").tag(ArrowStyle.double)
                 }
-                .pickerStyle(.segmented).frame(width: 90)
+                .pickerStyle(.segmented).fixedSize()
             case .text:
                 colorPicker
+                separator
                 labelled("Size") {
-                    Slider(value: $model.fontSize, in: 8...96).frame(width: 100)
-                    Text("\(Int(model.fontSize))").monospacedDigit().frame(width: 26)
+                    Slider(value: $model.fontSize, in: EditorDefaults.fontSizeRange).frame(width: 96)
+                    value("\(Int(model.fontSize))")
                 }
                 labelled("Weight") {
-                    Slider(value: $model.fontWeight, in: TextStyle.weightRange).frame(width: 90)
+                    Slider(value: $model.fontWeight, in: TextStyle.weightRange).frame(width: 80)
                     Text(TextStyle(color: model.color, fontSize: model.fontSize, background: model.textBackground, weight: model.fontWeight).weightName)
+                        .foregroundStyle(.secondary)
                         .frame(width: 58, alignment: .leading)
                 }
-                Picker("Style", selection: $model.textBackground) {
+                separator
+                Picker("", selection: $model.textBackground) {
                     Text("Plain").tag(TextBackground.none)
                     Text("Box").tag(TextBackground.solid)
                     Text("Dark box").tag(TextBackground.translucent)
                 }
-                .pickerStyle(.segmented).frame(width: 200)
+                .pickerStyle(.segmented).fixedSize()
             case .blur:
                 Picker("", selection: $model.blurKind) {
                     Text("Blur").tag(BlurKind.blur)
                     Text("Pixelate").tag(BlurKind.pixelate)
                 }
-                .pickerStyle(.segmented).frame(width: 140)
+                .pickerStyle(.segmented).fixedSize()
+                separator
                 labelled("Intensity") {
-                    Slider(value: $model.blurIntensity, in: 4...40).frame(width: 140)
+                    Slider(value: $model.blurIntensity, in: EditorDefaults.blurRange).frame(width: 120)
+                    value("\(Int(model.blurIntensity))")
                 }
             case .counter:
                 colorPicker
+                separator
                 labelled("Size") {
-                    Slider(value: $model.counterSize, in: 18...64).frame(width: 120)
+                    Slider(value: $model.counterSize, in: EditorDefaults.counterRange).frame(width: 110)
+                    value("\(Int(model.counterSize))")
                 }
+                separator
                 hint("Click to place 1, 2, 3…")
             }
             Spacer(minLength: 0)
         }
         .controlSize(.small)
-        .font(.system(size: 12))
-        .padding(.horizontal, 12)
-        .frame(height: 38)
+        .font(.system(size: EditorChrome.labelSize))
+        .padding(.horizontal, 14)
+        .frame(height: 40)
         .background(Color(nsColor: .windowBackgroundColor))
     }
 
+    private var separator: some View {
+        Rectangle().fill(EditorChrome.edge).frame(width: 1, height: 18)
+    }
+
     private func hint(_ text: String) -> some View {
-        Text(text).foregroundStyle(.secondary)
+        Text(text).foregroundStyle(.secondary).lineLimit(1)
+    }
+
+    private func value(_ text: String) -> some View {
+        Text(text).monospacedDigit().foregroundStyle(.secondary).frame(width: 24, alignment: .leading)
     }
 
     private func labelled<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Text(label).foregroundStyle(.secondary)
             content()
         }
     }
 
     private var colorPicker: some View {
-        HStack(spacing: 5) {
-            ForEach(RGBA.palette, id: \.self) { swatch in
-                Button { model.color = swatch } label: {
-                    Circle()
-                        .fill(Color(nsColor: swatch.nsColor))
-                        .frame(width: 16, height: 16)
-                        .overlay(Circle().strokeBorder(.primary.opacity(model.color == swatch ? 0.95 : 0.3), lineWidth: model.color == swatch ? 2 : 1))
-                        .padding(2)
-                }
-                .buttonStyle(.plain)
-            }
+        HStack(spacing: 6) {
+            swatches(RGBA.palette, selection: $model.color)
             ColorPicker("", selection: Binding(
                 get: { Color(nsColor: model.color.nsColor) },
                 set: { model.color = RGBA(NSColor($0)) }
@@ -489,13 +499,72 @@ struct OptionsBar: View {
         }
     }
 
-    private func strokePicker(width: Binding<CGFloat>, range: ClosedRange<CGFloat>) -> some View {
-        labelled("Width") {
-            Slider(value: width, in: range).frame(width: 110)
-            Text("\(Int(width.wrappedValue))").monospacedDigit().frame(width: 22)
+    /// A row of colour dots; the chosen one wears a ring.
+    private func swatches(_ colors: [RGBA], selection: Binding<RGBA>) -> some View {
+        HStack(spacing: 4) {
+            ForEach(colors, id: \.self) { swatch in
+                let chosen = selection.wrappedValue == swatch
+                Button { selection.wrappedValue = swatch } label: {
+                    Circle()
+                        .fill(Color(nsColor: swatch.nsColor))
+                        .frame(width: 16, height: 16)
+                        .overlay(Circle().strokeBorder(.primary.opacity(0.15), lineWidth: 0.5))
+                        .padding(2)
+                        .overlay(Circle().strokeBorder(chosen ? EditorChrome.accent : .clear, lineWidth: 1.5))
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 
+    private func strokePicker(width: Binding<CGFloat>, range: ClosedRange<CGFloat>) -> some View {
+        labelled("Width") {
+            Slider(value: width, in: range).frame(width: 100)
+            value("\(Int(width.wrappedValue))")
+        }
+    }
+}
+
+/// A compact text button for the options bar, in the toolbar's style.
+struct OptionButton: View {
+    enum Role { case normal, prominent, destructive }
+
+    let title: String
+    var symbol: String?
+    var role: Role = .normal
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                if let symbol { Image(systemName: symbol).font(.system(size: 11, weight: .semibold)) }
+                Text(title).font(.system(size: EditorChrome.labelSize, weight: .medium))
+            }
+            .foregroundStyle(foreground)
+            .padding(.horizontal, 10)
+            .frame(height: 24)
+            .background(RoundedRectangle(cornerRadius: EditorChrome.buttonRadius, style: .continuous).fill(background))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+    }
+
+    private var foreground: Color {
+        switch role {
+        case .prominent: .white
+        case .destructive: .red.opacity(0.9)
+        case .normal: .primary.opacity(0.85)
+        }
+    }
+
+    private var background: Color {
+        switch role {
+        case .prominent: EditorChrome.accent.opacity(hovering ? 0.88 : 1)
+        case .destructive: Color.red.opacity(hovering ? 0.14 : 0.08)
+        case .normal: hovering ? EditorChrome.hoverFill : EditorChrome.groupFill
+        }
+    }
 }
 
 // MARK: - Status bar
@@ -513,20 +582,44 @@ struct EditorStatusBar: View {
                 Text("· cropped").foregroundStyle(.secondary)
             }
             Spacer()
-            HStack(spacing: 2) {
-                IconButton(symbol: "minus.magnifyingglass", help: "Zoom out (⌘−)") { model.applyZoom(.zoomOut) }
-                Text("\(Int((model.zoom * 100).rounded()))%")
-                    .monospacedDigit()
-                    .frame(width: 44)
-                IconButton(symbol: "plus.magnifyingglass", help: "Zoom in (⌘+)") { model.applyZoom(.zoomIn) }
-                Button("Fit") { model.applyZoom(.fit) }.buttonStyle(.plain).foregroundStyle(.secondary)
-                Button("100%") { model.applyZoom(.actualSize) }.buttonStyle(.plain).foregroundStyle(.secondary)
+            HStack(spacing: 0) {
+                StatusButton(symbol: "minus", help: "Zoom out (⌘−)") { model.applyZoom(.zoomOut) }
+                Button { model.applyZoom(.actualSize) } label: {
+                    Text("\(Int((model.zoom * 100).rounded()))%")
+                        .monospacedDigit()
+                        .frame(width: 40)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Actual size (⌘1)")
+                StatusButton(symbol: "plus", help: "Zoom in (⌘+)") { model.applyZoom(.zoomIn) }
+                StatusButton(symbol: "arrow.down.left.and.arrow.up.right", help: "Fit to window (⌘0)") { model.applyZoom(.fit) }
             }
         }
-        .font(.system(size: 11))
-        .foregroundStyle(.primary.opacity(0.75))
-        .padding(.horizontal, 12)
-        .frame(height: 26)
+        .font(.system(size: EditorChrome.captionSize))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 14)
+        .frame(height: 28)
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+/// A small icon button for the status bar.
+private struct StatusButton: View {
+    let symbol: String
+    let help: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 10, weight: .semibold))
+                .frame(width: 22, height: 20)
+                .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(hovering ? EditorChrome.hoverFill : .clear))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(help)
     }
 }

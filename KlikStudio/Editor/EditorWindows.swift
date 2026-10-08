@@ -196,6 +196,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         // ours from the moment it is made.
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
+        // An editor is a dark room whatever the rest of the Mac is: the picture is judged
+        // against neutral grey, and a light frame round it changes how its colours read.
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.backgroundColor = NSColor(white: 0x14 / 255, alpha: 1)
         // Still set: it is the name the Window menu and Mission Control read.
         window.title = session.packageURL.deletingPathExtension().lastPathComponent
         window.isReleasedWhenClosed = false

@@ -16,6 +16,9 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
     let height: CGFloat
     /// How this kind of region is selected, so the row does not have to know.
     let selection: (UUID) -> Selection
+    /// Whether regions that overlap in time sit in rows of their own, one under the other,
+    /// rather than on top of each other. `height` is then one row's. See `RegionStacking`.
+    var stacks = false
     /// What to draw *inside* the chip, for a lane whose contents have a shape worth
     /// reading rather than only a label worth naming.
     ///
@@ -47,26 +50,79 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
     @State private var hoveredGrip: String?
     /// Which chip the pointer is over, for the same reason there is one `hoveredGrip`.
     @State private var hoveredChip: UUID?
+    /// The top row on show, in a stacked lane with more rows than `TimelineStrip.stackLimit`.
+    @State private var firstRow = 0
 
     private var viewport: TimelineViewport { model.viewport }
     private let radius: CGFloat = TimelineChipBackground.radius
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            TimelineLaneWell(height: height)
+        // From the document rather than the live drag, so a chip being dragged keeps its row
+        // until it is let go, instead of hopping between rows under the pointer.
+        let rows = stacks ? RegionStacking.rows(of: regions) : [:]
+        let count = stacks ? RegionStacking.rowCount(of: regions) : 1
+        let shown = min(count, TimelineStrip.stackLimit)
+        let first = min(firstRow, count - shown)
+        let total = stacks ? TimelineStrip.stackedHeight(rows: shown) : height
+        return ZStack(alignment: .topLeading) {
+            TimelineLaneWell(height: total)
 
-            ForEach(regions) { region in
-                body(for: region)
+            // Only the rows on show: one scrolled out of the lane is not there to click.
+            ForEach(regions.filter { (first..<(first + shown)).contains(rows[$0.id] ?? 0) }) { region in
+                body(for: region, row: (rows[region.id] ?? 0) - first)
+            }
+
+            if count > shown {
+                rowScroller(first: first, shown: shown, count: count)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
             }
         }
-        .frame(height: height)
+        .frame(height: total)
+        // Picked from anywhere — the picture, the timeline, a menu — a region in a row that
+        // is scrolled out of the lane is brought into it.
+        .onChange(of: model.selection) {
+            guard stacks, let id = model.selection.regionID, let row = rows[id] else { return }
+            if row < first { firstRow = row } else if row >= first + shown { firstRow = row - shown + 1 }
+        }
+    }
+
+    /// Up and down through a lane's rows, at its right-hand end, with how many are hidden.
+    private func rowScroller(first: Int, shown: Int, count: Int) -> some View {
+        let hidden = count - shown
+        return VStack(spacing: 2) {
+            rowStep("chevron.up", enabled: first > 0) { firstRow = max(0, first - 1) }
+            Text("+\(hidden)")
+                .font(.system(size: 9, weight: .semibold).monospacedDigit())
+                .foregroundStyle(.white.opacity(0.7))
+            rowStep("chevron.down", enabled: first + shown < count) { firstRow = min(count - shown, first + 1) }
+        }
+        .padding(.vertical, 3)
+        .frame(width: 22)
+        .background(Color(white: 0.12).opacity(0.92), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(.white.opacity(0.08)))
+        .padding(.trailing, 2)
+        .help("\(hidden) more \(hidden == 1 ? "row" : "rows") of \(title.lowercased())s at the same time")
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Rows \(first + 1) to \(first + shown) of \(count)")
+    }
+
+    private func rowStep(_ symbol: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 8, weight: .bold))
+                .frame(width: 18, height: 12)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.white.opacity(enabled ? 0.85 : 0.25))
+        .disabled(!enabled)
     }
 
     private func isSelected(_ region: Region) -> Bool {
         model.isSelected(selection(region.id))
     }
 
-    private func body(for region: Region) -> some View {
+    private func body(for region: Region, row: Int) -> some View {
         // Mid-drag this is the gesture's answer; otherwise the document's. One rule for
         // both, so a chip being dragged and a chip standing still cannot be placed by two
         // different pieces of arithmetic.
@@ -94,8 +150,9 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
             // ⌘ adds to the selection instead of replacing it, which is what lets a drag
             // afterwards carry several chips at once.
             .onTapGesture {
-                model.select(selection(region.id),
-                             extending: NSEvent.modifierFlags.contains(.command))
+                let extending = NSEvent.modifierFlags.contains(.command)
+                model.select(selection(region.id), extending: extending)
+                if !extending { model.showOnPicture(selection(region.id)) }
             }
             .gesture(move(region))
             .contextMenu {
@@ -118,7 +175,7 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
             // be selected, and why a chip further along could not be reached at all.
             //
             // `.position` places it, so the frame and the picture are the same rectangle.
-            .position(x: left + width / 2, y: height / 2)
+            .position(x: left + width / 2, y: CGFloat(row) * (height + TimelineStrip.stackGap) + height / 2)
     }
 
     /// Cut, copy, duplicate, paste and delete: what every lane offers.

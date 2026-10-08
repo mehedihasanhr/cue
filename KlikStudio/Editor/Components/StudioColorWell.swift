@@ -23,6 +23,8 @@ struct StudioColorWell: View {
 
     @State private var isPresented = false
     @State private var isHovering = false
+    /// Who the shared colour panel is writing for, when it was opened from here.
+    @State private var owner = UUID()
     @Environment(\.isEnabled) private var isEnabled
 
     init(_ title: String, selection: Binding<Color>, supportsOpacity: Bool = false, size: CGFloat = StudioTheme.Height.control) {
@@ -58,10 +60,14 @@ struct StudioColorWell: View {
         .onHover { isHovering = $0 && isEnabled }
         .animation(StudioMotion.hover, value: isHovering)
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
-            StudioColorPopover(title: title, selection: $selection, supportsOpacity: supportsOpacity) {
+            StudioColorPopover(title: title, selection: $selection, supportsOpacity: supportsOpacity,
+                               owner: owner) {
                 isPresented = false
             }
         }
+        // Gone, so the panel stops writing to it: otherwise the next thing selected was styled
+        // in this well's panel and the colour landed on the thing that had been selected.
+        .onDisappear { ColorPanelBridge.shared.detach(owner) }
         .help(title)
         .accessibilityLabel(title)
         .accessibilityValue(Text(StudioColorPopover.hex(for: selection, includeAlpha: supportsOpacity)))
@@ -74,6 +80,7 @@ struct StudioColorPopover: View {
     let title: String
     @Binding var selection: Color
     let supportsOpacity: Bool
+    var owner: UUID?
     let close: () -> Void
 
     @State private var hexText = ""
@@ -210,7 +217,7 @@ struct StudioColorPopover: View {
     }
 
     private func openColorPanel() {
-        ColorPanelBridge.shared.attach(to: $selection, supportsOpacity: supportsOpacity)
+        ColorPanelBridge.shared.attach(to: $selection, supportsOpacity: supportsOpacity, owner: owner)
         close()
     }
 
@@ -244,9 +251,11 @@ final class ColorPanelBridge: NSObject {
     static let shared = ColorPanelBridge()
 
     private var write: ((Color) -> Void)?
+    private var owner: UUID?
 
-    func attach(to binding: Binding<Color>, supportsOpacity: Bool) {
+    func attach(to binding: Binding<Color>, supportsOpacity: Bool, owner: UUID? = nil) {
         write = { binding.wrappedValue = $0 }
+        self.owner = owner
         let panel = NSColorPanel.shared
         panel.showsAlpha = supportsOpacity
         panel.setTarget(nil)
@@ -255,6 +264,17 @@ final class ColorPanelBridge: NSObject {
         panel.setAction(#selector(colorChanged(_:)))
         panel.isContinuous = true
         panel.orderFront(nil)
+    }
+
+    /// Lets go of a well that has gone, and puts the panel away with it: left open, it would
+    /// be a colour panel that changes nothing.
+    func detach(_ owner: UUID) {
+        guard self.owner == owner else { return }
+        write = nil
+        self.owner = nil
+        let panel = NSColorPanel.shared
+        panel.setTarget(nil)
+        panel.orderOut(nil)
     }
 
     @objc private func colorChanged(_ sender: NSColorPanel) {

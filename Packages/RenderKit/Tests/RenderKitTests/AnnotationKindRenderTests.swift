@@ -108,7 +108,7 @@ enum AnnotationRendering {
     }
 
     static let everyKind: [AnnotationItem.Kind] = [
-        .rectangle, .ellipse, .highlight, .step(3), .text("Hello"),
+        .rectangle, .ellipse, .loop, .highlight, .step(3), .text("Hello"),
         .callout("Hello", tail: CGPoint(x: 0.5, y: 0.5)),
         .line(from: CGPoint(x: 0, y: 1), to: CGPoint(x: 1, y: 0)),
         .arrow(from: CGPoint(x: 0, y: 1), to: CGPoint(x: 1, y: 0)),

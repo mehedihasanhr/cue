@@ -3,134 +3,107 @@ import RecordKit
 import SwiftUI
 import TimelineKit
 
-/// The slim bar between the picture and the timeline: playing it, where you are in it,
-/// cutting it, and how loud and how close the work is.
+/// The bar between the picture and the timeline: playing it, where you are in it, acting
+/// at the playhead, and — at the far end — undo, and how much of the edit is on screen.
 ///
-/// It used to be a column in the corner beside the timeline — play controls at the top,
-/// then a tall empty gap, then the volume and the timeline zoom at the bottom — which cost
-/// the timeline the width of the settings column and said nothing at all with most of its
-/// height. One row across the full window is how Final Cut and Screen Studio do it, and
-/// for the same reason: every control here acts on the strip directly beneath it, and the
-/// strip gets the whole width of the window, which is the one measurement that decides how
-/// finely an edit can be placed.
-///
-/// Left to right in the order the hand reaches for them: move through the edit, read where
-/// you are, act at the playhead, then — set apart at the far end — the two settings that
-/// change what you are looking at rather than the edit itself.
-///
-/// What is *not* here: the aspect menu and the Crop button. Both are a frame setting, both
-/// already live in the inspector, and a control duplicated across the window is a control
-/// somebody has to check.
+/// Every control here acts on the strip directly beneath it, so it takes the middle
+/// column's width with the timeline. The ones that do something sit on small fields of
+/// their own; undo and redo are bare glyphs, because they are about the edit as a whole.
 struct TransportBar: View {
     let model: EditorModel
-    /// Plays the edit with the screen to itself. See `FullScreenPreview`.
-    var presentFullScreen: () -> Void = {}
     @Environment(StudioSettings.self) private var settings
 
-    /// Tall enough for a row of 28-point glyphs with a little air, and no taller: this bar
-    /// is a seam between the picture and the timeline, not a third panel.
-    static let height: CGFloat = 40
+    static let height: CGFloat = 46
 
     var body: some View {
-        HStack(spacing: 0) {
-            playback
+        HStack(spacing: 6) {
+            playButton
             timecode
-                .padding(.leading, 10)
-
-            divider
-
-            editing
+            if let rate = model.playbackRateLabel {
+                rateBadge(rate)
+            }
+            barIcon("scissors", help: tip("Split at the playhead", .splitAtPlayhead), name: "Split") {
+                model.splitAtPlayhead()
+            }
+            .padding(.leading, 2)
+            addZoom
+            barIcon("wand.and.stars", help: "Add zooms where the recording was clicked", name: "Auto-zoom") {
+                model.suggestZooms()
+            }
 
             Spacer(minLength: 16)
 
             if let audio = model.audio, audio.hasSound {
                 level(audio)
-                divider
+                    .padding(.trailing, 6)
             }
+            ghost("arrow.uturn.backward",
+                  help: model.document.undoName.map { "Undo \($0)" } ?? "Undo",
+                  name: "Undo",
+                  isEnabled: model.document.canUndo) { model.undo() }
+            ghost("arrow.uturn.forward", help: "Redo", name: "Redo",
+                  isEnabled: model.document.canRedo) { model.redo() }
             zoom
-            divider
-            StudioIconButton(systemImage: "arrow.up.left.and.arrow.down.right",
-                             help: "Play full screen (⇧⌘F)",
-                             accessibilityName: "Full screen preview",
-                             size: .small,
-                             iconSize: 11,
-                             action: presentFullScreen)
+                .padding(.leading, 6)
         }
-        .padding(.horizontal, SidebarMetrics.contentInset - 4)
+        .padding(.horizontal, 12)
         .frame(height: Self.height)
         .frame(maxWidth: .infinity)
-        .studioSurface()
+        .background(StudioTheme.Surface.panel)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Transport")
     }
 
-    private var divider: some View {
-        StudioDivider(axis: .vertical, length: 16)
-            .padding(.horizontal, 10)
-    }
-
     // MARK: - Moving through it
 
-    /// One size, all ghost squircles — nothing drawn round a glyph until the pointer is on
-    /// it. Controls that all act at the playhead should look like the same kind of thing.
-    /// Play is the exception, filled in the accent: it is the control the hand goes to
-    /// first, and the one this bar is for.
-    private var playback: some View {
-        HStack(spacing: 2) {
-            glyph("backward.end.fill", help: tip("Previous frame", .previousFrame), name: "Previous frame") {
-                model.stepFrame(forward: false)
-            }
-
-            glyph(model.isPlaying ? "pause.fill" : "play.fill",
-                  help: tip(model.isPlaying ? "Pause" : "Play", .playPause),
-                  name: model.isPlaying ? "Pause" : "Play",
-                  variant: .primary,
-                  size: 12) { model.togglePlayback() }
-                .padding(.horizontal, 2)
-
-            glyph("forward.end.fill", help: tip("Next frame", .nextFrame), name: "Next frame") {
-                model.stepFrame(forward: true)
-            }
-
-            // The rate, whenever it is not the ordinary one: J and L run the playhead at
-            // 2× and 4×, either way, and a picture moving at the wrong speed with nothing
-            // saying so reads as a fault.
-            if let rate = model.playbackRateLabel {
-                Text(rate)
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(StudioPalette.brand)
-                    .padding(.horizontal, 5)
-                    .frame(height: 18)
-                    .background(StudioPalette.brand.opacity(0.14),
-                                in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-                    .padding(.leading, 4)
-                    .help("\(model.playbackRateDescription ?? rate). K stops; Space pauses.")
-                    .accessibilityLabel(model.playbackRateDescription ?? rate)
-            }
+    private var playButton: some View {
+        Button { model.togglePlayback() } label: {
+            Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 30, height: 30)
+                .background(StudioTheme.Surface.fieldHover,
+                            in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .contentShape(Rectangle())
         }
+        .buttonStyle(StudioPressStyle())
+        .help(tip(model.isPlaying ? "Pause" : "Play", .playPause))
+        .accessibilityLabel(model.isPlaying ? "Pause" : "Play")
     }
 
-    /// Where the playhead is, out of how long the edit is.
-    ///
-    /// Hundredths on both sides, because frame-stepping is one of the three buttons beside
-    /// it: a clock that only counts whole seconds does not move when you press Next Frame,
-    /// and a button that changes nothing reads as a button that is broken. Monospaced
-    /// digits so the numbers tick in place instead of shuffling the bar sideways while the
-    /// edit plays, and fixed in size so the row never truncates it.
+    /// The rate, whenever it is not the ordinary one: J and L run the playhead at 2× and
+    /// 4×, either way, and a picture moving at the wrong speed with nothing saying so
+    /// reads as a fault.
+    private func rateBadge(_ rate: String) -> some View {
+        Text(rate)
+            .font(.system(size: 10, weight: .semibold, design: .rounded))
+            .monospacedDigit()
+            .foregroundStyle(StudioTheme.Surface.playhead)
+            .padding(.horizontal, 6)
+            .frame(height: 22)
+            .background(StudioTheme.Surface.playhead.opacity(0.16),
+                        in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .help("\(model.playbackRateDescription ?? rate). K stops; Space pauses.")
+            .accessibilityLabel(model.playbackRateDescription ?? rate)
+    }
+
+    /// Where the playhead is, out of how long the edit is: a small field, the length in
+    /// the quieter ink. Hundredths, so a frame step always changes it.
     private var timecode: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 8) {
             Text(Timecode.precise(model.playhead))
-                .foregroundStyle(.primary)
-            Text("/")
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.white)
             Text(Timecode.precise(model.duration))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(StudioTheme.Surface.label.opacity(0.8))
         }
-        .font(.system(size: 12))
+        .font(.system(size: 12, weight: .medium))
         .monospacedDigit()
         .lineLimit(1)
         .fixedSize()
+        .padding(.horizontal, 10)
+        .frame(height: 30)
+        .background(StudioTheme.Surface.control,
+                    in: RoundedRectangle(cornerRadius: 7, style: .continuous))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Playhead")
         .accessibilityValue("\(Timecode.precise(model.playhead)) of \(Timecode.precise(model.duration))")
@@ -138,22 +111,58 @@ struct TransportBar: View {
 
     // MARK: - Acting at the playhead
 
-    private var editing: some View {
-        HStack(spacing: 2) {
-            glyph("scissors", help: tip("Split at the playhead", .splitAtPlayhead), name: "Split") {
-                model.splitAtPlayhead()
+    private var addZoom: some View {
+        Button { model.addZoomAtPlayhead() } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "plus")
+                    .font(.system(size: 11, weight: .semibold))
+                Text("Zoom")
+                    .font(.system(size: 12.5, weight: .medium))
             }
-
-            StudioActionMenu(actions: [
-                .init("Add Zoom at Playhead", systemImage: "plus.magnifyingglass") { model.addZoomAtPlayhead() },
-                .init("Auto-Zoom from Clicks", systemImage: "cursorarrow.click.2") { model.suggestZooms() },
-            ], style: .studio(.ghost, isIconOnly: true)) {
-                Image(systemName: "plus.magnifyingglass")
-                    .font(.system(size: 13, weight: .medium))
-            }
-            .help("Push in on part of the picture")
-            .accessibilityLabel("Add zoom")
+            .foregroundStyle(.white)
+            .padding(.horizontal, 11)
+            .frame(height: 30)
+            .background(StudioTheme.Surface.control,
+                        in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .contentShape(Rectangle())
         }
+        .buttonStyle(StudioPressStyle())
+        .help("Push in on part of the picture, at the playhead")
+        .accessibilityLabel("Add zoom")
+    }
+
+    /// A square control on a field of its own, like the reference's bar.
+    private func barIcon(_ symbol: String,
+                         help: String,
+                         name: String,
+                         action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 12.5, weight: .medium))
+                .foregroundStyle(Color(white: 0.85))
+                .frame(width: 30, height: 30)
+                .background(StudioTheme.Surface.control,
+                            in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(StudioPressStyle())
+        .help(help)
+        .accessibilityLabel(name)
+    }
+
+    /// A glyph with nothing round it: undo, redo.
+    private func ghost(_ symbol: String,
+                       help: String,
+                       name: String,
+                       isEnabled: Bool,
+                       action: @escaping () -> Void) -> some View {
+        StudioIconButton(systemImage: symbol,
+                         help: help,
+                         accessibilityName: name,
+                         size: .small,
+                         iconSize: 12.5,
+                         action: action)
+            .disabled(!isEnabled)
     }
 
     /// A tooltip with the shortcut as it is set now, which Settings can change — or none,
@@ -161,22 +170,6 @@ struct TransportBar: View {
     /// rebinds it.
     private func tip(_ text: String, _ command: EditorCommand) -> String {
         settings.editorShortcuts[command].map { "\(text) (\($0.displayString))" } ?? text
-    }
-
-    /// One control: a `StudioIconButton`, the same 28-point squircle as the title bar's
-    /// glyphs, so the rows of icons in this window are one size.
-    private func glyph(_ symbol: String,
-                       help: String,
-                       name: String,
-                       variant: StudioButtonStyle.Variant = .ghost,
-                       size: CGFloat = 13,
-                       action: @escaping () -> Void) -> some View {
-        StudioIconButton(systemImage: symbol,
-                         help: help,
-                         accessibilityName: name,
-                         variant: variant,
-                         iconSize: size,
-                         action: action)
     }
 
     // MARK: - How loud the preview is
@@ -217,22 +210,27 @@ struct TransportBar: View {
     /// apart meaning two different things is exactly the confusion this row exists to
     /// avoid.
     private var zoom: some View {
-        HStack(spacing: 4) {
-            StudioIconButton(systemImage: "arrow.left.and.right",
-                             help: tip("Fit the whole edit", .fitTimeline),
-                             accessibilityName: "Fit timeline",
-                             size: .small,
-                             iconSize: 11) {
-                model.viewport.fit(model.duration)
+        HStack(spacing: 8) {
+            Button { model.viewport.fit(model.duration) } label: {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(Color(white: 0.8))
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(StudioPressStyle())
+            .help(tip("Fit the whole edit", .fitTimeline))
+            .accessibilityLabel("Fit timeline")
 
             StudioSlider(value: zoomLevel,
                          in: log2(TimelineViewport.minimumPointsPerSecond)...log2(TimelineViewport.maximumPointsPerSecond),
                          size: .small)
-                .frame(width: Self.sliderWidth)
+                .frame(width: 128)
                 .help("How much of the edit the timeline shows")
                 .accessibilityLabel("Timeline scale")
         }
+        .padding(.horizontal, 10)
+        .frame(height: 30)
+        .background(StudioTheme.Surface.control, in: Capsule())
     }
 
     /// Both sliders one length, so the right end of the bar is two matching controls

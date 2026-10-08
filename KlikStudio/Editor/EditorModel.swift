@@ -43,7 +43,10 @@ final class EditorModel {
     /// re-derive the layout the renderer has just done, and the two would disagree the
     /// first time either of them changed.
     private(set) var scene: SceneDescriptor?
-    private(set) var isPlaying = false
+    private(set) var isPlaying = false {
+        // Playing shows every animation for real; a preview of one would fight it.
+        didSet { if isPlaying, !oldValue { stopAnimationPreview() } }
+    }
     /// How fast, and which way, the playhead moves while it plays: 1 for normal speed,
     /// ±2 and ±4 for the shuttle keys, negative backwards. Back to 1 on stopping. See
     /// `EditorModel+Shuttle`.
@@ -55,6 +58,7 @@ final class EditorModel {
     var tool: EditorTool = .frame {
         didSet {
             guard tool != oldValue else { return }
+            if tool != .annotate { drawingAnnotation = nil }
             if tool.isCanvasTool || oldValue.isCanvasTool { refresh() }
         }
     }
@@ -540,8 +544,12 @@ final class EditorModel {
     /// Core Image's own kernels are keyed by size: a factor that drifted by a pixel with
     /// every window resize would miss every cache it has, and would spend more on rebuilding
     /// a gradient than it saved on compositing one.
+    ///
+    /// A gesture on the picture or the timeline counts as moving too: a label dragged across
+    /// a 4K frame waited a full-size composite for every step, and lagged the pointer by it.
+    /// The frame it is let go on is drawn at full size by `finishInteraction`.
     private var previewFidelity: Double {
-        guard isPlaying || isScrubbing else { return 1 }
+        guard isPlaying || isScrubbing || document.isInteracting else { return 1 }
         let output = previewSize
         guard output.width > 1, previewPaneSize.width > 1 else { return 1 }
         let backing = NSScreen.main?.backingScaleFactor ?? 2
@@ -606,7 +614,8 @@ final class EditorModel {
         // A movie brought into the project is read at the quality the recording is being
         // read at, so a scrub across a cut into one is as quick as a scrub within the take.
         let media = importedMedia
-        let quality: FrameSource.Quality = isPlaying || isScrubbing ? .preview(previewPixelSize) : .exact
+        let quality: FrameSource.Quality = isPlaying || isScrubbing || animationPreview != nil
+            ? .preview(previewPixelSize) : .exact
         // Ordinary forward playback reads the file straight through rather than seeking for
         // every frame — see `FrameSource.playbackFrame(at:)`. Scrubbing, the shuttle's other
         // speeds and a still frame keep the exact seek.
@@ -730,9 +739,24 @@ final class EditorModel {
         // frame of its fade — opacity zero. Typing into it changed nothing on the picture.
         // Playing puts the entrance and exit back, and the export always has them, so this
         // is a way of looking at the edit, not a change to it.
+        //
+        // With the Annotate tool, every annotation, not only the selected one: you are laying
+        // them out, and a label added a moment ago vanished from the picture as soon as the
+        // next one was added or selected — it was sitting on the first frame of its own fade.
+        // The annotation whose animation is being previewed: drawn as it is `offset` into its
+        // life, by moving its start, so the renderer's own pose does the animating.
+        var previewing: UUID?
+        if let running = animationPreview, let offset = animationPreviewOffset,
+           let index = draft.annotations.firstIndex(where: { $0.id == running.id }) {
+            draft.annotations[index].start = playhead - CMTime(seconds: offset, preferredTimescale: 6_000)
+            previewing = running.id
+        }
         if !isPlaying {
-            let working = Set(Self.annotations(in: selected))
-            for index in draft.annotations.indices where working.contains(draft.annotations[index].id) {
+            let working = tool == .annotate
+                ? Set(draft.annotations.map(\.id))
+                : Set(Self.annotations(in: selected))
+            for index in draft.annotations.indices
+            where working.contains(draft.annotations[index].id) && draft.annotations[index].id != previewing {
                 draft.annotations[index].animation.entrance = .none
                 draft.annotations[index].animation.exit = .none
             }
@@ -782,6 +806,55 @@ final class EditorModel {
     /// contains: without that the renderer's copy of the words would stay on screen until
     /// the next keystroke happened to redraw it, which is a double image that appears and
     /// disappears depending on how fast you type.
+    /// One annotation's animation, playing on the paused picture — see `previewAnimation`.
+    private(set) var animationPreview: (id: UUID, preview: AnnotationAnimationPreview, started: Date)?
+    @ObservationIgnored private var animationPreviewTask: Task<Void, Never>?
+
+    /// Plays part of an annotation's animation once, on the paused picture, so a change to it
+    /// is seen where it was made rather than by playing the video to find it.
+    ///
+    /// The playhead stays where it is: the annotation is drawn as it would be some way into
+    /// its own life (`AnnotationAnimationPreview`), and then still again. A new request
+    /// replaces one that is running; `delay` lets a slider's drag settle before it plays.
+    func previewAnimation(ofAnnotation id: UUID, _ part: AnnotationAnimationPreview.Part,
+                          after delay: Duration = .zero) {
+        animationPreviewTask?.cancel()
+        animationPreviewTask = Task { [weak self] in
+            if delay > .zero { try? await Task.sleep(for: delay) }
+            guard !Task.isCancelled, let self, !self.isPlaying, let item = self.annotation(id) else { return }
+            let preview = AnnotationAnimationPreview(part: part, animation: item.animation,
+                                                     duration: item.duration.seconds)
+            guard preview.hasMotion else { return }
+            self.animationPreview = (id, preview, Date())
+            while !Task.isCancelled, self.animationPreviewOffset != nil {
+                self.refresh()
+                try? await Task.sleep(for: .milliseconds(33))
+            }
+            // Cancelled by a newer preview, which owns the state now.
+            guard !Task.isCancelled else { return }
+            self.animationPreview = nil
+            self.refresh()
+        }
+    }
+
+    func stopAnimationPreview() {
+        animationPreviewTask?.cancel()
+        animationPreviewTask = nil
+        guard animationPreview != nil else { return }
+        animationPreview = nil
+        refresh()
+    }
+
+    /// How far into its life the previewed annotation is drawn now, or nil when nothing is.
+    private var animationPreviewOffset: Double? {
+        guard let running = animationPreview else { return nil }
+        return running.preview.offset(at: Date().timeIntervalSince(running.started))
+    }
+
+    /// An annotation the canvas should open for typing as soon as it can — one just added
+    /// from a button, which is not on the canvas yet when it is added. The canvas clears it.
+    var annotationToType: UUID?
+
     var editingAnnotation: UUID? {
         didSet {
             guard editingAnnotation != oldValue else { return }
@@ -848,6 +921,31 @@ final class EditorModel {
     }
 
     func clearSelection() { selected = [] }
+
+    /// Puts the playhead on a label or a mask picked on the timeline, when it is not on
+    /// screen at the playhead — so its frame and handles are on the picture, ready to move
+    /// and size, rather than the inspector being about something nowhere to be seen. At its
+    /// start, where it first appears; left where it is when it is already showing.
+    func showOnPicture(_ selection: Selection) {
+        guard !isPlaying else { return }
+        let range: CMTimeRange? = switch selection {
+        case .annotation(let id): timeline.annotations.first { $0.id == id }?.range
+        case .blur(let id): timeline.blurs.first { $0.id == id }?.range
+        default: nil
+        }
+        guard let range, !range.containsTime(playhead) else { return }
+        scrub(to: range.start)
+    }
+
+    /// A click on the picture where nothing is: lets go of a label or a mask, whose frame
+    /// and handles are drawn on the picture. A zoom or a clip picked on the timeline is not
+    /// about the picture, and stays picked.
+    func deselectOnCanvas() {
+        switch selection {
+        case .annotation, .blur: clearSelection()
+        default: break
+        }
+    }
 
     /// Drops a selection that an edit has invalidated.
     ///
@@ -2109,7 +2207,7 @@ final class EditorModel {
     /// cannot be offered directly by a menu. This is the choice before the payload exists.
     /// What each one is called, looks like and lands as is in `EditorModel+AnnotationKinds`.
     enum NewAnnotation: String, CaseIterable, Identifiable {
-        case text, arrow, box, ellipse, line, highlight, step, callout
+        case text, arrow, box, ellipse, loop, line, highlight, step, callout
 
         var id: String { rawValue }
     }
@@ -2125,10 +2223,14 @@ final class EditorModel {
         // than not offering the button.
         tool = .annotate
         let aspect = outputSize.height > 0 ? outputSize.width / outputSize.height : 16.0 / 9
-        return addAnnotation(new.kind(nextStep: timeline.nextStepNumber),
-                             rect: offsetForClearSpace(new.rect(aspect: aspect)),
-                             named: "Add \(new.title)",
-                             configure: new.configure)
+        let id = addAnnotation(new.kind(nextStep: timeline.nextStepNumber),
+                               rect: offsetForClearSpace(new.rect(aspect: aspect)),
+                               named: "Add \(new.title)",
+                               configure: new.configure)
+        // Something with words opens for typing, its placeholder selected, so the first
+        // keystroke replaces "Text" rather than the user having to find it and click twice.
+        if new == .text || new == .callout { annotationToType = id }
+        return id
     }
 
     /// Nudges a new rectangle clear of anything already at the playhead.
@@ -2183,6 +2285,61 @@ final class EditorModel {
         return item.id
     }
 
+    /// A text box drawn on the picture: it keeps the width it was drawn at, and — when it was
+    /// drawn taller than a line — the height too, with the type at a reading size rather than
+    /// blown up to fill it.
+    ///
+    /// It used to become a label sized to its (empty) words the moment it was drawn, so the
+    /// box anybody drew vanished into a sliver the width of a space, at a type size taken
+    /// from however tall the drag happened to be.
+    /// The kind a drag on the picture will draw, chosen on the canvas bar and waiting.
+    ///
+    /// A shape is drawn where it goes, the way every drawing tool draws one — pick the box,
+    /// drag it out over the thing — rather than dropped in the middle and then dragged and
+    /// sized into place. One drawing, then back to picking: Figma, Keynote and Snagit all
+    /// let go of a shape tool once it has been used.
+    var drawingAnnotation: NewAnnotation?
+
+    /// Picks a kind to draw. Words are not drawn: a label is added and opened for typing,
+    /// since its box is its words.
+    func armAnnotation(_ new: NewAnnotation) {
+        tool = .annotate
+        guard new != .text else {
+            drawingAnnotation = nil
+            addAnnotation(new)
+            return
+        }
+        drawingAnnotation = drawingAnnotation == new ? nil : new
+    }
+
+    /// Adds the kind being drawn over `rect`, a rectangle of the finished frame; a line or
+    /// an arrow from `ends.from` to `ends.to`, inside it.
+    @discardableResult
+    func drawAnnotation(_ new: NewAnnotation, rect: CGRect, ends: (from: CGPoint, to: CGPoint)? = nil) -> UUID {
+        drawingAnnotation = nil
+        var kind = new.kind(nextStep: timeline.nextStepNumber)
+        if let ends {
+            switch kind {
+            case .arrow: kind = .arrow(from: ends.from, to: ends.to)
+            case .line: kind = .line(from: ends.from, to: ends.to)
+            default: break
+            }
+        }
+        let id = addAnnotation(kind, rect: rect, named: "Add \(new.title)", configure: new.configure)
+        if new == .callout { annotationToType = id }
+        return id
+    }
+
+    func addTextBox(drawn rect: CGRect) -> UUID {
+        let isLine = rect.height <= 0.12
+        return addAnnotation(.text(""), rect: rect, named: "Add Text") { item in
+            item.fixedWidth = rect.width >= 0.08
+            item.fixedHeight = !isLine
+            item.fontSize = isLine ? min(0.1, max(0.02, rect.height * 0.82)) : 0.05
+            item.rect = rect
+        }
+    }
+
     func setRegionRect(_ id: UUID, rect: CGRect) {
         apply(Commands.SetRegionRect(id: id, rect: rect))
     }
@@ -2195,18 +2352,50 @@ final class EditorModel {
         apply(Commands.RestyleAnnotation(id: id, name: name) { item in
             let before = item
             change(&item)
+            // A callout's bubble is the size it was drawn, with its words set inside — and
+            // made bigger, about its middle, when bigger words no longer fit in it. Never
+            // smaller: a roomy bubble is a choice.
+            if case .callout(let words, _) = item.kind,
+               item.fontSize > before.fontSize || item.kind != before.kind || item.style != before.style {
+                let needed = AnnotationFit.calloutSize(words, style: item.style, color: item.color,
+                                                       fontSize: item.fontSize, frame: frame)
+                var rect = item.rect
+                let grow = (dx: max(0, needed.width - rect.width), dy: max(0, needed.height - rect.height))
+                rect = rect.insetBy(dx: -grow.dx / 2, dy: -grow.dy / 2)
+                rect.origin.x = min(max(0, rect.minX), max(0, 1 - rect.width))
+                rect.origin.y = min(max(0, rect.minY), max(0, 1 - rect.height))
+                item.rect = rect
+            }
             guard AnnotationFit.needsFitting(before, item) else { return }
             item.rect = AnnotationFit.fitted(item, frame: frame, setByCaller: before.rect != item.rect)
         })
     }
 
-    /// Resizes a text label from the canvas: its wrap width from the box, and — from a
-    /// corner — its type scaled with it. One command, so the box and the type land together.
-    func resizeLabel(_ id: UUID, rect: CGRect, fontSize: Double) {
+    /// Resizes a text label from the canvas: from a side its width, from the top or bottom
+    /// its height, from a corner its type scaled with the box. One command, so the box and
+    /// the type land together.
+    ///
+    /// - Parameters:
+    ///   - fixesWidth: a side was pulled, so the label keeps this width from now on.
+    ///   - fixesHeight: the top or bottom was pulled, so it keeps this height.
+    func resizeLabel(_ id: UUID, rect: CGRect, fontSize: Double,
+                     fixesWidth: Bool = false, fixesHeight: Bool = false) {
         restyleAnnotation(id, "Resize") { item in
             guard !item.isLocked else { return }
             item.rect = rect
             item.fontSize = min(max(fontSize, 0.012), 0.3)
+            if fixesWidth { item.fixedWidth = true }
+            if fixesHeight { item.fixedHeight = true }
+        }
+    }
+
+    /// Lets a label's width, height or both go back to following its words.
+    func fitLabelToText(_ id: UUID, width: Bool, height: Bool) {
+        guard let item = annotation(id), AnnotationFit.isLabel(item),
+              (width && item.fixedWidth) || (height && item.fixedHeight) else { return }
+        restyleAnnotation(id, "Fit to Text") { item in
+            if width { item.fixedWidth = false }
+            if height { item.fixedHeight = false }
         }
     }
 

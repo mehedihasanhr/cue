@@ -36,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var statusItem: NSStatusItem?
     /// Blinks the mark in the menu bar, when the mark is what is shown there.
+    private var markBlinker: MarkBlinker?
     private var statusMenu: NSMenu?
     private var floatingPanel: FloatingPanelWindow?
     private var island: IslandController?
@@ -621,6 +622,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The menu bar glyph gives once, the way a shutter does, at what Klik just took.
     private func pulseStatusItem() {
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        // The mark blinks at what it just took; any other glyph gives like a shutter.
+        if let markBlinker {
+            markBlinker.blink()
+            return
+        }
         guard let button = statusItem?.button else { return }
         button.wantsLayer = true
         guard let layer = button.layer else { return }
@@ -639,8 +645,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func applyMenuBarIcon() {
         withObservationTracking {
             // The mark is drawn from its paths; every other choice is a still image.
-            if preferences.icon == .mark {
-                statusItem?.button?.image = KlikMarkImage.template(height: 17)
+            markBlinker?.stop()
+            markBlinker = nil
+            if preferences.icon == .mark, let button = statusItem?.button {
+                button.image = KlikMarkImage.template(height: 17)
+                markBlinker = MarkBlinker(button: button, height: 17)
             } else {
                 let image = preferences.menuBarImage()
                     ?? NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "Klik")
@@ -1353,6 +1362,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let image = image ?? library.image(for: item) else {
             presentError(NSError(domain: "Klik", code: 2, userInfo: [NSLocalizedDescriptionKey: "The capture file could not be opened."]))
             return
+        }
+        // One editor at a time: a new capture replaces the one before, which keeps its
+        // annotations (saved into the library, as Done does) rather than piling up windows.
+        for (id, older) in editorWindows where id != item.id {
+            older.done()
         }
         // Decoding the wallpaper thumbnails costs seconds of CPU, so it waits for the
         // first editor rather than running at every login; it's done long before the

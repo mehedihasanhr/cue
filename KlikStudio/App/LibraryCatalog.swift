@@ -58,12 +58,36 @@ final class LibraryCatalog {
 
     init(folder: URL) { self.folder = folder }
 
+    /// Watches the library folder for takes appearing, disappearing or being renamed.
+    ///
+    /// The list used to be read only when the window appeared and when a recording
+    /// finished. A take deleted any other way — an unkept draft discarded when its editor
+    /// closed, or a folder removed in the Finder — stayed on the list, and opening it
+    /// opened an editor that could not find its manifest.
+    private var watcher: FolderWatcher?
+
+    /// Starts following the folder, and stops when the window's task is cancelled.
+    func follow() async {
+        let watcher = FolderWatcher { [weak self] in
+            Task { await self?.reload() }
+        }
+        self.watcher = watcher
+        watcher.watch(folder)
+        // Held until the window goes away and cancels this task.
+        while !Task.isCancelled {
+            try? await Task.sleep(for: .seconds(3600))
+        }
+        watcher.stop()
+        if self.watcher === watcher { self.watcher = nil }
+    }
+
     private var library: RecordingLibrary { RecordingLibrary(folder: folder) }
 
     /// Follows the library folder if it is changed in Settings while the window is open.
     func look(at folder: URL) async {
         guard folder != self.folder else { return }
         self.folder = folder
+        watcher?.watch(folder)
         entries = []
         await reload()
     }
@@ -98,6 +122,14 @@ final class LibraryCatalog {
     /// does not install the object there, and it is exactly what made clicking a recording
     /// do nothing at all.
     func open(_ entry: RecordingEntry) {
+        // Gone since the list was read: say so and take it off the list, rather than open
+        // an editor window whose only content is "couldn't open this recording".
+        guard FileManager.default.fileExists(atPath: entry.url.appendingPathComponent("manifest.json")
+            .path(percentEncoded: false)) else {
+            problem = "“\(entry.name)” is no longer in your recordings folder."
+            Task { await reload() }
+            return
+        }
         StudioAppDelegate.openEditor(entry.url)
     }
 
@@ -229,5 +261,52 @@ final class LibraryCatalog {
 
     static func size(_ bytes: Int64) -> String {
         bytes > 0 ? ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file) : ""
+    }
+}
+
+/// Calls back, a moment after the fact, whenever the entries of one folder change.
+///
+/// A vnode source on the folder itself: adding, removing or renaming a take inside it is
+/// a write to the folder. Bursts — a take being copied in writes many times — are gathered
+/// into one call.
+@MainActor
+final class FolderWatcher {
+    private let changed: @MainActor () -> Void
+    private var source: DispatchSourceFileSystemObject?
+    private var pending: Task<Void, Never>?
+
+    init(changed: @escaping @MainActor () -> Void) {
+        self.changed = changed
+    }
+
+    func watch(_ folder: URL) {
+        stop()
+        let descriptor = open(folder.path(percentEncoded: false), O_EVTONLY)
+        guard descriptor >= 0 else { return }
+        let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: descriptor,
+                                                               eventMask: [.write, .rename, .delete],
+                                                               queue: .main)
+        source.setEventHandler { [weak self] in
+            MainActor.assumeIsolated { self?.schedule() }
+        }
+        source.setCancelHandler { close(descriptor) }
+        source.resume()
+        self.source = source
+    }
+
+    func stop() {
+        pending?.cancel()
+        pending = nil
+        source?.cancel()
+        source = nil
+    }
+
+    private func schedule() {
+        pending?.cancel()
+        pending = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            self?.changed()
+        }
     }
 }

@@ -52,13 +52,15 @@ struct AnnotationRenderer {
     }
 
     /// Annotations may spill over the padding, so they are clipped to the whole output.
-    func drawAnnotations(_ document: EditorDocument, draft: Annotation?, context: CGContext) {
+    /// `editingTextID` names a text box being typed into: its box is drawn but not its
+    /// words, which the text editor on top shows, so they never appear twice.
+    func drawAnnotations(_ document: EditorDocument, draft: Annotation?, editingTextID: UUID? = nil, context: CGContext) {
         let output = CGRect(origin: .zero, size: document.layout.size)
         context.saveGState()
         context.clip(to: output)
         context.translateBy(x: document.contentOffset.x, y: document.contentOffset.y)
         for annotation in document.annotations {
-            draw(annotation, document: document, context: context)
+            draw(annotation, document: document, drawsText: annotation.id != editingTextID, context: context)
         }
         if let draft {
             draw(draft, document: document, context: context)
@@ -130,7 +132,7 @@ struct AnnotationRenderer {
 
     // MARK: - Annotations
 
-    private func draw(_ annotation: Annotation, document: EditorDocument, context: CGContext) {
+    private func draw(_ annotation: Annotation, document: EditorDocument, drawsText: Bool = true, context: CGContext) {
         if annotation.rotation != 0, annotation.canRotate {
             let center = annotation.center
             context.saveGState()
@@ -138,13 +140,13 @@ struct AnnotationRenderer {
             context.translateBy(x: center.x, y: center.y)
             context.rotate(by: annotation.rotation)
             context.translateBy(x: -center.x, y: -center.y)
-            drawUnrotated(annotation, document: document, context: context)
+            drawUnrotated(annotation, document: document, drawsText: drawsText, context: context)
             return
         }
-        drawUnrotated(annotation, document: document, context: context)
+        drawUnrotated(annotation, document: document, drawsText: drawsText, context: context)
     }
 
-    private func drawUnrotated(_ annotation: Annotation, document: EditorDocument, context: CGContext) {
+    private func drawUnrotated(_ annotation: Annotation, document: EditorDocument, drawsText: Bool, context: CGContext) {
         switch annotation.kind {
         case .rectangle(let rect, let style):
             let path = CGPath(rect: rect, transform: nil)
@@ -190,7 +192,7 @@ struct AnnotationRenderer {
             context.restoreGState()
 
         case .text(let origin, let text, let style):
-            drawText(text, at: origin, style: style, context: context)
+            drawText(text, at: origin, style: style, drawsGlyphs: drawsText, context: context)
 
         case .counter(let center, let number, let color, let size):
             drawCounter(number, at: center, color: color, size: size, context: context)
@@ -284,9 +286,10 @@ struct AnnotationRenderer {
         context.restoreGState()
     }
 
-    private func drawText(_ text: String, at origin: CGPoint, style: TextStyle, context: CGContext) {
-        let display = text.isEmpty ? " " : text
-        let size = TextMetrics.size(of: display, style: style)
+    private func drawText(_ text: String, at origin: CGPoint, style: TextStyle, drawsGlyphs: Bool, context: CGContext) {
+        // Measured the way the model measures its bounds, so the box, its selection and
+        // the editor on top all agree, even while it is still empty.
+        let size = TextMetrics.size(of: text, style: style)
         let box = CGRect(origin: origin, size: size)
         var attributes = TextMetrics.attributes(for: style)
 
@@ -308,8 +311,10 @@ struct AnnotationRenderer {
             context.addPath(CGPath(roundedRect: box, cornerWidth: 6, cornerHeight: 6, transform: nil))
             context.fillPath()
         }
-        display.draw(at: CGPoint(x: box.minX + TextMetrics.padding.width, y: box.minY + TextMetrics.padding.height),
-                     withAttributes: attributes)
+        if drawsGlyphs, !text.isEmpty {
+            text.draw(at: CGPoint(x: box.minX + TextMetrics.padding.width, y: box.minY + TextMetrics.padding.height),
+                      withAttributes: attributes)
+        }
         context.restoreGState()
     }
 

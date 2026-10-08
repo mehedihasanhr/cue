@@ -35,14 +35,9 @@ struct StudioAddOnSettingsView: View {
         .task { await registry.refresh() }
     }
 
-    private var footer: String {
-        if let error = registry.feedError {
-            return "Klik couldn't check for a newer Klik Studio: \(error)"
-        }
-        if availability.isUsable {
-            return "Klik Studio records the screen, edits the take and exports it. Opening it brings up its recorder bar; what it records lands in its own library."
-        }
-        return "Screen recording is its own app, so an install that only takes screenshots downloads none of it. Klik finds it, checks it was signed by the same developer, and launches it."
+    /// Only when something went wrong: a note that a newer Klik Studio could not be checked for.
+    private var footer: String? {
+        registry.feedError.map { "Klik couldn't check for a newer Klik Studio: \($0)" }
     }
 
     // MARK: - What Klik asks for
@@ -51,7 +46,7 @@ struct StudioAddOnSettingsView: View {
     private var recordingSettings: some View {
         @Bindable var studio = studio
 
-        SettingsGroup("Recording", footer: "Klik hands these to Klik Studio each time you record.") {
+        SettingsGroup("Recording") {
             SettingsRow("Countdown", subtitle: "Seconds before the first frame", symbol: "timer", tint: .orange) {
                 Picker("Countdown", selection: $studio.countdownSeconds) {
                     Text("None").tag(0)
@@ -85,8 +80,7 @@ struct StudioAddOnSettingsView: View {
 
     @ViewBuilder
     private var developerSettings: some View {
-        SettingsGroup("Advanced",
-                      footer: "Use this to run a build of Klik Studio from Xcode, or a copy kept outside Applications. It is signature-checked like any other.") {
+        SettingsGroup("Advanced") {
             SettingsRow("Klik Studio build",
                         subtitle: studio.localBuildURL?.path(percentEncoded: false) ?? "Wherever it is installed",
                         symbol: "hammer.fill", tint: .gray) {
