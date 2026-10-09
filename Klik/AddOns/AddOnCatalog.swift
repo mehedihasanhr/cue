@@ -185,6 +185,8 @@ nonisolated enum AddOnError: Error, LocalizedError, Equatable {
     case tooOld(installed: SemanticVersion, required: SemanticVersion)
     case untrusted(String)
     case launchFailed(String)
+    /// macOS refused to open the add-on (Gatekeeper); the user has been told why already.
+    case blocked
     case installFailed(String)
     case downloadFailed(String)
 
@@ -200,6 +202,7 @@ nonisolated enum AddOnError: Error, LocalizedError, Equatable {
         case .tooOld(let installed, let required): "Klik Studio \(installed) is installed, but \(required) or later is needed."
         case .untrusted(let reason): "The installed add-on isn't signed by Klik's developer (\(reason))."
         case .launchFailed(let reason): "The add-on wouldn't start: \(reason)"
+        case .blocked: "macOS didn't open the add-on."
         case .installFailed(let reason): "Klik couldn't install it: \(reason)"
         case .downloadFailed(let reason): "The download didn't finish (\(reason)). Try again."
         }

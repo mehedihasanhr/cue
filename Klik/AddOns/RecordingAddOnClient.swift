@@ -77,7 +77,11 @@ final class RecordingAddOnClient {
             try await NSWorkspace.shared.open(launchURL, configuration: NSWorkspace.OpenConfiguration())
             Log.addOns.notice("Handed recording \(request.correlationID.uuidString, privacy: .public) to \(self.addOn.bundleID, privacy: .public)")
         } catch {
-            throw .launchFailed(error.localizedDescription)
+            // Almost always Gatekeeper, which says only "a miscellaneous error occurred";
+            // the same explanation as Open gives, rather than that.
+            Log.addOns.error("Couldn't open \(self.addOn.bundleID, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            AddOnRegistry.explainRefusedLaunch(of: addOn)
+            throw .blocked
         }
     }
 
