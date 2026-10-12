@@ -223,6 +223,14 @@ struct AgentSettingsView: View {
                         ForEach(agents.links(for: agent)) { link in
                             AgentLinkRow(link: link, connector: agents)
                         }
+                        if agent == .claude, agents.needsDesktopFolder {
+                            // Easy to miss: with a terminal profile connected, the app's
+                            // own sessions (in ~/.claude) still never show.
+                            SettingsRow("Claude desktop app", subtitle: "Its sessions use ~/.claude, which isn’t connected, so they don’t show on the island.",
+                                        symbol: "asterisk", tint: .orange) {
+                                Button("Connect…") { agents.connect(.claude) }
+                            }
+                        }
                         AgentConnectRow(agent: agent, connector: agents)
                     }
                     .disabled(!preferences.agentSessionsEnabled)
