@@ -105,7 +105,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         // Don't let SwiftUI's ideal size pin the window; the user sizes it freely.
         host.sizingOptions = []
         window.contentViewController = host
-        window.contentMinSize = CGSize(width: 560, height: 400)
+        // Narrowest the toolbar fits at, with its trailing buttons and shapes folded.
+        window.contentMinSize = CGSize(width: 720, height: 400)
         sizeToFit(image: image, on: Self.targetScreen(for: image))
     }
 
