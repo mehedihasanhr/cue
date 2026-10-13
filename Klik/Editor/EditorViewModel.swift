@@ -29,8 +29,8 @@ enum EditorTool: String, CaseIterable, Identifiable {
         case .select: "cursorarrow"
         case .background: "photo.on.rectangle.angled"
         case .crop: "crop"
-        case .pencil: "pencil.tip"
-        case .highlighter: "scribble.variable"
+        case .pencil: "pencil"
+        case .highlighter: "paintbrush.pointed"
         case .highlight: "highlighter"
         case .shape: "square"
         case .arrow: "arrow.down.left"
@@ -67,6 +67,13 @@ enum ShapeKind: String, CaseIterable, Identifiable, Codable {
         case .rectangle: "square"
         case .ellipse: "circle"
         case .line: "line.diagonal"
+        }
+    }
+    var title: String {
+        switch self {
+        case .rectangle: "Rectangle"
+        case .ellipse: "Ellipse"
+        case .line: "Line"
         }
     }
 }
@@ -172,6 +179,7 @@ final class EditorViewModel {
     var strokeWidth: CGFloat = 4 { didSet { applyStyleToSelection() } }
     var fillMode: FillMode = .none { didSet { applyStyleToSelection() } }
     var shapeKind: ShapeKind = .rectangle
+    var smartShapes = true
     var arrowStyle: ArrowStyle = .single { didSet { applyStyleToSelection() } }
     var fontSize: CGFloat = TextStyle.defaultSize { didSet { applyStyleToSelection() } }
     var fontWeight: CGFloat = TextStyle.defaultWeight { didSet { applyStyleToSelection() } }
@@ -211,7 +219,7 @@ final class EditorViewModel {
             record.strokeWidth = strokeWidth; record.fillMode = fillMode; record.shapeKind = shapeKind; record.arrowStyle = arrowStyle
             record.fontSize = fontSize; record.fontWeight = fontWeight; record.textBackground = textBackground
             record.highlighterWidth = highlighterWidth; record.blurKind = blurKind; record.blurIntensity = blurIntensity
-            record.counterSize = counterSize
+            record.counterSize = counterSize; record.smartShapes = smartShapes
             return record
         }
         set {
@@ -221,6 +229,7 @@ final class EditorViewModel {
             strokeWidth = newValue.strokeWidth; fillMode = newValue.fillMode; shapeKind = newValue.shapeKind; arrowStyle = newValue.arrowStyle
             fontSize = newValue.fontSize; fontWeight = newValue.fontWeight; textBackground = newValue.textBackground
             highlighterWidth = newValue.highlighterWidth; blurKind = newValue.blurKind; blurIntensity = newValue.blurIntensity
+            smartShapes = newValue.smartShapes
             counterSize = newValue.counterSize
         }
     }
@@ -228,12 +237,39 @@ final class EditorViewModel {
     // MARK: - Document mutation with undo
 
     func commit(_ change: (inout EditorDocument) -> Void) {
+        isDirty = true
+        // Inside a drag the one undo step is registered when it ends, so each step is
+        // just the change: no copy kept, no undo closure.
+        if interactionBase != nil {
+            change(&document)
+            interactionChanged = true
+            return
+        }
         let before = document
         var after = document
         change(&after)
         document = after
-        isDirty = true
         registerUndo(returningTo: before)
+    }
+
+    /// The document as it was when a continuous edit (a slider drag, a colour well) began.
+    private var interactionBase: EditorDocument?
+    private var interactionChanged = false
+
+    /// Starts gathering a run of commits into one undo step. Nested calls are ignored.
+    func beginInteraction() {
+        guard interactionBase == nil else { return }
+        interactionBase = document
+        interactionChanged = false
+    }
+
+    /// Ends the run begun by `beginInteraction()`, registering one undo back to its start
+    /// if anything was committed in between.
+    func endInteraction() {
+        guard let base = interactionBase else { return }
+        interactionBase = nil
+        if interactionChanged { registerUndo(returningTo: base) }
+        interactionChanged = false
     }
 
     private func registerUndo(returningTo state: EditorDocument) {
@@ -635,6 +671,14 @@ final class EditorViewModel {
             }
             annotation = Annotation(kind: annotation.kind)
             commit { $0.annotations.append(annotation) }
+            // A second step, so one undo gives the scribble back as drawn.
+            if tool == .pencil, smartShapes, let shape = smartShape(for: pencilPoints) {
+                let id = annotation.id
+                commit { document in
+                    guard let index = document.annotations.firstIndex(where: { $0.id == id }) else { return }
+                    document.annotations[index].kind = shape
+                }
+            }
             select(annotation.id)
         case .moving(_, let origin, _), .resizing(_, _, let origin), .endpoint(_, _, let origin), .bend(_, let origin), .rotating(_, let origin, _):
             // The live drag mutated the document directly; register one undo step for it.
@@ -647,6 +691,20 @@ final class EditorViewModel {
             if let rect = cropDraft, rect.width < 2 || rect.height < 2 { cropDraft = document.crop ?? document.imageRect }
         case .cropMoving, .cropResizing, .none:
             break
+        }
+    }
+
+    /// What a pencil stroke becomes when it was plainly meant as a shape, in the pencil's
+    /// colour and width; nil leaves it a scribble.
+    private func smartShape(for points: [CGPoint]) -> AnnotationKind? {
+        let stroke = StrokeStyle(color: color, width: strokeWidth)
+        switch ShapeRecognizer.recognize(points) {
+        case .line(let start, let end): return .line(start: start, end: end, style: stroke)
+        case .ellipse(let rect): return .ellipse(rect: rect, style: ShapeStyle(stroke: stroke, fill: .none))
+        case .rectangle(let rect): return .rectangle(rect: rect, style: ShapeStyle(stroke: stroke, fill: .none))
+        case .arrow(let start, let end):
+            return .arrow(start: start, end: end, bend: .zero, style: stroke, arrowStyle: arrowStyle)
+        case nil: return nil
         }
     }
 

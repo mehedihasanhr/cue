@@ -17,6 +17,8 @@ struct EditorDefaults: Codable, Equatable {
     var blurKind: BlurKind = .blur
     var blurIntensity: CGFloat = 12
     var counterSize: CGFloat = 30
+    /// The pencil straightens a drawn line, circle, box or arrow into the real shape.
+    var smartShapes = true
     /// When on, an editor starts from the options the previous one was closed with.
     var rememberLastUsed = false
 
@@ -44,6 +46,7 @@ struct EditorDefaults: Codable, Equatable {
         blurKind = try c.decodeIfPresent(BlurKind.self, forKey: .blurKind) ?? blurKind
         blurIntensity = try c.decodeIfPresent(CGFloat.self, forKey: .blurIntensity) ?? blurIntensity
         counterSize = try c.decodeIfPresent(CGFloat.self, forKey: .counterSize) ?? counterSize
+        smartShapes = try c.decodeIfPresent(Bool.self, forKey: .smartShapes) ?? smartShapes
         rememberLastUsed = try c.decodeIfPresent(Bool.self, forKey: .rememberLastUsed) ?? rememberLastUsed
     }
 

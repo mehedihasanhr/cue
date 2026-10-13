@@ -203,51 +203,225 @@ struct EditorToolbar: View {
     var body: some View {
         ZStack {
             WindowDragArea()
-            // Tools centred in the bar, one pill per kind of tool.
-            HStack(spacing: 6) {
-                ForEach(toolGroups, id: \.self) { tools in
-                    ToolGroup {
-                        ForEach(tools) { tool in ToolButton(tool: tool, model: model) }
-                    }
-                }
-            }
-
-            HStack(spacing: 8) {
+            // Tools centred in the bar while there is room, sliding aside rather than
+            // under the buttons at either end when the window is narrow. The buttons on
+            // the right fold into a menu before anything overlaps.
+            ToolbarRowLayout(gap: 12) {
                 TrafficLights(onClose: windowButtons.close, onMinimize: windowButtons.minimize, onZoom: windowButtons.zoom)
-                Spacer()
-                ToolGroup {
-                    IconButton(symbol: "arrow.uturn.backward", help: "Undo (⌘Z)", enabled: model.canUndo) { model.undo() }
-                    IconButton(symbol: "arrow.uturn.forward", help: "Redo (⇧⌘Z)", enabled: model.canRedo) { model.redo() }
+                ViewThatFits(in: .horizontal) {
+                    tools(compact: false)
+                    tools(compact: true)
                 }
-                ToolGroup {
-                    IconButton(symbol: copied ? "checkmark" : "doc.on.doc", help: "Copy to clipboard (⌘C)", tint: copied ? .green : nil) {
-                        // Feedback first; the copy is a pasteboard promise and doesn't block.
-                        withAnimation(.easeOut(duration: 0.15)) { copied = true }
-                        onCopy()
-                        Task {
-                            try? await Task.sleep(for: .seconds(1.6))
-                            withAnimation { copied = false }
-                        }
-                    }
-                    IconButton(symbol: "rectangle.split.2x1", help: "Compare with other images — or drop them on the canvas", action: onAddImages)
-                    DragOutView(
-                        fileName: fileName,
-                        render: { model.renderedImage().flatMap(DocumentExporter.pngData) },
-                        thumbnail: { model.renderedImage().map { NSImage(cgImage: $0, size: model.document.outputSize) } }
-                    )
-                    .frame(width: EditorChrome.buttonSize.width, height: EditorChrome.buttonSize.height)
-                    .help("Drag into another app")
-                    IconButton(symbol: "trash", help: "Delete capture", tint: .red.opacity(0.9), action: onDelete)
+                ViewThatFits(in: .horizontal) {
+                    actions
+                    compactActions
                 }
-                ToolbarPillButton(title: "Export…", prominent: false, action: onExport)
-                    .help("Export a copy (⇧⌘S)")
-                ToolbarPillButton(title: "Done", prominent: true, action: onDone)
-                    .help("Save and close")
             }
         }
         .padding(.horizontal, 10)
         .frame(height: EditorToolbar.height)
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    /// One pill per kind of tool. Compact, for a narrow window, folds the shapes into one
+    /// button showing the last one used.
+    private func tools(compact: Bool) -> some View {
+        HStack(spacing: 6) {
+            ForEach(toolGroups, id: \.self) { tools in
+                ToolGroup {
+                    ForEach(tools) { tool in
+                        // Each shape is its own button, so a circle or a line is one click.
+                        if tool == .shape {
+                            if compact {
+                                ShapeGroupButton(model: model)
+                            } else {
+                                ForEach(ShapeKind.allCases) { kind in ToolButton(tool: tool, shape: kind, model: model) }
+                            }
+                        } else {
+                            ToolButton(tool: tool, model: model)
+                        }
+                    }
+                }
+            }
+        }
+        .fixedSize()
+    }
+
+    private var actions: some View {
+        HStack(spacing: 8) {
+            ToolGroup {
+                IconButton(symbol: "arrow.uturn.backward", help: "Undo (⌘Z)", enabled: model.canUndo) { model.undo() }
+                IconButton(symbol: "arrow.uturn.forward", help: "Redo (⇧⌘Z)", enabled: model.canRedo) { model.redo() }
+            }
+            ToolGroup {
+                copyButton
+                IconButton(symbol: "rectangle.split.2x1", help: "Compare with other images — or drop them on the canvas", action: onAddImages)
+                dragOut
+                IconButton(symbol: "trash", help: "Delete capture", tint: .red.opacity(0.9), action: onDelete)
+            }
+            ToolbarPillButton(title: "Export…", prominent: false, action: onExport)
+                .help("Export a copy (⇧⌘S)")
+            ToolbarPillButton(title: "Done", prominent: true, action: onDone)
+                .help("Save and close")
+        }
+        .fixedSize()
+    }
+
+    /// The narrow window's version: Copy and drag-out stay to hand, the rest (all with
+    /// shortcuts or used rarely) go in a menu, and Export shrinks to its icon.
+    private var compactActions: some View {
+        HStack(spacing: 8) {
+            ToolGroup {
+                copyButton
+                dragOut
+                Menu {
+                    Button("Undo") { model.undo() }.disabled(!model.canUndo)
+                    Button("Redo") { model.redo() }.disabled(!model.canRedo)
+                    Divider()
+                    Button("Compare with Other Images…", action: onAddImages)
+                    Button("Export…", action: onExport)
+                    Divider()
+                    Button("Delete Capture", role: .destructive, action: onDelete)
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: EditorChrome.iconSize, weight: .semibold))
+                        .foregroundStyle(Color.primary.opacity(0.85))
+                        .frame(width: EditorChrome.buttonSize.width, height: EditorChrome.buttonSize.height)
+                        .contentShape(Rectangle())
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("More")
+            }
+            ToolbarPillButton(title: "Done", prominent: true, action: onDone)
+                .help("Save and close")
+        }
+        .fixedSize()
+    }
+
+    private var copyButton: some View {
+        IconButton(symbol: copied ? "checkmark" : "doc.on.doc", help: "Copy to clipboard (⌘C)", tint: copied ? .green : nil) {
+            // Feedback first; the copy is a pasteboard promise and doesn't block.
+            withAnimation(.easeOut(duration: 0.15)) { copied = true }
+            onCopy()
+            Task {
+                try? await Task.sleep(for: .seconds(1.6))
+                withAnimation { copied = false }
+            }
+        }
+    }
+
+    private var dragOut: some View {
+        DragOutView(
+            fileName: fileName,
+            render: { model.renderedImage().flatMap(DocumentExporter.pngData) },
+            thumbnail: { model.renderedImage().map { NSImage(cgImage: $0, size: model.document.outputSize) } }
+        )
+        .frame(width: EditorChrome.buttonSize.width, height: EditorChrome.buttonSize.height)
+        .help("Drag into another app")
+    }
+}
+
+/// The toolbar's row: leading item at the left edge, trailing at the right, and the middle
+/// centred in the window — or, when that would run into either end, as close to centre as
+/// it can get. The trailing item is offered only the width the others leave, so a
+/// `ViewThatFits` there picks the version that fits.
+struct ToolbarRowLayout: Layout {
+    var gap: CGFloat
+
+    /// The measurements for one width. Measuring a `ViewThatFits` measures every version
+    /// inside it, so it is done once per width rather than on every pass.
+    struct Cache {
+        var width: CGFloat = -1
+        var leading: CGSize = .zero
+        var middle: CGSize = .zero
+        var trailing: CGSize = .zero
+    }
+
+    func makeCache(subviews: Subviews) -> Cache { Cache() }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) -> CGSize {
+        let height = subviews.map { $0.sizeThatFits(.unspecified).height }.max() ?? 0
+        let width = proposal.width ?? subviews.reduce(0) { $0 + $1.sizeThatFits(.unspecified).width } + 2 * gap
+        return CGSize(width: width, height: proposal.height ?? height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) {
+        guard subviews.count == 3 else { return }
+        if cache.width != bounds.width { measure(bounds, subviews: subviews, cache: &cache) }
+        let (leading, middle, trailing) = (cache.leading, cache.middle, cache.trailing)
+
+        subviews[0].place(at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading, proposal: ProposedViewSize(leading))
+        subviews[2].place(at: CGPoint(x: bounds.maxX, y: bounds.midY), anchor: .trailing, proposal: ProposedViewSize(trailing))
+
+        let lowest = bounds.minX + leading.width + gap
+        let highest = bounds.maxX - trailing.width - gap - middle.width
+        let centred = bounds.midX - middle.width / 2
+        let x = highest >= lowest ? min(max(centred, lowest), highest) : lowest
+        subviews[1].place(at: CGPoint(x: x, y: bounds.midY), anchor: .leading, proposal: ProposedViewSize(middle))
+    }
+
+    private func measure(_ bounds: CGRect, subviews: Subviews, cache: inout Cache) {
+        let leading = subviews[0].sizeThatFits(.unspecified)
+        let room = max(0, bounds.width - leading.width - 2 * gap)
+
+        // The middle and the trailing item each come full or compact (a `ViewThatFits`
+        // offered no width answers with its smallest version). Fold the trailing buttons
+        // first, then the tools.
+        func width(_ index: Int, compact: Bool) -> CGFloat {
+            subviews[index].sizeThatFits(ProposedViewSize(width: compact ? 0 : nil, height: bounds.height)).width
+        }
+        let middleFull = width(1, compact: false)
+        let middleOffer = middleFull + width(2, compact: true) <= room ? middleFull : width(1, compact: true)
+        let middle = subviews[1].sizeThatFits(ProposedViewSize(width: middleOffer, height: bounds.height))
+        let trailing = subviews[2].sizeThatFits(ProposedViewSize(width: max(0, room - middle.width), height: bounds.height))
+        cache = Cache(width: bounds.width, leading: leading, middle: middle, trailing: trailing)
+    }
+}
+
+/// The shapes folded into one button for a narrow toolbar: it shows the last shape used
+/// and picks it; a click also opens the three side by side to choose another.
+private struct ShapeGroupButton: View {
+    let model: EditorViewModel
+    @State private var hovering = false
+    @State private var expanded = false
+
+    var body: some View {
+        let active = model.tool == .shape
+        Button {
+            model.tool = .shape
+            expanded = true
+        } label: {
+            Image(systemName: model.shapeKind.symbol)
+                .font(.system(size: EditorChrome.iconSize, weight: .semibold))
+                .frame(width: EditorChrome.buttonSize.width, height: EditorChrome.buttonSize.height)
+                .foregroundStyle(active ? Color.white : Color.primary.opacity(0.85))
+                .overlay(alignment: .bottomTrailing) {
+                    // Says there is more here than one shape.
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 6, weight: .heavy))
+                        .foregroundStyle(active ? Color.white.opacity(0.8) : Color.primary.opacity(0.45))
+                        .padding(3)
+                }
+                .background(
+                    RoundedRectangle(cornerRadius: EditorChrome.buttonRadius, style: .continuous)
+                        .fill(active ? EditorChrome.accent : (hovering ? EditorChrome.hoverFill : Color.clear))
+                )
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("\(model.shapeKind.title) (R) — click for other shapes")
+        .popover(isPresented: $expanded, arrowEdge: .bottom) {
+            HStack(spacing: 2) {
+                ForEach(ShapeKind.allCases) { kind in
+                    ToolButton(tool: .shape, shape: kind, model: model) { expanded = false }
+                }
+            }
+            .padding(5)
+        }
     }
 }
 
@@ -296,12 +470,20 @@ struct ToolGroup<Content: View>: View {
 
 private struct ToolButton: View {
     let tool: EditorTool
+    /// For the shape tool: which shape this button draws.
+    var shape: ShapeKind?
     let model: EditorViewModel
+    /// Called after the tool is picked: the folded shape group closes its popover.
+    var onPick: () -> Void = {}
     @State private var hovering = false
 
     var body: some View {
-        let active = model.tool == tool
-        Button { model.tool = tool } label: {
+        let active = model.tool == tool && (shape == nil || model.shapeKind == shape)
+        Button {
+            if let shape { model.shapeKind = shape }
+            model.tool = tool
+            onPick()
+        } label: {
             Image(systemName: symbol)
                 .font(.system(size: EditorChrome.iconSize, weight: .semibold))
                 .symbolRenderingMode(.monochrome)
@@ -315,11 +497,11 @@ private struct ToolButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help("\(tool.title) (\(String(tool.key).uppercased()))")
+        .help(shape.map { "\($0.title) (\(String(tool.key).uppercased()))" } ?? "\(tool.title) (\(String(tool.key).uppercased()))")
     }
 
     private var symbol: String {
-        if tool == .shape { return model.shapeKind.symbol }
+        if let shape { return shape.symbol }
         if tool == .blur { return model.blurKind == .blur ? "drop.fill" : "checkerboard.rectangle" }
         return tool.symbol
     }
@@ -358,7 +540,7 @@ struct OptionsBar: View {
         HStack(spacing: 12) {
             // Which tool this row sets, and its key, so the shortcuts are learnt by using it.
             HStack(spacing: 6) {
-                Text(model.tool.title)
+                Text(model.tool == .shape ? model.shapeKind.title : model.tool.title)
                     .font(.system(size: EditorChrome.labelSize, weight: .semibold))
                 KeyCap(String(model.tool.key).uppercased())
             }
@@ -382,6 +564,14 @@ struct OptionsBar: View {
                 colorPicker
                 separator
                 strokePicker(width: $model.strokeWidth, range: EditorDefaults.strokeRange)
+                separator
+                Toggle(isOn: $model.smartShapes) {
+                    Label("Smart shapes", systemImage: "wand.and.stars")
+                        .font(.system(size: EditorChrome.labelSize))
+                }
+                .toggleStyle(.button)
+                .controlSize(.small)
+                .help("Turn a drawn line, circle, box or arrow into a clean one")
             case .highlighter:
                 colorPicker
                 separator
@@ -391,11 +581,6 @@ struct OptionsBar: View {
                 separator
                 hint("Drag a box over text to highlight it")
             case .shape:
-                Picker("", selection: $model.shapeKind) {
-                    ForEach(ShapeKind.allCases) { kind in Image(systemName: kind.symbol).tag(kind) }
-                }
-                .pickerStyle(.segmented).fixedSize()
-                separator
                 colorPicker
                 separator
                 strokePicker(width: $model.strokeWidth, range: EditorDefaults.strokeRange)
