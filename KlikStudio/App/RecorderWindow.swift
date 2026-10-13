@@ -28,12 +28,12 @@ struct LibraryWindow: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            let hasRecordings = catalog.map { !$0.entries.isEmpty || !$0.interrupted.isEmpty } ?? false
+            header(hasRecordings ? catalog : nil)
+
             if model?.permissionDenied == true, let model {
                 PermissionBanner(model: model)
             }
-
-            let hasRecordings = catalog.map { !$0.entries.isEmpty || !$0.interrupted.isEmpty } ?? false
-            header(hasRecordings ? catalog : nil)
 
             if let catalog {
                 if hasRecordings {
@@ -49,6 +49,8 @@ struct LibraryWindow: View {
                 Spacer()
             }
         }
+        // Up into the title bar: the header row is the title bar.
+        .ignoresSafeArea(.container, edges: .top)
         .frame(minWidth: 520, minHeight: 440)
         .background(Color(nsColor: .windowBackgroundColor))
         .background {
@@ -80,54 +82,58 @@ struct LibraryWindow: View {
     }
 
     /// The window's name and how much is in it, the tools for finding a take, and the way
-    /// to make another — on one line when the window is wide enough, two when it is not.
+    /// to make another — one row, in the window's title bar, level with the traffic lights.
     ///
-    /// The count used to sit in a footer under the list, where nobody reads, and the title
-    /// and the tools on two rows of their own, under a strip that was only the window's
-    /// buttons: three bands of chrome before the first recording.
+    /// The count used to sit in a footer under the list, where nobody reads; then the
+    /// title and the tools sat in a band of their own under an empty strip that held only
+    /// the window's buttons. Now the strip *is* the header: no band of chrome above the
+    /// first recording but this one.
     private func header(_ catalog: LibraryCatalog?) -> some View {
-        let title = VStack(alignment: .leading, spacing: 1) {
-            Text("Recordings")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundStyle(StudioTheme.Palette.textPrimary)
-                .accessibilityAddTraits(.isHeader)
-            Text(summary)
-                .font(.system(size: 11.5))
-                .foregroundStyle(StudioTheme.Palette.textSecondary)
-                .lineLimit(1)
-        }
-        .fixedSize()
+        let title = Text("Recordings")
+            .font(.system(size: 14, weight: .bold))
+            .foregroundStyle(StudioTheme.Palette.textPrimary)
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityValue(summary)
+            .fixedSize()
         let record = StudioButton("New Recording", systemImage: "record.circle", variant: .primary) {
             StudioAppDelegate.showBar()
         }
         .help("Bring up the recorder bar")
         .fixedSize()
+        let compactRecord = StudioIconButton(systemImage: "record.circle", help: "New Recording — bring up the recorder bar",
+                                             accessibilityName: "New Recording", variant: .primary) {
+            StudioAppDelegate.showBar()
+        }
 
         return VStack(spacing: 0) {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 10) {
-                    title
-                    Spacer(minLength: 16)
-                    if let catalog { LibraryTools(catalog: catalog, layout: $layout).frame(minWidth: 470) }
+            HStack(spacing: 8) {
+                title
+                Spacer(minLength: 12)
+                if let catalog { LibraryTools(catalog: catalog, layout: $layout) }
+                // The name when there is room for it; the glyph alone when the window is
+                // narrow, rather than a second row of chrome.
+                ViewThatFits(in: .horizontal) {
                     record
+                    compactRecord
                 }
-                VStack(spacing: 10) {
-                    HStack {
-                        title
-                        Spacer(minLength: 12)
-                        record
-                    }
-                    if let catalog { LibraryTools(catalog: catalog, layout: $layout) }
-                }
+                .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 2)
-            .padding(.bottom, 12)
+            .padding(.leading, Self.trafficLightInset)
+            .padding(.trailing, 14)
+            .frame(height: Self.headerHeight)
+            // The row is the title bar: a drag on any bare part of it moves the window.
+            .background(WindowDragArea())
             Rectangle()
                 .fill(StudioTheme.Palette.stroke)
                 .frame(height: 1)
         }
     }
+
+    /// As tall as the title bar the window's unified toolbar makes, so the traffic lights
+    /// sit in the middle of this row; see `LibraryWindowController`.
+    static let headerHeight: CGFloat = 52
+    /// The room the traffic lights take at the left of the row.
+    private static let trafficLightInset: CGFloat = 84
 
     /// Rows lose their columns below this width, and say the same facts under the name.
     private var isCompact: Bool { width < 640 }
@@ -331,23 +337,41 @@ private struct LibrarySectionView<Content: View>: View {
 private struct LibraryTools: View {
     @Bindable var catalog: LibraryCatalog
     @Binding var layout: LibraryLayout
-    @Environment(StudioSettings.self) private var settings
     @FocusState private var isSearching: Bool
+    /// The search as a field rather than a glyph: opened by a click on the glyph, closed
+    /// again when it is let go of with nothing typed in it.
+    @State private var showsSearch = false
 
-    var body: some View {
-        HStack(spacing: 8) {
-            HStack(spacing: 6) {
+    private static let searchWidth: CGFloat = 220
+
+    /// A glyph at rest, the same square as the buttons beside it; clicked, it grows to
+    /// the left into a field with the caret in it. A search with words in it stays open.
+    private var search: some View {
+        let height = StudioTheme.ControlSize.regular.height
+        let isOpen = showsSearch || !catalog.search.isEmpty
+        return HStack(spacing: 6) {
+            Button(action: openSearch) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(StudioTheme.Palette.textSecondary)
-                    .accessibilityHidden(true)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(isOpen ? StudioTheme.Palette.textSecondary : StudioTheme.Palette.textPrimary)
+                    .frame(width: isOpen ? 14 : height, height: height)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Search recordings (⌘F)")
+            .keyboardShortcut("f", modifiers: .command)
+            .accessibilityLabel("Search")
+
+            if isOpen {
                 TextField("Search", text: $catalog.search)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
                     .focused($isSearching)
+                    .onExitCommand(perform: closeSearch)
                     .accessibilityLabel("Search recordings")
+                    .transition(.opacity)
                 if !catalog.search.isEmpty {
-                    Button { catalog.search = "" } label: {
+                    Button(action: closeSearch) {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(StudioTheme.Palette.textTertiary)
                     }
@@ -356,38 +380,37 @@ private struct LibraryTools: View {
                     .accessibilityLabel("Clear the search")
                 }
             }
-            .studioField(isFocused: isSearching, size: .regular)
-            .frame(minWidth: 150, idealWidth: 240, maxWidth: .infinity)
+        }
+        .padding(.horizontal, isOpen ? 8 : 0)
+        .frame(width: isOpen ? Self.searchWidth : height, height: height, alignment: .leading)
+        .background(StudioTheme.squircle(StudioTheme.ControlSize.regular.radius).fill(StudioTheme.Palette.fill))
+        .overlay(StudioTheme.squircle(StudioTheme.ControlSize.regular.radius).strokeBorder(StudioTheme.Palette.stroke))
+        // Clipped to its own shape while it grows, then ringed outside it: a square clip
+        // after the ring cut the ring's corners off.
+        .clipShape(StudioTheme.squircle(StudioTheme.ControlSize.regular.radius))
+        .studioFocusRing(isSearching, radius: StudioTheme.ControlSize.regular.radius)
+        .animation(.spring(duration: 0.32, bounce: 0.12), value: isOpen)
+        .onChange(of: isSearching) { _, focused in
+            // Let go of with nothing in it: back to the glyph.
+            if !focused, catalog.search.isEmpty { showsSearch = false }
+        }
+    }
 
-            // A menu rather than a segmented control: three keys and a direction is four
-            // things, and the direction only makes sense next to the key it reverses.
-            Menu {
-                Picker("Sort by", selection: $catalog.order) {
-                    ForEach(RecordingOrder.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.inline)
-                Divider()
-                Picker("Direction", selection: $catalog.descending) {
-                    Text(catalog.order == .name ? "A to Z" : "Newest first").tag(false)
-                    Text(catalog.order == .name ? "Z to A" : "Oldest first").tag(true)
-                }
-                .pickerStyle(.inline)
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "arrow.up.arrow.down")
-                        .font(.system(size: 11.5, weight: .medium))
-                    Text(catalog.order.title)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 8.5, weight: .semibold))
-                        .foregroundStyle(StudioTheme.Palette.textSecondary)
-                }
-            }
-            .menuStyle(.button)
-            .buttonStyle(.studio(.secondary, size: .regular))
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("How the list is sorted")
-            .accessibilityLabel("Sort by \(catalog.order.title)")
+    private func openSearch() {
+        showsSearch = true
+        // A beat later, once the field is in the tree to take the focus.
+        DispatchQueue.main.async { isSearching = true }
+    }
+
+    private func closeSearch() {
+        catalog.search = ""
+        isSearching = false
+        showsSearch = false
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            search
 
             StudioSegmented(selection: $layout,
                             items: LibraryLayout.allCases,
@@ -397,10 +420,6 @@ private struct LibraryTools: View {
                 .fixedSize()
                 .accessibilityLabel("Layout")
 
-            StudioIconButton(systemImage: "folder", help: "Show the recordings folder in Finder",
-                             variant: .secondary) {
-                NSWorkspace.shared.open(settings.library)
-            }
         }
     }
 }
@@ -415,7 +434,7 @@ private struct RecordingActions {
         [[.init("Open", systemImage: "play.rectangle") { catalog.open(entry) }],
          [.init("Rename\u{2026}", systemImage: "pencil") { catalog.beginRenaming(entry) },
           .init("Duplicate", systemImage: "plus.square.on.square") { Task { await catalog.duplicate(entry) } },
-          .init("Show in Finder", systemImage: "folder") { catalog.reveal(entry) }],
+          .init("Reveal in Finder", systemImage: "folder") { catalog.reveal(entry) }],
          // Named for where it goes, not for what it destroys: this is a move to the
          // Trash, and a menu item that says Delete promises something worse.
          [.init("Move to Trash", systemImage: "trash") { catalog.askToDelete(entry) }]]
@@ -511,7 +530,6 @@ private struct RecordingCard: View {
     let datedTitle: Bool
     @State private var isHovering = false
     @State private var poster: Data?
-    @Environment(\.colorScheme) private var colorScheme
 
     private var actions: RecordingActions { RecordingActions(entry: entry, catalog: catalog) }
 
@@ -579,9 +597,9 @@ private struct RecordingCard: View {
                                               : StudioTheme.Palette.stroke,
                                    lineWidth: isHovering ? 2 : 1)
             }
-            .shadow(color: .black.opacity(isHovering ? (colorScheme == .dark ? 0.5 : 0.18) : 0.06),
-                    radius: isHovering ? 12 : 3, y: isHovering ? 6 : 1)
-            .offset(y: isHovering && !StudioMotion.reduceMotion ? -2 : 0)
+            // The ring says which card is under the pointer; the card itself stays put,
+            // with the same faint shadow, rather than lifting off the page.
+            .shadow(color: .black.opacity(0.06), radius: 3, y: 1)
     }
 
     /// The length, and whether there is sound, on the picture's corner, where a video
@@ -749,20 +767,23 @@ private struct LibraryDialogs: ViewModifier {
     func body(content: Content) -> some View {
         guard let catalog else { return AnyView(content) }
         return AnyView(content
-            .alert("Rename Recording", isPresented: renaming(catalog)) {
+            // `presenting:` hands each button the recording the alert is about: closing
+            // the alert clears `renaming` / `deleting`, before a task its button started
+            // has run, and reading them there found nothing.
+            .alert("Rename Recording", isPresented: renaming(catalog), presenting: catalog.renaming) { entry in
                 // A field in an alert rather than an editable row: the name is validated
                 // and can be refused, and a row that silently reverts does not say why.
                 TextField("Name", text: Binding { catalog.draftName } set: { catalog.draftName = $0 })
-                Button("Rename") { Task { await catalog.commitRename() } }
+                Button("Rename") { Task { await catalog.commitRename(entry) } }
                 Button("Cancel", role: .cancel) { catalog.renaming = nil }
-            } message: {
+            } message: { _ in
                 Text("This renames the recording on disk.")
             }
             .alert("Move \u{201C}\(catalog.deleting?.name ?? "")\u{201D} to the Trash?",
-                   isPresented: deleting(catalog)) {
-                Button("Move to Trash", role: .destructive) { Task { await catalog.confirmDelete() } }
+                   isPresented: deleting(catalog), presenting: catalog.deleting) { entry in
+                Button("Move to Trash", role: .destructive) { Task { await catalog.confirmDelete(entry) } }
                 Button("Cancel", role: .cancel) { catalog.deleting = nil }
-            } message: {
+            } message: { _ in
                 // Said plainly, because it is the truth and it is the reassurance: this is
                 // recoverable, and the user is the one who recovers it.
                 Text("It goes to the Trash, so you can put it back until the Trash is emptied.")
