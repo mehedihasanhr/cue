@@ -7,7 +7,8 @@ import SwiftUI
 /// entries, assets, colors) can be dragged into its description or pasted there.
 /// Moves by the strip along its top, so a drag in the text selects. Closes on ⎋,
 /// on Create / Cancel, on a click outside, or when it loses key status — unless it
-/// is pinned, when only ⎋ and the form's own buttons close it. The note form adds
+/// is pinned, when only ⎋ and the form's own buttons close it. The task form is
+/// always pinned. The note form adds
 /// a corner grip to resize it and can turn its glass clearer.
 final class QuickTaskPanel: NSPanel {
     static let defaultSize = CGSize(width: IslandGeometry.formWidth, height: IslandGeometry.formContentHeight + 8)
@@ -73,6 +74,14 @@ final class QuickTaskPanel: NSPanel {
                 close()
             }
         }
+        // A task is written slowly, often while looking at something else: it stays
+        // until its own buttons or ⎋ close it, never on a click elsewhere.
+        chrome.pinned = true
+        movesByTopStrip = true
+        // Left to itself the window server lets clicks fall through where the glass
+        // looks see-through (the top strip), into the app behind: set explicitly,
+        // the window takes every click in its frame.
+        ignoresMouseEvents = false
     }
 
     /// Any of the island's forms (a snippet, its blanks) as a floating window.
@@ -224,6 +233,38 @@ final class QuickTaskPanel: NSPanel {
     }
 
     override var canBecomeKey: Bool { true }
+
+    /// The task form's top strip (the grabber) moves the window. Caught here, before
+    /// the form sees the click, so it works whatever the SwiftUI views under it do.
+    private var movesByTopStrip = false
+    private static let stripHeight: CGFloat = 32
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown, movesByTopStrip, onTopStrip(event.locationInWindow) {
+            move(from: event)
+            return
+        }
+        super.sendEvent(event)
+    }
+
+    /// Under the glass's top edge, clear of the resize band above and the close
+    /// button at the right end.
+    private func onTopStrip(_ point: CGPoint) -> Bool {
+        guard let bounds = contentView?.bounds else { return false }
+        let glass = bounds.insetBy(dx: Self.margin, dy: Self.margin)
+        return point.y < glass.maxY - 7 && point.y > glass.maxY - Self.stripHeight
+            && point.x > glass.minX + 7 && point.x < glass.maxX - 44
+    }
+
+    private func move(from event: NSEvent) {
+        let start = NSEvent.mouseLocation, origin = frame.origin
+        NSCursor.closedHand.push()
+        defer { NSCursor.pop() }
+        while let next = nextEvent(matching: [.leftMouseDragged, .leftMouseUp]), next.type == .leftMouseDragged {
+            let pointer = NSEvent.mouseLocation
+            setFrameOrigin(CGPoint(x: origin.x + pointer.x - start.x, y: origin.y + pointer.y - start.y))
+        }
+    }
 
     /// Resizes the glass to `size` (the window grows around it), keeping the top-left
     /// corner in place and staying on screen; never larger than the screen itself.
