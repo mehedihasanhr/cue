@@ -107,10 +107,6 @@ final class RecorderModel {
     /// The line under it: what will actually be captured, and how fast.
     private(set) var targetDetail = ""
 
-    /// Called once an area has been dragged out, so the target overlay can come up after
-    /// the area picker rather than underneath it.
-    var onAreaPicked: () -> Void = {}
-
     var windowSearch = ""
 
     private let content = ShareableContentStore()
@@ -197,6 +193,9 @@ final class RecorderModel {
 
     /// Picks a mode, and with it the obvious target for that mode.
     func choose(_ mode: Mode) {
+        // The area overlay belongs to Area: choosing anything else takes it down, rather
+        // than leaving a dimmed screen behind a window picker.
+        if mode != .area { closeAreaPicker() }
         self.mode = mode
         switch mode {
         case .display:
@@ -210,6 +209,10 @@ final class RecorderModel {
             target = nil
             targetLabel = ""
         case .area:
+            // A display chosen a moment ago is not an area: until one is drawn there is
+            // nothing to record, so the record button asks for one instead of quietly
+            // filming the whole screen.
+            if case .area = target {} else { select(nil) }
             pickArea()
         case .device:
             watchDevices()
@@ -298,27 +301,49 @@ final class RecorderModel {
         }
     }
 
-    /// Drags out part of the screen, then keeps it as the target.
+    /// Puts up the area overlay — showing the area already chosen, if there is one — and
+    /// keeps whatever is drawn on it as the target.
     func pickArea() {
+        if let areaPicker, areaPicker.isActive { return }
         let controller = AreaSelectionController()
         areaPicker = controller
-        controller.begin { [weak self] selection in
+        controller.onChange = { [weak self] selection in
             guard let self else { return }
-            areaPicker = nil
-            guard let selection else {
-                // Cancelled: fall back to whatever was chosen before rather than leaving
-                // the bar armed with nothing.
-                if target == nil { choose(.display) }
-                return
-            }
             mode = .area
             target = .area(display: selection.displayID, rect: selection.rect)
             targetLabel = "Selected area"
             targetDetail = Self.detail(width: Int(selection.rect.width),
                                        height: Int(selection.rect.height),
                                        displayID: selection.displayID)
-            onAreaPicked()
         }
+        // Escape: the area is let go of along with the overlay. Area stays the mode, so the
+        // record button brings the overlay back to draw a new one.
+        controller.onCancel = { [weak self] in
+            guard let self else { return }
+            areaPicker = nil
+            if case .area = target { select(nil) }
+        }
+        controller.onConfirm = { [weak self] in self?.record() }
+
+        var initial: AreaSelectionController.Selection?
+        if case .area(let display, let rect) = target {
+            initial = .init(displayID: display, rect: rect)
+        }
+        controller.begin(initial: initial)
+    }
+
+    /// Record was pressed in Area with nothing drawn: the overlay comes up, if it is not up
+    /// already, and its hint says that an area is what is missing.
+    func askForArea() {
+        choose(.area)
+        areaPicker?.nudge()
+    }
+
+    /// Takes the area overlay down, keeping the area: the take is starting, or another mode
+    /// was chosen.
+    func closeAreaPicker() {
+        areaPicker?.end()
+        areaPicker = nil
     }
 
     /// "1512 × 982 · 120 FPS" — the two numbers anyone checks before a take.
@@ -352,6 +377,8 @@ final class RecorderModel {
 
     func record() {
         guard let target else { return }
+        // Off the screen before the first frame, so the dim is not in the recording.
+        closeAreaPicker()
         studio.record(target: target)
     }
 

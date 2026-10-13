@@ -24,9 +24,11 @@ struct RecorderBar: View {
     let minimize: () -> Void
     let showLibrary: () -> Void
     let openSettings: () -> Void
-    /// Raises the screen-filling overlay that names what was chosen. Record lives there
-    /// now, so choosing a mode and starting a take are two halves of one gesture.
+    /// Raises what a mode needs once it is chosen: the window or device picker, the area
+    /// overlay, a glance at which display.
     let showTargets: (RecorderModel.Mode) -> Void
+    /// Record pressed with nothing chosen: asks for it.
+    let askForTarget: () -> Void
     @Namespace private var modeChip
     /// One hover pane for the whole setup row, which travels to whatever the pointer is
     /// over rather than each control lighting up on its own — so sweeping along the bar
@@ -419,8 +421,7 @@ struct RecorderBar: View {
             if model.canRecord {
                 model.record()
             } else {
-                model.choose(model.mode)
-                showTargets(model.mode)
+                askForTarget()
             }
         } label: {
             RecordGlyph()

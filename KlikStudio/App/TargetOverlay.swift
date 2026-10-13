@@ -26,6 +26,8 @@ final class TargetOverlayController {
     /// without dismissing this first. A window that is not key has no first responder, so
     /// the key never reached it and escape did nothing at all.
     private var escape: Any?
+    /// The fade that takes a display glance away by itself.
+    private var fade: Task<Void, Never>?
 
     /// Pressing the button. The panel owns what that means, because starting a take also
     /// has to take the overlay down.
@@ -43,6 +45,11 @@ final class TargetOverlayController {
     func show() {
         hide()
         let pointer = NSEvent.mouseLocation
+        // Display needs no decision on one screen — it is that screen — so the overlay is
+        // only a glance at what will be recorded: it takes no clicks and goes by itself.
+        // With more than one, it stays until a screen is clicked, because that click is
+        // the choice.
+        let isGlance = model.mode == .display && NSScreen.screens.count == 1
 
         for screen in NSScreen.screens {
             // A non-activating panel, the way Spotlight and Raycast come up. It takes the
@@ -77,6 +84,7 @@ final class TargetOverlayController {
             window.becomesKeyOnlyIfNeeded = false
             window.isExcludedFromWindowsMenu = true
             window.animationBehavior = .none
+            window.ignoresMouseEvents = isGlance
             window.onCancel = { [weak self] in self?.hide() }
 
             let view = TargetOverlayView(model: model,
@@ -87,11 +95,17 @@ final class TargetOverlayController {
                                          // target is not a display — the one being used.
                                          isPointerScreen: NSMouseInRect(pointer, screen.frame, false),
                                          start: { [weak self] in self?.start() },
-                                         cancel: { [weak self] in self?.hide() })
+                                         cancel: { [weak self] in self?.hide() },
+                                         picked: { [weak self] in self?.fadeOut(after: .milliseconds(700)) })
 
             window.contentView = NSHostingView(rootView: view)
             window.orderFrontRegardless()
             windows.append(window)
+        }
+
+        if isGlance {
+            fadeOut(after: .milliseconds(1400))
+            return
         }
 
         // Key — without which none of this can hear a keystroke.
@@ -122,7 +136,27 @@ final class TargetOverlayController {
         }
     }
 
+    /// Lets the overlay go after a moment, fading rather than vanishing.
+    private func fadeOut(after delay: Duration) {
+        fade?.cancel()
+        let windows = windows
+        fade = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled else { return }
+            await NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.3
+                for window in windows { window.animator().alphaValue = 0 }
+            }
+            // Only if these are still the windows on screen: a mode chosen during the fade
+            // has put up overlays of its own.
+            guard !Task.isCancelled, let self, self.windows == windows else { return }
+            self.hide()
+        }
+    }
+
     func hide() {
+        fade?.cancel()
+        fade = nil
         if let escape { NSEvent.removeMonitor(escape) }
         escape = nil
         for window in windows { window.orderOut(nil) }
@@ -167,18 +201,22 @@ private struct TargetOverlayView: View {
     let isPointerScreen: Bool
     let start: () -> Void
     let cancel: () -> Void
+    /// A display was clicked — the overlay has done its job.
+    let picked: () -> Void
 
     var body: some View {
         ZStack {
-            scrim
+            if model.mode == .display {
+                displayGlance
+            } else {
+                scrim
+            }
             if showsCard {
                 Group {
                     if model.mode == .window {
                         windowPicker
                     } else if model.mode == .device {
                         devicePicker
-                    } else {
-                        card
                     }
                 }
                 .transition(StudioMotion.reduceMotion
@@ -217,7 +255,7 @@ private struct TargetOverlayView: View {
     }
 
     private var detail: String {
-        model.mode == .display ? (source.map(Self.detail) ?? "") : model.targetDetail
+        model.targetDetail
     }
 
     private var source: RecorderModel.Source? {
@@ -225,32 +263,46 @@ private struct TargetOverlayView: View {
         return model.displays.first { $0.target.displayID == displayID }
     }
 
-    private var card: some View {
-        VStack(spacing: 14) {
-            Text(title)
-                .font(.system(size: 46, weight: .bold))
-                // Large type reads too loose at its default tracking; Apple tightens as
-                // it grows, and so does this.
-                .tracking(-0.8)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.white)
-                .shadow(color: .black.opacity(0.4), radius: 18, y: 4)
-
-            if !detail.isEmpty {
-                Text(detail)
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.75))
+    /// Which display will be recorded, said quietly: a frame in the accent around the
+    /// chosen screen and its name in a small label, over a dim light enough to keep working
+    /// through. The other screens dim further and offer themselves — clicking one is
+    /// choosing it. No button: the bar's record button is the one way to start, and a
+    /// second, bigger one here made every choice of mode a dialog.
+    private var displayGlance: some View {
+        ZStack {
+            Color.black.opacity(isArmed ? 0.12 : 0.4)
+            if isArmed {
+                Rectangle()
+                    .strokeBorder(StudioPalette.brand, lineWidth: 4)
             }
-
-            StartButton(isArmed: isArmed, action: start)
-                .padding(.top, 10)
+            HStack(spacing: 8) {
+                Image(systemName: isArmed ? "checkmark.circle.fill" : "display")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(isArmed ? StudioPalette.brand : .white.opacity(0.8))
+                    .symbolRenderingMode(.hierarchical)
+                Text(isArmed ? title : "Click to record \(title)")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                if isArmed, !detail.isEmpty {
+                    Text(detail)
+                        .font(.system(size: 12, weight: .medium))
+                        .monospacedDigit()
+                        .foregroundStyle(.white.opacity(0.6))
+                }
+            }
+            .lineLimit(1)
+            .padding(.horizontal, 16)
+            .frame(height: 36)
+            .background(.black.opacity(0.66), in: Capsule())
+            .overlay(Capsule().strokeBorder(.white.opacity(0.12)))
+            .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
         }
-        .padding(40)
-        .frame(maxWidth: 620)
-    }
-
-    private static func detail(_ source: RecorderModel.Source) -> String {
-        source.subtitle
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if !isArmed, let source { model.select(source) }
+            picked()
+        }
+        .animation(StudioMotion.selection, value: isArmed)
     }
 
     /// Naming a window, which is the one target that cannot be guessed.
@@ -956,38 +1008,6 @@ private struct WindowTile: View {
         }
         .aspectRatio(16 / 10, contentMode: .fit)
         .frame(maxWidth: .infinity)
-    }
-}
-
-/// The one button the overlay exists for.
-private struct StartButton: View {
-    let isArmed: Bool
-    let action: () -> Void
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 9) {
-                Image(systemName: "record.circle")
-                    .font(.system(size: 15, weight: .semibold))
-                Text(isArmed ? "Start recording" : "Record this display")
-                    .font(.system(size: 14, weight: .semibold))
-            }
-            .foregroundStyle(.white)
-            .padding(.horizontal, 22)
-            .frame(height: 46)
-            .background(StudioPalette.brand.opacity(isHovering ? 1 : 0.92),
-                        in: Capsule())
-            .overlay(Capsule().strokeBorder(.white.opacity(0.18)))
-            .shadow(color: StudioPalette.brand.opacity(0.45), radius: 18, y: 6)
-            .contentShape(Capsule())
-        }
-        .buttonStyle(BarButtonStyle(pressedScale: 0.96))
-        // The global shortcut, so it can be learned here and used from any app next time.
-        .help(RecorderCenter.shared?.help("Start recording", .record) ?? "Start recording")
-        .onHover { hovering in
-            withAnimation(StudioMotion.hover) { isHovering = hovering }
-        }
     }
 }
 
