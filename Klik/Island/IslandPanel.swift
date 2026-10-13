@@ -1673,6 +1673,7 @@ struct CaptureCard: View {
             Button("Open in Viewer") { actions.preview(item) }
             Button("Edit") { actions.edit(item) }
             Button("Copy to Clipboard") { actions.copy(item) }
+            Button("Reveal in Finder") { library.reveal(item) }
             Button("Pin to Screen") { actions.pinToScreen(item) }
             Button("Copy Share Link") { actions.shareLink(item) }
             Button("Make Task…") { actions.makeTask(item) }

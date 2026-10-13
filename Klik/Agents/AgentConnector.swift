@@ -61,6 +61,20 @@ final class AgentConnector {
 
     func links(for agent: AgentKind) -> [Link] { links.filter { $0.agent == agent } }
 
+    private func isLinked(_ folder: URL) -> Bool {
+        links.contains { $0.folder.standardizedFileURL.path == folder.standardizedFileURL.path }
+    }
+
+    /// The Claude desktop app is installed but its folder is not connected: its
+    /// sessions run with `~/.claude`'s settings whatever profile the terminal uses,
+    /// so without it they never reach the island.
+    var needsDesktopFolder: Bool {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: Self.desktopAppID) != nil
+            && !isLinked(Self.defaultFolder(for: .claude))
+    }
+
+    static let desktopAppID = "com.anthropic.claudefordesktop"
+
     /// The first builds kept one folder per agent; those become the first links.
     private func migrateSingleFolders() {
         guard defaults.array(forKey: Self.linksKey) == nil else { return }
@@ -164,8 +178,10 @@ final class AgentConnector {
         panel.canCreateDirectories = false
         panel.allowsMultipleSelection = false
         panel.showsHiddenFiles = true
+        // The default folder until it is connected — the Claude desktop app's sessions
+        // use it even when a terminal profile is linked already.
         let suggested = Self.defaultFolder(for: agent)
-        panel.directoryURL = !another && FileManager.default.fileExists(atPath: suggested.path) ? suggested : Self.home
+        panel.directoryURL = !isLinked(suggested) && FileManager.default.fileExists(atPath: suggested.path) ? suggested : Self.home
         NSApp.activate()
         guard panel.runModal() == .OK, let folder = panel.url?.standardizedFileURL else { return }
         guard looksRight(folder, for: agent) || confirmUnusual(folder, for: agent) else { return }
@@ -208,6 +224,9 @@ final class AgentConnector {
         let file = link.folder.appendingPathComponent(AgentHooks.settingsFile(for: link.agent))
         let settings = (try? AgentHooks.decode(try? Data(contentsOf: file))) ?? [:]
         var installed = AgentHooks.isInstalled(in: settings, agent: link.agent)
+        // The script of an older build: put this one's in place, so a change to it
+        // (what it tells Klik) needs no reconnecting.
+        if installed { try? writeScript(in: link.folder.appendingPathComponent(AgentHooks.folderName)) }
         // An older build's entries, missing events added since: bring them up to date.
         // Not for Codex, which would ask the user to review every new entry again.
         if !installed, link.agent == .claude, AgentHooks.hasAny(in: settings), (try? install(link.agent, in: link.folder)) != nil {

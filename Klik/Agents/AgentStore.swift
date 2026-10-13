@@ -120,7 +120,10 @@ final class AgentStore {
     }
 
     private func ask(_ event: AgentEvent, from connection: AgentConnection) {
-        guard var request = AgentRequest(event, at: .now), canAsk() else {
+        // The Claude desktop app asks in its own window, and may not show that dialog
+        // while the hook holds the question: let it go at once. The session still
+        // shows as waiting, and a click brings Claude forward to answer there.
+        guard !event.isDesktop, var request = AgentRequest(event, at: .now), canAsk() else {
             connection.reply()
             return
         }

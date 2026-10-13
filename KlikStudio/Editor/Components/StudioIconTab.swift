@@ -53,7 +53,7 @@ struct StudioIconTab: View {
         if !isAvailable { return StudioTheme.Palette.textTertiary }
         // White when chosen or under the pointer, a soft grey otherwise — the rail is
         // neutral, so the accent stays for what is set on the picture.
-        if isSelected || isHovering { return .white }
-        return Color(white: 0.62)
+        if isSelected || isHovering { return StudioTheme.Surface.ink }
+        return StudioTheme.Surface.value
     }
 }

@@ -138,6 +138,14 @@ final class CaptureLibrary {
         withFolderAccess { NSWorkspace.shared.activateFileViewerSelecting([folderURL]) }
     }
 
+    /// Selects the capture's file in Finder. False when the file has gone.
+    @discardableResult
+    func reveal(_ item: CaptureItem) -> Bool {
+        guard let url = fileURL(for: item) else { return false }
+        withScopedAccess(to: url) { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+        return true
+    }
+
     // MARK: - Items
 
     // MARK: - Text in captures

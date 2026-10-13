@@ -647,6 +647,8 @@ final class IslandController {
         let handler: @MainActor () -> Void = { [weak self] in
             guard let self, model.geometry != nil else { return }
             switch model.phase {
+            // The task form closes only by its own Cancel / Create or ⎋.
+            case .prompt(let prompt) where prompt.isTaskForm: return
             case .prompt, .taskDetail, .clock, .agents: break
             case .expanded where forExpanded: break
             default: return

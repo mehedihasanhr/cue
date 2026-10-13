@@ -55,9 +55,9 @@ struct EditorToolbar: View {
         .padding(.leading, Self.trafficLightInset)
         .padding(.trailing, SidebarMetrics.contentInset - 4)
         .frame(height: Self.height)
-        // The window's seam colour, with no rule under it: the strip is the top edge of
-        // the frame the panels sit in, not a panel of its own.
-        .background(StudioTheme.Surface.seam)
+        // The seam colour in the dark, the top edge of the frame the panels sit in; white
+        // in the light, a bar like the panels under it.
+        .background(StudioTheme.Surface.titleBar)
         // The whole bar drags the window, the way a real title bar does — minus the
         // controls, which `Button` already claims.
         .background(WindowDragArea())
@@ -212,7 +212,7 @@ private struct GlyphButton: View {
 /// `isMovableByWindowBackground` is not enough on its own: SwiftUI's hosting view takes
 /// the mouse-down before AppKit can read it as a window drag. The same trick the recorder
 /// bar uses, for the same reason.
-private struct WindowDragArea: NSViewRepresentable {
+struct WindowDragArea: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView { DragView() }
     func updateNSView(_ view: NSView, context: Context) {}
 

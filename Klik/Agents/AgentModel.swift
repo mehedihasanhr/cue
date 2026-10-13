@@ -167,6 +167,11 @@ nonisolated struct AgentEvent: Sendable, Equatable {
     /// The terminal pane the agent runs in ("wezterm:3", "tmux:%1"), where the hook
     /// script can type an answer only the agent's own dialog takes.
     var pane: String?
+    /// What started the agent (`CLAUDE_CODE_ENTRYPOINT`): "claude-desktop", "cli", …
+    var entry: String?
+
+    /// A session of the Claude desktop app: no terminal, and its own dialogs.
+    var isDesktop: Bool { entry == "claude-desktop" }
 
     private struct Envelope: Decodable {
         struct Klik: Decodable {
@@ -176,6 +181,7 @@ nonisolated struct AgentEvent: Sendable, Equatable {
             var ppid: Int32?
             var term: String?
             var pane: String?
+            var entry: String?
         }
         var klik: Klik
         var event: JSONValue
@@ -208,6 +214,7 @@ nonisolated struct AgentEvent: Sendable, Equatable {
         let term = envelope.klik.term?.trimmingCharacters(in: .whitespaces)
         terminal = term?.isEmpty == false ? term : nil
         pane = envelope.klik.pane.flatMap { $0.isEmpty ? nil : $0 }
+        entry = envelope.klik.entry.flatMap { $0.isEmpty ? nil : $0 }
     }
 
     init(agent: AgentKind, name: Name, sessionID: String, cwd: String? = nil, toolName: String? = nil, toolInput: JSONValue? = nil,

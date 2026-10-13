@@ -142,13 +142,15 @@ nonisolated enum AgentHooks {
     agent=$(printf %s "${1:-claude}" | tr -cd 'a-z')
     profile=$(basename "$(dirname "$(dirname "$0")")" | tr -cd 'A-Za-z0-9._ -')
     term=$(printf %s "$TERM_PROGRAM" | tr -cd 'A-Za-z0-9._ -')
+    # What started the agent: "claude-desktop" for the Claude app, "cli" in a terminal.
+    entry=$(printf %s "$CLAUDE_CODE_ENTRYPOINT" | tr -cd 'a-z-')
     # The pane the agent runs in, so an answer can be typed there (see below).
     pane=''
     [ -n "$WEZTERM_PANE" ] && pane="wezterm:$(printf %s "$WEZTERM_PANE" | tr -cd '0-9')"
     [ -z "$pane" ] && [ -n "$TMUX_PANE" ] && pane="tmux:$(printf %s "$TMUX_PANE" | tr -cd '%0-9')"
     event=$(tr -d '\\r\\n')
     [ -n "$event" ] || exit 0
-    reply=$(printf '{"klik":{"agent":"%s","profile":"%s","pid":%d,"ppid":%d,"term":"%s","pane":"%s"},"event":%s}\\n' "$agent" "$profile" "$$" "$PPID" "$term" "$pane" "$event" | /usr/bin/nc -U "$sock" 2>/dev/null)
+    reply=$(printf '{"klik":{"agent":"%s","profile":"%s","pid":%d,"ppid":%d,"term":"%s","pane":"%s","entry":"%s"},"event":%s}\\n' "$agent" "$profile" "$$" "$PPID" "$term" "$pane" "$entry" "$event" | /usr/bin/nc -U "$sock" 2>/dev/null)
     case "$reply" in
     '\(keysReplyPrefix)'*)
         # An answer only the agent's own dialog accepts: press its key in this pane.

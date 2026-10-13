@@ -102,8 +102,11 @@ struct StudioMenuPicker<Value: Hashable>: View {
                 // the width of the longest, and keeps it.
                 // In a row or on a heading the words sit against the chevron, so a short
                 // choice is not a word floating in the middle of the longest one's room.
+                // On a heading or in a row the field is only as wide as the current choice:
+                // its right edge, the chevron, stays put anyway, and room kept for a longer
+                // name was empty space the pointer's highlight then filled.
                 ZStack(alignment: isEmbedded ? .trailing : .leading) {
-                    if sizesToLongest {
+                    if sizesToLongest, !isEmbedded {
                         ForEach(allItems) { item in
                             Text(item.title)
                                 .lineLimit(1)

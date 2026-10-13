@@ -606,6 +606,12 @@ struct IslandPrompt: Hashable {
         }
     }
 
+    /// A new task or an edit of one.
+    var isTaskForm: Bool {
+        if case .task = kind { return true }
+        return false
+    }
+
     /// A yes/no box (Cancel / Delete) rather than a text field.
     var isConfirm: Bool {
         if case .delete = kind { return true }
@@ -993,8 +999,21 @@ struct TaskFormRow: View {
         VStack(spacing: 0) {
             // The strip the window moves by: a grabber, like a sheet's.
             WindowDragStrip()
-                .frame(height: 14)
-                .overlay { Capsule().fill(.primary.opacity(0.18)).frame(width: 36, height: 4) }
+                .frame(height: 24)
+                .overlay { Capsule().fill(.primary.opacity(0.18)).frame(width: 36, height: 4).allowsHitTesting(false) }
+                // The way out: the window no longer closes on a click elsewhere.
+                .overlay(alignment: .trailing) {
+                    Button { finish(nil) } label: {
+                        Icon("xmark", size: 10, weight: .bold)
+                            .foregroundStyle(.primary.opacity(0.6))
+                            .frame(width: 22, height: 22)
+                            .background(.primary.opacity(0.1), in: Circle())
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Close (⎋)")
+                    .padding(.trailing, 10)
+                }
             markdownEditor
                 .padding(.horizontal, 8)
                 .frame(maxHeight: .infinity)

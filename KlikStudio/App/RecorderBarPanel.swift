@@ -49,7 +49,7 @@ final class RecorderBarPanel {
         island.choose = { [weak self] mode in
             guard let self else { return }
             self.model.choose(mode)
-            if mode.isAvailable, mode != .area { self.targets.show() }
+            self.showTargets(for: mode)
         }
         island.restart = { [weak self] in
             guard let self else { return }
@@ -67,7 +67,7 @@ final class RecorderBarPanel {
                 self.model.record()
             } else {
                 self.show()
-                self.begin(self.model.mode)
+                self.askForTarget()
             }
         }
         return island
@@ -77,9 +77,6 @@ final class RecorderBarPanel {
         self.settings = settings
         self.studio = studio
         model = RecorderModel(settings: settings, studio: studio)
-        // Dragging out an area puts up its own overlay; this one waits until that is
-        // finished rather than appearing underneath it.
-        model.onAreaPicked = { [weak self] in self?.targets.show() }
         targets.start = { [weak self] in
             self?.model.record()
             self?.targets.hide()
@@ -119,16 +116,8 @@ final class RecorderBarPanel {
                               minimize: { [weak self] in self?.minimize() },
                               showLibrary: { [weak self] in self?.showLibrary() },
                               openSettings: { [weak self] in self?.openSettings() },
-                              showTargets: { [weak self] mode in
-                                  // Area raises its own drag overlay first; this one
-                                  // follows from `onAreaPicked` once a rectangle exists.
-                                  // Area raises its own drag overlay first; this one
-                                  // follows from `onAreaPicked` once a rectangle exists.
-                                  // Window shows this overlay directly, as a grid of
-                                  // pictures of the windows.
-                                  guard mode.isAvailable, mode != .area else { return }
-                                  self?.targets.show()
-                              })
+                              showTargets: { [weak self] mode in self?.showTargets(for: mode) },
+                              askForTarget: { [weak self] in self?.askForTarget() })
             .environment(studio)
             .environment(settings)
             .padding(14)   // room for the bar's own shadow, which a borderless window clips
@@ -193,7 +182,7 @@ final class RecorderBarPanel {
     }
 
     func hide() {
-        targets.hide()
+        hideTargets()
         panel?.orderOut(nil)
         onVisibilityChange(false)
     }
@@ -221,13 +210,35 @@ final class RecorderBarPanel {
     func begin(_ mode: RecorderModel.Mode) {
         show()
         model.choose(mode)
-        guard mode.isAvailable, mode != .area else { return }
+        showTargets(for: mode)
+    }
+
+    /// What comes up once a mode is chosen. Area draws on its own overlay, which the model
+    /// puts up; Window and Device need a picker; Display needs nothing but a glance at
+    /// which screen it is.
+    private func showTargets(for mode: RecorderModel.Mode) {
+        guard mode.isAvailable, mode != .area else {
+            targets.hide()
+            return
+        }
         targets.show()
     }
 
-    /// Takes the target overlay down, for a take started by a shortcut while it was up.
+    /// Record was pressed with nothing chosen: ask for it, the way the mode asks.
+    private func askForTarget() {
+        if model.mode == .area {
+            targets.hide()
+            model.askForArea()
+        } else {
+            model.choose(model.mode)
+            showTargets(for: model.mode)
+        }
+    }
+
+    /// Takes every overlay down, for a take started by a shortcut while one was up.
     func hideTargets() {
         targets.hide()
+        model.closeAreaPicker()
     }
 
     func toggle() {

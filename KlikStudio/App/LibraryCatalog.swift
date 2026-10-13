@@ -150,8 +150,7 @@ final class LibraryCatalog {
     /// Asked again whether an editor is open, rather than trusting the answer from when
     /// the field appeared: a sheet is somewhere a user can sit for a minute, and an editor
     /// can be opened from the bar in that minute.
-    func commitRename() async {
-        guard let entry = renaming else { return }
+    func commitRename(_ entry: RecordingEntry) async {
         renaming = nil
         guard !refuseWhileOpen(entry, verb: "renamed") else { return }
         do {
@@ -188,8 +187,11 @@ final class LibraryCatalog {
     /// checks the file is one of ours and in this folder before it moves anything, and
     /// moves it to the Trash rather than unlinking it, so even a bug that got this far
     /// with the wrong recording is something the user can put back.
-    func confirmDelete() async {
-        guard let entry = deleting else { return }
+    ///
+    /// Takes the recording the alert was asking about rather than reading `deleting`:
+    /// closing the alert clears `deleting`, and that happens before a `Task` started by
+    /// its button runs — so reading it here found nothing and the recording stayed put.
+    func confirmDelete(_ entry: RecordingEntry) async {
         deleting = nil
         guard !refuseWhileOpen(entry, verb: "deleted") else { return }
         do {
