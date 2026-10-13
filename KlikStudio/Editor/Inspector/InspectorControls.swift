@@ -181,7 +181,7 @@ struct InspectorHeading: View {
     var body: some View {
         Text(title)
             .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(Color(white: 0.97))
+            .foregroundStyle(StudioTheme.Surface.ink)
             .lineLimit(1)
             .accessibilityAddTraits(.isHeader)
     }
@@ -243,7 +243,7 @@ struct InspectorSection<Content: View, Trailing: View>: View {
                     if let systemImage {
                         Image(systemName: systemImage)
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(Color(white: 0.5))
+                            .foregroundStyle(StudioTheme.Surface.value)
                             .frame(width: 14)
                     }
                     InspectorHeading(title)
@@ -263,7 +263,7 @@ struct InspectorSection<Content: View, Trailing: View>: View {
             // One hairline under every section, edge to edge: enough to say where a
             // section ends, quiet enough that the column reads as one surface.
             Rectangle()
-                .fill(Color.white.opacity(0.06))
+                .fill(StudioTheme.Surface.hairline)
                 .frame(height: 1)
                 .padding(.horizontal, -SidebarMetrics.contentInset)
         }
@@ -485,7 +485,7 @@ struct SectionButton: View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(Color(white: isHovering && isEnabled ? 0.85 : 0.5))
+                .foregroundStyle(isHovering && isEnabled ? StudioTheme.Surface.inkSoft : StudioTheme.Surface.value)
                 .contentShape(Rectangle())
         }
         .buttonStyle(StudioPressStyle())
@@ -700,7 +700,7 @@ struct SwatchTile<Content: View>: View {
                 .overlay {
                     // A faint edge, enough to find a black swatch on the dark panel.
                     StudioTheme.squircle(6)
-                        .strokeBorder(Color.white.opacity(0.1))
+                        .strokeBorder(StudioTheme.Palette.strokeStrong)
                 }
                 // The ones not chosen a little dimmer, so the grid is a quiet row of
                 // choices and the chosen one is the swatch the eye finds.
@@ -710,7 +710,7 @@ struct SwatchTile<Content: View>: View {
                     // the one under the pointer, fainter, so hovering never looks like
                     // choosing.
                     StudioTheme.squircle(8)
-                        .strokeBorder(Color.white.opacity(isSelected ? 0.85 : 0.22),
+                        .strokeBorder(StudioTheme.Surface.ink.opacity(isSelected ? 0.85 : 0.22),
                                       lineWidth: isSelected ? 1.5 : (isHovering ? 1 : 0))
                         .padding(-2.5)
                 }
@@ -787,12 +787,12 @@ struct InspectorAdvancedGroup<Content: View>: View {
                 HStack(spacing: 8) {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(Color(white: 0.55))
+                        .foregroundStyle(StudioTheme.Surface.value)
                         .rotationEffect(.degrees(isOpen ? 90 : 0))
                         .frame(width: 14)
                     Text("Advanced")
                         .font(.system(size: 12.5, weight: .medium))
-                        .foregroundStyle(Color(white: isHovering ? 0.94 : 0.72))
+                        .foregroundStyle(isHovering ? StudioTheme.Surface.ink : StudioTheme.Surface.label)
                     Spacer(minLength: 0)
                 }
                 .frame(minHeight: 40)
@@ -807,7 +807,7 @@ struct InspectorAdvancedGroup<Content: View>: View {
 
             if isOpen {
                 Rectangle()
-                    .fill(Color.white.opacity(0.06))
+                    .fill(StudioTheme.Surface.hairline)
                     .frame(height: 1)
                     .padding(.horizontal, -SidebarMetrics.contentInset)
                 VStack(alignment: .leading, spacing: SidebarSpacing.betweenSections) {

@@ -80,12 +80,12 @@ struct EditorView: View {
                 EditorRail(model: model)
 
                 VStack(spacing: 0) {
-                    PreviewPane(model: model) { session.present(true) }
+                    PreviewPane(model: model)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .padding([.top, .trailing, .bottom], Self.seam)
                         .background(StudioTheme.Surface.seam)
 
-                    TransportBar(model: model)
+                    TransportBar(model: model) { session.present(true) }
                     TimelineStrip(model: model)
                         .frame(maxWidth: .infinity)
                         .frame(height: TimelineStrip.height(for: model.timeline,

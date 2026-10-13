@@ -11,6 +11,8 @@ import TimelineKit
 /// their own; undo and redo are bare glyphs, because they are about the edit as a whole.
 struct TransportBar: View {
     let model: EditorModel
+    /// Plays the edit with the screen to itself. See `FullScreenPreview`.
+    var presentFullScreen: () -> Void = {}
     @Environment(StudioSettings.self) private var settings
 
     static let height: CGFloat = 46
@@ -45,6 +47,13 @@ struct TransportBar: View {
                   isEnabled: model.document.canRedo) { model.redo() }
             zoom
                 .padding(.leading, 6)
+            // At the far end, after the timeline's scale: about the whole window, not
+            // the picture, so it sits with the bar rather than on the canvas.
+            barIcon("arrow.up.left.and.arrow.down.right",
+                    help: "Play full screen (⇧⌘F)",
+                    name: "Full screen preview",
+                    action: presentFullScreen)
+                .padding(.leading, 2)
         }
         .padding(.horizontal, 12)
         .frame(height: Self.height)
@@ -60,7 +69,7 @@ struct TransportBar: View {
         Button { model.togglePlayback() } label: {
             Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(StudioTheme.Surface.ink)
                 .frame(width: 30, height: 30)
                 .background(StudioTheme.Surface.fieldHover,
                             in: RoundedRectangle(cornerRadius: 7, style: .continuous))
@@ -92,7 +101,7 @@ struct TransportBar: View {
     private var timecode: some View {
         HStack(spacing: 8) {
             Text(Timecode.precise(model.playhead))
-                .foregroundStyle(.white)
+                .foregroundStyle(StudioTheme.Surface.ink)
             Text(Timecode.precise(model.duration))
                 .foregroundStyle(StudioTheme.Surface.label.opacity(0.8))
         }
@@ -119,7 +128,7 @@ struct TransportBar: View {
                 Text("Zoom")
                     .font(.system(size: 12.5, weight: .medium))
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(StudioTheme.Surface.ink)
             .padding(.horizontal, 11)
             .frame(height: 30)
             .background(StudioTheme.Surface.control,
@@ -139,7 +148,7 @@ struct TransportBar: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 12.5, weight: .medium))
-                .foregroundStyle(Color(white: 0.85))
+                .foregroundStyle(StudioTheme.Surface.inkSoft)
                 .frame(width: 30, height: 30)
                 .background(StudioTheme.Surface.control,
                             in: RoundedRectangle(cornerRadius: 7, style: .continuous))
@@ -214,7 +223,7 @@ struct TransportBar: View {
             Button { model.viewport.fit(model.duration) } label: {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(Color(white: 0.8))
+                    .foregroundStyle(StudioTheme.Surface.inkSoft)
                     .contentShape(Rectangle())
             }
             .buttonStyle(StudioPressStyle())

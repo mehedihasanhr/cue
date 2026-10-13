@@ -53,7 +53,7 @@ struct TimelineRuler: View {
                 // of "0s" off the edge.
                 let label = context.resolve(Text(Timecode.ruler(second, step: step))
                     .font(.system(size: 10.5, weight: .regular))
-                    .foregroundStyle(Color(white: 0.55)))
+                    .foregroundStyle(StudioTheme.Surface.value))
                 let labelWidth = label.measure(in: size).width
                 let labelX = max(x, labelWidth / 2 + 1)
                 // Faded out from under the playhead's knob, which is drawn over this
@@ -82,7 +82,7 @@ struct TimelineRuler: View {
                     context.fill(Path(ellipseIn: CGRect(x: between - diameter / 2,
                                                         y: size.height / 2 - diameter / 2,
                                                         width: diameter, height: diameter)),
-                                 with: .color(Color(white: 0.4)))
+                                 with: .color(StudioTheme.Surface.inkFaint))
                 }
             }
 

@@ -111,11 +111,11 @@ struct InspectorPanel: View {
         HStack(spacing: 8) {
             Image(systemName: heading.symbol)
                 .font(.system(size: 12))
-                .foregroundStyle(.white)
+                .foregroundStyle(StudioTheme.Surface.ink)
                 .frame(width: 16)
             Text(heading.title)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(StudioTheme.Surface.ink)
                 .lineLimit(1)
             Spacer(minLength: 8)
             if selectionOwnsPanel {
@@ -240,9 +240,9 @@ final class InspectorState {
     var showsAllSystemWallpapers = false
 }
 
-/// Export, as the head of the inspector: a raised neutral button with its shortcut beside
-/// the word. Plain enough not to pull the eye off the picture; it is the last thing you
-/// do, not the thing you look at while working.
+/// Export, as the head of the inspector: the window's one filled button, in Klik blue,
+/// with its shortcut beside the word. Everything else in the window is a neutral; the
+/// one way out of it is the one thing in colour.
 struct ExportHeadButton: View {
     let action: () -> Void
     @Environment(StudioSettings.self) private var settings
@@ -258,17 +258,17 @@ struct ExportHeadButton: View {
                 if let shortcut = settings.editorShortcuts[.export]?.displayString {
                     Text(shortcut)
                         .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(StudioTheme.Surface.label)
+                        .foregroundStyle(.white.opacity(0.7))
                 }
             }
-            .foregroundStyle(Color(white: 0.92))
+            .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
             .frame(height: 32)
-            .background(isHovering ? Color(white: 0x33 / 255) : StudioTheme.Surface.fieldHover,
+            .background(StudioPalette.brand.opacity(isHovering ? 0.9 : 1),
                         in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.07))
+                    .strokeBorder(.white.opacity(0.12))
             }
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }

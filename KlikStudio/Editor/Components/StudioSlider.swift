@@ -285,11 +285,12 @@ struct ScrubFace: View {
         ZStack(alignment: .leading) {
             shape.fill(isLit ? StudioTheme.Surface.fieldHover : StudioTheme.Surface.field)
             Rectangle()
-                .fill(StudioTheme.Surface.scrubFill.opacity(isLit ? 1 : 0.9))
+                .fill(StudioTheme.Surface.scrubFill)
+                .brightness(isLit ? -0.03 : 0)
                 .frame(width: max(0, fillTo))
             // The bar the value ends at: the one bright mark in the row.
             RoundedRectangle(cornerRadius: 1, style: .continuous)
-                .fill(.white)
+                .fill(StudioTheme.Surface.scrubMark)
                 .frame(width: 2, height: 14)
                 .offset(x: max(0, fillTo - 2))
             HStack(spacing: 8) {
@@ -301,7 +302,7 @@ struct ScrubFace: View {
                 Spacer(minLength: 4)
                 Text(scrub.value)
                     .font(.system(size: 11.5).monospacedDigit())
-                    .foregroundStyle(isLit ? Color(white: 0.92) : StudioTheme.Surface.value)
+                    .foregroundStyle(isLit ? StudioTheme.Surface.ink : StudioTheme.Surface.value)
                     .lineLimit(1)
                     .fixedSize()
             }

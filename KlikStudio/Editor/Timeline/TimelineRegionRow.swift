@@ -93,13 +93,13 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
             rowStep("chevron.up", enabled: first > 0) { firstRow = max(0, first - 1) }
             Text("+\(hidden)")
                 .font(.system(size: 9, weight: .semibold).monospacedDigit())
-                .foregroundStyle(.white.opacity(0.7))
+                .foregroundStyle(StudioTheme.Surface.label)
             rowStep("chevron.down", enabled: first + shown < count) { firstRow = min(count - shown, first + 1) }
         }
         .padding(.vertical, 3)
         .frame(width: 22)
-        .background(Color(white: 0.12).opacity(0.92), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(.white.opacity(0.08)))
+        .background(StudioTheme.Surface.floating.opacity(0.92), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(StudioTheme.Surface.hairline))
         .padding(.trailing, 2)
         .help("\(hidden) more \(hidden == 1 ? "row" : "rows") of \(title.lowercased())s at the same time")
         .accessibilityElement(children: .contain)
@@ -114,7 +114,7 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.white.opacity(enabled ? 0.85 : 0.25))
+        .foregroundStyle(StudioTheme.Surface.inkSoft.opacity(enabled ? 1 : 0.3))
         .disabled(!enabled)
     }
 

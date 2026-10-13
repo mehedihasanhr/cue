@@ -9,13 +9,16 @@ import TimelineKit
 /// laid-out image.
 struct PreviewPane: View {
     let model: EditorModel
-    /// Plays the edit with the screen to itself. See `FullScreenPreview`.
-    var presentFullScreen: () -> Void = {}
 
-    /// Room around the picture, so a crop handle at the very edge is still grabbable.
-    private let inset: CGFloat = 22
-    /// Room under the picture for the floating tool bar, so it never sits over the work.
-    private let toolBarRoom: CGFloat = 50
+    /// Room around the picture. None: the picture fills the pane, with nothing framed
+    /// round it — except while cropping, where a handle at the very edge has to stay
+    /// grabbable.
+    private var inset: CGFloat { model.tool == .crop ? 22 : 0 }
+    /// The floating tool bar sits over the picture rather than taking a strip of its own;
+    /// it fades away while the edit plays, so it never covers the thing being watched.
+    private let toolBarRoom: CGFloat = 0
+    /// The pane's corner, which the picture takes when it fills the pane.
+    private static let cornerRadius: CGFloat = 10
 
     var body: some View {
         GeometryReader { proxy in
@@ -25,8 +28,8 @@ struct PreviewPane: View {
                 // window a third colour competing with the frame standing on it — and
                 // the frame carries its own background, which is the thing that is
                 // supposed to be judged here.
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color(white: 0x11 / 255))
+                RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+                    .fill(StudioTheme.Surface.canvas)
                     // A click on nothing — the picture, or the space round it — lets go of
                     // the label or mask that was picked, and its frame goes with it. A click
                     // on the label brings it back. Every layout tool does this.
@@ -53,10 +56,9 @@ struct PreviewPane: View {
                                 Checkerboard()
                             }
                         }
-                        .clipShape(RoundedRectangle(cornerRadius: model.tool.flattensPreview ? 0 : 6, style: .continuous))
-                        // Just enough to lift it off the well; the frame's own shadow, if
-                        // it has one, is the one that matters.
-                        .shadow(color: .black.opacity(model.tool.flattensPreview ? 0 : 0.22), radius: 8, y: 3)
+                        // Flat on the pane: no lift, no shadow, no corner of its own — the
+                        // picture is the canvas, not a card laid on one.
+                        .clipShape(RoundedRectangle(cornerRadius: inset == 0 ? Self.cornerRadius : 0, style: .continuous))
                         .padding(.horizontal, inset)
                         .padding(.top, inset)
                         .padding(.bottom, toolBarRoom)
@@ -102,13 +104,10 @@ struct PreviewPane: View {
                 // sits on the picture rather than in the inspector because it is about the
                 // picture, and it is the last thing in the stack so the framing handles
                 // never end up underneath it.
+                // Inside the picture, a little above its bottom edge, rather than across it.
                 CanvasToolBar(model: model)
-                    .padding(.bottom, 9)
+                    .padding(.bottom, max(9, proxy.size.height - stage(in: proxy.size).maxY + 14))
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-
-                fullScreenButton
-                    .padding(10)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             }
             // How big the picture is allowed to be, told to the thing that renders it.
             //
@@ -142,23 +141,6 @@ struct PreviewPane: View {
         let ratio = model.previewSize
         guard ratio.width > 0, ratio.height > 0 else { return available }
         return AVMakeRect(aspectRatio: ratio, insideRect: available)
-    }
-
-    /// Full screen, in the canvas's corner: a black square, the one thing on the canvas
-    /// that is about the window rather than the picture.
-    private var fullScreenButton: some View {
-        Button(action: presentFullScreen) {
-            Image(systemName: "arrow.up.left.and.arrow.down.right")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Color(white: 0.8))
-                .frame(width: 28, height: 28)
-                .background(Color(white: 0x1C / 255).opacity(0.9),
-                            in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(StudioPressStyle())
-        .help("Play full screen (⇧⌘F)")
-        .accessibilityLabel("Full screen preview")
     }
 }
 
@@ -220,12 +202,12 @@ struct CanvasToolBar: View {
             }
         }
         .padding(3)
-        .background(Color(white: 0x1D / 255), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .background(StudioTheme.Surface.floating, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
+                .strokeBorder(StudioTheme.Surface.hairline, lineWidth: 1)
         }
-        .shadow(color: .black.opacity(0.2), radius: 4, y: 1)
+        .shadow(color: .black.opacity(0.18), radius: 14, y: 4)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Shapes")
     }
@@ -241,14 +223,14 @@ struct CanvasToolBar: View {
             }
         }
         .padding(3)
-        // A shade lighter than the well it sits in, with a hairline edge and almost no
-        // shadow: part of the canvas, not a palette floating over it.
-        .background(Color(white: 0x1D / 255), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        // Floating over the picture: its own surface, a hairline edge and a soft shadow
+        // under it, so it reads against whatever the frame is showing.
+        .background(StudioTheme.Surface.floating, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
+                .strokeBorder(StudioTheme.Surface.hairline, lineWidth: 1)
         }
-        .shadow(color: .black.opacity(0.2), radius: 4, y: 1)
+        .shadow(color: .black.opacity(0.18), radius: 14, y: 4)
         .opacity(model.isPlaying ? 0 : 1)
         .allowsHitTesting(!model.isPlaying)
         .animation(StudioMotion.state, value: mode)
@@ -368,7 +350,7 @@ struct CanvasToolBar: View {
 
     private var separator: some View {
         Rectangle()
-            .fill(Color.white.opacity(0.1))
+            .fill(StudioTheme.Surface.hairline)
             .frame(width: 1, height: 16)
             .padding(.horizontal, 4)
     }
@@ -377,7 +359,7 @@ struct CanvasToolBar: View {
     private func caption(_ title: String, symbol: String) -> some View {
         Label(title, systemImage: symbol)
             .font(.system(size: 11.5, weight: .medium))
-            .foregroundStyle(Color(white: 0.6))
+            .foregroundStyle(StudioTheme.Surface.value)
             .padding(.horizontal, 8)
             .frame(height: 28)
     }
@@ -401,7 +383,7 @@ struct CanvasToolBar: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(isOn ? .white : Color(white: 0.66))
+                .foregroundStyle(isOn ? StudioTheme.Surface.ink : StudioTheme.Surface.value)
                 .frame(width: 28, height: 28)
                 .background(isOn ? StudioTheme.Surface.fieldHover : .clear,
                             in: RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -426,7 +408,7 @@ private struct CanvasSegmentStyle: ButtonStyle {
         configuration.label
             .labelStyle(.titleAndIcon)
             .font(.system(size: 11.5, weight: .medium))
-            .foregroundStyle(isOn ? .white : Color(white: 0.66))
+            .foregroundStyle(isOn ? StudioTheme.Surface.ink : StudioTheme.Surface.value)
             .padding(.horizontal, 9)
             .frame(height: 28)
             .background(isOn ? StudioTheme.Surface.fieldHover : .clear,
@@ -441,10 +423,10 @@ private struct CanvasAddButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 11.5, weight: .semibold))
-            .foregroundStyle(Color(white: 0.07))
+            .foregroundStyle(StudioTheme.Surface.onPrimary)
             .padding(.horizontal, 10)
             .frame(height: 28)
-            .background(Color(white: 0.9).opacity(configuration.isPressed ? 0.8 : 1),
+            .background(StudioTheme.Surface.primaryButton.opacity(configuration.isPressed ? 0.8 : 1),
                         in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .contentShape(Rectangle())
     }

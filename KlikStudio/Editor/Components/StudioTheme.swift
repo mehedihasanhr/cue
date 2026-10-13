@@ -101,36 +101,84 @@ enum StudioTheme {
 
     /// The editor window's own colours: flat neutral greys, darkest at the seams.
     ///
-    /// The editor is always dark (`EditorWindowController` says so), so these are plain
-    /// values rather than pairs: the window is a frame of near-black seams round a few
-    /// panels one step lighter, and every field on a panel one step lighter again. Three
-    /// steps, nothing between them, so a row, a panel and a gap are never confused.
+    /// The window is a frame of seams round a few panels one step off them, and every
+    /// field on a panel one step off again. In the light appearance the panels are white
+    /// on grey seams, the canvas a lighter grey well between them, and a field a soft
+    /// grey on its white panel. Three steps, nothing between them, so a row,
+    /// a panel and a gap are never confused. Each is a pair, one for each appearance:
+    /// the editor follows the theme chosen in Settings like every other window.
     enum Surface {
+        private static func pair(light: Int, dark: Int) -> Color {
+            pair(light: NSColor(white: CGFloat(light) / 255, alpha: 1), dark: dark)
+        }
+
+        /// A light value with a breath of blue in it, so the greys sit with Klik blue
+        /// rather than beside it; the dark one stays neutral.
+        private static func pair(light: NSColor, dark: Int) -> Color {
+            Palette.dynamic(light: light, dark: NSColor(white: CGFloat(dark) / 255, alpha: 1))
+        }
+
+        private static func cool(_ value: Int) -> NSColor {
+            NSColor(srgbRed: CGFloat(value - 3) / 255, green: CGFloat(value - 1) / 255, blue: CGFloat(value + 2) / 255, alpha: 1)
+        }
+
+        /// Klik blue (#0E4FEC), the editor's one accent.
+        private static let brand = NSColor(srgbRed: 0x0E / 255, green: 0x4F / 255, blue: 0xEC / 255, alpha: 1)
+
+        // The light appearance, back to front: one grey ground the picture stands on and
+        // the panels sit in, white panels, and soft grey fields on them.
+
         /// The seams: the gaps round the canvas and between the columns.
-        static let seam = Color(white: 0x14 / 255)
+        static let seam = pair(light: cool(0xEC), dark: 0x14)
+        /// The title bar: the seam in the dark, white like a panel in the light.
+        static let titleBar = pair(light: 0xFF, dark: 0x14)
         /// The panels: the rail, the inspector, the transport and the timeline.
-        static let panel = Color(white: 0x18 / 255)
+        static let panel = pair(light: 0xFF, dark: 0x18)
         /// A field on a panel: a row, a slider's trough, a button at rest.
-        static let field = Color(white: 0x23 / 255)
+        static let field = pair(light: cool(0xF3), dark: 0x23)
         /// The same field under the pointer.
-        static let fieldHover = Color(white: 0x2A / 255)
+        static let fieldHover = pair(light: cool(0xEB), dark: 0x2A)
+        /// A field pressed or lit: a step beyond the hover.
+        static let fieldPressed = pair(light: cool(0xE2), dark: 0x33)
         /// A bar button at rest — a shade under a field, because it sits on the transport
         /// rather than in a row.
-        static let control = Color(white: 0x20 / 255)
-        /// The part of a scrub slider that is set.
-        static let scrubFill = Color(white: 0x45 / 255)
+        static let control = pair(light: cool(0xF3), dark: 0x20)
+        /// The part of a scrub slider that is set: grey in the dark, a wash of Klik blue
+        /// in the light, where a grey on grey said nothing.
+        static let scrubFill = Palette.dynamic(light: brand.withAlphaComponent(0.13),
+                                               dark: NSColor(white: 0x45 / 255, alpha: 1))
+        /// The bar a scrub slider's value ends at.
+        static let scrubMark = Palette.dynamic(light: brand, dark: NSColor(white: 0xF5 / 255, alpha: 1))
         /// The part of the timeline past the end of the edit.
-        static let beyondEnd = Color(white: 0x1F / 255)
+        static let beyondEnd = pair(light: cool(0xF7), dark: 0x1F)
+        /// Behind the picture: the canvas the frame sits in. In the light the same grey as
+        /// the seams, so the frame stands on the window's own ground rather than in a well
+        /// inside it — one step fewer between the picture and the panels.
+        static let canvas = pair(light: cool(0xEC), dark: 0x11)
+        /// A small floating bar over the canvas.
+        static let floating = pair(light: 0xFF, dark: 0x1D)
         /// The playhead and the timeline scale's fill.
         static let playhead = Color(red: 0x0C / 255, green: 0x7C / 255, blue: 0xDD / 255)
         /// The footage on the timeline.
         static let clip = Color(red: 0x6F / 255, green: 0x38 / 255, blue: 0xE8 / 255)
-        /// The one light button in the window: Export.
-        static let primaryButton = Color(white: 0xF3 / 255)
-        /// A label in a row, a field's name.
-        static let label = Color(white: 0.7)
-        /// A row's value.
-        static let value = Color(white: 0.54)
+        /// The one strong button in the window: Export.
+        static let primaryButton = pair(light: 0x1D, dark: 0xF3)
+        /// The words on it.
+        static let onPrimary = pair(light: 0xFA, dark: 0x12)
+
+        /// Ink on the panels, strongest first: a title or a chosen icon, a control's
+        /// glyph, a label in a row, a row's value, a scale's marks.
+        static let ink = pair(light: 0x1D, dark: 0xF5)
+        static let inkSoft = pair(light: 0x3C, dark: 0xD6)
+        static let label = pair(light: 0x4A, dark: 0xB3)
+        static let value = pair(light: 0x76, dark: 0x8A)
+        static let inkFaint = pair(light: 0x9A, dark: 0x66)
+        /// The one-point edge round a field or a floating bar.
+        static let hairline = Palette.dynamic(light: .black.withAlphaComponent(0.09),
+                                              dark: .white.withAlphaComponent(0.07))
+        /// A faint wash on a panel: a well, an unlit chip.
+        static let wash = Palette.dynamic(light: .black.withAlphaComponent(0.05),
+                                          dark: .white.withAlphaComponent(0.06))
     }
 
     // MARK: - Shape
