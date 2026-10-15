@@ -22,7 +22,8 @@ export type ShareSettings = {
 
 export type IslandSettings = {
   enabled: boolean;
-  allDisplays: boolean;
+  /** "primary", "all", or one display's id. */
+  display: string;
   showPill: boolean;
   openMode: "hover" | "click";
   hoverDelay: number;

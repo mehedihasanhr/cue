@@ -1,6 +1,6 @@
 [package]
 name = "klik"
-version = "0.2.1"
+version = "0.2.2"
 description = "Klik for Windows"
 authors = ["Md. Mehedi Hasan Hridoy"]
 edition = "2024"

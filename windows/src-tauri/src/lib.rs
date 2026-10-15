@@ -136,6 +136,7 @@ pub fn run() {
             commands::copy_text,
             commands::log_error,
             commands::island_ready,
+            commands::island_displays,
             commands::island_interactive,
             commands::island_take_keyboard,
             commands::island_geometry,

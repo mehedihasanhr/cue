@@ -809,6 +809,14 @@ const PANEL_POSITIONS: { value: string; title: string }[] = [
 
 function Island({ prefs, save }: { prefs: Prefs; save: Save }) {
   const island = prefs.island;
+  const [displays, setDisplays] = useState<{ id: string; title: string; primary: boolean }[]>([]);
+  useEffect(() => {
+    const look = () => invoke<{ id: string; title: string; primary: boolean }[]>("island_displays").then(setDisplays);
+    look();
+    // A display plugged in while Settings is open shows when it is come back to.
+    window.addEventListener("focus", look);
+    return () => window.removeEventListener("focus", look);
+  }, []);
   const set = (patch: Partial<IslandSettings>) => save({ island: { ...island, ...patch } });
   const off = !island.enabled;
   return (
@@ -817,8 +825,19 @@ function Island({ prefs, save }: { prefs: Prefs; save: Save }) {
         <Row title="Show the Dynamic Island" subtitle="A pill at the top of the screen that opens into Klik.">
           <Switch label="Show the island" checked={island.enabled} onChange={(enabled) => set({ enabled })} />
         </Row>
-        <Row title="Show it on every display" subtitle="Off, only on the main display." disabled={off}>
-          <Switch label="On every display" checked={island.allDisplays} disabled={off} onChange={(allDisplays) => set({ allDisplays })} />
+        <Row title="Display" subtitle="Where the island sits. A display that's unplugged hands it back to the main one." disabled={off}>
+          <Select
+            label="Display"
+            disabled={off}
+            value={island.display}
+            onChange={(display) => set({ display })}
+            options={[
+              { value: "primary", title: "Main display" },
+              { value: "all", title: "Every display" },
+              ...displays.filter((d) => !d.primary || displays.length > 1).map((d) => ({ value: d.id, title: d.title })),
+              ...(island.display !== "primary" && island.display !== "all" && !displays.some((d) => d.id === island.display) ? [{ value: island.display, title: "A display not connected now" }] : []),
+            ]}
+          />
         </Row>
         <Row title="Pill background" subtitle="Black while closed, so it can be found. Off, it hides until it opens." disabled={off}>
           <Switch label="Pill background" checked={island.showPill} disabled={off} onChange={(showPill) => set({ showPill })} />

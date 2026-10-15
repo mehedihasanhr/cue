@@ -47,7 +47,10 @@ pub struct Settings {
 #[serde(rename_all = "camelCase", default)]
 pub struct IslandSettings {
     pub enabled: bool,
-    /// On every display, or only the main one.
+    /// Which display the island is on: "primary", "all", or one display's name.
+    pub display: String,
+    /// Replaced by `display`; still read so an older file loads, and otherwise ignored.
+    #[serde(skip_serializing)]
     pub all_displays: bool,
     /// Draw the pill while closed (the Mac's "notch background").
     pub show_pill: bool,
@@ -69,7 +72,8 @@ impl Default for IslandSettings {
     fn default() -> Self {
         Self {
             enabled: true,
-            all_displays: true,
+            display: "primary".into(),
+            all_displays: false,
             show_pill: true,
             open_mode: "hover".into(),
             hover_delay: 0.0,
@@ -205,6 +209,16 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_island_starts_on_the_main_display() {
+        // 0.2's files said `allDisplays: true`; they now land on the main display.
+        let old: Settings = serde_json::from_str(r#"{"island":{"enabled":true,"allDisplays":true}}"#).unwrap();
+        assert_eq!(old.island.display, "primary");
+        let written = serde_json::to_value(&old).unwrap();
+        assert!(written["island"].get("allDisplays").is_none());
+        assert_eq!(written["island"]["display"], "primary");
+    }
 
     #[test]
     fn missing_fields_take_defaults() {

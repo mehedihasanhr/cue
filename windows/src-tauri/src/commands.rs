@@ -30,7 +30,7 @@ pub fn set_settings(app: AppHandle, state: State<AppState>, settings: Settings) 
     settings.save(&state.settings_path).map_err(text)?;
     let islands_changed = {
         let old = &state.settings.lock().unwrap().island;
-        old.enabled != settings.island.enabled || old.all_displays != settings.island.all_displays
+        old.enabled != settings.island.enabled || old.display != settings.island.display
     };
     let folder = settings.save_folder.clone().unwrap_or_else(default_captures_folder);
     *state.settings.lock().unwrap() = settings;
@@ -364,6 +364,34 @@ fn os_description() -> String {
     }
     #[cfg(not(windows))]
     std::env::consts::OS.to_string()
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DisplayChoice {
+    id: String,
+    title: String,
+    primary: bool,
+}
+
+/// The displays, for Settings › Island's choice of where the island goes.
+#[tauri::command]
+pub fn island_displays(app: AppHandle) -> Vec<DisplayChoice> {
+    let primary = app.primary_monitor().ok().flatten();
+    app.available_monitors()
+        .unwrap_or_default()
+        .iter()
+        .enumerate()
+        .map(|(index, m)| {
+            let is_primary = primary.as_ref().is_some_and(|p| p.position() == m.position());
+            let size = m.size();
+            DisplayChoice {
+                id: crate::island::display_id(m, index),
+                title: format!("Display {} \u{2014} {} \u{d7} {}{}", index + 1, size.width, size.height, if is_primary { " (main)" } else { "" }),
+                primary: is_primary,
+            }
+        })
+        .collect()
 }
 
 /// Opens a page of Windows Settings that a Klik setting depends on.
