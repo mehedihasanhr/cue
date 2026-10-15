@@ -208,6 +208,8 @@ final class StudioService: StudioRecording {
                     }
                     openEditor?(url)
                 }
+                // After the draft marker, so a take that opens as a draft waits to be kept.
+                DriveStorage.shared.recordingFinished(url)
             case .failure(let error):
                 if let request { finish(request, outcome: .failed, message: error.localizedDescription) }
             }
@@ -238,6 +240,8 @@ final class StudioService: StudioRecording {
             switch await session.stop() {
             case .success(let url):
                 if let request { finish(request, outcome: .finished, project: url) }
+                // Queued, not sent: the upload carries on at the next launch.
+                DriveStorage.shared.recordingFinished(url)
             case .failure(let error):
                 if let request { finish(request, outcome: .failed, message: error.localizedDescription) }
             }

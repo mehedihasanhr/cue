@@ -1,0 +1,5 @@
+// Copy to Config/Google.xcconfig (ignored by git) and fill in.
+//
+// The client ID of a Google Cloud OAuth client of type "iOS", with bundle ID
+// com.stackrover.klik.studio. See docs/studio/google-drive.md.
+KLIK_GOOGLE_CLIENT_ID = 000000000000-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com

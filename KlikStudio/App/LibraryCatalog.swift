@@ -167,7 +167,10 @@ final class LibraryCatalog {
     /// package and touches nothing the editor is holding.
     func duplicate(_ entry: RecordingEntry) async {
         do {
-            try library.duplicate(entry.url)
+            let copy = try library.duplicate(entry.url)
+            // The copy is a new recording as far as Drive goes: left in, its record would
+            // send the copy's upload over the original's files.
+            DriveRecord.remove(from: copy)
         } catch {
             report(error)
         }

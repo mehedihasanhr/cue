@@ -14,6 +14,8 @@ struct StorageSettingsPane: View {
 
     var body: some View {
         SettingsPane(.storage) {
+            DriveSettingsGroup()
+
             SettingsGroup("Recordings") {
                 SettingsRow(settings.library.lastPathComponent,
                             subtitle: libraryLine,
