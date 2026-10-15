@@ -22,6 +22,7 @@ mod settings;
 mod share;
 mod sound;
 mod state;
+mod studio;
 mod tray;
 mod updates;
 mod windows;
@@ -100,6 +101,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            studio::studio_state,
+            studio::studio_record,
+            studio::studio_library,
             commands::get_settings,
             commands::set_settings,
             commands::shortcut_conflicts,

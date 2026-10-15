@@ -39,10 +39,15 @@ pub fn handle_args(app: &AppHandle, args: &[String]) {
 /// `klik-studio://record?request=<path>`: Klik's request — what to record, with sound or
 /// not — as a JSON file (the Mac's AddOnKit `RecordingRequest`).
 fn handle_link(app: &AppHandle, link: &str) {
+    if link.trim_end_matches('/').ends_with("://library") {
+        open_library(app).ok();
+        return;
+    }
     let request = link
         .split_once("request=")
         .map(|(_, path)| urlencoding_decode(path))
-        .and_then(|path| std::fs::read(path).ok())
+        // Klik's request is a file for this one hand-off; it goes once read.
+        .and_then(|path| std::fs::read(&path).ok().inspect(|_| drop(std::fs::remove_file(&path))))
         .and_then(|data| serde_json::from_slice::<serde_json::Value>(&data).ok());
     show_bar(app).ok();
     if let Some(request) = request {

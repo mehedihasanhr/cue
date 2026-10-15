@@ -35,6 +35,8 @@ pub struct Settings {
     pub capture: CaptureSettings,
     pub clipboard: ClipboardSettings,
     pub updates: UpdateSettings,
+    /// Settings › Studio: what Klik asks Klik Studio for.
+    pub studio: crate::studio::StudioSettings,
     /// The editor's tool defaults, as the editor writes them (`editor.defaults` on the Mac).
     pub editor: serde_json::Value,
 }
@@ -155,6 +157,7 @@ impl Default for Settings {
             capture: Default::default(),
             clipboard: Default::default(),
             updates: Default::default(),
+            studio: Default::default(),
             editor: serde_json::Value::Null,
         }
     }

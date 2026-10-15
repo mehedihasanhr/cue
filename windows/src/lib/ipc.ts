@@ -42,6 +42,7 @@ export type Settings = {
   capture: { sound: boolean };
   clipboard: { enabled: boolean; limit: number };
   updates: { automatic: boolean };
+  studio: { countdownSeconds: number; systemAudio: boolean; microphone: boolean; opensEditorAfterRecording: boolean };
   editor: unknown;
   afterCapture: AfterCapture;
   copyToClipboard: boolean;

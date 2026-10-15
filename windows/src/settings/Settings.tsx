@@ -7,6 +7,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import appIcon from "../../src-tauri/icons/128x128@2x.png";
 import { DEFAULT_PREFS, editorDefaults, RANGES, type EditorDefaults } from "../editor/prefs";
@@ -35,7 +36,7 @@ import "./settings.css";
 
 // MARK: - Sections
 
-type Section = "general" | "appearance" | "shortcuts" | "sharing" | "about" | "island" | "capture" | "editor" | "clipboard";
+type Section = "general" | "appearance" | "shortcuts" | "sharing" | "about" | "island" | "capture" | "editor" | "clipboard" | "studio";
 
 const SECTIONS: Record<Section, { title: string; subtitle: string; symbol: IconName; tint: Tint; keywords: string[] }> = {
   general: {
@@ -94,6 +95,13 @@ const SECTIONS: Record<Section, { title: string; subtitle: string; symbol: IconN
     tint: "teal",
     keywords: ["history", "copy", "paste", "limit", "items", "clear", "pinned"],
   },
+  studio: {
+    title: "Studio",
+    subtitle: "Record the screen, then edit it in Klik Studio",
+    symbol: "record.circle.fill",
+    tint: "red",
+    keywords: ["record", "recording", "video", "screen", "countdown", "microphone", "system audio", "studio", "edit videos"],
+  },
   editor: {
     title: "Editor",
     subtitle: "What every new annotation starts as",
@@ -105,7 +113,7 @@ const SECTIONS: Record<Section, { title: string; subtitle: string; symbol: IconN
 
 const GROUPS: Section[][] = [
   ["general", "appearance", "shortcuts", "sharing", "about"],
-  ["island", "capture", "editor", "clipboard"],
+  ["island", "capture", "editor", "clipboard", "studio"],
 ];
 
 function matches(section: Section, query: string): boolean {
@@ -231,6 +239,7 @@ export default function Settings() {
     capture: () => <Capture prefs={prefs} save={save} />,
     editor: () => <Editor prefs={prefs} save={save} />,
     clipboard: () => <Clipboard prefs={prefs} save={save} />,
+    studio: () => <Studio prefs={prefs} save={save} />,
   };
 
   return (
@@ -1029,6 +1038,61 @@ function Clipboard({ prefs, save }: { prefs: Prefs; save: Save }) {
           <button className="button" disabled={!count} onClick={() => invoke("store_clear_unpinned", { kind: "clipboard" })}>
             Clear History
           </button>
+        </Row>
+      </Group>
+    </Pane>
+  );
+}
+
+// MARK: - Studio
+
+const STUDIO_DOWNLOAD = "https://github.com/mehedihasanhr/klik-releases/releases";
+
+/** The Mac's Studio pane: whether Klik Studio is here, and what Klik asks it for. */
+function Studio({ prefs, save }: { prefs: Prefs; save: Save }) {
+  const [state, setState] = useState<{ installed: boolean; path: string | null } | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+  useEffect(() => {
+    const look = () => invoke<{ installed: boolean; path: string | null }>("studio_state").then(setState);
+    look();
+    // Installed while this is open: noticed when the window is come back to.
+    window.addEventListener("focus", look);
+    return () => window.removeEventListener("focus", look);
+  }, []);
+  const set = (patch: Partial<Prefs["studio"]>) => save({ studio: { ...prefs.studio, ...patch } });
+  const run = (command: string) => invoke(command).then(() => setFailure(null)).catch((e) => setFailure(String(e)));
+  return (
+    <Pane>
+      <Group footer={failure ?? undefined}>
+        <Row title="Klik Studio" subtitle={state === null ? "…" : state.installed ? "Records the screen with sound, then makes it look made: zooms, a background, a smooth pointer." : "Not installed. Records the screen with sound, then makes it look made."} symbol="record.circle.fill" tint="red">
+          {state?.installed ? (
+            <span className="row-buttons">
+              <button className="button" onClick={() => run("studio_library")}>
+                Edit Videos
+              </button>
+              <button className="button primary" onClick={() => run("studio_record")}>
+                Record Screen…
+              </button>
+            </span>
+          ) : (
+            <button className="button primary" onClick={() => openUrl(STUDIO_DOWNLOAD)}>
+              Download
+            </button>
+          )}
+        </Row>
+      </Group>
+      <Group title="Recording" disabled={!state?.installed}>
+        <Row title="Countdown" subtitle="Seconds before the first frame" symbol="timer" tint="orange">
+          <Select label="Countdown" value={String(prefs.studio.countdownSeconds)} onChange={(v) => set({ countdownSeconds: Number(v) })} options={[{ value: "0", title: "None" }, ...[3, 5, 10].map((n) => ({ value: String(n), title: `${n}s` }))]} />
+        </Row>
+        <Row title="System audio" subtitle="What the PC is playing" symbol="speaker.wave.2.fill" tint="blue">
+          <Switch label="System audio" checked={prefs.studio.systemAudio} onChange={(systemAudio) => set({ systemAudio })} />
+        </Row>
+        <Row title="Microphone" subtitle="Windows may ask for permission the first time" symbol="mic" tint="red">
+          <Switch label="Microphone" checked={prefs.studio.microphone} onChange={(microphone) => set({ microphone })} />
+        </Row>
+        <Row title="Open the editor when a recording stops" symbol="film" tint="purple">
+          <Switch label="Open the editor" checked={prefs.studio.opensEditorAfterRecording} onChange={(opensEditorAfterRecording) => set({ opensEditorAfterRecording })} />
         </Row>
       </Group>
     </Pane>
