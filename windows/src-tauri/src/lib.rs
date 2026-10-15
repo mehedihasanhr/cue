@@ -6,6 +6,7 @@ mod clipboard;
 mod commands;
 mod finish;
 mod hotkeys;
+mod island;
 mod library;
 mod notify;
 mod ocr;
@@ -13,6 +14,7 @@ mod protocol;
 mod secrets;
 mod settings;
 mod share;
+mod sound;
 mod state;
 mod tray;
 mod updates;
@@ -29,7 +31,12 @@ pub fn run() {
         // another Klik that would fight this one for the shortcuts. `klik --capture area`
         // takes a capture instead, for scripts and other launchers.
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-            actions::run(app, actions::from_args(&args).unwrap_or("showHistory"));
+            #[cfg(debug_assertions)]
+            if let Some(index) = args.iter().position(|a| a == "--island-demo") {
+                island::demo(app, args.get(index + 1).map(String::as_str).unwrap_or("expanded"));
+                return;
+            }
+            actions::run(app, &actions::from_args(&args).unwrap_or_else(|| "showHistory".into()));
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -58,6 +65,10 @@ pub fn run() {
                 conflicts: Mutex::new(Vec::new()),
             });
 
+            app.manage(island::Islands::default());
+            island::rebuild(app.handle());
+            island::watch(app.handle().clone());
+
             tray::create(app.handle())?;
             let conflicts = hotkeys::apply(app.handle());
             for conflict in &conflicts {
@@ -71,7 +82,7 @@ pub fn run() {
 
             let args: Vec<String> = std::env::args().collect();
             if let Some(action) = actions::from_args(&args) {
-                actions::run(app.handle(), action);
+                actions::run(app.handle(), &action);
             } else if !args.iter().any(|arg| arg == "--autostart") {
                 actions::run(app.handle(), "showHistory");
             }
@@ -109,6 +120,14 @@ pub fn run() {
             commands::editor_write_file,
             commands::copy_text,
             commands::log_error,
+            commands::island_ready,
+            commands::island_interactive,
+            commands::island_take_keyboard,
+            commands::island_geometry,
+            commands::default_shortcuts,
+            commands::app_info,
+            commands::reveal_app,
+            commands::open_windows_settings,
         ])
         .build(tauri::generate_context!())
         .expect("error while starting Klik")

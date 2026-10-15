@@ -9,13 +9,13 @@ use tauri::AppHandle;
 pub fn recognize_to_clipboard(app: &AppHandle, image: RgbaImage) -> Result<()> {
     let text = recognize(&image)?;
     if text.trim().is_empty() {
-        crate::notify::send(app, "No text found", "Klik couldn't read any text in that area.");
+        crate::island::status(app, "tray", "No text found", Some("Klik couldn't read any text there."));
         return Ok(());
     }
     crate::clipboard::copy_text(&text)?;
     let lines = text.lines().count();
     let summary = if lines == 1 { "1 line".to_string() } else { format!("{lines} lines") };
-    crate::notify::send(app, "Text copied", &format!("{summary} on the clipboard."));
+    crate::island::status(app, "checkmark.circle.fill", "Text copied", Some(&format!("{summary} on the clipboard")));
     Ok(())
 }
 

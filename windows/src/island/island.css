@@ -1,0 +1,139 @@
+/* The island: always dark, on a transparent window. Measures from the Mac's
+   `IslandChrome` and `IslandStyle`. */
+html.island-root, html.island-root body, html.island-root #root { background: transparent; color-scheme: dark; }
+.island-window { position: fixed; inset: 0; color: #fff; --accent: #5c94db; }
+.island-shape { position: absolute; inset: 0; pointer-events: none; }
+.island-shape .faded { transition: fill 300ms ease-out; }
+.island-shape .rim { transition: opacity 200ms ease-out; }
+.island-content { position: absolute; top: 0; overflow: hidden; }
+.island-body { height: 100%; }
+
+@keyframes island-content-in { from { opacity: 0; transform: scale(0.8); } to { opacity: 1; transform: none; } }
+.island-row, .island-panel { transform-origin: top center; animation: island-content-in 280ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+@media (prefers-reduced-motion: reduce) { .island-row, .island-panel { animation-duration: 150ms; } }
+
+/* Flash and status rows */
+.island-row { height: 48px; }
+.island-measure { position: absolute; left: 0; top: 0; width: max-content; visibility: hidden; pointer-events: none; }
+.flash-row { display: flex; align-items: center; gap: 10px; padding: 0 16px; height: 48px; white-space: nowrap; }
+.flash-thumb { width: 48px; height: 32px; object-fit: cover; border-radius: 6px; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.15); background: rgba(128,128,128,0.3); }
+.row-text { display: flex; flex-direction: column; gap: 1px; }
+.row-title { font-size: 12.5px; font-weight: 600; }
+.row-subtitle { font-size: 10.5px; color: rgba(255,255,255,0.55); }
+.row-spacer { flex: 1; min-width: 12px; }
+
+/* The panel (shared with the floating Klik panel) */
+.panel { color: #fff; display: flex; flex-direction: column; }
+.panel.island { gap: 10px; padding: 0 16px 16px; }
+.panel-header { display: flex; align-items: center; gap: 8px; }
+.search {
+  flex: 1; min-width: 240px; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px;
+  border-radius: 10px; background: rgba(255,255,255,0.08); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.55); transition: background 180ms ease-out, box-shadow 180ms ease-out;
+}
+.search.on { background: rgba(255,255,255,0.11); box-shadow: inset 0 0 0 1px rgba(92,148,219,0.6); color: var(--accent); }
+.search input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: #fff; font-size: 13.5px; user-select: text; }
+.search input::placeholder { color: rgba(255,255,255,0.4); }
+.matches { font-size: 11px; font-weight: 500; color: rgba(255,255,255,0.55); white-space: nowrap; }
+.search .clear { border: 0; background: transparent; padding: 0; color: rgba(255,255,255,0.5); display: grid; }
+.capture-bar { display: flex; height: 32px; }
+.hover-button {
+  width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 8px;
+  background: transparent; color: rgba(255,255,255,0.6); transition: background 120ms ease-out, color 120ms ease-out;
+}
+.hover-button:hover { background: rgba(255,255,255,0.1); color: #fff; }
+
+.tab-row { display: flex; gap: 2px; }
+.tab-pill {
+  display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px; border: 0; border-radius: 8px;
+  background: transparent; color: rgba(255,255,255,0.55); font-size: 12px; font-weight: 500;
+  transition: background 120ms ease-out, color 120ms ease-out;
+}
+.tab-pill:hover { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.9); }
+.tab-pill.on { background: rgba(255,255,255,0.12); color: #fff; font-weight: 600; }
+.tab-pill .count { font-size: 10.5px; font-weight: 500; opacity: 0.5; font-variant-numeric: tabular-nums; }
+
+/* The strip: cards grouped by day, scrolling sideways */
+.strip-frame { position: relative; height: 148px; margin: 0 -16px; }
+.strip { display: flex; gap: 16px; overflow-x: auto; overflow-y: hidden; height: 100%; padding: 0 16px; scrollbar-width: none; }
+.strip::-webkit-scrollbar { display: none; }
+.strip-group h3 { margin: 0; height: 24px; line-height: 20px; font-size: 11.5px; font-weight: 600; color: rgba(255,255,255,0.55); white-space: nowrap; }
+.strip-cards { display: flex; gap: 10px; }
+.fade { position: absolute; top: 0; bottom: 0; width: 40px; pointer-events: none; opacity: 0; transition: opacity 150ms ease-out; }
+.fade.start { left: 0; background: linear-gradient(to right, rgba(0,0,0,0.9), transparent); }
+.fade.end { right: 0; background: linear-gradient(to left, rgba(0,0,0,0.9), transparent); }
+.fade.on { opacity: 1; }
+
+.card {
+  position: relative; flex: none; width: 156px; height: 124px; border-radius: 14px; overflow: hidden;
+  background: rgba(255,255,255,0.06); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.07);
+}
+.card::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.42); opacity: 0; transition: opacity 120ms ease-out;
+}
+.card:hover::after { opacity: 1; }
+.card.quick { border-radius: 16px; }
+.card.quick::after { box-shadow: inset 0 0 0 2px var(--brand); }
+.card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.caption {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 7px 9px; display: flex; flex-direction: column; gap: 2px;
+  background: linear-gradient(to bottom, rgba(0,0,0,0), rgba(0,0,0,0.45) 40%, rgba(0,0,0,0.65));
+  text-shadow: 0 1px 1.5px rgba(0,0,0,0.35);
+}
+.caption-title { font-size: 10.5px; font-weight: 500; color: rgba(255,255,255,0.92); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.caption-line { display: flex; align-items: center; gap: 6px; font-size: 9.5px; color: rgba(255,255,255,0.8); }
+.caption-line .spacer { flex: 1; }
+.caption-line .pinned { color: #ffd60a; display: grid; }
+.badge {
+  font-size: 8px; font-weight: 500; font-variant-numeric: tabular-nums; color: rgba(255,255,255,0.65);
+  padding: 1.5px 5px; border-radius: 4px; background: rgba(0,0,0,0.45); white-space: nowrap;
+}
+.rename { width: 100%; font-size: 10.5px; padding: 1px 4px; border-radius: 4px; border: 1px solid var(--brand); background: rgba(0,0,0,0.6); color: #fff; outline: none; user-select: text; }
+.card-actions {
+  position: absolute; top: 0; left: 0; right: 0; display: flex; gap: 5px; padding: 6px;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.85), rgba(0,0,0,0));
+  opacity: 0; pointer-events: none; transition: opacity 120ms ease-out;
+}
+.card:hover .card-actions { opacity: 1; pointer-events: auto; }
+.card-action {
+  width: 24px; height: 24px; display: grid; place-items: center; padding: 0; border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.35); background: rgba(0,0,0,0.8); color: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+}
+
+.panel-empty { height: 148px; display: grid; place-content: center; justify-items: center; gap: 8px; color: rgba(255,255,255,0.55); text-align: center; }
+.empty-title { font-size: 13px; font-weight: 500; color: rgba(255,255,255,0.85); }
+.empty-action { border: 0; background: rgba(255,255,255,0.1); color: #fff; height: 28px; padding: 0 12px; border-radius: 999px; font-size: 12.5px; font-weight: 600; }
+.empty-action:hover { background: rgba(255,255,255,0.16); }
+.empty-action .keys { color: rgba(255,255,255,0.55); font-weight: 500; margin-left: 6px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .card::after, .card-actions, .tab-pill, .hover-button, .fade { transition: none; }
+}
+
+/* The floating Klik panel: 700 × 520, dark glass, radius 24, inside a 24-point margin. */
+.floating-frame { position: fixed; inset: 0; padding: 24px; }
+.floating-panel {
+  position: relative; height: 100%; border-radius: 24px; overflow: hidden; color: #fff;
+  background: linear-gradient(rgba(28, 29, 31, 0.97), rgba(20, 21, 23, 0.97));
+  box-shadow: 0 6px 16px rgba(0,0,0,0.3), inset 0 0 0 1px rgba(255,255,255,0.14);
+  padding: 0 18px 18px; display: flex; flex-direction: column;
+}
+.drag-strip { height: 18px; display: grid; place-items: center; flex: none; }
+.drag-strip span { width: 36px; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.25); pointer-events: none; }
+.panel.floating { flex: 1; min-height: 0; gap: 14px; }
+.panel-header.floating { gap: 10px; }
+.search.capsule { height: 36px; border-radius: 999px; background: rgba(255,255,255,0.1); box-shadow: none; color: rgba(255,255,255,0.6); }
+.search.capsule input { font-size: 13px; }
+.search.capsule.on { background: rgba(255,255,255,0.14); box-shadow: inset 0 0 0 1.5px rgba(14,79,236,0.8); color: var(--brand); }
+.tool-group { display: flex; gap: 4px; padding: 3px; border-radius: 999px; background: rgba(255,255,255,0.08); }
+.tool-button {
+  width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 50%; padding: 0;
+  background: transparent; color: rgba(255,255,255,0.85); transition: background 120ms ease-out, color 120ms ease-out;
+}
+.tool-button:hover { background: rgba(255,255,255,0.16); color: #fff; }
+.grid-scroll { flex: 1; overflow-y: auto; margin: 0 -6px; padding: 0 6px; scrollbar-width: thin; }
+.grid-scroll section h3 { font-size: 12px; font-weight: 600; margin: 4px 0 8px; color: rgba(255,255,255,0.9); }
+.grid { display: grid; grid-template-columns: repeat(var(--columns, 4), minmax(0, 1fr)); gap: 14px; margin-bottom: 8px; }
+.panel.floating .panel-empty { flex: 1; height: auto; }

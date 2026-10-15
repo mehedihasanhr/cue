@@ -22,7 +22,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         .item(&item("captureFullScreen", "Capture Full Screen")?)
         .item(&item("captureText", "Capture Text")?)
         .separator()
-        .item(&item("showHistory", "History")?)
+        .item(&item("showHistory", "Klik Panel")?)
         .item(&MenuItemBuilder::with_id("showSettings", "Settings\u{2026}").build(app)?)
         .separator()
         .item(&MenuItemBuilder::with_id("quit", "Quit Klik").build(app)?)
@@ -40,7 +40,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
             action => actions::run(app, action),
         })
         .on_tray_icon_event(|tray, event| {
-            // A left click opens History, the closest thing to the Mac's Klik panel.
+            // A left click opens the Klik panel, as clicking the Mac's menu bar item does.
             if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
                 actions::run(tray.app_handle(), "showHistory");
             }

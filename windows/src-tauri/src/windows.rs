@@ -23,12 +23,90 @@ fn show(app: &AppHandle, label: &str, title: &str, size: (f64, f64), min: (f64, 
     Ok(window)
 }
 
-pub fn open_settings(app: &AppHandle) -> Result<()> {
-    show(app, "settings", "Klik Settings", (760.0, 560.0), (640.0, 440.0)).map(|_| ())
+/// Settings: the Mac's 920 × 640 window, drawn edge to edge by the page — its own
+/// caption buttons, Mica behind the sidebar and page on Windows 11.
+/// `page` opens it on that page ("island", "shortcuts", …).
+pub fn open_settings(app: &AppHandle, page: Option<&str>) -> Result<()> {
+    use tauri::Emitter;
+    if let Some(window) = app.get_webview_window("settings") {
+        if let Some(page) = page {
+            app.emit_to("settings", "settings:go", page).ok();
+        }
+        window.unminimize().ok();
+        window.show()?;
+        window.set_focus()?;
+        return Ok(());
+    }
+    // A new window reads the page from its address, being too young to hear an event.
+    let url = format!("index.html#{}", page.unwrap_or(""));
+    let builder = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App(url.into()))
+        .title("Klik Settings")
+        .inner_size(920.0, 640.0)
+        .min_inner_size(760.0, 480.0)
+        .center()
+        .decorations(false)
+        .transparent(true)
+        // Keeps Windows 11's rounded corners and shadow on a window without a frame.
+        .shadow(true)
+        .visible(false);
+    #[cfg(windows)]
+    let builder = builder.effects(tauri::utils::config::WindowEffectsConfig {
+        effects: vec![tauri::window::Effect::Mica],
+        ..Default::default()
+    });
+    builder.build()?;
+    Ok(())
 }
 
+/// The Klik panel: the Mac's floating panel, opened where Settings › Island › Panels
+/// says — at the pointer by default. Made once and kept, so it opens instantly.
 pub fn open_history(app: &AppHandle) -> Result<()> {
-    show(app, "history", "Klik History", (900.0, 620.0), (520.0, 400.0)).map(|_| ())
+    use crate::state::AppState;
+    use tauri::{LogicalPosition, LogicalSize, Emitter};
+    const SIZE: (f64, f64) = (700.0 + 48.0, 520.0 + 48.0);
+    let window = match app.get_webview_window("panel") {
+        Some(window) => window,
+        None => WebviewWindowBuilder::new(app, "panel", WebviewUrl::App("index.html".into()))
+            .title("Klik")
+            .inner_size(SIZE.0, SIZE.1)
+            .decorations(false)
+            .transparent(true)
+            .shadow(false)
+            .resizable(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .visible(false)
+            .build()?,
+    };
+    let position = app.state::<AppState>().settings().panels.position;
+    if let (Ok(cursor), Ok(Some(monitor))) = (app.cursor_position(), app.monitor_from_point(
+        app.cursor_position().map(|c| c.x).unwrap_or(0.0),
+        app.cursor_position().map(|c| c.y).unwrap_or(0.0),
+    )) {
+        let scale = monitor.scale_factor();
+        let area = monitor.work_area();
+        let (left, top) = (area.position.x as f64 / scale, area.position.y as f64 / scale);
+        let (width, height) = (area.size.width as f64 / scale, area.size.height as f64 / scale);
+        let (pointer_x, pointer_y) = (cursor.x / scale, cursor.y / scale);
+        let (x, y) = match position.as_str() {
+            "top" => (left + (width - SIZE.0) / 2.0, top),
+            "center" => (left + (width - SIZE.0) / 2.0, top + (height - SIZE.1) / 2.0),
+            "bottom" => (left + (width - SIZE.0) / 2.0, top + height - SIZE.1),
+            "topLeft" => (left, top),
+            "topRight" => (left + width - SIZE.0, top),
+            "bottomLeft" => (left, top + height - SIZE.1),
+            "bottomRight" => (left + width - SIZE.0, top + height - SIZE.1),
+            _ => (pointer_x - SIZE.0 / 2.0, pointer_y - 60.0),
+        };
+        let x = x.clamp(left, left + width - SIZE.0);
+        let y = y.clamp(top, top + height - SIZE.1);
+        window.set_size(LogicalSize::new(SIZE.0, SIZE.1)).ok();
+        window.set_position(LogicalPosition::new(x, y)).ok();
+    }
+    window.show()?;
+    window.set_focus()?;
+    app.emit_to("panel", "panel:shown", ()).ok();
+    Ok(())
 }
 
 pub fn open_editor(app: &AppHandle, id: Uuid) -> Result<()> {

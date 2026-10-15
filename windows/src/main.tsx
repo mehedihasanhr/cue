@@ -21,6 +21,14 @@ const view = (() => {
     const Editor = React.lazy(() => import("./editor/Editor"));
     return <Editor id={label.slice("editor-".length)} />;
   }
+  if (label.startsWith("island-")) {
+    const Island = React.lazy(() => import("./island/Island"));
+    return <Island />;
+  }
+  if (label === "panel") {
+    const KlikPanel = React.lazy(() => import("./island/KlikPanel"));
+    return <KlikPanel />;
+  }
   if (label.startsWith("pin-")) {
     const Pin = React.lazy(() => import("./pin/Pin"));
     return <Pin id={label.slice("pin-".length)} />;
@@ -29,8 +37,7 @@ const view = (() => {
     const Settings = React.lazy(() => import("./settings/Settings"));
     return <Settings />;
   }
-  const History = React.lazy(() => import("./history/History"));
-  return <History />;
+  return null;
 })();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement, {

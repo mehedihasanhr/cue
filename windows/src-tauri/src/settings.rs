@@ -30,6 +30,82 @@ pub struct Settings {
     /// "system", "light" or "dark".
     pub appearance: String,
     pub share: crate::share::ShareSettings,
+    pub island: IslandSettings,
+    pub panels: PanelSettings,
+    pub capture: CaptureSettings,
+    /// The editor's tool defaults, as the editor writes them (`editor.defaults` on the Mac).
+    pub editor: serde_json::Value,
+}
+
+/// Settings › Island. Defaults are the Mac's, except that the closed pill shows: a
+/// Windows desktop has no notch to sit in, so an invisible one would never be found.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct IslandSettings {
+    pub enabled: bool,
+    /// On every display, or only the main one.
+    pub all_displays: bool,
+    /// Draw the pill while closed (the Mac's "notch background").
+    pub show_pill: bool,
+    /// "hover" or "click".
+    pub open_mode: String,
+    pub hover_delay: f64,
+    pub close_on_leave: bool,
+    pub close_delay: f64,
+    /// The tab it opens on; empty means the last one used.
+    pub opens_on: String,
+    pub flash_captures: bool,
+    pub flash_duration: f64,
+    pub statuses: bool,
+    /// "lively", "quick" or "none".
+    pub animation: String,
+}
+
+impl Default for IslandSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            all_displays: true,
+            show_pill: true,
+            open_mode: "hover".into(),
+            hover_delay: 0.0,
+            close_on_leave: true,
+            close_delay: 0.25,
+            opens_on: String::new(),
+            flash_captures: true,
+            flash_duration: 1.8,
+            statuses: true,
+            animation: "lively".into(),
+        }
+    }
+}
+
+/// Where the Klik panel opens (Alt+Shift+K, the tray).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct PanelSettings {
+    /// "pointer", "top", "center", "bottom", "topLeft", "topRight", "bottomLeft", "bottomRight".
+    pub position: String,
+    pub columns: u32,
+}
+
+impl Default for PanelSettings {
+    fn default() -> Self {
+        Self { position: "pointer".into(), columns: 4 }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CaptureSettings {
+    /// Play a sound after each capture.
+    pub sound: bool,
+}
+
+impl Default for CaptureSettings {
+    fn default() -> Self {
+        Self { sound: true }
+    }
 }
 
 impl Default for Settings {
@@ -41,6 +117,10 @@ impl Default for Settings {
             shortcuts: default_shortcuts(),
             appearance: "system".into(),
             share: Default::default(),
+            island: Default::default(),
+            panels: Default::default(),
+            capture: Default::default(),
+            editor: serde_json::Value::Null,
         }
     }
 }
