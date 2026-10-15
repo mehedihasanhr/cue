@@ -20,8 +20,29 @@ export type ShareSettings = {
   datedNames: boolean;
 };
 
+export type IslandSettings = {
+  enabled: boolean;
+  allDisplays: boolean;
+  showPill: boolean;
+  openMode: "hover" | "click";
+  hoverDelay: number;
+  closeOnLeave: boolean;
+  closeDelay: number;
+  opensOn: string;
+  flashCaptures: boolean;
+  flashDuration: number;
+  statuses: boolean;
+  animation: "lively" | "quick" | "none";
+};
+
 export type Settings = {
   share: ShareSettings;
+  island: IslandSettings;
+  panels: { position: string; columns: number };
+  capture: { sound: boolean };
+  clipboard: { enabled: boolean; limit: number };
+  updates: { automatic: boolean };
+  editor: unknown;
   afterCapture: AfterCapture;
   copyToClipboard: boolean;
   saveFolder: string | null;
@@ -51,6 +72,7 @@ export type HistoryItem = {
   pixelHeight: number;
   scale: number;
   pinned: boolean;
+  groupID?: string;
   url: string;
   thumbnailUrl: string;
   path: string;
@@ -65,6 +87,10 @@ export const ipc = {
   getAutostart: () => invoke<boolean>("get_autostart"),
   setAutostart: (enabled: boolean) => invoke<void>("set_autostart", { enabled }),
   runAction: (action: string) => invoke<void>("run_action", { action }),
+  defaultShortcuts: () => invoke<Record<string, string>>("default_shortcuts"),
+  appInfo: () => invoke<{ exe: string; os: string }>("app_info"),
+  revealApp: () => invoke<void>("reveal_app"),
+  openWindowsSettings: (page: "keyboard" | "language") => invoke<void>("open_windows_settings", { page }),
 
   startCapture: (mode: Mode) => invoke<void>("start_capture", { mode }),
   overlayInfo: (index: number) => invoke<OverlayInfo>("overlay_info", { index }),

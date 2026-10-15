@@ -6,10 +6,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppearance, useShowWhenReady, useToast } from "../lib/hooks";
 import { ipc, message, type HistoryItem } from "../lib/ipc";
 import { DEFAULT_BACKGROUND, type Doc } from "./model/document";
+import type { Annotation } from "./model/types";
 import { edgeColor, encode, renderToCanvas, type Source } from "./render";
 import { loadPrefs, savePrefs, TOOL_KEYS, type Prefs, type Tool } from "./prefs";
 import { Stage, type StageHandle } from "./Stage";
-import { BackgroundPanel, Toolbar } from "./Toolbar";
+import { BackgroundPanel, OptionsBar, StatusBar, Toolbar } from "./Toolbar";
 import "./editor.css";
 
 type History = { past: Doc[]; present: Doc; future: Doc[] };
@@ -21,7 +22,7 @@ export default function Editor({ id }: { id: string }) {
   const [history, setHistory] = useState<History | null>(null);
   const [saved, setSaved] = useState<Doc | null>(null);
   const [tool, setTool] = useState<Tool>("arrow");
-  const [prefs, setPrefsState] = useState<Prefs>(loadPrefs);
+  const [prefs, setPrefsState] = useState<Prefs>(() => loadPrefs(null));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showBackground, setShowBackground] = useState(false);
   const [zoom, setZoom] = useState(1);
@@ -33,6 +34,10 @@ export default function Editor({ id }: { id: string }) {
   const dirty = !!doc && doc !== saved;
 
   // MARK: - Loading
+
+  useEffect(() => {
+    ipc.getSettings().then((settings) => setPrefsState(loadPrefs(settings.editor)));
+  }, []);
 
   useEffect(() => {
     ipc
@@ -126,6 +131,15 @@ export default function Editor({ id }: { id: string }) {
     setSelectedId(null);
   }
 
+  /** A copy of the selection, a little down and to the right, selected. */
+  function duplicateSelected() {
+    const original = doc?.annotations.find((a) => a.id === selectedId);
+    if (!doc || !original) return;
+    const copy = shifted({ ...structuredClone(original), id: crypto.randomUUID() }, 12);
+    commit({ ...doc, annotations: [...doc.annotations, copy] });
+    setSelectedId(copy.id);
+  }
+
   function applyCrop() {
     if (!doc || !stage.current) return;
     const r = stage.current.cropRect();
@@ -185,6 +199,17 @@ export default function Editor({ id }: { id: string }) {
     showToast("Saved a copy");
   });
 
+  const deleteCapture = async () => {
+    const sure = await ask("Delete this capture? It goes to the Recycle Bin.", {
+      title: "Klik", kind: "warning", okLabel: "Delete", cancelLabel: "Cancel",
+    });
+    if (!sure) return;
+    run(async () => {
+      await ipc.historyDelete(id);
+      await getCurrentWindow().destroy();
+    });
+  };
+
   const done = () => run(async () => {
     if (dirty) await ipc.editorSave(id, await rendered());
     await getCurrentWindow().destroy();
@@ -217,6 +242,7 @@ export default function Editor({ id }: { id: string }) {
         if (key === "z" && !e.shiftKey) undo();
         else if ((key === "z" && e.shiftKey) || key === "y") redo();
         else if (key === "c") copy();
+        else if (key === "d") duplicateSelected();
         else if (key === "s" && e.shiftKey) saveAs();
         else if (key === "s") saveOver();
         else if (key === "0") stage.current?.fit();
@@ -242,6 +268,9 @@ export default function Editor({ id }: { id: string }) {
   if (!doc || !source) return null;
   const selected = doc.annotations.find((a) => a.id === selectedId) ?? null;
 
+  const showOptions = tool !== "select" || !!selected;
+  const out = { width: (doc.crop?.width ?? doc.width) * doc.scale, height: (doc.crop?.height ?? doc.height) * doc.scale };
+
   return (
     <div className="editor">
       <Toolbar
@@ -251,40 +280,35 @@ export default function Editor({ id }: { id: string }) {
           if (t !== "select") setSelectedId(null);
         }}
         prefs={prefs}
-        selected={selected}
         onStyle={restyle}
-        hasBackground={!!doc.background}
         backgroundOpen={showBackground}
         onBackground={toggleBackground}
         canUndo={history!.past.length > 0}
         canRedo={history!.future.length > 0}
         onUndo={undo}
         onRedo={redo}
-        onApplyCrop={applyCrop}
-        onResetCrop={() => {
-          commit({ ...doc, crop: null });
-          setTool("select");
-        }}
-        hasCrop={!!doc.crop}
         busy={busy}
         onCopy={copy}
-        onSaveAs={saveAs}
+        onExport={saveAs}
+        onDelete={deleteCapture}
         onDone={done}
-        zoom={zoom * (window.devicePixelRatio || 1) / doc.scale}
-        onFit={() => stage.current?.fit()}
       />
-      <div className="editor-body">
-        <Stage
-          ref={stage}
-          doc={doc}
-          source={source}
+      {showOptions && (
+        <OptionsBar
           tool={tool}
           prefs={prefs}
-          selectedId={selectedId}
-          onSelect={setSelectedId}
-          onCommit={commit}
-          onZoomChange={setZoom}
+          selected={selected}
+          onStyle={restyle}
+          onDuplicate={duplicateSelected}
+          onDeleteSelected={deleteSelected}
+          onApplyCrop={applyCrop}
+          onResetCrop={() => {
+            commit({ ...doc, crop: null });
+            setTool("select");
+          }}
         />
+      )}
+      <div className="editor-body">
         {showBackground && doc.background && (
           <BackgroundPanel
             background={doc.background}
@@ -296,8 +320,44 @@ export default function Editor({ id }: { id: string }) {
             onClose={() => setShowBackground(false)}
           />
         )}
+        <Stage
+          ref={stage}
+          doc={doc}
+          source={source}
+          tool={tool}
+          prefs={prefs}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          onCommit={commit}
+          onZoomChange={setZoom}
+        />
       </div>
+      <StatusBar
+        pixelWidth={Math.round(out.width)}
+        pixelHeight={Math.round(out.height)}
+        scale={doc.scale}
+        cropped={!!doc.crop}
+        zoom={zoom * (window.devicePixelRatio || 1) / doc.scale}
+        onZoomOut={() => stage.current?.zoomBy(0.8)}
+        onZoomIn={() => stage.current?.zoomBy(1.25)}
+        onActualSize={() => stage.current?.actualSize()}
+        onFit={() => stage.current?.fit()}
+      />
       {toast && <div className="toast" role="status">{toast}</div>}
     </div>
   );
+}
+
+/** `annotation` moved by `d` points both ways. */
+function shifted(annotation: Annotation, d: number): Annotation {
+  const p = (q: { x: number; y: number }) => ({ x: q.x + d, y: q.y + d });
+  const r = (q: { x: number; y: number; width: number; height: number }) => ({ ...q, x: q.x + d, y: q.y + d });
+  switch (annotation.type) {
+    case "rectangle": case "ellipse": case "highlight": case "blur": return { ...annotation, rect: r(annotation.rect) };
+    case "line": return { ...annotation, start: p(annotation.start), end: p(annotation.end) };
+    case "arrow": return { ...annotation, start: p(annotation.start), end: p(annotation.end) };
+    case "pencil": case "highlighter": return { ...annotation, points: annotation.points.map(p) };
+    case "text": return { ...annotation, origin: p(annotation.origin) };
+    case "counter": return { ...annotation, center: p(annotation.center) };
+  }
 }

@@ -28,12 +28,19 @@ pub fn get_settings(state: State<AppState>) -> Settings {
 #[tauri::command]
 pub fn set_settings(app: AppHandle, state: State<AppState>, settings: Settings) -> Result<Vec<Conflict>> {
     settings.save(&state.settings_path).map_err(text)?;
+    let islands_changed = {
+        let old = &state.settings.lock().unwrap().island;
+        old.enabled != settings.island.enabled || old.all_displays != settings.island.all_displays
+    };
     let folder = settings.save_folder.clone().unwrap_or_else(default_captures_folder);
     *state.settings.lock().unwrap() = settings;
     state.library.lock().unwrap().set_folder(folder);
     let conflicts = hotkeys::apply(&app);
     *state.conflicts.lock().unwrap() = conflicts.clone();
     tray::refresh(&app);
+    if islands_changed {
+        crate::island::rebuild(&app);
+    }
     app.emit("settings-changed", ()).ok();
     app.emit("library-changed", ()).ok();
     Ok(conflicts)
@@ -288,4 +295,85 @@ pub fn share_secret_status() -> std::collections::BTreeMap<String, bool> {
 #[tauri::command]
 pub fn set_share_secret(name: String, value: String) -> Result<()> {
     crate::secrets::set(&name, &value).map_err(|e| format!("{e:#}"))
+}
+
+// MARK: - Island
+
+#[tauri::command]
+pub fn island_ready(app: AppHandle, window: tauri::WebviewWindow) {
+    crate::island::ready(&app, window.label());
+}
+
+#[tauri::command]
+pub fn island_interactive(app: AppHandle, window: tauri::WebviewWindow, interactive: bool) {
+    crate::island::set_interactive(&app, window.label(), interactive);
+}
+
+#[tauri::command]
+pub fn island_take_keyboard(app: AppHandle, window: tauri::WebviewWindow) {
+    crate::island::take_keyboard(&app, window.label());
+}
+
+/// The island's fixed measures, so the page and the pointer thread agree.
+#[tauri::command]
+pub fn island_geometry() -> serde_json::Value {
+    serde_json::json!({
+        "pillWidth": crate::island::PILL_WIDTH,
+        "stripHeight": crate::island::STRIP_HEIGHT,
+        "windowWidth": crate::island::WINDOW_WIDTH,
+        "windowHeight": crate::island::WINDOW_HEIGHT,
+    })
+}
+
+/// The shortcuts Klik starts with, for Settings › Shortcuts › Restore Defaults.
+#[tauri::command]
+pub fn default_shortcuts() -> std::collections::BTreeMap<String, String> {
+    crate::settings::default_shortcuts()
+}
+
+/// What Settings › About shows: where Klik is, and the system it runs on.
+#[tauri::command]
+pub fn app_info() -> serde_json::Value {
+    let exe = std::env::current_exe().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
+    serde_json::json!({ "exe": exe, "os": os_description() })
+}
+
+#[tauri::command]
+pub fn reveal_app() -> Result<()> {
+    let exe = std::env::current_exe().map_err(text)?;
+    tauri_plugin_opener::reveal_item_in_dir(exe).map_err(text)
+}
+
+fn os_description() -> String {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // The build number tells Windows 11 (22000 and up) from 10; `ver` prints it.
+        let build = std::process::Command::new("cmd")
+            .args(["/C", "ver"])
+            .creation_flags(0x0800_0000)
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .and_then(|v| v.trim().rsplit('.').nth(1).and_then(|b| b.parse::<u32>().ok()));
+        return match build {
+            Some(b) if b >= 22000 => format!("Windows 11 (build {b})"),
+            Some(b) => format!("Windows 10 (build {b})"),
+            None => "Windows".into(),
+        };
+    }
+    #[cfg(not(windows))]
+    std::env::consts::OS.to_string()
+}
+
+/// Opens a page of Windows Settings that a Klik setting depends on.
+#[tauri::command]
+pub fn open_windows_settings(app: AppHandle, page: String) -> Result<()> {
+    use tauri_plugin_opener::OpenerExt;
+    let uri = match page.as_str() {
+        "keyboard" => "ms-settings:easeofaccess-keyboard",
+        "language" => "ms-settings:regionlanguage",
+        _ => return Err("No such page.".into()),
+    };
+    app.opener().open_url(uri, None::<&str>).map_err(text)
 }

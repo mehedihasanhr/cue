@@ -20,15 +20,25 @@ pub fn deliver(app: &AppHandle, image: RgbaImage, scale: f64, mode: Mode) -> Res
             log::warn!("{error:#}");
         }
     }
+    if settings.capture.sound {
+        crate::sound::shutter();
+    }
     let item = state.library.lock().unwrap().add(&image, scale)?;
     app.emit("library-changed", ()).ok();
 
+    // The island flashes the capture, as on the Mac; without one, a notification says
+    // where it went — unless the editor opening says so already.
+    let url = crate::protocol::url(&format!("thumb/{}", item.id));
+    let flashed = crate::island::flash(app, &item, url, settings.copy_to_clipboard);
     if settings.after_capture == AfterCapture::Edit {
         windows::open_editor(app, item.id)?;
-    } else if settings.copy_to_clipboard {
-        crate::notify::send(app, "Capture copied", "It's on the clipboard and in History.");
-    } else {
-        crate::notify::send(app, "Capture saved", "It's in History.");
+    } else if !flashed {
+        let (title, body) = if settings.copy_to_clipboard {
+            ("Capture copied", "It's on the clipboard and in History.")
+        } else {
+            ("Capture saved", "It's in History.")
+        };
+        crate::notify::send(app, title, body);
     }
     Ok(())
 }
