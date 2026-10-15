@@ -88,7 +88,8 @@ pub fn run() {
 
             // Started by hand, show something, so it is plain that Klik is running; started
             // at login, stay in the tray.
-            updates::check_later(app.handle().clone());
+            app.manage(updates::Updates::default());
+            updates::start(app.handle().clone());
 
             let args: Vec<String> = std::env::args().collect();
             if let Some(action) = actions::from_args(&args) {
@@ -161,6 +162,9 @@ pub fn run() {
             islandcmds::history_clear_unpinned,
             islandcmds::open_link,
             islandcmds::reveal_path,
+            updates::update_state,
+            updates::update_check,
+            updates::update_install,
         ])
         .build(tauri::generate_context!())
         .expect("error while starting Klik")

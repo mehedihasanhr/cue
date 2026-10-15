@@ -34,6 +34,7 @@ pub struct Settings {
     pub panels: PanelSettings,
     pub capture: CaptureSettings,
     pub clipboard: ClipboardSettings,
+    pub updates: UpdateSettings,
     /// The editor's tool defaults, as the editor writes them (`editor.defaults` on the Mac).
     pub editor: serde_json::Value,
 }
@@ -109,6 +110,21 @@ impl Default for CaptureSettings {
     }
 }
 
+/// Settings › About › Updates.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct UpdateSettings {
+    /// Download newer versions quietly and install them when the PC is left alone (or
+    /// Klik is quit); off, Klik only says there is one.
+    pub automatic: bool,
+}
+
+impl Default for UpdateSettings {
+    fn default() -> Self {
+        Self { automatic: true }
+    }
+}
+
 /// Settings › Clipboard.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
@@ -138,6 +154,7 @@ impl Default for Settings {
             panels: Default::default(),
             capture: Default::default(),
             clipboard: Default::default(),
+            updates: Default::default(),
             editor: serde_json::Value::Null,
         }
     }

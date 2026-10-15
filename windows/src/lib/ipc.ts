@@ -41,6 +41,7 @@ export type Settings = {
   panels: { position: string; columns: number };
   capture: { sound: boolean };
   clipboard: { enabled: boolean; limit: number };
+  updates: { automatic: boolean };
   editor: unknown;
   afterCapture: AfterCapture;
   copyToClipboard: boolean;

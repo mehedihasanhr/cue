@@ -7,8 +7,6 @@ import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
-import { relaunch } from "@tauri-apps/plugin-process";
-import { check, type Update } from "@tauri-apps/plugin-updater";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import appIcon from "../../src-tauri/icons/128x128@2x.png";
 import { DEFAULT_PREFS, editorDefaults, RANGES, type EditorDefaults } from "../editor/prefs";
@@ -228,7 +226,7 @@ export default function Settings() {
     appearance: () => <Appearance prefs={prefs} save={save} />,
     shortcuts: () => <Shortcuts prefs={prefs} save={save} conflicts={conflicts} />,
     sharing: () => <Sharing prefs={prefs} save={save} />,
-    about: () => <About prefs={prefs} />,
+    about: () => <About prefs={prefs} save={save} />,
     island: () => <Island prefs={prefs} save={save} />,
     capture: () => <Capture prefs={prefs} save={save} />,
     editor: () => <Editor prefs={prefs} save={save} />,
@@ -658,27 +656,29 @@ function Sharing({ prefs, save }: { prefs: Prefs; save: Save }) {
 
 // MARK: - About
 
-function About({ prefs }: { prefs: Prefs }) {
+function About({ prefs, save }: { prefs: Prefs; save: Save }) {
   const [version, setVersion] = useState("");
   const [info, setInfo] = useState<{ exe: string; os: string } | null>(null);
   const [folder, setFolder] = useState("");
   const [copied, setCopied] = useState(false);
-  const [update, setUpdate] = useState<Update | null>(null);
+  const [update, setUpdate] = useState<{ version: string | null; ready: boolean }>({ version: null, ready: false });
   const [status, setStatus] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
   useEffect(() => {
     getVersion().then(setVersion);
     ipc.appInfo().then(setInfo);
     ipc.defaultFolder().then((f) => setFolder(prefs.saveFolder ?? f));
+    invoke<{ version: string | null; ready: boolean }>("update_state").then(setUpdate);
   }, [prefs.saveFolder]);
+  useEvent<{ version: string | null; ready: boolean }>("update-changed", setUpdate);
 
   async function checkForUpdates() {
     setWorking(true);
     setStatus("Checking…");
     try {
-      const found = await check();
+      const found = await invoke<{ version: string | null; ready: boolean }>("update_check");
       setUpdate(found);
-      setStatus(found ? `Klik ${found.version} is available.` : "You have the newest version.");
+      setStatus(found.version ? null : "You have the newest version.");
     } catch (error) {
       setStatus(`Couldn't check: ${message(error)}`);
     } finally {
@@ -687,25 +687,25 @@ function About({ prefs }: { prefs: Prefs }) {
   }
 
   async function install() {
-    if (!update) return;
     setWorking(true);
-    let total = 0;
-    let received = 0;
+    setStatus(update.ready ? "Installing…" : "Downloading…");
     try {
-      await update.downloadAndInstall((event) => {
-        if (event.event === "Started") total = event.data.contentLength ?? 0;
-        if (event.event === "Progress") {
-          received += event.data.chunkLength;
-          if (total) setStatus(`Downloading… ${Math.round((received / total) * 100)}%`);
-        }
-        if (event.event === "Finished") setStatus("Installing…");
-      });
-      await relaunch();
+      // Klik closes here, and the installer opens the new one.
+      await invoke("update_install");
     } catch (error) {
       setStatus(`Couldn't install: ${message(error)}`);
       setWorking(false);
     }
   }
+
+  const automatic = prefs.updates.automatic;
+  const updateText =
+    status ??
+    (update.version
+      ? update.ready
+        ? `Klik ${update.version} is downloaded. It installs when you step away, or when you quit Klik.`
+        : `Klik ${update.version} is available.`
+      : "Klik looks for a newer version every few hours.");
 
   return (
     <Pane>
@@ -733,8 +733,8 @@ function About({ prefs }: { prefs: Prefs }) {
         <Row title="Windows">
           <span className="row-value">{info?.os}</span>
         </Row>
-        <Row title="Updates" subtitle={status ?? "Klik checks a little after it starts."}>
-          {update ? (
+        <Row title="Updates" subtitle={updateText}>
+          {update.version ? (
             <button className="button primary" disabled={working} onClick={install}>
               Install and Restart
             </button>
@@ -743,6 +743,20 @@ function About({ prefs }: { prefs: Prefs }) {
               Check for Updates
             </button>
           )}
+        </Row>
+        <Row
+          title="Install updates"
+          subtitle={automatic ? "Downloaded quietly, installed when you step away from the PC or quit Klik." : "Klik tells you when there is one; you install it here."}
+        >
+          <Segmented
+            label="Install updates"
+            value={automatic ? "auto" : "ask"}
+            onChange={(v) => save({ updates: { automatic: v === "auto" } })}
+            options={[
+              { value: "auto", title: "Automatically" },
+              { value: "ask", title: "Ask First" },
+            ]}
+          />
         </Row>
       </Group>
 

@@ -36,7 +36,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
         .menu(&menu(app)?)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
-            "quit" => app.exit(0),
+            "quit" => crate::updates::quit(app),
             action => actions::run(app, action),
         })
         .on_tray_icon_event(|tray, event| {
