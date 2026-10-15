@@ -100,3 +100,5 @@ button { cursor: default; }
 }
 @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 6px); } }
 @media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
+
+.page-failure { position: fixed; left: 12px; right: 12px; bottom: 12px; margin: 0; padding: 10px; border-radius: 8px; background: #3a0d0d; color: #ffb4b4; font: 11px var(--mono); white-space: pre-wrap; z-index: 99; }

@@ -16,6 +16,8 @@ pub fn run(app: &AppHandle, action: &str) {
             "captureText" => capture::start(&app, Mode::Text),
             "showHistory" => windows::open_history(&app),
             "showSettings" => windows::open_settings(&app, None),
+            "recordScreen" => crate::studio::record(&app),
+            "openStudio" => crate::studio::open_library(&app),
             other => match other.strip_prefix("showSettings/") {
                 Some(page) => windows::open_settings(&app, Some(page)),
                 None => Ok(()),

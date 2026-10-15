@@ -4,6 +4,7 @@
 
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
+  AudioWave01Icon,
   Album02Icon,
   Alert02Icon,
   AppWindowMacIcon,
@@ -125,6 +126,17 @@ import {
   MagicWand01Icon,
   PaintBrush04Icon,
   PlusSignSquareIcon,
+  Film01Icon,
+  Mic01Icon,
+  MicOff01Icon,
+  PauseIcon,
+  PlayIcon,
+  RotateLeft01Icon,
+  ScissorIcon,
+  Video01Icon,
+  VideoOffIcon,
+  VolumeOffIcon,
+  ZoomInAreaIcon,
 } from "@hugeicons/core-free-icons";
 
 const ICONS = {
@@ -250,6 +262,17 @@ const ICONS = {
   "viewfinder": FullScreenIcon,
   "xmark": Cancel01Icon,
   "xmark.circle.fill": CancelCircleIcon,
+  "mic": Mic01Icon,
+  "mic.slash": MicOff01Icon,
+  "speaker.slash.fill": VolumeOffIcon,
+  "video": Video01Icon,
+  "video.slash": VideoOffIcon,
+  "pause.fill": PauseIcon,
+  "play.fill": PlayIcon,
+  "arrow.counterclockwise": RotateLeft01Icon,
+  "film": Film01Icon,
+  "scissors": ScissorIcon,
+  "plus.magnifyingglass": ZoomInAreaIcon,
   "cursorarrow": Cursor01Icon,
   "photo.on.rectangle.angled": ImageCompositionIcon,
   "crop": CropIcon,
@@ -270,6 +293,8 @@ const ICONS = {
   "oval": CircleIcon,
   "line.diagonal": SolidLine01Icon,
   "cursorarrow.rays": CursorMagicSelection01Icon,
+  "waveform": AudioWave01Icon,
+  "zoom.area": ZoomInAreaIcon,
   "xmark.circle": CancelCircleIcon,
 } as const;
 
