@@ -97,6 +97,12 @@ fn monitors_signature(app: &AppHandle) -> String {
         .join("|")
 }
 
+/// A display's name for Settings to remember: Windows' device name (`\\.\DISPLAY2`),
+/// or its place in the list where there is none.
+pub fn display_id(monitor: &tauri::Monitor, index: usize) -> String {
+    monitor.name().cloned().unwrap_or_else(|| format!("display-{}", index + 1))
+}
+
 /// Makes the islands Settings asks for, replacing any there were.
 pub fn rebuild(app: &AppHandle) {
     let islands = app.state::<Islands>();
@@ -112,10 +118,17 @@ pub fn rebuild(app: &AppHandle) {
     }
     let primary = app.primary_monitor().ok().flatten();
     let monitors = app.available_monitors().unwrap_or_default();
+    // A chosen display that isn't plugged in now leaves the island on the main one.
+    let chosen = monitors.iter().enumerate().any(|(i, m)| display_id(m, i) == settings.display);
     let mut placed = Vec::new();
     for (index, monitor) in monitors.iter().enumerate() {
-        let is_primary = primary.as_ref().is_some_and(|p| p.position() == monitor.position());
-        if !settings.all_displays && !is_primary && monitors.len() > 1 {
+        let is_primary = primary.as_ref().is_some_and(|p| p.position() == monitor.position()) || (primary.is_none() && index == 0);
+        let wanted = match settings.display.as_str() {
+            "all" => true,
+            id if chosen => display_id(monitor, index) == id,
+            _ => is_primary,
+        };
+        if !wanted && monitors.len() > 1 {
             continue;
         }
         let scale = monitor.scale_factor();
