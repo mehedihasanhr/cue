@@ -4,6 +4,7 @@
 // forward pill. Every page is cards of rows built from `controls.tsx`.
 
 import { getVersion } from "@tauri-apps/api/app";
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -36,7 +37,7 @@ import "./settings.css";
 
 // MARK: - Sections
 
-type Section = "general" | "appearance" | "shortcuts" | "sharing" | "about" | "island" | "capture" | "editor";
+type Section = "general" | "appearance" | "shortcuts" | "sharing" | "about" | "island" | "capture" | "editor" | "clipboard";
 
 const SECTIONS: Record<Section, { title: string; subtitle: string; symbol: IconName; tint: Tint; keywords: string[] }> = {
   general: {
@@ -88,6 +89,13 @@ const SECTIONS: Record<Section, { title: string; subtitle: string; symbol: IconN
     tint: "orange",
     keywords: ["after", "editor", "copy", "clipboard", "sound", "shutter", "audio"],
   },
+  clipboard: {
+    title: "Clipboard",
+    subtitle: "What Klik remembers of what you copy",
+    symbol: "doc.on.clipboard.fill",
+    tint: "teal",
+    keywords: ["history", "copy", "paste", "limit", "items", "clear", "pinned"],
+  },
   editor: {
     title: "Editor",
     subtitle: "What every new annotation starts as",
@@ -99,7 +107,7 @@ const SECTIONS: Record<Section, { title: string; subtitle: string; symbol: IconN
 
 const GROUPS: Section[][] = [
   ["general", "appearance", "shortcuts", "sharing", "about"],
-  ["island", "capture", "editor"],
+  ["island", "capture", "editor", "clipboard"],
 ];
 
 function matches(section: Section, query: string): boolean {
@@ -224,6 +232,7 @@ export default function Settings() {
     island: () => <Island prefs={prefs} save={save} />,
     capture: () => <Capture prefs={prefs} save={save} />,
     editor: () => <Editor prefs={prefs} save={save} />,
+    clipboard: () => <Clipboard prefs={prefs} save={save} />,
   };
 
   return (
@@ -966,6 +975,45 @@ function Capture({ prefs, save }: { prefs: Prefs; save: Save }) {
         >
           <button className="button" onClick={() => ipc.openWindowsSettings("language")}>
             Language Settings…
+          </button>
+        </Row>
+      </Group>
+    </Pane>
+  );
+}
+
+// MARK: - Clipboard
+
+const CLIPBOARD_LIMITS = [50, 100, 200, 500, 1000];
+
+function Clipboard({ prefs, save }: { prefs: Prefs; save: Save }) {
+  const [count, setCount] = useState<number | null>(null);
+  const load = () => invoke<unknown[]>("store_list", { kind: "clipboard" }).then((list) => setCount(list.length));
+  useEffect(() => {
+    load();
+  }, []);
+  useEvent<string>("store-changed", (kind) => kind === "clipboard" && load());
+  const set = (patch: Partial<Prefs["clipboard"]>) => save({ clipboard: { ...prefs.clipboard, ...patch } });
+  return (
+    <Pane>
+      <Group>
+        <Row title="Keep a clipboard history" subtitle="What you copy shows in the island's Clipboard tab. What password managers mark as private is never kept.">
+          <Switch label="Keep a clipboard history" checked={prefs.clipboard.enabled} onChange={(enabled) => set({ enabled })} />
+        </Row>
+        <Row title="Keep the last" disabled={!prefs.clipboard.enabled}>
+          <Select
+            label="Keep the last"
+            disabled={!prefs.clipboard.enabled}
+            value={String(prefs.clipboard.limit)}
+            onChange={(v) => set({ limit: Number(v) })}
+            options={CLIPBOARD_LIMITS.map((n) => ({ value: String(n), title: `${n} items` }))}
+          />
+        </Row>
+      </Group>
+      <Group footer="Pinned items stay. This cannot be undone.">
+        <Row title={count === null ? "…" : `${count} item${count === 1 ? "" : "s"} stored`} symbol="doc.on.clipboard" tint="teal">
+          <button className="button" disabled={!count} onClick={() => invoke("store_clear_unpinned", { kind: "clipboard" })}>
+            Clear History
           </button>
         </Row>
       </Group>

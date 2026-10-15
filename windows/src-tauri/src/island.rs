@@ -60,6 +60,18 @@ struct Pointer {
     x: f64,
     y: f64,
     in_window: bool,
+    /// The left button is held: something may be being dragged onto the island.
+    button: bool,
+}
+
+fn left_button_down() -> bool {
+    #[cfg(windows)]
+    unsafe {
+        use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+        return (GetAsyncKeyState(VK_LBUTTON.0 as i32) as u16 & 0x8000) != 0;
+    }
+    #[cfg(not(windows))]
+    false
 }
 
 /// A moment's confirmation on the island — the Mac's `IslandStatus`.
@@ -168,6 +180,7 @@ pub fn set_interactive(app: &AppHandle, label: &str, interactive: bool) {
 /// The search field was clicked: the island takes the keyboard.
 pub fn take_keyboard(app: &AppHandle, label: &str) {
     if let Some(window) = app.get_webview_window(label) {
+        crate::paste::remember_front();
         window.set_focusable(true).ok();
         window.set_focus().ok();
     }
@@ -203,6 +216,7 @@ pub fn watch(app: AppHandle) {
                         x: (cursor.x - island.x as f64) / island.scale,
                         y: (cursor.y - island.y as f64) / island.scale,
                         in_window: inside,
+                        button: left_button_down(),
                     };
                     app.emit_to(&island.label, "island:pointer", pointer).ok();
                 }

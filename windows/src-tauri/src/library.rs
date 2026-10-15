@@ -137,6 +137,22 @@ impl Library {
         self.write_index()
     }
 
+    /// Puts a capture in a group, or takes it out of its group with `None`.
+    pub fn set_group(&mut self, id: Uuid, group: Option<Uuid>) -> Result<()> {
+        if let Some(item) = self.items.iter_mut().find(|item| item.id == id) {
+            item.group_id = group;
+        }
+        self.write_index()
+    }
+
+    /// Takes every capture out of a group that is being deleted.
+    pub fn ungroup(&mut self, group: Uuid) -> Result<()> {
+        for item in self.items.iter_mut().filter(|item| item.group_id == Some(group)) {
+            item.group_id = None;
+        }
+        self.write_index()
+    }
+
     pub fn thumbnail_path(&self, id: Uuid) -> PathBuf {
         self.thumbnails.join(format!("{id}.jpg"))
     }

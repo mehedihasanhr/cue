@@ -3,16 +3,20 @@
 // elsewhere, as a panel does.
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useEvent } from "../lib/hooks";
 import { ipc } from "../lib/ipc";
 import { Panel } from "./Panel";
+import { PromptView, type Prompt } from "./Prompt";
 import "./island.css";
 
 export default function KlikPanel() {
   const window = getCurrentWindow();
   const [columns, setColumns] = useState(4);
   const [toast, setToast] = useState<string | null>(null);
+  const [prompt, setPrompt] = useState<Prompt | null>(null);
+  // A menu or a form takes the focus for a moment; that is not a click elsewhere.
+  const busy = useRef(false);
 
   const load = () => ipc.getSettings().then((s) => setColumns(s.panels.columns));
   useEffect(() => {
@@ -20,9 +24,10 @@ export default function KlikPanel() {
     load();
     window.show().then(() => window.setFocus());
     const off = window.onFocusChanged(({ payload: focused }) => {
-      if (!focused) window.hide();
+      if (!focused && !busy.current) window.hide();
     });
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && window.hide();
+    // Esc hides the panel once nothing inside it (a search, an open card, a form) wants it.
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !e.defaultPrevented && !busy.current && window.hide();
     document.addEventListener("keydown", onKey);
     return () => {
       off.then((stop) => stop());
@@ -42,12 +47,31 @@ export default function KlikPanel() {
         <Panel
           mode="floating"
           onDone={() => window.hide()}
+          onMenu={(open) => (busy.current = open)}
+          onPrompt={(p) => {
+            busy.current = true;
+            setPrompt(p);
+          }}
           onStatus={(title) => {
             setToast(title);
             setTimeout(() => setToast(null), 1600);
           }}
         />
         {toast && <div className="toast" role="status">{toast}</div>}
+        {prompt && (
+          <div className="floating-prompt" onMouseDown={(e) => e.target === e.currentTarget && setPrompt(null)}>
+            <div className="floating-prompt-box">
+              <PromptView
+                prompt={prompt}
+                onClose={() => {
+                  setPrompt(null);
+                  busy.current = false;
+                  window.setFocus();
+                }}
+              />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

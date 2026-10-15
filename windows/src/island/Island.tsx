@@ -3,12 +3,15 @@
 // are the Mac's (`IslandGeometry`, `IslandView`).
 
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useEvent } from "../lib/hooks";
 import { ipc, type Settings } from "../lib/ipc";
 import { Icon, STROKE, type IconName } from "../ui/icon";
 import { Animator, curves, notchPath } from "./motion";
+import { island } from "./data";
 import { Panel } from "./Panel";
+import { promptSize, PromptView, type Prompt } from "./Prompt";
 import "./island.css";
 
 type Geometry = { pillWidth: number; stripHeight: number; windowWidth: number; windowHeight: number };
@@ -19,7 +22,8 @@ type Phase =
   | { kind: "collapsed" }
   | { kind: "flash"; flash: Flash }
   | { kind: "status"; status: Status }
-  | { kind: "expanded" };
+  | { kind: "expanded" }
+  | { kind: "prompt"; prompt: Prompt };
 
 // The Mac's measures (IslandGeometry).
 const PANEL_WIDTH = 780;
@@ -45,12 +49,16 @@ export default function Island() {
   const [faded, setFaded] = useState(true);
   const [contentWidth, setContentWidth] = useState<number | null>(null);
   const [panelHeight, setPanelHeight] = useState(258);
+  const [dropping, setDropping] = useState(false);
+  /** The panel stays mounted under a form, so closing the form finds it as it was. */
+  const [panelAlive, setPanelAlive] = useState(false);
   const [shape, setShape] = useState({ width: 140, height: 22, radius: RADIUS.collapsed, flare: CLOSED_FLARE });
   const animator = useRef<Animator<"width" | "height" | "radius" | "flare"> | null>(null);
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
   const timers = useRef<{ open?: number; close?: number; dismiss?: number; fade?: number }>({});
   const menuOpen = useRef(false);
+  const dragArmed = useRef(false);
   const interactive = useRef(false);
   const contentRow = useRef<HTMLDivElement>(null);
   const panelBox = useRef<HTMLDivElement>(null);
@@ -93,6 +101,11 @@ export default function Island() {
         target = { width: Math.round(width), height: strip + FLASH_HEIGHT, radius: RADIUS.flash, flare: OPEN_FLARE };
         break;
       }
+      case "prompt": {
+        const size = promptSize(phase.prompt);
+        target = { width: size.width, height: strip + size.height + PANEL_PADDING.bottom, radius: RADIUS.expanded, flare: OPEN_FLARE };
+        break;
+      }
       case "expanded":
         target = {
           width: PANEL_WIDTH + PANEL_PADDING.horizontal * 2,
@@ -109,8 +122,16 @@ export default function Island() {
     if (phase.kind === "collapsed") timers.current.fade = window.setTimeout(() => setFaded(true), 460);
     else setFaded(false);
 
-    setInteractive(phase.kind === "expanded");
-  }, [phase.kind, contentWidth, panelHeight, geometry, settings?.animation]);
+    setInteractive(phase.kind === "expanded" || phase.kind === "prompt");
+    if (phase.kind === "expanded") setPanelAlive(true);
+    if (phase.kind === "collapsed" || phase.kind === "flash" || phase.kind === "status") {
+      setPanelAlive(false);
+      setDropping(false);
+      island.forgetFront();
+    }
+    // A form is typed into: the island takes the keyboard for it.
+    if (phase.kind === "prompt") invoke("island_take_keyboard");
+  }, [phase.kind, phase.kind === "prompt" ? phase.prompt : null, contentWidth, panelHeight, geometry, settings?.animation]);
 
   function setInteractive(on: boolean) {
     if (interactive.current === on) return;
@@ -159,14 +180,19 @@ export default function Island() {
     return { left: left - slop, right: left + total + slop, bottom: shape.height + slop };
   }
 
-  useEvent<{ x: number; y: number; inWindow: boolean }>("island:pointer", (p) => {
+  useEvent<{ x: number; y: number; inWindow: boolean; button: boolean }>("island:pointer", (p) => {
     if (!settings || !geometry) return;
     const current = phaseRef.current;
     const bounds = shapeBounds(current.kind === "collapsed" ? 6 : 0);
     const over = p.inWindow && p.x >= bounds.left && p.x <= bounds.right && p.y <= bounds.bottom;
 
+    // Armed only by a button already held as the pointer arrives — a drag from elsewhere,
+    // not a click on the pill.
+    if (!over) dragArmed.current = p.button;
+    if (dropping && !p.button && !over) setDropping(false);
+    if (current.kind === "prompt") return; // a form closes by its own buttons, or a click outside
     if (current.kind === "expanded") {
-      if (over || menuOpen.current) {
+      if (over || menuOpen.current || dropping) {
         window.clearTimeout(timers.current.close);
         timers.current.close = undefined;
       } else if (settings.closeOnLeave && timers.current.close === undefined) {
@@ -175,6 +201,14 @@ export default function Island() {
       return;
     }
 
+    // Something dragged onto the island with the button held: open on Assets, ready
+    // for the drop, whatever the open mode.
+    if (over && p.button && dragArmed.current) {
+      dragArmed.current = false;
+      setDropping(true);
+      open();
+      return;
+    }
     if (settings.openMode === "click") {
       // Clicks only reach the page while the pointer is over the pill.
       setInteractive(over);
@@ -213,9 +247,66 @@ export default function Island() {
   };
   useEvent<Status>("island:status", showStatus);
 
+  // Files dropped on the open island are kept as assets.
+  useEffect(() => {
+    const off = getCurrentWebview().onDragDropEvent((event) => {
+      const kind = event.payload.type;
+      if (kind === "enter" || kind === "over") {
+        setDropping(true);
+        if (phaseRef.current.kind !== "expanded") open();
+      } else if (kind === "leave") {
+        setDropping(false);
+      } else if (kind === "drop") {
+        setDropping(false);
+        const paths = event.payload.paths;
+        island
+          .assetsAddPaths(paths)
+          .then((n) => {
+            close();
+            setTimeout(
+              () => showStatus({ title: n === 0 ? "Nothing to save" : n === 1 ? "Saved to Assets" : `${n} saved to Assets`, symbol: n ? "tray.and.arrow.down.fill" : "exclamationmark.triangle.fill", duration: 1.8 }),
+              120,
+            );
+          })
+          .catch(() => {});
+      }
+    });
+    return () => {
+      off.then((stop) => stop());
+    };
+  }, []);
+
+  function showPrompt(prompt: Prompt) {
+    window.clearTimeout(timers.current.close);
+    timers.current.close = undefined;
+    setPhase({ kind: "prompt", prompt });
+  }
+
+  /** A form is done: back to the panel, as the Mac's island goes back after one. */
+  function promptDone() {
+    if (phaseRef.current.kind === "prompt") setPhase({ kind: "expanded" });
+  }
+
   // Debug builds: `--island-demo <phase>` shows a phase without the pointer.
   useEvent<string>("island:demo", (name) => {
-    if (name === "expanded") open();
+    if (name.startsWith("expanded:")) {
+      // `expanded:<tab>` opens on that tab; `expanded:search=<text>` searches.
+      const arg = name.slice("expanded:".length);
+      try {
+        if (arg.startsWith("search=")) localStorage.setItem("island.demo.search", arg.slice(7));
+        else localStorage.setItem("island.tab", arg);
+      } catch {
+        /* demo only */
+      }
+      setPhase({ kind: "collapsed" });
+      setTimeout(open, 50);
+    } else if (name === "prompt" || name === "form") {
+      setPhase(
+        name === "prompt"
+          ? { kind: "prompt", prompt: { type: "field", title: "Name this color", placeholder: "Name", initial: "Klik blue", onSubmit: () => {} } }
+          : { kind: "prompt", prompt: { type: "task", title: "New task", projects: [], initial: { text: "Ship the island", priority: "high" }, onSubmit: () => {} } },
+      );
+    } else if (name === "expanded") open();
     else if (name === "flash") setPhase({ kind: "flash", flash: { url: "", width: 1920, height: 1080, copied: true, duration: 60 } });
     else if (name === "status") setPhase({ kind: "status", status: { symbol: "checkmark.circle.fill", title: "Text copied", subtitle: "3 lines on the clipboard", duration: 60 } });
     else close();
@@ -225,6 +316,7 @@ export default function Island() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && phaseRef.current.kind === "expanded") close();
+      else if (e.key === "Escape" && phaseRef.current.kind === "prompt") promptDone();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -237,7 +329,7 @@ export default function Island() {
   const path = notchPath(shape.width, shape.height, shape.flare, shape.radius);
   const collapsed = phase.kind === "collapsed";
   const black = !(collapsed && faded && !settings.showPill);
-  const rim = phase.kind === "expanded";
+  const rim = phase.kind === "expanded" || phase.kind === "prompt";
 
   return (
     <div
@@ -246,6 +338,7 @@ export default function Island() {
         const b = shapeBounds();
         const inside = e.clientX >= b.left && e.clientX <= b.right && e.clientY <= b.bottom;
         if (!inside && phase.kind === "expanded") close();
+        else if (!inside && phase.kind === "prompt") promptDone();
         else if (inside && collapsed && settings.openMode === "click") open();
       }}
     >
@@ -278,18 +371,25 @@ export default function Island() {
               </div>
             </>
           )}
-          {phase.kind === "expanded" && (
+          {phase.kind === "prompt" && (
+            <div className="island-prompt" key="prompt" style={{ padding: `0 ${PANEL_PADDING.horizontal + 12}px ${PANEL_PADDING.bottom}px` }}>
+              <PromptView prompt={phase.prompt} onClose={promptDone} />
+            </div>
+          )}
+          {(phase.kind === "expanded" || (phase.kind === "prompt" && panelAlive)) && (
             <div
               className="island-panel"
               ref={panelBox}
-              style={{ padding: `0 ${PANEL_PADDING.horizontal}px ${PANEL_PADDING.bottom}px` }}
+              style={{ padding: `0 ${PANEL_PADDING.horizontal}px ${PANEL_PADDING.bottom}px`, display: phase.kind === "prompt" ? "none" : undefined }}
             >
               <Panel
                 mode="island"
-                initialTab={settings.opensOn}
+                initialTab={dropping ? "assets" : settings.opensOn}
+                dropping={dropping}
                 onWantsKeyboard={() => invoke("island_take_keyboard")}
                 onMenu={(open) => (menuOpen.current = open)}
                 onDone={close}
+                onPrompt={showPrompt}
                 onStatus={(title, symbol, subtitle) => {
                   close();
                   setTimeout(() => showStatus({ title, symbol, subtitle, duration: 1.8 }), 120);

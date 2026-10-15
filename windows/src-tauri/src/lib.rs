@@ -1,6 +1,12 @@
 //! Klik for Windows: the screenshot tool, in the tray.
 
 mod actions;
+mod assets;
+mod cliphistory;
+mod islandcmds;
+mod notes;
+mod paste;
+mod stores;
 mod capture;
 mod clipboard;
 mod commands;
@@ -65,6 +71,10 @@ pub fn run() {
                 conflicts: Mutex::new(Vec::new()),
             });
 
+            app.manage(stores::Stores::open(&roaming, &local));
+            app.manage(islandcmds::NotesFolder(notes::folder(&roaming)));
+            cliphistory::watch(app.handle().clone());
+
             app.manage(island::Islands::default());
             island::rebuild(app.handle());
             island::watch(app.handle().clone());
@@ -128,6 +138,29 @@ pub fn run() {
             commands::app_info,
             commands::reveal_app,
             commands::open_windows_settings,
+            islandcmds::store_list,
+            islandcmds::store_put,
+            islandcmds::store_update,
+            islandcmds::store_delete,
+            islandcmds::store_clear_unpinned,
+            islandcmds::clip_copy,
+            islandcmds::copy_text_and_paste,
+            islandcmds::paste_item,
+            islandcmds::forget_front,
+            islandcmds::assets_add_paths,
+            islandcmds::assets_add_clipboard,
+            islandcmds::asset_copy,
+            islandcmds::asset_open,
+            islandcmds::asset_reveal,
+            islandcmds::asset_rename,
+            islandcmds::notes_list,
+            islandcmds::note_save,
+            islandcmds::note_delete,
+            islandcmds::note_reveal,
+            islandcmds::history_set_group,
+            islandcmds::history_clear_unpinned,
+            islandcmds::open_link,
+            islandcmds::reveal_path,
         ])
         .build(tauri::generate_context!())
         .expect("error while starting Klik")

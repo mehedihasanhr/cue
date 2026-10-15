@@ -40,6 +40,7 @@ export type Settings = {
   island: IslandSettings;
   panels: { position: string; columns: number };
   capture: { sound: boolean };
+  clipboard: { enabled: boolean; limit: number };
   editor: unknown;
   afterCapture: AfterCapture;
   copyToClipboard: boolean;
@@ -70,6 +71,7 @@ export type HistoryItem = {
   pixelHeight: number;
   scale: number;
   pinned: boolean;
+  groupID?: string;
   url: string;
   thumbnailUrl: string;
   path: string;

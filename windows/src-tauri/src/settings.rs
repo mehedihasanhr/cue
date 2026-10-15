@@ -33,6 +33,7 @@ pub struct Settings {
     pub island: IslandSettings,
     pub panels: PanelSettings,
     pub capture: CaptureSettings,
+    pub clipboard: ClipboardSettings,
     /// The editor's tool defaults, as the editor writes them (`editor.defaults` on the Mac).
     pub editor: serde_json::Value,
 }
@@ -108,6 +109,22 @@ impl Default for CaptureSettings {
     }
 }
 
+/// Settings › Clipboard.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ClipboardSettings {
+    /// Keep a history of what is copied.
+    pub enabled: bool,
+    /// How many entries; pinned ones are kept beyond it.
+    pub limit: u32,
+}
+
+impl Default for ClipboardSettings {
+    fn default() -> Self {
+        Self { enabled: true, limit: 200 }
+    }
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -120,6 +137,7 @@ impl Default for Settings {
             island: Default::default(),
             panels: Default::default(),
             capture: Default::default(),
+            clipboard: Default::default(),
             editor: serde_json::Value::Null,
         }
     }

@@ -4,6 +4,8 @@
 //!   frame/<session>/<display>.png   a frozen display, while a capture is being chosen
 //!   capture/<id>                    a capture's PNG
 //!   thumb/<id>                      its thumbnail
+//!   clip/<id>                       a clipboard entry's picture
+//!   asset/<id>                      an asset's file
 
 use crate::state::AppState;
 use tauri::http::{Request, Response, StatusCode};
@@ -37,6 +39,23 @@ pub fn handle(app: &AppHandle, request: Request<Vec<u8>>) -> Response<Vec<u8>> {
         }),
         ["thumb", id] => uuid::Uuid::parse_str(id).ok().and_then(|id| {
             app.state::<AppState>().library.lock().unwrap().thumbnail(id).ok().map(|data| ("image/jpeg", data))
+        }),
+        ["clip", id] => {
+            let folder = app.state::<crate::stores::Stores>().clipboard_folder();
+            let id = id.trim_end_matches(".png");
+            (!id.contains(['/', '\\', '.'])).then(|| std::fs::read(folder.join(format!("{id}.png"))).ok()).flatten().map(|d| ("image/png", d))
+        }
+        ["asset", id] => crate::assets::path(app, id).and_then(|path| {
+            let mime = match path.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase).as_deref() {
+                Some("png") => "image/png",
+                Some("jpg" | "jpeg") => "image/jpeg",
+                Some("gif") => "image/gif",
+                Some("webp") => "image/webp",
+                Some("bmp") => "image/bmp",
+                Some("avif") => "image/avif",
+                _ => "application/octet-stream",
+            };
+            std::fs::read(path).ok().map(|d| (mime, d))
         }),
         _ => None,
     };
