@@ -1,0 +1,11 @@
+html, body, #root { background: #000; }
+.overlay { position: fixed; inset: 0; cursor: crosshair; overflow: hidden; }
+.overlay.window-mode { cursor: default; }
+.overlay img, .overlay canvas:not(.loupe) {
+  position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+  pointer-events: none;
+}
+.loupe {
+  position: absolute; width: 128px; height: 150px; pointer-events: none; display: none;
+  border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.25);
+}
