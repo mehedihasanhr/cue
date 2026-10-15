@@ -10,6 +10,7 @@ import { ipc, type Settings } from "../lib/ipc";
 import { Icon, STROKE, type IconName } from "../ui/icon";
 import { Animator, curves, notchPath } from "./motion";
 import { island } from "./data";
+import { menuDismissed } from "./menus";
 import { Panel } from "./Panel";
 import { promptSize, PromptView, type Prompt } from "./Prompt";
 import "./island.css";
@@ -59,6 +60,7 @@ export default function Island() {
   const timers = useRef<{ open?: number; close?: number; dismiss?: number; fade?: number }>({});
   const menuOpen = useRef(false);
   const dragArmed = useRef(false);
+  const buttonWasDown = useRef(false);
   const interactive = useRef(false);
   const contentRow = useRef<HTMLDivElement>(null);
   const panelBox = useRef<HTMLDivElement>(null);
@@ -185,6 +187,13 @@ export default function Island() {
     const current = phaseRef.current;
     const bounds = shapeBounds(current.kind === "collapsed" ? 6 : 0);
     const over = p.inWindow && p.x >= bounds.left && p.x <= bounds.right && p.y <= bounds.bottom;
+
+    // A menu from the island is up: a click away from the island closes it (a click on
+    // one of its items is heard by the item first, a moment before this).
+    if (menuOpen.current && buttonWasDown.current && !p.button && !over) {
+      window.setTimeout(menuDismissed, 300);
+    }
+    buttonWasDown.current = p.button;
 
     // Armed only by a button already held as the pointer arrives — a drag from elsewhere,
     // not a click on the pill.
