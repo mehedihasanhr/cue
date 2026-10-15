@@ -1,0 +1,62 @@
+/* The recorder bar, measured off the Mac's: 64 tall, radius 18, frosted #292929, 44-point
+   tiles, one red record button. The window is clear; the bar sits in its middle. */
+html, body, #root { background: transparent !important; }
+.bar-frame { position: fixed; inset: 0; display: grid; place-items: center; }
+.bar {
+  display: flex; align-items: center; height: 64px; padding: 0 10px; border-radius: 18px;
+  background: rgba(41, 41, 41, 0.94); color: #fff;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  animation: bar-in 260ms cubic-bezier(0.2, 0.9, 0.3, 1.1);
+}
+@keyframes bar-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } }
+.separator { width: 1px; height: 38px; margin: 0 10px; background: rgba(255, 255, 255, 0.1); }
+.close-disc {
+  display: grid; place-items: center; width: 24px; height: 24px; margin: 0 2px 0 8px; padding: 0; border: 0; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92); color: #1f1f1f; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+.close-disc:active { transform: scale(0.88); }
+.modes { display: flex; gap: 2px; padding: 3px; border-radius: 13px; background: rgba(0, 0, 0, 0.22); }
+.mode, .tile {
+  display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 10px;
+  background: transparent; color: rgba(255, 255, 255, 0.58); transition: background 140ms ease-out, color 140ms ease-out;
+}
+.mode { width: 40px; height: 38px; }
+.mode:hover, .tile:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); color: #fff; }
+.mode.on { background: rgba(255, 255, 255, 0.16); color: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); }
+.tile { color: #fff; }
+.tile.off { color: rgba(255, 255, 255, 0.58); }
+.tile:disabled { color: rgba(255, 255, 255, 0.3); }
+.record {
+  display: grid; place-items: center; width: 44px; height: 44px; margin-left: 4px; padding: 0; border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.8); background: transparent;
+}
+.record:hover { border-color: rgba(255, 255, 255, 0.95); }
+.record-dot { width: 30px; height: 30px; border-radius: 50%; background: #ff3b30; transition: transform 140ms ease-out; }
+.record:hover .record-dot { transform: scale(1.06); background: #ff453a; }
+.record:active .record-dot { transform: scale(0.9); }
+.stop { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: rgba(255, 59, 48, 0.18); }
+.stop:hover { background: rgba(255, 59, 48, 0.3); }
+.stop-square { width: 15px; height: 15px; border-radius: 3.5px; background: #ff453a; }
+.timer { display: flex; align-items: center; gap: 8px; padding-left: 12px; min-width: 120px; }
+.live-dot { width: 9px; height: 9px; border-radius: 50%; background: #ff3b30; animation: pulse 1.4s ease-in-out infinite; }
+.live-dot.held { background: #ff9f0a; animation: none; }
+@keyframes pulse { 50% { opacity: 0.35; } }
+.time { font: 500 15px var(--font); font-variant-numeric: tabular-nums; min-width: 46px; }
+.paused { font-size: 9.5px; font-weight: 600; letter-spacing: 0.04em; color: #ff9f0a; }
+.countdown { position: relative; display: grid; place-items: center; width: 38px; height: 38px; margin-left: 6px; }
+.countdown svg { position: absolute; inset: 0; transform: rotate(-90deg); }
+.ring-track { fill: none; stroke: rgba(255, 255, 255, 0.15); stroke-width: 3; }
+.ring { fill: none; stroke: #ff453a; stroke-width: 3; stroke-linecap: round; stroke-dasharray: 100.5; transition: stroke-dashoffset 1s linear; }
+.countdown span { font: 500 19px var(--mono); }
+.bar-text { width: 210px; padding: 0 12px; }
+.bar-text.wide { width: 290px; }
+.bar-title { font-size: 13px; font-weight: 600; }
+.bar-sub { font-size: 11.5px; color: rgba(255, 255, 255, 0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pill {
+  height: 34px; padding: 0 14px; margin-left: 6px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.1); color: #fff; font-size: 12.5px; font-weight: 500;
+}
+.pill:hover { background: rgba(255, 255, 255, 0.16); }
+.pill.danger { background: #ff3b30; border-color: transparent; font-weight: 600; }
+.warn { display: grid; place-items: center; width: 34px; color: #ff9f0a; padding-left: 6px; }
+@media (prefers-reduced-motion: reduce) { .bar, .live-dot { animation: none; } }

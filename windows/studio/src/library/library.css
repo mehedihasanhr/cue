@@ -1,0 +1,21 @@
+.library { height: 100%; display: flex; flex-direction: column; background: var(--page-solid); }
+.library-header { display: flex; align-items: center; gap: 12px; padding: 18px 24px 14px; }
+.library-header h1 { margin: 0; font-size: 20px; font-weight: 600; flex: 1; }
+.library-search { display: flex; align-items: center; gap: 6px; height: 30px; width: 220px; padding: 0 10px; border-radius: 10px; background: var(--field); color: var(--text-2); }
+.library-search input { flex: 1; min-width: 0; border: 0; background: none; outline: none; user-select: text; }
+.new-recording { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--brand); color: #fff; font-weight: 600; }
+.new-recording .dot { width: 9px; height: 9px; border-radius: 50%; background: #ff453a; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9); }
+.library-grid { flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 18px; padding: 4px 24px 24px; align-content: start; }
+.recording-card { display: flex; flex-direction: column; gap: 4px; border: 0; padding: 0; background: none; text-align: left; color: var(--text); }
+.poster { position: relative; aspect-ratio: 16 / 10; border-radius: 12px; overflow: hidden; background: #000; box-shadow: inset 0 0 0 1px var(--edge); }
+.poster video { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+.recording-card:hover .poster { box-shadow: 0 0 0 2px var(--brand); }
+.duration, .badge { position: absolute; bottom: 8px; padding: 2px 7px; border-radius: 6px; background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.duration { right: 8px; }
+.badge { left: 8px; }
+.badge.warn { background: rgba(255, 159, 10, 0.9); color: #000; }
+.card-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-meta { font-size: 11.5px; color: var(--text-2); }
+.library-empty { flex: 1; display: grid; place-content: center; justify-items: center; gap: 8px; color: var(--text-2); text-align: center; padding: 40px; }
+.empty-title { font-size: 15px; font-weight: 600; color: var(--text); }
+.empty-sub { max-width: 380px; font-size: 12.5px; line-height: 1.5; }
