@@ -111,6 +111,7 @@ final class StudioAppDelegate: NSObject, NSApplicationDelegate {
         Self.shared = self
         guard let handOff = Self.handOff else { return }
         configure(settings: handOff.settings, studio: handOff.studio)
+        DriveStorage.shared.resumeAtLaunch()
     }
 
     /// Settings, made the first time somebody asks for it and kept, so it opens where it

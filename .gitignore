@@ -9,6 +9,8 @@ xcuserdata/
 
 # Local signing config (contains your Team ID) and the self-signed dev certificate
 Config/Signing.xcconfig
+# Google OAuth client ID for Drive backup (see Config/Google.xcconfig.example)
+Config/Google.xcconfig
 Config/local/
 
 # Test results

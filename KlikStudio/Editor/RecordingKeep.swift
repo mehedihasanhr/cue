@@ -26,13 +26,17 @@ enum RecordingKeep {
     }
 
     static func keep(_ package: URL) {
+        guard isUnsaved(package) else { return }
         try? FileManager.default.removeItem(at: marker(in: package))
+        // A draft kept is a recording like any other — and one Drive has been waiting for.
+        DriveStorage.shared.recordingKept(package)
     }
 
     /// Deletes a take nobody kept — once nothing is still exporting from it, since an
     /// export carries on after its window closes and reads the package as it goes.
     @MainActor
     static func discard(_ package: URL, after exports: ExportJobs) {
+        DriveStorage.shared.recordingDiscarded(package)
         Task { @MainActor in
             while exports.isBusy { try? await Task.sleep(for: .seconds(1)) }
             do {

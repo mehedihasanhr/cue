@@ -4,3 +4,7 @@
 // It shares only the signing identity, so the host's team check recognises it.
 
 #include? "Signing.xcconfig"
+
+// Google sign-in for Drive backup. Not committed: copy Google.xcconfig.example to
+// Google.xcconfig and put your OAuth client ID in it. See docs/studio/google-drive.md.
+#include? "Google.xcconfig"

@@ -435,9 +435,28 @@ private struct RecordingActions {
          [.init("Rename\u{2026}", systemImage: "pencil") { catalog.beginRenaming(entry) },
           .init("Duplicate", systemImage: "plus.square.on.square") { Task { await catalog.duplicate(entry) } },
           .init("Reveal in Finder", systemImage: "folder") { catalog.reveal(entry) }],
+         driveActions,
          // Named for where it goes, not for what it destroys: this is a move to the
          // Trash, and a menu item that says Delete promises something worse.
          [.init("Move to Trash", systemImage: "trash") { catalog.askToDelete(entry) }]]
+    }
+
+    /// Google Drive, as far as this take has got there.
+    private var driveActions: [StudioActionMenu<AnyView>.Action] {
+        let drive = DriveStorage.shared
+        let url = entry.url
+        switch drive.status(for: url) {
+        case .none:
+            return [.init("Upload to Google Drive", systemImage: "icloud.and.arrow.up") { drive.upload(url) }]
+        case .queued, .uploading:
+            return [.init("Stop Uploading", systemImage: "xmark.icloud") { drive.cancel(url) }]
+        case .failed:
+            return [.init("Retry Upload to Google Drive", systemImage: "arrow.clockwise.icloud") { drive.upload(url) }]
+        case .uploaded:
+            return [.init("Copy Google Drive Link", systemImage: "link") { drive.copyLink(for: url) },
+                    .init("Open in Google Drive", systemImage: "arrow.up.forward.square") { drive.openInDrive(url) },
+                    .init("Upload Changes to Google Drive", systemImage: "icloud.and.arrow.up") { drive.upload(url) }]
+        }
     }
 
     /// "Sep 30, 2026 at 7:15 PM · 0:34 · 45 MB" — the three facts that tell two takes apart.
@@ -606,6 +625,7 @@ private struct RecordingCard: View {
     /// player puts them.
     private var badges: some View {
         HStack(spacing: 5) {
+            DriveBadge(url: entry.url)
             if actions.hasSound {
                 Image(systemName: entry.kinds.contains(.microphone) ? "mic.fill" : "speaker.wave.2.fill")
                     .font(.system(size: 9, weight: .semibold))
@@ -753,6 +773,43 @@ private struct RecordingRow: View {
             }
             .clipShape(StudioTheme.squircle(6))
             .overlay(StudioTheme.squircle(6).strokeBorder(StudioTheme.Palette.stroke))
+            .overlay(alignment: .bottomTrailing) {
+                DriveBadge(url: entry.url)
+                    .foregroundStyle(.white)
+                    .padding(3)
+                    .background(.black.opacity(0.62), in: Circle())
+                    .padding(3)
+                    .opacity(DriveStorage.shared.status(for: entry.url) == .none ? 0 : 1)
+            }
+    }
+}
+
+/// Where a take is with Google Drive, as one small glyph: going up, up, or stuck.
+/// Nothing at all for a take that has never been sent.
+private struct DriveBadge: View {
+    let url: URL
+
+    var body: some View {
+        switch DriveStorage.shared.status(for: url) {
+        case .none:
+            EmptyView()
+        case .queued:
+            glyph("icloud", help: "Waiting to upload to Google Drive")
+        case let .uploading(progress):
+            glyph("icloud.and.arrow.up", help: "Uploading to Google Drive \u{2014} \(Int(progress * 100))%")
+                .symbolEffect(.pulse, options: .repeating)
+        case .uploaded:
+            glyph("checkmark.icloud.fill", help: "In Google Drive")
+        case let .failed(message):
+            glyph("exclamationmark.icloud.fill", help: "Couldn\u{2019}t upload to Google Drive: \(message)")
+        }
+    }
+
+    private func glyph(_ name: String, help: String) -> some View {
+        Image(systemName: name)
+            .font(.system(size: 9.5, weight: .semibold))
+            .help(help)
+            .accessibilityLabel(help)
     }
 }
 

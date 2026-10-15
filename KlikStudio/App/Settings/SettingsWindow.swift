@@ -43,7 +43,7 @@ enum StudioSettingsSection: String, CaseIterable, Identifiable {
         case .captions: "The language listened for, and how new captions look"
         case .audio: "Voice clean-up, click sounds and the preview"
         case .export: "What the export sheet starts with, and what happens after"
-        case .storage: "Disk space, caches, and starting over"
+        case .storage: "Google Drive, disk space, caches"
         case .about: "The recording add-on for Klik"
         }
     }
@@ -86,7 +86,7 @@ enum StudioSettingsSection: String, CaseIterable, Identifiable {
         case .captions: ["language", "transcribe", "subtitles", "position", "typeface", "font", "animation", "highlight", "backdrop"]
         case .audio: ["voice", "clean up", "noise", "even out", "loudness", "volume", "click sound", "preview", "voiceover", "count in", "mute"]
         case .export: ["format", "mp4", "mov", "prores", "gif", "quality", "frame rate", "size", "resolution", "1080p", "4k", "codec", "sound", "loop", "folder", "reveal", "finder", "open"]
-        case .storage: ["disk", "space", "free", "cache", "waveform", "thumbnail", "poster", "clear", "reset", "defaults"]
+        case .storage: ["google", "drive", "cloud", "upload", "backup", "disk", "space", "free", "cache", "waveform", "thumbnail", "poster", "clear", "reset", "defaults"]
         case .about: ["version", "contract", "klik", "connection", "bridge", "build"]
         }
     }

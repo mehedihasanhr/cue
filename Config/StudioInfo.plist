@@ -51,6 +51,9 @@
 			</dict>
 		</dict>
 	</array>
+	<!-- The Google OAuth client for Drive backup, from Config/Google.xcconfig. Empty when unset. -->
+	<key>KlikGoogleClientID</key>
+	<string>$(KLIK_GOOGLE_CLIENT_ID)</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Klik Studio writes captions by recognising the speech in your recording. This happens on your Mac — the audio is never sent anywhere.</string>
 </dict>
