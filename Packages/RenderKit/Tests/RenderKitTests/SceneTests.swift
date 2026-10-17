@@ -258,6 +258,69 @@ struct SceneTests {
         #expect(worst <= 0, "the pointer left the zoomed frame by \(worst) of it at \(worstAt)s")
     }
 
+    /// Following eases after the pointer instead of moving with it frame for frame.
+    ///
+    /// Moved by the pointer at each instant, the camera went from rest to the hand's full
+    /// speed in a single frame when the pointer reached the edge of the dead zone, stopped
+    /// as abruptly, and copied every tremor of a hand resting near the edge — the shake
+    /// people saw after a zoom landed. Measured as how sharply the picture's movement
+    /// changes from one frame to the next, at 60 frames a second, in points on screen.
+    @Test func followingThePointerDoesNotShake() {
+        var timeline = timeline()
+        timeline.cursor.smoothing = 0
+        timeline.zooms = [ZoomRegion(start: .zero, duration: time(10), scale: 2.5,
+                                     transition: time(0.5), followsCursor: true)]
+        let picture = CGSize(width: videoSize.width / 2, height: videoSize.height / 2)
+
+        func worstJolt(_ samples: [CursorSample], from: Double, to: Double) -> Double {
+            let track = CursorTrack(samples: samples)
+            let builder = builder()
+            var shown: [CGPoint] = []
+            for frame in Int(from * 60)...Int(to * 60) {
+                let scene = builder.descriptor(for: timeline, at: time(Double(frame) / 60), cursor: track)
+                shown.append(CGPoint(x: scene.zoomCenter.x * picture.width * scene.zoom,
+                                     y: scene.zoomCenter.y * picture.height * scene.zoom))
+            }
+            var worst = 0.0
+            for index in 2..<shown.count {
+                let a = shown[index - 2], b = shown[index - 1], c = shown[index]
+                worst = max(worst, hypot(c.x - 2 * b.x + a.x, c.y - 2 * b.y + a.y))
+            }
+            return worst
+        }
+
+        // Still, a fast flick most of the way across the shot, still again — the kind that
+        // shook the picture on a real take. (A flick across more than the whole shot in a
+        // fraction of a second cannot be both followed smoothly and kept in shot; there
+        // keeping it in shot wins — see `theZoomNeverLosesThePointer`.)
+        var flick: [CursorSample] = []
+        for step in 0...400 {
+            let t = Double(step) / 40
+            let x: Double = switch t {
+            case ..<2: 200
+            case ..<2.2: 200 + 300 * ((t - 2) / 0.2)
+            default: 500
+            }
+            flick.append(CursorSample(t: t, x: x, y: 250, shape: .arrow))
+        }
+        let flickJolt = worstJolt(flick, from: 1, to: 4)
+        // Moved with the pointer at each instant this was 31 pt; most of what is left is the
+        // camera turning from following the flick to settling, at 2.5×.
+        #expect(flickJolt < 20, "a flick jolted the picture \(flickJolt) pt in a frame")
+
+        // A hand resting just past the edge of the dead zone, trembling by a few points
+        // ten times a second.
+        var tremor: [CursorSample] = []
+        for step in 0...1_200 {
+            let t = Double(step) / 120
+            let x = 600 + 3 * sin(2 * Double.pi * 10 * t)
+            tremor.append(CursorSample(t: t, x: x, y: 250, shape: .arrow))
+        }
+        let tremorJolt = worstJolt(tremor, from: 2, to: 6)
+        // And this, moved with the pointer at each instant, was 6.9 pt: the shake itself.
+        #expect(tremorJolt < 0.5, "a trembling hand shook the picture \(tremorJolt) pt in a frame")
+    }
+
     /// A pointer in the corner is kept in shot without the frame leaving the picture.
     ///
     /// The two rules pull against each other there: keeping the pointer in frame wants the
@@ -315,6 +378,12 @@ struct SceneTests {
     ///
     /// This is the dead zone made visible: the same flick, framed two ways, and the only
     /// difference is how far the pointer is allowed to stray before the camera reacts.
+    ///
+    /// Judged once the hand has stopped. During the flick itself the camera eases after the
+    /// pointer rather than moving with it frame for frame — taken at each instant, the dead
+    /// zone dragged the picture from rest to the hand's full speed in one frame, which is
+    /// the shake people saw — so a pointer that fast is let past the safe area for a moment,
+    /// and only the edge of the frame is a hard limit.
     @Test(arguments: [0.4, 0.85]) func theSafeAreaBoundsHowFarThePointerStrays(_ safeArea: Double) {
         var timeline = timeline()
         timeline.cursor.smoothing = 0
@@ -336,9 +405,11 @@ struct SceneTests {
         let builder = builder()
 
         var worst = 0.0
+        var worstFree = 0.0
         var worstAnywhere = 0.0
         for step in 0...80 {
-            let scene = builder.descriptor(for: timeline, at: time(1 + Double(step) / 20), cursor: track)
+            let at = 1 + Double(step) / 20
+            let scene = builder.descriptor(for: timeline, at: time(at), cursor: track)
             guard let cursor = scene.cursor else { continue }
             // How far out the pointer got, as a fraction of centre-to-edge.
             let half = 0.5 / scene.zoom
@@ -351,39 +422,36 @@ struct SceneTests {
             // result. That is the intended order — showing empty canvas would be worse —
             // so the setting is judged only where the camera was free to obey it.
             let pinned = min(abs(scene.zoomCenter.x - half), abs(scene.zoomCenter.x - (1 - half))) < 0.001
-            if !pinned { worst = max(worst, reach) }
+            // Settled: the flick is over and the camera's window has moved past it.
+            let settled = at >= 2.3 + SceneBuilder.followWindow(steadiness: timeline.camera.steadiness)
+            if !pinned { worstFree = max(worstFree, reach) }
+            if !pinned, settled { worst = max(worst, reach) }
         }
 
-        // Never past what was asked for where the camera was free, and — since the flick
-        // is far faster than the camera — actually pushed out to it, so the setting is
-        // doing the work rather than the pointer happening to stay near the middle.
+        // Never past what was asked for where the camera was free once the hand has
+        // settled, and actually pushed out to it, so the setting is doing the work rather
+        // than the pointer happening to stay near the middle.
         #expect(worst <= safeArea + 0.02, "the pointer reached \(worst) of the way out")
-        #expect(worst > safeArea - 0.2, "the setting never bound; the test proves nothing")
+        #expect(worstFree > safeArea - 0.2, "the setting never bound; the test proves nothing")
         // And wherever it was, it stayed in shot.
         #expect(worstAnywhere <= 1.0001, "the pointer left the frame entirely")
     }
 
-    /// Steadiness is how long the camera's memory is, so a steadier one holds the framing
-    /// it already had for longer.
+    /// Steadiness is how long a stretch of the pointer the camera weighs, so a steadier
+    /// camera spreads the same move over longer and arrives later.
     ///
-    /// Measured on the way *back*, which is where it now shows. The camera holds its shot
-    /// until the pointer would leave it, so on the way out both cameras are moved by the
-    /// same thing — the pointer being outside — and neither memory has anything to say.
-    /// Coming back, the steadier one still remembers where the pointer was and keeps the
-    /// picture out there a moment longer.
-    ///
-    /// The pointer returns to just right of centre rather than all the way across: a
-    /// return to the far side puts the camera under the guarantee that keeps the drawn
-    /// pointer in shot, and that binds identically whatever the memory is.
-    @Test func aSteadierCameraHoldsTheOldFramingLonger() {
-        func centre(steadiness: Double) -> Double {
+    /// The pointer jumps back from the right to just right of centre at 2 s. A camera
+    /// moved by the pointer at each instant would jump with it, which is the shake this
+    /// replaced; a camera that weighs a stretch either side of now eases across instead.
+    /// The pointer returns to just right of centre rather than all the way across, so the
+    /// rule that keeps the drawn pointer in shot never binds.
+    @Test func aSteadierCameraSpreadsAMoveOverLonger() {
+        func centre(steadiness: Double, at seconds: Double) -> Double {
             var timeline = timeline()
             timeline.cursor.smoothing = 0
             timeline.camera.steadiness = steadiness
-            // A close zoom, so the dead zone is narrow and the averaging is what decides.
-            // Wide open, nothing the pointer does inside the shot reaches the camera at
-            // all — which is the whole point of the dead zone, and leaves no room for a
-            // memory to be measured.
+            // A close zoom, so the dead zone is narrow and the pointer's moves reach the
+            // camera at all.
             timeline.zooms = [ZoomRegion(start: .zero, duration: time(10), scale: 3,
                                          transition: time(0.2), followsCursor: true)]
             var samples: [CursorSample] = []
@@ -392,14 +460,14 @@ struct SceneTests {
                 samples.append(CursorSample(t: t, x: t < 2 ? 720 : 440, y: 250, shape: .arrow))
             }
             return builder().descriptor(for: timeline,
-                                        at: time(2.1),
+                                        at: time(seconds),
                                         cursor: CursorTrack(samples: samples)).zoomCenter.x
         }
 
-        #expect(centre(steadiness: 2) > centre(steadiness: 0.2) + 0.1,
-                "a longer memory should still be framing where the pointer was")
-        #expect(abs(centre(steadiness: 0.05) - 0.5) < 0.01,
-                "and a camera with almost no memory is already home")
+        #expect(centre(steadiness: 1, at: 2.1) > centre(steadiness: 0.05, at: 2.1) + 0.02,
+                "a steadier camera arrives later")
+        #expect(abs(centre(steadiness: 0.05, at: 2.3) - 0.5) < 0.01,
+                "and a camera that weighs almost nothing either side is already home")
     }
 
     // MARK: - Layers

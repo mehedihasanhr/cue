@@ -44,6 +44,19 @@ enum CameraCheck {
             _ = Commands.setZoomSpeed(speed).apply(to: &timeline)
             print("zoom speed: \(speed.title), \(speed.transition) s each way")
         }
+        // `--suggest`: with the zooms the editor adds the first time a take is opened, for a
+        // take nobody has edited yet — which is exactly the one being complained about.
+        if arguments.contains("--suggest") {
+            let size = document.manifest.track(.screen)?.pixelSize ?? CGSize(width: 1_920, height: 1_080)
+            let points = size.width / max(0.1, document.manifest.displayScale)
+            let suggester = ZoomSuggester(frameSize: CGSize(width: points, height: size.height / max(0.1, document.manifest.displayScale)),
+                                          crop: timeline.style.crop?.rect ?? CropRect.full.rect,
+                                          picture: document.pictureTrack,
+                                          tuning: ZoomSuggester.Tuning(transition: timeline.camera.zoomSpeed.transition))
+            let found = suggester.suggestions(cursor: document.cursorTrack.samples, input: document.inputSamples,
+                                              focus: document.focusSamples, duration: timeline.sourceDuration)
+            _ = Commands.SuggestZooms(timeline.placedOnTimeline(found)).apply(to: &timeline)
+        }
         if arguments.contains("--no-follow") {
             timeline.camera.follow = 0
             print("pointer following off")
@@ -75,8 +88,8 @@ enum CameraCheck {
         if let flag = arguments.firstIndex(of: "--trace"), flag + 2 < arguments.count,
            let from = Double(arguments[flag + 1]), let to = Double(arguments[flag + 2]) {
             for sample in samples where sample.time >= from && sample.time <= to
-                && (to - from < 1 || Int((sample.time * 60).rounded()) % 6 == 0) {
-                print(String(format: "  %6.2f s  zoom %.3f  centre %.4f, %.4f  blur %.2f", sample.time, sample.zoom,
+                && (to - from < 1 || arguments.contains("--every-frame") || Int((sample.time * 60).rounded()) % 6 == 0) {
+                print(String(format: "  %6.2f s  zoom %.4f  centre %.6f, %.6f  blur %.2f", sample.time, sample.zoom,
                              sample.center.x, sample.center.y, sample.blur))
             }
         }
@@ -146,6 +159,25 @@ enum CameraCheck {
                              name, from, to - from, target, overshoot * 100, startSpeed, peakSpeed, drift, reversals))
             }
         }
+        // Shake: while zoomed in, how often the picture turns back on itself frame to frame,
+        // in output points of the picture as it is shown. A camera that follows calmly turns
+        // round a few times a second at most; one that shakes does it every other frame.
+        var turns = 0, zoomedFrames = 0, worstJerk = 0.0, worstAt = 0.0
+        var lastStep = CGVector.zero
+        for (p, q) in zip(samples, samples.dropFirst()) where p.zoom > 1.01 && q.zoom > 1.01 {
+            zoomedFrames += 1
+            let step = CGVector(dx: (q.center.x - p.center.x) * points.width * q.zoom,
+                                dy: (q.center.y - p.center.y) * points.height * q.zoom)
+            for (a, b) in [(step.dx, lastStep.dx), (step.dy, lastStep.dy)]
+                where abs(a) > 0.05 && abs(b) > 0.05 && (a > 0) != (b > 0) {
+                turns += 1
+                let jerk = abs(a - b)
+                if jerk > worstJerk { worstJerk = jerk; worstAt = q.time }
+            }
+            lastStep = step
+        }
+        print(String(format: "shake: %d turn-backs over %d zoomed frames (%.1f a second), worst %.2f pt at %.2f s",
+                     turns, zoomedFrames, Double(turns) / max(1, Double(zoomedFrames)) * 60, worstJerk, worstAt))
         print(String(format: "worst: overshoot %.1f%%, drift %.1f pt, reversals %d in total, crop changes %d",
                      worstOvershoot * 100, worstDrift, totalReversals, cropChanges))
         return 0

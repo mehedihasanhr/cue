@@ -456,23 +456,9 @@ public struct SceneBuilder: Sendable {
            override.hiding < 1, let track, !track.isEmpty,
            let sourceTime = timeline.sourceTime(at: time) {
             let claim = (1 - override.hiding) * camera.follow * arrived * min(1, max(0, following))
-
-            // The dead zone itself, measured on the *averaged* pointer: a twitch of the
-            // hand at the boundary would otherwise nudge the picture, and `steadiness` is
-            // the dial that says how much of a twitch to ignore.
-            if let averaged = track.averagePosition(at: sourceTime.seconds, window: camera.steadiness)
-                .flatMap({ normalised($0, crop: crop) }) {
-                center = nudged(center, toKeep: averaged, within: half * camera.safeArea, by: claim)
-            }
-
-            // And the same limit on the pointer as it is actually *drawn*, which is what
-            // makes `safeArea` mean what it says — the same point `cursorLayer` uses.
-            // Both clamps, not one: the averaged one is the calmer and leads on the way
-            // back; this one keeps the comfortable framing honest.
-            if let live = drawnPointer(timeline, at: time, sourceTime: sourceTime,
-                                       track: track, override: override, crop: crop) {
-                center = nudged(center, toKeep: live, within: half * camera.safeArea, by: claim)
-            }
+            center = followed(center, timeline: timeline, at: time, sourceTime: sourceTime, track: track,
+                              override: override, crop: crop, within: half * camera.safeArea, scale: target,
+                              steadiness: camera.steadiness, by: claim)
         }
         // The shot it is going to, kept on the picture at its own depth.
         let aim = ZoomFraming.cameraCenter(center, scale: target)
@@ -543,16 +529,106 @@ public struct SceneBuilder: Sendable {
                              y: middle.y + (aim.y - middle.y) * claim)
         }
 
-        if let averaged = track.averagePosition(at: sourceTime.seconds, window: camera.steadiness)
-            .flatMap({ normalised($0, crop: crop) }) {
-            center = nudged(center, toKeep: averaged, within: half * camera.safeArea, by: claim)
-        }
-        if let live = drawnPointer(timeline, at: time, sourceTime: sourceTime,
-                                   track: track, override: override, crop: crop) {
-            center = nudged(center, toKeep: live, within: half * camera.safeArea, by: claim)
-        }
-        return center
+        return followed(center, timeline: timeline, at: time, sourceTime: sourceTime, track: track,
+                        override: override, crop: crop, within: half * camera.safeArea, scale: scale,
+                        steadiness: camera.steadiness, by: claim)
     }
+
+    /// A shot aimed at `center`, moved by the dead zone round the pointer — averaged over a
+    /// short stretch either side of now rather than taken at this instant.
+    ///
+    /// Taken at this instant, the dead zone is rigid: once the pointer reaches its edge the
+    /// camera moves exactly as the hand does, from a standstill to the hand's full speed in
+    /// one frame and back to a standstill in the next, and every tremor of a hand resting
+    /// near the edge shakes the whole picture. Measured on a real take, a flick of the
+    /// mouse moved the picture 27 pt in a single frame from rest. Averaging what the dead
+    /// zone asks for over a window centred on now, with weights that fall to nothing at
+    /// both ends, turns that into an eased move: it begins a moment before the pointer
+    /// reaches the edge, carries on a moment after, and a tremor too quick for the window
+    /// averages out. Centred, so it does not lag behind the hand — the recording is all
+    /// there, the future of the pointer included — and stateless, so scrubbing to a frame
+    /// shows what playing to it does. The edge rule in `settled` still keeps a pointer that
+    /// outruns the average from leaving the shot.
+    ///
+    /// `steadiness` sets the window: calmer means a longer one.
+    private func followed(_ center: CGPoint, timeline: Timeline, at time: CMTime, sourceTime: CMTime,
+                          track: CursorTrack, override: CursorOverride, crop: CGRect,
+                          within reach: Double, scale: Double, steadiness: Double, by claim: Double) -> CGPoint {
+        let now = drawnPointer(timeline, at: time, sourceTime: sourceTime, track: track, override: override, crop: crop)
+        return averagedPull(on: center, around: sourceTime.seconds, window: Self.followWindow(steadiness: steadiness),
+                            within: reach, scale: scale, keeping: now, by: claim) { source in
+            drawnPointer(timeline, at: time, sourceTime: CMTime(seconds: source, preferredTimescale: 600_000),
+                         track: track, override: override, crop: crop)
+        }
+    }
+
+    /// The dead zone's pull on `center`, smoothed over `window` seconds either side of
+    /// `time` — see `followed`.
+    ///
+    /// Two passes, so that smoothing never moves the camera *less* than the dead zone asks.
+    /// A plain average does: as a flick arrives, half the window still remembers the pointer
+    /// at rest, the camera falls short, and the pointer runs past the safe area until the
+    /// instant rule at the edge catches it — at the hand's speed, which is the jolt again.
+    /// So first, along each axis, the furthest the pull goes either way anywhere within
+    /// `window` of each moment; then a weighted average of that, over the same `window`,
+    /// with weights that fall to nothing at both ends. Every term of the average is at
+    /// least the pull at this moment, so the camera is never short; and the result is as
+    /// smooth as the weights. The cost is that the camera sets off a little before the
+    /// pointer arrives and comes back a little after it has gone — which is what a camera
+    /// operator who could see what is coming would do.
+    private func averagedPull(on center: CGPoint, around time: Double, window: Double,
+                              within reach: Double, scale: Double, keeping now: CGPoint?, by claim: Double,
+                              pointer: (Double) -> CGPoint?) -> CGPoint {
+        guard claim > 0, window > 0 else { return center }
+        let steps = Self.followSteps
+        // The pull at every reading over twice the window either side, which is what the
+        // furthest-within-the-window of each moment in the window needs.
+        let pulls: [CGVector?] = (-2 * steps...2 * steps).map { step in
+            pointer(time + window * Double(step) / Double(steps)).map { point in
+                // Kept on the picture here, before the smoothing, rather than only after it:
+                // clamped afterwards, a camera gliding after a pointer near the side of the
+                // recording ran into the side at speed and stopped dead in one frame. Clamped
+                // first, the readings reach the side one after another and it slows into it.
+                //
+                // And with the pointer as it is *now* kept in shot, for the same reason: the
+                // camera sets off towards where the pointer is going while it is still sitting
+                // at the other side of the shot, and stopped by the rule that keeps it in
+                // shot only afterwards, it stopped dead. Each reading is bounded instead.
+                var kept = nudged(center, toKeep: point, within: reach, by: 1)
+                if let now { kept = nudged(kept, toKeep: now, within: 0.98 * ZoomFraming.halfSide(forScale: scale), by: 1) }
+                kept = ZoomFraming.cameraCenter(kept, scale: scale)
+                return CGVector(dx: kept.x - center.x, dy: kept.y - center.y)
+            }
+        }
+        var pull = CGVector.zero
+        var weights = 0.0
+        for step in -steps...steps {
+            let weight = 0.5 * (1 + cos(Double.pi * Double(step) / Double(steps)))
+            guard weight > 0 else { continue }
+            var right = 0.0, left = 0.0, down = 0.0, up = 0.0
+            var any = false
+            for near in pulls[(step + steps)...(step + 3 * steps)] {
+                guard let near else { continue }
+                any = true
+                right = max(right, near.dx); left = min(left, near.dx)
+                down = max(down, near.dy); up = min(up, near.dy)
+            }
+            guard any else { continue }
+            pull.dx += (right + left) * weight
+            pull.dy += (down + up) * weight
+            weights += weight
+        }
+        guard weights > 0 else { return center }
+        return CGPoint(x: center.x + pull.dx / weights * claim, y: center.y + pull.dy / weights * claim)
+    }
+
+    /// How far either side of now the camera looks at the pointer, in seconds.
+    static func followWindow(steadiness: Double) -> Double { 0.1 + 0.25 * min(1, max(0, steadiness)) }
+    /// How many readings of the pointer either side of now: one every few milliseconds.
+    static let followSteps = 24
+    /// How far either side of now the rule that keeps the pointer in shot looks, in
+    /// seconds: shorter than following's, because this one is about not losing it.
+    static let edgeWindow = 0.15
 
     /// How far back a held camera looks for where to aim, in seconds, at the least.
     static let heldAimWindow = 1.5
@@ -609,7 +685,23 @@ public struct SceneBuilder: Sendable {
             // In full even on the way in. It binds only when the pointer would otherwise be
             // cut off — a pointer inside the shot costs the straight move nothing — and a
             // move bent for a frame is a better fault than a pointer that vanishes.
-            center = nudged(center, toKeep: live, within: half * 0.98, by: 1 - override.hiding)
+            //
+            // Averaged over a moment either side of now, like the following itself: taken at
+            // this instant, a flick of the hand towards the edge dragged the picture along at
+            // the hand's own speed from a standstill and dropped it again a frame later — a
+            // jolt of 24 pt in one frame on a real take, and the same inside every glide,
+            // whose two ends each pass through here. Averaged, the camera sets off a moment
+            // before the pointer gets there. Then the instant rule, which that leaves nothing to
+            // do but for a pointer that dashes across the whole shot and back within the
+            // window — by then it is the last resort it says.
+            let claim = 1 - override.hiding
+            center = averagedPull(on: center, around: sourceTime.seconds, window: Self.edgeWindow,
+                                  within: half * 0.98, scale: scale, keeping: live, by: claim) { source in
+                pointerPoint(timeline, at: time, sourceTime: CMTime(seconds: source, preferredTimescale: 600_000),
+                             track: track, override: override)
+                    .map { normalisedClamped($0, crop: crop) }
+            }
+            center = nudged(center, toKeep: live, within: half * 0.98, by: claim)
         }
 
         // Keep the camera inside the picture. Last, so it always wins — a pointer in the

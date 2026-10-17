@@ -217,7 +217,10 @@ struct CameraFollowTests {
         let following = worstReach(timeline(follows: true), roam, from: 2.0, to: 8.0)
         let holding = worstReach(timeline(follows: false), roam, from: 2.0, to: 8.0)
         #expect(holding > following, "holding: \(holding), following: \(following)")
-        #expect(following <= 0.87, "a following camera keeps it comfortably inside")
+        // Inside, though not as far inside as a camera that moved with the hand frame for
+        // frame: easing after a pointer that turns about at speed lets it a little nearer
+        // the edge for a moment. See `theSafeAreaBoundsHowFarThePointerStrays`.
+        #expect(following <= 0.95, "a following camera keeps it inside")
     }
 
     /// A tighter dead zone lets the pointer drag the camera sooner.
