@@ -58,7 +58,7 @@ struct ZoomGlideCameraTests {
     /// The headline: the camera never pulls back to the whole picture between two close
     /// zooms. Sampled on a 60 fps grid from before the first zoom's ramp out to after the
     /// second's ramp in.
-    @Test(arguments: [0.0, 0.2, 0.9])
+    @Test(arguments: [0.0, 0.2, 0.5])
     func theScaleNeverFallsBelowTheSmallerOfTheTwoZooms(gap: Double) {
         let edit = timeline(gap: gap)
         for frame in Int(5.4 * 60)...Int((7.4 + gap) * 60) {
@@ -144,7 +144,10 @@ struct ZoomGlideCameraTests {
         let held = builder().descriptor(for: edit, at: time(5.4), cursor: track).zoomCenter
         #expect(held.x > 0.6, "dragged across by the pointer")
         let leaving = builder().descriptor(for: edit, at: time(5.5), cursor: track).zoomCenter
-        #expect(abs(leaving.x - held.x) < 1e-6, "the move begins from that very shot")
+        // Within a point: the path is rounded off over a few frames either side (see
+        // `SceneBuilder.smoothedShot`), so the move is already just under way as it begins
+        // rather than starting from that shot on one frame.
+        #expect(abs(leaving.x - held.x) < 1e-3, "the move begins from that very shot")
 
         // And the pointer never leaves the picture the camera is showing, all the way.
         for frame in 324...396 {

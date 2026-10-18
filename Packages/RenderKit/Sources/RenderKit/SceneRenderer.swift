@@ -66,10 +66,30 @@ public final class SceneRenderer: @unchecked Sendable {
                 scene: scene, blending: blending, blendingWebcam: blendingWebcam)
     }
 
+    /// Whether the recorded picture, as the camera has placed it, is opaque over every pixel
+    /// of the output — so nothing drawn under it can show.
+    ///
+    /// Only the plain case: the recording itself rather than a title, flat rather than
+    /// turned in space or in a device, at full opacity, with its frame moving with the
+    /// camera. And the frame has to reach past the output by more than its rounded corners,
+    /// which are the only part of it that is not opaque.
+    static func pictureCoversFrame(_ scene: SceneDescriptor, output: CGRect) -> Bool {
+        guard scene.title == nil, scene.device == nil, scene.perspective == nil,
+              scene.videoOpacity >= 1, scene.frameFollowsCamera, scene.zoom > 1 else { return false }
+        let corner = scene.cornerRadius * scene.zoom + 2
+        return scene.transformedVideoFrame.insetBy(dx: corner, dy: corner).contains(output)
+    }
+
     /// One frame, every layer, before any transition mixes it with another.
     func composed(_ scene: SceneDescriptor, source: CIImage?, webcam: CIImage?) -> CIImage {
         let output = CGRect(origin: .zero, size: scene.outputSize)
-        var image = background(for: scene).cropped(to: output)
+        // Zoomed in far enough, the picture covers the whole frame, and the background and
+        // the picture's shadow are entirely underneath it. They were drawn anyway — a
+        // full-frame gradient and a wide Gaussian blur of a frame grown to nearly twice the
+        // output — which made a zoomed frame take twice as long as one that was not, and
+        // played as a stutter. Nothing they would have drawn can be seen, so nothing is lost.
+        let covered = Self.pictureCoversFrame(scene, output: output)
+        var image = covered ? CIImage(color: .black).cropped(to: output) : background(for: scene).cropped(to: output)
 
         // A title slide shows no recording: its panel, when it has one, stands where the
         // picture would, and is framed exactly as the picture is. Not drawn at all once a
@@ -81,7 +101,7 @@ public final class SceneRenderer: @unchecked Sendable {
             // The border round both, outside their edge — see `outlined(_:in:)`.
             var video = outlined(chromed(videoLayer(scene, source: source), in: scene), in: scene)
             if scene.videoOpacity < 1 { video = Self.faded(video, to: scene.videoOpacity) }
-            if scene.shadowOpacity > 0, scene.shadowRadius > 0 {
+            if scene.shadowOpacity > 0, scene.shadowRadius > 0, !covered {
                 image = shadow(under: video, scene: scene).composited(over: image)
             }
             // Turned in space as one piece — picture, bar and border — when the project

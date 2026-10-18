@@ -337,7 +337,7 @@ public struct SceneBuilder: Sendable {
     /// it is a function of the time like every other framing rule.
     func camera(for timeline: Timeline, at time: CMTime, cursor track: CursorTrack?,
                 crop: CGRect) -> (zoom: Double, center: CGPoint) {
-        let shot = framedCamera(for: timeline, at: time, cursor: track, crop: crop)
+        let shot = smoothedShot(for: timeline, at: time, cursor: track, crop: crop)
         guard timeline.cursor.loop.bringsCameraBack else { return shot }
         let home = timeline.pointerLoopBlend(at: time)
         guard home > 0 else { return shot }
@@ -350,6 +350,88 @@ public struct SceneBuilder: Sendable {
         // the scale grows.
         return (zoom, ZoomFraming.cameraCenter(center, scale: zoom))
     }
+
+    /// The shot, with the corners rounded off its path.
+    ///
+    /// Every rule that decides the shot is smooth on its own, but where one takes over from
+    /// another — the rule that keeps the pointer in shot catching a glide that was easing
+    /// away from it, say — the path can turn a corner in a single frame, and a corner in a
+    /// camera's path is a jolt. So where the camera looks is averaged over a few frames
+    /// either side of now, with weights that fall to nothing at both ends: too short a
+    /// stretch to lag behind anything, long enough that no turn happens in one frame. Only
+    /// where it looks — the zoom's depth already moves along smooth ramps, and averaging it
+    /// would blur the start and end of every one. And only while zoomed in, where there is
+    /// anything to move.
+    func smoothedShot(for timeline: Timeline, at time: CMTime, cursor track: CursorTrack?,
+                      crop: CGRect) -> (zoom: Double, center: CGPoint) {
+        let shot = framedCamera(for: timeline, at: time, cursor: track, crop: crop)
+        guard shot.zoom > 1 else { return shot }
+        let steps = Self.pathSteps
+        // In exact time, not seconds: the same moment of an excerpt and of the whole video
+        // must read exactly the same neighbours.
+        let margin = CMTime(value: CMTimeValue(steps), timescale: Self.pathRate)
+        // Read off past either end of the edit, a moment that is not in it: see `widened`.
+        let reach = time - margin < .zero || time + margin > timeline.duration
+        let wide = reach ? Self.widened(timeline, by: margin) : nil
+        var total = CGPoint.zero
+        var weights = 0.0
+        for step in -steps...steps {
+            let weight = 0.5 * (1 + cos(Double.pi * Double(step) / Double(steps + 1)))
+            let at = time + CMTime(value: CMTimeValue(step), timescale: Self.pathRate)
+            let near: (zoom: Double, center: CGPoint)
+            if step == 0 {
+                near = shot
+            } else if let wide {
+                near = framedCamera(for: wide, at: at + margin, cursor: track, crop: crop)
+            } else {
+                near = framedCamera(for: timeline, at: at, cursor: track, crop: crop)
+            }
+            // A frame at a different depth is a different shot, not a neighbour on the same
+            // path: an instant zoom cuts in on one frame and must stay a cut.
+            guard abs(near.zoom - shot.zoom) <= Self.pathDepthTolerance else { continue }
+            total.x += near.center.x * weight
+            total.y += near.center.y * weight
+            weights += weight
+        }
+        guard weights > 0 else { return shot }
+        // And the two rules every shot ends with, once more: averaging a path that kept the
+        // pointer in shot can leave it a hair outside where the path turned hardest.
+        return settled(CGPoint(x: total.x / weights, y: total.y / weights), scale: shot.zoom,
+                       timeline: timeline, at: time, cursor: track, crop: crop)
+    }
+
+    /// The edit with a moment more footage at each end, and everything on it moved along
+    /// to make room — so a camera read a few frames before the start or after the end sees
+    /// what the footage there would have shown.
+    ///
+    /// For an exported excerpt that is the whole video's footage either side of it, which
+    /// is what keeps the excerpt's first and last frames the whole video's frames: the
+    /// excerpt is cut out of a clip, and the clip goes on. Only a clip of the recording can
+    /// be widened; a held frame, a title or another file stays as it is.
+    static func widened(_ timeline: Timeline, by shift: CMTime) -> Timeline {
+        var wide = timeline
+        if var first = wide.clips.first, first.source == nil, first.hold == nil, first.title == nil {
+            let more = CMTimeMultiplyByFloat64(shift, multiplier: first.speed)
+            first.sourceStart = first.sourceStart - more
+            first.sourceDuration = first.sourceDuration + more
+            wide.clips[0] = first
+        } else {
+            return timeline
+        }
+        if var last = wide.clips.last, last.source == nil, last.hold == nil, last.title == nil {
+            last.sourceDuration = last.sourceDuration + CMTimeMultiplyByFloat64(shift, multiplier: last.speed)
+            wide.clips[wide.clips.count - 1] = last
+        }
+        wide.zooms = wide.zooms.map { var zoom = $0; zoom.start = zoom.start + shift; return zoom }
+        wide.cursorRegions = wide.cursorRegions.map { var region = $0; region.start = region.start + shift; return region }
+        return wide
+    }
+
+    /// How many frames either side of now `smoothedShot` reads, and how far apart.
+    static let pathSteps = 4
+    static let pathRate: CMTimeScale = 60
+    /// How far apart in depth two frames may be and still be read as one path.
+    static let pathDepthTolerance = 0.3
 
     /// The shot the zooms — and the whole-video zoom, when there is one — ask for at this
     /// moment, before a loop brings it home.
@@ -600,32 +682,58 @@ public struct SceneBuilder: Sendable {
                 return CGVector(dx: kept.x - center.x, dy: kept.y - center.y)
             }
         }
+        // The furthest each way within the window of every reading, in one sliding pass per
+        // direction rather than a scan of the window for each — this runs for every frame,
+        // several times over, and on the main thread while the picture plays.
+        let right = Self.slidingExtreme(pulls.map { $0.map { max(0, $0.dx) } }, half: steps, by: >)
+        let left = Self.slidingExtreme(pulls.map { $0.map { min(0, $0.dx) } }, half: steps, by: <)
+        let down = Self.slidingExtreme(pulls.map { $0.map { max(0, $0.dy) } }, half: steps, by: >)
+        let up = Self.slidingExtreme(pulls.map { $0.map { min(0, $0.dy) } }, half: steps, by: <)
         var pull = CGVector.zero
         var weights = 0.0
         for step in -steps...steps {
             let weight = 0.5 * (1 + cos(Double.pi * Double(step) / Double(steps)))
-            guard weight > 0 else { continue }
-            var right = 0.0, left = 0.0, down = 0.0, up = 0.0
-            var any = false
-            for near in pulls[(step + steps)...(step + 3 * steps)] {
-                guard let near else { continue }
-                any = true
-                right = max(right, near.dx); left = min(left, near.dx)
-                down = max(down, near.dy); up = min(up, near.dy)
-            }
-            guard any else { continue }
-            pull.dx += (right + left) * weight
-            pull.dy += (down + up) * weight
+            let index = step + 2 * steps
+            guard weight > 0, let r = right[index], let l = left[index], let d = down[index], let u = up[index]
+            else { continue }
+            pull.dx += (r + l) * weight
+            pull.dy += (d + u) * weight
             weights += weight
         }
         guard weights > 0 else { return center }
         return CGPoint(x: center.x + pull.dx / weights * claim, y: center.y + pull.dy / weights * claim)
     }
 
+    /// For each reading, the most extreme of those within `half` readings either side of
+    /// it, by `better` — `nil` where none of them was read. A monotonic queue: each reading
+    /// goes in once and comes out once.
+    static func slidingExtreme(_ values: [Double?], half: Int, by better: (Double, Double) -> Bool) -> [Double?] {
+        var result = [Double?](repeating: nil, count: values.count)
+        var queue: [Int] = []
+        var head = 0
+        var next = 0
+        for index in values.indices {
+            // Everything up to `half` ahead of this reading is in.
+            while next < values.count, next <= index + half {
+                if let value = values[next] {
+                    while queue.count > head, let last = values[queue[queue.count - 1]], !better(last, value) {
+                        queue.removeLast()
+                    }
+                    queue.append(next)
+                }
+                next += 1
+            }
+            // Nothing more than `half` behind it.
+            while head < queue.count, queue[head] < index - half { head += 1 }
+            if head < queue.count { result[index] = values[queue[head]] }
+        }
+        return result
+    }
+
     /// How far either side of now the camera looks at the pointer, in seconds.
     static func followWindow(steadiness: Double) -> Double { 0.1 + 0.25 * min(1, max(0, steadiness)) }
     /// How many readings of the pointer either side of now: one every few milliseconds.
-    static let followSteps = 24
+    static let followSteps = 12
     /// How far either side of now the rule that keeps the pointer in shot looks, in
     /// seconds: shorter than following's, because this one is about not losing it.
     static let edgeWindow = 0.15

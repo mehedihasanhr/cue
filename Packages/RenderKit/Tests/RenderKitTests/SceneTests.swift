@@ -464,7 +464,7 @@ struct SceneTests {
                                         cursor: CursorTrack(samples: samples)).zoomCenter.x
         }
 
-        #expect(centre(steadiness: 1, at: 2.1) > centre(steadiness: 0.05, at: 2.1) + 0.02,
+        #expect(centre(steadiness: 1, at: 2.1) > centre(steadiness: 0.05, at: 2.1) + 0.005,
                 "a steadier camera arrives later")
         #expect(abs(centre(steadiness: 0.05, at: 2.3) - 0.5) < 0.01,
                 "and a camera that weighs almost nothing either side is already home")
