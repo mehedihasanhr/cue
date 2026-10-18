@@ -44,6 +44,12 @@ struct PreviewPane: View {
                         // because this is the scale the rounded corners are judged at.
                         .interpolation(.high)
                         .antialiased(true)
+                        // Under the live layer while playing, and hidden so a see-through
+                        // background does not show the last still frame through it.
+                        .opacity(model.showsLive ? 0 : 1)
+                        // Playing frames go straight onto a layer, not through this image:
+                        // see `LiveFrameSink`.
+                        .overlay { LiveFrameView(sink: model.liveSink).opacity(model.showsLive ? 1 : 0) }
                         // Clicks go through to the stage under it: the picture is looked at,
                         // and a click on it is a click on nothing in particular.
                         .allowsHitTesting(false)
@@ -90,7 +96,8 @@ struct PreviewPane: View {
                     // framing box is simply here. See `EditorModel.framedZoom`.
                     if model.isFramingZoom {
                         ZoomFramingOverlay(model: model, stage: stage(in: proxy.size))
-                        ZoomFramingHint(model: model)
+                        ZoomFramingHint(model: model,
+                                        bottom: toolBarBottom(in: proxy.size) + CanvasToolBar.height + 8)
                     }
                 }
 
@@ -106,7 +113,7 @@ struct PreviewPane: View {
                 // never end up underneath it.
                 // Inside the picture, a little above its bottom edge, rather than across it.
                 CanvasToolBar(model: model)
-                    .padding(.bottom, max(9, proxy.size.height - stage(in: proxy.size).maxY + 14))
+                    .padding(.bottom, toolBarBottom(in: proxy.size))
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             }
             // How big the picture is allowed to be, told to the thing that renders it.
@@ -125,6 +132,12 @@ struct PreviewPane: View {
                 model.previewPaneResized(to: size)
             }
         }
+    }
+
+    /// How far above the pane's bottom edge the canvas bar sits: inside the picture, a
+    /// little above its bottom edge.
+    private func toolBarBottom(in size: CGSize) -> CGFloat {
+        max(9, size.height - stage(in: size).maxY + 14)
     }
 
     /// Where the picture actually lands.
@@ -158,6 +171,8 @@ struct PreviewPane: View {
 /// watching is something in front of the picture.
 struct CanvasToolBar: View {
     let model: EditorModel
+    /// How tall the bar is: a row of 28-point controls in a 3-point frame.
+    static let height: CGFloat = 34
     @State private var isAdding = false
     /// Whether the bar of shapes is open above the Annotate bar.
     @State private var showsShapes = false

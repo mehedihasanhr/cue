@@ -35,6 +35,8 @@ struct FullScreenPreview: View {
                         .resizable()
                         .interpolation(.high)
                         .antialiased(true)
+                        .opacity(model.showsLive ? 0 : 1)
+                        .overlay { LiveFrameView(sink: model.liveSink).opacity(model.showsLive ? 1 : 0) }
                         .aspectRatio(contentMode: .fit)
                         .background {
                             if model.hasTransparentBackground { Checkerboard() }

@@ -10,6 +10,10 @@ import TimelineKit
 /// because by then the user is doing the thing the sentence describes.
 struct ZoomFramingHint: View {
     let model: EditorModel
+    /// How far above the pane's bottom edge it sits: just above the canvas bar. A fixed
+    /// distance from the pane's bottom put it behind the bar whenever the picture did not
+    /// fill the pane's height, because the bar rides on the picture.
+    var bottom: CGFloat = 62
 
     var body: some View {
         if let zoom = model.framedZoom {
@@ -26,7 +30,7 @@ struct ZoomFramingHint: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .padding(.bottom, 62)
+            .padding(.bottom, bottom)
             .allowsHitTesting(false)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             .opacity(model.isGesturing ? 0 : 1)

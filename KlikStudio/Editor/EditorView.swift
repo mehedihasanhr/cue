@@ -91,7 +91,11 @@ struct EditorView: View {
                         .frame(height: TimelineStrip.height(for: model.timeline,
                                                             hasSound: model.waveform.state != .unavailable))
                 }
-                .frame(maxWidth: .infinity)
+                // Allowed to be narrower than anything in it would like, and clipped to what
+                // it gets: the inspector beside it has a fixed width, and a middle column
+                // that would not shrink pushed it out past the window's edge.
+                .frame(minWidth: 0, maxWidth: .infinity)
+                .clipped()
 
                 if session.showsInspector {
                     InspectorPanel(model: model) { session.isExporting = true }

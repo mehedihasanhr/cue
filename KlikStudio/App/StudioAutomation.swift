@@ -148,7 +148,8 @@ enum StudioAutomation {
                 if parts.contains("cmd") { flags.insert(.command) }
                 if parts.contains("shift") { flags.insert(.shift) }
                 let named: [String: (String, UInt16)] = ["esc": ("\u{1b}", 53), "return": ("\r", 36),
-                                                         "backspace": ("\u{7f}", 51), "tab": ("\t", 48)]
+                                                         "backspace": ("\u{7f}", 51), "tab": ("\t", 48),
+                                                         "space": (" ", 49)]
                 let characters = named[parts[1]]?.0 ?? parts[1]
                 let code: UInt16 = named[parts[1]]?.1 ?? 0
                 for type in [NSEvent.EventType.keyDown, .keyUp] {
@@ -161,6 +162,12 @@ enum StudioAutomation {
                     }
                 }
                 try? await Task.sleep(for: .milliseconds(30))
+                continue
+            }
+            // `play`: starts or stops playback, as the space bar would — which a window in
+            // the background never receives.
+            if verb == "play" {
+                StudioAppDelegate.shared?.editors.current?.session.model?.togglePlayback()
                 continue
             }
             if verb == "wait", parts.count > 1, let ms = Int(parts[1]) {

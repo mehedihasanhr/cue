@@ -35,8 +35,31 @@ struct TransportBar: View {
 
             Spacer(minLength: 16)
 
+            // The right end gives way when the column is narrow, sliders first — rather
+            // than the bar refusing to shrink. It did refuse: at the window's narrowest,
+            // or back from the full-screen preview in a window that size, the bar was
+            // wider than its column and pushed everything beside it, the inspector
+            // included, out past the window's edge, where it was cut off.
+            ViewThatFits(in: .horizontal) {
+                trailing(volumeSlider: true, scaleSlider: true)
+                trailing(volumeSlider: false, scaleSlider: true)
+                trailing(volumeSlider: false, scaleSlider: false)
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(height: Self.height)
+        .frame(maxWidth: .infinity)
+        .background(StudioTheme.Surface.panel)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Transport")
+    }
+
+    /// Sound, undo and redo, the timeline's scale and the full-screen preview — with or
+    /// without their sliders.
+    private func trailing(volumeSlider: Bool, scaleSlider: Bool) -> some View {
+        HStack(spacing: 6) {
             if let audio = model.audio, audio.hasSound {
-                level(audio)
+                level(audio, slider: volumeSlider)
                     .padding(.trailing, 6)
             }
             ghost("arrow.uturn.backward",
@@ -45,7 +68,7 @@ struct TransportBar: View {
                   isEnabled: model.document.canUndo) { model.undo() }
             ghost("arrow.uturn.forward", help: "Redo", name: "Redo",
                   isEnabled: model.document.canRedo) { model.redo() }
-            zoom
+            zoom(slider: scaleSlider)
                 .padding(.leading, 6)
             // At the far end, after the timeline's scale: about the whole window, not
             // the picture, so it sits with the bar rather than on the canvas.
@@ -55,12 +78,6 @@ struct TransportBar: View {
                     action: presentFullScreen)
                 .padding(.leading, 2)
         }
-        .padding(.horizontal, 12)
-        .frame(height: Self.height)
-        .frame(maxWidth: .infinity)
-        .background(StudioTheme.Surface.panel)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Transport")
     }
 
     // MARK: - Moving through it
@@ -188,7 +205,7 @@ struct TransportBar: View {
     /// dirty. Left out entirely for a recording with no sound, rather than shown dead: a
     /// volume slider that does nothing is a question somebody has to ask.
     @ViewBuilder
-    private func level(_ audio: PreviewAudio) -> some View {
+    private func level(_ audio: PreviewAudio, slider: Bool = true) -> some View {
         @Bindable var audio = audio
 
         HStack(spacing: 4) {
@@ -204,11 +221,13 @@ struct TransportBar: View {
                 audio.isMuted.toggle()
             }
 
-            StudioSlider(value: $audio.volume, in: 0...1, size: .small, defaultValue: 1)
-                .frame(width: Self.sliderWidth)
-                .disabled(audio.isMuted)
-                .help("How loud the preview is")
-                .accessibilityLabel("Preview volume")
+            if slider {
+                StudioSlider(value: $audio.volume, in: 0...1, size: .small, defaultValue: 1)
+                    .frame(width: Self.sliderWidth)
+                    .disabled(audio.isMuted)
+                    .help("How loud the preview is")
+                    .accessibilityLabel("Preview volume")
+            }
         }
     }
 
@@ -218,7 +237,7 @@ struct TransportBar: View {
     /// the glass is already on this bar meaning a *camera* zoom, and two magnifiers a hand
     /// apart meaning two different things is exactly the confusion this row exists to
     /// avoid.
-    private var zoom: some View {
+    private func zoom(slider: Bool = true) -> some View {
         HStack(spacing: 8) {
             Button { model.viewport.fit(model.duration) } label: {
                 Image(systemName: "magnifyingglass")
@@ -230,12 +249,14 @@ struct TransportBar: View {
             .help(tip("Fit the whole edit", .fitTimeline))
             .accessibilityLabel("Fit timeline")
 
-            StudioSlider(value: zoomLevel,
-                         in: log2(TimelineViewport.minimumPointsPerSecond)...log2(TimelineViewport.maximumPointsPerSecond),
-                         size: .small)
-                .frame(width: 128)
-                .help("How much of the edit the timeline shows")
-                .accessibilityLabel("Timeline scale")
+            if slider {
+                StudioSlider(value: zoomLevel,
+                             in: log2(TimelineViewport.minimumPointsPerSecond)...log2(TimelineViewport.maximumPointsPerSecond),
+                             size: .small)
+                    .frame(width: 128)
+                    .help("How much of the edit the timeline shows")
+                    .accessibilityLabel("Timeline scale")
+            }
         }
         .padding(.horizontal, 10)
         .frame(height: 30)

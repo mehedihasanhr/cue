@@ -224,7 +224,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         hosting.sizingOptions = []
         window.contentViewController = hosting
         window.setContentSize(CGSize(width: 1_280, height: 860))
-        window.contentMinSize = CGSize(width: 960, height: 680)
+        // Wide enough for the tool rail, the inspector, and the transport bar at its most
+        // compact between them — see `TransportBar`. At 960 the bar did not fit, and the
+        // inspector was pushed out past the window's edge.
+        window.contentMinSize = CGSize(width: 1_040, height: 680)
 
         super.init(window: window)
         window.delegate = self

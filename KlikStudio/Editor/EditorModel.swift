@@ -548,11 +548,23 @@ final class EditorModel {
     /// A gesture on the picture or the timeline counts as moving too: a label dragged across
     /// a 4K frame waited a full-size composite for every step, and lagged the pointer by it.
     /// The frame it is let go on is drawn at full size by `finishInteraction`.
+    #if DEBUG
+    static let logsPreviewTiming = ProcessInfo.processInfo.environment["KLIK_PREVIEW_TIMING"] != nil
+    #endif
+
+    /// Pixels per point the preview is drawn at while playing.
+    private static let playingBacking: CGFloat = 1.5
+
     private var previewFidelity: Double {
         guard isPlaying || isScrubbing || document.isInteracting else { return 1 }
         let output = previewSize
         guard output.width > 1, previewPaneSize.width > 1 else { return 1 }
-        let backing = NSScreen.main?.backingScaleFactor ?? 2
+        // Playing, a point and a half of pixels per point rather than two: under motion the
+        // difference does not show, and a zoomed frame drawn at the full Retina size took
+        // long enough that playback fell to twenty-odd uneven frames a second. Paused,
+        // scrubbed or dragged, the full size, so what is looked at closely is sharp.
+        let screen = NSScreen.main?.backingScaleFactor ?? 2
+        let backing = isPlaying ? min(screen, Self.playingBacking) : screen
         let wanted = max(previewPaneSize.width * backing / output.width,
                          previewPaneSize.height * backing / output.height)
         // Never below an eighth: past that the picture stops being a preview of anything,
@@ -590,6 +602,15 @@ final class EditorModel {
         if !document.isInteracting {
             regionWaveforms.reconcile(paths: timeline.audio.map(\.path) + timeline.soundTracks.map(\.path))
         }
+        // Playing, with a frame already being drawn, there is nothing to describe: the next
+        // frame is described when it can be drawn, for the moment it will be shown, and
+        // nothing on the canvas reads `scene` while the picture is moving. Described anyway
+        // on every display tick, it kept the main thread busy enough that finished frames
+        // waited to be picked up.
+        if isPlaying, renderTask != nil, !isFramingDrag {
+            hasPendingRender = true
+            return
+        }
         let scene = builder.descriptor(for: renderedTimeline, at: playhead, cursor: smoothedCursor)
         // Kept at full size whatever the preview draws at: this is the description of the
         // frame the export would write, and the overlays map their handles through its
@@ -606,10 +627,53 @@ final class EditorModel {
             hasPendingRender = true
             return
         }
-        startRender(of: scene)
+        // Playing, the frame is drawn for the moment it will be on screen, not the moment it
+        // was asked for. Drawing takes time — a zoomed frame of a Retina recording, decoded
+        // and composited, tens of milliseconds and never the same twice — and a frame drawn
+        // for the playhead as it set off arrived showing a moment already gone, by a
+        // different amount each time: the picture lagged behind the sound, and a smooth
+        // camera move came out lurching, fast and slow by turns. So it is aimed at now plus
+        // how long frames have been taking, and if it is ready early it waits for its moment.
+        if isPlaying, playbackRate != 0 {
+            let lead = min(Self.longestLead, max(1.0 / 120, renderCost))
+            let due = CACurrentMediaTime() + lead
+            let ahead = min(duration, max(.zero, playhead + CMTime(seconds: lead * playbackRate, preferredTimescale: 60_000)))
+            startRender(of: builder.descriptor(for: renderedTimeline, at: ahead, cursor: smoothedCursor), due: due)
+        } else {
+            startRender(of: scene, due: nil)
+        }
     }
 
-    private func startRender(of scene: SceneDescriptor) {
+    /// How long a frame has lately taken from being asked for to being ready, in seconds —
+    /// what a frame during playback is drawn that far ahead of the playhead for.
+    @ObservationIgnored private var renderCost = 1.0 / 30
+    /// The furthest ahead a frame is ever aimed: a stall must not have every later frame
+    /// drawn for a moment far in the future.
+    private static let longestLead = 0.15
+
+    /// The newest moment a playing frame has been sent to the screen for: a frame that
+    /// finishes after a later one has been sent is dropped rather than shown out of order.
+    @ObservationIgnored private var presented: CFTimeInterval = 0
+
+    private func logShown(_ scene: SceneDescriptor) {
+        #if DEBUG
+        guard Self.logsPreviewTiming else { return }
+        // When a playing frame reached the screen, the moment it shows, and where the
+        // playhead had got to by then — what `KLIK_PREVIEW_TIMING` is for.
+        let line = String(format: "shown %.4f scene %.4f playhead %.4f zoom %.4f cx %.5f cy %.5f\n",
+                          CACurrentMediaTime(), scene.sourceTime.seconds, playhead.seconds, scene.zoom,
+                          scene.zoomCenter.x, scene.zoomCenter.y)
+        let url = packageURL.appendingPathComponent("timing.txt")
+        if let handle = try? FileHandle(forWritingTo: url) {
+            handle.seekToEndOfFile(); handle.write(Data(line.utf8)); try? handle.close()
+        } else {
+            try? Data(line.utf8).write(to: url)
+        }
+        #endif
+    }
+
+    private func startRender(of scene: SceneDescriptor, due: CFTimeInterval?) {
+        let asked = CACurrentMediaTime()
         let frames = frames
         // A movie brought into the project is read at the quality the recording is being
         // read at, so a scrub across a cut into one is as quick as a scrub within the take.
@@ -671,6 +735,30 @@ final class EditorModel {
             // Off the main thread. Drawn here it held the main thread for the length of every
             // frame — the same thread the playback clock ticks on and the window draws on —
             // so each heavy frame made the next tick late, and the picture stepped unevenly.
+            if let due, let target = liveSink.buffer(size: drawn.outputSize, colorSpace: renderer.colorSpace) {
+                // Playing: drawn into a buffer the screen shows as it is — see `LiveFrameSink`.
+                await Self.drawLive(renderer, drawn, source: source, webcam: camera,
+                                    blending: blending, blendingWebcam: blendingCamera,
+                                    into: LiveFrameBuffer(buffer: target))
+                guard !Task.isCancelled else { return }
+                // How long that took, remembered as a running average so one slow frame
+                // does not throw the next one far ahead.
+                renderCost = renderCost * 0.8 + (CACurrentMediaTime() - asked) * 0.2
+                // Shown at its moment by a timer of its own, so the next frame can start
+                // being drawn now rather than after this one has waited.
+                presented = due
+                let early = due - CACurrentMediaTime()
+                if early > 0.001 {
+                    Task { [weak self] in
+                        try? await Task.sleep(for: .seconds(early))
+                        guard let self, self.isPlaying, self.presented == due else { return }
+                        self.showLive(target, scene: scene)
+                    }
+                } else {
+                    showLive(target, scene: scene)
+                }
+                return
+            }
             let image = await Self.draw(renderer, drawn, source: source, webcam: camera,
                                         blending: blending, blendingWebcam: blendingCamera)
             guard !Task.isCancelled, let image else { return }
@@ -678,6 +766,11 @@ final class EditorModel {
             // layout and its aspect-fit arithmetic do not move when the fidelity does. The
             // picture gets softer; nothing shifts.
             preview = NSImage(cgImage: image, size: scene.outputSize)
+            // A still frame is back: the live layer gives way to it.
+            if showsLive {
+                showsLive = false
+                liveSink.clear()
+            }
             // Skipped when a scrub is already waiting: warming the frames around a moment
             // nobody is looking at any more is exactly the backlog this is trying not to
             // build. Playback is the other way round — it is heading straight for those
@@ -691,6 +784,26 @@ final class EditorModel {
                 await frames?.prefetch(around: drawn.sourceTime, forward: isPlaying && playbackRate > 0)
             }
         }
+    }
+
+    /// Where playing frames are drawn and shown — see `LiveFrameSink`.
+    let liveSink = LiveFrameSink()
+    /// Whether the picture on screen is a playing frame on the live layer rather than
+    /// `preview`. Changes as playback starts and stops, not with every frame.
+    private(set) var showsLive = false
+
+    private func showLive(_ buffer: CVPixelBuffer, scene: SceneDescriptor) {
+        liveSink.show(buffer)
+        if !showsLive { showsLive = true }
+        logShown(scene)
+    }
+
+    @concurrent
+    private nonisolated static func drawLive(_ renderer: SceneRenderer, _ scene: SceneDescriptor, source: CIImage?,
+                                             webcam: CIImage?, blending: CIImage?, blendingWebcam: CIImage?,
+                                             into target: LiveFrameBuffer) async {
+        renderer.render(scene, source: source, webcam: webcam, blending: blending,
+                        blendingWebcam: blendingWebcam, to: target.buffer)
     }
 
     @concurrent
@@ -2470,7 +2583,7 @@ final class EditorModel {
         // time, over the whole recording. Placed as it came, every zoom after a cut, a
         // speed change, a freeze frame or a title landed on the wrong moment — so each is
         // put where its moment now is in the edit, and one whose moment was cut goes.
-        let found = suggester.suggestions(cursor: document.cursorTrack.samples,
+        let found = suggester.smartSuggestions(cursor: document.cursorTrack.samples,
                                           input: document.inputSamples,
                                           focus: document.focusSamples,
                                           duration: timeline.sourceDuration)
