@@ -53,8 +53,15 @@ enum CameraCheck {
                                           crop: timeline.style.crop?.rect ?? CropRect.full.rect,
                                           picture: document.pictureTrack,
                                           tuning: ZoomSuggester.Tuning(transition: timeline.camera.zoomSpeed.transition))
-            let found = suggester.suggestions(cursor: document.cursorTrack.samples, input: document.inputSamples,
+            let found = suggester.smartSuggestions(cursor: document.cursorTrack.samples, input: document.inputSamples,
                                               focus: document.focusSamples, duration: timeline.sourceDuration)
+            if arguments.contains("--moments") {
+                for moment in suggester.suggestions(cursor: document.cursorTrack.samples, input: document.inputSamples,
+                                                    focus: document.focusSamples, duration: timeline.sourceDuration) {
+                    print(String(format: "moment %6.2f–%6.2f  %@  centre %.2f, %.2f", moment.start.seconds, moment.end.seconds,
+                                 moment.source?.rawValue ?? "manual", moment.center.x, moment.center.y))
+                }
+            }
             _ = Commands.SuggestZooms(timeline.placedOnTimeline(found)).apply(to: &timeline)
         }
         if arguments.contains("--no-follow") {

@@ -115,6 +115,8 @@ enum Lab {
             return await StreamProbe.run()
         case "camera":
             return await CameraCheck.run(Array(arguments.dropFirst()))
+        case "renderbench":
+            return await RenderBench.run(Array(arguments.dropFirst()))
         case "pace":
             return await PaceCheck.run(Array(arguments.dropFirst()))
         case "everything":
