@@ -147,4 +147,26 @@ struct ZoomSmoothnessTests {
         #expect(PictureTrack.fillsFrame(CGRect(x: 0, y: 0, width: 1_300, height: 949), frame: frame) == false,
                 "a real resize is still one")
     }
+
+    /// A zoom sets off from rest and settles at rest, in and out alike.
+    ///
+    /// The spring zooms used to have reached its top speed a sixth of the way through, so
+    /// the first frame of a zoom in already moved at most of the average speed — a snap —
+    /// and a zoom out, its mirror, rushed at the end.
+    @Test func theDefaultZoomCurveStartsAndEndsGently() {
+        let curve = ZoomRegion.defaultEasing
+        let frame = 1.0 / 54 // one frame of a 0.9-second ramp at 60 fps
+        let firstIn = curve.apply(frame) / frame
+        let firstOut = curve.applyLeaving(frame) / frame
+        let lastIn = (1 - curve.apply(1 - frame)) / frame
+        #expect(firstIn < 0.05, "a zoom in sets off at \(firstIn) of its average speed")
+        #expect(firstOut < 0.05, "a zoom out sets off at \(firstOut) of its average speed")
+        #expect(lastIn < 0.05, "and arrives at \(lastIn) of it")
+        var peak = 0.0
+        for step in 0..<54 {
+            let a = Double(step) / 54, b = Double(step + 1) / 54
+            peak = max(peak, (curve.apply(b) - curve.apply(a)) * 54)
+        }
+        #expect(peak < 2, "its fastest is \(peak) times its average")
+    }
 }

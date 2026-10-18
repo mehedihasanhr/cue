@@ -25,6 +25,10 @@ import RecordKit
 public struct ZoomSuggester: Sendable {
     public struct Tuning: Sendable {
         /// Clicks closer together than this belong to the same moment.
+        ///
+        /// 1.5 s, down from 2.5: at 2.5 somebody clicking along a line of text about once a
+        /// second never left a gap long enough to end a zoom, and eleven clicks over eleven
+        /// seconds became one shot of all of them.
         public var clusterGap: Double
         /// How long before the first click the zoom starts, so the move is finished by
         /// the time the thing happens.
@@ -33,6 +37,10 @@ public struct ZoomSuggester: Sendable {
         public var holdAfter: Double
         public var minimumDuration: Double
         public var maximumDuration: Double
+        /// The longest a zoom made by joining two overlapping zooms may become. Past it the
+        /// two are kept apart, the earlier ending where the later begins, so the camera
+        /// glides on from one to the next rather than holding one long shot.
+        public var longestMerge: Double
         /// How long each zoom takes to go in and to come out — the project's zoom speed.
         public var transition: Double
         /// How far in to go for a click. Bigger than 2 starts to look like a magnifying
@@ -75,11 +83,13 @@ public struct ZoomSuggester: Sendable {
         /// Fewer keys than this is a shortcut, not typing.
         public var minimumKeystrokes: Int
 
-        public init(clusterGap: Double = 2.5,
+        public init(clusterGap: Double = 1.5,
                     leadIn: Double = 0.7,
                     holdAfter: Double = 1.2,
                     minimumDuration: Double = 1.5,
                     maximumDuration: Double = 12,
+                    longestMerge: Double = 6,
+
                     transition: Double = ZoomRegion.defaultTransition.seconds,
                     scale: Double = 1.8,
                     spreadLimit: Double = 900,
@@ -99,6 +109,7 @@ public struct ZoomSuggester: Sendable {
             self.holdAfter = holdAfter
             self.minimumDuration = minimumDuration
             self.maximumDuration = maximumDuration
+            self.longestMerge = longestMerge
             self.transition = max(0, transition)
             self.scale = scale
             self.spreadLimit = spreadLimit
@@ -117,6 +128,10 @@ public struct ZoomSuggester: Sendable {
     }
 
     public var tuning: Tuning
+
+    /// How much of a zoomed shot one cluster of clicks may spread across, either way. Not
+    /// all of it: the clicks at the edges would be framed against the very edge.
+    static let shotShare = 0.8
     /// The recorded frame in points, so a click position becomes a normalised centre.
     public var frameSize: CGSize
     /// The part of the recording the picture shows, as a fraction of it. The whole of it
@@ -190,6 +205,33 @@ public struct ZoomSuggester: Sendable {
         return merged(regions, duration: duration)
     }
 
+    /// The zooms to suggest: one for every moment, joined where the camera would glide —
+    /// see `joined`. What auto-zoom in the editor asks for.
+    public func smartSuggestions(cursor: [CursorSample],
+                                 input: [InputSample],
+                                 focus: [FocusSample],
+                                 duration: CMTime) -> [ZoomRegion] {
+        joined(suggestions(cursor: cursor, input: input, focus: focus, duration: duration))
+    }
+
+    /// The suggested zooms, made to say on the timeline what the camera will do.
+    ///
+    /// Every moment keeps its zoom — an earlier version chose only the busiest, and clicks
+    /// went unzoomed. Two zooms closer together than the camera will go out and back in
+    /// for (`ZoomGlide.longestGlidedGap`) are joined edge to edge instead, so the timeline
+    /// shows one zoomed stretch where the camera stays in and glides from one to the next,
+    /// and every gap left on it is a gap the camera really is zoomed out in.
+    private func joined(_ regions: [ZoomRegion]) -> [ZoomRegion] {
+        var result = regions.sorted { $0.start < $1.start }
+        for index in result.indices.dropLast() {
+            let gap = (result[index + 1].start - result[index].end).seconds
+            if gap > 0, gap < ZoomGlide.longestGlidedGap {
+                result[index].duration = result[index + 1].start - result[index].start
+            }
+        }
+        return result
+    }
+
     // MARK: - Clicks
 
     private func clickRegions(input: [InputSample], duration: CMTime) -> [ZoomRegion] {
@@ -212,6 +254,8 @@ public struct ZoomSuggester: Sendable {
 
         var regions: [ZoomRegion] = []
         var cluster: [(t: Double, point: CGPoint)] = []
+        let lead = max(tuning.leadIn, tuning.transition + 0.1)
+        let hold = max(tuning.holdAfter, tuning.transition + 0.3)
 
         func flush() {
             defer { cluster.removeAll() }
@@ -220,11 +264,13 @@ public struct ZoomSuggester: Sendable {
             let xs = cluster.map(\.point.x)
             let ys = cluster.map(\.point.y)
 
-            // Started early enough that the zoom has all but arrived when the click
-            // happens, and long enough to go in, be seen, and come out: a zoom that is two
-            // ramps and nothing between them is a flick, not a shot.
-            let start = max(0, first.t - max(tuning.leadIn, tuning.transition * 0.9))
-            let end = min(duration.seconds, last.t + tuning.holdAfter)
+            // Started early enough that the zoom has arrived when the click happens, and held
+            // long enough after the last that it is seen zoomed before the camera leaves: a
+            // zoom that is two ramps and nothing between them is a flick, not a shot. Both
+            // measured against the ramp itself — the lead used to be nine tenths of it, so
+            // the camera was still moving in as the click landed.
+            let start = max(0, first.t - lead)
+            let end = min(duration.seconds, last.t + hold)
             let shortest = max(tuning.minimumDuration, tuning.transition * 2 + 0.8)
             let length = min(max(end - start, shortest), tuning.maximumDuration)
             guard length > 0, start < duration.seconds else { return }
@@ -253,13 +299,26 @@ public struct ZoomSuggester: Sendable {
         /// that would stretch the cluster past the spread limit starts a new one instead of
         /// poisoning the old one, and the spread guard that used to drop clusters is now an
         /// invariant that cannot fire.
+        ///
+        /// And "one place" is what one zoomed shot can show, not a fixed distance. The limit
+        /// used to be 900 points either way, which at 1.8× on a laptop screen is wider than
+        /// the shot (840 points) and taller than the whole screen (902): eight clicks over
+        /// nine seconds, from one side of the screen to the other, all joined one 11-second
+        /// zoom that then had to drag itself across the screen after them. Now a click that
+        /// would leave the cluster wider or taller than most of the shot starts a new one —
+        /// and so does one that would make the zoom longer than a zoom may be, rather than
+        /// the cluster growing on and the zoom being cut off before its last clicks.
         func belongs(_ click: (t: Double, point: CGPoint)) -> Bool {
-            guard let previous = cluster.last else { return true }
+            guard let first = cluster.first, let previous = cluster.last else { return true }
             guard click.t - previous.t <= tuning.clusterGap else { return false }
+            guard click.t - first.t + lead + hold <= tuning.maximumDuration else { return false }
             let xs = cluster.map(\.point.x) + [click.point.x]
             let ys = cluster.map(\.point.y) + [click.point.y]
-            let spread = max((xs.max() ?? 0) - (xs.min() ?? 0), (ys.max() ?? 0) - (ys.min() ?? 0))
-            return spread <= tuning.spreadLimit
+            let shot = CGSize(width: recorded.width / max(1, tuning.scale) * Self.shotShare,
+                              height: recorded.height / max(1, tuning.scale) * Self.shotShare)
+            let wide = (xs.max() ?? 0) - (xs.min() ?? 0)
+            let tall = (ys.max() ?? 0) - (ys.min() ?? 0)
+            return max(wide, tall) <= tuning.spreadLimit && wide <= shot.width && tall <= shot.height
         }
 
         for click in clicks.sorted(by: { $0.t < $1.t }) {
@@ -470,7 +529,14 @@ public struct ZoomSuggester: Sendable {
             // so the camera frames neither of them. Where the two are further apart than a
             // single moment is allowed to be, the earlier one gives way at the later one's
             // start instead — both survive, each pointed at what it was about.
-            if apart(last, region), let trimmed = abutted(last, before: region) {
+            //
+            // And two moments that would make one zoom longer than a merge may make stay two
+            // as well. Each zoom starts before its first click and holds after its last, so a
+            // steady run of clicks overlaps itself all the way along: merged, it was one zoom
+            // as long as the whole run, however it had been split.
+            let merging = max(last.end, region.end) - last.start
+            if apart(last, region) || merging.seconds > tuning.longestMerge,
+               let trimmed = abutted(last, before: region) {
                 result[result.count - 1] = trimmed
                 result.append(region)
                 continue

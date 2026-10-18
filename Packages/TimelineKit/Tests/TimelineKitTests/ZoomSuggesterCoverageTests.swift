@@ -50,6 +50,137 @@ struct ZoomSuggesterCoverageTests {
         #expect(zooms[1].center.x > 0.5, "and the second at the right")
     }
 
+    /// Clicks that wander across the screen, each soon after the last, are not one long
+    /// zoom.
+    ///
+    /// From a real take: eight clicks over nine seconds, from one side of the screen to the
+    /// other, each under the gap that joins clicks into one moment. They all joined one
+    /// 11-second zoom that dragged itself after them — the limit on how far a moment could
+    /// spread was 900 points, wider than a 1.8× shot and taller than the whole screen.
+    @Test func clicksWanderingAcrossTheScreenAreNotOneLongZoom() {
+        let clicks = [click(22.4, 1_274, 668), click(23.9, 700, 478), click(24.7, 878, 409),
+                      click(27.1, 526, 475), click(27.8, 549, 570), click(28.3, 563, 652),
+                      click(29.3, 906, 772), click(31.0, 117, 409)]
+        let zooms = zooms(clicks)
+        #expect(zooms.count > 1, "one zoom for all of them")
+        #expect(zooms.allSatisfy { $0.duration.seconds <= 7 },
+                "a zoom of \(zooms.map(\.duration.seconds).max() ?? 0) s")
+        for click in clicks {
+            guard case .mouseDown(let t, _, _, _) = click else { continue }
+            #expect(covered(zooms, at: t), "the click at \(t) s is in shot")
+        }
+    }
+
+    /// A steady run of clicks along one line of text is several zooms, not one.
+    ///
+    /// From a real take: eleven clicks over eleven seconds, about one a second, all on the
+    /// same line. Each was under the old 2.5-second gap from the last, and the zooms they
+    /// did make overlapped and were merged back together — one 13.6-second zoom.
+    @Test func aSteadyRunOfClicksIsSeveralZoomsNotOne() {
+        let clicks = [click(3.2, 868, 352), click(3.61, 933, 337), click(4.84, 653, 383),
+                      click(5.87, 400, 383), click(7.64, 523, 362), click(8.23, 523, 351),
+                      click(8.94, 560, 350), click(10.39, 564, 352), click(11.19, 644, 345),
+                      click(12.72, 586, 349), click(14.17, 485, 356)]
+        let zooms = zooms(clicks)
+        #expect(zooms.count > 1)
+        #expect(zooms.allSatisfy { $0.duration.seconds <= ZoomSuggester.Tuning().longestMerge + 0.001 },
+                "a zoom of \(zooms.map(\.duration.seconds).max() ?? 0) s")
+        for click in clicks {
+            guard case .mouseDown(let t, _, _, _) = click else { continue }
+            #expect(covered(zooms, at: t), "the click at \(t) s is in shot")
+        }
+    }
+
+    /// Every gap auto-zoom leaves between two zooms is one the camera is zoomed out in, and
+    /// a pause in the work is such a gap.
+    ///
+    /// From a real take: thirteen zooms in a minute, nearly all closer together than the
+    /// camera would go out and back in for, so it glided from one to the next and the
+    /// picture was zoomed in where the timeline showed a gap between zooms.
+    @Test func autoZoomLeavesNoGapTheCameraStaysZoomedThrough() {
+        var clicks: [InputSample] = []
+        var t = 2.0
+        var step = 0
+        while t < 58 {
+            let x = [300.0, 900, 520, 1_200, 700][step % 5]
+            clicks.append(click(t, x, 300 + Double(step % 3) * 150))
+            // Bursts of three clicks, then a pause.
+            t += step % 3 == 2 ? 3.5 : 0.8
+            step += 1
+        }
+        let zooms = suggester().smartSuggestions(cursor: [], input: clicks, focus: [],
+                                                 duration: CMTime(seconds: 60, preferredTimescale: 600))
+        var outside = 0.0
+        for (a, b) in zip(zooms, zooms.dropFirst()) {
+            let gap = (b.start - a.end).seconds
+            #expect(gap == 0 || gap >= ZoomGlide.longestGlidedGap,
+                    "a \(gap) s gap at \(a.end.seconds) s, which the camera would stay zoomed through")
+            outside += gap
+        }
+        #expect(outside > 10, "zoomed out for only \(outside) s of 60")
+        for click in clicks {
+            guard case .mouseDown(let t, _, _, _) = click else { continue }
+            #expect(covered(zooms, at: t), "the click at \(t) s is in shot")
+        }
+    }
+
+    /// Every click of a real take is zoomed, and zoomed all the way in when it lands —
+    /// not caught by a zoom still on its way in or already on its way out.
+    @Test func everyClickLandsWhileItsZoomIsAllTheWayIn() {
+        let clicks = [click(2.0, 186, 238), click(7.0, 576, 524), click(11.53, 1_069, 215), click(12.42, 1_128, 216),
+                      click(13.6, 985, 217), click(15.45, 1_198, 219), click(16.3, 1_260, 218), click(17.18, 1_312, 219),
+                      click(18.51, 1_356, 212), click(19.11, 1_429, 212), click(20.07, 1_405, 211), click(22.65, 1_094, 214),
+                      click(25.47, 251, 270), click(28.28, 495, 271), click(29.19, 594, 272), click(32.36, 551, 334),
+                      click(36.49, 1_393, 844), click(40.31, 189, 420), click(42.85, 511, 436), click(43.77, 522, 509),
+                      click(44.45, 524, 435), click(45.07, 524, 459)]
+        let zooms = suggester().smartSuggestions(cursor: [], input: clicks, focus: [],
+                                                 duration: CMTime(seconds: 47, preferredTimescale: 600))
+        for click in clicks {
+            guard case .mouseDown(let t, _, _, _) = click else { continue }
+            let at = CMTime(seconds: t, preferredTimescale: 600)
+            // In, at full depth: either inside a zoom's held part, or where one zoom glides
+            // on to the next touching it, which stays in.
+            let full = zooms.contains { zoom in
+                let held = zoom.start + zoom.transition <= at && at <= zoom.end - zoom.transition
+                let gliding = zoom.contains(at) && zooms.contains { $0.start == zoom.end || $0.end == zoom.start }
+                return held || gliding
+            }
+            #expect(full, "the click at \(t) s is not zoomed all the way in")
+        }
+    }
+
+    /// Busy clicks are not left out because a neighbouring zoom touches theirs.
+    ///
+    /// From a real take: a run of work split into zooms that touch, so each piece shut out
+    /// the next — four clicks on one form went unzoomed beside a zoom with as many.
+    @Test func busyClicksAreNotDroppedForTouchingANeighbour() {
+        let clicks = [click(1.42, 671, 711), click(3.79, 654, 584), click(5.54, 538, 393), click(6.83, 705, 582),
+                      click(9.13, 791, 159), click(10.16, 903, 165), click(11.09, 586, 636), click(11.77, 538, 603),
+                      click(12.83, 554, 596), click(14.0, 1_072, 478), click(16.74, 1_219, 417), click(18.2, 727, 622),
+                      click(18.75, 837, 621), click(19.5, 672, 621), click(20.1, 621, 620), click(20.69, 546, 625),
+                      click(23.7, 224, 492), click(29.66, 196, 534), click(35.34, 204, 548), click(39.43, 536, 261),
+                      click(40.32, 637, 251), click(43.36, 601, 532), click(44.5, 439, 520), click(47.96, 170, 636),
+                      click(50.34, 154, 541)]
+        let zooms = suggester().smartSuggestions(cursor: [], input: clicks, focus: [],
+                                                 duration: CMTime(seconds: 52.3, preferredTimescale: 600))
+        let inShot = clicks.filter { click in
+            guard case .mouseDown(let t, _, _, _) = click else { return false }
+            return covered(zooms, at: t)
+        }.count
+        #expect(inShot == clicks.count, "only \(inShot) of \(clicks.count) clicks zoomed")
+    }
+
+    /// Clicks in one place for longer than a zoom may last are all in shot, rather than
+    /// the zoom being cut off at its longest before the last of them.
+    @Test func aLongRunOfClicksInOnePlaceIsNotCutShort() {
+        let clicks = stride(from: 5.0, through: 25, by: 1.5).map { click($0, 700, 450) }
+        let zooms = zooms(clicks)
+        for click in clicks {
+            guard case .mouseDown(let t, _, _, _) = click else { continue }
+            #expect(covered(zooms, at: t), "the click at \(t) s is in shot")
+        }
+    }
+
     /// Clicks on the same thing are still one moment, not one zoom each. That was always
     /// right and must stay right.
     @Test func clicksOnTheSameThingAreStillOneMoment() {

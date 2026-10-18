@@ -51,6 +51,10 @@ public struct ZoomGlide: Equatable, Sendable {
     /// ramps that meet.
     public var isKeptZoomedIn: Bool { moveStart > start }
 
+    /// The longest gap between two zooms the camera glides across rather than going out
+    /// and back in, in seconds.
+    public static let longestGlidedGap = 0.6
+
     public var duration: CMTime { end - start }
 
     public func contains(_ time: CMTime) -> Bool { time >= start && time < end }
@@ -89,7 +93,12 @@ public struct ZoomGlide: Equatable, Sendable {
               from.duration > .zero, to.duration > .zero else { return nil }
         let gap = to.start - from.end
         guard gap >= .zero else { return nil }
-        let needed = from.ramps.out + to.ramps.in
+        // Glided across only when the gap is a blink. It used to be any gap shorter than
+        // the two ramps — nearly two seconds at the default speed — so a gap you could see on
+        // the timeline, between two zooms you could see were separate, played zoomed in, and
+        // the picture was zoomed where the timeline said it was not. Out and back in over a
+        // gap that short is quick, but it is what the timeline shows.
+        let needed = min(from.ramps.out + to.ramps.in, CMTime(seconds: Self.longestGlidedGap, preferredTimescale: 600))
         // A gap as long as the ramps is where pulling back stops looking like a stumble
         // and starts looking like a pause. Two ramps of nothing that touch fail this too,
         // which is the seam a split leaves: a cut, as it always was.

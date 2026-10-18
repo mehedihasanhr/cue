@@ -94,11 +94,19 @@ struct ZoomGlideTests {
         #expect(glide.end == time(6.5), "arrives where the second would have finished pushing in")
     }
 
-    @Test func aGapShorterThanTheTwoRampsGlides() {
-        let glides = ZoomLane.glides(in: [zoom(start: 2, duration: 4), zoom(start: 6.9, duration: 4)])
+    @Test func aGapOfABlinkGlides() {
+        let glides = ZoomLane.glides(in: [zoom(start: 2, duration: 4), zoom(start: 6.4, duration: 4)])
         #expect(glides.count == 1)
         #expect(glides.first?.start == time(5.5))
-        #expect(glides.first?.end == time(7.4))
+        #expect(glides.first?.end == time(6.9))
+    }
+
+    /// A gap you can see on the timeline is a gap the camera is zoomed out in, even one
+    /// shorter than the two ramps. It used to glide across any gap shorter than them, so
+    /// the picture was zoomed in where the timeline showed no zoom.
+    @Test func aGapShorterThanTheTwoRampsButLongerThanABlinkDoesNotGlide() {
+        let glides = ZoomLane.glides(in: [zoom(start: 2, duration: 4), zoom(start: 6.9, duration: 4)])
+        #expect(glides.isEmpty)
     }
 
     /// A gap as long as the ramps is a pause, and the camera pulls back through it.

@@ -33,6 +33,12 @@ public enum Easing: String, Codable, Sendable, CaseIterable {
     /// jump cut, however long it takes. Critically damped — see `apply(_:)`.
     case spring
     case easeInOut
+    /// The zoom default: from rest, gathering speed gradually, fastest halfway, and
+    /// settling as gently as it set off — the same at both ends, so a zoom in and a zoom
+    /// out feel alike. The spring reached its top speed a sixth of the way through, so a
+    /// zoom in lurched into motion on its first frames and a zoom out, its mirror, rushed
+    /// at the end; people saw that as a snap rather than a camera move.
+    case smooth
 
     public func apply(_ t: Double) -> Double {
         let t = min(1, max(0, t))
@@ -41,6 +47,9 @@ public enum Easing: String, Codable, Sendable, CaseIterable {
             return t
         case .easeInOut:
             return t < 0.5 ? 2 * t * t : 1 - pow(-2 * t + 2, 2) / 2
+        case .smooth:
+            // Smootherstep: speed and acceleration both nothing at either end.
+            return t * t * t * (t * (t * 6 - 15) + 10)
         case .spring:
             // A critically damped spring, in closed form — x(t) = 1 − (1 + ωt)e^(−ωt) —
             // stretched so it arrives exactly at t = 1. Evaluated rather than simulated,
@@ -250,7 +259,7 @@ public struct ZoomRegion: TimelineRegion {
 
     /// Whether this zoom pulls back rather than pushing in.
     public var zoomsOut: Bool { scale < 1 }
-    public static let defaultEasing = Easing.spring
+    public static let defaultEasing = Easing.smooth
     /// Medium zoom speed: long enough to be a camera move rather than a cut. It was half a
     /// second, which with the old overshooting curve made a zoom snap in.
     public static let defaultTransition = CMTime(value: 9, timescale: 10)
