@@ -800,6 +800,8 @@ private struct IslandOptions: View {
             Divider()
             Button("Recordings\u{2026}", action: actions.showLibrary)
             Button("Settings\u{2026}", action: actions.openSettings)
+            Divider()
+            Button("Quit Klik Studio") { NSApp.terminate(nil) }
         } label: {
             IslandGlyph(symbol: "gearshape", isOn: true)
         }

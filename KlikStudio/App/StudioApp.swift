@@ -162,6 +162,15 @@ final class StudioAppDelegate: NSObject, NSApplicationDelegate {
         // Set before anything is drained below, so a recording that launched the app has
         // somewhere to go the moment it is read.
         studio.openEditor = { [weak self] url in self?.editors.open(url) }
+        // Klik's menu: the bar is shown even over an editor, since somebody asked for it.
+        studio.showRecorder = { [weak self] in
+            self?.bar?.show()
+            NSApp.activate()
+        }
+        studio.showLibrary = { [weak self] in
+            self?.showLibrary()
+            NSApp.activate()
+        }
 
         let panel = RecorderBarPanel(settings: settings, studio: studio)
         panel.showLibrary = { [weak self] in self?.showLibrary() }

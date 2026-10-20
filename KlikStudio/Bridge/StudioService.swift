@@ -40,6 +40,11 @@ final class StudioService: StudioRecording {
     /// recording double-clicked in the Finder — frequently opened nothing at all. The app
     /// delegate owns the editor windows and sets this.
     @ObservationIgnored var openEditor: ((URL) -> Void)?
+    /// Brings the recorder bar forward — Klik's "Klik Studio…" menu item. Set by the app
+    /// delegate, which owns the bar.
+    @ObservationIgnored var showRecorder: (() -> Void)?
+    /// Opens Recordings — Klik's "Klik Studio…" menu item.
+    @ObservationIgnored var showLibrary: (() -> Void)?
     /// Said out loud when Klik asked for a folder this app cannot write to.
     private(set) var destinationNote: String?
 
@@ -411,6 +416,13 @@ final class StudioService: StudioRecording {
             }
             openEditor?(url)
             return
+        }
+        if url.scheme == AddOnBridge.urlScheme {
+            switch url.host {
+            case AddOnBridge.showRecorderHost: return showRecorder?() ?? ()
+            case AddOnBridge.showLibraryHost: return showLibrary?() ?? ()
+            default: break
+            }
         }
         guard let file = RequestFile.file(from: url) else {
             StudioLog.bridge.error("Ignoring \(url.scheme ?? "a", privacy: .public) URL that is not a recording request")

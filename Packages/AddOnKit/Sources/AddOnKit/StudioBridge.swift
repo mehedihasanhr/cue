@@ -22,6 +22,26 @@ public enum AddOnBridge {
 
     /// The query item carrying the path of a written `RecordingRequest`.
     public static let requestQueryItem = "request"
+
+    /// The host of the URL that brings the add-on's recorder bar forward, recording
+    /// nothing — Klik's menu item, which hands the choosing to the add-on.
+    public static let showRecorderHost = "recorder"
+
+    /// The host of the URL that opens the add-on's Recordings window.
+    public static let showLibraryHost = "library"
+
+    /// `klik-studio://recorder`. An add-on too old to know it still comes forward.
+    public static var showRecorderURL: URL { url(host: showRecorderHost) }
+
+    /// `klik-studio://library`.
+    public static var showLibraryURL: URL { url(host: showLibraryHost) }
+
+    private static func url(host: String) -> URL {
+        var components = URLComponents()
+        components.scheme = urlScheme
+        components.host = host
+        return components.url!
+    }
 }
 
 /// What an installed add-on can do.

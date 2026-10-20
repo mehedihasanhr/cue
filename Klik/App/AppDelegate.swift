@@ -566,21 +566,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
         // Video, from Klik Studio. Always listed, so the feature can be found from here;
         // without Studio the items say so with a badge, and choosing one offers to install.
-        menu.addItem(.sectionHeader(title: "Video"))
         let badge: NSMenuItemBadge? = switch recorder.availability {
         case .ready, .updatable: nil
         case .tooOld: NSMenuItemBadge(string: "Update")
         case .notInstalled, .untrusted: NSMenuItemBadge(string: "Get")
         }
-        for item in [makeItem("Record Screen…", #selector(recordScreen(_:))), makeItem("Edit Videos", #selector(openStudio(_:)))] {
+        for item in [makeItem("Record Video", #selector(recordVideo(_:))), makeItem("Klik Studio…", #selector(openStudio(_:)))] {
             item.badge = badge
             menu.addItem(item)
         }
         menu.addItem(.separator())
         let panels: [(String, Selector, HotkeyID)] = [
-            ("Klik Panel", #selector(showPanel(_:)), .showPanel),
-            ("Clipboard List", #selector(showClipboardPanel(_:)), .clipboardPanel),
-            ("Command Palette", #selector(showCommandPalette(_:)), .commandPalette),
             ("Quick Task…", #selector(quickTask(_:)), .quickTask),
             ("Quick Note…", #selector(quickNote(_:)), .quickNote),
         ]
@@ -621,11 +617,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             _ = self?.perform(action, with: sender)
         }
-    }
-
-    /// The floating panel at the pointer (the ⌥⇧K shortcut's action, from the menu).
-    @objc func showPanel(_ sender: Any?) {
-        toggleHistoryAtPointer()
     }
 
     /// The menu bar glyph gives once, the way a shutter does, at what Klik just took.
@@ -1124,51 +1115,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         coordinator.captureArea(fromMenu: sender is NSMenuItem)
     }
 
-    /// Record the screen — or, with no add-on installed, offer to install one.
-    ///
-    /// The command is always present so the feature is discoverable; what it does
-    /// depends on what is installed, which is what `commandTitle` says out loud.
-    @objc func recordScreen(_ sender: Any?) {
-        guard recorder.canRecord else {
-            offerStudio(for: .record) { [weak self] in self?.recordScreen(nil) }
-            return
-        }
-        // Asked here rather than by the add-on. `\.ask` handed the question to Klik
-        // Studio, which answered it by taking the whole screen — a second app dimming the
-        // display to ask which part of it you meant, while you were already in Klik.
-        guard let island else { return askAddOnToChoose() }
-        let preferences = recorder.preferences
-        var parts = [preferences.recordsSystemAudio ? "System audio" : "No system audio"]
-        if preferences.recordsMicrophone { parts.append("Microphone") }
-        if preferences.countdownSeconds > 0 { parts.append("\(preferences.countdownSeconds)s countdown") }
-        let shown = island.showRecorder(summary: parts.joined(separator: " · ")) { [recorder] target in
-            Task {
-                do {
-                    try await recorder.record(target: target)
-                } catch {
-                    Log.addOns.error("Recording request failed: \(error.localizedDescription, privacy: .public)")
-                    if (error as? AddOnError) != .blocked { NSAlert(error: error).runModal() }
-                }
-            }
-        }
-        // No island on screen — it can be switched off in Settings, and it has no geometry
-        // until it has been placed. Falling through to the add-on's own picker beats a
-        // menu item that does nothing at all.
-        if !shown { askAddOnToChoose() }
-    }
-
-    /// The old route, for the case where there is no island to ask in.
-    private func askAddOnToChoose() {
-        Task { [recorder] in
-            do {
-                try await recorder.record(target: .ask)
-            } catch {
-                Log.addOns.error("Recording request failed: \(error.localizedDescription, privacy: .public)")
-                if (error as? AddOnError) != .blocked { NSAlert(error: error).runModal() }
-            }
-        }
-    }
-
     @objc func captureScrolling(_ sender: Any?) {
         coordinator.captureScrolling(fromMenu: sender is NSMenuItem)
     }
@@ -1285,29 +1231,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return true
     }
 
-    /// Open Klik Studio — its recordings, to edit — or offer to install it.
+    /// Klik Studio's recorder bar, where recording starts — or, without a usable Studio,
+    /// an offer to install or update it.
+    @objc func recordVideo(_ sender: Any?) {
+        inStudio { try await $0.showRecorder() }
+    }
+
+    /// Klik Studio's Recordings, the gallery of what was recorded — or the same offer.
     @objc func openStudio(_ sender: Any?) {
+        inStudio { try await $0.showLibrary() }
+    }
+
+    private func inStudio(_ action: @escaping @MainActor @Sendable (RecordingAddOnClient) async throws -> Void) {
         guard recorder.canRecord else {
-            offerStudio(for: .edit) { [weak self] in try? self?.recorder.launch() }
+            offerStudio { [weak self] in self?.inStudio(action) }
             return
         }
-        do {
-            try recorder.launch()
-        } catch {
-            showStudioSettings()
+        Task { [recorder] in
+            do {
+                try await action(recorder)
+            } catch {
+                Log.addOns.error("Couldn't show Klik Studio: \(error.localizedDescription, privacy: .public)")
+                if (error as? AddOnError) != .blocked { NSAlert(error: error).runModal() }
+            }
         }
     }
 
     /// A video command without a usable Klik Studio: ask to install or update it. Once it
     /// is in place, `then` carries on with what the user asked for.
-    private func offerStudio(for purpose: StudioInstallPrompt.Purpose, then: @escaping @MainActor @Sendable () -> Void) {
+    private func offerStudio(then: @escaping @MainActor @Sendable () -> Void) {
         Task { [weak self] in
             guard let self else { return }
             // Without the release list there is nothing to offer, and the menu may be the
             // first thing to ask for it.
             if recorder.availability.offeredRelease == nil, !recorder.canRecord { await addOns.refresh() }
             if recorder.canRecord { return then() }
-            switch StudioInstallPrompt.ask(recorder.availability, purpose: purpose, feedError: addOns.feedError) {
+            switch StudioInstallPrompt.ask(recorder.availability, feedError: addOns.feedError) {
             case .install:
                 addOns.install(recorder.addOn)
                 // Declined the folder Klik asked for: nothing started, nothing to watch.

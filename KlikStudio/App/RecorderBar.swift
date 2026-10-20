@@ -248,22 +248,25 @@ struct RecorderBar: View {
         .backgroundPreferenceValue(HoverAnchors.self, hoverPane)
     }
 
+    /// Puts the bar away to the island. The size of every other tile on the bar, under the
+    /// same gliding hover.
     private var closeButton: some View {
         Button(action: close) {
-            // A solid white disc with a dark cross, the system's own close for a floating
-            // HUD: the one control on the bar that is not about the recording, set apart by
-            // being the one solid thing on it.
+            // A solid circle in a fine ring, the tile's size: set apart from the recording
+            // controls without shouting over them.
             Image(systemName: "xmark")
-                .font(.system(size: 10, weight: .heavy))
-                .foregroundStyle(Color(white: 0.12))
-                .frame(width: 24, height: 24)
-                .background(.white.opacity(0.92), in: Circle())
-                .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.85))
+                .frame(width: 32, height: 32)
+                .background(Color(white: 0.26), in: Circle())
+                .overlay(Circle().strokeBorder(.white.opacity(0.14), lineWidth: 1))
+                .frame(width: BarIcon.tile, height: BarIcon.tile)
+                .contentShape(Rectangle())
         }
-        .buttonStyle(BarButtonStyle(pressedScale: 0.88))
+        .buttonStyle(BarButtonStyle())
         .help("Close the recorder")
-        .padding(.leading, 8)
-        .padding(.trailing, 2)
+        .accessibilityLabel("Close")
+        .modifier(slidingHover("close"))
     }
 
     /// The four modes in one inset strip, with one glass chip that slides to the choice.
@@ -449,6 +452,8 @@ struct RecorderBar: View {
                 ForEach([3, 5, 10], id: \.self) { Text("\($0) seconds").tag($0) }
             }
             .pickerStyle(.inline)
+            Divider()
+            Button("Quit Klik Studio") { NSApp.terminate(nil) }
         } label: {
             // The whole round button is the label, in the button menu style with a plain
             // button, as the input chips are: as a borderless menu with the circle drawn
@@ -460,7 +465,7 @@ struct RecorderBar: View {
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help("Recordings, settings and countdown")
+        .help("Recordings, settings, countdown and Quit")
         .padding(.trailing, 4)
     }
 

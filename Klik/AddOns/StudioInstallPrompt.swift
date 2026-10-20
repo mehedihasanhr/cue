@@ -8,17 +8,6 @@ import AppKit
 /// shows its progress, so "Install" starts it and opens the page.
 @MainActor
 enum StudioInstallPrompt {
-    enum Purpose {
-        case record, edit
-
-        var phrase: String {
-            switch self {
-            case .record: "record your screen"
-            case .edit: "edit videos"
-            }
-        }
-    }
-
     enum Choice {
         /// The download has started (or the update), and the caller should watch for it.
         case install
@@ -27,13 +16,13 @@ enum StudioInstallPrompt {
         case dismissed
     }
 
-    static func ask(_ availability: AddOnAvailability, purpose: Purpose, feedError: String?) -> Choice {
+    static func ask(_ availability: AddOnAvailability, feedError: String?) -> Choice {
         let addOn = AddOnCatalog.studio
         let alert = NSAlert()
         let install: Bool
         switch availability {
         case .notInstalled(let release?):
-            alert.messageText = "Install \(addOn.name) to \(purpose.phrase)"
+            alert.messageText = "Install \(addOn.name) to record and edit videos"
             alert.informativeText = "\(addOn.name) adds screen recording, timeline editing, auto-zoom and video export. It installs as its own app (\(size(of: release))), so Klik stays light."
             alert.addButton(withTitle: "Install")
             install = true
@@ -44,7 +33,7 @@ enum StudioInstallPrompt {
             alert.addButton(withTitle: "Open Settings")
             install = false
         case .tooOld(let installed, let required, let release):
-            alert.messageText = "Update \(addOn.name) to \(purpose.phrase)"
+            alert.messageText = "Update \(addOn.name) to record and edit videos"
             alert.informativeText = "This copy is version \(installed); Klik needs \(required) or newer."
                 + (release.map { " The update is \(size(of: $0))." } ?? "")
             alert.addButton(withTitle: release == nil ? "Open Settings" : "Update")
