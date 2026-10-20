@@ -8,7 +8,7 @@ import BackgroundKit
 struct AnnotationRenderer {
     let effects: EffectsCache
 
-    func draw(_ document: EditorDocument, draft: Annotation? = nil) {
+    func draw(_ document: ImageEditorDocument, draft: Annotation? = nil) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         drawBackdrop(document, context: context)
         drawContent(document, context: context)
@@ -17,14 +17,14 @@ struct AnnotationRenderer {
 
     /// The background fill and the card's shadow: the expensive, low-frequency part of a
     /// frame. The canvas caches it as a bitmap and redraws only the rest while dragging.
-    func drawBackdrop(_ document: EditorDocument, context: CGContext) {
+    func drawBackdrop(_ document: ImageEditorDocument, context: CGContext) {
         guard let background = document.background else { return }
         let layout = document.layout
         drawBackground(background, in: CGRect(origin: .zero, size: layout.size), card: layout.card, context: context)
     }
 
     /// The inset border and the captured image, clipped to the rounded content frame.
-    func drawContent(_ document: EditorDocument, context: CGContext) {
+    func drawContent(_ document: ImageEditorDocument, context: CGContext) {
         let layout = document.layout
         let contentFrame = layout.image
 
@@ -54,7 +54,7 @@ struct AnnotationRenderer {
     /// Annotations may spill over the padding, so they are clipped to the whole output.
     /// `editingTextID` names a text box being typed into: its box is drawn but not its
     /// words, which the text editor on top shows, so they never appear twice.
-    func drawAnnotations(_ document: EditorDocument, draft: Annotation?, editingTextID: UUID? = nil, context: CGContext) {
+    func drawAnnotations(_ document: ImageEditorDocument, draft: Annotation?, editingTextID: UUID? = nil, context: CGContext) {
         let output = CGRect(origin: .zero, size: document.layout.size)
         context.saveGState()
         context.clip(to: output)
@@ -132,7 +132,7 @@ struct AnnotationRenderer {
 
     // MARK: - Annotations
 
-    private func draw(_ annotation: Annotation, document: EditorDocument, drawsText: Bool = true, context: CGContext) {
+    private func draw(_ annotation: Annotation, document: ImageEditorDocument, drawsText: Bool = true, context: CGContext) {
         if annotation.rotation != 0, annotation.canRotate {
             let center = annotation.center
             context.saveGState()
@@ -146,7 +146,7 @@ struct AnnotationRenderer {
         drawUnrotated(annotation, document: document, drawsText: drawsText, context: context)
     }
 
-    private func drawUnrotated(_ annotation: Annotation, document: EditorDocument, drawsText: Bool, context: CGContext) {
+    private func drawUnrotated(_ annotation: Annotation, document: ImageEditorDocument, drawsText: Bool, context: CGContext) {
         switch annotation.kind {
         case .rectangle(let rect, let style):
             let path = CGPath(rect: rect, transform: nil)
@@ -393,7 +393,7 @@ extension RGBA {
 
 /// Flattens a document into pixels at its native scale.
 enum DocumentExporter {
-    static func render(_ document: EditorDocument, effects: EffectsCache) -> CGImage? {
+    static func render(_ document: ImageEditorDocument, effects: EffectsCache) -> CGImage? {
         let size = document.outputSize
         let scale = document.scale
         let width = Int((size.width * scale).rounded())

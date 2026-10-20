@@ -16,5 +16,46 @@
 			</array>
 		</dict>
 	</array>
+	<!-- Klik's video recordings: packages it owns and opens in the video editor. -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Klik Recording</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.stackrover.klik.recording</string>
+			</array>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+		</dict>
+	</array>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.stackrover.klik.recording</string>
+			<key>UTTypeDescription</key>
+			<string>Klik Recording</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>com.apple.package</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>klikrec</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
+	<!-- The Google OAuth client for Drive backup, from Config/Google.xcconfig. Empty when unset. -->
+	<key>KlikGoogleClientID</key>
+	<string>$(KLIK_GOOGLE_CLIENT_ID)</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Klik writes captions by recognising the speech in your recording. This happens on your Mac — the audio is never sent anywhere.</string>
 </dict>
 </plist>

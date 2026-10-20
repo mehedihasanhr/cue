@@ -1,15 +1,10 @@
 #!/bin/bash
 #
-# Packages a built app — Klik, or the Klik Studio add-on — as a DMG people can
-# install from.
+# Packages a built Klik as a DMG people can install from.
 #
 #   xcodebuild -project Klik.xcodeproj -scheme Klik -configuration Release \
 #       -derivedDataPath build/release build
 #   Scripts/make-dmg.sh
-#
-#   xcodebuild -project KlikStudio/KlikStudio.xcodeproj -scheme KlikStudio \
-#       -configuration Release -derivedDataPath build/release-studio build
-#   Scripts/make-dmg.sh "build/release-studio/Build/Products/Release/Klik Studio.app"
 #
 # The image holds the app beside a shortcut to /Applications, which is what makes
 # "drag it across to install" work. Without that shortcut the image opens with

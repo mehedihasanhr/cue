@@ -9,6 +9,7 @@ import AppKit
 ///     klik://snippet/add?keyword=;sig&text=…&name=…
 ///     klik://clipboard/copy?text=…
 ///     klik://palette · klik://clipboard · klik://panel · klik://clock · klik://settings
+///     klik://record · klik://recordings
 enum URLCommand: Equatable {
     case captureArea, captureWindow, captureFullScreen, captureScrolling, captureText, pickColor
     case newTask(title: String?, notes: String, priority: TaskPriority, project: String?)
@@ -17,6 +18,7 @@ enum URLCommand: Equatable {
     case newNote(text: String?)
     case copy(String)
     case palette, clipboard, panel, clock, settings
+    case record, recordings
 
     /// nil for a URL Klik does not understand.
     init?(_ url: URL) {
@@ -48,6 +50,8 @@ enum URLCommand: Equatable {
         case ["panel"], ["library"]: self = .panel
         case ["clock"], ["prayer"]: self = .clock
         case ["settings"], ["preferences"]: self = .settings
+        case ["record"], ["video", "record"], ["recorder"]: self = .record
+        case ["recordings"], ["video"], ["videos"]: self = .recordings
         default: return nil
         }
     }

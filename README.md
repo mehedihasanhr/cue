@@ -368,65 +368,40 @@ Klik/
 ├── Preview/      Temporary capture viewer (replaced by the editor in Step 3)
 ├── Support/      CapturedImage, Log, WindowHosting, Icon (the island's Hugeicons stroke icons,
 │                 by SF Symbol name; HugeIconGlyphs is generated from @hugeicons/core-free-icons, MIT)
-├── AddOns/       AddOnCatalog, AddOnRegistry, AddOnInstaller/Downloader, AddOnLocator,
-│                 RecordingAddOnClient, AddOnSettingsView — finding and installing add-ons
+├── Studio/       Screen recording and the video editor: the recorder bar, Recordings,
+│                 the editor windows and their settings (StudioController owns them)
 └── Resources/    Assets.xcassets
-KlikStudio/       Klik Studio.app — the recording add-on: its own .xcodeproj, its own app
-Packages/AddOnKit/  The contract both apps compile: RecordingRequest, capabilities, request files
-Packages/RecordKit/ Capture, linked only by the add-on: ScreenCaptureKit + AVAssetWriter,
-                  frame pacing, cursor telemetry, the .klikrec package
+Packages/RecordKit/ Capture: ScreenCaptureKit + AVAssetWriter, frame pacing, cursor
+                  telemetry, the .klikrec package, RecordingRequest
 Packages/TimelineKit/ The edit: clips, regions, undo, auto-zoom, project.json
 Packages/RenderKit/ SceneDescriptor + SceneRenderer (Core Image on Metal) — one renderer
                   for both the preview and the export
-Config/           Shared by both projects: Klik.entitlements, KlikStudio.entitlements,
-                  StudioInfo.plist, Studio.xcconfig, Signing.xcconfig (local, git-ignored)
+Config/           Klik.entitlements, Info.plist, Vendor.xcconfig, Signing.xcconfig and
+                  Google.xcconfig (both local, git-ignored)
 ```
 
-The Xcode project uses file-system-synchronized groups, so new files under `Klik/` and
-`KlikStudio/` are picked up automatically — no project edits needed.
+The Xcode project uses file-system-synchronized groups, so new files under `Klik/` are
+picked up automatically — no project edits needed.
 
-## Add-ons
+## Screen recording
 
-Heavy features do not ship inside Klik. Screen recording lives in **Klik Studio**, a
-separate signed app the user installs from Settings › Add-ons, so an install that only
-takes screenshots downloads, launches and holds none of it.
+Screen recording and the video editor are part of Klik. They live under `Klik/Studio/`
+and in four packages, and run in Klik's own process:
 
-- The host links `Packages/AddOnKit` and nothing else: the request and capability types,
-  no AVFoundation, no Metal, no Speech.
-- `AddOnRegistry` finds an installed add-on through LaunchServices, then checks its code
-  signature carries Klik's own team identifier — a bundle identifier is a naming
-  convention, not a credential.
-- Installing downloads a notarised image or package, verifies its length and SHA-256, and
-  hands it to macOS. A sandboxed app cannot create a non-quarantined executable or clear
-  the quarantine flag, so Klik does not try to install an app itself.
-- Capabilities are asked for before they are offered, so an older add-on simply shows
-  fewer commands.
-
-**Settings › Add-ons** carries the whole lifecycle: Install / Update, Open, Show in
-Finder, and — under Advanced — **Choose a Klik Studio build**, which points Klik at a
-copy anywhere on disk (an Xcode build, or one kept outside Applications) and is how the
-pair is developed before anything is published. That copy is signature-checked like any
-other.
-
-The same page holds what Klik *asks for* when you record: countdown, system audio,
-microphone, where recordings are saved, and whether the editor opens when a recording
-stops. They travel in the `RecordingRequest`, so the add-on needs no settings of its own
-for any of it. A save folder Klik picked is a grant Klik holds — the add-on cannot
-inherit it, so it tries the folder, falls back to its own library, and says so.
-
-**Capture** and **Open Klik Studio** in the Capture menu both work whatever is
-installed: with no add-on they open this page instead of failing.
-
-Klik Studio is its **own Xcode project**, built and released on its own schedule. Klik
-never builds it and never bundles it — it finds it, checks its signature, and launches
-it.
+- **Record Video** in the menu bar item (or `klik://record`) brings up the recorder bar;
+  **Recordings…** (or `klik://recordings`) opens the gallery of what was recorded.
+- While a take is under way the same menu shows Stop and Pause.
+- A `.klikrec` opened from the Finder opens in the video editor. While an editor is open
+  Klik keeps a Dock tile, because the editor's commands live in the menu bar.
+- Recording and video settings have their own window — Settings › Recording & Video, or
+  **Recording & Video Settings…** in the app menu.
+- Recordings are kept in `~/Movies/Klik Studio`, the folder the separate Klik Studio app
+  used, so earlier recordings are still there.
 
 ```sh
-# The add-on, from its own project
-xcodebuild -project KlikStudio/KlikStudio.xcodeproj -scheme KlikStudio -configuration Debug build
+xcodebuild -project Klik.xcodeproj -scheme Klik -configuration Debug build
 
 # The packages, on their own
-cd Packages/AddOnKit && swift test
 cd Packages/RecordKit && swift test
 cd Packages/TimelineKit && swift test
 cd Packages/RenderKit && swift test
@@ -479,4 +454,4 @@ can change the document behind another part's back.
 5. Export (clipboard, save, drag-out, floating thumbnail)
 6. ✅ Scrolling capture
 7. Polish (✅ custom shortcuts, ✅ preferences window; save locations, dark mode, localization)
-8. Recording, as the Klik Studio add-on (✅ plumbing, ✅ capture + telemetry, ✅ editor: timeline, zooms, renderer; export next)
+8. Recording and the video editor, built into Klik (✅ plumbing, ✅ capture + telemetry, ✅ editor: timeline, zooms, renderer; export next)

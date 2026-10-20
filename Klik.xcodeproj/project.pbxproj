@@ -7,8 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		4B4C494B000000000000A034 /* AddOnKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B4C494B000000000000A032 /* AddOnKit */; };
-		4B4C494B000000000000A036 /* AddOnKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B4C494B000000000000A037 /* AddOnKit */; };
+		4B4C494B000000000000A051 /* RecordKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B4C494B000000000000A052 /* RecordKit */; };
+		4B4C494B000000000000A054 /* RenderKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B4C494B000000000000A055 /* RenderKit */; };
+		4B4C494B000000000000A057 /* TimelineKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B4C494B000000000000A058 /* TimelineKit */; };
 		4B4C494B000000000000A038 /* BackgroundKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B4C494B000000000000A03A /* BackgroundKit */; };
 		4B4C494B000000000000A039 /* BackgroundKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B4C494B000000000000A03B /* BackgroundKit */; };
 /* End PBXBuildFile section */
@@ -73,14 +74,6 @@
 				Tasks/TaskStore.swift,
 				Tasks/TaskWire.swift,
 				Support/Log.swift,
-				AddOns/SemanticVersion.swift,
-				AddOns/AddOnCatalog.swift,
-				AddOns/AddOnDownloader.swift,
-				AddOns/AddOnLocator.swift,
-				AddOns/AddOnPlacer.swift,
-				AddOns/AddOnRegistry.swift,
-				AddOns/RecordingAddOnClient.swift,
-				AddOns/StudioPreferences.swift,
 				Agents/AgentModel.swift,
 				Agents/AgentHooks.swift,
 			);
@@ -109,8 +102,10 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				4B4C494B000000000000A034 /* AddOnKit in Frameworks */,
 				4B4C494B000000000000A038 /* BackgroundKit in Frameworks */,
+				4B4C494B000000000000A051 /* RecordKit in Frameworks */,
+				4B4C494B000000000000A054 /* RenderKit in Frameworks */,
+				4B4C494B000000000000A057 /* TimelineKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -118,7 +113,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				4B4C494B000000000000A036 /* AddOnKit in Frameworks */,
 				4B4C494B000000000000A039 /* BackgroundKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -175,8 +169,10 @@
 			);
 			name = Klik;
 			packageProductDependencies = (
-				4B4C494B000000000000A032 /* AddOnKit */,
 				4B4C494B000000000000A03A /* BackgroundKit */,
+				4B4C494B000000000000A052 /* RecordKit */,
+				4B4C494B000000000000A055 /* RenderKit */,
+				4B4C494B000000000000A058 /* TimelineKit */,
 			);
 			productName = Klik;
 			productReference = 4B4C494B000000000000A001 /* Klik.app */;
@@ -199,7 +195,6 @@
 			);
 			name = KlikTests;
 			packageProductDependencies = (
-				4B4C494B000000000000A037 /* AddOnKit */,
 				4B4C494B000000000000A03B /* BackgroundKit */,
 			);
 			productName = KlikTests;
@@ -242,8 +237,10 @@
 			mainGroup = 4B4C494B000000000000D001;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				4B4C494B000000000000A031 /* XCLocalSwiftPackageReference "Packages/AddOnKit" */,
 				4B4C494B000000000000A03C /* XCLocalSwiftPackageReference "Packages/BackgroundKit" */,
+				4B4C494B000000000000A050 /* XCLocalSwiftPackageReference "Packages/RecordKit" */,
+				4B4C494B000000000000A053 /* XCLocalSwiftPackageReference "Packages/RenderKit" */,
+				4B4C494B000000000000A056 /* XCLocalSwiftPackageReference "Packages/TimelineKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 4B4C494B000000000000D003 /* Products */;
@@ -291,25 +288,25 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		4B4C494B000000000000A031 /* XCLocalSwiftPackageReference "Packages/AddOnKit" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = Packages/AddOnKit;
-		};
 		4B4C494B000000000000A03C /* XCLocalSwiftPackageReference "Packages/BackgroundKit" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/BackgroundKit;
 		};
+		4B4C494B000000000000A050 /* XCLocalSwiftPackageReference "Packages/RecordKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/RecordKit;
+		};
+		4B4C494B000000000000A053 /* XCLocalSwiftPackageReference "Packages/RenderKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/RenderKit;
+		};
+		4B4C494B000000000000A056 /* XCLocalSwiftPackageReference "Packages/TimelineKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/TimelineKit;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		4B4C494B000000000000A032 /* AddOnKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = AddOnKit;
-		};
-		4B4C494B000000000000A037 /* AddOnKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = AddOnKit;
-		};
 		4B4C494B000000000000A03A /* BackgroundKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = BackgroundKit;
@@ -317,6 +314,18 @@
 		4B4C494B000000000000A03B /* BackgroundKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = BackgroundKit;
+		};
+		4B4C494B000000000000A052 /* RecordKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RecordKit;
+		};
+		4B4C494B000000000000A055 /* RenderKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RenderKit;
+		};
+		4B4C494B000000000000A058 /* TimelineKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = TimelineKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 
@@ -476,7 +485,9 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Klik sends notes to Apple Notes when you ask it to.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Klik records your camera when you add a webcam overlay, and the screen of an iPhone or iPad connected by cable when you choose to record one.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Klik records your microphone when you narrate a recording.";
 				INFOPLIST_KEY_NSLocationUsageDescription = "Klik uses your location to compute prayer times on this Mac. It never leaves the device.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Klik uses your location to compute prayer times on this Mac. It never leaves the device.";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -507,7 +518,9 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Klik sends notes to Apple Notes when you ask it to.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Klik records your camera when you add a webcam overlay, and the screen of an iPhone or iPad connected by cable when you choose to record one.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Klik records your microphone when you narrate a recording.";
 				INFOPLIST_KEY_NSLocationUsageDescription = "Klik uses your location to compute prayer times on this Mac. It never leaves the device.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Klik uses your location to compute prayer times on this Mac. It never leaves the device.";
 				LD_RUNPATH_SEARCH_PATHS = (

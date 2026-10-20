@@ -24,8 +24,8 @@ Auto zoom, a smooth pointer and nice backgrounds are now a commodity: a $35 tool
 cd Tools/studio-lab && swift build
 .build/debug/studiolab pointer --target display   # or area, window
 .build/debug/studiolab stream
-.build/debug/studiolab press "Klik Studio" "Add Zoom at Playhead"
-.build/debug/studiolab shot "Klik Studio" /tmp/editor.png
+.build/debug/studiolab press "pid:<Klik's pid>" "Add Zoom at Playhead"
+.build/debug/studiolab shot "pid:<Klik's pid>" /tmp/editor.png
 ```
 
 `pointer` and `stream` cover the screen and move the pointer for about 25 seconds. `press`, `key` and `shot` do not touch the screen or the pointer.

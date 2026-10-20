@@ -1,4 +1,3 @@
-import AddOnKit
 import CoreGraphics
 import AppKit
 import Foundation

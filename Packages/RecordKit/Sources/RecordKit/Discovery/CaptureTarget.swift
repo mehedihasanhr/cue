@@ -1,4 +1,3 @@
-import AddOnKit
 import CoreGraphics
 import Foundation
 import ScreenCaptureKit
@@ -99,11 +98,11 @@ public enum WindowSharing {
 /// think about the permission dance: this is where a missing grant becomes a typed
 /// error rather than an empty list of displays.
 public struct ShareableContentStore: Sendable {
-    /// Windows the add-on should never offer, because recording your own recorder is
-    /// never what anyone wanted.
+    /// Windows the recorder should never offer, because recording your own recorder is
+    /// never what anyone wanted: Klik, and Klik Studio from before it was part of Klik.
     public let excludedBundleIDs: Set<String>
 
-    public init(excludedBundleIDs: Set<String> = [AddOnBridge.studioBundleID, "com.stackrover.klik"]) {
+    public init(excludedBundleIDs: Set<String> = ["com.stackrover.klik", "com.stackrover.klik.studio"]) {
         self.excludedBundleIDs = excludedBundleIDs
     }
 

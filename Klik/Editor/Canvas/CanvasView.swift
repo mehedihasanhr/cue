@@ -114,7 +114,7 @@ final class CanvasView: NSView, NSTextViewDelegate, NSUserInterfaceValidations {
     /// redraws the whole view many times a second. They are rendered once into a bitmap
     /// — capped at ~2K, which is invisible for such low-frequency content — and blitted.
     /// The image, inset and annotations stay live so nothing sharp goes through the cache.
-    private func drawBackdrop(_ document: EditorDocument, context: CGContext) {
+    private func drawBackdrop(_ document: ImageEditorDocument, context: CGContext) {
         guard let background = document.background else { return }
         let layout = document.layout
         let key = BackdropKey(background: background, size: layout.size, card: layout.card)
@@ -139,7 +139,7 @@ final class CanvasView: NSView, NSTextViewDelegate, NSUserInterfaceValidations {
         context.restoreGState()
     }
 
-    private func renderBackdrop(_ document: EditorDocument, size: CGSize) -> CGImage? {
+    private func renderBackdrop(_ document: ImageEditorDocument, size: CGSize) -> CGImage? {
         let maxPixels: CGFloat = 2048
         let scale = min(document.scale, maxPixels / max(size.width, size.height, 1))
         let width = Int((size.width * scale).rounded(.up)), height = Int((size.height * scale).rounded(.up))

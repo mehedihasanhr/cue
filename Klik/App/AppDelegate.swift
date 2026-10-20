@@ -1,8 +1,8 @@
-import AddOnKit
 import Carbon.HIToolbox
 import os
 import AppKit
 import BackgroundKit
+import RecordKit
 import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -25,13 +25,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let preferences = AppPreferences()
     /// The recognisers Capture Text can use, and the language packs behind them.
     private lazy var ocrEngines = OCREngines(preferences: preferences)
-    /// What optional features are installed. Cheap to hold: it knows where add-ons
-    /// are and nothing about what they do.
-    private lazy var studioPreferences = StudioPreferences()
-    private lazy var addOns = AddOnRegistry(preferences: studioPreferences)
-    /// The recording add-on, if it is installed. The host asks it to record and
-    /// takes the result; none of the recording code is in Klik.
-    private lazy var recorder = RecordingAddOnClient(registry: addOns, preferences: studioPreferences)
+    /// Screen recording and the video editor.
+    let studio = StudioController()
+    /// The settings and service `KlikApp` makes for the menu bar, handed over for `studio`.
+    static var studioHandOff: (settings: StudioSettings, studio: StudioService)?
     private lazy var coordinator = CaptureCoordinator(shortcuts: shortcuts, preferences: preferences, engines: ocrEngines)
 
     private var statusItem: NSStatusItem?
@@ -64,7 +61,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        MainMenu.install(target: self)
         preferences.applyAppearance()
         // The bundle launches as an agent; the preference decides whether Klik takes
         // a Dock tile, so it can be turned off without reinstalling.
@@ -74,6 +70,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let icon = NSImage(named: "AppIcon") { NSApp.applicationIconImage = icon }
         installStatusItem()
         _ = taskSync // listens for task changes from now on
+        if let handOff = Self.studioHandOff {
+            studio.start(settings: handOff.settings, studio: handOff.studio)
+        }
+        // A video editor needs the menu bar, so Klik keeps a Dock tile while one is open.
+        studio.onEditorsChange = { [weak self] in
+            guard let self else { return }
+            preferences.keepsDock = !studio.editors.isEmpty
+        }
 
         coordinator.onCaptured = { [weak self] image in self?.handleCapture(image) }
         coordinator.onTextRecognized = { [weak self] text in self?.handleRecognizedText(text) }
@@ -483,9 +487,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// `klik://…` from the command line, Shortcuts, Raycast, a browser.
+    /// `klik://…` from the command line, Shortcuts, Raycast, a browser — and recordings
+    /// opened from the Finder, which go to the video editor.
     func application(_ application: NSApplication, open urls: [URL]) {
-        for url in urls {
+        let recordings = urls.filter(StudioController.handles)
+        if !recordings.isEmpty { studio.open(recordings) }
+        for url in urls where !StudioController.handles(url) {
             guard let command = URLCommand(url) else {
                 Log.app.notice("Unknown URL: \(url.absoluteString, privacy: .public)")
                 FeedbackHUD.show("Klik doesn't understand that link", symbol: "link.badge.plus", subtitle: url.absoluteString)
@@ -528,6 +535,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .panel: toggleHistoryAtPointer()
         case .clock: island?.showClock() ?? showSettings(nil)
         case .settings: showSettings(nil)
+        case .record: studio.showRecorder()
+        case .recordings: studio.showLibrary()
         }
     }
 
@@ -564,17 +573,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ]
         for (title, selector, id) in tools { menu.addItem(shortcutItem(title, selector, id)) }
         menu.addItem(.separator())
-        // Video, from Klik Studio. Always listed, so the feature can be found from here;
-        // without Studio the items say so with a badge, and choosing one offers to install.
-        let badge: NSMenuItemBadge? = switch recorder.availability {
-        case .ready, .updatable: nil
-        case .tooOld: NSMenuItemBadge(string: "Update")
-        case .notInstalled, .untrusted: NSMenuItemBadge(string: "Get")
+        // Video. Mid-take, the take's own controls take Record Video's place: the bar may
+        // be put away, and this menu is always there.
+        if let session = studio.service?.session, session.state.isBusy {
+            if session.state.isStarting {
+                menu.addItem(makeItem("Cancel Countdown", #selector(stopRecording(_:))))
+            } else {
+                menu.addItem(makeItem("Stop Recording", #selector(stopRecording(_:))))
+                menu.addItem(makeItem(session.isPaused ? "Resume Recording" : "Pause Recording", #selector(pauseRecording(_:))))
+            }
+        } else {
+            menu.addItem(makeItem("Record Video", #selector(recordVideo(_:))))
         }
-        for item in [makeItem("Record Video", #selector(recordVideo(_:))), makeItem("Klik Studio…", #selector(openStudio(_:)))] {
-            item.badge = badge
-            menu.addItem(item)
-        }
+        menu.addItem(makeItem("Recordings…", #selector(openStudio(_:))))
         menu.addItem(.separator())
         let panels: [(String, Selector, HotkeyID)] = [
             ("Quick Task…", #selector(quickTask(_:)), .quickTask),
@@ -1226,90 +1237,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The Dock tile, clicked with nothing open: the panel at the pointer, the way
     /// the hotkey opens it. With a window already up, AppKit brings it forward.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
-        guard !hasVisibleWindows else { return true }
+        guard !hasVisibleWindows, !studio.handlesReopen else { return true }
         toggleHistoryAtPointer()
         return true
     }
 
-    /// Klik Studio's recorder bar, where recording starts — or, without a usable Studio,
-    /// an offer to install or update it.
+    /// The recorder bar, where recording starts.
     @objc func recordVideo(_ sender: Any?) {
-        inStudio { try await $0.showRecorder() }
+        studio.showRecorder()
     }
 
-    /// Klik Studio's Recordings, the gallery of what was recorded — or the same offer.
+    /// Recordings, the gallery of what was recorded.
     @objc func openStudio(_ sender: Any?) {
-        inStudio { try await $0.showLibrary() }
+        studio.showLibrary()
     }
 
-    private func inStudio(_ action: @escaping @MainActor @Sendable (RecordingAddOnClient) async throws -> Void) {
-        guard recorder.canRecord else {
-            offerStudio { [weak self] in self?.inStudio(action) }
-            return
-        }
-        Task { [recorder] in
-            do {
-                try await action(recorder)
-            } catch {
-                Log.addOns.error("Couldn't show Klik Studio: \(error.localizedDescription, privacy: .public)")
-                if (error as? AddOnError) != .blocked { NSAlert(error: error).runModal() }
-            }
-        }
+    /// Stops the take under way and keeps it, or calls off a countdown.
+    @objc func stopRecording(_ sender: Any?) {
+        guard let service = studio.service else { return }
+        service.session.state.isStarting ? service.cancel() : service.stop()
     }
 
-    /// A video command without a usable Klik Studio: ask to install or update it. Once it
-    /// is in place, `then` carries on with what the user asked for.
-    private func offerStudio(then: @escaping @MainActor @Sendable () -> Void) {
-        Task { [weak self] in
-            guard let self else { return }
-            // Without the release list there is nothing to offer, and the menu may be the
-            // first thing to ask for it.
-            if recorder.availability.offeredRelease == nil, !recorder.canRecord { await addOns.refresh() }
-            if recorder.canRecord { return then() }
-            switch StudioInstallPrompt.ask(recorder.availability, feedError: addOns.feedError) {
-            case .install:
-                addOns.install(recorder.addOn)
-                // Declined the folder Klik asked for: nothing started, nothing to watch.
-                guard isInstallingStudio else { return }
-                showStudioSettings()
-                whenStudioInstalled(then: then)
-            case .settings:
-                showStudioSettings()
-            case .dismissed:
-                break
-            }
-        }
+    @objc func pauseRecording(_ sender: Any?) {
+        studio.service?.togglePause()
     }
 
-    private var isInstallingStudio: Bool {
-        switch addOns.state(of: recorder.addOn) {
-        case .downloading, .installing: true
-        default: false
-        }
-    }
-
-    /// Runs `action` once the install under way has put a usable Studio in place; gives
-    /// up quietly if it fails, is cancelled, or is handed to macOS's installer.
-    private func whenStudioInstalled(then action: @escaping @MainActor @Sendable () -> Void) {
-        withObservationTracking {
-            _ = addOns.state(of: recorder.addOn)
-        } onChange: { [weak self] in
-            Task { @MainActor in
-                guard let self else { return }
-                if self.isInstallingStudio { return self.whenStudioInstalled(then: action) }
-                if self.recorder.canRecord { action() }
-            }
-        }
-    }
-
-    private func showStudioSettings() {
-        showSettings(nil)
-        settingsWindow?.present(.studio)
+    /// A take is stopped and saved, and unsaved edits and running exports asked about,
+    /// before Klik quits.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        studio.shouldTerminate(sender)
     }
 
     @objc func showSettings(_ sender: Any?) {
         if settingsWindow == nil {
-            let controller = SettingsWindowController(model: model, shortcuts: shortcuts, library: library, clipboard: clipboard, preferences: preferences, addOns: addOns, studio: studioPreferences, clock: prayerClock, share: share, sync: syncFolder, notes: notes, taskSync: taskSync, ocrEngines: ocrEngines, agents: agentConnector)
+            let controller = SettingsWindowController(model: model, shortcuts: shortcuts, library: library, clipboard: clipboard, preferences: preferences, clock: prayerClock, share: share, sync: syncFolder, notes: notes, taskSync: taskSync, ocrEngines: ocrEngines, agents: agentConnector)
             controller.onClose = { [weak self] in
                 self?.settingsWindow = nil
                 self?.shortcuts.isRecording = false

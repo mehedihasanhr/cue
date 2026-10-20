@@ -147,7 +147,7 @@ enum EditorMode {
 /// in-progress interaction. Views observe it; the canvas redraws on any change.
 @Observable
 final class EditorViewModel {
-    private(set) var document: EditorDocument
+    private(set) var document: ImageEditorDocument
     let effects = EffectsCache()
 
     var mode: EditorMode = .edit {
@@ -207,7 +207,7 @@ final class EditorViewModel {
     private var suppressStyleSync = false
 
     init(image: CapturedImage, defaults: EditorDefaults = EditorDefaults()) {
-        document = EditorDocument(image: image)
+        document = ImageEditorDocument(image: image)
         options = defaults
     }
 
@@ -236,7 +236,7 @@ final class EditorViewModel {
 
     // MARK: - Document mutation with undo
 
-    func commit(_ change: (inout EditorDocument) -> Void) {
+    func commit(_ change: (inout ImageEditorDocument) -> Void) {
         isDirty = true
         // Inside a drag the one undo step is registered when it ends, so each step is
         // just the change: no copy kept, no undo closure.
@@ -253,7 +253,7 @@ final class EditorViewModel {
     }
 
     /// The document as it was when a continuous edit (a slider drag, a colour well) began.
-    private var interactionBase: EditorDocument?
+    private var interactionBase: ImageEditorDocument?
     private var interactionChanged = false
 
     /// Starts gathering a run of commits into one undo step. Nested calls are ignored.
@@ -272,7 +272,7 @@ final class EditorViewModel {
         interactionChanged = false
     }
 
-    private func registerUndo(returningTo state: EditorDocument) {
+    private func registerUndo(returningTo state: ImageEditorDocument) {
         undoManager.registerUndo(withTarget: self) { model in
             let current = model.document
             model.document = state
@@ -306,7 +306,7 @@ final class EditorViewModel {
         guard let composed = CompareComposer.compose(pieces, axis: axis) else { return false }
 
         let previous = document
-        var next = EditorDocument(image: composed)
+        var next = ImageEditorDocument(image: composed)
         next.background = background
         // Counters already drawn into the flattened piece are not offered again.
         next.nextCounter = document.nextCounter
@@ -446,7 +446,7 @@ final class EditorViewModel {
     /// Document as it was before editing started (one undo step is registered when
     /// editing ends). Set eagerly for a freshly placed box, lazily on the first edit
     /// of an existing one.
-    private var textEditingSnapshot: EditorDocument?
+    private var textEditingSnapshot: ImageEditorDocument?
 
     func updateEditingText(_ text: String) {
         guard let id = editingTextID, let annotation = document.annotation(id: id),

@@ -613,8 +613,14 @@ final class AppPreferences {
         }
     }
 
+    /// Set while a video editor is open: its commands live in the menu bar, which an app
+    /// without a Dock tile does not have.
+    var keepsDock = false {
+        didSet { if keepsDock != oldValue { applyDockVisibility() } }
+    }
+
     func applyDockVisibility() {
-        let policy: NSApplication.ActivationPolicy = showInDock ? .regular : .accessory
+        let policy: NSApplication.ActivationPolicy = showInDock || keepsDock ? .regular : .accessory
         guard NSApp.activationPolicy() != policy else { return }
         NSApp.setActivationPolicy(policy)
         // Coming back from an agent, the app needs a nudge to claim its Dock tile.

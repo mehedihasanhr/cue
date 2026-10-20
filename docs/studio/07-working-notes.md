@@ -44,8 +44,7 @@ swift test --package-path Packages/TimelineKit
 swift test --package-path Packages/RenderKit
 swift test --package-path Packages/RecordKit
 swift test --package-path Packages/BackgroundKit
-swift test --package-path Packages/AddOnKit
-xcodebuild -project KlikStudio/KlikStudio.xcodeproj -scheme KlikStudio -configuration Debug build
+xcodebuild -project Klik.xcodeproj -scheme Klik -configuration Debug build
 ```
 
 Tests use Swift Testing (`@Test`, `#expect`). A filter runs one suite: `swift test --package-path Packages/TimelineKit --filter CaptionCommandTests`.
@@ -57,8 +56,8 @@ Tests use Swift Testing (`@Test`, `#expect`). A filter runs one suite: `swift te
 The Mac is in use by a person while tests run. So:
 
 - Never click or type at screen coordinates. A click lands on whatever is there.
-- Launch the app without bringing it forward: `open -g -a "<path>/Klik Studio.app" --env KLIK_STUDIO_QUIET=1 "<recording>.klikrec"`.
-- Drive it by name: `studiolab menus "Klik Studio"`, `studiolab press "Klik Studio" "<menu item>"`, `studiolab shot "Klik Studio" out.png`.
+- Launch the app without bringing it forward: `open -g -a "<path>/Klik.app" --env KLIK_STUDIO_QUIET=1 "<recording>.klikrec"`. Studio is part of Klik, so this is Klik's own Debug build.
+- Drive it by process: `studiolab menus "pid:<pid>"`, `studiolab press "pid:<pid>" "<menu item>"`, `studiolab shot "pid:<pid>" out.png`. The name "Klik" can match the installed copy too, so a pid is safer.
 - Controls inside a window can only be reached while that window is on the current Space. Menu items can always be reached, which is one more reason every action has one.
 - `studiolab pointer` and `studiolab stream` cover the screen and move the pointer for about 25 seconds. Do not run them without being asked.
 - Work on a copy of a recording, not on the ones in `~/Movies/Klik Studio`.
