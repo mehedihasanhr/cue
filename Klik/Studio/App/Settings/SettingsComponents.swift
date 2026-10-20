@@ -157,16 +157,12 @@ struct StudioSettingsPane<Content: View>: View {
         self.content = content()
     }
 
+    /// The groups only: the page around them — its scrolling, its margins — is Klik
+    /// Settings', where these sit beside Klik's own.
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 26) {
-                content
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 64)
-            .padding(.bottom, 24)
+        VStack(alignment: .leading, spacing: 26) {
+            content
         }
-        .accessibilityLabel("\(section.title) settings")
     }
 }
 

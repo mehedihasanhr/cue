@@ -1351,6 +1351,7 @@ struct EditorSettingsView: View {
         @Bindable var preferences = preferences
         let d = $preferences.editorDefaults
         SettingsPane(.editor) {
+            SettingsHeading("Screenshot editor")
             SettingsGroup {
                 SettingsRow("Start each editor with the options last used") {
                     Toggle("Remember last used", isOn: d.rememberLastUsed).toggleStyle(.switch)
@@ -1436,6 +1437,10 @@ struct EditorSettingsView: View {
                     }
                 }
             }
+
+            // The video editor's: one Editor page for both editors.
+            SettingsHeading("Video editor")
+            EditorSettingsPane()
         }
     }
 }
@@ -1535,6 +1540,9 @@ struct ShortcutSettingsView: View {
                     Button("Restore Defaults") { shortcuts.restoreDefaults() }
                 }
             }
+
+            // Recording and the video editor: one keyboard, so one page.
+            ShortcutSettingsPane()
         }
     }
 

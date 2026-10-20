@@ -16,7 +16,7 @@ struct StorageSettingsPane: View {
         StudioSettingsPane(.storage) {
             DriveSettingsGroup()
 
-            StudioSettingsGroup("Recordings") {
+            StudioSettingsGroup("Space used") {
                 StudioSettingsRow(settings.library.lastPathComponent,
                             subtitle: libraryLine,
                             symbol: "film.stack.fill", tint: .orange) {

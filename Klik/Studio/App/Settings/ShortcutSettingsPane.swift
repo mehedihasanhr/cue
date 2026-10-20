@@ -19,12 +19,12 @@ struct ShortcutSettingsPane: View {
 
         StudioSettingsPane(.shortcuts) {
             StudioSettingsGroup {
-                SettingsToggleRow("Use shortcuts from any app",
-                                  subtitle: "Reach the recorder without switching to it.",
+                SettingsToggleRow("Screen recording shortcuts from any app",
+                                  subtitle: "Start, pause, restart and mark a recording without switching to Klik.",
                                   isOn: $preferences.usesGlobalShortcuts)
             }
 
-            StudioSettingsGroup("Recorder shortcuts") {
+            StudioSettingsGroup("Screen recording") {
                 ForEach(RecorderAction.allCases) { action in
                     ShortcutRow(action: action, preferences: preferences, editor: settings.editorShortcuts)
                 }
@@ -52,7 +52,7 @@ struct ShortcutSettingsPane: View {
     @ViewBuilder
     private func editorShortcuts(recorder: RecorderPreferences) -> some View {
         let shortcuts = settings.editorShortcuts
-        StudioSettingsGroup("Editor shortcuts") {
+        StudioSettingsGroup("Video editor menus") {
             StudioSettingsCell(vertical: 8) {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
