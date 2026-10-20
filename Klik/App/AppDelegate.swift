@@ -73,6 +73,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let handOff = Self.studioHandOff {
             studio.start(settings: handOff.settings, studio: handOff.studio)
         }
+        studio.showSettings = { [weak self] page in
+            self?.showSettings(nil)
+            self?.settingsWindow?.present(SettingsSection(page ?? .general))
+        }
         // A video editor needs the menu bar, so Klik keeps a Dock tile while one is open.
         studio.onEditorsChange = { [weak self] in
             guard let self else { return }
@@ -1270,7 +1274,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func showSettings(_ sender: Any?) {
         if settingsWindow == nil {
-            let controller = SettingsWindowController(model: model, shortcuts: shortcuts, library: library, clipboard: clipboard, preferences: preferences, clock: prayerClock, share: share, sync: syncFolder, notes: notes, taskSync: taskSync, ocrEngines: ocrEngines, agents: agentConnector)
+            let controller = SettingsWindowController(model: model, shortcuts: shortcuts, library: library, clipboard: clipboard, preferences: preferences, clock: prayerClock, share: share, sync: syncFolder, notes: notes, taskSync: taskSync, ocrEngines: ocrEngines, agents: agentConnector, studio: studio)
             controller.onClose = { [weak self] in
                 self?.settingsWindow = nil
                 self?.shortcuts.isRecording = false

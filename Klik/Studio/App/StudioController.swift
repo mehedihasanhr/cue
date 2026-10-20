@@ -36,10 +36,6 @@ final class StudioController {
         DriveStorage.shared.resumeAtLaunch()
     }
 
-    /// Settings, made the first time somebody asks for it and kept, so it opens where it
-    /// was and on the page it was left on.
-    private var settingsWindow: StudioSettingsWindowController?
-
     /// Told whenever an editor opens or closes, for the Dock rule: while one is open Klik
     /// is a regular app, because the editor's commands live in the menu bar.
     var onEditorsChange: () -> Void = {}
@@ -218,16 +214,18 @@ final class StudioController {
 
     // MARK: - Settings
 
-    /// Opens Settings, on `section` when one is given.
+    /// Opens Klik Settings on a recording page — `section`, or the first one. Set by Klik's
+    /// app delegate, which owns the Settings window.
+    var showSettings: (StudioSettingsSection?) -> Void = { _ in }
+
     static func openSettings(_ section: StudioSettingsSection? = nil) {
-        shared?.presentSettings(section)
+        shared?.showSettings(section)
     }
 
-    private func presentSettings(_ section: StudioSettingsSection?) {
-        guard let settings, let studio else { return }
-        if settingsWindow == nil {
-            settingsWindow = StudioSettingsWindowController(settings: settings, studio: studio, recorder: bar?.model)
-        }
-        settingsWindow?.present(section)
+    /// What the recording pages of Klik Settings read: the settings, the service, and the
+    /// bar's model for the camera and microphone lists.
+    var settingsObjects: (settings: StudioSettings, studio: StudioService, recorder: RecorderModel?)? {
+        guard let settings, let studio else { return nil }
+        return (settings, studio, bar?.model)
     }
 }

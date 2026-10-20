@@ -38,12 +38,11 @@ struct KlikApp: App {
             EmptyView()
         }
         .commands {
-            // Klik's own Settings window, which SwiftUI's scene cannot be; recording and the
-            // video editor keep theirs, beside it.
+            // Klik's own Settings window, which SwiftUI's scene cannot be. Recording and the
+            // video editor have their pages in it.
             CommandGroup(replacing: .appSettings) {
                 Button("Settings…") { delegate.showSettings(nil) }
                     .keyboardShortcut(",")
-                Button("Recording & Video Settings…") { StudioController.openSettings() }
             }
             CommandGroup(replacing: .newItem) {}
             CommandGroup(after: .windowList) {

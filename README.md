@@ -393,8 +393,9 @@ and in four packages, and run in Klik's own process:
 - While a take is under way the same menu shows Stop and Pause.
 - A `.klikrec` opened from the Finder opens in the video editor. While an editor is open
   Klik keeps a Dock tile, because the editor's commands live in the menu bar.
-- Recording and video settings have their own window — Settings › Recording & Video, or
-  **Recording & Video Settings…** in the app menu.
+- Recording and video settings are pages of Klik Settings, in their own sidebar group:
+  Recordings, Recording, Recording Shortcuts, Video Editor, Captions, Audio, Video Export
+  and Storage & Drive.
 - Recordings are kept in `~/Movies/Klik Studio`, the folder the separate Klik Studio app
   used, so earlier recordings are still there.
 

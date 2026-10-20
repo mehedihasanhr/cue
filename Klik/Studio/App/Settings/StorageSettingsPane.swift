@@ -45,21 +45,21 @@ struct StorageSettingsPane: View {
             }
 
             StudioSettingsGroup("Reset") {
-                StudioSettingsRow("Reset all settings", subtitle: didReset ? "Done. Everything is back to its default." : nil,
+                StudioSettingsRow("Reset recording and video settings", subtitle: didReset ? "Done. Recording and the video editor are back to their defaults." : "Klik's other settings are kept.",
                             symbol: "arrow.counterclockwise", tint: .red) {
-                    Button("Reset All Settings…") { confirmsReset = true }
+                    Button("Reset…") { confirmsReset = true }
                 }
             }
         }
         .task(id: settings.library) { await measure() }
-        .confirmationDialog("Reset all settings?", isPresented: $confirmsReset) {
-            Button("Reset All Settings", role: .destructive) {
+        .confirmationDialog("Reset recording and video settings?", isPresented: $confirmsReset) {
+            Button("Reset", role: .destructive) {
                 settings.resetToDefaults()
                 didReset = true
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Every preference goes back to its default. Recordings, looks and speaker notes are kept. This can't be undone.")
+            Text("Every recording and video editor preference goes back to its default. Recordings, looks, speaker notes and Klik's other settings are kept. This can't be undone.")
         }
     }
 

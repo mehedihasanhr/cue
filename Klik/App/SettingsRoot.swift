@@ -6,15 +6,38 @@ import SwiftUI
 /// The pages of the Settings window, in sidebar order.
 enum SettingsSection: String, CaseIterable, Identifiable {
     case general, appearance, shortcuts, sharing, permissions, about
-    case island, agents, capture, studio, editor, clipboard, tasks, snippets, notes, colors, time
+    case island, agents, capture, editor, clipboard, tasks, snippets, notes, colors, time
+    case recordings, recording, recordingShortcuts, videoEditor, captions, audio, videoExport, videoStorage
 
     var id: String { rawValue }
 
     /// The sidebar shows the app-wide pages first, then a group per feature.
     static let groups: [[SettingsSection]] = [
         [.general, .appearance, .shortcuts, .sharing, .permissions, .about],
-        [.island, .agents, .capture, .studio, .editor, .clipboard, .tasks, .snippets, .notes, .colors, .time],
+        [.island, .agents, .capture, .editor, .clipboard, .tasks, .snippets, .notes, .colors, .time],
+        [.recordings, .recording, .recordingShortcuts, .videoEditor, .captions, .audio, .videoExport, .videoStorage],
     ]
+
+    /// The recording page behind each of the screen-recording sections, which keep their
+    /// own panes, icons and search words.
+    var studioPage: StudioSettingsSection? {
+        switch self {
+        case .recordings: .general
+        case .recording: .recording
+        case .recordingShortcuts: .shortcuts
+        case .videoEditor: .editor
+        case .captions: .captions
+        case .audio: .audio
+        case .videoExport: .export
+        case .videoStorage: .storage
+        default: nil
+        }
+    }
+
+    /// The section a recording page lives in; About has none of its own any more.
+    init(_ page: StudioSettingsSection) {
+        self = Self.allCases.first { $0.studioPage == page } ?? .recordings
+    }
 
     var title: String {
         switch self {
@@ -27,7 +50,14 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .island: "Island"
         case .agents: "Agents"
         case .capture: "Capture"
-        case .studio: "Recording & Video"
+        case .recordings: "Recordings"
+        case .recording: "Recording"
+        case .recordingShortcuts: "Recording Shortcuts"
+        case .videoEditor: "Video Editor"
+        case .captions: "Captions"
+        case .audio: "Audio"
+        case .videoExport: "Video Export"
+        case .videoStorage: "Storage & Drive"
         case .editor: "Editor"
         case .clipboard: "Clipboard"
         case .tasks: "Tasks"
@@ -50,7 +80,6 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .island: "How the Dynamic Island opens, closes, looks and moves"
         case .agents: "Claude Code and Codex sessions on the island, and answering them from there"
         case .capture: "The pointer, the sound, and the language Capture Text reads"
-        case .studio: "Screen recording, the video editor and export"
         case .editor: "What every new annotation starts as"
         case .clipboard: "What Klik remembers of what you copy"
         case .tasks: "A server to keep tasks in step with, and webhooks for each change"
@@ -58,6 +87,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .notes: "Quick notes, where they live, and where they can be sent"
         case .colors: "The color picker and its formats"
         case .time: "The time on the island and prayer times"
+        default: studioPage?.subtitle ?? ""
         }
     }
 
@@ -72,7 +102,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .island: "rectangle.topthird.inset.filled"
         case .agents: "asterisk"
         case .capture: "camera.fill"
-        case .studio: "record.circle.fill"
+        case .recordings: "film.stack.fill"
         case .editor: "paintbrush.pointed.fill"
         case .clipboard: "doc.on.clipboard.fill"
         case .tasks: "checklist"
@@ -80,6 +110,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .notes: "note.text"
         case .colors: "eyedropper.halffull"
         case .time: "clock.fill"
+        default: studioPage?.symbol ?? "circle"
         }
     }
 
@@ -94,7 +125,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .island: .brand
         case .agents: .orange
         case .capture: .orange
-        case .studio: .red
+        case .recordings: .orange
         case .editor: .purple
         case .clipboard: .teal
         case .tasks: .green
@@ -102,6 +133,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .notes: .yellow
         case .colors: .red
         case .time: .cyan
+        default: studioPage?.tint ?? .gray
         }
     }
 
@@ -121,10 +153,11 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .notes: ["note", "quick note", "markdown", "folder", "icloud", "obsidian", "vault", "apple notes", "notion", "sync"]
         case .colors: ["color", "picker", "format", "hex", "rgb", "hsl", "swift", "css"]
         case .capture: ["cursor", "pointer", "mouse", "sound", "shutter", "audio", "full screen", "ocr", "text", "recognise", "recognize", "language", "bangla", "bengali", "hindi", "devanagari", "arabic", "script", "tesseract", "vision", "pack", "download", "cloud"]
-        case .studio: ["studio", "klik studio", "record", "recording", "screen recording", "video", "screencast", "demo", "countdown", "microphone", "camera", "system audio", "export", "captions", "editor", "drive"]
+        case .recordings: ["recordings", "video", "screen recording", "studio", "klik studio", "folder", "library", "movies", "open editor"]
         case .editor: ["annotation", "color", "stroke", "width", "shape", "arrow", "fill", "text", "font", "marker", "highlighter", "blur", "pixelate", "counter", "defaults"]
         case .clipboard: ["history", "copy", "paste", "limit", "items", "clear", "pinned"]
         case .time: ["clock", "hour", "prayer", "salah", "fajr", "dhuhr", "asr", "maghrib", "isha", "location", "latitude", "longitude", "method", "madhab", "announce"]
+        default: (studioPage?.keywords ?? []) + ["video", "recording"]
         }
     }
 
@@ -239,7 +272,14 @@ struct SettingsRootView: View {
         case .island: IslandSettingsView()
         case .agents: AgentSettingsView()
         case .capture: CaptureSettingsView()
-        case .studio: RecordingSettingsLinkView()
+        case .recordings: GeneralSettingsPane()
+        case .recording: RecordingSettingsPane()
+        case .recordingShortcuts: ShortcutSettingsPane()
+        case .videoEditor: EditorSettingsPane()
+        case .captions: CaptionSettingsPane()
+        case .audio: AudioSettingsPane()
+        case .videoExport: ExportSettingsPane()
+        case .videoStorage: StorageSettingsPane()
         case .editor: EditorSettingsView()
         case .clipboard: ClipboardSettingsView()
         case .tasks: TasksSettingsView()
