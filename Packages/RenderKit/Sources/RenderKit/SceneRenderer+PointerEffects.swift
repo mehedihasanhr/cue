@@ -8,8 +8,9 @@ import TimelineKit
 extension SceneRenderer {
     /// How much of the spotlight's radius is feather, half inside the circle and half
     /// outside it. Enough that the edge reads as light falling off rather than as a hole
-    /// cut in the picture.
-    static let spotlightFeather = 0.35
+    /// cut in the picture — 0.35 with a straight-line fall-off read as a lit disc with a
+    /// ring round it.
+    static let spotlightFeather = 0.6
 
     /// Darkens the frame so far — the background and the recording — except for a soft
     /// circle round the pointer.
@@ -30,12 +31,29 @@ extension SceneRenderer {
         guard radius > 1 else { return image }
         let feather = radius * Self.spotlightFeather
 
-        let shade = CIFilter.radialGradient()
-        shade.center = centre
-        shade.radius0 = Float(max(0, radius - feather / 2))
-        shade.radius1 = Float(radius + feather / 2)
-        shade.color0 = CIColor(red: 0, green: 0, blue: 0, alpha: 0)
-        shade.color1 = CIColor(red: 0, green: 0, blue: 0, alpha: min(1, spot.dimming))
+        // How far through the feather each pixel is, 0 to 1, as a grey...
+        let ramp = CIFilter.radialGradient()
+        ramp.center = centre
+        ramp.radius0 = Float(max(0, radius - feather / 2))
+        ramp.radius1 = Float(radius + feather / 2)
+        ramp.color0 = CIColor(red: 0, green: 0, blue: 0)
+        ramp.color1 = CIColor(red: 1, green: 1, blue: 1)
+        // ...eased, so the shade sets in gently, is steepest halfway and arrives gently:
+        // smoothstep, 3t² − 2t³. A straight line from clear to dark starts and stops
+        // abruptly, and the eye sees each of those as a ring.
+        let eased = CIFilter.colorPolynomial()
+        eased.inputImage = ramp.outputImage?.cropped(to: output)
+        let curve = CIVector(x: 0, y: 0, z: 3, w: -2)
+        eased.redCoefficients = curve
+        eased.greenCoefficients = curve
+        eased.blueCoefficients = curve
+        // ...and made the shade: black, as opaque as the dimming at the outside.
+        let shade = CIFilter.colorMatrix()
+        shade.inputImage = eased.outputImage
+        shade.rVector = CIVector(x: 0, y: 0, z: 0, w: 0)
+        shade.gVector = CIVector(x: 0, y: 0, z: 0, w: 0)
+        shade.bVector = CIVector(x: 0, y: 0, z: 0, w: 0)
+        shade.aVector = CIVector(x: min(1, spot.dimming), y: 0, z: 0, w: 0)
         guard let dark = shade.outputImage?.cropped(to: output) else { return image }
         return dark.composited(over: image).cropped(to: output)
     }

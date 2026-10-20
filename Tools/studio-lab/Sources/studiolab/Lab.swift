@@ -117,6 +117,8 @@ enum Lab {
             return await CameraCheck.run(Array(arguments.dropFirst()))
         case "renderbench":
             return await RenderBench.run(Array(arguments.dropFirst()))
+        case "spotshot":
+            return await SpotShot.run(Array(arguments.dropFirst()))
         case "pace":
             return await PaceCheck.run(Array(arguments.dropFirst()))
         case "everything":
