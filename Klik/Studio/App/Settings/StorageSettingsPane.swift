@@ -17,7 +17,7 @@ struct StorageSettingsPane: View {
             DriveSettingsGroup()
 
             StudioSettingsGroup("Space used") {
-                StudioSettingsRow(settings.library.lastPathComponent,
+                StudioSettingsRow("Recordings",
                             subtitle: libraryLine,
                             symbol: "film.stack.fill", tint: .orange) {
                     HStack(spacing: 8) {
@@ -68,7 +68,7 @@ struct StorageSettingsPane: View {
     private var libraryLine: String {
         guard let usage else { return "Measuring…" }
         let count = usage.recordingCount == 1 ? "1 recording" : "\(usage.recordingCount) recordings"
-        return "\(count) · \(Self.bytes(usage.libraryBytes)) · \(settings.library.path(percentEncoded: false))"
+        return "\(count) · \(Self.bytes(usage.libraryBytes))"
     }
 
     private var diskLine: String {

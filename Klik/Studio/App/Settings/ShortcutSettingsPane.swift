@@ -18,29 +18,24 @@ struct ShortcutSettingsPane: View {
         @Bindable var preferences = settings.recorder
 
         StudioSettingsPane(.shortcuts) {
-            StudioSettingsGroup {
-                SettingsToggleRow("Screen recording shortcuts from any app",
+            StudioSettingsGroup("Screen recording") {
+                SettingsToggleRow("Use these from any app",
                                   subtitle: "Start, pause, restart and mark a recording without switching to Klik.",
                                   isOn: $preferences.usesGlobalShortcuts)
-            }
-
-            StudioSettingsGroup("Screen recording") {
                 ForEach(RecorderAction.allCases) { action in
                     ShortcutRow(action: action, preferences: preferences, editor: settings.editorShortcuts)
+                        .disabled(!preferences.usesGlobalShortcuts)
                 }
             }
-            .disabled(!preferences.usesGlobalShortcuts)
-
-            StudioSettingsGroup {
-                StudioSettingsRow("Defaults", subtitle: "⌃⌥⌘ with R, P, T and M.") {
-                    Button("Restore Defaults") { preferences.shortcuts = .defaults }
-                        .disabled(preferences.shortcuts == .defaults)
-                }
-            }
-            .disabled(!preferences.usesGlobalShortcuts)
 
             editorShortcuts(recorder: preferences)
         }
+    }
+
+    /// For the page's one Restore Defaults, which puts Klik's shortcuts back along with these.
+    static func restoreDefaults(_ settings: StudioSettings) {
+        settings.recorder.shortcuts = .defaults
+        settings.editorShortcuts.shortcuts = .defaults
     }
 
     // MARK: - The editor's
@@ -67,13 +62,6 @@ struct ShortcutSettingsPane: View {
                         .accessibilityLabel("Clear the search")
                     }
                 }
-            }
-            StudioSettingsRow("Editor defaults",
-                        subtitle: shortcuts.shortcuts.isDefault
-                            ? "Every editor shortcut is as it shipped."
-                            : "\(shortcuts.shortcuts.overrides.count) changed.") {
-                Button("Restore Editor Defaults") { shortcuts.shortcuts = .defaults }
-                    .disabled(shortcuts.shortcuts.isDefault)
             }
         }
 

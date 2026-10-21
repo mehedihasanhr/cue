@@ -60,16 +60,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         agentConnector.tearDown() // waiting agents ask in their terminals again
     }
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        preferences.applyAppearance()
-        // The bundle launches as an agent; the preference decides whether Klik takes
-        // a Dock tile, so it can be turned off without reinstalling.
-        preferences.applyDockVisibility()
-        // Alerts, onboarding and the About pane all draw the brand icon from the asset
-        // catalog, independent of the icon-services cache for this bundle path.
-        if let icon = NSImage(named: "AppIcon") { NSApp.applicationIconImage = icon }
-        installStatusItem()
-        _ = taskSync // listens for task changes from now on
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Before anything a launch was asked to open: `klik://settings` arrives ahead of
+        // didFinishLaunching, and its recording pages need the recorder's settings.
         if let handOff = Self.studioHandOff {
             studio.start(settings: handOff.settings, studio: handOff.studio)
         }
@@ -82,6 +75,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             preferences.keepsDock = !studio.editors.isEmpty
         }
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        preferences.applyAppearance()
+        // The bundle launches as an agent; the preference decides whether Klik takes
+        // a Dock tile, so it can be turned off without reinstalling.
+        preferences.applyDockVisibility()
+        // Alerts, onboarding and the About pane all draw the brand icon from the asset
+        // catalog, independent of the icon-services cache for this bundle path.
+        if let icon = NSImage(named: "AppIcon") { NSApp.applicationIconImage = icon }
+        installStatusItem()
+        _ = taskSync // listens for task changes from now on
 
         coordinator.onCaptured = { [weak self] image in self?.handleCapture(image) }
         coordinator.onTextRecognized = { [weak self] text in self?.handleRecognizedText(text) }

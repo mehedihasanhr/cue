@@ -63,7 +63,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .shortcuts: "The keys that reach Klik from any app, and the video editor's menus"
         case .sharing: "Where Copy Share Link uploads captures"
         case .permissions: "What macOS lets Klik see and do"
-        case .about: "Screenshots you can annotate, blur and share — built natively for macOS"
+        case .about: "Screenshots and screen recordings you can annotate, edit and share — built natively for macOS"
         case .island: "How the Dynamic Island opens, closes, looks and moves"
         case .agents: "Claude Code and Codex sessions on the island, and answering them from there"
         case .capture: "The pointer, the sound, and the language Capture Text reads"

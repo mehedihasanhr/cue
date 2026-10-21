@@ -12,7 +12,8 @@ struct GeneralSettingsPane: View {
         StudioSettingsPane(.general) {
             StudioSettingsGroup("Recordings") {
                 StudioSettingsRow(settings.isUsingDefaultLibrary ? "Movies › Klik Studio" : settings.library.lastPathComponent,
-                            subtitle: settings.library.path(percentEncoded: false),
+                            // The container's Movies is a link to the real one; show where the files really are.
+                            subtitle: settings.library.resolvingSymlinksInPath().path(percentEncoded: false),
                             symbol: "folder.fill", tint: .orange) {
                     HStack(spacing: 8) {
                         Button("Choose…") { chooseLibrary() }

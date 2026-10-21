@@ -1,6 +1,7 @@
 import os
 import AppKit
 import ApplicationServices
+import AVFoundation
 import CoreGraphics
 
 enum PermissionKind {
@@ -68,6 +69,24 @@ enum PermissionManager {
 
     static func openAccessibilitySettings() {
         open("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+    }
+
+    static func openMicrophoneSettings() {
+        open("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
+    }
+
+    static func openCameraSettings() {
+        open("x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")
+    }
+
+    /// Asks for the microphone or camera the first time; once the user has answered,
+    /// only System Settings can change it, so that is opened instead.
+    static func requestCaptureDevice(_ type: AVMediaType, orOpen settings: @escaping () -> Void) {
+        guard AVCaptureDevice.authorizationStatus(for: type) == .notDetermined else {
+            settings()
+            return
+        }
+        Task { _ = await AVCaptureDevice.requestAccess(for: type) }
     }
 
     static func openKeyboardShortcutSettings() {

@@ -1,3 +1,4 @@
+import AVFoundation
 import BackgroundKit
 import SwiftUI
 
@@ -1258,6 +1259,9 @@ struct ClipboardSettingsView: View {
 
 struct PermissionSettingsView: View {
     @Environment(AppModel.self) private var model
+    // Not observable anywhere else, so read again on every tick below.
+    @State private var hasMicrophone = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+    @State private var hasCamera = AVCaptureDevice.authorizationStatus(for: .video) == .authorized
 
     var body: some View {
         SettingsPane(.permissions) {
@@ -1265,21 +1269,45 @@ struct PermissionSettingsView: View {
                 PermissionRow(
                     symbol: "rectangle.dashed.badge.record", tint: .blue,
                     title: "Screen Recording",
-                    detail: "For every capture. Relaunch Klik after granting.",
+                    detail: "Screenshots and screen recordings. Relaunch Klik after granting.",
                     granted: model.hasScreenCaptureAccess,
-                    request: { PermissionManager.requestScreenCaptureAccess() },
+                    request: {
+                        PermissionManager.requestScreenCaptureAccess()
+                        PermissionManager.openScreenRecordingSettings()
+                    },
                     openSettings: PermissionManager.openScreenRecordingSettings
                 )
                 PermissionRow(
                     symbol: "accessibility", tint: .purple,
                     title: "Accessibility",
-                    detail: "Snippets, paste and the front field.",
+                    detail: "Snippets, paste, the front field, and keys and focus in recordings.",
                     granted: model.hasAccessibilityAccess,
                     request: {
                         PermissionManager.requestAccessibilityAccess()
                         PermissionManager.revealAppInFinder()
+                        PermissionManager.openAccessibilitySettings()
                     },
                     openSettings: PermissionManager.openAccessibilitySettings
+                )
+                PermissionRow(
+                    symbol: "mic.fill", tint: .orange,
+                    title: "Microphone",
+                    detail: "Your voice in recordings and voiceovers.",
+                    granted: hasMicrophone,
+                    request: {
+                        PermissionManager.requestCaptureDevice(.audio, orOpen: PermissionManager.openMicrophoneSettings)
+                    },
+                    openSettings: PermissionManager.openMicrophoneSettings
+                )
+                PermissionRow(
+                    symbol: "video.fill", tint: .green,
+                    title: "Camera",
+                    detail: "The camera bubble in recordings.",
+                    granted: hasCamera,
+                    request: {
+                        PermissionManager.requestCaptureDevice(.video, orOpen: PermissionManager.openCameraSettings)
+                    },
+                    openSettings: PermissionManager.openCameraSettings
                 )
             }
         }
@@ -1288,6 +1316,8 @@ struct PermissionSettingsView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
                 model.refreshPermissionState()
+                hasMicrophone = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+                hasCamera = AVCaptureDevice.authorizationStatus(for: .video) == .authorized
             }
         }
     }
@@ -1311,10 +1341,7 @@ private struct PermissionRow: View {
                         .font(.system(size: 11, weight: .medium))
                         .labelStyle(.titleAndIcon)
                 } else {
-                    Button("Grant Access…") {
-                        request()
-                        openSettings()
-                    }
+                    Button("Grant Access…", action: request)
                     .buttonStyle(.borderedProminent)
                 }
                 Button(action: openSettings) {
@@ -1501,6 +1528,7 @@ private struct SliderRow: View {
 
 struct ShortcutSettingsView: View {
     @Environment(ShortcutController.self) private var shortcuts
+    @Environment(StudioSettings.self) private var studioSettings: StudioSettings?
 
     private var hasReservedBinding: Bool {
         shortcuts.entries.values.contains { $0.status == .reservedByMacOS }
@@ -1535,14 +1563,18 @@ struct ShortcutSettingsView: View {
                 }
             }
 
-            SettingsGroup {
-                SettingsRow("Defaults") {
-                    Button("Restore Defaults") { shortcuts.restoreDefaults() }
-                }
-            }
-
             // Recording and the video editor: one keyboard, so one page.
             ShortcutSettingsPane()
+
+            // One reset for the whole page, last, under everything it puts back.
+            SettingsGroup {
+                SettingsRow("Restore every shortcut on this page to how Klik shipped") {
+                    Button("Restore Defaults") {
+                        shortcuts.restoreDefaults()
+                        if let studioSettings { ShortcutSettingsPane.restoreDefaults(studioSettings) }
+                    }
+                }
+            }
         }
     }
 
@@ -1621,7 +1653,7 @@ struct AboutSettingsView: View {
                         AppIconTile(size: 56)
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Klik").font(.system(size: 14, weight: .semibold))
-                            Text("Screenshots you can annotate, blur and share — built natively for macOS.")
+                            Text("Screenshots and screen recordings you can annotate, edit and share — built natively for macOS.")
                                 .font(SettingsFont.sub)
                                 .foregroundStyle(.secondary)
                         }
