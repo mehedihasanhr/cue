@@ -1,7 +1,7 @@
 import AppKit
 import CoreGraphics
 
-/// An on-screen window of another app, for hover-to-select and edge snapping.
+/// An on-screen window, for hover-to-select and edge snapping.
 struct WindowInfo: Identifiable, Equatable {
     let id: CGWindowID
     let ownerName: String
@@ -11,16 +11,16 @@ struct WindowInfo: Identifiable, Equatable {
 }
 
 enum WindowDetector {
-    /// Normal-level windows currently on screen, front to back, excluding Klik's own.
+    /// Normal-level windows currently on screen, front to back. Klik's own count too — the
+    /// video editor and Recordings are windows like any other app's — while its overlays,
+    /// panels and HUDs sit above the normal level and are left out by it.
     static func onScreenWindows() -> [WindowInfo] {
         guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
                 as? [[String: Any]]
         else { return [] }
 
-        let ownPID = ProcessInfo.processInfo.processIdentifier
         return list.compactMap { info in
             guard let layer = info[kCGWindowLayer as String] as? Int, layer == 0,
-                  let pid = info[kCGWindowOwnerPID as String] as? pid_t, pid != ownPID,
                   let alpha = info[kCGWindowAlpha as String] as? Double, alpha > 0.01,
                   let id = info[kCGWindowNumber as String] as? CGWindowID,
                   let boundsDict = info[kCGWindowBounds as String] as? NSDictionary,

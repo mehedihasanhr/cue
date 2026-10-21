@@ -140,10 +140,13 @@ final class ScreenCaptureService {
 
     // MARK: - Internals
 
-    /// The display without any Klik window (the island, HUDs, the dim overlay, the
-    /// scrolling preview): by application when ScreenCaptureKit lists us, else by the
-    /// windows it does know. The island is shareable so that screen sharing and
-    /// recordings show it; this filter is what keeps it out of Klik's own shots.
+    /// The display without Klik's floating windows (the island, HUDs, the dim overlay,
+    /// the scrolling preview, the recorder bar): by application when ScreenCaptureKit
+    /// lists us, else by the windows it does know. The island is shareable so that screen
+    /// sharing and recordings show it; this filter is what keeps it out of Klik's own shots.
+    ///
+    /// Klik's ordinary windows — the video editor, Recordings, Settings — are documents
+    /// like any other app's, and stay in the picture.
     private static func filterLeavingKlikOut(display: SCDisplay, in content: SCShareableContent) -> SCContentFilter {
         let pid = ProcessInfo.processInfo.processIdentifier
         let bundleID = Bundle.main.bundleIdentifier
@@ -154,10 +157,12 @@ final class ScreenCaptureService {
         }
         let ownApps = content.applications.filter(isOwn)
         let ownWindows = content.windows.filter { $0.owningApplication.map(isOwn) ?? false }
-        Log.capture.info("Capture filter excludes \(ownApps.count) app(s) / \(ownWindows.count) own window(s)")
+        let documents = ownWindows.filter { $0.windowLayer == 0 }
+        let chrome = ownWindows.filter { $0.windowLayer != 0 }
+        Log.capture.info("Capture filter excludes \(ownApps.count) app(s) / \(chrome.count) own window(s), keeps \(documents.count)")
         return ownApps.isEmpty
-            ? SCContentFilter(display: display, excludingWindows: ownWindows)
-            : SCContentFilter(display: display, excludingApplications: ownApps, exceptingWindows: [])
+            ? SCContentFilter(display: display, excludingWindows: chrome)
+            : SCContentFilter(display: display, excludingApplications: ownApps, exceptingWindows: documents)
     }
 
     private static func configuration(pointSize: CGSize, scale: CGFloat) -> SCStreamConfiguration {
