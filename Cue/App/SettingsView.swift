@@ -349,7 +349,7 @@ struct IslandSettingsView: View {
                     Picker("Opens on", selection: $preferences.islandOpensOn) {
                         Text("Last used").tag(IslandTab?.none)
                         Divider()
-                        ForEach(IslandTab.allCases, id: \.self) { Text($0.title).tag(IslandTab?.some($0)) }
+                        ForEach(preferences.islandTabs, id: \.self) { Text($0.title).tag(IslandTab?.some($0)) }
                     }
                     .fixedSize()
                 }

@@ -267,7 +267,7 @@ enum EditorMarkdown {
         return lines.joined(separator: "\n")
     }
 
-    private static func inlineMarkdown(_ attributed: NSAttributedString, in range: NSRange, block: EditorBlock) -> String {
+    static func inlineMarkdown(_ attributed: NSAttributedString, in range: NSRange, block: EditorBlock) -> String {
         var out = ""
         var source: String?
         var runs: [(InlineTraits, String)] = []
@@ -307,7 +307,7 @@ extension MarkdownBlock {
 
 /// The text view: paragraphs styled by their block, marks turned into style as
 /// they are typed, list markers and quote bars drawn in the margin.
-final class RichTextView: NSTextView {
+class RichTextView: NSTextView {
     var style = EditorStyle()
     /// Plain text (snippets): nothing is Markdown, nothing converts.
     var plain = false
@@ -316,6 +316,9 @@ final class RichTextView: NSTextView {
     var imageForSource: (String) -> NSImage? = { _ in nil }
     var iconForSource: (String) -> NSImage? = { _ in nil }
     var onBacktab: (() -> Void)?
+    /// The number the first numbered item shows: a block editor holds one item per
+    /// view, and tells each where it falls in its list.
+    var listStart = 1
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -590,7 +593,37 @@ final class RichTextView: NSTextView {
             restyleParagraph(at: paragraph.location, block: block == .done ? .todo : .done)
             return
         }
+        // A click on an image or file opens it (an image in the viewer, a file in its
+        // app) — where whoever hosts the editor says it can.
+        if let openAttachment, event.clickCount == 1, let source = attachmentSource(at: point) {
+            openAttachment(source)
+            return
+        }
         super.mouseDown(with: event)
+    }
+
+    /// Opens an image or file, given its `cue://` or `cue-file://` source. nil: a click
+    /// on one selects it, as in any text.
+    var openAttachment: ((String) -> Void)?
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        // The text's I-beam everywhere but over what a click opens.
+        if openAttachment != nil, attachmentSource(at: convert(event.locationInWindow, from: nil)) != nil {
+            NSCursor.pointingHand.set()
+        }
+    }
+
+    /// The source of the image or file drawn under `point`, if there is one.
+    private func attachmentSource(at point: NSPoint) -> String? {
+        guard let layoutManager, let textContainer, let storage = textStorage, storage.length > 0 else { return nil }
+        let local = NSPoint(x: point.x - textContainerOrigin.x, y: point.y - textContainerOrigin.y)
+        let glyph = layoutManager.glyphIndex(for: local, in: textContainer)
+        let rect = layoutManager.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: textContainer)
+        guard rect.contains(local) else { return nil }
+        let character = layoutManager.characterIndexForGlyph(at: glyph)
+        guard character < storage.length, storage.attribute(.attachment, at: character, effectiveRange: nil) != nil else { return nil }
+        return storage.attribute(.cueSource, at: character, effectiveRange: nil) as? String
     }
 
     /// The paragraph whose checkbox is under `point`, if any.
@@ -680,7 +713,7 @@ final class RichTextView: NSTextView {
                 let dot = NSAttributedString(string: "•", attributes: [.font: NSFont.systemFont(ofSize: font.pointSize, weight: .bold), .foregroundColor: markerColor])
                 dot.draw(at: NSPoint(x: left + 6, y: rect.minY))
             case .numbered:
-                let label = NSAttributedString(string: "\(number).", attributes: [.font: NSFont.systemFont(ofSize: font.pointSize - 1, weight: .semibold), .foregroundColor: markerColor])
+                let label = NSAttributedString(string: "\(number + listStart - 1).", attributes: [.font: NSFont.systemFont(ofSize: font.pointSize - 1, weight: .semibold), .foregroundColor: markerColor])
                 let width = label.size().width
                 label.draw(at: NSPoint(x: left + EditorStyle.listIndent - 5 - width, y: rect.minY + 0.5))
             case .todo, .done:
@@ -834,6 +867,8 @@ struct MarkdownEditor: NSViewRepresentable {
     var plain = false
     /// ⇧⇥ in the editor.
     var onBacktab: () -> Void = {}
+    /// A click on an image or file, with its source; nil leaves clicks to select them.
+    var onOpenAttachment: ((String) -> Void)? = nil
 
     /// Lets the toolbar reach the text view.
     final class Handle {
@@ -923,9 +958,10 @@ struct MarkdownEditor: NSViewRepresentable {
         textView.autoresizingMask = [.width]
         textView.insertImage = insertImage
         textView.insertFile = insertFile
-        textView.imageForSource = { source in imageURL(source).flatMap { NSImage(contentsOf: $0) } }
+        textView.imageForSource = { source in imageURL(source).flatMap(ImageCache.image(at:)) }
         textView.iconForSource = { source in attachmentURL(source).map { NSWorkspace.shared.icon(forFile: $0.path) } }
         textView.onBacktab = onBacktab
+        textView.openAttachment = onOpenAttachment
         textView.registerForDraggedTypes([.fileURL, .png, .tiff])
         textView.load(markdown: text)
         context.coordinator.lastMarkdown = text
@@ -940,6 +976,7 @@ struct MarkdownEditor: NSViewRepresentable {
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
+        (scroll.documentView as? RichTextView)?.openAttachment = onOpenAttachment
         guard let textView = scroll.documentView as? RichTextView, text != context.coordinator.lastMarkdown else { return }
         context.coordinator.lastMarkdown = text
         textView.load(markdown: text)

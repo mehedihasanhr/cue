@@ -195,6 +195,25 @@ priority, all from the keyboard; a pick shows in the buttons under the text and 
 token goes. What is saved is still Markdown. The floating pane (⌥/) moves by the
 strip along its top, so a drag in the text selects.
 
+### Tasks dashboard
+
+Every task in a window of its own: **Tasks…** in the menu bar, the expand button in
+the island's Tasks tab, "Tasks dashboard" in the command palette, or `cue://tasks`.
+The sidebar has **All tasks**, **Today** (added or changed today), **Urgent** (still
+open), **No project** and **Completed**, then the projects as a tree with their open
+counts; right-click a project to add a sub-project, rename or delete it. ⌘F searches
+every task, all the words in any order.
+
+Show the tasks as a **List** (⌘1), grouped by status with Complete folded away, or as
+a **Board** (⌘2) with a column per status: drag a card to another column to change
+its status, onto a project to move it there, or onto No project, Urgent or Completed.
+The line at the top adds a task (⌘N) to the project you are in, with the same
+`#project` and `!priority` shorthand as the island.
+
+Click a task to open it on the right: status, priority and project as pills, and the
+whole text in the same Markdown editor as the form, saved a moment after you stop
+typing. ⎋ closes it, ⌘⌫ deletes it after asking.
+
 ### Tasks from captures, focus sessions
 
 Right-click a capture › **Make Task…** opens the task form with the screenshot
@@ -325,7 +344,7 @@ puts the result back on the clipboard.
 `cue://capture/area|window|full|scrolling|text`, `cue://color/pick`,
 `cue://task/new?title=…&notes=…&priority=high&project=…`, `cue://note/new?text=…`,
 `cue://snippet/add?keyword=;sig&text=…`, `cue://clipboard/copy?text=…`,
-`cue://palette`, `cue://clipboard`, `cue://panel`, `cue://clock`, `cue://settings`.
+`cue://palette`, `cue://clipboard`, `cue://panel`, `cue://clock`, `cue://settings`, `cue://tasks`.
 `Tools/cue` wraps them for the shell (`cue capture area`, `cue task "Fix it" -p high`,
 `cue copy "text"`, `echo hi | cue copy`); run `chmod +x Tools/cue` and put it on your
 PATH, or call it as `sh Tools/cue …`.

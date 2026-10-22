@@ -122,6 +122,8 @@ final class IslandModel {
     var onPromptFinished: (IslandPrompt, PromptAnswer?) -> Void = { _, _ in }
     /// Opens a task in the compact island; called by the panel.
     var onShowTask: (TaskItem) -> Void = { _ in }
+    /// Opens the task dashboard window; called by the panel, set by the controller.
+    var onOpenTaskDashboard: () -> Void = {}
     /// Leaves the task detail (back to the open panel); set by the controller.
     var onTaskDetailClosed: (TaskItem?) -> Void = { _ in }
     /// A click on the closed shape opens it.
@@ -388,7 +390,7 @@ struct IslandView: View {
                 Color.clear.frame(height: strip)
                 IslandPanel(library: library, clipboard: clipboard, assets: assets, colors: colors, tasksStore: tasks, snippets: snippets, actions: actions, dropping: model.dropping,
                             width: model.panelWidth, onIdealWidth: { model.setPanelWidth($0) }, onIdealHeight: { model.setPanelHeight($0) },
-                            onPrompt: { model.onPrompt($0) }, onShowTask: { model.onShowTask($0) },
+                            onPrompt: { model.onPrompt($0) }, onShowTask: { model.onShowTask($0) }, onOpenTaskDashboard: { model.onOpenTaskDashboard() },
                             onShowClock: { model.onShowClock() }, onPreviewPane: { model.onPreviewPane($0, $1) }, isPreviewOpen: { model.previewOpen },
                             onHidePreview: { model.onHidePreview() }, isPointerInPreview: { model.isPointerInPreview() }, previewLeaveTick: model.previewLeaveTick, arrowPress: model.arrowPress)
                     .padding(.horizontal, IslandGeometry.panelHorizontalPadding)
@@ -943,13 +945,16 @@ struct TaskFormRow: View {
 
     private var markdownEditor: some View {
         MarkdownEditor(text: $text, handle: editor, insertImage: { data in store.saveImage(data) }, insertFile: { url in store.saveAttachment(url) },
-                       imageURL: { store.imageURL(for: $0) }, attachmentURL: { store.attachmentURL(for: $0) }, fontSize: style == .floating ? 13 : 12)
+                       imageURL: { store.imageURL(for: $0) }, attachmentURL: { store.attachmentURL(for: $0) }, fontSize: style == .floating ? 17 : 12)
             .focused($focus, equals: .notes)
             .overlay(alignment: .bottomLeading) {
-                suggestionList
-                    .padding(.leading, 8)
-                    .padding(.bottom, 6)
-                    .animation(.easeOut(duration: 0.12), value: token)
+                // The floating form lists them in a section of its own, as Raycast does.
+                if style == .island {
+                    suggestionList
+                        .padding(.leading, 8)
+                        .padding(.bottom, 6)
+                        .animation(.easeOut(duration: 0.12), value: token)
+                }
             }
             .onAppear {
                 editor.onToken = { new in
@@ -960,10 +965,10 @@ struct TaskFormRow: View {
             }
             .overlay(alignment: .topLeading) {
                 if text.isEmpty {
-                    Text("What needs doing? #project · !priority · / for formatting")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.primary.opacity(0.3))
-                        .padding(.horizontal, 12).padding(.top, 8)
+                    Text(style == .floating ? "What needs doing?" : "What needs doing? #project · !priority · / for formatting")
+                        .font(.system(size: style == .floating ? 17 : 13))
+                        .foregroundStyle(.primary.opacity(style == .floating ? 0.4 : 0.3))
+                        .padding(.horizontal, 12).padding(.top, style == .floating ? 6 : 8)
                         .allowsHitTesting(false)
                 }
             }
@@ -972,156 +977,248 @@ struct TaskFormRow: View {
 
     // MARK: Floating
 
-    /// One pane: the text sits straight on the glass, no frame around it; under
-    /// it, plain glyphs on the left (attach, format) and on the right the project,
-    /// the priority as a pill, and a round Create — all glass buttons.
+    @State private var showsActions = false
+
+    /// Raycast's panel: an input row (the task's icon, the text in a large hand, and on
+    /// the right the project and priority as quiet menus), `#` `!` `/` suggestions as a
+    /// section under it, and a footer — a round menu button on the left, and on the
+    /// right a pill of the main action and Actions, each with its keys.
     private var floatingBody: some View {
-        VStack(spacing: 0) {
-            // The strip the window moves by: a grabber, like a sheet's.
-            WindowDragStrip()
-                .frame(height: 24)
-                .overlay { Capsule().fill(.primary.opacity(0.18)).frame(width: 36, height: 4).allowsHitTesting(false) }
-                // The way out: the window no longer closes on a click elsewhere.
-                .overlay(alignment: .trailing) {
-                    Button { finish(nil) } label: {
-                        Icon("xmark", size: 10, weight: .bold)
-                            .foregroundStyle(.primary.opacity(0.6))
-                            .frame(width: 22, height: 22)
-                            .background(.primary.opacity(0.1), in: Circle())
-                            .contentShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .help("Close (⎋)")
-                    .padding(.trailing, 10)
+        // The buttons float over the foot of the text, on no bar of their own.
+        ZStack(alignment: .bottom) {
+            VStack(spacing: 0) {
+                markdownEditor
+                    .padding(.horizontal, 12)
+                    .padding(.top, 14)
+                    .frame(maxHeight: .infinity, alignment: .top)
+                raycastSuggestions
+            }
+            // Room for the floating buttons, so the last line is never under them.
+            .padding(.bottom, 50)
+            footer
+        }
+        .animation(.easeOut(duration: 0.14), value: token)
+    }
+
+    /// The project and priority: small bordered menus in the footer.
+    @ViewBuilder
+    private var accessories: some View {
+        HStack(spacing: 2) {
+            if newProjectName != nil {
+                InlineTextField(placeholder: "New project", font: .system(size: 13), boxed: false) { name in
+                    newProjectName = nil
+                    if let project = store.addProject(named: name) { projectID = project.id }
+                } cancel: {
+                    newProjectName = nil
                 }
-            markdownEditor
-                .padding(.horizontal, 8)
-                .frame(maxHeight: .infinity)
-            floatingBar
-                .padding(.horizontal, 12)
-                .padding(.bottom, 10)
+                .frame(width: 130)
+            } else {
+                Menu { projectMenuItems } label: {
+                    accessoryLabel(symbol: pendingProject != nil ? "folder.badge.plus" : "folder",
+                                   title: store.project(projectID)?.name ?? pendingProject ?? "No project",
+                                   tint: .secondary)
+                }
+                .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+                .help("Project — or type #name")
+            }
+            Menu {
+                ForEach(TaskPriority.allCases, id: \.self) { value in
+                    Button { priority = value } label: { Label { Text(value.title) } icon: { Icon(value.symbol, weight: .medium) } }
+                }
+            } label: {
+                accessoryLabel(symbol: priority.symbol, title: priority.title, tint: priority == .medium ? .secondary : priority.color)
+            }
+            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+            .help("Priority — or type !urgent, ⌘1–4")
         }
     }
 
-    /// Glass buttons under the text: attach and format on the left; the project, the
-    /// priority and a round Create (brand-tinted once there is something to create)
-    /// on the right.
+    private func accessoryLabel(symbol: String, title: String, tint: Color) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: symbol).font(.system(size: 10, weight: .semibold)).foregroundStyle(tint)
+            Text(title).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+            Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold)).foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: 160)
+        .padding(.horizontal, 9)
+        .frame(height: 26)
+        .floatingButton(Capsule())
+    }
+
+    /// `#` projects, `!` priorities, `/` formatting — a Raycast section under the text.
     @ViewBuilder
-    private var floatingBar: some View {
-        let bar = HStack(spacing: 8) {
-                floatingGlyph("plus", help: "Attach an image… (⌘⇧I)") { chooseImage() }
-                Menu {
-                    Button("Bold", action: { editor.bold() }).keyboardShortcut("b")
-                    Button("Italic", action: { editor.italic() }).keyboardShortcut("i")
-                    Button("Strikethrough", action: { editor.strikethrough() }).keyboardShortcut("x", modifiers: [.command, .shift])
-                    Button("Code", action: { editor.code() }).keyboardShortcut("e")
-                    Divider()
-                    Button("Heading", action: { editor.block(.heading2) }).keyboardShortcut("h", modifiers: [.command, .shift])
-                    Button("Bullet list", action: { editor.block(.bullet) }).keyboardShortcut("l", modifiers: [.command, .shift])
-                    Button("Numbered list", action: { editor.block(.numbered) }).keyboardShortcut("n", modifiers: [.command, .shift])
-                    Button("Checklist", action: { editor.block(.todo) }).keyboardShortcut("t", modifiers: [.command, .shift])
-                    Button("Quote", action: { editor.block(.quote) }).keyboardShortcut("q", modifiers: [.command, .shift])
-                    Button("Code block", action: { editor.block(.code) })
-                } label: {
-                    Text("/")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.primary.opacity(0.85))
-                        .frame(width: 34, height: 34)
-                        .glassCircle()
-                        .contentShape(Circle())
-                }
-                .menuStyle(.button)
-                .buttonStyle(.plain)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("Formatting — type / in the text · #project · !priority")
-                Spacer(minLength: 0)
-                if newProjectName != nil {
-                    PromptBox {
-                        Icon("folder.badge.plus", size: 14, weight: .semibold).foregroundStyle(.primary.opacity(0.7)).padding(.leading, 8)
-                        InlineTextField(placeholder: "New project name", font: .system(size: 12, weight: .medium), boxed: false) { name in
-                            newProjectName = nil
-                            if let project = store.addProject(named: name) { projectID = project.id }
-                        } cancel: {
-                            newProjectName = nil
+    private var raycastSuggestions: some View {
+        let rows = suggestions
+        if let token, let mark = token.first, !rows.isEmpty {
+            let visible = 5
+            let first = max(0, min(highlighted - visible + 1, rows.count - visible))
+            let shown = Array(rows.enumerated()).filter { $0.offset >= first && $0.offset < first + visible }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(mark == "#" ? "Projects" : mark == "!" ? "Priority" : "Formatting")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 4)
+                ForEach(shown, id: \.element.id) { index, row in
+                    HStack(spacing: 12) {
+                        Icon(row.symbol, size: 14, weight: .semibold)
+                            .foregroundStyle(row.tint == .primary ? Color.primary.opacity(0.75) : row.tint)
+                            .frame(width: 26, height: 26)
+                            .background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        Text(row.title).font(.system(size: 14)).lineLimit(1)
+                        Spacer(minLength: 8)
+                        if let detail = row.detail {
+                            Text(detail).font(.system(size: 13)).foregroundStyle(.secondary)
                         }
                     }
-                    .frame(width: 180)
-                } else {
-                    Menu {
-                        projectMenuItems
-                    } label: {
-                        let name = store.project(projectID)?.name ?? pendingProject
-                        HStack(spacing: 6) {
-                            Icon(pendingProject != nil ? "folder.badge.plus" : (projectID == nil ? "folder" : "folder.fill"), size: 15, weight: .semibold)
-                            if let name {
-                                Text(name).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                            }
-                        }
-                        .foregroundStyle(.primary.opacity(0.85))
-                        .padding(.horizontal, name == nil ? 0 : 14)
-                        .frame(minWidth: 34, maxWidth: 180)
-                        .frame(height: 34)
-                        .glassPill()
-                        .contentShape(Capsule())
-                    }
-                    .menuStyle(.button)
-                    .buttonStyle(.plain)
-                    .menuIndicator(.hidden)
-                    .fixedSize()
-                    .help("Project")
+                    .padding(.horizontal, 10)
+                    .frame(height: 40)
+                    .background(index == highlighted ? Color.primary.opacity(0.1) : Color.clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    .contentShape(Rectangle())
+                    .onTapGesture { row.pick(); self.token = nil }
+                    .onHover { if $0 { highlighted = index } }
                 }
-                Menu {
-                    ForEach(TaskPriority.allCases, id: \.self) { value in
-                        Button { priority = value } label: { Label { Text(value.title) } icon: { Icon(value.symbol, weight: .medium) } }
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        Icon(priority.symbol, size: 14, weight: .semibold).foregroundStyle(priority.color)
-                        Text(priority.title).font(.system(size: 13, weight: .medium))
-                        Icon("chevron.down", size: 11, weight: .bold).foregroundStyle(.primary.opacity(0.5))
-                    }
-                    .foregroundStyle(.primary.opacity(0.9))
-                    .padding(.horizontal, 14)
-                    .frame(height: 34)
-                    .glassPill()
-                    .contentShape(Capsule())
-                }
-                .menuStyle(.button)
-                .buttonStyle(.plain)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("Priority (⌘1–4)")
+            }
+            .padding(.horizontal, 6)
+            .padding(.bottom, 4)
+            .transition(.opacity.combined(with: .move(edge: .bottom)))
+            .accessibilityLabel("Suggestions")
+        }
+    }
+
+    /// The footer: the formatting menu as a round button on the left; on the right a
+    /// pill with Create (⌘↩) and Actions (⌘K).
+    private var footer: some View {
+        HStack(spacing: 10) {
+            Menu {
+                Button("Attach Image…", action: chooseImage).keyboardShortcut("i", modifiers: [.command, .shift])
+                Divider()
+                Button("Bold", action: { editor.bold() }).keyboardShortcut("b")
+                Button("Italic", action: { editor.italic() }).keyboardShortcut("i")
+                Button("Strikethrough", action: { editor.strikethrough() }).keyboardShortcut("x", modifiers: [.command, .shift])
+                Button("Code", action: { editor.code() }).keyboardShortcut("e")
+                Divider()
+                Button("Heading", action: { editor.block(.heading2) }).keyboardShortcut("h", modifiers: [.command, .shift])
+                Button("Bullet List", action: { editor.block(.bullet) }).keyboardShortcut("l", modifiers: [.command, .shift])
+                Button("Numbered List", action: { editor.block(.numbered) }).keyboardShortcut("n", modifiers: [.command, .shift])
+                Button("Checklist", action: { editor.block(.todo) }).keyboardShortcut("t", modifiers: [.command, .shift])
+                Button("Quote", action: { editor.block(.quote) }).keyboardShortcut("q", modifiers: [.command, .shift])
+                Button("Code Block", action: { editor.block(.code) })
+            } label: {
+                Image(systemName: "line.3.horizontal.decrease")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 26, height: 26)
+                    .floatingButton(Circle())
+            }
+            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+            .help("Formatting and attachments — or type / in the text")
+
+            accessories
+
+            Spacer(minLength: 0)
+
+            HStack(spacing: 4) {
                 Button(action: create) {
-                    Icon("arrow.up", size: 18, weight: .bold)
-                        .foregroundStyle(valid ? Color.white : Color.primary.opacity(0.5))
-                        .frame(width: 34, height: 34)
-                        .glassCircle(tint: valid ? Color.brand : nil)
-                        .contentShape(Circle())
+                    HStack(spacing: 8) {
+                        Text(prompt.editing == nil ? "Create Task" : "Save Task")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(valid ? Color.primary : Color.primary.opacity(0.4))
+                        HStack(spacing: 3) { RaycastKey("⌘"); RaycastKey("↩") }
+                    }
+                    .padding(.horizontal, 8)
+                    .frame(height: 24)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(!valid)
-                .help(prompt.editing == nil ? "Create (⌘↩)" : "Save (⌘↩)")
-                .animation(.easeOut(duration: 0.15), value: valid)
+
+                Rectangle().fill(.primary.opacity(0.1)).frame(width: 1, height: 16)
+
+                Button { showsActions.toggle() } label: {
+                    HStack(spacing: 8) {
+                        Text("Actions").font(.system(size: 12)).foregroundStyle(.secondary)
+                        HStack(spacing: 3) { RaycastKey("⌘"); RaycastKey("K") }
+                    }
+                    .padding(.horizontal, 8)
+                    .frame(height: 24)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut("k")
+                .popover(isPresented: $showsActions, arrowEdge: .top) { actionsList }
             }
-        if #available(macOS 26.0, *) {
-            GlassEffectContainer(spacing: 8) { bar }
-        } else {
-            bar
+            .padding(.horizontal, 3)
+            .frame(height: 28)
+            .floatingButton(Capsule())
         }
+        .padding(.horizontal, 8)
+        .padding(.bottom, 8)
     }
 
-    private func floatingGlyph(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Icon(symbol, size: 19, weight: .medium)
-                .foregroundStyle(.primary.opacity(0.85))
-                .frame(width: 34, height: 34)
-                .glassCircle()
-                .contentShape(Circle())
+    /// What ⌘K lists, Raycast-style: attach, the project, the priority, cancel.
+    private var actionsList: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            actionSection("Task")
+            actionRow("Paste from Clipboard", symbol: "doc.on.clipboard", keys: "⌘V") {
+                showsActions = false
+                // A capture just taken is on the clipboard: it lands in the task.
+                if let textView = editor.textView {
+                    textView.window?.makeFirstResponder(textView)
+                    textView.paste(nil)
+                }
+            }
+            actionRow("Attach Image…", symbol: "photo", keys: "⇧⌘I") { showsActions = false; chooseImage() }
+            actionRow("New Project…", symbol: "folder.badge.plus") { showsActions = false; newProjectName = "" }
+            actionSection("Project")
+            actionRow("No project", symbol: "tray", checked: projectID == nil && pendingProject == nil) { projectID = nil; pendingProject = nil; showsActions = false }
+            ForEach(store.projects.sorted { store.path(to: $0.id).map(\.name).joined(separator: "/") < store.path(to: $1.id).map(\.name).joined(separator: "/") }) { project in
+                actionRow(store.path(to: project.id).map(\.name).joined(separator: " › "), symbol: "folder", checked: projectID == project.id) {
+                    projectID = project.id
+                    pendingProject = nil
+                    showsActions = false
+                }
+            }
+            actionSection("Priority")
+            ForEach(Array(TaskPriority.allCases.enumerated()), id: \.element) { index, value in
+                actionRow(value.title, symbol: value.symbol, keys: "⌘\(index + 1)", checked: priority == value, tint: value.color) {
+                    priority = value
+                    showsActions = false
+                }
+            }
+            Divider().padding(.vertical, 4)
+            actionRow("Cancel", symbol: "xmark", keys: "esc") { showsActions = false; finish(nil) }
         }
-        .buttonStyle(.plain)
-        .help(help)
+        .padding(6)
+        .frame(width: 280)
+    }
+
+    private func actionSection(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 10)
+            .padding(.top, 8)
+            .padding(.bottom, 2)
+    }
+
+    private func actionRow(_ title: String, symbol: String, keys: String? = nil, checked: Bool = false, tint: Color = .primary, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Icon(symbol, size: 13, weight: .medium)
+                    .foregroundStyle(tint == .primary ? Color.primary.opacity(0.7) : tint)
+                    .frame(width: 18)
+                Text(title).font(.system(size: 13)).lineLimit(1)
+                Spacer(minLength: 6)
+                if checked { Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary) }
+                if let keys { Text(keys).font(.system(size: 11)).foregroundStyle(.secondary) }
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(RaycastRowStyle())
     }
 
     // MARK: Island
@@ -1520,5 +1617,50 @@ struct KeyWindowFocus: NSViewRepresentable {
             guard let window else { return }
             DispatchQueue.main.async { window.makeKey() }
         }
+    }
+}
+
+
+/// A key as Raycast draws one in its footer: a small rounded square, outlined.
+struct RaycastKey: View {
+    let key: String
+    init(_ key: String) { self.key = key }
+
+    var body: some View {
+        Text(key)
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(.secondary)
+            .frame(minWidth: 17, minHeight: 17)
+            .padding(.horizontal, key.count > 1 ? 4 : 0)
+            .background(.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(.primary.opacity(0.15)))
+    }
+}
+
+/// A list row that lights up under the pointer, as Raycast's do.
+struct RaycastRowStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        RowBody(configuration: configuration)
+    }
+
+    private struct RowBody: View {
+        let configuration: Configuration
+        @State private var hovering = false
+
+        var body: some View {
+            configuration.label
+                .background(Color.primary.opacity(configuration.isPressed ? 0.14 : hovering ? 0.08 : 0), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .onHover { hovering = $0 }
+        }
+    }
+}
+
+extension View {
+    /// A button that floats over the text: an opaque face and a grey hairline, no shadow.
+    func floatingButton(_ shape: some InsettableShape) -> some View {
+        self
+            .background(NotionStyle.card, in: shape)
+            .overlay(shape.strokeBorder(.primary.opacity(0.12)))
+            .contentShape(shape)
     }
 }

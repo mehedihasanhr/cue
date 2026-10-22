@@ -38,6 +38,7 @@ struct EditorView: View {
     let onDone: () -> Void
     /// Pick images to lay beside this one (the toolbar's Compare button).
     var onAddImages: () -> Void = {}
+    var onCreateTask: () -> Void = {}
     let windowButtons: WindowButtons
     @State private var dropTargeted = false
 
@@ -47,7 +48,7 @@ struct EditorView: View {
                 PreviewToolbar(model: model, title: title, fileName: fileName, onCopy: onCopy, onDelete: onDelete, windowButtons: windowButtons)
                 Divider()
             } else {
-                EditorToolbar(model: model, fileName: fileName, onCopy: onCopy, onSave: onSave, onExport: onExport, onDelete: onDelete, onDone: onDone, onAddImages: onAddImages, windowButtons: windowButtons)
+                EditorToolbar(model: model, fileName: fileName, onCopy: onCopy, onSave: onSave, onExport: onExport, onDelete: onDelete, onDone: onDone, onAddImages: onAddImages, onCreateTask: onCreateTask, windowButtons: windowButtons)
                 Divider()
                 // The options row only appears when there is something to set.
                 if model.tool != .background, !(model.tool == .select && model.selectedID == nil) {
@@ -188,6 +189,7 @@ struct EditorToolbar: View {
     let onDelete: () -> Void
     let onDone: () -> Void
     var onAddImages: () -> Void = {}
+    var onCreateTask: () -> Void = {}
     let windowButtons: WindowButtons
     @State private var copied = false
 
@@ -259,6 +261,8 @@ struct EditorToolbar: View {
                 dragOut
                 IconButton(symbol: "trash", help: "Delete capture", tint: .red.opacity(0.9), action: onDelete)
             }
+            ToolbarPillButton(title: "Create Task", prominent: false, action: onCreateTask)
+                .help("A new task with this capture — write what to do above it")
             ToolbarPillButton(title: "Export…", prominent: false, action: onExport)
                 .help("Export a copy (⇧⌘S)")
             ToolbarPillButton(title: "Done", prominent: true, action: onDone)
@@ -279,6 +283,7 @@ struct EditorToolbar: View {
                     Button("Redo") { model.redo() }.disabled(!model.canRedo)
                     Divider()
                     Button("Compare with Other Images…", action: onAddImages)
+                    Button("Create Task…", action: onCreateTask)
                     Button("Export…", action: onExport)
                     Divider()
                     Button("Delete Capture", role: .destructive, action: onDelete)

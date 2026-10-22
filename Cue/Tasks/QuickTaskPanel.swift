@@ -29,7 +29,23 @@ final class QuickTaskPanel: NSPanel {
         }
         /// 0: frosted (the default); 1: nearly clear glass.
         var clarity: Double = 0
+        /// The island's dark smoked glass, or Raycast's frosted panel (the task form).
+        var look: Look = .smoke
         weak var panel: QuickTaskPanel?
+
+        enum Look { case smoke, raycast }
+    }
+
+    /// Raycast's panel: the desktop frosted behind a light (or, in Dark Mode, deep
+    /// grey) veil, a hairline edge and a soft shadow — following the system's appearance.
+    private enum RaycastGlass {
+        /// White at 95 % over the blurred desktop (a deep grey at the same strength in
+        /// Dark Mode): solid enough to read on, with the backdrop still coming through.
+        static let veil = NotionStyle.dynamic(light: NotionStyle.rgb(255, 255, 255, 0.95), dark: NotionStyle.rgb(32, 32, 34, 0.95))
+        /// A grey hairline all round.
+        static let edge = NotionStyle.dynamic(light: NotionStyle.rgb(0, 0, 0, 0.12), dark: NotionStyle.rgb(255, 255, 255, 0.14))
+        /// Light catching the top of the glass.
+        static let sheen = NotionStyle.dynamic(light: NotionStyle.rgb(255, 255, 255, 0.6), dark: NotionStyle.rgb(255, 255, 255, 0.05))
     }
 
     /// The glass at `size`, keeping its top-left corner where it is.
@@ -41,9 +57,38 @@ final class QuickTaskPanel: NSPanel {
         private static var ink: Color { Color(red: 0.03, green: 0.035, blue: 0.05) }
 
         var body: some View {
+            if chrome.look == .raycast { raycast } else { smoke }
+        }
+
+        private var raycast: some View {
+            let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+            return content
+                .frame(width: chrome.size.width, height: chrome.size.height)
+                // The content is clipped to the rounded glass; the glass's shadow is not,
+                // so it falls outside the edge into the window's margin.
+                .clipShape(shape)
+                .background {
+                    ZStack {
+                        // The backdrop: the desktop behind the window, blurred.
+                        GlassMaterial(material: .hudWindow)
+                        RaycastGlass.veil
+                        LinearGradient(colors: [RaycastGlass.sheen, .clear], startPoint: .top, endPoint: .init(x: 0.5, y: 0.25))
+                    }
+                    .clipShape(shape)
+                    .overlay(shape.strokeBorder(RaycastGlass.edge, lineWidth: 1))
+                    // A soft shadow, a little below: lifts it off whatever is behind.
+                    .shadow(color: .black.opacity(0.08), radius: 2, y: 1)
+                    .shadow(color: .black.opacity(0.16), radius: 14, y: 6)
+                    .allowsHitTesting(false)
+                }
+                .padding(QuickTaskPanel.margin)
+                .environment(chrome)
+        }
+
+        private var smoke: some View {
             let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
             let solid = 1 - min(max(chrome.clarity, 0), 1)
-            content
+            return content
                 .padding(.top, 8)
                 .frame(width: chrome.size.width, height: chrome.size.height)
                 // The island's look, as a window: dark smoked glass with the same slow
@@ -77,11 +122,20 @@ final class QuickTaskPanel: NSPanel {
         // A task is written slowly, often while looking at something else: it stays
         // until its own buttons or ⎋ close it, never on a click elsewhere.
         chrome.pinned = true
-        movesByTopStrip = true
+        useRaycastLook()
         // Left to itself the window server lets clicks fall through where the glass
         // looks see-through (the top strip), into the app behind: set explicitly,
         // the window takes every click in its frame.
         ignoresMouseEvents = false
+    }
+
+    /// The task and note forms' look: Raycast's frosted white panel, wide enough for a
+    /// sentence on one line, moved by a thin band along its top edge (it has no grabber).
+    func useRaycastLook(size: CGSize = CGSize(width: 640, height: 380)) {
+        chrome.look = .raycast
+        resize(to: size, animated: false)
+        movesByTopStrip = true
+        stripHeight = 16
     }
 
     /// Any of the island's forms (a snippet, its blanks) as a floating window.
@@ -234,10 +288,32 @@ final class QuickTaskPanel: NSPanel {
 
     override var canBecomeKey: Bool { true }
 
+    /// The editing keys, handled here. The panel does not activate Cue, so ⌘V never
+    /// reaches the Edit menu (it is only consulted for the active app) and pasting a
+    /// capture did nothing; each goes straight to whatever has the caret instead.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock, .numericPad, .function])
+        let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        let action: Selector? = switch (flags, key) {
+        case (.command, "v"): #selector(NSText.paste(_:))
+        case ([.command, .option, .shift], "v"): #selector(NSTextView.pasteAsPlainText(_:))
+        case (.command, "c"): #selector(NSText.copy(_:))
+        case (.command, "x"): #selector(NSText.cut(_:))
+        case (.command, "a"): #selector(NSText.selectAll(_:))
+        case (.command, "z"): Selector(("undo:"))
+        case ([.command, .shift], "z"): Selector(("redo:"))
+        default: nil
+        }
+        // A SwiftUI control may claim the key first (a shortcut on a button).
+        if super.performKeyEquivalent(with: event) { return true }
+        if let action, NSApp.sendAction(action, to: nil, from: self) { return true }
+        return false
+    }
+
     /// The task form's top strip (the grabber) moves the window. Caught here, before
     /// the form sees the click, so it works whatever the SwiftUI views under it do.
     private var movesByTopStrip = false
-    private static let stripHeight: CGFloat = 32
+    private var stripHeight: CGFloat = 32
 
     override func sendEvent(_ event: NSEvent) {
         if event.type == .leftMouseDown, movesByTopStrip, onTopStrip(event.locationInWindow) {
@@ -252,7 +328,7 @@ final class QuickTaskPanel: NSPanel {
     private func onTopStrip(_ point: CGPoint) -> Bool {
         guard let bounds = contentView?.bounds else { return false }
         let glass = bounds.insetBy(dx: Self.margin, dy: Self.margin)
-        return point.y < glass.maxY - 7 && point.y > glass.maxY - Self.stripHeight
+        return point.y < glass.maxY - 7 && point.y > glass.maxY - stripHeight
             && point.x > glass.minX + 7 && point.x < glass.maxX - 44
     }
 

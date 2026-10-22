@@ -39,6 +39,8 @@ final class IslandController {
     /// A snippet's blanks were filled in the compact box (nil: cancelled); set by
     /// the app delegate.
     var onSnippetFilled: (Snippet, [String: String]?) -> Void = { _, _ in }
+    /// The Tasks tab asked for the dashboard window; set by the app.
+    var onOpenTaskDashboard: () -> Void = {}
 
     init(library: CaptureLibrary, clipboard: ClipboardHistory, assets: AssetStore, colors: ColorStore, groups: GroupStore, tasks: TaskStore, snippets: SnippetStore,
          notes: NoteStore, actions: HistoryActions, preferences: AppPreferences, clock: PrayerClock? = nil, focus: FocusTimer? = nil, agents: AgentStore? = nil) {
@@ -74,6 +76,10 @@ final class IslandController {
         agents?.onFinished = { [weak self] session, took in self?.agentFinished(session, took: took) }
         model.onPrompt = { [weak self] prompt in self?.prompt(prompt) }
         model.onShowTask = { [weak self] task in self?.showTask(task) }
+        model.onOpenTaskDashboard = { [weak self] in
+            self?.collapse()
+            self?.onOpenTaskDashboard()
+        }
         model.onPanelWidthChanged = { [weak self] in
             // Reported from inside a layout pass; the window resizes after it.
             DispatchQueue.main.async { self?.fitWindow(); self?.placePreview() }

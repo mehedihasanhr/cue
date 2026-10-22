@@ -5,7 +5,7 @@
 #   cue task "Title" [-n notes] [-p priority] [-P project]
 #   cue note ["Text"]      (no text, or piped text: the note; none at all opens the form)
 #   cue snippet ";kw" "Template text" [-n name]
-#   cue copy "text"        cue palette | clipboard | panel | clock | settings
+#   cue copy "text"        cue palette | clipboard | panel | clock | settings | tasks
 #   cue url 'cue://…'     (any URL, as is)
 #
 # Install: ln -s "$PWD/Tools/cue" /usr/local/bin/cue   (or copy it anywhere on your PATH)
@@ -64,7 +64,7 @@ case "$command" in
     copy)
         if [ $# -ge 1 ]; then text="$1"; else text="$(cat)"; fi
         open_url "cue://clipboard/copy?text=$(encode "$text")" ;;
-    palette|clipboard|panel|clock|settings)
+    palette|clipboard|panel|clock|settings|tasks)
         open_url "cue://$command" ;;
     url)
         [ $# -ge 1 ] || usage

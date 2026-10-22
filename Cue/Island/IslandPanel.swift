@@ -72,6 +72,8 @@ struct IslandPanel: View {
     var onPrompt: (IslandPrompt) -> Void = { _ in }
     /// Opens a task in the compact island.
     var onShowTask: (TaskItem) -> Void = { _ in }
+    /// Opens the task dashboard window (the Tasks tab's expand button).
+    var onOpenTaskDashboard: () -> Void = {}
     /// Opens the clock in the compact island (the prayer pill).
     var onShowClock: () -> Void = {}
     /// Opens a card in the pane under the island (Settings › Island › Preview opens);
@@ -399,6 +401,8 @@ struct IslandPanel: View {
                 .overlay(RoundedRectangle(cornerRadius: IslandChrome.controlRadius, style: .continuous)
                     .strokeBorder(searching ? IslandStyle.accent.opacity(0.6) : .white.opacity(0.06), lineWidth: 1))
                 .background(KeyOnFocus(focused: searchFocused))
+                // Tasks: the dashboard, in its own window (the island has no Tasks tab).
+                HoverButton(symbol: "checklist", help: "Tasks", size: 30, quiet: true, action: onOpenTaskDashboard)
                 if !searching {
                     if let focusTimer, focusTimer.isRunning {
                         FocusPill(timer: focusTimer, onShowTask: onShowTask)
@@ -510,7 +514,7 @@ struct IslandPanel: View {
                             .onCardHover { hover(.clipboard($0), inside: $1) }
                     }
                 case .tasks:
-                    IslandTasksView(store: tasksStore, onPrompt: onPrompt, onShowTask: onShowTask, onHover: { hover(.task($0), inside: $1) })
+                    IslandTasksView(store: tasksStore, onPrompt: onPrompt, onShowTask: onShowTask, onHover: { hover(.task($0), inside: $1) }, onOpenDashboard: onOpenTaskDashboard)
                 case .snippets:
                     if snippets.items.isEmpty {
                         empty("Type a keyword anywhere and Cue pastes the snippet", symbol: "text.badge.plus",
@@ -662,7 +666,8 @@ struct IslandPanel: View {
                                   swatch: item.kind == .color ? PickedColor(hex: item.text) : nil))
         }, onSnippet: { text in
             onPrompt(IslandPrompt(kind: .snippet(nil, initialText: text, assetID: nil)))
-        }, onEdit: { actions.editClipboardImage(item) }, onNewGroup: { onPrompt(IslandPrompt(kind: .group(.clipboard, assign: .clipboard(item.id), editing: nil))) })
+        }, onEdit: { actions.editClipboardImage(item) }, onNewGroup: { onPrompt(IslandPrompt(kind: .group(.clipboard, assign: .clipboard(item.id), editing: nil))) },
+        createTask: actions.createTask)
     }
 
     private func assetCard(_ item: AssetItem) -> some View {
@@ -670,7 +675,8 @@ struct IslandPanel: View {
             onPrompt(IslandPrompt(kind: .rename(.asset(item)), initial: item.title, image: assets.thumbnail(for: item)))
         }, onSnippet: {
             onPrompt(IslandPrompt(kind: .snippet(nil, initialText: "", assetID: item.id)))
-        }, onNewGroup: { onPrompt(IslandPrompt(kind: .group(.assets, assign: .asset(item.id), editing: nil))) })
+        }, onNewGroup: { onPrompt(IslandPrompt(kind: .group(.assets, assign: .asset(item.id), editing: nil))) },
+        createTask: actions.createTask)
     }
 
     private func colorCard(_ entry: ColorEntry) -> some View {
@@ -1676,7 +1682,7 @@ struct CaptureCard: View {
             Button("Reveal in Finder") { library.reveal(item) }
             Button("Pin to Screen") { actions.pinToScreen(item) }
             Button("Copy Share Link") { actions.shareLink(item) }
-            Button("Make Task…") { actions.makeTask(item) }
+            Button("Create as Task…") { actions.makeTask(item) }
             Menu("Palette") {
                 Button("Keep Colors in the Colors Tab") { keepPalette() }
                 Divider()
@@ -1785,8 +1791,19 @@ struct ClipboardCard: View {
     var onEdit: () -> Void = {}
     /// A new group with this entry in it.
     var onNewGroup: () -> Void = {}
+    /// A new task with this entry in its description.
+    var createTask: (TaskSeed) -> Void = { _ in }
     @Environment(GroupStore.self) private var groups: GroupStore?
     @State private var hovering = false
+
+    /// What a task made from this entry holds: the picture, the text, or the first file.
+    private var taskSeed: TaskSeed? {
+        switch item.kind {
+        case .image: clipboard.imageData(for: item).map(TaskSeed.image)
+        case .files: item.filePaths.first.map { TaskSeed.file(URL(fileURLWithPath: $0)) }
+        default: item.text.isEmpty ? nil : .text(item.text)
+        }
+    }
 
     var body: some View {
         CardChrome(hovering: $hovering, label: "\(item.kind.rawValue.capitalized): \(item.name ?? item.title), \(item.createdAt.formatted(.relative(presentation: .named)))\(item.pinned ? ", pinned" : "")", onTap: copy) {
@@ -1851,6 +1868,9 @@ struct ClipboardCard: View {
             Button(item.name == nil ? "Name…" : "Rename…", action: onRename)
             if item.kind == .text || item.kind == .link || item.kind == .color {
                 Button("Make Snippet…") { onSnippet(item.text) }
+            }
+            if let seed = taskSeed {
+                Button("Create as Task…") { createTask(seed) }
             }
             Divider()
             Button("Delete", role: .destructive) { clipboard.delete(item) }
@@ -1985,6 +2005,8 @@ struct AssetCard: View {
     var onSnippet: () -> Void = {}
     /// A new group with this asset in it.
     var onNewGroup: () -> Void = {}
+    /// A new task with this asset in its description.
+    var createTask: (TaskSeed) -> Void = { _ in }
     @Environment(GroupStore.self) private var groups: GroupStore?
     @State private var hovering = false
 
@@ -2019,6 +2041,7 @@ struct AssetCard: View {
             }
             Button("Rename…", action: onRename)
             Button("Make Snippet…", action: onSnippet)
+            Button("Create as Task…") { createTask(.file(assets.fileURL(for: item))) }
             Divider()
             Button("Delete", role: .destructive) { assets.delete(item) }
         }

@@ -13,6 +13,8 @@ struct IslandTasksView: View {
     var onShowTask: (TaskItem) -> Void = { _ in }
     /// The pointer came onto (or left) a task's row; the preview pane follows it.
     var onHover: (TaskItem, Bool) -> Void = { _, _ in }
+    /// Opens every task in the dashboard window.
+    var onOpenDashboard: () -> Void = {}
 
     private enum Selection: Equatable {
         case projects
@@ -63,7 +65,7 @@ struct IslandTasksView: View {
     }
 
     /// The list's order: what is being worked on first, what is done last.
-    private static let statusOrder: [TaskStatus] = [.inProcess, .pending, .review, .complete]
+    private static let statusOrder: [TaskStatus] = [.pending, .inProcess, .review, .complete]
 
     private enum ProjectLayout: String {
         case grid, list
@@ -119,6 +121,7 @@ struct IslandTasksView: View {
                 Text("Projects").font(.system(size: 12, weight: .semibold)).foregroundStyle(.white.opacity(0.85))
             }
             Spacer(minLength: 0)
+            plus("Open the tasks dashboard", symbol: "arrow.up.left.and.arrow.down.right", action: onOpenDashboard)
             if selection == .projects {
                 HStack(spacing: 2) {
                     layoutButton(.grid, symbol: "square.grid.2x2")
