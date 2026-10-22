@@ -61,7 +61,7 @@ public final class DeviceRecorder: NSObject,
 
     private var observers: [any NSObjectProtocol] = []
 
-    private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "device")
+    private static let log = Logger(subsystem: "com.stackrover.cue.studio", category: "device")
 
     public init(device: AVCaptureDevice,
                 queue: DispatchQueue,

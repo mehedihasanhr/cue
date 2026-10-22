@@ -13,12 +13,12 @@ import UniformTypeIdentifiers
 ///
 /// Off by default; pointed at a folder it writes one PNG per case there —
 ///
-///     KLIK_LOOKS_DIR=/tmp/looks swift test --filter LookSnapshots
-@Suite(.enabled(if: ProcessInfo.processInfo.environment["KLIK_LOOKS_DIR"] != nil,
-                "set KLIK_LOOKS_DIR to a folder to write the pictures"),
+///     CUE_LOOKS_DIR=/tmp/looks swift test --filter LookSnapshots
+@Suite(.enabled(if: ProcessInfo.processInfo.environment["CUE_LOOKS_DIR"] != nil,
+                "set CUE_LOOKS_DIR to a folder to write the pictures"),
        .serialized)
 struct LookSnapshots {
-    private let folder = URL(fileURLWithPath: ProcessInfo.processInfo.environment["KLIK_LOOKS_DIR"] ?? "/tmp")
+    private let folder = URL(fileURLWithPath: ProcessInfo.processInfo.environment["CUE_LOOKS_DIR"] ?? "/tmp")
     private let videoSize = CGSize(width: 1_920, height: 1_080)
 
     private func timeline() -> Timeline {

@@ -119,5 +119,5 @@ enum BackgroundImageLoader {
         return CIImage(cgImage: decoded)
     }
 
-    private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "render")
+    private static let log = Logger(subsystem: "com.stackrover.cue.studio", category: "render")
 }

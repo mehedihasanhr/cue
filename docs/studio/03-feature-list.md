@@ -1,14 +1,14 @@
 # 3. Feature list
 
-Every feature found in the research, with where Klik Studio stands and when it is planned.
+Every feature found in the research, with where Cue Studio stands and when it is planned.
 
-**Klik Studio column:** Have, Partial, or Missing, as of branch `feat/studio` on 2026-09-30.
+**Cue Studio column:** Have, Partial, or Missing, as of branch `feat/studio` on 2026-09-30.
 **Phase column:** P0 = correctness (now), P1 = parity with Screen Studio, P2 = the market's gaps, P3 = later. "Done" means shipped before this plan. Phases are described in `05-roadmap.md`.
 **Competitor columns:** SS = Screen Studio, OSS = best of Recordly / OpenScreen / Cap, Pro = Camtasia / ScreenFlow / FocuSee / Descript / Tella.
 
 ## Recording
 
-| Feature | SS | OSS | Pro | Klik Studio | Phase |
+| Feature | SS | OSS | Pro | Cue Studio | Phase |
 |---|---|---|---|---|---|
 | Record a display | Yes | Yes | Yes | Have | Done |
 | Record a window, including ones on other Spaces | Yes | Yes | Yes | Have | Done |
@@ -44,7 +44,7 @@ Every feature found in the research, with where Klik Studio stands and when it i
 
 ## Pointer
 
-| Feature | SS | OSS | Pro | Klik Studio | Phase |
+| Feature | SS | OSS | Pro | Cue Studio | Phase |
 |---|---|---|---|---|---|
 | Show or hide | Yes | Yes | Yes | Have | Done |
 | Size after recording | Yes | Yes | Camtasia | Have | Done |
@@ -69,7 +69,7 @@ Every feature found in the research, with where Klik Studio stands and when it i
 
 ## Zoom and camera moves
 
-| Feature | SS | OSS | Pro | Klik Studio | Phase |
+| Feature | SS | OSS | Pro | Cue Studio | Phase |
 |---|---|---|---|---|---|
 | Automatic zooms from clicks | Yes | Yes | FocuSee, Camtasia | Have | Done |
 | Automatic zooms from typing and text fields | No (rejected) | Screenize | FocuSee | Have (needs keystroke recording on) | Done |
@@ -92,7 +92,7 @@ Every feature found in the research, with where Klik Studio stands and when it i
 
 ## Camera bubble
 
-| Feature | SS | OSS | Pro | Klik Studio | Phase |
+| Feature | SS | OSS | Pro | Cue Studio | Phase |
 |---|---|---|---|---|---|
 | Position, size, roundness, mirror, shadow | Yes | Yes | Yes | Have | Done |
 | Drag anywhere on the preview | No | Yes | Yes | Have | Done |
@@ -104,7 +104,7 @@ Every feature found in the research, with where Klik Studio stands and when it i
 
 ## Audio
 
-| Feature | SS | OSS | Pro | Klik Studio | Phase |
+| Feature | SS | OSS | Pro | Cue Studio | Phase |
 |---|---|---|---|---|---|
 | Level, mute and solo per source | Mute only | Gain | Yes | Have | Done |
 | Waveforms | Yes | Yes | Yes | Have | Done |
@@ -119,7 +119,7 @@ Every feature found in the research, with where Klik Studio stands and when it i
 
 ## Captions
 
-| Feature | SS | OSS | Pro | Klik Studio | Phase |
+| Feature | SS | OSS | Pro | Cue Studio | Phase |
 |---|---|---|---|---|---|
 | On-device transcription | Yes | Yes | No (cloud) | Have | Done |
 | Choose the language | Yes | Yes | Yes | Have | Done |
@@ -136,7 +136,7 @@ Every feature found in the research, with where Klik Studio stands and when it i
 
 ## Timeline editing
 
-| Feature | SS | OSS | Pro | Klik Studio | Phase |
+| Feature | SS | OSS | Pro | Cue Studio | Phase |
 |---|---|---|---|---|---|
 | Trim, split, delete with the gap closed | Yes | Yes | Yes | Have | Done |
 | Speed per clip | Presets | Yes | Yes | Have (0.25–8×) | Done |
@@ -160,7 +160,7 @@ Every feature found in the research, with where Klik Studio stands and when it i
 
 ## Annotations, masks and overlays
 
-| Feature | SS | OSS | Pro | Klik Studio | Phase |
+| Feature | SS | OSS | Pro | Cue Studio | Phase |
 |---|---|---|---|---|---|
 | Text | No | Yes | Yes | Have | Done |
 | Arrow | No | Yes | Yes | Have (draggable ends, Shift snaps to 15°) | Done |
@@ -182,7 +182,7 @@ Every feature found in the research, with where Klik Studio stands and when it i
 
 ## Backgrounds and frame
 
-| Feature | SS | OSS | Pro | Klik Studio | Phase |
+| Feature | SS | OSS | Pro | Cue Studio | Phase |
 |---|---|---|---|---|---|
 | Wallpapers, gradients, colours, own image | Yes | Yes | Yes | Have | Done |
 | Background blur | Yes | Yes | No | Have | Done |
@@ -194,11 +194,11 @@ Every feature found in the research, with where Klik Studio stands and when it i
 | Custom gradient colours and angle | No | OpenScreen | No | Have (2–3 colours, linear or radial) | Done |
 | Device frames (iPhone, iPad, Mac, browser) | iPhone, iPad | OpenScreen, Cap | Rotato | Have: macOS window, browser, iPhone and iPad, drawn (no bitmaps), portrait and landscape | Done |
 | Animated or video backgrounds | No | Recordly, Cap | No | Have: moving backgrounds (drift, aurora, grain; drawn fresh each frame) and a looping background video, silent (Frame › Background Video…; `Style.Background.animated`, `.video`) | Done |
-| Saved style presets, shareable as files | Yes | Yes | Yes | Have (`.klikstyle` files, six built in) | Done |
+| Saved style presets, shareable as files | Yes | Yes | Yes | Have (`.cuestyle` files, six built in) | Done |
 
 ## Export and sharing
 
-| Feature | SS | OSS | Pro | Klik Studio | Phase |
+| Feature | SS | OSS | Pro | Cue Studio | Phase |
 |---|---|---|---|---|---|
 | MP4 and GIF | Yes | Yes | Yes | Have | Done |
 | MOV | No | No | Yes | Have | Done |
@@ -217,7 +217,7 @@ Every feature found in the research, with where Klik Studio stands and when it i
 
 ## Projects, library and settings
 
-| Feature | SS | OSS | Pro | Klik Studio | Phase |
+| Feature | SS | OSS | Pro | Cue Studio | Phase |
 |---|---|---|---|---|---|
 | Project is one package that can be moved | Yes | Yes | Yes | Have | Done |
 | Library: thumbnails, search, sort, rename, duplicate, trash | Basic | Basic | Yes | Have | Done |

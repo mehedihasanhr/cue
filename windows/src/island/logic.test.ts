@@ -45,9 +45,9 @@ describe("text transforms", () => {
     expect(offered).not.toContain("jsonPretty");
   });
   it("extracts links, addresses and numbers", () => {
-    const found = extract("Mail a@b.co or see https://klik.app/x. Costs 12.50 and 3");
+    const found = extract("Mail a@b.co or see https://cue.app/x. Costs 12.50 and 3");
     expect(found.map((g) => g.title)).toEqual(["URLs", "E-mail Addresses", "Numbers"]);
-    expect(found[0].values).toEqual(["https://klik.app/x"]);
+    expect(found[0].values).toEqual(["https://cue.app/x"]);
   });
 });
 

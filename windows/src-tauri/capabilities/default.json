@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Every Klik window: settings, history, editors and capture overlays.",
+  "description": "Every Cue window: settings, history, editors and capture overlays.",
   "windows": ["*"],
   "permissions": [
     "core:default",

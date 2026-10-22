@@ -140,7 +140,7 @@ public struct RecordingManifest: Codable, Equatable, Sendable {
                 sourceRect: CGRect? = nil,
                 tracks: [Track] = [],
                 telemetry: Telemetry = Telemetry(),
-                recordedBy: String = "Klik Studio",
+                recordedBy: String = "Cue Studio",
                 formatVersion: Int = RecordingManifest.currentFormat) {
         self.formatVersion = formatVersion
         self.name = name
@@ -173,14 +173,14 @@ public struct RecordingManifest: Codable, Equatable, Sendable {
     }
 }
 
-/// A `.klikrec` package on disk.
+/// A `.cuerec` package on disk.
 ///
 /// A package rather than a folder of loose files or a single container: the user drags
 /// one object, Finder treats it as a document, and the recorder can still append to the
 /// media inside it while it is being written. A single container would mean rewriting
 /// the whole thing to add a track.
 public struct RecordingPackage: Sendable {
-    public static let fileExtension = "klikrec"
+    public static let fileExtension = "cuerec"
 
     public let url: URL
 

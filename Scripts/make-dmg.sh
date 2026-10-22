@@ -1,8 +1,8 @@
 #!/bin/bash
 #
-# Packages a built Klik as a DMG people can install from.
+# Packages a built Cue as a DMG people can install from.
 #
-#   xcodebuild -project Klik.xcodeproj -scheme Klik -configuration Release \
+#   xcodebuild -project Cue.xcodeproj -scheme Cue -configuration Release \
 #       -derivedDataPath build/release build
 #   Scripts/make-dmg.sh
 #
@@ -18,7 +18,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-APP=${1:-"$ROOT/build/release/Build/Products/Release/Klik.app"}
+APP=${1:-"$ROOT/build/release/Build/Products/Release/Cue.app"}
 OUT_DIR="$ROOT/dist"
 
 [ -d "$APP" ] || { echo "no app at $APP — build Release first"; exit 1; }

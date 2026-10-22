@@ -1,5 +1,5 @@
-"""Writes Klik/Support/HugeIconGlyphs.swift from the icons Klik draws:
-    HUGEICONS=/path/to/package python3 Tools/hugeicons/gen.py Klik/Support/HugeIconGlyphs.swift
+"""Writes Cue/Support/HugeIconGlyphs.swift from the icons Cue draws:
+    HUGEICONS=/path/to/package python3 Tools/hugeicons/gen.py Cue/Support/HugeIconGlyphs.swift
 Add a name to NAMES and an alias in Icon.swift to use a new icon."""
 import pathlib, re, sys
 from extract import glyphs

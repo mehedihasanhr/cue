@@ -5,7 +5,7 @@ import Foundation
 import os
 import TimelineKit
 
-/// The pointers Klik draws.
+/// The pointers Cue draws.
 ///
 /// Its own artwork, on purpose: the system cursors are Apple's, and a video file that
 /// bakes them in is a question nobody wants to answer. These are the familiar silhouettes

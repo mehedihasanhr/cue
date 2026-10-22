@@ -121,9 +121,9 @@ export function useNotes(): Note[] {
   return notes;
 }
 
-/** Where pictures come from: `klik://` on the Mac test bed, `http://klik.localhost` on Windows. */
-export function klikUrl(path: string): string {
-  return navigator.userAgent.includes("Windows") ? `http://klik.localhost/${path}` : `klik://localhost/${path}`;
+/** Where pictures come from: `cue://` on the Mac test bed, `http://cue.localhost` on Windows. */
+export function cueUrl(path: string): string {
+  return navigator.userAgent.includes("Windows") ? `http://cue.localhost/${path}` : `cue://localhost/${path}`;
 }
 
 // MARK: - Words for things

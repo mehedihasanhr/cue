@@ -99,10 +99,10 @@ public enum WindowSharing {
 /// error rather than an empty list of displays.
 public struct ShareableContentStore: Sendable {
     /// Windows the recorder should never offer, because recording your own recorder is
-    /// never what anyone wanted: Klik, and Klik Studio from before it was part of Klik.
+    /// never what anyone wanted: Cue, and Cue Studio from before it was part of Cue.
     public let excludedBundleIDs: Set<String>
 
-    public init(excludedBundleIDs: Set<String> = ["com.stackrover.klik", "com.stackrover.klik.studio"]) {
+    public init(excludedBundleIDs: Set<String> = ["com.stackrover.cue", "com.stackrover.cue.studio"]) {
         self.excludedBundleIDs = excludedBundleIDs
     }
 
@@ -148,7 +148,7 @@ public struct ShareableContentStore: Sendable {
         }
     }
 
-    /// The filter for a target, with Klik's own windows left out.
+    /// The filter for a target, with Cue's own windows left out.
     public func filter(for target: CaptureTarget, in content: SCShareableContent) throws(RecordingError) -> SCContentFilter {
         switch target {
         case .display(let id), .area(let id, _):

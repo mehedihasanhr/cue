@@ -16,7 +16,7 @@ struct DocumentTests {
     private func makeDocument(projectJSON: String? = nil,
                               duration: Double = 30) throws -> (EditorDocument, URL) {
         let folder = FileManager.default.temporaryDirectory
-            .appendingPathComponent("KlikStudioTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("CueStudioTests-\(UUID().uuidString)", isDirectory: true)
         let package = try RecordingPackage.create(named: "Take", in: folder)
         let manifest = RecordingManifest(name: "Take", duration: duration)
         try package.write(manifest)

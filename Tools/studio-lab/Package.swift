@@ -1,7 +1,7 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
-/// Measures Klik Studio instead of looking at it.
+/// Measures Cue Studio instead of looking at it.
 ///
 /// A recording is only right if the pointer that gets drawn is where the pointer really
 /// was, when it was there. That cannot be judged by eye and cannot be unit-tested without

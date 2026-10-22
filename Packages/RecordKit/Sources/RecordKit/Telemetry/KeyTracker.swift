@@ -78,7 +78,7 @@ public final class KeyTracker: @unchecked Sendable {
             label: { keyCode in KeyboardLayout.character(forKeyCode: keyCode) })
     }
 
-    private static let log = Logger(subsystem: "com.stackrover.klik.recordkit", category: "keys")
+    private static let log = Logger(subsystem: "com.stackrover.cue.recordkit", category: "keys")
 
     private let writer: JSONLWriter
     private let queue: DispatchQueue

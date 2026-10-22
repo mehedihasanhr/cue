@@ -132,7 +132,7 @@ public enum RecoveryError: Error, LocalizedError, Equatable, Sendable {
 /// point before the manifest is written leaves the package exactly as it was, so recovery
 /// can be tried again; after it, every file in the package plays.
 public enum TakeRecovery {
-    private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "recovery")
+    private static let log = Logger(subsystem: "com.stackrover.cue.studio", category: "recovery")
 
     /// Room kept free beyond the files being rewritten: the manifest, the sidecars, and
     /// not running a disk that is already short to empty.

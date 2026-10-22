@@ -3,7 +3,7 @@ import CoreMedia
 import Foundation
 import TimelineKit
 
-/// `studiolab everything <recording.klikrec> <out.mp4>` — one of every feature at once.
+/// `studiolab everything <recording.cuerec> <out.mp4>` — one of every feature at once.
 ///
 /// Each feature was built and tested alone; this is the check that they work together in
 /// one edit and one export: clips that are titles and freeze frames with transitions

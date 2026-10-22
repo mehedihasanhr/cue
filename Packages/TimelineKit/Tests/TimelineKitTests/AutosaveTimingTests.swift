@@ -68,7 +68,7 @@ struct BackgroundSaveTests {
 
     private func makeDocument() throws -> (EditorDocument, URL) {
         let folder = FileManager.default.temporaryDirectory
-            .appendingPathComponent("KlikStudioTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("CueStudioTests-\(UUID().uuidString)", isDirectory: true)
         let package = try RecordingPackage.create(named: "Take", in: folder)
         try package.write(RecordingManifest(name: "Take", duration: 30))
         return (try EditorDocument(package: package), folder)

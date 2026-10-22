@@ -17,7 +17,7 @@ import os
 /// of the app's laid over it, such as a sheet or the tab strip a full-screen browser
 /// stacks above its page — topmost among that app's windows.
 public final class WindowPresence: @unchecked Sendable {
-    private static let log = Logger(subsystem: "com.stackrover.klik.recordkit", category: "presence")
+    private static let log = Logger(subsystem: "com.stackrover.cue.recordkit", category: "presence")
 
     private let window: CGWindowID
     private let owner: pid_t?

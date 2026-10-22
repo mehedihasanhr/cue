@@ -7,7 +7,7 @@ import { Icon, STROKE, type IconName } from "../ui/icon";
 import { relative } from "./answers";
 import { captureTitle, detectCode } from "./cards";
 import { cssColor, format, FORMAT_TITLES, FORMATS, type ColorFormat } from "./colormath";
-import { byteSize, firstLine, klikUrl, type Asset, type ClipItem, type ColorItem, type Note, type Snippet } from "./data";
+import { byteSize, firstLine, cueUrl, type Asset, type ClipItem, type ColorItem, type Note, type Snippet } from "./data";
 
 export type DetailItem =
   | { kind: "captures"; item: HistoryItem }
@@ -48,7 +48,7 @@ export function Detail({ entry, version, buttons, colorFormat, onCopyText, onBac
       pills.push(relative(new Date(c.createdAt)));
       if (c.kind === "image") {
         if (c.pixelWidth) pills.splice(1, 0, `${c.pixelWidth} × ${c.pixelHeight}`);
-        body = <DetailImage src={klikUrl(`clip/${c.id}`)} title={c.name} />;
+        body = <DetailImage src={cueUrl(`clip/${c.id}`)} title={c.name} />;
       } else if (c.kind === "files") {
         const files = text.split("\n").filter(Boolean);
         pills.splice(1, 0, `${files.length} ${files.length === 1 ? "file" : "files"}`);
@@ -78,7 +78,7 @@ export function Detail({ entry, version, buttons, colorFormat, onCopyText, onBac
       pills.push(a.kind === "image" ? "Image" : "File", a.kind === "image" && a.pixelWidth ? `${a.pixelWidth} × ${a.pixelHeight}` : byteSize(a.byteSize));
       body =
         a.kind === "image" ? (
-          <DetailImage src={klikUrl(`asset/${a.id}`)} title={a.fileName} />
+          <DetailImage src={cueUrl(`asset/${a.id}`)} title={a.fileName} />
         ) : (
           <div className="detail-filecard">
             <Icon name="doc" size={56} weight={1.1} />

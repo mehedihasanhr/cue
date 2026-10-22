@@ -175,7 +175,7 @@ struct RecorderBarTests {
 
     @Test func `a restart with nothing left behind is already clean`() {
         #expect(TakeRestart.removeLeftovers(of: nil))
-        let gone = FileManager.default.temporaryDirectory.appendingPathComponent("gone-\(UUID().uuidString).klikrec")
+        let gone = FileManager.default.temporaryDirectory.appendingPathComponent("gone-\(UUID().uuidString).cuerec")
         #expect(TakeRestart.removeLeftovers(of: gone))
     }
 
@@ -189,7 +189,7 @@ struct RecorderBarTests {
 
     // MARK: - What a display recording leaves out
 
-    private let own: Set<String> = ["com.stackrover.klik.studio", "com.stackrover.klik"]
+    private let own: Set<String> = ["com.stackrover.cue.studio", "com.stackrover.cue"]
     private let finder = CaptureExclusion.finderBundleID
     private let desktopLayer = Int(CGWindowLevelForKey(.desktopIconWindow))
 
@@ -199,15 +199,15 @@ struct RecorderBarTests {
          .init(id: 3, bundleID: finder, layer: 0),                            // a Finder window
          .init(id: 4, bundleID: finder, layer: Int(CGWindowLevelForKey(.popUpMenuWindow))),
          .init(id: 5, bundleID: "com.apple.dock", layer: Int(CGWindowLevelForKey(.desktopWindow))), // wallpaper
-         .init(id: 6, bundleID: "com.stackrover.klik.studio", layer: 0),     // the bar
+         .init(id: 6, bundleID: "com.stackrover.cue.studio", layer: 0),     // the bar
          .init(id: 7, bundleID: "com.apple.Safari", layer: 0)]
     }
 
     private var running: [String] {
-        [finder, "com.apple.dock", "com.stackrover.klik.studio", "com.stackrover.klik", "com.apple.Safari"]
+        [finder, "com.apple.dock", "com.stackrover.cue.studio", "com.stackrover.cue", "com.apple.Safari"]
     }
 
-    @Test func `by default only Klik Studio and Klik are left out`() {
+    @Test func `by default only Cue Studio and Cue are left out`() {
         let plan = CaptureExclusion.plan(running: running, windows: windows, ownBundleIDs: own, hidesDesktopIcons: false)
         #expect(plan.excludedApplications == own)
         #expect(plan.exceptedWindows.isEmpty)
@@ -237,10 +237,10 @@ struct RecorderBarTests {
     /// The bar, the menu bar icon, the speaker notes and the camera preview are all this
     /// app's windows, and they stay out of a display recording because the app does.
     @Test func `this app is always left out of a display recording`() {
-        #expect(ShareableContentStore().excludedBundleIDs.contains("com.stackrover.klik.studio"))
+        #expect(ShareableContentStore().excludedBundleIDs.contains("com.stackrover.cue.studio"))
         let plan = CaptureExclusion.plan(running: running, windows: windows,
                                          ownBundleIDs: ShareableContentStore().excludedBundleIDs,
                                          hidesDesktopIcons: true)
-        #expect(plan.excludedApplications.contains("com.stackrover.klik.studio"))
+        #expect(plan.excludedApplications.contains("com.stackrover.cue.studio"))
     }
 }

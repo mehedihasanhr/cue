@@ -14,7 +14,7 @@ public struct SavedLook: Identifiable, Equatable, Sendable {
     }
 }
 
-/// The folder of `.klikstyle` files: listing, saving, renaming, deleting, importing.
+/// The folder of `.cuestyle` files: listing, saving, renaming, deleting, importing.
 ///
 /// A folder of ordinary files rather than a database, deliberately: a look is something
 /// people keep, copy to another Mac and send to each other, and a file in a folder is
@@ -37,12 +37,12 @@ public struct LookStore: Sendable {
         self.reservedNames = reservedNames
     }
 
-    /// `~/Library/Application Support/Klik Studio/Looks`, inside the sandbox where there
+    /// `~/Library/Application Support/Cue Studio/Looks`, inside the sandbox where there
     /// is one.
     public static var standardFolder: URL {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
-        return support.appendingPathComponent("Klik Studio", isDirectory: true)
+        return support.appendingPathComponent("Cue Studio", isDirectory: true)
             .appendingPathComponent("Looks", isDirectory: true)
     }
 

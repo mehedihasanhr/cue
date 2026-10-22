@@ -1,6 +1,6 @@
 # 4. Architecture
 
-How Klik Studio is built today, the rules that keep it correct, and how each planned feature fits in. The earlier design document, `docs/research/klik-studio-swift-architecture.md`, has the original reasoning; this page is the current state plus what comes next.
+How Cue Studio is built today, the rules that keep it correct, and how each planned feature fits in. The earlier design document, `docs/research/cue-studio-swift-architecture.md`, has the original reasoning; this page is the current state plus what comes next.
 
 ## Principles
 
@@ -15,7 +15,7 @@ How Klik Studio is built today, the rules that keep it correct, and how each pla
 ## Packages
 
 ```
-Klik (host app) ──AddOnKit──▶ Klik Studio (app)
+Cue (host app) ──AddOnKit──▶ Cue Studio (app)
                                    │
         ┌──────────────┬───────────┼────────────────┐
         ▼              ▼           ▼                ▼
@@ -27,12 +27,12 @@ Klik (host app) ──AddOnKit──▶ Klik Studio (app)
 
 | Package | Owns | Depends on |
 |---|---|---|
-| `AddOnKit` | The request Klik sends and the `klik-studio://` link | — |
-| `RecordKit` | ScreenCaptureKit capture, microphones, camera, the clock, writers, telemetry, the `.klikrec` package, the library | AddOnKit |
+| `AddOnKit` | The request Cue sends and the `cue-studio://` link | — |
+| `RecordKit` | ScreenCaptureKit capture, microphones, camera, the clock, writers, telemetry, the `.cuerec` package, the library | AddOnKit |
 | `TimelineKit` | `Timeline` and its regions, commands, undo, snapping, clipboard payloads, zoom suggestion, pointer track, caption shaping, waveforms | RecordKit |
 | `RenderKit` | `SceneBuilder`, `SceneDescriptor`, `SceneRenderer`, `FrameSource`, exporters, audio mixdown | TimelineKit |
 | `BackgroundKit` | Wallpaper catalogue, gradients, imported backgrounds | — |
-| `KlikStudio` (app) | Recorder bar, target overlay, editor windows, inspector, timeline views, export queue, settings, captions | all of the above |
+| `CueStudio` (app) | Recorder bar, target overlay, editor windows, inspector, timeline views, export queue, settings, captions | all of the above |
 | `Tools/studio-lab` | Measuring: scripted pointer recordings, ScreenCaptureKit timing probe, driving the app through Accessibility | RecordKit, TimelineKit, RenderKit |
 
 ## Recording
@@ -63,10 +63,10 @@ These are the rules the pointer-sync fixes established. Each has a test.
 | Pointer times are moved by one display refresh | The screen shows the pointer one refresh after the system knows where it is |
 | A click is a sample of the pointer's path | So the pointer passes through the place it clicked, exactly |
 
-### The `.klikrec` package
+### The `.cuerec` package
 
 ```
-Recording.klikrec/
+Recording.cuerec/
   manifest.json          what was recorded: tracks, sizes, clock, telemetry paths
   project.json           the edit (a Timeline), written on save
   media/                 screen.mov, webcam.mov, system-audio.m4a, microphone-N.m4a
@@ -123,7 +123,7 @@ Each is an addition to one of the layers above. None needs a second renderer or 
 | **Camera layouts over time** | `LayoutRegion` lane: camera full, hidden, split | — | `webcamLayer` and `videoFrame` read the layout in force | Layout lane |
 | **Camera background removal** | `WebcamSettings.background` | — | Vision person segmentation as a mask | Webcam inspector |
 | **Voice clean-up, fades** | `SoundStyle` fields per source | — | `AudioMixdown` adds volume ramps and an isolation pass | Audio inspector |
-| **Style presets** | `StylePreset`: the style parts of a `Timeline` | — | — | Preset menu; `.klikpreset` files |
+| **Style presets** | `StylePreset`: the style parts of a `Timeline` | — | — | Preset menu; `.cuepreset` files |
 | **More aspect ratios, border** | `AspectPreset` cases; `FrameStyle.border` | — | Border drawn with the corners | Frame inspector |
 | **Freeze frame, transitions, title slides** | `Clip.Kind`: footage, still, title; `Transition` on a cut | — | `SceneBuilder` blends two scenes across a transition | Timeline |
 | **Several recordings in one project** | `Timeline.sources`; `Clip.sourceID` | Importing copies media and telemetry into the package | One `FrameSource` and one pointer track per source | Import and append commands |
@@ -143,7 +143,7 @@ Where the build differs from the plan above, the build is the truth:
 |---|---|
 | Crash-safe recording | Every file is written with `movieFragmentInterval` = 1 s, so an unfinished file plays up to its last fragment; `finishWriting` turns it back into an ordinary movie. An `in-progress.json` marker in the package (the planned manifest and the writing process) says a take did not finish. `TakeRecovery` rewrites the files, checks the first and last frames decode, completes the manifest with a `recovery` note, then swaps and removes the marker; if anything fails, the package is left byte for byte. Sidecars reach the disk every 0.5 s, and the take's files are synced to the disk every 2 s. `RecordKitCrashProbe` is a test-only executable that is killed mid-take by the tests |
 | Keyboard | `InputSample.shortcut` with the key only when ⌘ or ⌃ is held or for a named key (never ⌥ alone, which types characters on most keyboards); everything else is `InputSample.key` with no identity. `telemetry.keys` in the manifest says whether keys were recorded or not permitted. `KeyCue` regions on the Keys lane, `KeyStyle` on the timeline, `KeyLayer` drawn by `KeycapArtwork`, kept clear of captions and the camera bubble |
-| Looks | `Look` (`.klikstyle` JSON with a version; every field optional) captures the frame, pointer, captions, camera and bubble styles but not whether the bubble is on. `LookStore` keeps them in Application Support; six are built in. `LookFidelityTests` fail if a style setting is added and not carried |
+| Looks | `Look` (`.cuestyle` JSON with a version; every field optional) captures the frame, pointer, captions, camera and bubble styles but not whether the bubble is on. `LookStore` keeps them in Application Support; six are built in. `LookFidelityTests` fail if a style setting is added and not carried |
 | Masks | `BlurRegion.Style`: blur, pixelate, cover, spotlight; spotlights are unioned into one dimmed picture |
 | Sensitive text | `SensitiveScanner` (RenderKit) reads two samples a second with Vision's accurate recogniser, skipping samples whose picture has not changed; `SensitiveText` (TimelineKit, pure) says what counts; `SensitiveGrouping` makes consecutive readings one stretch; edges are pinned to the frame by halving, with two frames of margin; moving text is followed with `MaskFollower`, checked against the readings. `SensitiveFinding` is on the recording's clock and cached in `derived/sensitive-text.json`; `masks(in:…)` maps it through the edit (cuts, speeds, freeze frames) and `Commands.AddMasks` adds the lot as one undo step |
 | Zoom motion | `ZoomRegion.isInstant`; `CameraStyle.glidesBetweenZooms` (off for projects saved before it existed); the glide rule is in `ZoomGlide` |
@@ -169,6 +169,6 @@ Where the build differs from the plan above, the build is the truth:
 | Capture behaviour | `studiolab stream` | What ScreenCaptureKit's timestamps mean on this Mac |
 | App, without taking the screen | `studiolab press`, `key`, `shot` | Menu commands work; what the editor looks like |
 | Export, on a real recording | `studiolab export` | The app's exporter writes a file of the right length, with click sounds where the clicks are |
-| Build | `xcodebuild` for `KlikStudio` and `Klik` | Compiles with no warnings |
+| Build | `xcodebuild` for `CueStudio` and `Cue` | Compiles with no warnings |
 
 The measuring tool moves the real pointer and covers the screen for about 25 seconds, so it is run deliberately, not on every change.

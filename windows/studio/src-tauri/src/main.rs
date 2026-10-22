@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    klik_studio_lib::run()
+    cue_studio_lib::run()
 }

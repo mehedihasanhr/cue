@@ -1,5 +1,5 @@
 // Icons by the SF Symbol names the Mac app uses, drawn from Hugeicons' stroke set —
-// the same icons as the Mac's `Klik/Support/Icon.swift` (Hugeicons 4.3.5, MIT).
+// the same icons as the Mac's `Cue/Support/Icon.swift` (Hugeicons 4.3.5, MIT).
 // Imported one by one: the whole set is 14,000 icons.
 
 import { HugeiconsIcon } from "@hugeicons/react";

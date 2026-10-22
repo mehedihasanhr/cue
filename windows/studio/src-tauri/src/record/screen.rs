@@ -208,7 +208,7 @@ pub fn windows_list() -> Vec<WindowInfo> {
             }
             let app = w.process_name().unwrap_or_default();
             let lower = app.to_ascii_lowercase();
-            if lower.starts_with("klik-studio") || lower.starts_with("klik studio") {
+            if lower.starts_with("cue-studio") || lower.starts_with("cue studio") {
                 return None;
             }
             Some(WindowInfo { hwnd: w.as_raw_hwnd() as i64, title, app, x: rect.left, y: rect.top, width, height })

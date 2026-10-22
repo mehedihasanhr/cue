@@ -154,7 +154,7 @@ struct CaptionShapingTests {
     // MARK: - What a real recogniser actually hands over
 
     /// Recorded from `SpeechTranscriber` on macOS 27 — the timed runs it produced for
-    /// "Hello there, everyone. This is a screen recording of Klik Studio. Open the panel,
+    /// "Hello there, everyone. This is a screen recording of Cue Studio. Open the panel,
     /// then press record, and the captions will follow along." Kept verbatim, leading
     /// spaces and misheard "Click" included, because the point of a fixture is to be what
     /// happened rather than what one would like to have happened.

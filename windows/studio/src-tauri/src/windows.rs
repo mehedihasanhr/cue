@@ -5,8 +5,8 @@
 //! - `library`: every recording.
 //! - `editor-<n>`: one recording being edited.
 //!
-//! And the ways in: a plain launch shows the bar; Klik's `klik-studio://record?request=…`
-//! shows it ready for what Klik asked; a `.klikrec` folder opens in the editor.
+//! And the ways in: a plain launch shows the bar; Cue's `cue-studio://record?request=…`
+//! shows it ready for what Cue asked; a `.cuerec` folder opens in the editor.
 
 use anyhow::Result;
 use std::hash::{Hash, Hasher};
@@ -15,11 +15,11 @@ use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, Webview
 const BAR_SIZE: (f64, f64) = (560.0, 76.0);
 
 pub fn handle_args(app: &AppHandle, args: &[String]) {
-    if let Some(link) = args.iter().find(|a| a.starts_with("klik-studio://")) {
+    if let Some(link) = args.iter().find(|a| a.starts_with("cue-studio://")) {
         handle_link(app, link);
         return;
     }
-    if let Some(package) = args.iter().skip(1).find(|a| a.trim_end_matches(['/', '\\']).ends_with(".klikrec")) {
+    if let Some(package) = args.iter().skip(1).find(|a| a.trim_end_matches(['/', '\\']).ends_with(".cuerec")) {
         // A debug build can be told where to put the playhead or what to export, so the
         // editor can be checked without anyone clicking (`--demo=t=2.5;export=out.mp4`).
         let demo = if cfg!(debug_assertions) { args.iter().find_map(|a| a.strip_prefix("--demo=")) } else { None };
@@ -36,7 +36,7 @@ pub fn handle_args(app: &AppHandle, args: &[String]) {
     show_bar(app).ok();
 }
 
-/// `klik-studio://record?request=<path>`: Klik's request — what to record, with sound or
+/// `cue-studio://record?request=<path>`: Cue's request — what to record, with sound or
 /// not — as a JSON file (the Mac's AddOnKit `RecordingRequest`).
 fn handle_link(app: &AppHandle, link: &str) {
     if link.trim_end_matches('/').ends_with("://library") {
@@ -46,7 +46,7 @@ fn handle_link(app: &AppHandle, link: &str) {
     let request = link
         .split_once("request=")
         .map(|(_, path)| urlencoding_decode(path))
-        // Klik's request is a file for this one hand-off; it goes once read.
+        // Cue's request is a file for this one hand-off; it goes once read.
         .and_then(|path| std::fs::read(&path).ok().inspect(|_| drop(std::fs::remove_file(&path))))
         .and_then(|data| serde_json::from_slice::<serde_json::Value>(&data).ok());
     show_bar(app).ok();
@@ -85,7 +85,7 @@ pub fn show_bar(app: &AppHandle) -> Result<()> {
         return Ok(());
     }
     let window = WebviewWindowBuilder::new(app, "bar", WebviewUrl::App("index.html".into()))
-        .title("Klik Studio")
+        .title("Cue Studio")
         .inner_size(BAR_SIZE.0, BAR_SIZE.1)
         .decorations(false)
         .transparent(true)
@@ -153,7 +153,7 @@ pub fn open_library(app: &AppHandle) -> Result<()> {
         return Ok(());
     }
     WebviewWindowBuilder::new(app, "library", WebviewUrl::App("index.html".into()))
-        .title("Recordings — Klik Studio")
+        .title("Recordings — Cue Studio")
         .inner_size(960.0, 640.0)
         .min_inner_size(640.0, 420.0)
         .center()
@@ -176,7 +176,7 @@ pub fn open_editor(app: &AppHandle, path: &str) -> Result<()> {
     let name = std::path::Path::new(path).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
     let encoded: String = path.bytes().map(|b| if b.is_ascii_alphanumeric() { (b as char).to_string() } else { format!("%{b:02X}") }).collect();
     WebviewWindowBuilder::new(app, &label, WebviewUrl::App(format!("index.html#{encoded}").into()))
-        .title(format!("{name} — Klik Studio"))
+        .title(format!("{name} — Cue Studio"))
         .inner_size(1280.0, 820.0)
         .min_inner_size(900.0, 600.0)
         .center()

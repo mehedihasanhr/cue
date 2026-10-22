@@ -233,7 +233,7 @@ mod tests {
 
     #[test]
     fn numbers_a_taken_name() {
-        let dir = std::env::temp_dir().join(format!("klik-names-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("cue-names-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("a.png"), b"").unwrap();
         std::fs::write(dir.join("a (2).png"), b"").unwrap();
@@ -250,7 +250,7 @@ mod tests {
 
     #[test]
     fn adds_renames_and_lists() {
-        let root = std::env::temp_dir().join(format!("klik-library-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("cue-library-{}", std::process::id()));
         let mut library = Library::open(root.join("captures"), &root.join("data"));
         let item = library.add(&RgbaImage::new(4, 3), 1.5).unwrap();
         assert_eq!((item.pixel_width, item.pixel_height), (4, 3));

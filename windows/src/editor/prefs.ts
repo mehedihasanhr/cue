@@ -60,7 +60,7 @@ export function editorDefaults(value: unknown): EditorDefaults {
   return { ...DEFAULT_PREFS, rememberLastUsed: false, ...saved };
 }
 
-const KEY = "klik.editor.prefs";
+const KEY = "cue.editor.prefs";
 
 /** What a new editor starts with, given the settings' `editor` blob. */
 export function loadPrefs(settings: unknown): Prefs {

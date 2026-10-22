@@ -4,7 +4,7 @@ import Foundation
 import Testing
 @testable import RecordKit
 
-/// The `.klikrec` package, its manifest, and the telemetry files beside the video.
+/// The `.cuerec` package, its manifest, and the telemetry files beside the video.
 struct PackageTests {
     private func temporaryFolder() -> URL {
         let url = URL.temporaryDirectory.appending(path: "RecordKitTests-\(UUID().uuidString)")
@@ -17,7 +17,7 @@ struct PackageTests {
         defer { try? FileManager.default.removeItem(at: folder) }
 
         let package = try RecordingPackage.create(named: "Demo", in: folder)
-        #expect(package.url.pathExtension == "klikrec")
+        #expect(package.url.pathExtension == "cuerec")
         for directory in [package.url, package.mediaFolder, package.telemetryFolder] {
             var isDirectory: ObjCBool = false
             #expect(FileManager.default.fileExists(atPath: directory.path(percentEncoded: false), isDirectory: &isDirectory))
@@ -35,9 +35,9 @@ struct PackageTests {
         let second = try RecordingPackage.create(named: "Demo", in: folder)
         let third = try RecordingPackage.create(named: "Demo", in: folder)
 
-        #expect(first.url.lastPathComponent == "Demo.klikrec")
-        #expect(second.url.lastPathComponent == "Demo 2.klikrec")
-        #expect(third.url.lastPathComponent == "Demo 3.klikrec")
+        #expect(first.url.lastPathComponent == "Demo.cuerec")
+        #expect(second.url.lastPathComponent == "Demo 2.cuerec")
+        #expect(third.url.lastPathComponent == "Demo 3.cuerec")
     }
 
     @Test func theManifestRoundTrips() throws {
@@ -160,7 +160,7 @@ struct PackageTests {
     /// A recording may say *when* someone typed. It may never say what they typed.
     ///
     /// Asserted on the bytes rather than on the type, because the type is exactly the
-    /// thing that could quietly regain a text field one day. If this fails, a `.klikrec`
+    /// thing that could quietly regain a text field one day. If this fails, a `.cuerec`
     /// has started carrying its author's keystrokes next to the video.
     @Test func aKeystrokeNeverCarriesItsText() throws {
         let data = try JSONEncoder().encode([InputSample.key(t: 2.5, modifiers: 1 << 17)])

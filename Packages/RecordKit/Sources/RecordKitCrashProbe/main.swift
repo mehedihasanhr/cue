@@ -5,7 +5,7 @@ import Foundation
 // Starts a made-up take in <folder> and records it in real time, saying how far it has got
 // on standard output after every half second:
 //
-//     package /path/to/<name>.klikrec
+//     package /path/to/<name>.cuerec
 //     recorded 0.5
 //     recorded 1.0
 //

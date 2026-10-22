@@ -16,7 +16,7 @@ public struct WallpaperResolver: Sendable {
 
     public func source(for id: WallpaperID) -> WallpaperSource? {
         switch id.namespace {
-        case .klik:
+        case .cue:
             return GradientPreset(rawValue: id.name).map(WallpaperSource.procedural)
         case .system:
             let name = WallpaperCatalog.fullSizeName(forPreview: id.name) ?? id.name

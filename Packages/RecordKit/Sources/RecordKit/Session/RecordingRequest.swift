@@ -100,7 +100,7 @@ public struct RecordingResult: Sendable, Codable, Equatable {
 
     public var correlationID: UUID
     public var outcome: Outcome
-    /// The `.klikrec` package, when there is one.
+    /// The `.cuerec` package, when there is one.
     public var project: URL?
     /// Why it failed, in the add-on's words, for the host to show as-is.
     public var message: String?

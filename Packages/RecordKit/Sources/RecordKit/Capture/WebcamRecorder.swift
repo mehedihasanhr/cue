@@ -27,7 +27,7 @@ public final class WebcamRecorder: NSObject, AVCaptureVideoDataOutputSampleBuffe
     private let deviceName: String
     private let onLoss: @Sendable (RecordingError) -> Void
 
-    private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "webcam")
+    private static let log = Logger(subsystem: "com.stackrover.cue.studio", category: "webcam")
 
     public init(device: AVCaptureDevice,
                 writer: SessionWriter,

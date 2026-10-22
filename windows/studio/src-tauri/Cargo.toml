@@ -1,12 +1,12 @@
 [package]
-name = "klik-studio"
+name = "cue-studio"
 version = "0.1.0"
-description = "Klik Studio for Windows"
+description = "Cue Studio for Windows"
 authors = ["Md. Mehedi Hasan Hridoy"]
 edition = "2024"
 
 [lib]
-name = "klik_studio_lib"
+name = "cue_studio_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

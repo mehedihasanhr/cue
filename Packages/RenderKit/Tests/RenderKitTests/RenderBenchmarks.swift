@@ -14,13 +14,13 @@ import TimelineKit
 /// suite that takes a minute is a suite nobody runs. They are here so a claim about
 /// performance can be checked instead of believed —
 ///
-///     KLIK_BENCH=1 swift test --filter RenderBenchmarks
+///     CUE_BENCH=1 swift test --filter RenderBenchmarks
 ///
 /// What they measure is **throughput and per-call cost**. Nothing here can see a dropped
 /// frame, a hitch while scrubbing or a scroll that does not keep up: those live in the
 /// window server and in a person's eye, and neither is reachable from a test process.
-@Suite(.enabled(if: ProcessInfo.processInfo.environment["KLIK_BENCH"] != nil,
-                "set KLIK_BENCH=1 to measure"),
+@Suite(.enabled(if: ProcessInfo.processInfo.environment["CUE_BENCH"] != nil,
+                "set CUE_BENCH=1 to measure"),
        .serialized,
        .timeLimit(.minutes(5)))
 struct RenderBenchmarks {
@@ -569,7 +569,7 @@ struct RenderBenchmarks {
 
     private static func scratch() throws -> URL {
         let folder = FileManager.default.temporaryDirectory
-            .appendingPathComponent("klik-bench-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("cue-bench-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         return folder
     }

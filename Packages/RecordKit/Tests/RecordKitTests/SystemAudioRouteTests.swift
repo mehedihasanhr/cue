@@ -9,8 +9,8 @@ import Testing
 /// Nothing here opens a stream or asks for a grant: the decision is a plan made from
 /// bundle identifiers, and the stream configuration is a value that can be read back.
 struct SystemAudioRouteTests {
-    private let own: Set<String> = ["com.stackrover.klik.studio", "com.stackrover.klik"]
-    private let running = ["com.apple.Safari", "com.apple.Music", "com.stackrover.klik.studio", "com.spotify.client"]
+    private let own: Set<String> = ["com.stackrover.cue.studio", "com.stackrover.cue"]
+    private let running = ["com.apple.Safari", "com.apple.Music", "com.stackrover.cue.studio", "com.spotify.client"]
 
     @Test func systemAudioOffIsOffWhateverWasChosen() {
         #expect(SystemAudioRoute.plan(systemAudio: false, chosen: [], running: running, ownBundleIDs: own) == .off)
@@ -55,7 +55,7 @@ struct SystemAudioRouteTests {
 
     /// The recorder is never listened to, even when somebody picks it.
     @Test func theRecorderItselfIsNeverHeard() {
-        let route = SystemAudioRoute.plan(systemAudio: true, chosen: ["com.stackrover.klik.studio"],
+        let route = SystemAudioRoute.plan(systemAudio: true, chosen: ["com.stackrover.cue.studio"],
                                           running: running, ownBundleIDs: own)
         #expect(route == .nothingRunning)
     }
@@ -78,8 +78,8 @@ struct SystemAudioRouteTests {
         #expect(SystemAudioRoute.launchChangesFilter(launched: "com.apple.Music", chosen: chosen, ownBundleIDs: own))
         #expect(!SystemAudioRoute.launchChangesFilter(launched: "com.spotify.client", chosen: chosen, ownBundleIDs: own))
         #expect(!SystemAudioRoute.launchChangesFilter(launched: nil, chosen: chosen, ownBundleIDs: own))
-        #expect(!SystemAudioRoute.launchChangesFilter(launched: "com.stackrover.klik.studio",
-                                                      chosen: chosen + ["com.stackrover.klik.studio"],
+        #expect(!SystemAudioRoute.launchChangesFilter(launched: "com.stackrover.cue.studio",
+                                                      chosen: chosen + ["com.stackrover.cue.studio"],
                                                       ownBundleIDs: own))
         // The rebuilt filter is the plan against what runs now: both, in the chosen order.
         let now = SystemAudioRoute.plan(systemAudio: true, chosen: chosen,

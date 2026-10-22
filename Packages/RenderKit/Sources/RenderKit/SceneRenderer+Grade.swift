@@ -102,8 +102,8 @@ public struct CubeLUT: Equatable, Sendable {
             switch self {
             case .unreadable: "That file couldn't be read."
             case .noSize: "That isn't a .cube colour table: it doesn't say how big it is."
-            case .oneDimensional: "That is a one-dimensional table. Klik Studio reads 3D .cube tables."
-            case .tooLarge(let size): "That table is \(size) steps a side. Klik Studio reads tables of up to \(CubeLUT.largest)."
+            case .oneDimensional: "That is a one-dimensional table. Cue Studio reads 3D .cube tables."
+            case .tooLarge(let size): "That table is \(size) steps a side. Cue Studio reads tables of up to \(CubeLUT.largest)."
             case .wrongCount(let expected, let found): "That table should have \(expected) entries and has \(found)."
             case .badLine(let line): "Line \(line) of that table isn't three numbers."
             }

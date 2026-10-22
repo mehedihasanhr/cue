@@ -70,7 +70,7 @@ A review of the features added in the last days — transcript cuts, subtitles, 
 | Find Sensitive Information put masks over an added movie — and a freeze frame of one — at the seconds the text was read in the recording | `Timeline.pieces(ofSource:)` walked every clip, and an imported clip's source times are its own file's. Imported clips are now skipped, as `timelineTime(atSource:)` already did | `BugHuntTests.sensitiveSkipsImportedClips` |
 | Shorten Pauses cut the middle out of a title slide (or freeze frame, or added movie) put between two spoken lines | To the transcript the slide is just a long silence. Gaps that touch a clip which does not play the recording are left alone | `BugHuntTests.pausesLeaveTitlesAlone` |
 | Picking the last word before a title slide and the first after it, then pressing Delete, cut the title slide too; Remove Line from Video did the same for a caption stretched over a slide | Neighbouring picked words are one cut, silence between included. Cuts made from what was said now have the clips that are not the recording taken back out (`TranscriptEditing.keepingHolds`), in word cuts and in Remove Line | `BugHuntTests.wordCutsLeaveTitlesAlone` |
-| File › Add Recording… could not pick a recording: every `.klikrec` was greyed out | The panel allowed folders only, on the belief that no type was declared — but `StudioInfo.plist` exports `com.stackrover.klik.recording` as a package, which the panel shows as a file. Files of that type are now allowed, folders still are | App; traced (not yet seen on screen) |
+| File › Add Recording… could not pick a recording: every `.cuerec` was greyed out | The panel allowed folders only, on the belief that no type was declared — but `StudioInfo.plist` exports `com.stackrover.cue.recording` as a package, which the panel shows as a file. Files of that type are now allowed, folders still are | App; traced (not yet seen on screen) |
 | Translate Captions sent empty lines for translation, and could apply a translation that finished just after Cancel | Empty and whitespace-only captions are left out of the batch (with no source language set, a line with no words has no language to find); the task checks for cancellation before applying | App; not run end to end |
 
 ## Finding sensitive text (2026-09-29)
@@ -161,7 +161,7 @@ Recordings made before these fixes keep their old timing. The manifest's `pointe
 | 22 | The recorder bar changed width about its left edge | The bar sat off-centre for the whole of every take, and drifted further left each time | The bar keeps an anchor: the middle of its bottom edge | Checked on screen |
 | 23 | Every recording opened another editor window | Windows piled up | One editor; opening another recording replaces it | Checked on screen |
 | 24 | "Automatic" encoder asked whether the Mac can *decode* HEVC | A Mac that can play HEVC but not encode it in hardware would encode on the processor | Asks for a hardware encoder | — |
-| 25 | Studio told Klik it could not export GIFs or make captions | Out-of-date capability list | Both reported as supported | — |
+| 25 | Studio told Cue it could not export GIFs or make captions | Out-of-date capability list | Both reported as supported | — |
 | 26 | A doc comment and `@discardableResult` had come loose from `addBlur` and attached to `addSound` | Two compiler warnings | Put back | Build |
 | 27 | 12 compiler warnings in the app, 4 in the packages | Noise that hides real ones | All fixed; the build is clean | Build |
 | 28 | A playback test waited a fixed 0.7 s for the audio clock | Failed whenever a Bluetooth headset was asleep | Waits until the clock is moving | 15 runs, no failures |
@@ -325,7 +325,7 @@ Measured on a real take (34 s, 8 auto zooms at 1.8×) with `studiolab camera <pa
 
 ## Known and not yet fixed
 
-- **Resizing a window before recording is hidden while the app is sandboxed.** Klik Studio (and Klik) ship with the App Sandbox, which does not let an app drive another app's windows through Accessibility even with the grant. The presets and the resize code are built and the fitting logic is tested (`WindowSizingTests`); the menu appears only in a build without the sandbox. Offering it for real needs either dropping the sandbox or a helper allowed to do it.
+- **Resizing a window before recording is hidden while the app is sandboxed.** Cue Studio (and Cue) ship with the App Sandbox, which does not let an app drive another app's windows through Accessibility even with the grant. The presets and the resize code are built and the fitting logic is tested (`WindowSizingTests`); the menu appears only in a build without the sandbox. Offering it for real needs either dropping the sandbox or a helper allowed to do it.
 
 | Item | Notes |
 |---|---|
@@ -334,7 +334,7 @@ Measured on a real take (34 s, 8 auto zooms at 1.8×) with `studiolab camera <pa
 | Caption translation has not been run end to end | The first use of a language can open the system's download sheet |
 | System audio from chosen apps has not been recorded on a real take | The route, both stream configurations and the launch rule are tested; the second, audio-only stream, and the filter swap when a chosen app launches mid-take, have not been run against real apps on this Mac, because tests here must not capture the screen |
 | The Shortcuts page and the bar's system audio menu have not been looked at on screen | Built; the rules behind them are tested. Seventy editor rows are behind a filter field, which needs checking by eye |
-| Resizing a window before recording has not been run on a real window | `WindowResizer` is built and compiles; the rules it follows are tested, but tests here must never move somebody's windows. Klik Studio is sandboxed, and whether macOS lets a sandboxed app set another app's window size once Accessibility is granted still has to be checked on a real take — keyboard capture reads through the same grant, but reading is not writing |
+| Resizing a window before recording has not been run on a real window | `WindowResizer` is built and compiles; the rules it follows are tested, but tests here must never move somebody's windows. Cue Studio is sandboxed, and whether macOS lets a sandboxed app set another app's window size once Accessibility is granted still has to be checked on a real take — keyboard capture reads through the same grant, but reading is not writing |
 | A zoom's framing box on the preview shows the zoom's own scale | With the whole video held zoomed in, a zoom is that much further in than its box shows. The render is right; the box is not multiplied |
 | The Sway, Loop and whole-video Zoom sections and the window Size menu have not been looked at on screen | Built; the logic under them is tested |
 | Several recordings in one project, importing a video, iPhone and iPad recording, freehand annotations | Not built |
@@ -343,5 +343,5 @@ Measured on a real take (34 s, 8 auto zooms at 1.8×) with `studiolab camera <pa
 | iPhone and iPad recording, freehand annotations | Not built |
 | The transcript's word picking, the font pickers, the export sheet's Target size and the safe-zone overlay have not been looked at on screen | Built and compiled with tests for the logic and the drawing; the views still need checking by eye, in light and dark |
 | Text-field zooms only exist when keyboard shortcuts are recorded — **fixed** | Field focus now follows Record what has focus on its own. See Bug hunt (2026-09-30) |
-| Results are never sent back to Klik | The helper service does not exist yet |
+| Results are never sent back to Cue | The helper service does not exist yet |
 | One fidelity test failed once in about 20 full runs and has not failed since | Watching. It compares exact bytes while other tests render in parallel |

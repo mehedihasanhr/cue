@@ -436,7 +436,7 @@ public struct RecordedCursor: Equatable, Sendable {
 
 /// Which pointer to draw.
 ///
-/// Klik draws its own rather than shipping Apple's cursor artwork, so this is a small set
+/// Cue draws its own rather than shipping Apple's cursor artwork, so this is a small set
 /// of shapes the renderer knows how to make — not a name from the system.
 public enum CursorShapeKind: String, Equatable, Sendable {
     case arrow, iBeam, pointingHand, openHand, crosshair, resizeHorizontal, resizeVertical

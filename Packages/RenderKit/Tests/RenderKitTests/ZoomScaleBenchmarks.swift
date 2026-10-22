@@ -15,9 +15,9 @@ import TimelineKit
 ///
 /// Off by default, like the other benchmarks:
 ///
-///     KLIK_BENCH=1 swift test --filter ZoomScaleBenchmarks
-@Suite(.enabled(if: ProcessInfo.processInfo.environment["KLIK_BENCH"] != nil,
-                "set KLIK_BENCH=1 to measure"),
+///     CUE_BENCH=1 swift test --filter ZoomScaleBenchmarks
+@Suite(.enabled(if: ProcessInfo.processInfo.environment["CUE_BENCH"] != nil,
+                "set CUE_BENCH=1 to measure"),
        .serialized,
        .timeLimit(.minutes(5)))
 struct ZoomScaleBenchmarks {

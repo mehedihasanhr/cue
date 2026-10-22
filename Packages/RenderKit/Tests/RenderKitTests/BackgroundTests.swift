@@ -32,12 +32,12 @@ struct BackgroundTests {
     }
 
     @Test func aWallpaperNobodyCanResolveIsVisiblyMissing() {
-        let layer = DefaultBackgroundResolver().layer(for: .wallpaper(id: "klik:ocean"), packageURL: nil)
+        let layer = DefaultBackgroundResolver().layer(for: .wallpaper(id: "cue:ocean"), packageURL: nil)
         #expect(layer == .missing, "a forgotten resolver must fail loudly, not quietly differently")
     }
 
     @Test func aPackageRelativeImageResolvesAgainstTheProject() {
-        let package = URL(fileURLWithPath: "/tmp/Take.klikrec")
+        let package = URL(fileURLWithPath: "/tmp/Take.cuerec")
         let layer = DefaultBackgroundResolver().layer(for: .image(path: "Backgrounds/a.heic"),
                                                       packageURL: package)
         #expect(layer == .image(url: package.appendingPathComponent("Backgrounds/a.heic")))

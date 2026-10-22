@@ -1171,7 +1171,7 @@ impl VideoEncoder {
         Ok(SendDirectX::new(cache.surface.0.clone()))
     }
 
-    /// Klik Studio: moves the start of the video later by `ticks` (100 ns), so the frames
+    /// Cue Studio: moves the start of the video later by `ticks` (100 ns), so the frames
     /// after a pause follow straight on from those before it, with no gap for the pause.
     #[inline]
     pub fn skip_paused(&mut self, ticks: i64) {

@@ -97,7 +97,7 @@ pub fn start(app: &AppHandle, mode: Mode) -> Result<()> {
     for (index, rect) in bounds.into_iter().enumerate() {
         let label = overlay_label(index);
         let window = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
-            .title("Klik")
+            .title("Cue")
             .decorations(false)
             .resizable(false)
             .always_on_top(true)
@@ -188,7 +188,7 @@ fn close_overlays(app: &AppHandle) {
     }
 }
 
-/// The frozen picture of display `index`, for the `klik://` protocol.
+/// The frozen picture of display `index`, for the `cue://` protocol.
 pub fn frame_png(app: &AppHandle, session_id: &str, index: usize) -> Option<Arc<Vec<u8>>> {
     let state = app.state::<AppState>();
     let session = state.session.lock().unwrap();

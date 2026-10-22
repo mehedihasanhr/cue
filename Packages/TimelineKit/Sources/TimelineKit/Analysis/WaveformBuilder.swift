@@ -196,5 +196,5 @@ public struct WaveformBuilder: Sendable {
         return (UInt64(size), modified.timeIntervalSinceReferenceDate)
     }
 
-    private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "waveform")
+    private static let log = Logger(subsystem: "com.stackrover.cue.studio", category: "waveform")
 }

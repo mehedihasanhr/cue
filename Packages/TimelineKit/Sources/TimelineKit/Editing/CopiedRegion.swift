@@ -262,25 +262,25 @@ public enum CopiedRegion: Equatable, Sendable {
         let length = String(format: "%.2fs", duration.seconds)
         switch self {
         case .zoom(let r):
-            return "Klik zoom · \(String(format: "%.1f", r.scale))× · \(length)"
+            return "Cue zoom · \(String(format: "%.1f", r.scale))× · \(length)"
         case .blur(let r):
-            return "Klik mask · \(r.style.rawValue) · \(length)"
+            return "Cue mask · \(r.style.rawValue) · \(length)"
         case .annotation(let r):
             switch r.kind {
-            case .text(let text): return "Klik annotation · “\(text)” · \(length)"
-            case .arrow: return "Klik annotation · arrow · \(length)"
-            case .rectangle: return "Klik annotation · rectangle · \(length)"
-            case .image(let path): return "Klik annotation · \((path as NSString).lastPathComponent) · \(length)"
-            case .callout(let text, _): return "Klik callout · “\(text)” · \(length)"
+            case .text(let text): return "Cue annotation · “\(text)” · \(length)"
+            case .arrow: return "Cue annotation · arrow · \(length)"
+            case .rectangle: return "Cue annotation · rectangle · \(length)"
+            case .image(let path): return "Cue annotation · \((path as NSString).lastPathComponent) · \(length)"
+            case .callout(let text, _): return "Cue callout · “\(text)” · \(length)"
             case .ellipse, .loop, .line, .highlight, .step:
-                return "Klik annotation · \(r.kind.label.lowercased()) · \(length)"
+                return "Cue annotation · \(r.kind.label.lowercased()) · \(length)"
             }
         case .caption(let r):
             // The caption's own words, which are the thing somebody pasting a caption
             // elsewhere actually wants.
             return r.text
         case .audio(let r):
-            return "Klik sound · \((r.path as NSString).lastPathComponent) · \(length)"
+            return "Cue sound · \((r.path as NSString).lastPathComponent) · \(length)"
         case .cursor(let r):
             // Every override the stretch carries, so a spotlight or magnifier stretch is not
             // described as a calmed one.
@@ -290,11 +290,11 @@ public enum CopiedRegion: Equatable, Sendable {
             if r.spotlights { what.append("spotlit") }
             if r.magnifies { what.append("magnified") }
             if what.isEmpty { what.append("calmed") }
-            return "Klik pointer · \(what.joined(separator: ", ")) · \(length)"
+            return "Cue pointer · \(what.joined(separator: ", ")) · \(length)"
         case .key(let r):
-            return "Klik shortcut · \(r.title) · \(length)"
+            return "Cue shortcut · \(r.title) · \(length)"
         case .cameraLayout(let r):
-            return "Klik camera · \(r.layout.title.lowercased()) · \(length)"
+            return "Cue camera · \(r.layout.title.lowercased()) · \(length)"
         }
     }
 }

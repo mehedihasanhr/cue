@@ -6,7 +6,7 @@ import { DEFAULT_GRADIENT, type Background, type RGBA } from "../model/timeline"
 
 type Stops = [number, number, number][];
 
-/** `klik:<name>` wallpapers: evenly spread stops at a quarter turn (bottom to top). */
+/** `cue:<name>` wallpapers: evenly spread stops at a quarter turn (bottom to top). */
 export const PRESETS: Record<string, Stops> = {
   ocean: [[0.27, 0.65, 1], [0.36, 0.32, 0.9]],
   sunset: [[1, 0.55, 0.35], [0.98, 0.29, 0.53]],
@@ -41,7 +41,8 @@ export function gradientOf(b: Background): { stops: string[]; angle: number } | 
     case "gradient":
       return { stops: [css(b.from), css(b.to)], angle: b.angle };
     case "wallpaper": {
-      const name = b.id.startsWith("klik:") ? b.id.slice(5) : "";
+      // `klik:` is from before the app was renamed Cue.
+      const name = /^(cue|klik):/.test(b.id) ? b.id.slice(b.id.indexOf(":") + 1) : "";
       const preset = PRESETS[name];
       if (preset) return { stops: preset.map((c) => css(c)), angle: 0.25 };
       // A Mac system wallpaper isn't on this PC: the default stands in.

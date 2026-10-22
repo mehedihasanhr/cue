@@ -150,6 +150,7 @@ struct PointerStylingModelTests {
         let expected: [String: CursorStyle.Appearance] = [
             "blackArrow": .macOS14, "softArrow": .macOS26, "colourArrow": .macOS26Colour,
             "hand": .macOS26, "touch": .dot, "ring": .dot, "crosshair": .asRecorded,
+            "classicKlik": .classicCue,
         ]
         for (raw, appearance) in expected {
             let style = try decode(CursorStyle.self, #"{"appearance": "\#(raw)"}"#)
@@ -158,6 +159,6 @@ struct PointerStylingModelTests {
         // And the system pointers follow the pointer's shape, as the recorded one does.
         #expect(CursorStyle.Appearance.allCases.filter(\.followsRecordedShape)
                 == [.asRecorded, .macOS26, .macOS14, .macOS26White, .macOS14White, .macOS26Colour,
-                    .classicKlik, .gradient, .neon, .frost])
+                    .classicCue, .gradient, .neon, .frost])
     }
 }

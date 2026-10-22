@@ -5,8 +5,8 @@ import RecordKit
 /// `studiolab pointer [--target display|area|window] [--no-pause] [--out <folder>]` —
 /// record a scripted pointer, then measure the recording.
 ///
-/// `studiolab analyze <recording.klikrec>` — measure one that was already made.
-/// `studiolab frames <recording.klikrec> <from> <to>` — every frame and sample in a stretch.
+/// `studiolab analyze <recording.cuerec>` — measure one that was already made.
+/// `studiolab frames <recording.cuerec> <from> <to>` — every frame and sample in a stretch.
 /// `studiolab stream` — ask ScreenCaptureKit what its timestamps mean.
 ///
 /// `studiolab stage` is the blank window the pointer performs over. It is a process of its

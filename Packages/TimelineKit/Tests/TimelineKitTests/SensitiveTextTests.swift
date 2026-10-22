@@ -117,7 +117,7 @@ struct SensitiveTextTests {
         "The quick brown fox jumps over the lazy dog", "Settings", "Password", "Forgot password?",
         "Password: Required", "Change password…", "Enter your email address", "@username", "Sign in with Apple",
         "NSLayoutConstraint", "handleUserProfileUpdate", "ThisIsAVeryLongIdentifierName2024",
-        "com.stackrover.klik.studio", "internationalization-and-localization",
+        "com.stackrover.cue.studio", "internationalization-and-localization",
         "Loading.....", "Introduction .......... 3", "Wait for it .....",
     ])
     func ordinaryWords(_ line: String) {
@@ -158,7 +158,7 @@ struct SensitiveTextTests {
 
     @Test("Hashes, ids, files and paths", arguments: [
         "4dd7c30", "a3f5c9e2b1d4f6a8c0e2b4d6f8a0c2e4b6d8f0a2", "123e4567-e89b-12d3-a456-426614174000",
-        "icon@2x.png", "git@github.com:stackrover/klik.git", "/Users/jane/Documents/Projects/KlikStudio/Package.swift",
+        "icon@2x.png", "git@github.com:stackrover/cue.git", "/Users/jane/Documents/Projects/CueStudio/Package.swift",
         "Screenshot_2024-09-29_at_10.30.45.png", "IMG_20240929_123456.jpg", "https://example.com/docs/getting-started",
         "•••• 4242", "•••• •••• •••• 4242",
     ])

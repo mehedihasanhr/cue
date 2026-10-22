@@ -59,11 +59,11 @@ mod tests {
     fn reads_the_capture_flag() {
         let args = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         let action = |list: &[&str]| from_args(&args(list));
-        assert_eq!(action(&["klik.exe", "--capture", "window"]).as_deref(), Some("captureWindow"));
-        assert_eq!(action(&["klik.exe", "--capture"]).as_deref(), Some("captureArea"));
-        assert_eq!(action(&["klik.exe", "--autostart"]), None);
-        assert_eq!(action(&["klik.exe", "--open", "settings"]).as_deref(), Some("showSettings"));
-        assert_eq!(action(&["klik.exe", "--open", "Settings/Island"]).as_deref(), Some("showSettings/island"));
-        assert_eq!(action(&["klik.exe", "--open", "history"]).as_deref(), Some("showHistory"));
+        assert_eq!(action(&["cue.exe", "--capture", "window"]).as_deref(), Some("captureWindow"));
+        assert_eq!(action(&["cue.exe", "--capture"]).as_deref(), Some("captureArea"));
+        assert_eq!(action(&["cue.exe", "--autostart"]), None);
+        assert_eq!(action(&["cue.exe", "--open", "settings"]).as_deref(), Some("showSettings"));
+        assert_eq!(action(&["cue.exe", "--open", "Settings/Island"]).as_deref(), Some("showSettings/island"));
+        assert_eq!(action(&["cue.exe", "--open", "history"]).as_deref(), Some("showHistory"));
     }
 }

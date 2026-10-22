@@ -17,9 +17,9 @@ impl AppState {
     }
 }
 
-/// `Pictures\Klik`, where captures go unless Settings says otherwise.
+/// `Pictures\Cue`, where captures go unless Settings says otherwise.
 pub fn default_captures_folder() -> PathBuf {
-    dirs_pictures().join("Klik")
+    dirs_pictures().join("Cue")
 }
 
 fn dirs_pictures() -> PathBuf {

@@ -7,13 +7,13 @@ import RenderKit
 import TimelineKit
 import UniformTypeIdentifiers
 
-/// `studiolab spotshot <recording.klikrec> <second> <out.png>` — one frame of a recording
+/// `studiolab spotshot <recording.cuerec> <second> <out.png>` — one frame of a recording
 /// with the pointer spotlight on, written out, and the brightness across its edge printed.
 @MainActor
 enum SpotShot {
     static func run(_ arguments: [String]) async -> Int32 {
         guard arguments.count >= 3, let at = Double(arguments[1]) else {
-            print("usage: studiolab spotshot <recording.klikrec> <second> <out.png>")
+            print("usage: studiolab spotshot <recording.cuerec> <second> <out.png>")
             return 2
         }
         let package = RecordingPackage(url: URL(fileURLWithPath: arguments[0]))

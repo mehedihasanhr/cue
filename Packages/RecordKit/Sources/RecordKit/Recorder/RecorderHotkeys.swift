@@ -41,7 +41,7 @@ public final class RecorderHotkeys {
 
     /// Registers what is wanted now and lets go of what is not.
     ///
-    /// A shortcut with a problem — one macOS or Klik already has, one that takes typing
+    /// A shortcut with a problem — one macOS or Cue already has, one that takes typing
     /// away — is never registered even if it was stored: Settings refuses them, and a
     /// stored one from an older build must not slip past that.
     public func update(shortcuts: RecorderShortcuts, isEnabled: Bool, state: RecordingSession.State) {

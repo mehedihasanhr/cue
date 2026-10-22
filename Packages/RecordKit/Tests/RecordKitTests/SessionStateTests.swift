@@ -21,7 +21,7 @@ struct SessionStateTests {
          .recording(startedAt: started),
          .paused(startedAt: started, at: started.addingTimeInterval(4)),
          .finishing,
-         .finished(URL(fileURLWithPath: "/tmp/take.klikrec")),
+         .finished(URL(fileURLWithPath: "/tmp/take.cuerec")),
          .failed(.targetDisappeared)]
     }
 
@@ -62,7 +62,7 @@ struct SessionStateTests {
     }
 
     @Test func `nothing may be stopped or discarded once it has already finished`() {
-        let finished = State.finished(URL(fileURLWithPath: "/tmp/take.klikrec"))
+        let finished = State.finished(URL(fileURLWithPath: "/tmp/take.cuerec"))
         #expect(!finished.isTaking)
         #expect(!finished.isBusy)
     }

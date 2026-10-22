@@ -126,7 +126,7 @@ struct WaveformTests {
     /// voiceovers got waveforms of their own, so the cache needed a name per sound rather
     /// than one file called `peaks.bin`.
     @Test func eachSoundGetsACacheFileOfItsOwn() {
-        let package = RecordingPackage(url: URL(fileURLWithPath: "/tmp/nowhere.klik"))
+        let package = RecordingPackage(url: URL(fileURLWithPath: "/tmp/nowhere.cue"))
         let recording = WaveformBuilder.cacheURL(in: package)
         let music = WaveformBuilder.cacheURL(in: package, key: WaveformBuilder.key(forPath: "Audio/music.m4a"))
         let voice = WaveformBuilder.cacheURL(in: package, key: WaveformBuilder.key(forPath: "Audio/voice.m4a"))

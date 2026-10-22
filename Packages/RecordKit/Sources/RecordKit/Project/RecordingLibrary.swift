@@ -50,7 +50,7 @@ public enum RecordingLibraryError: Error, Equatable, LocalizedError {
     case nameIsHidden
     case nameTaken(String)
     case notARecording
-    /// Everything destructive here is confined to the library folder. A `.klikrec`
+    /// Everything destructive here is confined to the library folder. A `.cuerec`
     /// somewhere else is somebody else's file.
     case outsideLibrary
     case missing
@@ -61,7 +61,7 @@ public enum RecordingLibraryError: Error, Equatable, LocalizedError {
         case .nameContainsPathSeparator: "A name can\u{2019}t contain \u{201C}/\u{201D} or \u{201C}:\u{201D}."
         case .nameIsHidden: "A name can\u{2019}t start with a dot."
         case .nameTaken(let name): "There\u{2019}s already a recording called \u{201C}\(name)\u{201D}."
-        case .notARecording: "That isn\u{2019}t a Klik Studio recording."
+        case .notARecording: "That isn\u{2019}t a Cue Studio recording."
         case .outsideLibrary: "That recording isn\u{2019}t in the library folder."
         case .missing: "That recording is no longer there."
         }
@@ -106,7 +106,7 @@ public enum RecordingOrder: String, CaseIterable, Identifiable, Sendable {
 /// library must never write to it.
 ///
 /// **On destruction.** Every operation that changes something goes through `check(_:)`,
-/// which refuses anything that is not a `.klikrec` sitting directly in this folder. A
+/// which refuses anything that is not a `.cuerec` sitting directly in this folder. A
 /// screen recording can be the only copy of something, so nothing here unlinks a file:
 /// deletion is the Finder's Trash, which the user can undo and this code cannot.
 public struct RecordingLibrary: Sendable {
@@ -303,7 +303,7 @@ public struct RecordingLibrary: Sendable {
 
     /// Refuses anything that is not one of this library's recordings.
     ///
-    /// Three questions, all cheap and all worth asking every time: is it a `.klikrec`, is
+    /// Three questions, all cheap and all worth asking every time: is it a `.cuerec`, is
     /// it in this folder — this folder itself, not one beneath it — and is it still
     /// there. Two accidental recordings have already been made by this project's own
     /// bugs; a bug that *deletes* one must not be reachable.

@@ -61,7 +61,7 @@ public final class SessionWriter: @unchecked Sendable {
     public private(set) var droppedFrames = 0
     public private(set) var audioGaps = 0
 
-    private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "writer")
+    private static let log = Logger(subsystem: "com.stackrover.cue.studio", category: "writer")
 
     public init(url: URL,
                 pixelSize: CGSize,

@@ -5,8 +5,8 @@ public extension CursorStyle {
     /// What the pointer is drawn as.
     ///
     /// `asRecorded` is everything that came before there was a choice: the picture the
-    /// recording kept, or Klik's drawing of the shape the pointer had. The others — the
-    /// system's own pointers, of macOS 26 and before it, and a few drawings of Klik's —
+    /// recording kept, or Cue's drawing of the shape the pointer had. The others — the
+    /// system's own pointers, of macOS 26 and before it, and a few drawings of Cue's —
     /// are made at the size of the frame being written, so they are as sharp in a 4K
     /// export as in the preview, and each one is placed by its own point, which for the
     /// dot is its middle.
@@ -26,9 +26,9 @@ public extension CursorStyle {
         /// macOS 26's pointer filled with the chosen colour and outlined in white, the way
         /// Accessibility's pointer fill colour draws it.
         case macOS26Colour
-        /// Klik's own classic arrow and pointing hand, crisp black and white, with the
+        /// Cue's own classic arrow and pointing hand, crisp black and white, with the
         /// classic system shapes for the rest.
-        case classicKlik
+        case classicCue
         /// macOS 26's shapes filled with a gradient from the chosen colour into its
         /// neighbour on the colour wheel, outlined in white, with a shadow of its colour.
         case gradient
@@ -60,7 +60,7 @@ public extension CursorStyle {
             case .macOS26White: "macOS 26 white"
             case .macOS14White: "macOS 14 white"
             case .macOS26Colour: "macOS 26 colour"
-            case .classicKlik: "Classic Klik"
+            case .classicCue: "Classic Cue"
             case .dart: "Dart"
             case .dartBlack: "Dart black"
             case .dartColour: "Dart colour"
@@ -79,6 +79,8 @@ public extension CursorStyle {
         private static let retired: [String: Appearance] = [
             "blackArrow": .macOS14, "softArrow": .macOS26, "colourArrow": .macOS26Colour,
             "hand": .macOS26, "touch": .dot, "ring": .dot, "crosshair": .asRecorded,
+            // The app was called Klik before it was Cue.
+            "classicKlik": .classicCue,
         ]
 
         public init(from decoder: Decoder) throws {
@@ -97,7 +99,7 @@ public extension CursorStyle {
         public var isSystemPointer: Bool {
             switch self {
             case .macOS26, .macOS14, .macOS26White, .macOS14White, .macOS26Colour: true
-            case .asRecorded, .largeArrow, .minimal, .dot, .clicksOnly, .gradient, .neon, .frost, .classicKlik,
+            case .asRecorded, .largeArrow, .minimal, .dot, .clicksOnly, .gradient, .neon, .frost, .classicCue,
                  .dart, .dartBlack, .dartColour: false
             }
         }
@@ -106,7 +108,7 @@ public extension CursorStyle {
         /// styled ones built on them — and so has a drawing for every shape the pointer
         /// takes.
         public var usesSystemShapes: Bool {
-            isSystemPointer || self == .gradient || self == .neon || self == .frost || self == .classicKlik
+            isSystemPointer || self == .gradient || self == .neon || self == .frost || self == .classicCue
         }
 
         /// Whether anything is drawn where the pointer is.

@@ -1,4 +1,4 @@
-//! Klik for Windows: the screenshot tool, in the tray.
+//! Cue for Windows: the screenshot tool, in the tray.
 
 mod actions;
 mod assets;
@@ -35,7 +35,7 @@ use tauri::{Manager, RunEvent};
 pub fn run() {
     tauri::Builder::default()
         // A second launch — from the Start menu, say — opens History instead of starting
-        // another Klik that would fight this one for the shortcuts. `klik --capture area`
+        // another Cue that would fight this one for the shortcuts. `cue --capture area`
         // takes a capture instead, for scripts and other launchers.
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             #[cfg(debug_assertions)]
@@ -59,8 +59,8 @@ pub fn run() {
             std::thread::spawn(move || responder.respond(protocol::handle(&app, request)));
         })
         .setup(|app| {
-            let roaming = app.path().config_dir()?.join("Klik");
-            let local = app.path().local_data_dir()?.join("Klik");
+            let roaming = app.path().config_dir()?.join("Cue");
+            let local = app.path().local_data_dir()?.join("Cue");
             let settings_path = roaming.join("settings.json");
             let settings = Settings::load(&settings_path);
             let folder = settings.save_folder.clone().unwrap_or_else(default_captures_folder);
@@ -87,7 +87,7 @@ pub fn run() {
             }
             *app.state::<AppState>().conflicts.lock().unwrap() = conflicts;
 
-            // Started by hand, show something, so it is plain that Klik is running; started
+            // Started by hand, show something, so it is plain that Cue is running; started
             // at login, stay in the tray.
             app.manage(updates::Updates::default());
             updates::start(app.handle().clone());
@@ -172,9 +172,9 @@ pub fn run() {
             updates::update_install,
         ])
         .build(tauri::generate_context!())
-        .expect("error while starting Klik")
+        .expect("error while starting Cue")
         .run(|_app, event| {
-            // Closing the last window leaves Klik in the tray; only Quit ends it.
+            // Closing the last window leaves Cue in the tray; only Quit ends it.
             if let RunEvent::ExitRequested { api, code: None, .. } = event {
                 api.prevent_exit();
             }

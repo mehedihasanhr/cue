@@ -4,7 +4,7 @@ import RecordKit
 import RenderKit
 import TimelineKit
 
-/// `studiolab camera <recording.klikrec>` — how the camera actually moves through every
+/// `studiolab camera <recording.cuerec>` — how the camera actually moves through every
 /// zoom of a recording, measured frame by frame from the same scenes the editor draws.
 ///
 /// "The zoom is too fast" and "it shakes before it settles" are judgements about motion,
@@ -26,7 +26,7 @@ enum CameraCheck {
 
     static func run(_ arguments: [String]) async -> Int32 {
         guard let path = arguments.first else {
-            print("usage: studiolab camera <recording.klikrec>")
+            print("usage: studiolab camera <recording.cuerec>")
             return 2
         }
         let package = RecordingPackage(url: URL(fileURLWithPath: path))

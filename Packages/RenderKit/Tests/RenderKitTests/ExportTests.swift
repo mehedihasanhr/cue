@@ -104,7 +104,7 @@ struct ExportTests {
     /// real file rather than a mock of one.
     @Test func aRecordingGoesInAndAVideoComesOut() async throws {
         let folder = FileManager.default.temporaryDirectory
-            .appendingPathComponent("klik-export-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("cue-export-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
 
@@ -428,7 +428,7 @@ struct ExportTests {
     /// Somewhere to write, which the caller removes with `FileManager` when it is done.
     static func scratch() throws -> URL {
         let folder = FileManager.default.temporaryDirectory
-            .appendingPathComponent("klik-export-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("cue-export-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         return folder
     }

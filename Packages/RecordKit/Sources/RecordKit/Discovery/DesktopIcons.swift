@@ -8,7 +8,7 @@ import ScreenCaptureKit
 /// Two things are left out, for two different reasons, and ScreenCaptureKit makes them
 /// awkward to say together:
 ///
-/// - **Klik Studio and Klik themselves** — the bar, the menu bar icon and its menu, the
+/// - **Cue Studio and Cue themselves** — the bar, the menu bar icon and its menu, the
 ///   speaker notes, the camera preview, any alert. These are left out *by application*,
 ///   which is the only form that also covers a window opened halfway through the take:
 ///   the menu bar icon's menu, opened to press Stop, is a window that did not exist when

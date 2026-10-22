@@ -67,7 +67,7 @@ export default function Bar() {
       begin(e.payload);
     });
     const cancelled = listen("picker:cancelled", () => studio.closePicker());
-    // What Klik asked for (`klik-studio://record`).
+    // What Cue asked for (`cue-studio://record`).
     const request = listen<{ target?: Record<string, unknown>; microphone?: boolean; systemAudio?: boolean; countdownSeconds?: number }>(
       "studio:request",
       (e) => {

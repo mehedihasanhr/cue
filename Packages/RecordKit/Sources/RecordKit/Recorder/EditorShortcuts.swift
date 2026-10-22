@@ -251,7 +251,7 @@ public enum EditorShortcutProblem: Equatable, Sendable {
     public var message: String {
         switch self {
         case .system(let name): "macOS uses this for \(name)."
-        case .app(let name): "Klik Studio uses this for \(name)."
+        case .app(let name): "Cue Studio uses this for \(name)."
         case .recorder(let action): "The recorder uses this from any app for \u{201C}\(action.title)\u{201D}."
         case .usedBy(let command): "Already used for \u{201C}\(command.title)\u{201D}."
         case .typesCharacter: "⌥ with a key types a character. Add ⌘ or ⌃."

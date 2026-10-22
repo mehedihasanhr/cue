@@ -11,7 +11,7 @@ import Testing
 struct DeviceTakeTests {
     private func package(device: RecordedDevice?) throws -> (RecordingPackage, URL) {
         let folder = FileManager.default.temporaryDirectory
-            .appendingPathComponent("KlikStudioTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("CueStudioTests-\(UUID().uuidString)", isDirectory: true)
         let package = try RecordingPackage.create(named: "Phone", in: folder)
         var manifest = RecordingManifest(
             name: "Phone",

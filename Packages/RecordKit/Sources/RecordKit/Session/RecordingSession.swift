@@ -5,7 +5,7 @@ import Observation
 import os
 import ScreenCaptureKit
 
-/// One recording, from "go" to a `.klikrec` package.
+/// One recording, from "go" to a `.cuerec` package.
 ///
 /// The conductor: it starts the screen, the microphone and the telemetry together on one
 /// clock, watches the disk, and stops everything in the right order. It is `@MainActor`
@@ -104,7 +104,7 @@ public final class RecordingSession {
     private let content = ShareableContentStore()
     private let disk = DiskSpaceMonitor()
     private var clock = RecordingClock()
-    private let queue = DispatchQueue(label: "com.stackrover.klik.studio.capture", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "com.stackrover.cue.studio.capture", qos: .userInitiated)
 
     private var package: RecordingPackage?
     private var configuration: RecordingConfiguration?
@@ -162,7 +162,7 @@ public final class RecordingSession {
     private var pixelSize: CGSize = .zero
     private var displayScale: Double = 2
 
-    private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "session")
+    private static let log = Logger(subsystem: "com.stackrover.cue.studio", category: "session")
 
     /// One audio source being written, and what the manifest will say about it.
     private struct AudioLane {

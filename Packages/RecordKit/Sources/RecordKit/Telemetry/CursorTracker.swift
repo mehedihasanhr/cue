@@ -125,7 +125,7 @@ public final class CursorMapper: @unchecked Sendable {
             """)
     }
 
-    private static let log = Logger(subsystem: "com.stackrover.klik.recordkit", category: "cursor")
+    private static let log = Logger(subsystem: "com.stackrover.cue.recordkit", category: "cursor")
 
     /// The arithmetic of `place(_:)`, on its own so it can be checked without a stream.
     ///
@@ -201,7 +201,7 @@ public struct FrameGeometry: Sendable, Equatable {
 /// is polled more slowly on the main actor and read back under a lock — a pointer that
 /// changes shape 20 times a second is already an unusual second.
 public final class CursorTracker: @unchecked Sendable {
-    private static let log = Logger(subsystem: "com.stackrover.klik.recordkit", category: "cursor")
+    private static let log = Logger(subsystem: "com.stackrover.cue.recordkit", category: "cursor")
 
     private let queue: DispatchQueue
     private let cursorWriter: JSONLWriter
@@ -416,7 +416,7 @@ public final class CursorTracker: @unchecked Sendable {
 extension CursorShape {
     /// Names the system cursor.
     ///
-    /// Identity first, because it is free and right for Klik's own windows. It is almost
+    /// Identity first, because it is free and right for Cue's own windows. It is almost
     /// never the answer while recording, though: the pointer over another app's window —
     /// the browser being recorded — comes back from `currentSystem` as a fresh `NSCursor`
     /// every time, never `===` to `NSCursor.pointingHand` even when it is that hand. So

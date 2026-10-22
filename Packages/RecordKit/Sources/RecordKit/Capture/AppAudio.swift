@@ -152,7 +152,7 @@ public final class AppAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
     private var stream: SCStream?
     private var started = false
 
-    private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "app-audio")
+    private static let log = Logger(subsystem: "com.stackrover.cue.studio", category: "app-audio")
 
     public init(filter: SCContentFilter?, configuration: SCStreamConfiguration, writer: AudioTrackWriter) {
         self.filter = filter

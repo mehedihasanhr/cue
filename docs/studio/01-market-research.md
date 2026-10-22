@@ -7,7 +7,7 @@ Researched 2026-09-29. The full reports, with every source link, are in `docs/re
 | Screen Studio (the product to beat) | `docs/research/competitor-screen-studio.md` |
 | Open-source tools: Recordly, OpenScreen ("Open Studio"), Cap, OBS and others | `docs/research/competitors-open-source.md` |
 | Commercial tools: After Effects, Camtasia, ScreenFlow, Descript, Tella, Loom, FocuSee, Rotato, CleanShot X and newcomers | `docs/research/competitors-commercial.md` |
-| What Klik Studio already has | `docs/research/klik-studio-inventory.md` |
+| What Cue Studio already has | `docs/research/cue-studio-inventory.md` |
 
 This page is the summary. Feature-by-feature comparison is in `03-feature-list.md`.
 
@@ -108,4 +108,4 @@ The same complaints repeat across every product.
 1. **The base look is a commodity.** Auto zoom, a smooth pointer, backgrounds and motion blur now ship in a $35 tool and in free apps.
 2. **Reliability is the open gap.** Every competitor has open bugs for lost takes, drift, or preview that does not match export. The one user who went back to Screen Studio did so because cheaper tools were buggy.
 3. **Editing power is the second gap.** People export to another editor for annotations, extra masks, transitions or a second clip, and lose the pointer polish on the way.
-4. **Native and local are advantages we already have.** Klik Studio is a native Swift app that works offline, records each sound to its own file, and uses one renderer for preview and export.
+4. **Native and local are advantages we already have.** Cue Studio is a native Swift app that works offline, records each sound to its own file, and uses one renderer for preview and export.

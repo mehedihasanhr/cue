@@ -1,4 +1,4 @@
-//! Preferences, kept as one JSON file in `%APPDATA%\Klik\settings.json`.
+//! Preferences, kept as one JSON file in `%APPDATA%\Cue\settings.json`.
 //!
 //! Key names follow the Mac app's (`capture.after` there is `afterCapture` here) so the
 //! two read alike, but the file is this app's own: nothing on Windows reads macOS
@@ -23,7 +23,7 @@ pub struct Settings {
     pub after_capture: AfterCapture,
     /// Copy every capture to the clipboard as it is taken.
     pub copy_to_clipboard: bool,
-    /// Where captures are saved; `None` is `Pictures\Klik`.
+    /// Where captures are saved; `None` is `Pictures\Cue`.
     pub save_folder: Option<PathBuf>,
     /// Action → accelerator, in Tauri's syntax ("Alt+Shift+4"). Empty means none.
     pub shortcuts: BTreeMap<String, String>,
@@ -35,7 +35,7 @@ pub struct Settings {
     pub capture: CaptureSettings,
     pub clipboard: ClipboardSettings,
     pub updates: UpdateSettings,
-    /// Settings › Studio: what Klik asks Klik Studio for.
+    /// Settings › Studio: what Cue asks Cue Studio for.
     pub studio: crate::studio::StudioSettings,
     /// The editor's tool defaults, as the editor writes them (`editor.defaults` on the Mac).
     pub editor: serde_json::Value,
@@ -88,7 +88,7 @@ impl Default for IslandSettings {
     }
 }
 
-/// Where the Klik panel opens (Alt+Shift+K, the tray).
+/// Where the Cue panel opens (Alt+Shift+K, the tray).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct PanelSettings {
@@ -121,7 +121,7 @@ impl Default for CaptureSettings {
 #[serde(rename_all = "camelCase", default)]
 pub struct UpdateSettings {
     /// Download newer versions quietly and install them when the PC is left alone (or
-    /// Klik is quit); off, Klik only says there is one.
+    /// Cue is quit); off, Cue only says there is one.
     pub automatic: bool,
 }
 
@@ -167,7 +167,7 @@ impl Default for Settings {
     }
 }
 
-/// The Mac's ⌥⇧ set, as Alt+Shift: 3 full screen, 4 area, 6 window, T text, K Klik.
+/// The Mac's ⌥⇧ set, as Alt+Shift: 3 full screen, 4 area, 6 window, T text, K Cue.
 /// Win+Shift+S is left to Windows' own Snipping Tool.
 pub fn default_shortcuts() -> BTreeMap<String, String> {
     [
@@ -230,7 +230,7 @@ mod tests {
 
     #[test]
     fn round_trips() {
-        let dir = std::env::temp_dir().join(format!("klik-settings-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("cue-settings-{}", std::process::id()));
         let path = dir.join("settings.json");
         let mut settings = Settings::default();
         settings.shortcuts.insert("captureArea".into(), String::new());

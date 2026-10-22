@@ -1,11 +1,11 @@
 # Google Drive backup
 
-Klik Studio can back up recordings to the user's Google Drive. The user connects an account in **Settings › Storage › Google Drive**. After that:
+Cue Studio can back up recordings to the user's Google Drive. The user connects an account in **Settings › Storage › Google Drive**. After that:
 
 - Each saved recording uploads automatically. This can be switched off.
 - Any recording can be sent by hand from its menu in **Recordings**: *Upload to Google Drive*, *Copy Google Drive Link*, or *Open in Google Drive*.
 
-Recordings are uploaded to `Klik Studio/<recording name>/` in the user's Drive. Each folder mirrors the `.klikrec` package: `manifest.json`, `media/` and `telemetry/`. The `derived/` caches are not uploaded. The copy on the Mac is never removed.
+Recordings are uploaded to `Cue Studio/<recording name>/` in the user's Drive. Each folder mirrors the `.cuerec` package: `manifest.json`, `media/` and `telemetry/`. The `derived/` caches are not uploaded. The copy on the Mac is never removed.
 
 What has been uploaded is recorded in a `.drive.json` file inside each package. Uploading again only sends the files that changed. If an upload is interrupted, it carries on at the next launch.
 
@@ -22,15 +22,15 @@ What has been uploaded is recorded in a `.drive.json` file inside each package. 
    - `.../auth/userinfo.email`
 
    `drive.file` is non-sensitive, because it only covers files the app creates. Publishing the app therefore doesn't need Google's security review.
-5. **Clients › Create client**: choose application type **iOS** and enter bundle ID `com.stackrover.klik.studio`.
+5. **Clients › Create client**: choose application type **iOS** and enter bundle ID `com.stackrover.cue.studio`.
    - Use iOS, not *Desktop*. An iOS client has no secret, and it can return to the app on its reversed-client-ID URL scheme, which `ASWebAuthenticationSession` catches.
 6. Copy `Config/Google.xcconfig.example` to `Config/Google.xcconfig` (git ignores it), then paste in the client ID:
 
    ```
-   KLIK_GOOGLE_CLIENT_ID = 1234567890-abc123.apps.googleusercontent.com
+   CUE_GOOGLE_CLIENT_ID = 1234567890-abc123.apps.googleusercontent.com
    ```
 
-7. Rebuild Klik Studio. Without a client ID, the Connect button is disabled and explains why.
+7. Rebuild Cue Studio. Without a client ID, the Connect button is disabled and explains why.
 
 Release builds made from a clean worktree need `Config/Google.xcconfig` copied in, just like `Config/Signing.xcconfig`.
 
@@ -48,10 +48,10 @@ If Studio's use of Google data changes, update the privacy policy as well.
 
 | Piece | File |
 | --- | --- |
-| Sign-in: OAuth code flow with PKCE, token refresh and revoke | `KlikStudio/App/Cloud/GoogleOAuth.swift` |
-| Drive v3: folders, plus resumable uploads in 8 MiB chunks | `KlikStudio/App/Cloud/GoogleDriveClient.swift` |
-| Queue, auto-upload, per-recording state | `KlikStudio/App/Cloud/DriveStorage.swift` |
-| Refresh token storage (login keychain) | `KlikStudio/App/Cloud/StudioKeychain.swift` |
-| Settings UI | `KlikStudio/App/Settings/DriveSettingsGroup.swift` |
+| Sign-in: OAuth code flow with PKCE, token refresh and revoke | `CueStudio/App/Cloud/GoogleOAuth.swift` |
+| Drive v3: folders, plus resumable uploads in 8 MiB chunks | `CueStudio/App/Cloud/GoogleDriveClient.swift` |
+| Queue, auto-upload, per-recording state | `CueStudio/App/Cloud/DriveStorage.swift` |
+| Refresh token storage (login keychain) | `CueStudio/App/Cloud/StudioKeychain.swift` |
+| Settings UI | `CueStudio/App/Settings/DriveSettingsGroup.swift` |
 
 The access token is only kept in memory. The refresh token is stored in the keychain. When the user disconnects, the app revokes the grant with Google and forgets the account. Recordings that are already in Drive stay there.

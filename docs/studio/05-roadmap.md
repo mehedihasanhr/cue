@@ -40,7 +40,7 @@ Fix what is wrong before adding anything. Details and measurements are in `06-qu
 - [x] Window picker redesigned; opens over full-screen apps
 - [x] Recorder bar stays centred when it changes shape
 - [x] Clean build: no warnings
-- [x] Capabilities reported to Klik are correct
+- [x] Capabilities reported to Cue are correct
 - [x] Menu bar: one set of commands, every tool, Save, a Captions menu
 - [x] The settings panel follows the last thing chosen, tool or selection
 
@@ -91,7 +91,7 @@ Fix what is wrong before adding anything. Details and measurements are in `06-qu
 ### Frame
 - [x] Aspect ratios 4:5, 3:4, 16:10, custom
 - [x] Border
-- [x] Saved looks, as `.klikstyle` files, six built in
+- [x] Saved looks, as `.cuestyle` files, six built in
 
 ### Masks
 - [x] Spotlight (dim everything else)

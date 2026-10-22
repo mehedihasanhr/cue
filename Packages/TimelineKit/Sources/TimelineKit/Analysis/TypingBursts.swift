@@ -17,7 +17,7 @@ public struct TypingBurst: Equatable, Sendable {
 /// Finds the typing in a recording's presses.
 ///
 /// Reads the identity-less presses — the ones the recorder wrote as "a key went down"
-/// and nothing more — which is all that typing ever is in a `.klikrec`. A shortcut is
+/// and nothing more — which is all that typing ever is in a `.cuerec`. A shortcut is
 /// somebody operating the app, and is left out; the pure function here needs no other
 /// filter, because the privacy rule already sorted the two on the way in.
 public enum Typing {

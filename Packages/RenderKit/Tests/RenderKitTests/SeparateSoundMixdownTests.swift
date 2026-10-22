@@ -16,7 +16,7 @@ struct SeparateSoundMixdownTests {
         CMTime(seconds: seconds, preferredTimescale: 600)
     }
 
-    /// A throwaway package with some tones in it, standing in for a `.klikrec`.
+    /// A throwaway package with some tones in it, standing in for a `.cuerec`.
     ///
     /// The mixdown only ever resolves `packageURL + track.path` and opens the result, so a
     /// folder of audio files is a faithful stand-in and far less machinery than a real

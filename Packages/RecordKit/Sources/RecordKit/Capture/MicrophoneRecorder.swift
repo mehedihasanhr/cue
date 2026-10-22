@@ -24,7 +24,7 @@ public final class MicrophoneRecorder: NSObject, AVCaptureAudioDataOutputSampleB
     public let deviceName: String
     private let onLoss: @Sendable (RecordingError) -> Void
 
-    private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "microphone")
+    private static let log = Logger(subsystem: "com.stackrover.cue.studio", category: "microphone")
 
     public init(device: AVCaptureDevice,
                 writer: AudioTrackWriter,

@@ -1,4 +1,4 @@
-//! `klik://` — pictures for the web views, served from memory and disk without a trip
+//! `cue://` — pictures for the web views, served from memory and disk without a trip
 //! through IPC as base64.
 //!
 //!   frame/<session>/<display>.png   a frozen display, while a capture is being chosen
@@ -11,7 +11,7 @@ use crate::state::AppState;
 use tauri::http::{Request, Response, StatusCode};
 use tauri::{AppHandle, Manager};
 
-pub const SCHEME: &str = "klik";
+pub const SCHEME: &str = "cue";
 
 /// The URL a web view loads `path` from. WebView2 has no custom schemes of its own, so
 /// Tauri maps them to `http://<scheme>.localhost` there.

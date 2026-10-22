@@ -8,14 +8,14 @@ import TimelineKit
 
 /// What one preview frame costs while a label is dragged across the picture.
 ///
-///     KLIK_BENCH=1 swift test --filter AnnotationDragBenchmarks
+///     CUE_BENCH=1 swift test --filter AnnotationDragBenchmarks
 ///
 /// Each step moves the label and renders the frame the way the editor's preview does —
 /// `cgImage(for:)`, read back — so the number is the lag between the pointer and the label
 /// on screen. Measured at the export's size and at the preview's reduced size, because the
 /// drag is only as smooth as the frame it waits for.
-@Suite(.enabled(if: ProcessInfo.processInfo.environment["KLIK_BENCH"] != nil,
-                "set KLIK_BENCH=1 to measure"),
+@Suite(.enabled(if: ProcessInfo.processInfo.environment["CUE_BENCH"] != nil,
+                "set CUE_BENCH=1 to measure"),
        .serialized,
        .timeLimit(.minutes(5)))
 struct AnnotationDragBenchmarks {

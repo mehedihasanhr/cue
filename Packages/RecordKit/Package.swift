@@ -1,10 +1,10 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
-/// Capture: ScreenCaptureKit in, a `.klikrec` package out.
+/// Capture: ScreenCaptureKit in, a `.cuerec` package out.
 ///
 /// Lives in its own package so recording is compiled, tested and reasoned about without
-/// a UI. Klik links it for its screen recorder.
+/// a UI. Cue links it for its screen recorder.
 let package = Package(
     name: "RecordKit",
     platforms: [.macOS(.v14)],

@@ -178,7 +178,7 @@ struct AnnotationKindTests {
     @Test func eachNewKindHasAPlainSummaryForOtherApps() {
         for kind in everyNewKind {
             let summary = CopiedRegion.annotation(item(kind)).summary
-            #expect(summary.hasPrefix("Klik "))
+            #expect(summary.hasPrefix("Cue "))
         }
         #expect(CopiedRegion.annotation(item(.step(4))).summary.contains("step 4"))
         #expect(CopiedRegion.annotation(item(.callout("Save", tail: .zero))).summary.contains("Save"))

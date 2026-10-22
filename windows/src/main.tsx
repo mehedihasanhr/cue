@@ -26,8 +26,8 @@ const view = (() => {
     return <Island />;
   }
   if (label === "panel") {
-    const KlikPanel = React.lazy(() => import("./island/KlikPanel"));
-    return <KlikPanel />;
+    const CuePanel = React.lazy(() => import("./island/CuePanel"));
+    return <CuePanel />;
   }
   if (label.startsWith("pin-")) {
     const Pin = React.lazy(() => import("./pin/Pin"));

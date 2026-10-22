@@ -440,7 +440,7 @@ struct CrashSafetyTests {
 
     /// Recordings from before recovery existed have no note about it, and still open.
     @Test func aManifestWithoutARecoveryNoteStillOpens() throws {
-        let json = #"{"createdAt":"2026-09-01T10:00:00Z","displayScale":2,"duration":12.5,"formatVersion":1,"name":"Old","recordedBy":"Klik Studio","telemetry":{"cursor":"telemetry/cursor.jsonl"},"tracks":[{"kind":"screen","path":"media/screen.mov"}]}"#
+        let json = #"{"createdAt":"2026-09-01T10:00:00Z","displayScale":2,"duration":12.5,"formatVersion":1,"name":"Old","recordedBy":"Cue Studio","telemetry":{"cursor":"telemetry/cursor.jsonl"},"tracks":[{"kind":"screen","path":"media/screen.mov"}]}"#
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let manifest = try decoder.decode(RecordingManifest.self, from: Data(json.utf8))

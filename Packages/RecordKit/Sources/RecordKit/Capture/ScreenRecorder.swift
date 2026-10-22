@@ -38,7 +38,7 @@ public final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @
     /// to fit and the rest of the frame is black. This is how the editor learns which part.
     public var pictureTracker: PictureTracker?
 
-    private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "screen")
+    private static let log = Logger(subsystem: "com.stackrover.cue.studio", category: "screen")
 
     public init(filter: SCContentFilter,
                 configuration: SCStreamConfiguration,

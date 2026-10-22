@@ -44,7 +44,7 @@ export default function Editor({ id }: { id: string }) {
       .historyItem(id)
       .then((value) => {
         setItem(value);
-        getCurrentWindow().setTitle(`${value.fileName.replace(/\.png$/i, "")} — Klik`);
+        getCurrentWindow().setTitle(`${value.fileName.replace(/\.png$/i, "")} — Cue`);
         const image = new Image();
         image.crossOrigin = "anonymous";
         image.onload = () => {
@@ -201,7 +201,7 @@ export default function Editor({ id }: { id: string }) {
 
   const deleteCapture = async () => {
     const sure = await ask("Delete this capture? It goes to the Recycle Bin.", {
-      title: "Klik", kind: "warning", okLabel: "Delete", cancelLabel: "Cancel",
+      title: "Cue", kind: "warning", okLabel: "Delete", cancelLabel: "Cancel",
     });
     if (!sure) return;
     run(async () => {
@@ -222,7 +222,7 @@ export default function Editor({ id }: { id: string }) {
       if (!dirty) return;
       event.preventDefault();
       const keep = await ask("Save your changes to this capture?", {
-        title: "Klik", kind: "info", okLabel: "Save", cancelLabel: "Don't Save",
+        title: "Cue", kind: "info", okLabel: "Save", cancelLabel: "Don't Save",
       });
       if (keep && doc && source) await ipc.editorSave(id, await encode(renderToCanvas(doc, source), "image/png")).catch(() => {});
       await window.destroy();
