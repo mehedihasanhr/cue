@@ -86,6 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // catalog, independent of the icon-services cache for this bundle path.
         if let icon = NSImage(named: "AppIcon") { NSApp.applicationIconImage = icon }
         installStatusItem()
+        AppUpdater.shared.start()
         _ = taskSync // listens for task changes from now on
 
         coordinator.onCaptured = { [weak self] image in self?.handleCapture(image) }
@@ -546,6 +547,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .settings: showSettings(nil)
         case .record: studio.showRecorder()
         case .recordings: studio.showLibrary()
+        case .checkForUpdates: AppUpdater.shared.checkInBackground()
         }
     }
 
@@ -603,6 +605,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         for (title, selector, id) in panels { menu.addItem(shortcutItem(title, selector, id)) }
         menu.addItem(.separator())
         menu.addItem(makeItem("Settings…", #selector(showSettings(_:)), keyEquivalent: ",", modifiers: .command))
+        menu.addItem(makeItem("Check for Updates…", #selector(checkForUpdates(_:))))
         menu.addItem(.separator())
         menu.addItem(makeItem("Quit Cue", #selector(NSApplication.terminate(_:)), keyEquivalent: "q", modifiers: .command))
     }
@@ -1275,6 +1278,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// before Cue quits.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         studio.shouldTerminate(sender)
+    }
+
+    @objc func checkForUpdates(_ sender: Any?) {
+        AppUpdater.shared.checkForUpdates()
     }
 
     @objc func showSettings(_ sender: Any?) {

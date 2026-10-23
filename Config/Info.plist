@@ -55,6 +55,20 @@
 	<!-- The Google OAuth client for Drive backup, from Config/Google.xcconfig. Empty when unset. -->
 	<key>CueGoogleClientID</key>
 	<string>$(CUE_GOOGLE_CLIENT_ID)</string>
+	<!-- Sparkle updates: the feed lives in the public releases repository, under a fixed tag that
+	     Scripts/publish-release.sh rewrites on every release. Each update is checked against this key
+	     before it is installed; the private half is in the publisher's keychain (account "cue"). -->
+	<key>SUFeedURL</key>
+	<string>https://github.com/mehedihasanhr/cue-releases/releases/download/mac-feed/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>CZg8DWytPz8tuaxRXeelv1SM6zQICBGR3saGwy2Pilg=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUAutomaticallyUpdate</key>
+	<true/>
+	<!-- Cue is sandboxed, so it cannot replace itself: Sparkle's installer launcher does it. -->
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Cue writes captions by recognising the speech in your recording. This happens on your Mac — the audio is never sent anywhere.</string>
 </dict>

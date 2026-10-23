@@ -10,6 +10,7 @@
 		4B4C494B000000000000A051 /* RecordKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B4C494B000000000000A052 /* RecordKit */; };
 		4B4C494B000000000000A054 /* RenderKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B4C494B000000000000A055 /* RenderKit */; };
 		4B4C494B000000000000A057 /* TimelineKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B4C494B000000000000A058 /* TimelineKit */; };
+		4B4C494B000000000000A060 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 4B4C494B000000000000A062 /* Sparkle */; };
 		4B4C494B000000000000A038 /* BackgroundKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B4C494B000000000000A03A /* BackgroundKit */; };
 		4B4C494B000000000000A039 /* BackgroundKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B4C494B000000000000A03B /* BackgroundKit */; };
 /* End PBXBuildFile section */
@@ -106,6 +107,7 @@
 				4B4C494B000000000000A051 /* RecordKit in Frameworks */,
 				4B4C494B000000000000A054 /* RenderKit in Frameworks */,
 				4B4C494B000000000000A057 /* TimelineKit in Frameworks */,
+				4B4C494B000000000000A060 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -173,6 +175,7 @@
 				4B4C494B000000000000A052 /* RecordKit */,
 				4B4C494B000000000000A055 /* RenderKit */,
 				4B4C494B000000000000A058 /* TimelineKit */,
+				4B4C494B000000000000A062 /* Sparkle */,
 			);
 			productName = Cue;
 			productReference = 4B4C494B000000000000A001 /* Cue.app */;
@@ -241,6 +244,7 @@
 				4B4C494B000000000000A050 /* XCLocalSwiftPackageReference "Packages/RecordKit" */,
 				4B4C494B000000000000A053 /* XCLocalSwiftPackageReference "Packages/RenderKit" */,
 				4B4C494B000000000000A056 /* XCLocalSwiftPackageReference "Packages/TimelineKit" */,
+				4B4C494B000000000000A061 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 4B4C494B000000000000D003 /* Products */;
@@ -306,6 +310,17 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		4B4C494B000000000000A061 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.6.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		4B4C494B000000000000A03A /* BackgroundKit */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -326,6 +341,11 @@
 		4B4C494B000000000000A058 /* TimelineKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = TimelineKit;
+		};
+		4B4C494B000000000000A062 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4B4C494B000000000000A061 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
 		};
 /* End XCSwiftPackageProductDependency section */
 

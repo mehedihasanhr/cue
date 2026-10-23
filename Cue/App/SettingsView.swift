@@ -19,6 +19,7 @@ struct GeneralSettingsView: View {
 
     var body: some View {
         @Bindable var preferences = preferences
+        @Bindable var updater = AppUpdater.shared
         SettingsPane(.general) {
             SettingsGroup {
                 SettingsRow("Launch Cue at login") {
@@ -31,6 +32,20 @@ struct GeneralSettingsView: View {
                 }
                 if let launchError {
                     SettingsRow(launchError, symbol: "xmark.octagon.fill", tint: .red)
+                }
+            }
+
+            SettingsGroup("Updates") {
+                SettingsRow("Check for updates", subtitle: "Once a day, from Cue's releases on GitHub.") {
+                    Toggle("Check for updates", isOn: $updater.checksAutomatically).toggleStyle(.switch)
+                }
+                SettingsRow("Install updates automatically", subtitle: "Off, Cue asks before installing.") {
+                    Toggle("Install updates automatically", isOn: $updater.installsAutomatically).toggleStyle(.switch)
+                        .disabled(!updater.checksAutomatically)
+                }
+                SettingsRow("Cue \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?")") {
+                    Button("Check Now") { updater.checkForUpdates() }
+                        .disabled(!updater.canCheckForUpdates)
                 }
             }
 
