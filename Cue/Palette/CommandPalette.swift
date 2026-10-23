@@ -4,7 +4,7 @@ import SwiftUI
 /// Something the palette can do without an item.
 enum PaletteCommand: CaseIterable, Identifiable {
     case captureArea, captureWindow, captureFullScreen, captureScrolling, captureText, pickColor
-    case newTask, newNote, newSnippet, clipboardList, cuePanel, clock, settings, unghostPins
+    case newTask, taskDashboard, newNote, newSnippet, clipboardList, cuePanel, clock, settings, unghostPins
 
     var id: Self { self }
 
@@ -17,6 +17,7 @@ enum PaletteCommand: CaseIterable, Identifiable {
         case .captureText: "Capture text (OCR)"
         case .pickColor: "Pick a color"
         case .newTask: "New task"
+        case .taskDashboard: "Tasks dashboard"
         case .newNote: "New note"
         case .newSnippet: "New snippet"
         case .clipboardList: "Clipboard list"
@@ -36,6 +37,7 @@ enum PaletteCommand: CaseIterable, Identifiable {
         case .captureText: "text.viewfinder"
         case .pickColor: "eyedropper"
         case .newTask: "checklist"
+        case .taskDashboard: "checklist.checked"
         case .newNote: "note.text"
         case .newSnippet: "text.badge.plus"
         case .clipboardList: "doc.on.clipboard"
@@ -56,6 +58,7 @@ enum PaletteCommand: CaseIterable, Identifiable {
         case .captureText: "ocr read copy text"
         case .pickColor: "eyedropper picker"
         case .newTask: "todo add"
+        case .taskDashboard: "todo list board kanban projects all tasks"
         case .newNote: "jot memo markdown obsidian notion"
         case .newSnippet: "text expander template"
         case .clipboardList: "history paste"
@@ -76,6 +79,7 @@ enum PaletteCommand: CaseIterable, Identifiable {
         case .captureText: .green
         case .pickColor: .orange
         case .newTask: .mint
+        case .taskDashboard: .green
         case .newNote: .orange
         case .newSnippet: .yellow
         case .clipboardList: .purple

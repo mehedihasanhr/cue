@@ -24,9 +24,12 @@ nonisolated struct RemoteTask: Codable, Sendable {
         updatedAt = task.updatedAt
     }
 
-    /// The task as stored; a server that sends only a title gets it as the text.
+    /// The task as stored; a server that sends only a title gets it as the text, and
+    /// one whose title is not the one the text gives has renamed the task.
     var item: TaskItem {
-        TaskItem(id: id, text: text.isEmpty ? title : text, projectID: projectID, status: status, priority: priority, createdAt: createdAt, updatedAt: updatedAt)
+        let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let custom = text.isEmpty || title.isEmpty ? nil : TaskText.customTitle(title, for: text)
+        return TaskItem(id: id, text: text.isEmpty ? title : text, customTitle: custom, projectID: projectID, status: status, priority: priority, createdAt: createdAt, updatedAt: updatedAt)
     }
 
     private enum CodingKeys: String, CodingKey { case id, title, text, status, priority, projectID, createdAt, updatedAt }

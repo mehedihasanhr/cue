@@ -30,7 +30,8 @@ nonisolated enum TaskStatus: String, Codable, CaseIterable {
 
     var title: String {
         switch self {
-        case .pending: "Pending"
+        // Still `pending` when saved and synced; called To do where it shows.
+        case .pending: "To do"
         case .inProcess: "In process"
         case .review: "Review"
         case .complete: "Complete"
@@ -181,9 +182,11 @@ nonisolated enum TaskDeletion: Hashable {
 
 nonisolated struct TaskItem: Identifiable, Codable, Hashable {
     let id: UUID
-    /// The whole task as Markdown. There is no title of its own: lists show the
-    /// first line that says anything (`title`), plain.
+    /// The whole task as Markdown — its description, kept as written.
     var text: String
+    /// A title given by renaming the task. nil: the title is taken from the text
+    /// (its first line that says anything, plain and kept short).
+    var customTitle: String?
     var projectID: UUID?
     var status: TaskStatus
     var priority: TaskPriority
@@ -202,9 +205,10 @@ nonisolated struct TaskItem: Identifiable, Codable, Hashable {
     }
 
     /// A task as a server sent it.
-    init(id: UUID, text: String, projectID: UUID?, status: TaskStatus, priority: TaskPriority, createdAt: Date, updatedAt: Date) {
+    init(id: UUID, text: String, customTitle: String? = nil, projectID: UUID?, status: TaskStatus, priority: TaskPriority, createdAt: Date, updatedAt: Date) {
         self.id = id
         self.text = text
+        self.customTitle = customTitle
         self.projectID = projectID
         self.status = status
         self.priority = priority
@@ -212,15 +216,20 @@ nonisolated struct TaskItem: Identifiable, Codable, Hashable {
         self.updatedAt = updatedAt
     }
 
-    /// The first line that says anything, without Markdown — for lists.
-    var title: String { TaskText.title(of: text) }
-    /// What follows the title line, plain and on one line — for a card's preview.
-    var summary: String { TaskText.summary(of: text) }
-    /// Whether there is more than the title line.
+    /// The name lists show: the one it was renamed to, else one taken from the text.
+    var title: String {
+        if let customTitle, !customTitle.trimmingCharacters(in: .whitespaces).isEmpty { return customTitle }
+        return TaskText.autoTitle(of: text)
+    }
+    /// The description, plain and on one line, for a card's preview: what follows the
+    /// line the title was taken from, or all of it when the title is its own.
+    var summary: String { customTitle == nil ? TaskText.summary(of: text) : TaskText.oneLine(text) }
+    /// Whether there is more to read than the title.
     var hasMore: Bool { !summary.isEmpty }
 
-    // `title` and `notes` are what older builds wrote (and read): the text is their join.
-    private enum CodingKeys: String, CodingKey { case id, text, title, notes, projectID, status, priority, createdAt, updatedAt }
+    // `title` and `notes` are what older builds wrote (and read): the text is their
+    // join. `title` is still written, so they keep showing a name.
+    private enum CodingKeys: String, CodingKey { case id, text, title, customTitle, notes, projectID, status, priority, createdAt, updatedAt }
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -232,6 +241,7 @@ nonisolated struct TaskItem: Identifiable, Codable, Hashable {
             let notes = try container.decodeIfPresent(String.self, forKey: .notes) ?? ""
             text = TaskText.join(title: title, notes: notes)
         }
+        customTitle = try container.decodeIfPresent(String.self, forKey: .customTitle)
         projectID = try container.decodeIfPresent(UUID.self, forKey: .projectID)
         status = try container.decode(TaskStatus.self, forKey: .status)
         priority = try container.decodeIfPresent(TaskPriority.self, forKey: .priority) ?? .medium
@@ -244,6 +254,7 @@ nonisolated struct TaskItem: Identifiable, Codable, Hashable {
         try container.encode(id, forKey: .id)
         try container.encode(text, forKey: .text)
         try container.encode(title, forKey: .title)
+        try container.encodeIfPresent(customTitle, forKey: .customTitle)
         try container.encodeIfPresent(projectID, forKey: .projectID)
         try container.encode(status, forKey: .status)
         try container.encode(priority, forKey: .priority)
@@ -278,11 +289,45 @@ nonisolated enum TaskText {
         plain(splitMark(titleLine(of: text)).body)
     }
 
+    /// The longest title taken from a text; longer, it is cut at a word and ends in "…".
+    static let autoTitleLength = 80
+
+    /// A title for a task that has none of its own: its first line, plain, kept short.
+    static func autoTitle(of text: String) -> String {
+        let title = title(of: text)
+        guard title.count > autoTitleLength else { return title }
+        let cut = title.prefix(autoTitleLength)
+        let atWord = cut.lastIndex(where: \.isWhitespace).map { cut[..<$0] } ?? cut
+        return atWord.trimmingCharacters(in: .whitespaces) + "…"
+    }
+
+    /// The custom title to keep for `title` given `text`: nil when it is just the one
+    /// the text would give anyway, so the title goes on following the text.
+    static func customTitle(_ title: String, for text: String) -> String? {
+        title == autoTitle(of: text) ? nil : title
+    }
+
+    /// A line that is only an image or an attached file: nothing to read in a one-line
+    /// preview, where it would show as the word "image".
+    static func isMediaLine(_ line: String) -> Bool {
+        line.trimmingCharacters(in: .whitespaces).wholeMatch(of: #/!?\[[^\]]*\]\([^)]*\)/#) != nil
+    }
+
+    /// Every line, plain, on one line.
+    static func oneLine(_ text: String) -> String {
+        text.split(separator: "\n")
+            .filter { !isMediaLine(String($0)) }
+            .map { plain(splitMark($0.trimmingCharacters(in: .whitespaces)).body) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
     /// Everything after the title line, plain, on one line.
     static func summary(of text: String) -> String {
         let (lines, first) = lines(of: text)
         guard let first else { return "" }
         return lines[(first + 1)...]
+            .filter { !isMediaLine($0) }
             .map { plain(splitMark($0.trimmingCharacters(in: .whitespaces)).body) }
             .filter { !$0.isEmpty }
             .joined(separator: " ")
@@ -580,7 +625,7 @@ final class TaskStore {
     /// Edits a task's text, project and priority in one go.
     func update(_ task: TaskItem, text: String, projectID: UUID?, priority: TaskPriority) {
         let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !TaskText.title(of: cleaned).isEmpty else { return }
+        guard !TaskText.title(of: cleaned).isEmpty || task.customTitle != nil else { return }
         update(task) {
             $0.text = cleaned
             $0.projectID = projectID
@@ -620,8 +665,9 @@ final class TaskStore {
 
     /// The file behind a `cue-file://<id>/<name>` attachment reference.
     func attachmentURL(for source: String) -> URL? {
-        guard source.hasPrefix("cue-file://") else { return nil }
-        let parts = source.dropFirst(12).split(separator: "/", maxSplits: 1)
+        let scheme = "cue-file://"
+        guard source.hasPrefix(scheme) else { return nil }
+        let parts = source.dropFirst(scheme.count).split(separator: "/", maxSplits: 1)
         guard parts.count == 2, !parts[0].contains(".."), let name = String(parts[1]).removingPercentEncoding, !name.contains("/") else { return nil }
         let url = attachmentsFolder.appendingPathComponent(String(parts[0]), isDirectory: true).appendingPathComponent(name)
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
@@ -629,8 +675,9 @@ final class TaskStore {
 
     /// The file behind a `cue://<name>` image reference.
     func imageURL(for source: String) -> URL? {
-        guard source.hasPrefix("cue://") else { return nil }
-        let name = String(source.dropFirst(7))
+        let scheme = "cue://"
+        guard source.hasPrefix(scheme) else { return nil }
+        let name = String(source.dropFirst(scheme.count))
         guard !name.contains("/"), !name.contains("..") else { return nil }
         let url = imagesFolder.appendingPathComponent(name)
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
@@ -644,11 +691,28 @@ final class TaskStore {
         update(task) { $0.priority = priority }
     }
 
-    /// Replaces the title line (the rest of the text stays).
+    /// Gives the task a title of its own; the description is left as it is. A title
+    /// the same as the one taken from the text puts it back to following the text.
     func rename(_ task: TaskItem, to title: String) {
         let cleaned = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return }
-        update(task) { $0.text = TaskText.replacingTitle(of: $0.text, with: cleaned) }
+        let custom = TaskText.customTitle(cleaned, for: task.text)
+        guard custom != task.customTitle else { return }
+        update(task) { $0.customTitle = custom }
+    }
+
+    /// Saves a task's title and description together (the dashboard's page): one
+    /// change, one event. A nil or empty title follows the text again. Nothing is
+    /// saved that would leave the task without any title at all.
+    func update(_ task: TaskItem, title: String?, text: String) {
+        let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let custom = title.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.flatMap { $0.isEmpty ? nil : TaskText.customTitle($0, for: cleaned) }
+        guard custom != nil || !TaskText.title(of: cleaned).isEmpty else { return }
+        guard custom != task.customTitle || cleaned != task.text else { return }
+        update(task) {
+            $0.text = cleaned
+            $0.customTitle = custom
+        }
     }
 
     func move(_ task: TaskItem, to projectID: UUID?) {

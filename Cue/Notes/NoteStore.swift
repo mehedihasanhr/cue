@@ -231,7 +231,14 @@ final class NoteStore {
         let name = "image \(formatter.string(from: .now)).png"
         let url = folder.appendingPathComponent(name)
         guard (try? data.write(to: url, options: .atomic)) != nil else { return nil }
-        return Self.attachmentsFolder + "/" + name
+        // The Markdown that shows it (the editor inserts it as a line of its own), the
+        // name's spaces escaped so the link stays one piece in any Markdown reader.
+        return "![image](\(Self.reference(name)))"
+    }
+
+    /// `attachments/<name>`, escaped for a Markdown link; `url(for:)` reads it back.
+    private static func reference(_ name: String) -> String {
+        attachmentsFolder + "/" + (name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? name)
     }
 
     /// Copies a dropped file beside the notes; returns its reference.
@@ -245,7 +252,8 @@ final class NoteStore {
             counter += 1
         }
         guard (try? FileManager.default.copyItem(at: source, to: url)) != nil else { return nil }
-        return Self.attachmentsFolder + "/" + url.lastPathComponent
+        let name = url.lastPathComponent
+        return "[\(name.replacingOccurrences(of: "]", with: ")"))](\(Self.reference(name)))"
     }
 
     /// A reference in a note (`attachments/x.png`, or any path relative to the

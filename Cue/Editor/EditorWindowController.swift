@@ -78,6 +78,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
             onDelete: { [weak self] in self?.deleteCapture() },
             onDone: { [weak self] in self?.done() },
             onAddImages: { [weak self] in self?.addImages() },
+            onCreateTask: { [weak self] in self?.createTask() },
             windowButtons: WindowButtons(
                 close: { [weak self] in self?.window?.performClose(nil) },
                 minimize: { [weak self] in self?.window?.miniaturize(nil) },
@@ -242,6 +243,15 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
     /// Told the edited image on every save (a clipboard image goes back on the clipboard).
     var onSaved: ((CGImage) -> Void)?
+
+    /// A new task with the capture as it is now (annotations and all), as PNG.
+    var onCreateTask: ((Data) -> Void)?
+
+    @objc func createTask() {
+        model.endTextEditing()
+        guard let image = model.renderedImage(), let png = ImageEncoding.png(image) else { return }
+        onCreateTask?(png)
+    }
 
     @objc func save() {
         model.endTextEditing()

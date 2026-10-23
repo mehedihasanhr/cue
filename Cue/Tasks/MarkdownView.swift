@@ -214,7 +214,7 @@ struct MarkdownView: View {
             }
             .padding(.vertical, 2)
         case .image(let alt, let source):
-            if let url = imageURL(source) ?? (source.hasPrefix("/") ? URL(fileURLWithPath: source) : nil), let image = NSImage(contentsOf: url) {
+            if let url = imageURL(source) ?? (source.hasPrefix("/") ? URL(fileURLWithPath: source) : nil), let image = ImageCache.image(at: url) {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
@@ -289,5 +289,26 @@ struct MarkdownView: View {
             return Text(attributed)
         }
         return Text(text)
+    }
+}
+
+// MARK: - Images
+
+/// Pictures read from disk once and kept, so a page redrawn (or a panel sliding in)
+/// does not decode the same PNG again on every frame. Files are written once and never
+/// changed in place, so a path is a safe key.
+@MainActor
+enum ImageCache {
+    private static let cache: NSCache<NSURL, NSImage> = {
+        let cache = NSCache<NSURL, NSImage>()
+        cache.countLimit = 120
+        return cache
+    }()
+
+    static func image(at url: URL) -> NSImage? {
+        if let image = cache.object(forKey: url as NSURL) { return image }
+        guard let image = NSImage(contentsOf: url) else { return nil }
+        cache.setObject(image, forKey: url as NSURL)
+        return image
     }
 }

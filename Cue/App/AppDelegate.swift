@@ -50,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private lazy var agentConnector = AgentConnector(store: agentStore)
 
     private var settingsWindow: SettingsWindowController?
+    private var taskDashboard: TaskDashboardWindowController?
     private var onboardingWindows: [PermissionKind: HostedWindowController] = [:]
     private var editorWindows: [UUID: EditorWindowController] = [:]
 
@@ -503,6 +504,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let recordings = urls.filter(StudioController.handles)
         if !recordings.isEmpty { studio.open(recordings) }
         for url in urls where !StudioController.handles(url) {
+            #if DEBUG
+            if DebugCommands.handles(url) {
+                DebugCommands.run(url, tasks: tasks, createTask: { [weak self] in self?.createTask(from: $0) }) { [weak self] task, asPage in
+                    self?.openTaskDashboard(task: task)
+                    self?.taskDashboard?.showAsPage(asPage)
+                }
+                continue
+            }
+            #endif
             guard let command = URLCommand(url) else {
                 Log.app.notice("Unknown URL: \(url.absoluteString, privacy: .public)")
                 FeedbackHUD.show("Cue doesn't understand that link", symbol: "link.badge.plus", subtitle: url.absoluteString)
@@ -547,6 +557,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .settings: showSettings(nil)
         case .record: studio.showRecorder()
         case .recordings: studio.showLibrary()
+        case .tasks: showTaskDashboard(nil)
         case .checkForUpdates: AppUpdater.shared.checkInBackground()
         }
     }
@@ -603,6 +614,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             ("Quick Note…", #selector(quickNote(_:)), .quickNote),
         ]
         for (title, selector, id) in panels { menu.addItem(shortcutItem(title, selector, id)) }
+        menu.addItem(makeItem("Tasks…", #selector(showTaskDashboard(_:))))
         menu.addItem(.separator())
         menu.addItem(makeItem("Settings…", #selector(showSettings(_:)), keyEquivalent: ",", modifiers: .command))
         menu.addItem(makeItem("Check for Updates…", #selector(checkForUpdates(_:))))
@@ -719,6 +731,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 island = IslandController(library: library, clipboard: clipboard, assets: assets, colors: colors, groups: groups, tasks: tasks, snippets: snippets,
                                           notes: notes, actions: historyActions, preferences: preferences, clock: prayerClock, focus: focusTimer, agents: agentStore)
                 island?.onSnippetFilled = { [weak self] snippet, values in self?.snippetFilled(snippet, values: values) }
+                island?.onOpenTaskDashboard = { [weak self] in self?.showTaskDashboard(nil) }
                 library.warmThumbnails()
                 FeedbackHUD.island = { [weak self] status in self?.island?.showStatus(status) ?? false }
             }
@@ -878,6 +891,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 case .captureText: coordinator.captureText(fromMenu: true)
                 case .pickColor: pickColor(nil)
                 case .newTask: quickTask(nil)
+                case .taskDashboard: showTaskDashboard(nil)
                 case .newSnippet: snippetPanel(IslandPrompt(kind: .snippet(nil, initialText: "", assetID: nil)))
                 case .newNote: quickNote(nil)
                 case .clipboardList: showClipboardPanel(nil)
@@ -1035,6 +1049,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             pinToScreen: { [weak self] item in self?.pinToScreen(item) },
             shareLink: { [weak self] item in self?.shareLink(for: item) },
             makeTask: { [weak self] item in self?.makeTask(from: item) },
+            createTask: { [weak self] seed in self?.createTask(from: seed) },
             compare: { [weak self] item, images in self?.compare(item, with: images) },
             editClipboardImage: { [weak self] item in self?.closeHistoryThen { $0.editClipboardImage(item) } }
         )
@@ -1063,21 +1078,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// A new task with the capture in its description (the island's form, or the
     /// floating one without an island).
     private func makeTask(from item: CaptureItem) {
-        guard let image = library.image(for: item), let png = ImageEncoding.png(image.cgImage),
-              let markdown = tasks.saveImage(png) else { return }
-        let prompt = IslandPrompt(kind: .task(project: nil), initialNotes: markdown + "\n")
-        if let island {
-            island.prompt(prompt)
-        } else {
-            quickTaskPanel?.close()
-            let panel = QuickTaskPanel(store: tasks, prompt: prompt) { [weak self] answer in
-                guard let self, let answer else { return }
-                tasks.addTask(text: answer.text, in: answer.projectID, priority: answer.priority)
-                FeedbackHUD.show("Task added", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
-            }
-            quickTaskPanel = panel
-            panel.show(at: NSEvent.mouseLocation, position: preferences.panelPosition)
+        guard let image = library.image(for: item), let png = ImageEncoding.png(image.cgImage) else { return }
+        createTask(from: .image(png))
+    }
+
+    /// The floating task form with `seed` in the description — the picture (or text, or
+    /// file) at the bottom, the caret on the empty line above it for the title.
+    func createTask(from seed: TaskSeed) {
+        let notes: String?
+        switch seed {
+        case .image(let png):
+            notes = tasks.saveImage(png)
+        case .text(let text):
+            notes = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        case .file(let url):
+            let isImage = ["png", "jpg", "jpeg", "gif", "heic", "tiff", "webp"].contains(url.pathExtension.lowercased())
+            notes = isImage ? (try? Data(contentsOf: url)).flatMap { tasks.saveImage($0) } : tasks.saveAttachment(url)
         }
+        guard let notes, !notes.isEmpty else { return }
+        closeHistory()
+        island?.collapse()
+        quickTaskPanel?.close()
+        isNotePanel = false
+        let panel = QuickTaskPanel(store: tasks, prompt: IslandPrompt(kind: .task(project: nil), initialNotes: notes + "\n")) { [weak self] answer in
+            guard let self, let answer else { return }
+            tasks.addTask(text: answer.text, in: answer.projectID, priority: answer.priority)
+            FeedbackHUD.show("Task added", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
+        }
+        quickTaskPanel = panel
+        clipboard.openEditor = { [weak self] in
+            guard let panel = self?.quickTaskPanel, panel.isVisible else { return nil }
+            return panel.editor
+        }
+        panel.show(at: NSEvent.mouseLocation, position: preferences.panelPosition)
     }
 
     /// Uploads the capture where Settings › Sharing says and puts the link on the
@@ -1214,14 +1247,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let panel = QuickTaskPanel(form: form)
         quickTaskPanel = panel
         isNotePanel = true
-        panel.chrome.clarity = preferences.notesPanelClarity
-        if let size = preferences.notesPanelSize { panel.resize(to: size, animated: false) }
+        panel.useRaycastLook(size: preferences.notesPanelSize ?? CGSize(width: 640, height: 380))
         // Island cards pasted while the note is open land in its text.
         clipboard.openEditor = { [weak self] in
             guard let panel = self?.quickTaskPanel, panel.isVisible else { return nil }
             return panel.editor
         }
         panel.show(at: NSEvent.mouseLocation, position: preferences.panelPosition)
+    }
+
+    /// Every task in a window of its own: lists and projects, as a list or a board,
+    /// with the chosen task open beside them.
+    @objc func showTaskDashboard(_ sender: Any?) {
+        openTaskDashboard(task: nil)
+    }
+
+    /// The dashboard, with `task` (if any) open in its detail pane.
+    func openTaskDashboard(task: TaskItem?) {
+        closeHistory()
+        if taskDashboard == nil {
+            let controller = TaskDashboardWindowController(store: tasks)
+            controller.onClose = { [weak self] in self?.taskDashboard = nil }
+            taskDashboard = controller
+        }
+        taskDashboard?.present(task: task)
     }
 
     /// A floating "new task" form at the pointer (⌥/ by default).
@@ -1372,6 +1421,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let controller = EditorWindowController(item: item, image: image, library: library, preferences: preferences, mode: mode)
         controller.onClose = { [weak self] in self?.editorWindows[item.id] = nil }
         controller.onDelete = { [weak self] item in self?.library.delete(item) }
+        controller.onCreateTask = { [weak self] png in self?.createTask(from: .image(png)) }
         editorWindows[item.id] = controller
         controller.present()
     }

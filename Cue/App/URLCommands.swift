@@ -9,7 +9,7 @@ import AppKit
 ///     cue://snippet/add?keyword=;sig&text=…&name=…
 ///     cue://clipboard/copy?text=…
 ///     cue://palette · cue://clipboard · cue://panel · cue://clock · cue://settings
-///     cue://record · cue://recordings
+///     cue://record · cue://recordings · cue://tasks
 ///     cue://update (check for updates now, quietly, as the daily check does)
 enum URLCommand: Equatable {
     case captureArea, captureWindow, captureFullScreen, captureScrolling, captureText, pickColor
@@ -20,6 +20,8 @@ enum URLCommand: Equatable {
     case copy(String)
     case palette, clipboard, panel, clock, settings
     case record, recordings
+    /// The task dashboard.
+    case tasks
     case checkForUpdates
 
     /// nil for a URL Cue does not understand.
@@ -54,6 +56,7 @@ enum URLCommand: Equatable {
         case ["settings"], ["preferences"]: self = .settings
         case ["record"], ["video", "record"], ["recorder"]: self = .record
         case ["recordings"], ["video"], ["videos"]: self = .recordings
+        case ["tasks"], ["tasks", "dashboard"], ["task", "dashboard"], ["dashboard"]: self = .tasks
         case ["update"], ["updates"], ["check-for-updates"]: self = .checkForUpdates
         default: return nil
         }

@@ -98,13 +98,16 @@ struct NoteFormRow: View {
 
     private var markdownEditor: some View {
         MarkdownEditor(text: $text, handle: editor, insertImage: { data in store.saveImage(data) }, insertFile: { url in store.saveAttachment(url) },
-                       imageURL: { store.url(for: $0) }, attachmentURL: { store.url(for: $0) }, fontSize: style == .floating ? 13 : 12)
+                       imageURL: { store.url(for: $0) }, attachmentURL: { store.url(for: $0) }, fontSize: style == .floating ? 17 : 12)
             .focused($focused)
             .overlay(alignment: .bottomLeading) {
-                suggestionList
-                    .padding(.leading, 8)
-                    .padding(.bottom, 6)
-                    .animation(.easeOut(duration: 0.12), value: token)
+                // The floating form lists them in a section of its own, as the task form does.
+                if style == .island {
+                    suggestionList
+                        .padding(.leading, 8)
+                        .padding(.bottom, 6)
+                        .animation(.easeOut(duration: 0.12), value: token)
+                }
             }
             .onAppear {
                 editor.onToken = { new in
@@ -115,10 +118,10 @@ struct NoteFormRow: View {
             }
             .overlay(alignment: .topLeading) {
                 if text.isEmpty {
-                    Text("Jot something down — the first line is the title · / for formatting")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.primary.opacity(0.3))
-                        .padding(.horizontal, 12).padding(.top, 8)
+                    Text(style == .floating ? "Jot something down" : "Jot something down — the first line is the title · / for formatting")
+                        .font(.system(size: style == .floating ? 17 : 13))
+                        .foregroundStyle(.primary.opacity(style == .floating ? 0.4 : 0.3))
+                        .padding(.horizontal, 12).padding(.top, style == .floating ? 6 : 8)
                         .allowsHitTesting(false)
                 }
             }
@@ -157,136 +160,202 @@ struct NoteFormRow: View {
 
     // MARK: Floating
 
+    @State private var showsActions = false
+
+    /// The task form's look: the text on the frosted panel, `/` suggestions as a section
+    /// under it, and small buttons floating over its foot — formatting, attach and pin
+    /// on the left; Save and Actions on the right.
     private var floatingBody: some View {
-        VStack(spacing: 0) {
-            WindowDragStrip()
-                .frame(height: 14)
-                .overlay { Capsule().fill(.primary.opacity(0.18)).frame(width: 36, height: 4) }
-            markdownEditor
-                .padding(.horizontal, 8)
-                .frame(maxHeight: .infinity)
-            floatingBar
-                .padding(.horizontal, 12)
-                .padding(.bottom, 10)
-        }
-        // Pinned, nothing closes the note by itself — so it gets a close button.
-        .overlay(alignment: .topTrailing) {
-            if chrome?.pinned == true {
-                Button { finish(nil) } label: {
-                    Icon("xmark", size: 11, weight: .bold)
-                        .foregroundStyle(.primary.opacity(0.85))
-                        .frame(width: 22, height: 22)
-                        .glassCircle()
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .padding(6)
-                .help("Close the note (⎋)")
-                .transition(IslandView.reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.9)))
+        ZStack(alignment: .bottom) {
+            VStack(spacing: 0) {
+                markdownEditor
+                    .padding(.horizontal, 12)
+                    .padding(.top, 14)
+                    .frame(maxHeight: .infinity, alignment: .top)
+                formatSuggestions
             }
+            .padding(.bottom, 50)
+            footer
         }
-        .animation(.easeOut(duration: 0.15), value: chrome?.pinned)
-        // Settings › Notes decides how clear the glass is, live while it is open.
-        .onAppear { chrome?.clarity = preferences.notesPanelClarity }
+        .animation(.easeOut(duration: 0.14), value: token)
         .onChange(of: chrome?.size) { _, size in if let size { preferences.notesPanelSize = size } }
-        .onChange(of: preferences.notesPanelClarity) { _, clarity in chrome?.clarity = clarity }
     }
 
+    /// `/` formatting as a list section under the text.
     @ViewBuilder
-    private var floatingBar: some View {
-        let bar = HStack(spacing: 8) {
-            floatingGlyph("plus", help: "Attach an image… (⌘⇧I)") { chooseImage() }
-            Menu {
-                formatMenuItems
-            } label: {
-                Text("/")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.primary.opacity(0.85))
-                    .frame(width: 34, height: 34)
-                    .glassCircle()
-                    .contentShape(Circle())
+    private var formatSuggestions: some View {
+        let rows = suggestions
+        if token != nil, !rows.isEmpty {
+            let visible = 5
+            let first = max(0, min(highlighted - visible + 1, rows.count - visible))
+            let shown = Array(rows.enumerated()).filter { $0.offset >= first && $0.offset < first + visible }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Formatting")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 4)
+                ForEach(shown, id: \.element.id) { index, row in
+                    HStack(spacing: 12) {
+                        Icon(row.symbol, size: 14, weight: .semibold)
+                            .foregroundStyle(Color.primary.opacity(0.75))
+                            .frame(width: 26, height: 26)
+                            .background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        Text(row.title).font(.system(size: 14)).lineLimit(1)
+                        Spacer(minLength: 8)
+                        if let detail = row.detail { Text(detail).font(.system(size: 13)).foregroundStyle(.secondary) }
+                    }
+                    .padding(.horizontal, 10)
+                    .frame(height: 40)
+                    .background(index == highlighted ? Color.primary.opacity(0.1) : Color.clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    .contentShape(Rectangle())
+                    .onTapGesture { row.pick(); token = nil }
+                    .onHover { if $0 { highlighted = index } }
+                }
             }
-            .menuStyle(.button)
-            .buttonStyle(.plain)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("Formatting — type / in the text")
+            .padding(.horizontal, 6)
+            .padding(.bottom, 4)
+            .transition(.opacity.combined(with: .move(edge: .bottom)))
+            .accessibilityLabel("Formatting")
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 6) {
+            Menu { formatMenuItems } label: {
+                smallGlyph("line.3.horizontal.decrease")
+            }
+            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+            .help("Formatting — or type / in the text")
+            Button(action: chooseImage) { smallGlyph("photo") }
+                .buttonStyle(.plain)
+                .help("Attach an image… (⌘⇧I)")
             if let chrome {
-                @Bindable var chrome = chrome
                 Button { chrome.pinned.toggle() } label: {
-                    Icon(chrome.pinned ? "pin.fill" : "pin", size: 17, weight: .medium)
-                        .foregroundStyle(chrome.pinned ? Color.white : .primary.opacity(0.85))
-                        .frame(width: 34, height: 34)
-                        .glassCircle(tint: chrome.pinned ? Color.brand : nil)
+                    Image(systemName: chrome.pinned ? "pin.fill" : "pin")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(chrome.pinned ? Color.white : Color.secondary)
+                        .frame(width: 26, height: 26)
+                        .background(chrome.pinned ? Color.brand : NotionStyle.card, in: Circle())
+                        .overlay(Circle().strokeBorder(.primary.opacity(chrome.pinned ? 0 : 0.12)))
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .help(chrome.pinned ? "Pinned: stays open above other apps until closed" : "Pin: keep it open above other apps")
                 .animation(.easeOut(duration: 0.15), value: chrome.pinned)
             }
+
             Spacer(minLength: 0)
-            saveButton
-        }
-        if #available(macOS 26.0, *) {
-            GlassEffectContainer(spacing: 8) { bar }
-        } else {
-            bar
-        }
-    }
 
-    /// Save, with a chevron beside it for where the note goes besides its folder —
-    /// one capsule split in two, like a menu button.
-    @ViewBuilder
-    private var saveButton: some View {
-        let sending = editing == nil && !available.isEmpty
-        HStack(spacing: 0) {
-            Button(action: save) {
-                HStack(spacing: 6) {
-                    Icon(sendTo.isEmpty ? "checkmark" : "paperplane", size: 14, weight: .bold)
-                    Text("Save").font(.system(size: 13, weight: .semibold)).lineLimit(1)
+            HStack(spacing: 4) {
+                Button(action: save) {
+                    HStack(spacing: 8) {
+                        Text(editing == nil ? (sendTo.isEmpty ? "Save Note" : "Save & Send") : "Save Note")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(valid ? Color.primary : Color.primary.opacity(0.4))
+                        HStack(spacing: 3) { RaycastKey("⌘"); RaycastKey("↩") }
+                    }
+                    .padding(.horizontal, 8)
+                    .frame(height: 24)
+                    .contentShape(Rectangle())
                 }
-                .foregroundStyle(valid ? Color.white : Color.primary.opacity(0.5))
-                .padding(.leading, 14)
-                .padding(.trailing, sending ? 10 : 14)
-                .frame(height: 34)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .keyboardShortcut(.return, modifiers: .command)
-            .disabled(!valid)
-            .help(sendTo.isEmpty ? "Save (⌘↩)" : "Save and send to \(saveAsLabel) (⌘↩)")
-            if sending {
-                Divider().frame(height: 18).opacity(0.35)
-                Menu {
-                    saveAsItems
-                } label: {
-                    Icon("chevron.down", size: 11, weight: .bold)
-                        .foregroundStyle(valid ? Color.white.opacity(0.9) : Color.primary.opacity(0.5))
-                        .frame(width: 28, height: 34)
-                        .contentShape(Rectangle())
-                }
-                .menuStyle(.button)
                 .buttonStyle(.plain)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("Where this note goes besides its folder — now: \(saveAsLabel)")
+                .keyboardShortcut(.return, modifiers: .command)
+                .disabled(!valid)
+                .help(sendTo.isEmpty ? "Save (⌘↩)" : "Save and send to \(saveAsLabel) (⌘↩)")
+
+                Rectangle().fill(.primary.opacity(0.1)).frame(width: 1, height: 16)
+
+                Button { showsActions.toggle() } label: {
+                    HStack(spacing: 8) {
+                        Text("Actions").font(.system(size: 12)).foregroundStyle(.secondary)
+                        HStack(spacing: 3) { RaycastKey("⌘"); RaycastKey("K") }
+                    }
+                    .padding(.horizontal, 8)
+                    .frame(height: 24)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut("k")
+                .popover(isPresented: $showsActions, arrowEdge: .top) { actionsList }
             }
+            .padding(.horizontal, 3)
+            .frame(height: 28)
+            .floatingButton(Capsule())
         }
-        .fixedSize()
-        .glassPill(tint: valid ? Color.brand : nil)
-        .animation(.easeOut(duration: 0.15), value: valid)
+        .padding(.horizontal, 8)
+        .padding(.bottom, 8)
     }
 
-    private func floatingGlyph(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Icon(symbol, size: 19, weight: .medium)
-                .foregroundStyle(.primary.opacity(0.85))
-                .frame(width: 34, height: 34)
-                .glassCircle()
-                .contentShape(Circle())
+    private func smallGlyph(_ symbol: String) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(.secondary)
+            .frame(width: 26, height: 26)
+            .floatingButton(Circle())
+    }
+
+    /// What ⌘K lists: paste, attach, pin, where the note goes, cancel.
+    private var actionsList: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            actionSection("Note")
+            actionRow("Paste from Clipboard", symbol: "doc.on.clipboard", keys: "⌘V") {
+                showsActions = false
+                if let textView = editor.textView {
+                    textView.window?.makeFirstResponder(textView)
+                    textView.paste(nil)
+                }
+            }
+            actionRow("Attach Image…", symbol: "photo", keys: "⇧⌘I") { showsActions = false; chooseImage() }
+            if let chrome {
+                actionRow(chrome.pinned ? "Unpin" : "Pin Above Other Apps", symbol: chrome.pinned ? "pin.slash" : "pin") {
+                    chrome.pinned.toggle()
+                    showsActions = false
+                }
+            }
+            if editing == nil, !available.isEmpty {
+                actionSection("Send to")
+                actionRow("Cue only", symbol: "folder", checked: sendTo.isEmpty) { sendTo = [] }
+                ForEach(available) { destination in
+                    actionRow(destination.title, symbol: "paperplane", checked: sendTo.contains(destination)) {
+                        if sendTo.contains(destination) { sendTo.remove(destination) } else { sendTo.insert(destination) }
+                    }
+                }
+                actionRow("Defaults in Settings…", symbol: "gearshape") {
+                    showsActions = false
+                    NSApp.sendAction(#selector(AppDelegate.showNotesSettings(_:)), to: nil, from: nil)
+                }
+            }
+            Divider().padding(.vertical, 4)
+            actionRow("Cancel", symbol: "xmark", keys: "esc") { showsActions = false; finish(nil) }
         }
-        .buttonStyle(.plain)
-        .help(help)
+        .padding(6)
+        .frame(width: 280)
+    }
+
+    private func actionSection(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 10)
+            .padding(.top, 8)
+            .padding(.bottom, 2)
+    }
+
+    private func actionRow(_ title: String, symbol: String, keys: String? = nil, checked: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Icon(symbol, size: 13, weight: .medium).foregroundStyle(Color.primary.opacity(0.7)).frame(width: 18)
+                Text(title).font(.system(size: 13)).lineLimit(1)
+                Spacer(minLength: 6)
+                if checked { Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary) }
+                if let keys { Text(keys).font(.system(size: 11)).foregroundStyle(.secondary) }
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(RaycastRowStyle())
     }
 
     // MARK: Island
