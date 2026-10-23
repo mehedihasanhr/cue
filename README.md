@@ -50,6 +50,26 @@ treated as un-granted). `Config/Signing.xcconfig` (git-ignored) picks one of:
 
 If a grant ever gets stuck, clear it and re-grant: `tccutil reset ScreenCapture com.stackrover.cue`.
 
+## Releasing
+
+Installed copies update themselves through [Sparkle](https://sparkle-project.org): once a day they
+read `appcast.xml` from the `mac-feed` release of
+[cue-releases](https://github.com/mehedihasanhr/cue-releases), download the newer DMG in the
+background, check its EdDSA signature against `SUPublicEDKey` in `Config/Info.plist`, and install
+it when Cue quits. Settings › General › Updates turns this off or makes it ask first.
+
+```sh
+# Bump MARKETING_VERSION and CURRENT_PROJECT_VERSION first: Sparkle compares the build number.
+xcodebuild -project Cue.xcodeproj -scheme Cue -configuration Release -derivedDataPath build/release build
+Scripts/make-dmg.sh
+Scripts/publish-release.sh notes.md   # uploads the DMG as mac-<version>, then rewrites the feed
+```
+
+The private signing key lives in the publisher's login keychain (account `cue`), with a backup in
+`Config/local/sparkle-cue-ed25519.key`. Restore it on another Mac with
+`generate_keys --account cue -f <file>` (from `build/release/SourcePackages/artifacts/sparkle/Sparkle/bin`).
+Without it, no installed copy will accept another update.
+
 ## First run
 
 1. Launch Cue. A camera icon appears in the menu bar (no Dock icon) and, because the

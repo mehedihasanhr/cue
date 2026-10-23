@@ -22,6 +22,17 @@
 	<true/>
 	<key>com.apple.security.automation.apple-events</key>
 	<true/>
+	<!-- Sparkle.framework is embedded and signed with Cue's own certificate, but a self-signed
+	     certificate carries no Team ID, and the hardened runtime refuses to load a library whose
+	     Team ID does not match the app's. Can go once Cue is signed with a Developer ID. -->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+	<!-- Sparkle's installer launcher and its status channel, for updating a sandboxed app. -->
+	<key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
+	<array>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER)-spks</string>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER)-spki</string>
+	</array>
 	<key>com.apple.security.temporary-exception.apple-events</key>
 	<array>
 		<string>com.apple.Notes</string>
