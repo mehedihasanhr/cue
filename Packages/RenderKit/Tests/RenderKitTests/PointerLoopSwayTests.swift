@@ -146,7 +146,7 @@ struct PointerLoopSwayTests {
         let dot = swaying { $0.cursor.appearance = .dot }
         #expect(try #require(pointer(dot, at: 2.6, track: dash)).tilt == 0, "a dot")
         let large = swaying { $0.cursor.appearance = .largeArrow }
-        #expect(try #require(pointer(large, at: 2.6, track: beam)).tilt > 0.1, "Klik's own arrow, whatever the shape")
+        #expect(try #require(pointer(large, at: 2.6, track: beam)).tilt > 0.1, "Cue's own arrow, whatever the shape")
         #expect(try #require(pointer(timeline(), at: 2.6, track: dash)).tilt == 0, "and not unless asked")
     }
 

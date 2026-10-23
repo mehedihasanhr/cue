@@ -24,7 +24,7 @@ struct RecorderShortcutsTests {
         #expect(defaults[.marker]?.displayString == "⌃⌥⌘M")
     }
 
-    @Test func `no default clashes with macOS, Klik or another default`() {
+    @Test func `no default clashes with macOS, Cue or another default`() {
         #expect(RecorderShortcuts.defaults.problems.isEmpty)
         let combos = RecorderAction.allCases.compactMap { RecorderShortcuts.defaults[$0] }
         #expect(Set(combos).count == combos.count)
@@ -71,9 +71,9 @@ struct RecorderShortcutsTests {
                 == .system("inverting colours"))
     }
 
-    @Test func `Klik's own capture keys are Klik's`() {
+    @Test func `Cue's own capture keys are Cue's`() {
         let problem = RecorderShortcuts.defaults.problem(with: combo(kVK_ANSI_3, optionKey | shiftKey), for: .record)
-        #expect(problem == .klik("capturing the screen"))
+        #expect(problem == .cue("capturing the screen"))
     }
 
     @Test func `two actions cannot share a key`() {

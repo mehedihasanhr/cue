@@ -9,12 +9,53 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>com.stackrover.klik</string>
+			<string>com.stackrover.cue</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>klik</string>
+				<string>cue</string>
 			</array>
 		</dict>
 	</array>
+	<!-- Cue's video recordings: packages it owns and opens in the video editor. -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Cue Recording</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.stackrover.cue.recording</string>
+			</array>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+		</dict>
+	</array>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.stackrover.cue.recording</string>
+			<key>UTTypeDescription</key>
+			<string>Cue Recording</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>com.apple.package</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>cuerec</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
+	<!-- The Google OAuth client for Drive backup, from Config/Google.xcconfig. Empty when unset. -->
+	<key>CueGoogleClientID</key>
+	<string>$(CUE_GOOGLE_CLIENT_ID)</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Cue writes captions by recognising the speech in your recording. This happens on your Mac — the audio is never sent anywhere.</string>
 </dict>
 </plist>

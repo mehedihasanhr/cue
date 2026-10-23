@@ -64,7 +64,7 @@ final class ExportFrameReader {
     private var lastDelivered: CMTime = .negativeInfinity
     /// Where each sample is waited for: a queue per reader, so a pull that never came back
     /// from a stalled decoder cannot hold up the reader that replaces it.
-    private var pulls = DispatchQueue(label: "com.stackrover.klik.export-frame-reader")
+    private var pulls = DispatchQueue(label: "com.stackrover.cue.export-frame-reader")
     /// Stalls to pretend, for the tests: each pull while this is above zero behaves as a
     /// stalled one.
     var simulatedStalls = 0
@@ -164,7 +164,7 @@ final class ExportFrameReader {
         self.reader = reader
         self.output = output
         openedFrom = time
-        pulls = DispatchQueue(label: "com.stackrover.klik.export-frame-reader")
+        pulls = DispatchQueue(label: "com.stackrover.cue.export-frame-reader")
     }
 
     /// Takes the next frame. `false` once the file has run out.
@@ -255,7 +255,7 @@ final class ExportFrameReader {
         var abandonedAt: Date?
     }
 
-    private static let log = Logger(subsystem: "com.stackrover.klik.renderkit", category: "export-reader")
+    private static let log = Logger(subsystem: "com.stackrover.cue.renderkit", category: "export-reader")
 
     /// The next sample, waited for no longer than `stallLimit`.
     ///

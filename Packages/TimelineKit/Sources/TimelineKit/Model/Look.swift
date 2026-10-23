@@ -42,7 +42,7 @@ public struct Look: Equatable, Sendable {
     /// What this file was written by, so a future reader knows what it is looking at.
     public static let currentVersion = 1
     /// The extension a look file wears.
-    public static let fileExtension = "klikstyle"
+    public static let fileExtension = "cuestyle"
 
     public var name: String
     public var frame: Frame
@@ -628,7 +628,7 @@ extension Look: Codable {
         try c.encode(webcam, forKey: .webcam)
     }
 
-    /// The bytes of a `.klikstyle` file: JSON, keys in a stable order, readable in a
+    /// The bytes of a `.cuestyle` file: JSON, keys in a stable order, readable in a
     /// text editor — it is a file people are meant to keep and pass around.
     public func encoded() throws -> Data {
         let encoder = JSONEncoder()

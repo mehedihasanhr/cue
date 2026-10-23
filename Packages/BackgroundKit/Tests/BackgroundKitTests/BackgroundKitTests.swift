@@ -13,9 +13,16 @@ struct WallpaperIDTests {
         }
     }
 
-    @Test(arguments: ["", "nonamespace", "bogus:x", "klik:", ":klik"])
+    @Test(arguments: ["", "nonamespace", "bogus:x", "cue:", ":cue"])
     func nonsenseIsRejected(_ raw: String) {
         #expect(WallpaperID(rawValue: raw) == nil)
+    }
+
+    /// A project saved when the app was called Klik names its gradients `klik:`.
+    @Test func aKlikGradientReadsAsCues() throws {
+        let id = try #require(WallpaperID(rawValue: "klik:ocean"))
+        #expect(id == WallpaperID(.cue, "ocean"))
+        #expect(WallpaperID(rawValue: "klik:") == nil)
     }
 
     @Test func aSystemPictureInAFolderKeepsItsPath() throws {
@@ -58,7 +65,7 @@ struct WallpaperResolverTests {
     }
 
     @Test func anUnknownPresetResolvesToNothingRatherThanToADefault() {
-        let id = try! #require(WallpaperID(rawValue: "klik:invented"))
+        let id = try! #require(WallpaperID(rawValue: "cue:invented"))
         #expect(WallpaperResolver().source(for: id) == nil)
     }
 

@@ -3,7 +3,7 @@ import PackageDescription
 
 /// The backgrounds both apps offer, in one place.
 ///
-/// A leaf: no package dependencies, and none wanted. Klik's screenshot editor and Klik
+/// A leaf: no package dependencies, and none wanted. Cue's screenshot editor and Cue
 /// Studio's recording editor have different documents and different renderers, but they
 /// offer the same wallpapers — so what is shared is the catalogue and the ids, not the
 /// model that stores a choice.

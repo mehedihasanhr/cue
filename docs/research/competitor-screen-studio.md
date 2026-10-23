@@ -8,7 +8,7 @@ Research date: 2026-09-29. Current stable is 3.7.5-4595 (2026-08-05); current be
 - Reddit, X and G2 could not be read directly (blocked or 403). Reddit sentiment below is second-hand, via AlternativeTo and competitor blogs.
 - Many third-party articles are competitor blogs. I flag them as biased and did not treat their claims as fact unless official sources agree.
 - The homepage price uses animated digits; the fetch summary misread it as $20. Raw HTML and several third parties confirm $29.
-- No processes were started. Raw data is in `/private/tmp/claude-501/-Users-stackrover-Workspaces-offices-stackrover-klik/9c09420c-5547-4a41-bee3-db5b1cfd830c/scratchpad/` (`fb_top_1..6.json` holds all 296 public feature requests; `changelog.txt` holds the full changelog).
+- No processes were started. Raw data is in `/private/tmp/claude-501/-Users-stackrover-Workspaces-offices-stackrover-cue/9c09420c-5547-4a41-bee3-db5b1cfd830c/scratchpad/` (`fb_top_1..6.json` holds all 296 public feature requests; `changelog.txt` holds the full changelog).
 
 ## Screen Studio feature inventory
 

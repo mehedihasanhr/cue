@@ -37,7 +37,7 @@ impl AudioRecorder {
         let stop = Arc::new(AtomicBool::new(false));
         let flag = stop.clone();
         let thread = std::thread::Builder::new()
-            .name(format!("klik-audio-{source:?}"))
+            .name(format!("cue-audio-{source:?}"))
             .spawn(move || run(source, device_id, path, clock, flag))
             .context("Could not start the sound recorder")?;
         Ok(Self { stop, thread: Some(thread) })

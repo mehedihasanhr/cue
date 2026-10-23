@@ -122,7 +122,7 @@ pub fn video_close(media: State<'_, Media>, path: String) {
 /// Starts a file the export writes into.
 #[tauri::command]
 pub fn export_begin(media: State<'_, Media>, path: String) -> Result<()> {
-    let file = File::create(&path).map_err(|e| format!("Klik Studio can't write there: {e}"))?;
+    let file = File::create(&path).map_err(|e| format!("Cue Studio can't write there: {e}"))?;
     media.writers.lock().unwrap().insert(path, file);
     Ok(())
 }

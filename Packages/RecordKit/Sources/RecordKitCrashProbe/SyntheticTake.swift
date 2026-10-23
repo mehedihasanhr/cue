@@ -16,7 +16,7 @@ final class SyntheticTake: @unchecked Sendable {
     let pixelSize: CGSize
     let codec: AVVideoCodecType
     let clock = RecordingClock()
-    let queue = DispatchQueue(label: "com.stackrover.klik.studio.synthetic-take")
+    let queue = DispatchQueue(label: "com.stackrover.cue.studio.synthetic-take")
 
     let screen: SessionWriter
     let systemAudio: AudioTrackWriter

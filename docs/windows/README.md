@@ -1,6 +1,6 @@
-# Klik for Windows
+# Cue for Windows
 
-Klik for Windows is the screenshot tool in the Windows tray. It is built with Tauri 2: a Rust core (`windows/src-tauri`) and a React + TypeScript UI (`windows/src`). It shares no code with the Mac app, but follows it closely:
+Cue for Windows is the screenshot tool in the Windows tray. It is built with Tauri 2: a Rust core (`windows/src-tauri`) and a React + TypeScript UI (`windows/src`). It shares no code with the Mac app, but follows it closely:
 
 - the same capture overlay
 - the same editor tools and shape recognizer, ported line for line with the Mac's test cases
@@ -14,10 +14,10 @@ Klik for Windows is the screenshot tool in the Windows tray. It is built with Ta
 | Capture area, window, full screen | Every display is frozen first, then you choose. Window snapping, a loupe, Shift for a square, Ctrl to turn snapping off, Ctrl+A for the whole display, Esc to cancel. |
 | Capture text | Windows' own OCR (`Windows.Media.Ocr`) in your installed languages. The text goes to the clipboard. |
 | Editor | Arrow (bendable, single or double), rectangle, ellipse, line, pencil with smart shapes, highlighter, highlight box, text, counter, blur and pixelate. Also crop, rotate, a background (gradients, colours, padding, inset, corners, shadow, ratio), undo and redo, copy, Save As PNG or JPEG. |
-| Dynamic Island | A black pill hanging from the top centre of each display, drawn and animated like the Mac's. Hover (or click) and it opens into the Klik panel: search, the capture buttons, and today's captures. New captures flash on it; copies, uploads and errors show as statuses. Closed, it lets every click through. |
+| Dynamic Island | A black pill hanging from the top centre of each display, drawn and animated like the Mac's. Hover (or click) and it opens into the Cue panel: search, the capture buttons, and today's captures. New captures flash on it; copies, uploads and errors show as statuses. Closed, it lets every click through. |
 | Island tabs | All, Assets, Tasks, Notes, Captures, Colors, Snippets and Clipboard, as on the Mac: cards by day with Recent, Pinned and groups; search across everything with quick answers (colours, numbers, timestamps, px ↔ rem, base64, sums); a card opens in place (← →); Paste puts it straight into the app in front; Copy as / Paste as / Extract for text; forms on the island for names, notes, snippets and tasks. Files dragged onto the island are kept as assets. |
 | Clipboard history | What is copied anywhere (text, links, colours, pictures, files), with the app it came from. Password managers' private copies are skipped. Settings › Clipboard. |
-| Klik panel | The Mac's floating panel (Alt+Shift+K, or a left click on the tray icon), opened where Settings › Island › Panels says. Every capture by day, with search. Edit, copy, copy share link, float on screen, show in Explorer, pin to top, rename, and delete to the Recycle Bin. |
+| Cue panel | The Mac's floating panel (Alt+Shift+K, or a left click on the tray icon), opened where Settings › Island › Panels says. Every capture by day, with search. Edit, copy, copy share link, float on screen, show in Explorer, pin to top, rename, and delete to the Recycle Bin. |
 | Float on screen | The capture stays above other windows. Drag to move, scroll to resize, right-click for opacity, Esc to close. |
 | Share link | Uploads to an S3-compatible bucket (signed on the PC) or a custom endpoint, then copies the link. Secrets are kept in Windows Credential Manager. |
 | Settings | The Mac's layout: a sidebar with search, back and forward, and pages for General, Appearance, Shortcuts, Sharing, About, Island, Capture and Editor (every editor default, or "remember last used"). Mica behind it on Windows 11. |
@@ -31,21 +31,21 @@ Default shortcuts mirror the Mac's ⌥⇧ set as **Alt+Shift**:
 | Alt+Shift+6 | Window |
 | Alt+Shift+3 | Full screen |
 | Alt+Shift+T | Text |
-| Alt+Shift+K | Klik panel at the pointer |
+| Alt+Shift+K | Cue panel at the pointer |
 
 From a script or another launcher:
 
-- `klik.exe --capture area|window|fullscreen|text` takes a capture.
-- `klik.exe --open history|settings` opens the Klik panel or Settings; `--open settings/island` (or any page name) opens Settings on that page.
+- `cue.exe --capture area|window|fullscreen|text` takes a capture.
+- `cue.exe --open history|settings` opens the Cue panel or Settings; `--open settings/island` (or any page name) opens Settings on that page.
 
 ### Where things are kept
 
 | What | Where |
 | --- | --- |
-| Captures | `%USERPROFILE%\Pictures\Klik\Screenshot yyyy-MM-dd at HH.mm.ss.png` |
-| Settings | `%APPDATA%\Klik\settings.json` |
-| History index and thumbnails | `%LOCALAPPDATA%\Klik\` |
-| Secrets | Windows Credential Manager, under "Klik" |
+| Captures | `%USERPROFILE%\Pictures\Cue\Screenshot yyyy-MM-dd at HH.mm.ss.png` |
+| Settings | `%APPDATA%\Cue\settings.json` |
+| History index and thumbnails | `%LOCALAPPDATA%\Cue\` |
+| Secrets | Windows Credential Manager, under "Cue" |
 
 ## Building
 
@@ -91,14 +91,14 @@ CI (`.github/workflows/windows.yml`) runs the same checks on `windows-latest` an
 1. Bump `version` in `windows/src-tauri/tauri.conf.json` and `windows/package.json`.
 2. Build with `bash windows/scripts/build-installer.sh`. It signs the update with `~/.tauri/klik-windows.key`. Keep that key safe: without it, installed copies can never update again.
 3. Publish with `bash windows/scripts/publish-release.sh`. This:
-   - creates `windows-<version>` on `mehedihasanhr/klik-releases`, never marked latest
+   - creates `windows-<version>` on `mehedihasanhr/cue-releases`, never marked latest
    - replaces `latest.json` on the `windows-feed` release, which is what the in-app updater reads
 
 The installer isn't code-signed, so Windows SmartScreen shows "Windows protected your PC". Users choose **More info › Run anyway**.
 
 ## Testing on a PC (checklist)
 
-- [ ] The installer runs, Klik appears in the tray, and a left click on it opens the Klik panel.
+- [ ] The installer runs, Cue appears in the tray, and a left click on it opens the Cue panel.
 - [ ] Island: the pill shows at the top centre of every display and never blocks clicks on a maximised window's title bar. Hovering opens it; leaving closes it. A capture flashes on it. Typing in its search works.
 - [ ] Alt+Shift+4: the overlay covers every display. The loupe follows the pointer, and hovering a window outlines it.
 - [ ] Drag an area: the saved PNG is exactly that area, also with two displays at different scaling (100% and 150%).
@@ -115,7 +115,7 @@ The installer isn't code-signed, so Windows SmartScreen shows "Windows protected
 - [ ] A rough rectangle, circle, line and arrow drawn with the pencil turn into clean shapes.
 - [ ] Alt+Shift+T on some text: the text lands on the clipboard and the island says so.
 - [ ] Island tabs: copy something in a browser and it shows under Clipboard; Paste on a card pastes into Notepad; a new note, task and snippet save from the island's forms; dragging a file from Explorer onto the island saves it under Assets; searching "#0e4fec" or "24px" shows answers.
-- [ ] Klik panel: rename (F2), delete goes to the Recycle Bin, Show in Explorer, and a floating window that you can drag, scroll and set the opacity of.
+- [ ] Cue panel: rename (F2), delete goes to the Recycle Bin, Show in Explorer, and a floating window that you can drag, scroll and set the opacity of.
 - [ ] Settings: rebinding a shortcut works at once. A taken shortcut is flagged. "Open at sign-in" survives a restart. Island settings change the island at once. Editor defaults reach the next editor.
 - [ ] Sharing with an S3 bucket or endpoint copies a working link.
 - [ ] Settings › About › Check for Updates finds a newer test release.

@@ -55,7 +55,7 @@ const SECTIONS: Record<Section, { title: string; subtitle: string; symbol: IconN
   },
   shortcuts: {
     title: "Shortcuts",
-    subtitle: "The keys that reach Klik from any app",
+    subtitle: "The keys that reach Cue from any app",
     symbol: "command",
     tint: "indigo",
     keywords: ["hotkey", "keyboard", "keys", "global", "bindings", "record", "print screen"],
@@ -90,14 +90,14 @@ const SECTIONS: Record<Section, { title: string; subtitle: string; symbol: IconN
   },
   clipboard: {
     title: "Clipboard",
-    subtitle: "What Klik remembers of what you copy",
+    subtitle: "What Cue remembers of what you copy",
     symbol: "doc.on.clipboard.fill",
     tint: "teal",
     keywords: ["history", "copy", "paste", "limit", "items", "clear", "pinned"],
   },
   studio: {
     title: "Studio",
-    subtitle: "Record the screen, then edit it in Klik Studio",
+    subtitle: "Record the screen, then edit it in Cue Studio",
     symbol: "record.circle.fill",
     tint: "red",
     keywords: ["record", "recording", "video", "screen", "countdown", "microphone", "system audio", "studio", "edit videos"],
@@ -123,7 +123,7 @@ function matches(section: Section, query: string): boolean {
   return s.title.toLowerCase().includes(needle) || s.subtitle.toLowerCase().includes(needle) || s.keywords.some((k) => k.includes(needle));
 }
 
-const SECTION_KEY = "klik.settings.section";
+const SECTION_KEY = "cue.settings.section";
 
 /** The page asked for in the address (`#island`), else the one shown last. */
 function savedSection(): Section {
@@ -353,7 +353,7 @@ function General({ prefs, save }: { prefs: Prefs; save: Save }) {
   return (
     <Pane>
       <Group>
-        <Row title="Launch Klik when you sign in" subtitle="It waits in the tray, ready for its shortcuts.">
+        <Row title="Launch Cue when you sign in" subtitle="It waits in the tray, ready for its shortcuts.">
           <Switch
             label="Launch at sign-in"
             checked={!!autostart}
@@ -373,7 +373,7 @@ function General({ prefs, save }: { prefs: Prefs; save: Save }) {
       </Group>
 
       <Group title="Storage">
-        <Row title={custom ? lastComponent(folder) : "Pictures › Klik"} subtitle={folder} symbol="folder" tint="orange">
+        <Row title={custom ? lastComponent(folder) : "Pictures › Cue"} subtitle={folder} symbol="folder" tint="orange">
           <span className="row-buttons">
             <button
               className="button"
@@ -390,7 +390,7 @@ function General({ prefs, save }: { prefs: Prefs; save: Save }) {
           </span>
         </Row>
         {custom && (
-          <Row title="Default folder" subtitle="Pictures › Klik">
+          <Row title="Default folder" subtitle="Pictures › Cue">
             <button className="button" onClick={() => save({ saveFolder: null })}>
               Use Default Folder
             </button>
@@ -460,7 +460,7 @@ const ACTIONS: { id: string; title: string; symbol: IconName; tint: Tint }[] = [
   { id: "captureArea", title: "Capture area", symbol: "viewfinder", tint: "teal" },
   { id: "captureWindow", title: "Capture window", symbol: "macwindow", tint: "cyan" },
   { id: "captureText", title: "Capture text (OCR)", symbol: "text.viewfinder", tint: "green" },
-  { id: "showHistory", title: "Klik panel at the pointer", symbol: "cursorarrow.rays", tint: "orange" },
+  { id: "showHistory", title: "Cue panel at the pointer", symbol: "cursorarrow.rays", tint: "orange" },
 ];
 
 function Shortcuts({ prefs, save, conflicts }: { prefs: Prefs; save: Save; conflicts: Conflict[] }) {
@@ -634,7 +634,7 @@ function Sharing({ prefs, save }: { prefs: Prefs; save: Save }) {
           {text("Endpoint", "endpoint", "s3.us-east-1.amazonaws.com", "AWS S3, Cloudflare R2, MinIO, Backblaze B2…")}
           {text("Region", "region", "auto")}
           {text("Bucket", "bucket")}
-          {text("Folder", "prefix", "klik/")}
+          {text("Folder", "prefix", "cue/")}
           {text("Access key", "accessKey")}
           {secret("Secret key", "share.s3.secretKey")}
           {text("Public URL", "publicBase", "https://cdn.example.com", "What goes before the file name in the link.")}
@@ -699,7 +699,7 @@ function About({ prefs, save }: { prefs: Prefs; save: Save }) {
     setWorking(true);
     setStatus(update.ready ? "Installing…" : "Downloading…");
     try {
-      // Klik closes here, and the installer opens the new one.
+      // Cue closes here, and the installer opens the new one.
       await invoke("update_install");
     } catch (error) {
       setStatus(`Couldn't install: ${message(error)}`);
@@ -712,9 +712,9 @@ function About({ prefs, save }: { prefs: Prefs; save: Save }) {
     status ??
     (update.version
       ? update.ready
-        ? `Klik ${update.version} is downloaded. It installs when you step away, or when you quit Klik.`
-        : `Klik ${update.version} is available.`
-      : "Klik looks for a newer version every few hours.");
+        ? `Cue ${update.version} is downloaded. It installs when you step away, or when you quit Cue.`
+        : `Cue ${update.version} is available.`
+      : "Cue looks for a newer version every few hours.");
 
   return (
     <Pane>
@@ -722,7 +722,7 @@ function About({ prefs, save }: { prefs: Prefs; save: Save }) {
         <Cell vertical={16}>
           <img className="about-icon" src={appIcon} width={56} height={56} alt="" />
           <div className="row-text">
-            <div className="about-name">Klik</div>
+            <div className="about-name">Cue</div>
             <div className="row-subtitle">Screenshots you can annotate, blur and share — built for Windows.</div>
           </div>
           <div className="row-subtitle about-version">Version {version}</div>
@@ -731,7 +731,7 @@ function About({ prefs, save }: { prefs: Prefs; save: Save }) {
           <button
             className="button"
             onClick={() => {
-              ipc.copyText(`Klik ${version} · ${info?.os ?? "Windows"}`);
+              ipc.copyText(`Cue ${version} · ${info?.os ?? "Windows"}`);
               setCopied(true);
               window.setTimeout(() => setCopied(false), 1500);
             }}
@@ -755,7 +755,7 @@ function About({ prefs, save }: { prefs: Prefs; save: Save }) {
         </Row>
         <Row
           title="Install updates"
-          subtitle={automatic ? "Downloaded quietly, installed when you step away from the PC or quit Klik." : "Klik tells you when there is one; you install it here."}
+          subtitle={automatic ? "Downloaded quietly, installed when you step away from the PC or quit Cue." : "Cue tells you when there is one; you install it here."}
         >
           <Segmented
             label="Install updates"
@@ -770,7 +770,7 @@ function About({ prefs, save }: { prefs: Prefs; save: Save }) {
       </Group>
 
       <Group title="On this PC">
-        <Row title="Klik" subtitle={info?.exe}>
+        <Row title="Cue" subtitle={info?.exe}>
           <button className="button" onClick={() => ipc.revealApp()}>
             Show in Explorer
           </button>
@@ -822,7 +822,7 @@ function Island({ prefs, save }: { prefs: Prefs; save: Save }) {
   return (
     <Pane>
       <Group title="Dynamic Island">
-        <Row title="Show the Dynamic Island" subtitle="A pill at the top of the screen that opens into Klik.">
+        <Row title="Show the Dynamic Island" subtitle="A pill at the top of the screen that opens into Cue.">
           <Switch label="Show the island" checked={island.enabled} onChange={(enabled) => set({ enabled })} />
         </Row>
         <Row title="Display" subtitle="Where the island sits. A display that's unplugged hands it back to the main one." disabled={off}>
@@ -943,7 +943,7 @@ function Island({ prefs, save }: { prefs: Prefs; save: Save }) {
         <PreviewPicker
           popover
           title="Open panels at"
-          subtitle="The Klik panel from its shortcut and the tray."
+          subtitle="The Cue panel from its shortcut and the tray."
           value={prefs.panels.position}
           options={PANEL_POSITIONS}
           columns={4}
@@ -951,7 +951,7 @@ function Island({ prefs, save }: { prefs: Prefs; save: Save }) {
           onChange={(position) => save({ panels: { ...prefs.panels, position } })}
           preview={(position) => <PanelPositionPreview position={position} />}
         />
-        <Row title="Grid columns" subtitle="Cards per row in the Klik panel's grid.">
+        <Row title="Grid columns" subtitle="Cards per row in the Cue panel's grid.">
           <Stepper label="Columns" value={prefs.panels.columns} min={3} max={6} onChange={(columns) => save({ panels: { ...prefs.panels, columns } })} />
         </Row>
       </Group>
@@ -986,7 +986,7 @@ function Capture({ prefs, save }: { prefs: Prefs; save: Save }) {
   return (
     <Pane>
       <Group>
-        <Row title="After a capture" subtitle="Either way it is in the island and the Klik panel.">
+        <Row title="After a capture" subtitle="Either way it is in the island and the Cue panel.">
           <Segmented
             label="After a capture"
             value={prefs.afterCapture}
@@ -1011,7 +1011,7 @@ function Capture({ prefs, save }: { prefs: Prefs; save: Save }) {
       <Group title="Capture text">
         <Row
           title="Languages"
-          subtitle="Klik reads text with Windows' own recognizer, in the languages installed in Windows Settings › Time & language › Language & region."
+          subtitle="Cue reads text with Windows' own recognizer, in the languages installed in Windows Settings › Time & language › Language & region."
           symbol="text.viewfinder"
           tint="green"
         >
@@ -1065,9 +1065,9 @@ function Clipboard({ prefs, save }: { prefs: Prefs; save: Save }) {
 
 // MARK: - Studio
 
-const STUDIO_DOWNLOAD = "https://github.com/mehedihasanhr/klik-releases/releases";
+const STUDIO_DOWNLOAD = "https://github.com/mehedihasanhr/cue-releases/releases";
 
-/** The Mac's Studio pane: whether Klik Studio is here, and what Klik asks it for. */
+/** The Mac's Studio pane: whether Cue Studio is here, and what Cue asks it for. */
 function Studio({ prefs, save }: { prefs: Prefs; save: Save }) {
   const [state, setState] = useState<{ installed: boolean; path: string | null } | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
@@ -1083,7 +1083,7 @@ function Studio({ prefs, save }: { prefs: Prefs; save: Save }) {
   return (
     <Pane>
       <Group footer={failure ?? undefined}>
-        <Row title="Klik Studio" subtitle={state === null ? "…" : state.installed ? "Records the screen with sound, then makes it look made: zooms, a background, a smooth pointer." : "Not installed. Records the screen with sound, then makes it look made."} symbol="record.circle.fill" tint="red">
+        <Row title="Cue Studio" subtitle={state === null ? "…" : state.installed ? "Records the screen with sound, then makes it look made: zooms, a background, a smooth pointer." : "Not installed. Records the screen with sound, then makes it look made."} symbol="record.circle.fill" tint="red">
           {state?.installed ? (
             <span className="row-buttons">
               <button className="button" onClick={() => run("studio_library")}>

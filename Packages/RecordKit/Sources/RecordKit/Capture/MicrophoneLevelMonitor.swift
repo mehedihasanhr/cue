@@ -12,10 +12,10 @@ import os
 public final class MicrophoneLevelMonitor: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, @unchecked Sendable {
     private let session = AVCaptureSession()
     private let output = AVCaptureAudioDataOutput()
-    private let queue = DispatchQueue(label: "com.stackrover.klik.studio.meter", qos: .utility)
+    private let queue = DispatchQueue(label: "com.stackrover.cue.studio.meter", qos: .utility)
     public let deviceID: String
 
-    private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "meter")
+    private static let log = Logger(subsystem: "com.stackrover.cue.studio", category: "meter")
 
     /// `nil` when the device is gone or has not been allowed.
     public init?(deviceID: String) {

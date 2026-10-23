@@ -7,7 +7,7 @@ import Testing
 struct LookStoreTests {
     private func makeFolder() -> URL {
         FileManager.default.temporaryDirectory
-            .appendingPathComponent("KlikStudioLooks-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("CueStudioLooks-\(UUID().uuidString)", isDirectory: true)
     }
 
     private func look(_ name: String, padding: Double = 0.1) -> Look {
@@ -25,7 +25,7 @@ struct LookStoreTests {
         let saved = try store.save(look("Zebra", padding: 0.2))
         try store.save(look("apple", padding: 0.3))
         #expect(saved.url.pathExtension == Look.fileExtension)
-        #expect(saved.url.lastPathComponent == "Zebra.klikstyle")
+        #expect(saved.url.lastPathComponent == "Zebra.cuestyle")
 
         let listed = store.list()
         #expect(listed.map(\.name) == ["apple", "Zebra"], "sorted the way the Finder sorts")
@@ -55,7 +55,7 @@ struct LookStoreTests {
 
         let saved = try store.save(look("  16:9 / Dark  "))
         #expect(saved.name == "16:9 / Dark")
-        #expect(saved.url.lastPathComponent == "16-9 - Dark.klikstyle")
+        #expect(saved.url.lastPathComponent == "16-9 - Dark.cuestyle")
         #expect(store.list().first?.name == "16:9 / Dark", "the pretty name inside the file wins while it agrees with the file")
         #expect(LookStore.fileName(for: "///") == "---")
         #expect(LookStore.fileName(for: "   ") == "Look")
@@ -68,7 +68,7 @@ struct LookStoreTests {
         let store = LookStore(folder: folder, reservedNames: [])
 
         let saved = try store.save(look("Before"))
-        let moved = folder.appendingPathComponent("After.klikstyle")
+        let moved = folder.appendingPathComponent("After.cuestyle")
         try FileManager.default.moveItem(at: saved.url, to: moved)
         #expect(store.list().map(\.name) == ["After"])
     }
@@ -87,7 +87,7 @@ struct LookStoreTests {
 
         let renamed = try store.rename(saved, to: "Second")
         #expect(renamed.name == "Second")
-        #expect(renamed.url.lastPathComponent == "Second.klikstyle")
+        #expect(renamed.url.lastPathComponent == "Second.cuestyle")
         #expect(!FileManager.default.fileExists(atPath: saved.url.path(percentEncoded: false)))
         let after = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: renamed.url)) as? [String: Any])
         #expect(after["name"] as? String == "Second")
@@ -103,7 +103,7 @@ struct LookStoreTests {
         // And so is fixing its capitals, which on this disk is a move onto itself.
         let recased = try store.rename(same, to: "second")
         #expect(recased.name == "second")
-        #expect(recased.url.lastPathComponent == "second.klikstyle")
+        #expect(recased.url.lastPathComponent == "second.cuestyle")
         #expect(store.list().map(\.name) == ["Other", "second"])
     }
 
@@ -129,7 +129,7 @@ struct LookStoreTests {
         try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
 
         // A look sent by somebody else, with a field this build does not know.
-        let shared = elsewhere.appendingPathComponent("Sunset.klikstyle")
+        let shared = elsewhere.appendingPathComponent("Sunset.cuestyle")
         try Data(#"{"version": 3, "name": "Sunset", "frame": {"padding": 0.12}, "extra": true}"#.utf8).write(to: shared)
 
         try store.save(look("Sunset"))
@@ -145,7 +145,7 @@ struct LookStoreTests {
         #expect(again.name == "Sunset 3")
 
         // A reserved name is stepped past the same way.
-        let studio = elsewhere.appendingPathComponent("Studio.klikstyle")
+        let studio = elsewhere.appendingPathComponent("Studio.cuestyle")
         try Data(#"{"name": "Studio", "frame": {"padding": 0.5}}"#.utf8).write(to: studio)
         #expect(try store.importLook(from: studio).name == "Studio 2")
         #expect(FileManager.default.fileExists(atPath: shared.path(percentEncoded: false)), "the original stays where it was")
@@ -161,11 +161,11 @@ struct LookStoreTests {
         let store = LookStore(folder: folder, reservedNames: [])
         try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
 
-        let text = elsewhere.appendingPathComponent("notes.klikstyle")
+        let text = elsewhere.appendingPathComponent("notes.cuestyle")
         try Data("hello".utf8).write(to: text)
         #expect(throws: LookStore.Failure.notALook) { try store.importLook(from: text) }
 
-        let empty = elsewhere.appendingPathComponent("empty.klikstyle")
+        let empty = elsewhere.appendingPathComponent("empty.cuestyle")
         try Data("{}".utf8).write(to: empty)
         #expect(throws: LookStore.Failure.notALook) { try store.importLook(from: empty) }
         #expect(store.list().isEmpty)
@@ -176,7 +176,7 @@ struct LookStoreTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         let store = LookStore(folder: folder, reservedNames: [])
         try store.save(look("Fine"))
-        try Data("garbage".utf8).write(to: folder.appendingPathComponent("broken.klikstyle"))
+        try Data("garbage".utf8).write(to: folder.appendingPathComponent("broken.cuestyle"))
         try Data("{}".utf8).write(to: folder.appendingPathComponent("notes.txt"))
         #expect(store.list().map(\.name) == ["Fine"])
     }
@@ -184,7 +184,7 @@ struct LookStoreTests {
     @Test func theStandardFolderIsUnderApplicationSupport() {
         let folder = LookStore.standardFolder
         #expect(folder.lastPathComponent == "Looks")
-        #expect(folder.deletingLastPathComponent().lastPathComponent == "Klik Studio")
+        #expect(folder.deletingLastPathComponent().lastPathComponent == "Cue Studio")
         #expect(folder.path(percentEncoded: false).contains("Application Support"))
     }
 }

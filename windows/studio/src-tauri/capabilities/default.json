@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Every Klik Studio window: the recorder bar, the target picker, editors.",
+  "description": "Every Cue Studio window: the recorder bar, the target picker, editors.",
   "windows": ["*"],
   "permissions": [
     "core:default",

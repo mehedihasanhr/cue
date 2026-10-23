@@ -75,7 +75,7 @@ public enum ClickSound {
     /// Where the sounds are kept once made. Anywhere temporary will do: they are made
     /// again in a few milliseconds if the system clears it.
     public static var defaultFolder: URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("KlikStudio-ClickSounds", isDirectory: true)
+        FileManager.default.temporaryDirectory.appendingPathComponent("CueStudio-ClickSounds", isDirectory: true)
     }
 
     /// A file holding one of the sounds, made the first time it is asked for.

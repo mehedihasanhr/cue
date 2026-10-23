@@ -9,7 +9,7 @@
  * against 0, and AppKit's BOOL stays the typedef it always was.
  *
  * Leptonica's headers are deliberately absent. capi.h only forward-declares
- * `struct Pix`, and Klik never constructs one — it hands Tesseract a raw buffer.
+ * `struct Pix`, and Cue never constructs one — it hands Tesseract a raw buffer.
  */
 #pragma once
 

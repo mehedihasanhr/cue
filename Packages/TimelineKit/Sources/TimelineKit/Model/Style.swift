@@ -293,7 +293,7 @@ public struct CursorStyle: Codable, Equatable, Sendable {
     public var clickColor: ColorValue
     /// How big the ring grows, as a fraction of the shorter side of the finished frame.
     public var clickSize: Double
-    /// Draw the pointer the recording actually had, rather than Klik's drawing of it.
+    /// Draw the pointer the recording actually had, rather than Cue's drawing of it.
     ///
     /// On when the recording kept one — which is the right default, because the drawn
     /// pointer is an approximation of a *stock* Apple pointer and plenty of people do not

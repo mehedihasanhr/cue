@@ -3,7 +3,7 @@
 Two questions are answered here:
 
 1. **Where is the market's real gap?** What do users keep asking for that nobody delivers well?
-2. **Where is Klik Studio's gap?** What do competitors have that we do not?
+2. **Where is Cue Studio's gap?** What do competitors have that we do not?
 
 Demand figures are vote counts from Screen Studio's public feature hub (296 requests), plus issue trackers and forum threads. Sources are in `docs/research/`.
 
@@ -11,7 +11,7 @@ Demand figures are vote counts from Screen Studio's public feature hub (296 requ
 
 Score = user demand (1–5) × how poorly competitors serve it (1–5).
 
-| Rank | Gap | Evidence of demand | How competitors serve it today | Score | Klik Studio today |
+| Rank | Gap | Evidence of demand | How competitors serve it today | Score | Cue Studio today |
 |---|---|---|---|---|---|
 | 1 | **Blur that follows content.** A mask that stays on the email address while the page scrolls | 568 + 147 votes; users re-edit exports elsewhere to blur more | Static masks everywhere. Screen Studio allows one mask, and it fades in, briefly exposing the data | 25 | Several blurs at once, already. They do not follow content yet. The model has a "stick to content" flag that nothing draws |
 | 2 | **Reliability.** No lost takes, no drift, no export surprises | Open data-loss bugs in every open-source tool; crash complaints for every paid one | Nobody is praised for it | 20 | Strong base: one clock, one renderer, separate audio files. Pointer sync is now measured (see `06-quality-log.md`). Recording is not crash-safe yet |
@@ -29,7 +29,7 @@ Score = user demand (1–5) × how poorly competitors serve it (1–5).
 | 14 | **Captions: styling, languages, subtitles without a voice** | 102 votes | Tella and FocuSee are strong | 7.5 | One style, system language only |
 | 15 | **Brand kits and presets** | 88 votes for a logo watermark | Presets exist; brand kits cost extra | 7.5 | Defaults in Settings. No saved presets, no logo |
 
-### What this means for Klik Studio
+### What this means for Cue Studio
 
 Three themes cover most of the list:
 
@@ -37,9 +37,9 @@ Three themes cover most of the list:
 - **Enough editing that nobody has to leave.** Ranks 1, 3, 4, 10. Blur that tracks, real annotations, several clips, transitions.
 - **Local intelligence.** Ranks 6, 12, 14. Transcript editing, silence removal and calmer zoom, all on the Mac with no credits.
 
-## Part B: Klik Studio's gaps against competitors
+## Part B: Cue Studio's gaps against competitors
 
-Features that at least one main competitor ships and Klik Studio does not. Grouped by how much they matter.
+Features that at least one main competitor ships and Cue Studio does not. Grouped by how much they matter.
 
 ### Must have for parity with Screen Studio
 
@@ -91,7 +91,7 @@ Features that at least one main competitor ships and Klik Studio does not. Group
 | AI chat editing, command-line tool | OpenScreen, Cap |
 | Hosted sharing with analytics | Cap, Tella, Loom |
 
-## Part C: where Klik Studio is already ahead
+## Part C: where Cue Studio is already ahead
 
 Worth protecting while the gaps are closed.
 

@@ -509,7 +509,7 @@ public final class SceneRenderer: @unchecked Sendable {
 
     /// The pointer, drawn rather than sampled.
     ///
-    /// Klik draws its own shapes: the system's cursor artwork is Apple's, and a recording
+    /// Cue draws its own shapes: the system's cursor artwork is Apple's, and a recording
     /// that has to ship a copy of it is a licensing question nobody needs. Drawn once per
     /// size and cached, because a pointer is redrawn every frame and a `CGContext` per
     /// frame would show up in a profile immediately.
@@ -533,7 +533,7 @@ public final class SceneRenderer: @unchecked Sendable {
         let picture: CIImage
         let drawn: CGSize
         let hotspot: CGPoint
-        // A style of Klik's own is drawn at this frame's size, so it is as sharp in a 4K
+        // A style of Cue's own is drawn at this frame's size, so it is as sharp in a 4K
         // export as in the preview, and carries its own point.
         if cursor.appearance != .asRecorded,
            let styled = PointerStyleArtwork.drawing(cursor.appearance, shape: cursor.shape,

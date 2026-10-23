@@ -133,7 +133,7 @@ function FramePanel({ timeline: t, commit }: Props) {
   const set = (key: string, change: (t: Timeline) => void) => commit(change, key);
   const backgrounds: { id: string; b: Background }[] = [
     { id: "indigo", b: { kind: "gradient", from: { r: 0.36, g: 0.42, b: 0.85, a: 1 }, to: { r: 0.15, g: 0.16, b: 0.35, a: 1 }, angle: 0.25 } },
-    ...Object.keys(PRESETS).map((name) => ({ id: name, b: { kind: "wallpaper", id: `klik:${name}` } as Background })),
+    ...Object.keys(PRESETS).map((name) => ({ id: name, b: { kind: "wallpaper", id: `cue:${name}` } as Background })),
   ];
   const current = JSON.stringify(s.background);
   const solid = s.background.kind === "color" ? s.background.color : { r: 1, g: 1, b: 1, a: 1 };

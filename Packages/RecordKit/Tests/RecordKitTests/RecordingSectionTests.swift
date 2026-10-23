@@ -14,7 +14,7 @@ struct RecordingSectionTests {
     private var now: Date { calendar.date(from: DateComponents(year: 2026, month: 10, day: 1, hour: 12))! }
 
     private func entry(_ name: String, daysAgo: Double) -> RecordingEntry {
-        RecordingEntry(url: URL(fileURLWithPath: "/tmp/\(name).klikrec"), name: name,
+        RecordingEntry(url: URL(fileURLWithPath: "/tmp/\(name).cuerec"), name: name,
                        createdAt: now.addingTimeInterval(-daysAgo * 86_400),
                        duration: 10, byteCount: 1, kinds: [])
     }

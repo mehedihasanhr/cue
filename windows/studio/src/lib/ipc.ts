@@ -1,4 +1,4 @@
-// Typed calls into Klik Studio's Rust side.
+// Typed calls into Cue Studio's Rust side.
 
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 

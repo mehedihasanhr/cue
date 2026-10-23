@@ -44,7 +44,7 @@ public final class FocusTracker: @unchecked Sendable {
     /// one-pixel resize — not a thing that happened.
     private static let movementThreshold: CGFloat = 8
 
-    private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "focus")
+    private static let log = Logger(subsystem: "com.stackrover.cue.studio", category: "focus")
 
     public init(writer: JSONLWriter,
                 queue: DispatchQueue,
@@ -118,8 +118,8 @@ public final class FocusTracker: @unchecked Sendable {
     @MainActor
     private func applicationDidActivate(_ app: NSRunningApplication?) {
         guard let app else { return }
-        // Klik's own recorder bar coming forward is not a moment in the recording.
-        if let bundle = app.bundleIdentifier, bundle.hasPrefix("com.stackrover.klik") { return }
+        // Cue's own recorder bar coming forward is not a moment in the recording.
+        if let bundle = app.bundleIdentifier, bundle.hasPrefix("com.stackrover.cue") { return }
 
         if let rect = Self.frontWindowBounds(of: app.processIdentifier) {
             lastWindow.withLock { $0 = rect }
@@ -132,7 +132,7 @@ public final class FocusTracker: @unchecked Sendable {
     private func pollFrontWindow() {
         guard let app = NSWorkspace.shared.frontmostApplication,
               let rect = Self.frontWindowBounds(of: app.processIdentifier) else { return }
-        if let bundle = app.bundleIdentifier, bundle.hasPrefix("com.stackrover.klik") { return }
+        if let bundle = app.bundleIdentifier, bundle.hasPrefix("com.stackrover.cue") { return }
 
         let moved = lastWindow.withLock { last -> Bool in
             guard let last else { return true }

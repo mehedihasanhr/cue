@@ -9,13 +9,13 @@ import TimelineKit
 
 /// What a turned picture, a colour grade and a moving background cost per 1080p frame.
 ///
-///     KLIK_BENCH=1 swift test --filter LookBenchmarks
+///     CUE_BENCH=1 swift test --filter LookBenchmarks
 ///
 /// Each is measured against the same frame without it, rendered into a pixel buffer the
 /// way the preview and the exporter render, from a real picture rather than a flat colour
 /// Core Image could fold away.
-@Suite(.enabled(if: ProcessInfo.processInfo.environment["KLIK_BENCH"] != nil,
-                "set KLIK_BENCH=1 to measure"),
+@Suite(.enabled(if: ProcessInfo.processInfo.environment["CUE_BENCH"] != nil,
+                "set CUE_BENCH=1 to measure"),
        .serialized,
        .timeLimit(.minutes(5)))
 struct LookBenchmarks {

@@ -103,9 +103,9 @@ struct MovieAtoms: Equatable {
 /// on a queue of its own at utility priority, so the capture queue never waits on a disk.
 public final class TakeSync: @unchecked Sendable {
     private let folders: [URL]
-    private let queue = DispatchQueue(label: "com.stackrover.klik.studio.take-sync", qos: .utility)
+    private let queue = DispatchQueue(label: "com.stackrover.cue.studio.take-sync", qos: .utility)
     private var timer: DispatchSourceTimer?
-    private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "take-sync")
+    private static let log = Logger(subsystem: "com.stackrover.cue.studio", category: "take-sync")
 
     /// Everything in these folders is flushed, whatever writes it — a sidecar added later
     /// is covered without being named here.

@@ -1,4 +1,4 @@
-// What the island shows open, and what the Klik panel shows — the Mac's `IslandPanel`:
+// What the island shows open, and what the Cue panel shows — the Mac's `IslandPanel`:
 // search and the capture buttons on top, the tabs (All, Assets, Tasks, Notes, Captures,
 // Colors, Snippets, Clipboard), then the tab's items as cards in a strip grouped by day,
 // with Recent, Pinned and the groups under it. Searching looks through everything and

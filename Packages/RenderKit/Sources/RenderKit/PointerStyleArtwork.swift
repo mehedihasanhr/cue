@@ -4,7 +4,7 @@ import Foundation
 import TimelineKit
 
 /// The pointer styles drawn at the frame's size: every style but the recorded pointer and
-/// the invisible one — Klik's own drawings, and the system's pointers by way of
+/// the invisible one — Cue's own drawings, and the system's pointers by way of
 /// `SystemPointerArtwork`.
 ///
 /// Drawn with Core Graphics at the size the frame asks for, never scaled up from a
@@ -75,7 +75,7 @@ enum PointerStyleArtwork {
 
     private static func draw(_ appearance: CursorStyle.Appearance, shape: CursorShapeKind,
                              size: Double, color: ColorValue) -> Drawing? {
-        if appearance == .classicKlik, let drawing = KlikPointerArtwork.drawing(shape, size: size) {
+        if appearance == .classicCue, let drawing = CuePointerArtwork.drawing(shape, size: size) {
             return drawing
         }
         if let look = SystemPointerArtwork.look(for: appearance, color: color) {
@@ -94,7 +94,7 @@ enum PointerStyleArtwork {
         case .dartColour:
             return dart(size: size, body: cgColour(color, 1), rim: CGColor(gray: 1, alpha: 1), rimWidth: 1.35)
         case .asRecorded, .clicksOnly, .macOS26, .macOS14, .macOS26White, .macOS14White, .macOS26Colour,
-             .gradient, .neon, .frost, .classicKlik, .dart, .dartBlack, .dartColour:
+             .gradient, .neon, .frost, .classicCue, .dart, .dartBlack, .dartColour:
             return nil
         }
     }

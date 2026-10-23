@@ -36,7 +36,7 @@ public actor VideoExporter {
     /// whichever loop is running. See `ExportCancellation`.
     private let cancellation = ExportCancellation()
 
-    private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "export")
+    private static let log = Logger(subsystem: "com.stackrover.cue.studio", category: "export")
 
     public init(timeline: Timeline,
                 builder: SceneBuilder,

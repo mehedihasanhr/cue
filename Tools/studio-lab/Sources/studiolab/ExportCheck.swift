@@ -4,7 +4,7 @@ import RecordKit
 import RenderKit
 import TimelineKit
 
-/// `studiolab export <recording.klikrec> <out.mp4>` — the file the app would write, and
+/// `studiolab export <recording.cuerec> <out.mp4>` — the file the app would write, and
 /// whether what is in it is where it should be.
 ///
 /// The same `EditorDocument`, `SceneBuilder` and `VideoExporter` the editor uses, with the
@@ -15,7 +15,7 @@ import TimelineKit
 enum ExportCheck {
     static func run(_ arguments: [String], everything: Bool = false) async -> Int32 {
         guard arguments.count >= 2 else {
-            print("usage: studiolab export <recording.klikrec> <out.mp4>")
+            print("usage: studiolab export <recording.cuerec> <out.mp4>")
             return 2
         }
         let package = RecordingPackage(url: URL(fileURLWithPath: arguments[0]))

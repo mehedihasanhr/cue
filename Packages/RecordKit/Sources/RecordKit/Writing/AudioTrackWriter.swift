@@ -46,7 +46,7 @@ public final class AudioTrackWriter: @unchecked Sendable {
     /// editor would show an empty lane for a thing that is not there.
     public private(set) var hasSamples = false
 
-    private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "audio-writer")
+    private static let log = Logger(subsystem: "com.stackrover.cue.studio", category: "audio-writer")
 
     public init(url: URL, clock: RecordingClock, queue: DispatchQueue) throws(RecordingError) {
         self.queue = queue

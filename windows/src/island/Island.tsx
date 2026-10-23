@@ -312,7 +312,7 @@ export default function Island() {
     } else if (name === "prompt" || name === "form") {
       setPhase(
         name === "prompt"
-          ? { kind: "prompt", prompt: { type: "field", title: "Name this color", placeholder: "Name", initial: "Klik blue", onSubmit: () => {} } }
+          ? { kind: "prompt", prompt: { type: "field", title: "Name this color", placeholder: "Name", initial: "Cue blue", onSubmit: () => {} } }
           : { kind: "prompt", prompt: { type: "task", title: "New task", projects: [], initial: { text: "Ship the island", priority: "high" }, onSubmit: () => {} } },
       );
     } else if (name === "expanded") open();

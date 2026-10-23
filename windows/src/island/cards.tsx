@@ -11,7 +11,7 @@ import { cssColor, format, FORMAT_TITLES, inSRGB, isLight, type ColorFormat } fr
 import {
   byteSize,
   firstLine,
-  klikUrl,
+  cueUrl,
   NEXT_STATUS,
   PRIORITY_COLORS,
   PRIORITY_SYMBOLS,
@@ -182,7 +182,7 @@ export function ClipCardBody({ item }: { item: ClipItem }) {
   const text = item.text ?? "";
   switch (item.kind) {
     case "image":
-      return <img className="card-image" src={klikUrl(`clip/${item.id}`)} alt="" draggable={false} loading="lazy" />;
+      return <img className="card-image" src={cueUrl(`clip/${item.id}`)} alt="" draggable={false} loading="lazy" />;
     case "color":
       return <div className="card-fill" style={{ background: text }}><span className="color-chip">{text}</span></div>;
     case "link": {
@@ -239,7 +239,7 @@ export function clipCaption(item: ClipItem) {
 // MARK: - Assets
 
 export function AssetCardBody({ item }: { item: Asset }) {
-  if (item.kind === "image") return <img className="card-image" src={klikUrl(`asset/${item.id}`)} alt="" draggable={false} loading="lazy" />;
+  if (item.kind === "image") return <img className="card-image" src={cueUrl(`asset/${item.id}`)} alt="" draggable={false} loading="lazy" />;
   const ext = item.fileName.includes(".") ? item.fileName.split(".").pop()!.toUpperCase() : "FILE";
   return (
     <div className="card-file">
@@ -289,7 +289,7 @@ export function SnippetCardBody({ item }: { item: Snippet }) {
         {item.name && <span className="snippet-name">{item.name}</span>}
       </div>
       {item.assetID ? (
-        <img className="snippet-asset" src={klikUrl(`asset/${item.assetID}`)} alt="" />
+        <img className="snippet-asset" src={cueUrl(`asset/${item.assetID}`)} alt="" />
       ) : (
         <div className="text-preview small">{item.text}</div>
       )}

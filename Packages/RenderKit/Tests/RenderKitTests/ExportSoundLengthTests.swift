@@ -37,7 +37,7 @@ struct ExportSoundLengthTests {
     @Test(.timeLimit(.minutes(1)))
     func soundThatEndsEarlyDoesNotStopThePicture() async throws {
         let folder = FileManager.default.temporaryDirectory
-            .appendingPathComponent("klik-short-sound-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("cue-short-sound-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
 

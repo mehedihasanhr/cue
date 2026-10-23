@@ -84,5 +84,5 @@ public struct WallpaperBookmarks: Sendable {
         return try body(url)
     }
 
-    private static let log = Logger(subsystem: "com.stackrover.klik", category: "backgrounds")
+    private static let log = Logger(subsystem: "com.stackrover.cue", category: "backgrounds")
 }

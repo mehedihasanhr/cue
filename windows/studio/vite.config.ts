@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// Klik Studio's web side: its own root, sharing Klik's node_modules and UI kit
+// Cue Studio's web side: its own root, sharing Cue's node_modules and UI kit
 // (`../src/ui`, `../src/styles`).
 export default defineConfig({
   root: __dirname,

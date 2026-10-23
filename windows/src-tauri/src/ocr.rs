@@ -9,7 +9,7 @@ use tauri::AppHandle;
 pub fn recognize_to_clipboard(app: &AppHandle, image: RgbaImage) -> Result<()> {
     let text = recognize(&image)?;
     if text.trim().is_empty() {
-        crate::island::status(app, "tray", "No text found", Some("Klik couldn't read any text there."));
+        crate::island::status(app, "tray", "No text found", Some("Cue couldn't read any text there."));
         return Ok(());
     }
     crate::clipboard::copy_text(&text)?;

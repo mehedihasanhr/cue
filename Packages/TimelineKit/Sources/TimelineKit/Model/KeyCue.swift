@@ -11,7 +11,7 @@ import RecordKit
 ///
 /// Made from the recording when a project is first opened, and editable from then on: the
 /// keys are text in the inspector, so a shortcut the recorder could not see — one pressed
-/// while Klik Studio itself was in front — can be added by hand.
+/// while Cue Studio itself was in front — can be added by hand.
 public struct KeyCue: TimelineRegion {
     public let id: UUID
     public var start: CMTime

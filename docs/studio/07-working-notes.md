@@ -6,17 +6,17 @@ How to work in this codebase. Read this before changing anything.
 
 | Path | What it is |
 |---|---|
-| `Packages/RecordKit` | Recording: capture, the one clock, writers, telemetry, the `.klikrec` package and its manifest |
+| `Packages/RecordKit` | Recording: capture, the one clock, writers, telemetry, the `.cuerec` package and its manifest |
 | `Packages/TimelineKit` | The edit as one `Codable` value (`Timeline`), commands, analysis (pointer path, zoom suggestions, captions) |
 | `Packages/RenderKit` | `SceneBuilder` (pure) makes a `SceneDescriptor`; `SceneRenderer` draws it. Preview and export use the same two |
 | `Packages/BackgroundKit` | Wallpapers, gradients, colours |
-| `Packages/AddOnKit` | What Klik and an add-on say to each other |
-| `KlikStudio/App` | The recorder: bar, target picker, settings, windows |
-| `KlikStudio/Editor` | The editor: model, preview, timeline, inspector panels, export |
+| `Packages/AddOnKit` | What Cue and an add-on say to each other |
+| `CueStudio/App` | The recorder: bar, target picker, settings, windows |
+| `CueStudio/Editor` | The editor: model, preview, timeline, inspector panels, export |
 | `Tools/studio-lab` | `studiolab`: measures recordings and drives the app through Accessibility |
 | `docs/studio` | The plan. `03-feature-list.md` and `05-roadmap.md` say what is wanted; `04-architecture.md` says how it fits |
 
-The Xcode project uses synchronised folders. A new file in `KlikStudio/` is part of the app as soon as it exists. Do not edit `project.pbxproj`.
+The Xcode project uses synchronised folders. A new file in `CueStudio/` is part of the app as soon as it exists. Do not edit `project.pbxproj`.
 
 ## Rules of the design
 
@@ -32,8 +32,8 @@ The Xcode project uses synchronised folders. A new file in `KlikStudio/` is part
 - Match the code around you: naming, spacing, how much is commented.
 - Comments explain why, in plain sentences. Most say what went wrong before or what the rule is for. No banner comments, no restating the code.
 - Words shown to the user are plain and short: "Hide while it is still", not "Enable idle cursor auto-hide".
-- Inspector panels are built from `inspectorSection`, `InspectorField`, `InspectorPicker`, `InspectorSlider`, `InspectorRow`, `SectionButton` in `KlikStudio/Editor/Inspector/InspectorControls.swift`. Use them; do not restyle controls one at a time.
-- Anything the editor can do gets a menu item in `KlikStudio/Editor/EditorCommands.swift`. Keyboard shortcuts live there, not on buttons.
+- Inspector panels are built from `inspectorSection`, `InspectorField`, `InspectorPicker`, `InspectorSlider`, `InspectorRow`, `SectionButton` in `CueStudio/Editor/Inspector/InspectorControls.swift`. Use them; do not restyle controls one at a time.
+- Anything the editor can do gets a menu item in `CueStudio/Editor/EditorCommands.swift`. Keyboard shortcuts live there, not on buttons.
 - A disabled control has its reason written beside it.
 - Both appearances. Check light and dark: white on a light lane and dark on a dark one are the usual mistakes.
 
@@ -44,8 +44,7 @@ swift test --package-path Packages/TimelineKit
 swift test --package-path Packages/RenderKit
 swift test --package-path Packages/RecordKit
 swift test --package-path Packages/BackgroundKit
-swift test --package-path Packages/AddOnKit
-xcodebuild -project KlikStudio/KlikStudio.xcodeproj -scheme KlikStudio -configuration Debug build
+xcodebuild -project Cue.xcodeproj -scheme Cue -configuration Debug build
 ```
 
 Tests use Swift Testing (`@Test`, `#expect`). A filter runs one suite: `swift test --package-path Packages/TimelineKit --filter CaptionCommandTests`.
@@ -57,11 +56,11 @@ Tests use Swift Testing (`@Test`, `#expect`). A filter runs one suite: `swift te
 The Mac is in use by a person while tests run. So:
 
 - Never click or type at screen coordinates. A click lands on whatever is there.
-- Launch the app without bringing it forward: `open -g -a "<path>/Klik Studio.app" --env KLIK_STUDIO_QUIET=1 "<recording>.klikrec"`.
-- Drive it by name: `studiolab menus "Klik Studio"`, `studiolab press "Klik Studio" "<menu item>"`, `studiolab shot "Klik Studio" out.png`.
+- Launch the app without bringing it forward: `open -g -a "<path>/Cue.app" --env CUE_STUDIO_QUIET=1 "<recording>.cuerec"`. Studio is part of Cue, so this is Cue's own Debug build.
+- Drive it by process: `studiolab menus "pid:<pid>"`, `studiolab press "pid:<pid>" "<menu item>"`, `studiolab shot "pid:<pid>" out.png`. The name "Cue" can match the installed copy too, so a pid is safer.
 - Controls inside a window can only be reached while that window is on the current Space. Menu items can always be reached, which is one more reason every action has one.
 - `studiolab pointer` and `studiolab stream` cover the screen and move the pointer for about 25 seconds. Do not run them without being asked.
-- Work on a copy of a recording, not on the ones in `~/Movies/Klik Studio`.
+- Work on a copy of a recording, not on the ones in `~/Movies/Cue Studio`.
 
 ## Process rules
 

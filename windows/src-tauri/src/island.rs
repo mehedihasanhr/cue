@@ -1,4 +1,4 @@
-//! The Island: Klik's Dynamic Island, on Windows.
+//! The Island: Cue's Dynamic Island, on Windows.
 //!
 //! A Windows display has no notch, so the island is a pill hanging from the top centre
 //! of each display, as on the Mac's plain displays. Like the Mac's, its window never
@@ -138,7 +138,7 @@ pub fn rebuild(app: &AppHandle) {
         let y = monitor.position().y;
         let label = format!("island-{index}");
         let built = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
-            .title("Klik Island")
+            .title("Cue Island")
             .decorations(false)
             .transparent(true)
             .shadow(false)
@@ -154,7 +154,7 @@ pub fn rebuild(app: &AppHandle) {
         let Ok(window) = built else { continue };
         window.set_position(PhysicalPosition::new(x, y)).ok();
         window.set_size(PhysicalSize::new(width, height)).ok();
-        if cfg!(windows) || std::env::var_os("KLIK_ISLAND_CLICK_THROUGH").is_some() {
+        if cfg!(windows) || std::env::var_os("CUE_ISLAND_CLICK_THROUGH").is_some() {
             window.set_ignore_cursor_events(true).ok();
         }
         placed.push(Placed { label, x, y, width, height, scale, interactive: false, near: false });
@@ -312,7 +312,7 @@ pub fn demo(app: &AppHandle, phase: &str) {
     let label = "island-demo";
     if app.get_webview_window(label).is_none() {
         let built = WebviewWindowBuilder::new(app, label, WebviewUrl::App("index.html".into()))
-            .title("Klik Island Demo")
+            .title("Cue Island Demo")
             .inner_size(WINDOW_WIDTH, WINDOW_HEIGHT)
             .resizable(false)
             .visible(true)

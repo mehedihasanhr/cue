@@ -91,7 +91,7 @@ mod tests {
 
     #[test]
     fn names_files_after_the_title() {
-        let dir = std::env::temp_dir().join(format!("klik-notes-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("cue-notes-{}", uuid::Uuid::new_v4()));
         let id = save(&dir, None, "# Shopping: list\n- milk").unwrap();
         assert_eq!(id, "Shopping list");
         let again = save(&dir, Some(&id), "# Groceries\n- milk").unwrap();

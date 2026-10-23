@@ -135,8 +135,8 @@ public enum ShortcutProblem: Equatable, Sendable {
     case system(String)
     /// Another of the recorder's own shortcuts.
     case usedBy(RecorderAction)
-    /// One of Klik's, which is usually running beside this app.
-    case klik(String)
+    /// One of Cue's, which is usually running beside this app.
+    case cue(String)
     /// One of the editor's menu shortcuts. A global shortcut takes the key before any menu
     /// sees it, so the editor would lose it for as long as the shortcut is registered.
     case editor(EditorCommand)
@@ -148,7 +148,7 @@ public enum ShortcutProblem: Equatable, Sendable {
         case .typesCharacter: "⌥ with a key types a character. Add ⌘ or ⌃."
         case .system(let name): "macOS uses this for \(name)."
         case .usedBy(let action): "Already used for \u{201C}\(action.title)\u{201D}."
-        case .klik(let name): "Klik uses this for \(name)."
+        case .cue(let name): "Cue uses this for \(name)."
         case .editor(let command): "The editor uses this for \u{201C}\(command.title)\u{201D}."
         }
     }
@@ -174,13 +174,13 @@ public struct RecorderShortcuts: Codable, Equatable, Sendable {
     /// What is wrong with giving `combo` to `action`, or `nil` when nothing is.
     ///
     /// Checked from the most specific answer to the most general: a key that takes typing
-    /// away, then who already has it by name — macOS, Klik, another of these — and only
+    /// away, then who already has it by name — macOS, Cue, another of these — and only
     /// then the shape of the modifiers, which is a rule of thumb rather than a clash.
     public func problem(with combo: KeyCombo, for action: RecorderAction) -> ShortcutProblem? {
         let plain = !combo.hasCommand && !combo.hasOption && !combo.hasControl
         if plain, !combo.isFunctionKey { return .needsModifier }
         if let name = Self.system[combo] { return .system(name) }
-        if let name = Self.klik[combo] { return .klik(name) }
+        if let name = Self.cue[combo] { return .cue(name) }
         if let other = bindings.first(where: { $0.key != action && $0.value == combo })?.key { return .usedBy(other) }
         guard !combo.isFunctionKey else { return nil }
         if combo.hasCommand, !combo.hasOption, !combo.hasControl { return .commonInApps }
@@ -274,9 +274,9 @@ public struct RecorderShortcuts: Codable, Equatable, Sendable {
         return taken
     }()
 
-    /// Klik's own defaults. Klik is the host this app is launched from, so the two are
+    /// Cue's own defaults. Cue is the host this app is launched from, so the two are
     /// usually running together and the first to register a key keeps it.
-    static let klik: [KeyCombo: String] = {
+    static let cue: [KeyCombo: String] = {
         let optionShift = optionKey | shiftKey
         let shiftCommand = shiftKey | cmdKey
         return [

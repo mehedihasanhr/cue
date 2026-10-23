@@ -253,7 +253,7 @@ struct VoiceSwitchTests {
 struct VoiceSwitchUndoTests {
     @Test func turningASwitchOnIsOneUndo() throws {
         let folder = FileManager.default.temporaryDirectory
-            .appendingPathComponent("KlikStudioTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("CueStudioTests-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: folder) }
         let package = try RecordingPackage.create(named: "Take", in: folder)
         try package.write(RecordingManifest(name: "Take", duration: 10))

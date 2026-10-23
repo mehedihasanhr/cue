@@ -1,4 +1,4 @@
-# Klik Studio: research and plan
+# Cue Studio: research and plan
 
 Written 2026-09-29 on branch `feat/studio`.
 
@@ -16,7 +16,7 @@ Full research reports with sources are in [`docs/research/`](../research/).
 
 ## In one paragraph
 
-Auto zoom, a smooth pointer and nice backgrounds are now a commodity: a $35 tool and several free ones have them. What no competitor delivers is **reliability** (every one has open bugs for lost takes, drift, or preview that does not match export) and **enough editing that nobody has to leave** (annotations, more than one blur, blur that follows content, several clips). Klik Studio is native, local and built around one clock and one renderer, which is the right base for both. The plan is: fix correctness first and prove it by measurement, reach parity with Screen Studio, then build what the market is missing.
+Auto zoom, a smooth pointer and nice backgrounds are now a commodity: a $35 tool and several free ones have them. What no competitor delivers is **reliability** (every one has open bugs for lost takes, drift, or preview that does not match export) and **enough editing that nobody has to leave** (annotations, more than one blur, blur that follows content, several clips). Cue Studio is native, local and built around one clock and one renderer, which is the right base for both. The plan is: fix correctness first and prove it by measurement, reach parity with Screen Studio, then build what the market is missing.
 
 ## Measuring tool
 
@@ -24,8 +24,8 @@ Auto zoom, a smooth pointer and nice backgrounds are now a commodity: a $35 tool
 cd Tools/studio-lab && swift build
 .build/debug/studiolab pointer --target display   # or area, window
 .build/debug/studiolab stream
-.build/debug/studiolab press "Klik Studio" "Add Zoom at Playhead"
-.build/debug/studiolab shot "Klik Studio" /tmp/editor.png
+.build/debug/studiolab press "pid:<Cue's pid>" "Add Zoom at Playhead"
+.build/debug/studiolab shot "pid:<Cue's pid>" /tmp/editor.png
 ```
 
 `pointer` and `stream` cover the screen and move the pointer for about 25 seconds. `press`, `key` and `shot` do not touch the screen or the pointer.

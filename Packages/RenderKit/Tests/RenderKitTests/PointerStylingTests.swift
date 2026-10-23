@@ -514,7 +514,7 @@ struct PointerStylingTests {
             #expect(hand.hotspot.y < 0.4 && (0.25...0.6).contains(hand.hotspot.x), "\(appearance) hand \(hand.hotspot)")
             #expect(abs(iBeam.hotspot.y - 0.5) < 0.15, "\(appearance) I-beam \(iBeam.hotspot)")
         }
-        // Klik's own drawings are one drawing whatever the shape.
+        // Cue's own drawings are one drawing whatever the shape.
         let large = try #require(PointerStyleArtwork.drawing(.largeArrow, shape: .iBeam, size: 48, color: .white))
         let largeArrow = try #require(PointerStyleArtwork.drawing(.largeArrow, shape: .arrow, size: 48, color: .white))
         #expect(large.image.extent == largeArrow.image.extent)
@@ -551,7 +551,7 @@ struct PointerStylingTests {
         }
     }
 
-    /// Every style Klik draws has a drawing at every pointer size worth drawing, with its
+    /// Every style Cue draws has a drawing at every pointer size worth drawing, with its
     /// point inside it; and only the two that are not drawings — the recorded pointer and
     /// the invisible one — have none.
     @Test func everyDrawnStyleHasADrawingWithItsPointInside() {

@@ -88,7 +88,7 @@ public enum DeviceScreens {
         RecordedDevice.Family.guess(name: device.localizedName, pixelSize: pixelSize)
     }
 
-    private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "devices")
+    private static let log = Logger(subsystem: "com.stackrover.cue.studio", category: "devices")
 
     /// Calls back whenever a capture device comes or goes, so a list of devices on screen
     /// can be re-read. Any device, not only iOS ones: the notification says which device,

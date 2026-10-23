@@ -1,4 +1,3 @@
-import AddOnKit
 import AVFoundation
 import CoreGraphics
 import Foundation
@@ -110,7 +109,7 @@ public struct RecordingConfiguration: Sendable {
     public var webcamID: String?
     public var codec: VideoCodec
     public var quality: CaptureQuality
-    /// Where the `.klikrec` package is created.
+    /// Where the `.cuerec` package is created.
     public var destination: URL
     public var name: String
     /// Sampled cursor positions per second. 120 is two samples per frame at 60 fps,

@@ -1,4 +1,4 @@
-//! The app's windows. There is no main window: Klik lives in the tray, and each window
+//! The app's windows. There is no main window: Cue lives in the tray, and each window
 //! here is made when it is asked for. The web side picks what to draw from the label.
 
 use anyhow::Result;
@@ -40,7 +40,7 @@ pub fn open_settings(app: &AppHandle, page: Option<&str>) -> Result<()> {
     // A new window reads the page from its address, being too young to hear an event.
     let url = format!("index.html#{}", page.unwrap_or(""));
     let builder = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App(url.into()))
-        .title("Klik Settings")
+        .title("Cue Settings")
         .inner_size(920.0, 640.0)
         .min_inner_size(760.0, 480.0)
         .center()
@@ -58,7 +58,7 @@ pub fn open_settings(app: &AppHandle, page: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-/// The Klik panel: the Mac's floating panel, opened where Settings › Island › Panels
+/// The Cue panel: the Mac's floating panel, opened where Settings › Island › Panels
 /// says — at the pointer by default. Made once and kept, so it opens instantly.
 pub fn open_history(app: &AppHandle) -> Result<()> {
     use crate::state::AppState;
@@ -67,7 +67,7 @@ pub fn open_history(app: &AppHandle) -> Result<()> {
     let window = match app.get_webview_window("panel") {
         Some(window) => window,
         None => WebviewWindowBuilder::new(app, "panel", WebviewUrl::App("index.html".into()))
-            .title("Klik")
+            .title("Cue")
             .inner_size(SIZE.0, SIZE.1)
             .decorations(false)
             .transparent(true)
@@ -110,7 +110,7 @@ pub fn open_history(app: &AppHandle) -> Result<()> {
 }
 
 pub fn open_editor(app: &AppHandle, id: Uuid) -> Result<()> {
-    show(app, &format!("editor-{id}"), "Klik Editor", (1100.0, 760.0), (720.0, 480.0)).map(|_| ())
+    show(app, &format!("editor-{id}"), "Cue Editor", (1100.0, 760.0), (720.0, 480.0)).map(|_| ())
 }
 
 /// A capture floating above every window, at its real size — for keeping a reference in
@@ -135,7 +135,7 @@ pub fn open_pin(app: &AppHandle, id: Uuid) -> Result<()> {
         height *= fit;
     }
     WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
-        .title("Klik Pin")
+        .title("Cue Pin")
         .inner_size(width.max(80.0), height.max(60.0))
         .min_inner_size(60.0, 40.0)
         .decorations(false)

@@ -1,12 +1,12 @@
 //! Updates, as Settings › About › Updates says:
 //!
-//! - **Install automatically** (the default): a newer Klik is downloaded quietly and
-//!   installed when the PC has been left alone for a few minutes, or when Klik is quit
-//!   from the tray — never in the middle of a capture. The installer reopens Klik.
-//! - **Ask first**: Klik only says there is one, on the island and as a notification;
+//! - **Install automatically** (the default): a newer Cue is downloaded quietly and
+//!   installed when the PC has been left alone for a few minutes, or when Cue is quit
+//!   from the tray — never in the middle of a capture. The installer reopens Cue.
+//! - **Ask first**: Cue only says there is one, on the island and as a notification;
 //!   Settings › About installs it.
 //!
-//! Klik looks a little after it starts and then every six hours.
+//! Cue looks a little after it starts and then every six hours.
 
 use crate::state::AppState;
 use serde::Serialize;
@@ -96,19 +96,19 @@ pub async fn look(app: &AppHandle) {
             Ok(bytes) => {
                 *updates.downloaded.lock().unwrap() = Some(bytes);
                 app.emit("update-changed", state(app)).ok();
-                crate::island::status(app, "arrow.down.fill", &format!("Klik {version} is ready"), Some("It installs when you step away, or when you quit Klik."));
+                crate::island::status(app, "arrow.down.fill", &format!("Cue {version} is ready"), Some("It installs when you step away, or when you quit Cue."));
             }
             Err(error) => log::warn!("Update download failed: {error}"),
         }
     } else if updates.announced.lock().unwrap().as_deref() != Some(&version) {
         *updates.announced.lock().unwrap() = Some(version.clone());
-        crate::island::status(app, "arrow.down.fill", &format!("Klik {version} is available"), Some("Install it from Settings › About."));
-        crate::notify::send(app, &format!("Klik {version} is available"), "Install it from Settings › About.");
+        crate::island::status(app, "arrow.down.fill", &format!("Cue {version} is available"), Some("Install it from Settings › About."));
+        crate::notify::send(app, &format!("Cue {version} is available"), "Install it from Settings › About.");
     }
 }
 
 /// Installs the newer version now: from the download if there is one, else downloading
-/// it first. On Windows the installer closes Klik and opens the new one.
+/// it first. On Windows the installer closes Cue and opens the new one.
 pub async fn install(app: &AppHandle) -> anyhow::Result<()> {
     let update = app.state::<Updates>().found.lock().unwrap().clone().ok_or_else(|| anyhow::anyhow!("There is no update to install."))?;
     let waiting = app.state::<Updates>().downloaded.lock().unwrap().take();

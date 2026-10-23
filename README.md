@@ -1,4 +1,4 @@
-# Klik
+# Cue
 
 A native macOS screenshot tool in the spirit of CleanShot X — SwiftUI + AppKit, ScreenCaptureKit,
 sandboxed, no third-party dependencies. macOS 14+.
@@ -17,10 +17,10 @@ stitching, permission onboarding, Settings window (shortcuts, launch at login).
 
 ```sh
 # Command line
-xcodebuild -project Klik.xcodeproj -scheme Klik -configuration Debug build
-open build/Debug/Klik.app
+xcodebuild -project Cue.xcodeproj -scheme Cue -configuration Debug build
+open build/Debug/Cue.app
 
-# or just open Klik.xcodeproj in Xcode and press ⌘R
+# or just open Cue.xcodeproj in Xcode and press ⌘R
 ```
 
 ### Code signing
@@ -30,33 +30,33 @@ needs a *stable* identity — an ad-hoc signature changes on every build and the
 silently stops matching (the toggle in System Settings stays on, but the app is
 treated as un-granted). `Config/Signing.xcconfig` (git-ignored) picks one of:
 
-- **Local certificate (default)** — a self-signed "Klik Development" code-signing
+- **Local certificate (default)** — a self-signed "Cue Development" code-signing
   certificate in your login keychain. Create it once:
 
   ```sh
   # generate (files land in Config/local/, git-ignored)
-  openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=Klik Development/O=Klik local build" \
+  openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=Cue Development/O=Cue local build" \
     -addext "keyUsage=critical,digitalSignature" -addext "extendedKeyUsage=critical,codeSigning" \
-    -keyout Config/local/klik-dev.key -out Config/local/klik-dev.pem
-  openssl pkcs12 -export -legacy -inkey Config/local/klik-dev.key -in Config/local/klik-dev.pem \
-    -out Config/local/klik-dev.p12 -passout pass:klik -name "Klik Development"
+    -keyout Config/local/cue-dev.key -out Config/local/cue-dev.pem
+  openssl pkcs12 -export -legacy -inkey Config/local/cue-dev.key -in Config/local/cue-dev.pem \
+    -out Config/local/cue-dev.p12 -passout pass:cue -name "Cue Development"
   # import + trust for code signing (approve the macOS dialogs)
-  security import Config/local/klik-dev.p12 -k ~/Library/Keychains/login.keychain-db -P klik -T /usr/bin/codesign
-  security add-trusted-cert -r trustRoot -p codeSign -k ~/Library/Keychains/login.keychain-db Config/local/klik-dev.pem
+  security import Config/local/cue-dev.p12 -k ~/Library/Keychains/login.keychain-db -P cue -T /usr/bin/codesign
+  security add-trusted-cert -r trustRoot -p codeSign -k ~/Library/Keychains/login.keychain-db Config/local/cue-dev.pem
   ```
 
 - **Apple ID** — sign into Xcode › Settings › Accounts (a free Personal Team is enough)
   and paste the Team ID into `DEVELOPMENT_TEAM =` in the xcconfig.
 
-If a grant ever gets stuck, clear it and re-grant: `tccutil reset ScreenCapture com.stackrover.klik`.
+If a grant ever gets stuck, clear it and re-grant: `tccutil reset ScreenCapture com.stackrover.cue`.
 
 ## First run
 
-1. Launch Klik. A camera icon appears in the menu bar (no Dock icon) and, because the
+1. Launch Cue. A camera icon appears in the menu bar (no Dock icon) and, because the
    permission is missing, the onboarding window opens.
 2. Click **Request Access**, then **Open System Settings** in the system prompt and turn
-   on **Klik** under Privacy & Security › Screen & System Audio Recording.
-3. Back in Klik, click **Relaunch Klik** — macOS applies the grant on the next launch.
+   on **Cue** under Privacy & Security › Screen & System Audio Recording.
+3. Back in Cue, click **Relaunch Cue** — macOS applies the grant on the next launch.
 4. Press **⌥⇧3** (full screen), **⌥⇧4** (area) or **⌥⇧5** (scrolling), or hover the
    notch to open the Dynamic Island and use its capture buttons. A capture lands on
    the clipboard and in the island, and opens in the editor — or, with Settings ›
@@ -74,35 +74,35 @@ cursor.
 
 ### Scrolling capture (⌥⇧5)
 
-Select the scrolling area the same way, then click **Start Scrolling Capture**. Klik
+Select the scrolling area the same way, then click **Start Scrolling Capture**. Cue
 scrolls the content underneath step by step, captures each viewport, and stitches the
 frames (sticky headers/footers are removed). It stops at the end of the content, or
 when you press **⎋** / **Stop** in the floating HUD. Requires the **Accessibility**
-permission (Klik asks on first use) so it can send scroll events to the target app.
+permission (Cue asks on first use) so it can send scroll events to the target app.
 
 ### Shortcuts
 
 Defaults: **⌥⇧3** full screen · **⌥⇧4** area · **⌥⇧6** window · **⌥⇧5** scrolling · **⌥⇧T** capture
-text · **⌥⇧P** pick a color · **⌥⇧N** quick task · **⌥⇧M** quick note · **⌥⇧K** the Klik panel ·
+text · **⌥⇧P** pick a color · **⌥⇧N** quick task · **⌥⇧M** quick note · **⌥⇧K** the Cue panel ·
 **⌘⇧C** the clipboard list (type to filter, ↑↓, ↩ pastes, ⌘↩ copies, ⌥↩ pastes as
 plain text, ⇧↑↓ picks several to paste joined, ⌘1–9 picks) · **⌥⇧Space** the command
 palette · **⌘⇧V** the paste stack (each press pastes the next entry of the history).
 The menu bar icon lists every tool and panel with its shortcut, then Settings and
-Quit. Klik › Settings › Shortcuts: click a field and press a new combination (⌫ clears).
+Quit. Cue › Settings › Shortcuts: click a field and press a new combination (⌫ clears).
 
-### The Klik panel (⌥⇧K)
+### The Cue panel (⌥⇧K)
 
 A movable glass panel at the pointer: a search across everything, the capture
 tools, and every capture, clipboard entry, asset and color by day, as a grid of
 cards or a list. A click on a card copies it; dragging one carries it into another
 app. That is all it does — pinning, groups, editing and deleting live in the island.
-The macOS defaults (⌘⇧3/4/5/6) are handled by the system first; Klik marks them with a
+The macOS defaults (⌘⇧3/4/5/6) are handled by the system first; Cue marks them with a
 warning if you bind them, and links to Keyboard › Keyboard Shortcuts › Screenshots
 where they can be turned off.
 
 ### Command palette (⌥⇧Space)
 
-One list over everything, driven by the keyboard: Klik's actions (capture area, pick a
+One list over everything, driven by the keyboard: Cue's actions (capture area, pick a
 color, new task…), quick answers, and every capture, clipboard entry, asset, color,
 task and snippet. Type to filter, ↑↓ to choose, **↩** pastes the item where the cursor
 was (or runs the action / opens a task), **⌘↩** copies, **⌘O** opens (edit a capture,
@@ -144,11 +144,11 @@ left to guess, it answers in the nearest script it does know. Bangla put to it c
 back as Devanagari, at full confidence.
 
 So **Settings › Capture › Capture text** lets you name the language. The list says who
-will read each one: macOS where it can, otherwise a Tesseract language pack that Klik
+will read each one: macOS where it can, otherwise a Tesseract language pack that Cue
 downloads once (a few megabytes) and keeps in Application Support. Nothing is bundled
 and nothing is fetched until you choose a language that needs it.
 
-Two things follow from naming a language. Klik will not hand your screenshot to a
+Two things follow from naming a language. Cue will not hand your screenshot to a
 recogniser that has no model for it, and if the text comes back in a different alphabet
 from the one you asked for, it says so and copies nothing rather than putting the wrong
 script on your clipboard. Turn that check off in the same place if you would rather have
@@ -186,12 +186,12 @@ and it says so with a sound when the time is up.
 
 Settings › **Tasks** connects the tasks to a server of your own.
 
-**Sync.** Klik POSTs one JSON body to the **Server URL** (with `Authorization:
+**Sync.** Cue POSTs one JSON body to the **Server URL** (with `Authorization:
 Bearer <token>` when a token is set) two seconds after every change, on the interval
 chosen, and on **Sync Now**:
 
 ```json
-{ "client": "klik", "version": 1, "sentAt": "2026-09-22T08:00:00Z", "since": "…or null",
+{ "client": "cue", "version": 1, "sentAt": "2026-09-22T08:00:00Z", "since": "…or null",
   "projects": [ { "id": "UUID", "name": "Work", "parentID": null, "createdAt": "…" } ],
   "tasks": [ { "id": "UUID", "title": "Ship it", "text": "Ship it\nWith notes", "status": "pending",
                "priority": "high", "projectID": "UUID or null", "createdAt": "…", "updatedAt": "…" } ],
@@ -204,7 +204,7 @@ a task whose `updatedAt` is newer than the copy here replaces it (a task with on
 an `id` and `title` is fine; status defaults to `pending`, priority to `medium`),
 projects missing here are added, and the `deleted` ids are removed. Statuses are
 `pending`, `inProcess`, `review`, `complete`; priorities `urgent`, `high`, `medium`,
-`low`. **Check** POSTs `{ "client": "klik", "version": 1, "ping": true }`.
+`low`. **Check** POSTs `{ "client": "cue", "version": 1, "ping": true }`.
 
 **Webhook.** With **Send events** on, each change POSTs to the **Webhook URL**:
 
@@ -212,8 +212,8 @@ projects missing here are added, and the `deleted` ids are removed. Statuses are
 { "event": "task.created", "sentAt": "…", "task": { …as above… }, "project": { …or null… } }
 ```
 
-with `X-Klik-Event: task.created | task.updated | task.status | task.deleted` and,
-when a **Secret** is set, `X-Klik-Signature: sha256=<hex HMAC-SHA256 of the body>`.
+with `X-Cue-Event: task.created | task.updated | task.status | task.deleted` and,
+when a **Secret** is set, `X-Cue-Signature: sha256=<hex HMAC-SHA256 of the body>`.
 The event kinds can be ticked on and off; **Send Test** posts a `ping` event.
 Changes taken from the server are not sent back to it or to the webhook.
 
@@ -233,9 +233,9 @@ walk the cards and open each in turn.
 
 ### Quick notes
 
-**⌥⇧M** (or Notes › New in the island, or `klik://note`) opens a note at the pointer:
+**⌥⇧M** (or Notes › New in the island, or `cue://note`) opens a note at the pointer:
 Markdown, the first line is the title, `/` for formatting, images pasted or dropped in;
-**⌘↩** saves. Each note is one `.md` file named after its title, in Klik's own folder
+**⌘↩** saves. Each note is one `.md` file named after its title, in Cue's own folder
 or — Settings › Notes › Choose… — any folder: one in iCloud Drive syncs the notes with
 your other devices, an Obsidian vault folder shows them in Obsidian. The folder is
 watched, so notes edited elsewhere (Obsidian, another Mac) show up in the island. Only
@@ -243,17 +243,17 @@ the folder's top level is read; images go in `attachments/` beside the notes.
 
 Saving can also put a new note in **Obsidian** (through its `obsidian://new` link;
 name the vault in Settings, else the last one opened), **Apple Notes** (in the folder
-named in Settings; macOS asks once to let Klik control Notes) or **Notion** (an
+named in Settings; macOS asks once to let Cue control Notes) or **Notion** (an
 internal integration's secret and the page or database to put pages under; the secret
 stays in the Keychain; headings, lists, to-dos, quotes and code become the matching
 blocks). Settings › Notes › **Send new notes to…** sets the defaults; the form's
-**Save as** menu changes them for one note ("Klik only" keeps it in the folder). A
+**Save as** menu changes them for one note ("Cue only" keeps it in the folder). A
 card's menu sends an existing note anywhere later.
 
 ### Sync folder
 
 Settings › General › Sync: keep snippets, colors and tasks as JSON in a folder of your
-own — one in iCloud Drive or Dropbox shares them with your other Macs — and Klik
+own — one in iCloud Drive or Dropbox shares them with your other Macs — and Cue
 reloads when the files change. Task attachments stay on each Mac.
 
 ### Pin a capture to the screen
@@ -301,20 +301,20 @@ puts the result back on the clipboard.
 
 ### URL scheme and command line
 
-`klik://` URLs drive Klik from Shortcuts, Raycast, Alfred, a browser or a script:
-`klik://capture/area|window|full|scrolling|text`, `klik://color/pick`,
-`klik://task/new?title=…&notes=…&priority=high&project=…`, `klik://note/new?text=…`,
-`klik://snippet/add?keyword=;sig&text=…`, `klik://clipboard/copy?text=…`,
-`klik://palette`, `klik://clipboard`, `klik://panel`, `klik://clock`, `klik://settings`.
-`Tools/klik` wraps them for the shell (`klik capture area`, `klik task "Fix it" -p high`,
-`klik copy "text"`, `echo hi | klik copy`); run `chmod +x Tools/klik` and put it on your
-PATH, or call it as `sh Tools/klik …`.
+`cue://` URLs drive Cue from Shortcuts, Raycast, Alfred, a browser or a script:
+`cue://capture/area|window|full|scrolling|text`, `cue://color/pick`,
+`cue://task/new?title=…&notes=…&priority=high&project=…`, `cue://note/new?text=…`,
+`cue://snippet/add?keyword=;sig&text=…`, `cue://clipboard/copy?text=…`,
+`cue://palette`, `cue://clipboard`, `cue://panel`, `cue://clock`, `cue://settings`.
+`Tools/cue` wraps them for the shell (`cue capture area`, `cue task "Fix it" -p high`,
+`cue copy "text"`, `echo hi | cue copy`); run `chmod +x Tools/cue` and put it on your
+PATH, or call it as `sh Tools/cue …`.
 
 ### Snippets (text expander)
 
 The island's **Snippets** tab. Give a snippet a keyword (`;welcome`) and a template;
-type the keyword in any app and Klik replaces it with the template. `{{Name}}` in the
-template is a blank Klik asks for before pasting (in the island's compact box);
+type the keyword in any app and Cue replaces it with the template. `{{Name}}` in the
+template is a blank Cue asks for before pasting (in the island's compact box);
 `{{date}}`, `{{time}}`, `{{datetime}}` and `{{clipboard}}` fill themselves. A snippet
 can paste an asset (an image or a file) instead of text. Make one with **New** in the
 tab, or from a clipboard entry or an asset with **Make Snippet…** in its menu. Needs
@@ -324,7 +324,7 @@ back after the paste.
 Built-ins: `{{date}}`, `{{time}}`, `{{datetime}}`, `{{clipboard}}`, `{{uuid}}`,
 `{{date:yyyy-MM-dd}}` / `{{time:HH:mm}}` (any Unicode date format), `{{cursor}}` (where the
 caret lands after the paste) and `{{shell:git branch --show-current}}` (what a command
-prints, given two seconds, inside Klik's sandbox).
+prints, given two seconds, inside Cue's sandbox).
 
 ### Time & prayer times
 
@@ -342,20 +342,20 @@ location changes.
 
 ### Launch at login
 
-Klik › Settings › General › **Launch Klik at login** (uses `SMAppService`; macOS may ask
+Cue › Settings › General › **Launch Cue at login** (uses `SMAppService`; macOS may ask
 you to approve it under General › Login Items).
 
 ## Logs
 
 ```sh
-/usr/bin/log stream --level info --predicate 'subsystem == "com.stackrover.klik"'
+/usr/bin/log stream --level info --predicate 'subsystem == "com.stackrover.cue"'
 ```
 
 ## Layout
 
 ```
-Klik/
-├── App/          KlikApp (@main), AppDelegate, MainMenu, HotkeyManager (Carbon), ShortcutController,
+Cue/
+├── App/          CueApp (@main), AppDelegate, MainMenu, HotkeyManager (Carbon), ShortcutController,
 │                 ShortcutRecorderView, KeyCodeNames, AppModel, SettingsView, LaunchAtLogin
 ├── Capture/      CaptureCoordinator, ScreenCaptureService (ScreenCaptureKit), CaptureSession,
 │                 OverlayWindow, SelectionView, MagnifierView, SelectionToolbar, WindowDetector
@@ -368,65 +368,41 @@ Klik/
 ├── Preview/      Temporary capture viewer (replaced by the editor in Step 3)
 ├── Support/      CapturedImage, Log, WindowHosting, Icon (the island's Hugeicons stroke icons,
 │                 by SF Symbol name; HugeIconGlyphs is generated from @hugeicons/core-free-icons, MIT)
-├── AddOns/       AddOnCatalog, AddOnRegistry, AddOnInstaller/Downloader, AddOnLocator,
-│                 RecordingAddOnClient, AddOnSettingsView — finding and installing add-ons
+├── Studio/       Screen recording and the video editor: the recorder bar, Recordings,
+│                 the editor windows and their settings (StudioController owns them)
 └── Resources/    Assets.xcassets
-KlikStudio/       Klik Studio.app — the recording add-on: its own .xcodeproj, its own app
-Packages/AddOnKit/  The contract both apps compile: RecordingRequest, capabilities, request files
-Packages/RecordKit/ Capture, linked only by the add-on: ScreenCaptureKit + AVAssetWriter,
-                  frame pacing, cursor telemetry, the .klikrec package
+Packages/RecordKit/ Capture: ScreenCaptureKit + AVAssetWriter, frame pacing, cursor
+                  telemetry, the .cuerec package, RecordingRequest
 Packages/TimelineKit/ The edit: clips, regions, undo, auto-zoom, project.json
 Packages/RenderKit/ SceneDescriptor + SceneRenderer (Core Image on Metal) — one renderer
                   for both the preview and the export
-Config/           Shared by both projects: Klik.entitlements, KlikStudio.entitlements,
-                  StudioInfo.plist, Studio.xcconfig, Signing.xcconfig (local, git-ignored)
+Config/           Cue.entitlements, Info.plist, Vendor.xcconfig, Signing.xcconfig and
+                  Google.xcconfig (both local, git-ignored)
 ```
 
-The Xcode project uses file-system-synchronized groups, so new files under `Klik/` and
-`KlikStudio/` are picked up automatically — no project edits needed.
+The Xcode project uses file-system-synchronized groups, so new files under `Cue/` are
+picked up automatically — no project edits needed.
 
-## Add-ons
+## Screen recording
 
-Heavy features do not ship inside Klik. Screen recording lives in **Klik Studio**, a
-separate signed app the user installs from Settings › Add-ons, so an install that only
-takes screenshots downloads, launches and holds none of it.
+Screen recording and the video editor are part of Cue. They live under `Cue/Studio/`
+and in four packages, and run in Cue's own process:
 
-- The host links `Packages/AddOnKit` and nothing else: the request and capability types,
-  no AVFoundation, no Metal, no Speech.
-- `AddOnRegistry` finds an installed add-on through LaunchServices, then checks its code
-  signature carries Klik's own team identifier — a bundle identifier is a naming
-  convention, not a credential.
-- Installing downloads a notarised image or package, verifies its length and SHA-256, and
-  hands it to macOS. A sandboxed app cannot create a non-quarantined executable or clear
-  the quarantine flag, so Klik does not try to install an app itself.
-- Capabilities are asked for before they are offered, so an older add-on simply shows
-  fewer commands.
-
-**Settings › Add-ons** carries the whole lifecycle: Install / Update, Open, Show in
-Finder, and — under Advanced — **Choose a Klik Studio build**, which points Klik at a
-copy anywhere on disk (an Xcode build, or one kept outside Applications) and is how the
-pair is developed before anything is published. That copy is signature-checked like any
-other.
-
-The same page holds what Klik *asks for* when you record: countdown, system audio,
-microphone, where recordings are saved, and whether the editor opens when a recording
-stops. They travel in the `RecordingRequest`, so the add-on needs no settings of its own
-for any of it. A save folder Klik picked is a grant Klik holds — the add-on cannot
-inherit it, so it tries the folder, falls back to its own library, and says so.
-
-**Capture** and **Open Klik Studio** in the Capture menu both work whatever is
-installed: with no add-on they open this page instead of failing.
-
-Klik Studio is its **own Xcode project**, built and released on its own schedule. Klik
-never builds it and never bundles it — it finds it, checks its signature, and launches
-it.
+- **Record Video** in the menu bar item (or `cue://record`) brings up the recorder bar;
+  **Recordings…** (or `cue://recordings`) opens the gallery of what was recorded.
+- While a take is under way the same menu shows Stop and Pause.
+- A `.cuerec` opened from the Finder opens in the video editor. While an editor is open
+  Cue keeps a Dock tile, because the editor's commands live in the menu bar.
+- Recording and video settings are in Cue Settings: Screen Recording (folder, capture,
+  Drive backup), Captions & Audio and Video Export, with the recorder's and the video
+  editor's shortcuts on Shortcuts and the video editor's settings on Editor.
+- Recordings are kept in `~/Movies/Cue Studio`, the folder the separate Cue Studio app
+  used, so earlier recordings are still there.
 
 ```sh
-# The add-on, from its own project
-xcodebuild -project KlikStudio/KlikStudio.xcodeproj -scheme KlikStudio -configuration Debug build
+xcodebuild -project Cue.xcodeproj -scheme Cue -configuration Debug build
 
 # The packages, on their own
-cd Packages/AddOnKit && swift test
 cd Packages/RecordKit && swift test
 cd Packages/TimelineKit && swift test
 cd Packages/RenderKit && swift test
@@ -446,7 +422,7 @@ video plus **metadata sidecars**, with nothing baked in.
 - The cursor is **not** drawn into the video. Its position, shape and clicks are sampled
   into `telemetry/cursor.jsonl` and `input.jsonl` as they happen, which is what makes
   auto-zoom, cursor smoothing and click effects possible afterwards.
-- A recording is a `.klikrec` package: `manifest.json`, `media/`, `telemetry/`.
+- A recording is a `.cuerec` package: `manifest.json`, `media/`, `telemetry/`.
 - The disk is watched while recording, because ScreenCaptureKit stops silently when a
   volume fills and an `AVAssetWriter` fails at the end — long after the take.
 
@@ -479,4 +455,4 @@ can change the document behind another part's back.
 5. Export (clipboard, save, drag-out, floating thumbnail)
 6. ✅ Scrolling capture
 7. Polish (✅ custom shortcuts, ✅ preferences window; save locations, dark mode, localization)
-8. Recording, as the Klik Studio add-on (✅ plumbing, ✅ capture + telemetry, ✅ editor: timeline, zooms, renderer; export next)
+8. Recording and the video editor, built into Cue (✅ plumbing, ✅ capture + telemetry, ✅ editor: timeline, zooms, renderer; export next)

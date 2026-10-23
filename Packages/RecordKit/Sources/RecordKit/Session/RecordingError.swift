@@ -35,13 +35,13 @@ public enum RecordingError: Error, LocalizedError, Equatable, Sendable {
     public var errorDescription: String? {
         switch self {
         case .permissionDenied:
-            "Klik Studio doesn't have Screen Recording permission."
+            "Cue Studio doesn't have Screen Recording permission."
         case .microphoneDenied:
-            "Klik Studio doesn't have Microphone permission."
+            "Cue Studio doesn't have Microphone permission."
         case .cameraDenied:
-            "Klik Studio doesn't have Camera permission."
+            "Cue Studio doesn't have Camera permission."
         case .contentUnavailable(let reason):
-            "Klik Studio couldn't see what's on screen (\(reason))."
+            "Cue Studio couldn't see what's on screen (\(reason))."
         case .targetDisappeared:
             "What was being recorded is gone."
         case .lowDiskSpace(let bytes):
@@ -66,11 +66,11 @@ public enum RecordingError: Error, LocalizedError, Equatable, Sendable {
     public var recoverySuggestion: String? {
         switch self {
         case .permissionDenied:
-            "Turn on Klik Studio in System Settings › Privacy & Security › Screen & System Audio Recording, then try again."
+            "Turn on Cue Studio in System Settings › Privacy & Security › Screen & System Audio Recording, then try again."
         case .microphoneDenied:
-            "Turn on Klik Studio in System Settings › Privacy & Security › Microphone, then try again."
+            "Turn on Cue Studio in System Settings › Privacy & Security › Microphone, then try again."
         case .cameraDenied:
-            "Turn on Klik Studio in System Settings › Privacy & Security › Camera, or turn the camera off in the bar and record without it."
+            "Turn on Cue Studio in System Settings › Privacy & Security › Camera, or turn the camera off in the bar and record without it."
         case .lowDiskSpace:
             "The part that was recorded has been kept."
         case .unfinished:

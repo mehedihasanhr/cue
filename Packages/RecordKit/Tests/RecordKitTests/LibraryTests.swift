@@ -75,7 +75,7 @@ struct LibraryTests {
         let package = try make("Demo", in: folder)
         // What a rename in the Finder leaves behind: the folder says one thing, the
         // manifest still says another.
-        let moved = folder.appendingPathComponent("Renamed in Finder.klikrec")
+        let moved = folder.appendingPathComponent("Renamed in Finder.cuerec")
         try FileManager.default.moveItem(at: package.url, to: moved)
 
         let entry = try #require(RecordingLibrary(folder: folder).entries().first)
@@ -87,11 +87,11 @@ struct LibraryTests {
     // MARK: - Searching and sorting
 
     private func sample() -> [RecordingEntry] {
-        [RecordingEntry(url: URL(fileURLWithPath: "/l/Take 10.klikrec"), name: "Take 10",
+        [RecordingEntry(url: URL(fileURLWithPath: "/l/Take 10.cuerec"), name: "Take 10",
                         createdAt: Date(timeIntervalSince1970: 300), duration: 5, byteCount: 1, kinds: []),
-         RecordingEntry(url: URL(fileURLWithPath: "/l/Take 2.klikrec"), name: "Take 2",
+         RecordingEntry(url: URL(fileURLWithPath: "/l/Take 2.cuerec"), name: "Take 2",
                         createdAt: Date(timeIntervalSince1970: 100), duration: 90, byteCount: 1, kinds: []),
-         RecordingEntry(url: URL(fileURLWithPath: "/l/apology.klikrec"), name: "apology",
+         RecordingEntry(url: URL(fileURLWithPath: "/l/apology.cuerec"), name: "apology",
                         createdAt: Date(timeIntervalSince1970: 200), duration: 30, byteCount: 1, kinds: [])]
     }
 
@@ -116,9 +116,9 @@ struct LibraryTests {
     /// between refreshes — a list that reorders itself under the pointer is unusable.
     @Test func tiesAreBrokenByNameSoTheOrderIsStable() {
         let when = Date(timeIntervalSince1970: 1)
-        let entries = [RecordingEntry(url: URL(fileURLWithPath: "/l/b.klikrec"), name: "b",
+        let entries = [RecordingEntry(url: URL(fileURLWithPath: "/l/b.cuerec"), name: "b",
                                       createdAt: when, duration: 1, byteCount: 1, kinds: []),
-                       RecordingEntry(url: URL(fileURLWithPath: "/l/a.klikrec"), name: "a",
+                       RecordingEntry(url: URL(fileURLWithPath: "/l/a.cuerec"), name: "a",
                                       createdAt: when, duration: 1, byteCount: 1, kinds: [])]
         #expect(RecordingLibrary.arrange(entries, by: .date).map(\.name) == ["a", "b"])
         #expect(RecordingLibrary.arrange(entries, by: .length).map(\.name) == ["a", "b"])
@@ -144,7 +144,7 @@ struct LibraryTests {
         let package = try make("Demo", in: folder, duration: 12)
         let renamed = try library.rename(package.url, to: "The one with the bug")
 
-        #expect(renamed.lastPathComponent == "The one with the bug.klikrec")
+        #expect(renamed.lastPathComponent == "The one with the bug.cuerec")
         #expect(!FileManager.default.fileExists(atPath: package.url.path(percentEncoded: false)))
         #expect(try RecordingPackage(url: renamed).readManifest().name == "The one with the bug")
         #expect(try RecordingPackage(url: renamed).readManifest().duration == 12,
@@ -160,7 +160,7 @@ struct LibraryTests {
 
         let package = try make("Demo", in: folder)
         let renamed = try RecordingLibrary(folder: folder).rename(package.url, to: "  Tidy  ")
-        #expect(renamed.lastPathComponent == "Tidy.klikrec")
+        #expect(renamed.lastPathComponent == "Tidy.cuerec")
     }
 
     @Test func aNameAlreadyTakenIsRefusedAndNothingMoves() throws {
@@ -186,7 +186,7 @@ struct LibraryTests {
         defer { try? FileManager.default.removeItem(at: folder) }
 
         let package = try make("Demo", in: folder)
-        let moved = folder.appendingPathComponent("Finder Name.klikrec")
+        let moved = folder.appendingPathComponent("Finder Name.cuerec")
         try FileManager.default.moveItem(at: package.url, to: moved)
 
         let renamed = try RecordingLibrary(folder: folder).rename(moved, to: "Finder Name")
@@ -240,7 +240,7 @@ struct LibraryTests {
         try Data("frames".utf8).write(to: package.mediaFolder.appendingPathComponent("screen.mov"))
 
         let copy = try library.duplicate(package.url)
-        #expect(copy.lastPathComponent == "Demo 2.klikrec")
+        #expect(copy.lastPathComponent == "Demo 2.cuerec")
         #expect(FileManager.default.fileExists(atPath: package.url.path(percentEncoded: false)))
         #expect(FileManager.default.fileExists(atPath: copy.appendingPathComponent("media/screen.mov").path(percentEncoded: false)),
                 "a duplicate with no media is not a duplicate")
@@ -250,7 +250,7 @@ struct LibraryTests {
         #expect(manifest.duration == 7)
 
         let again = try library.duplicate(package.url)
-        #expect(again.lastPathComponent == "Demo 3.klikrec", "the number steps past what is there")
+        #expect(again.lastPathComponent == "Demo 3.cuerec", "the number steps past what is there")
     }
 
     // MARK: - The guard on everything destructive
@@ -273,7 +273,7 @@ struct LibraryTests {
         #expect(FileManager.default.fileExists(atPath: stranger.url.path(percentEncoded: false)))
     }
 
-    /// The folder itself, not a folder beneath it: a `.klikrec` inside a subfolder of the
+    /// The folder itself, not a folder beneath it: a `.cuerec` inside a subfolder of the
     /// library is not something this window is listing, so it is not something this
     /// window may delete.
     @Test func aRecordingInASubfolderIsNotThisLibrarys() throws {
@@ -304,7 +304,7 @@ struct LibraryTests {
         let folder = temporaryFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
 
-        let gone = folder.appendingPathComponent("Deleted in Finder.klikrec")
+        let gone = folder.appendingPathComponent("Deleted in Finder.cuerec")
         #expect(throws: RecordingLibraryError.missing) { try RecordingLibrary(folder: folder).check(gone) }
     }
 
@@ -324,7 +324,7 @@ struct LibraryTests {
         let landed = try #require(trashed, "the system must say where it put it")
         defer { try? FileManager.default.removeItem(at: landed) }
         #expect(FileManager.default.fileExists(atPath: landed.path(percentEncoded: false)))
-        #expect(landed.pathExtension == "klikrec")
+        #expect(landed.pathExtension == "cuerec")
         #expect(!FileManager.default.fileExists(atPath: package.url.path(percentEncoded: false)))
     }
 }

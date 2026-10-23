@@ -46,7 +46,7 @@ struct BackgroundMovieImportTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         let movie = folder.appendingPathComponent("Loop.MOV")
         try await writeMovie(to: movie)
-        let package = folder.appendingPathComponent("Take.klikrec", isDirectory: true)
+        let package = folder.appendingPathComponent("Take.cuerec", isDirectory: true)
         let path = try await BackgroundMovieImport.copy(movie, into: package)
         #expect(path.hasPrefix("\(BackgroundImport.folderName)/"))
         #expect(path.hasSuffix(".mov"))
@@ -59,7 +59,7 @@ struct BackgroundMovieImportTests {
         let text = folder.appendingPathComponent("notes.mov")
         try "not a movie".write(to: text, atomically: true, encoding: .utf8)
         await #expect(throws: BackgroundMovieImport.Failure.notAMovie) {
-            try await BackgroundMovieImport.copy(text, into: folder.appendingPathComponent("Take.klikrec"))
+            try await BackgroundMovieImport.copy(text, into: folder.appendingPathComponent("Take.cuerec"))
         }
     }
 }

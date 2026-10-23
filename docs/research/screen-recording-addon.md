@@ -1,7 +1,7 @@
-# Screen recording tools: features, architecture, and a native add-on design for Klik
+# Screen recording tools: features, architecture, and a native add-on design for Cue
 
 Research notes gathered on 2026-09-23 for the question "what would it take to add Screen Studio-style
-video recording to Klik, without making Klik heavier for people who only take screenshots?"
+video recording to Cue, without making Cue heavier for people who only take screenshots?"
 
 Three reference implementations were examined:
 
@@ -55,8 +55,8 @@ All three share one shape, and it is the shape worth copying:
 Point 2 is what makes the product feel magic. Auto-zoom, cursor smoothing, click bounce and
 re-framing are only possible because nothing was baked into the recording.
 
-For Klik, the same split applies, with two changes: the native helper *is* the whole feature
-(recorder, editor and exporter, all Swift), and it does not ship with Klik. It is a separately
+For Cue, the same split applies, with two changes: the native helper *is* the whole feature
+(recorder, editor and exporter, all Swift), and it does not ship with Cue. It is a separately
 installed add-on, so a user who only takes screenshots never downloads or launches a line of it.
 
 ---
@@ -261,26 +261,26 @@ The cost of the Electron shell is plain: 624 MB installed, hardened-runtime exce
 
 ---
 
-## 5. Klik: a native Swift recording add-on
+## 5. Cue: a native Swift recording add-on
 
 ### 5.1 Requirement
 
-Recording must be Swift and native, and it must **not** ship inside the default Klik download. Klik
+Recording must be Swift and native, and it must **not** ship inside the default Cue download. Cue
 is 11 MB installed and sandboxed; a video encoder, a Metal renderer, a timeline editor and a caption
 model would multiply that for every user, including the ones who only ever press ⌥⇧4. So recording
 is an **add-on**: installed separately, on request, and absent until then.
 
 ### 5.2 Shape
 
-The add-on is its own notarised application, `Klik Studio.app`, signed with the same Team ID, offered
-from inside Klik and installed into `/Applications` only when the user asks for it. Klik core links
+The add-on is its own notarised application, `Cue Studio.app`, signed with the same Team ID, offered
+from inside Cue and installed into `/Applications` only when the user asks for it. Cue core links
 none of its code. It runs as its own process, only while recording or editing, and exits afterwards.
 
 ```
-Klik.app (core, ~11 MB)                        Klik Studio.app (add-on, ~25–40 MB)
-├── Klik/AddOns/                               ├── Recording/   (SCStream, AVAssetWriter)
+Cue.app (core, ~11 MB)                        Cue Studio.app (add-on, ~25–40 MB)
+├── Cue/AddOns/                               ├── Recording/   (SCStream, AVAssetWriter)
 │   ├── AddOnRegistry     installed? version?  ├── Telemetry/   (cursor, keys, window bounds)
-│   ├── AddOnInstaller    download + verify    ├── Project/     (.klikrec package)
+│   ├── AddOnInstaller    download + verify    ├── Project/     (.cuerec package)
 │   ├── AddOnSettingsView Add-ons pane         ├── Editor/      (timeline + Metal renderer)
 │   └── RecordingClient   XPC calls            ├── Export/      (VideoToolbox, ImageIO)
 └── links only AddOnKit ◀── shared SPM pkg ──▶ └── Captions/    (SpeechAnalyzer)
@@ -290,27 +290,27 @@ Klik.app (core, ~11 MB)                        Klik Studio.app (add-on, ~25–40
 
 **Alternatives rejected.** An in-process loadable `.bundle` needs
 `com.apple.security.cs.disable-library-validation`, fights the App Sandbox and notarisation, and
-loads downloaded code into the host process — the posture Screen Studio had to adopt and Klik should
+loads downloaded code into the host process — the posture Screen Studio had to adopt and Cue should
 not. A compiled-in feature behind a preference flag does nothing for binary size, launch time or
 linked frameworks, which is the entire point.
 
 ### 5.3 Install flow
 
-The add-on is **an app the user installs**, not a payload Klik unpacks into its own container. Two
+The add-on is **an app the user installs**, not a payload Cue unpacks into its own container. Two
 sandbox facts decide this, and both were checked rather than assumed:
 
-- A sandboxed process cannot create a non-quarantined executable. Everything Klik downloads carries
+- A sandboxed process cannot create a non-quarantined executable. Everything Cue downloads carries
   `com.apple.quarantine`, and `LSFileQuarantineEnabled = false` does not exempt a sandboxed app. So
-  a downloaded-and-launched-in-place copy would hit Gatekeeper on first open, and Klik cannot strip
+  a downloaded-and-launched-in-place copy would hit Gatekeeper on first open, and Cue cannot strip
   the attribute.
-- Writing into Klik's own bundle is off the table anyway: the bundle is code-signed and sealed, and
+- Writing into Cue's own bundle is off the table anyway: the bundle is code-signed and sealed, and
   writing there invalidates the signature and silently drops the Screen Recording grant — the
-  existing `TessdataFiles` comment in `Klik/OCR/LanguagePackStore.swift` already records this.
+  existing `TessdataFiles` comment in `Cue/OCR/LanguagePackStore.swift` already records this.
 
 So the flow is:
 
 1. A catalogue entry per add-on: id, display name, version, minimum host version, download URL,
-   exact byte length, SHA-256. Klik fetches the catalogue; it does not hard-code versions.
+   exact byte length, SHA-256. Cue fetches the catalogue; it does not hard-code versions.
 2. The Add-ons pane shows the add-on with its size and version and a single **Install** button.
    Install downloads the notarised, stapled disk image or signed installer package with a resumable
    `URLSession` task, verifies length and digest, then hands it to `NSWorkspace.open` — the installer
@@ -321,11 +321,11 @@ So the flow is:
    `.partial` sweep on launch and one shared in-flight task per add-on, exactly as
    `LanguagePackStore` does today for Tesseract models.
 4. Discovery after install is LaunchServices, not a path: `NSWorkspace.shared
-   .urlForApplication(withBundleIdentifier: "com.stackrover.klik.studio")`, then a
+   .urlForApplication(withBundleIdentifier: "com.stackrover.cue.studio")`, then a
    `SecStaticCodeCheckValidity` requirement pinning the Team ID before the host will talk to it, then
    a version handshake against the minimum the host needs.
 5. Update and removal are the add-on's own business: it ships its own updater, and "Remove" simply
-   points the user at the installed app. Klik never deletes an app it did not install.
+   points the user at the installed app. Cue never deletes an app it did not install.
 
 The download/verify half of this is the `LanguagePackStore` pattern with a different payload; the
 install half deliberately defers to macOS rather than fighting quarantine.
@@ -336,14 +336,14 @@ Mach ports are blocked by the App Sandbox **except** between processes in the sa
 embedded XPC service is private to the app that contains it — it cannot be shared with a second app.
 So the wiring is:
 
-- both apps join `group.com.stackrover.klik`;
+- both apps join `group.com.stackrover.cue`;
 - the add-on registers a login-item helper with `SMAppService`, and that helper vends an
   `NSXPCListener(machServiceName:)` whose name is prefixed with the App Group;
-- Klik connects with `NSXPCConnection(machServiceName:options:)` and, after the handshake, can be
+- Cue connects with `NSXPCConnection(machServiceName:options:)` and, after the handshake, can be
   handed an `NSXPCListenerEndpoint` for the recording session itself.
 
 If the login-item helper proves more ceremony than it is worth for a feature the user invokes
-explicitly, the fallback is coarser and perfectly serviceable: Klik launches the add-on with
+explicitly, the fallback is coarser and perfectly serviceable: Cue launches the add-on with
 `NSWorkspace.openApplication(at:configuration:)` passing a request through a custom URL scheme or
 launch arguments, and the finished project comes back through the shared App Group container. Decide
 this when the first recording works end to end, not before.
@@ -365,13 +365,13 @@ it created itself.
 
 ### 5.5 Recording engine (inside the add-on)
 
-Screen Studio's split, in Swift 6 with the concurrency model Klik already uses (main-actor-by-default,
+Screen Studio's split, in Swift 6 with the concurrency model Cue already uses (main-actor-by-default,
 `nonisolated` where work leaves the main actor):
 
 - `Recording/RecordingSession` — an actor playing `Conductor`: starts and stops the sub-recorders
   together, owns the shared clock, surfaces errors and disk-space warnings.
 - `Recording/DisplayRecorder`, `WindowRecorder`, `AreaRecorder` — `SCStream` over an
-  `SCContentFilter` built from `SCShareableContent`. Klik's `WindowDetector` and
+  `SCContentFilter` built from `SCShareableContent`. Cue's `WindowDetector` and
   `ScreenCaptureService` already do this enumeration for screenshots; the add-on should reuse the
   existing selection overlay rather than growing a second one.
 - `Recording/SystemAudioRecorder` — SCStream audio (macOS 13+); `MicrophoneRecorder` — `AVAudioEngine`;
@@ -385,7 +385,7 @@ Screen Studio's split, in Swift 6 with the concurrency model Klik already uses (
 
 ### 5.6 Project format, editor, export
 
-- `Project/` — a `.klikrec` document package (`NSFileWrapper`): video tracks, audio tracks, webcam
+- `Project/` — a `.cuerec` document package (`NSFileWrapper`): video tracks, audio tracks, webcam
   track, telemetry sidecars, `project.json`. A package, like `.screenstudio`, so a project is one
   object in Finder but cheap to write incrementally.
 - `Editor/Timeline/` — a value-type model (clips, trims, speed regions, zoom regions, annotations,
@@ -399,7 +399,7 @@ Screen Studio's split, in Swift 6 with the concurrency model Klik already uses (
 - `Export/` — `AVAssetWriter` + `VTCompressionSession` for MP4/HEVC, `ImageIO` for GIF, hardware
   encoded, with no ffmpeg and no gifsicle to bundle, sign or update.
 - `Captions/` — on-device `SpeechAnalyzer` / `SFSpeechRecognizer` first. Whisper only if quality
-  demands it, built statically through the existing `Vendor/` pattern (Klik already vendors Tesseract
+  demands it, built statically through the existing `Vendor/` pattern (Cue already vendors Tesseract
   and Leptonica that way) and fetched as a downloadable model pack, like the language packs.
 
 ### 5.7 What the core already provides
@@ -412,15 +412,15 @@ onboarding flow (extended to microphone and camera), `CaptureLibrary` (recording
 screenshots do), `ShareUploader` (share links) and `AppPreferences` (settings).
 
 Permissions, stated plainly: the add-on carries its own TCC grants. Screen Recording, Microphone and
-Camera are requested by `Klik Studio.app` under its own bundle identifier, so the host's existing
+Camera are requested by `Cue Studio.app` under its own bundle identifier, so the host's existing
 grant is untouched, and removing the add-on removes its grants with it.
 
 ### 5.8 Optimisation ledger
 
 | | Without the add-on | With the add-on installed |
 |---|---|---|
-| Klik.app size | ~11 MB, unchanged | ~11 MB plus a few hundred KB of `AddOnKit` |
-| Frameworks linked by Klik | unchanged — no encode path, no Metal renderer, no Speech | unchanged |
+| Cue.app size | ~11 MB, unchanged | ~11 MB plus a few hundred KB of `AddOnKit` |
+| Frameworks linked by Cue | unchanged — no encode path, no Metal renderer, no Speech | unchanged |
 | Launch time | unchanged | unchanged; the add-on is a separate process, launched on demand |
 | Memory at idle | unchanged | unchanged; the add-on process exits after recording and editing |
 | Download | — | one-off ~25–40 MB, digest-verified, removable |
@@ -431,7 +431,7 @@ grant is untouched, and removing the add-on removes its grants with it.
 1. Add-on plumbing first — `AddOnKit`, `AddOnRegistry`, `AddOnInstaller`, the Add-ons pane, the XPC
    handshake. Without it none of the rest is optional, and retrofitting the boundary later is the
    expensive path.
-2. Recording plus telemetry sidecars, writing a `.klikrec` package.
+2. Recording plus telemetry sidecars, writing a `.cuerec` package.
 3. Playback and the `SceneRenderer` preview.
 4. Timeline editing: trim, speed, crop.
 5. Zoom regions and cursor beautification — the features the sidecars exist for.
@@ -451,7 +451,7 @@ grant is untouched, and removing the add-on removes its grants with it.
   deciding whether a keystroke overlay earns that prompt, or whether it waits.
 - **GPU budget** for 4K60 preview with blur, shadow and zoom springs in one Core Image graph.
 - **Editor placement.** Does the add-on carry its own editor window, or hand finished projects to
-  Klik's existing `Klik/Editor`? The second keeps one editor; the first keeps the core free of
+  Cue's existing `Cue/Editor`? The second keeps one editor; the first keeps the core free of
   timeline code. Current leaning: the add-on owns it, for the same reason it owns everything else
   heavy.
 - **Manifest generality.** Define the add-on manifest broadly enough that other optional features
@@ -472,5 +472,5 @@ grant is untouched, and removing the add-on removes its grants with it.
 - Screen Studio 3.7.5-4595 at `/Applications/Screen Studio.app` — `Info.plist`, code-signing
   entitlements, bundle layout, and `file` / `otool -L` / `nm -u` / `strings` inspection of the
   helpers in `Contents/Resources/app.asar.unpacked/bin/`.
-- Klik itself — `README.md`, `Config/Klik.entitlements`, `Klik/OCR/LanguagePackStore.swift`, and the
-  module layout under `Klik/`.
+- Cue itself — `README.md`, `Config/Cue.entitlements`, `Cue/OCR/LanguagePackStore.swift`, and the
+  module layout under `Cue/`.

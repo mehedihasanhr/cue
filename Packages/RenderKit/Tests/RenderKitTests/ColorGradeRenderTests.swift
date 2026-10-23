@@ -135,7 +135,7 @@ struct ColorGradeRenderTests {
 
     private func package(with cube: String) throws -> URL {
         let folder = FileManager.default.temporaryDirectory
-            .appendingPathComponent("grade-\(UUID().uuidString).klikrec", isDirectory: true)
+            .appendingPathComponent("grade-\(UUID().uuidString).cuerec", isDirectory: true)
         let luts = folder.appendingPathComponent(LUTReference.folderName, isDirectory: true)
         try FileManager.default.createDirectory(at: luts, withIntermediateDirectories: true)
         try cube.write(to: luts.appendingPathComponent("invert.cube"), atomically: true, encoding: .utf8)
@@ -201,7 +201,7 @@ struct ColorGradeRenderTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         let good = folder.appendingPathComponent("Teal and Orange.cube")
         try Self.invertingCube().write(to: good, atomically: true, encoding: .utf8)
-        let package = folder.appendingPathComponent("Take.klikrec", isDirectory: true)
+        let package = folder.appendingPathComponent("Take.cuerec", isDirectory: true)
         let lut = try CubeLUT.copy(good, into: package)
         #expect(lut.name == "Teal and Orange")
         #expect(lut.path.hasPrefix("\(LUTReference.folderName)/"))

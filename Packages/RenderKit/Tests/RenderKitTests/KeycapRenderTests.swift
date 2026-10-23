@@ -336,7 +336,7 @@ struct KeycapRenderTests {
     /// Writes a few frames to look at, when asked to. Not a test of anything: a way of
     /// seeing the artwork without launching the app.
     @Test func snapshotsForTheEye() throws {
-        guard let folder = ProcessInfo.processInfo.environment["KLIK_KEYCAP_SNAPSHOTS"] else { return }
+        guard let folder = ProcessInfo.processInfo.environment["CUE_KEYCAP_SNAPSHOTS"] else { return }
         let renderer = SceneRenderer()
         let large = CGSize(width: 1_280, height: 720)
         func write(_ name: String, _ scene: SceneDescriptor) throws {

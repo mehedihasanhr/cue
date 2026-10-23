@@ -28,7 +28,7 @@ public struct MediaFile: Identifiable, Equatable, Codable, Sendable {
     public enum Kind: String, Codable, Sendable {
         /// Any movie file.
         case video
-        /// The screen of another Klik recording. Its pointer and clicks stay behind: they
+        /// The screen of another Cue recording. Its pointer and clicks stay behind: they
         /// were measured against that take's clock, and this project keeps only one.
         case recording
     }

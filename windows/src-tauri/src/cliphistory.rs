@@ -3,7 +3,7 @@
 //!
 //! Windows bumps a sequence number on every copy, so a look twice a second costs almost
 //! nothing while nothing changes. What password managers mark as private is skipped, as
-//! are Klik's own copies and a repeat of the newest entry. An entry's fields are the
+//! are Cue's own copies and a repeat of the newest entry. An entry's fields are the
 //! Mac's `ClipboardItem`: `kind` is text, link, color, image or files; `text` holds the
 //! text, the colour as `#RRGGBB`, or the files' paths one per line; a picture is a PNG
 //! in the Clipboard folder named by the entry's id.
@@ -19,7 +19,7 @@ use tauri::{AppHandle, Manager};
 /// The largest text kept; longer copies are left out rather than slow every list.
 const MAX_TEXT: usize = 2 * 1024 * 1024;
 
-/// Set by Klik's own copies, so the watcher leaves the next change alone.
+/// Set by Cue's own copies, so the watcher leaves the next change alone.
 static OWN_COPY: AtomicBool = AtomicBool::new(false);
 
 pub fn mark_own_copy() {
@@ -279,8 +279,8 @@ mod tests {
     fn classifies_like_the_mac() {
         assert_eq!(classify("#0e4fec"), "color");
         assert_eq!(classify("rgb(14, 79, 236)"), "color");
-        assert_eq!(classify("https://klik.app/download"), "link");
-        assert_eq!(classify("see https://klik.app"), "text");
+        assert_eq!(classify("https://cue.app/download"), "link");
+        assert_eq!(classify("see https://cue.app"), "text");
         assert_eq!(classify("hello"), "text");
         assert_eq!(normalize_color("#abc").as_deref(), Some("#AABBCC"));
         assert_eq!(normalize_color("rgb(14, 79, 236)").as_deref(), Some("#0E4FEC"));

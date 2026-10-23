@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Builds the Tesseract and Leptonica static libraries Klik links against, and puts
+# Builds the Tesseract and Leptonica static libraries Cue links against, and puts
 # them in Vendor/tesseract/ where Config/Vendor.xcconfig expects to find them.
 #
 # Run by hand, not from Xcode. The result is committed, so a clone builds without
@@ -14,7 +14,7 @@
 # the code into the executable puts it under the app's own signature instead, and
 # leaves the DMG and Gatekeeper story exactly as it was.
 #
-# Why no image codecs: Klik hands Tesseract a raw grayscale buffer, so Leptonica
+# Why no image codecs: Cue hands Tesseract a raw grayscale buffer, so Leptonica
 # never reads or writes a file. Turning the codecs off removes the whole
 # libpng/jpeg/tiff/webp/zlib dependency chain, which would otherwise link against
 # whatever Homebrew has and break on every other Mac.
@@ -70,7 +70,7 @@ for ARCH in $ARCHS; do
     cd "$WORK/src/tesseract"
     [ -f configure ] || ./autogen.sh >/dev/null
     rm -rf "$WORK/b-tess-$ARCH"; mkdir -p "$WORK/b-tess-$ARCH"; cd "$WORK/b-tess-$ARCH"
-    # --disable-legacy: the packs Klik downloads are LSTM-only, so the old classifier
+    # --disable-legacy: the packs Cue downloads are LSTM-only, so the old classifier
     #   is dead weight and, if present, invites "legacy engine requested" failures.
     # --disable-openmp: libomp is not in the Xcode toolchain and would be a dylib.
     # --disable-graphics: ScrollView's debug viewer wants a Java process.

@@ -201,7 +201,7 @@ impl Session {
                 pointer_latency: Some(latency),
                 keys: Some("recorded".into()),
             },
-            recorded_by: "Klik Studio".into(),
+            recorded_by: "Cue Studio".into(),
         };
         package::write_json(&self.package.join("manifest.json"), &manifest)?;
         if let Some([x, y, w, h]) = self.crop {

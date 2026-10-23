@@ -41,7 +41,7 @@ impl Default for ShareSettings {
             endpoint: String::new(),
             region: "auto".into(),
             bucket: String::new(),
-            prefix: "klik/".into(),
+            prefix: "cue/".into(),
             access_key: String::new(),
             public_base: String::new(),
             custom_url: String::new(),
@@ -211,7 +211,7 @@ async fn upload_custom(settings: &ShareSettings, png: Vec<u8>, name: &str) -> Re
     }
     let client = reqwest::Client::new();
     let mut request = if post {
-        let boundary = format!("klik-{}", uuid::Uuid::new_v4().simple());
+        let boundary = format!("cue-{}", uuid::Uuid::new_v4().simple());
         let mut form = format!(
             "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{name}\"\r\nContent-Type: image/png\r\n\r\n"
         )

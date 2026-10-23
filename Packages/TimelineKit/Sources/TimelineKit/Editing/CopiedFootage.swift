@@ -383,8 +383,8 @@ public struct CopiedFootage: Equatable, Sendable {
     public var summary: String {
         let length = String(format: "%.2fs", duration.seconds)
         let cuts = clips.count == 1 ? "1 clip" : "\(clips.count) clips"
-        guard carried > 0 else { return "Klik footage · \(length) · \(cuts)" }
-        return "Klik footage · \(length) · \(cuts) · \(carried) region\(carried == 1 ? "" : "s")"
+        guard carried > 0 else { return "Cue footage · \(length) · \(cuts)" }
+        return "Cue footage · \(length) · \(cuts) · \(carried) region\(carried == 1 ? "" : "s")"
     }
 }
 

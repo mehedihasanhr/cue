@@ -15,7 +15,7 @@ struct FontFamilyRenderTests {
     /// would pass on one machine only.
     private static let serif = "Georgia"
     private static let mono = "Menlo"
-    private static let missing = "Klik No Such Family"
+    private static let missing = "Cue No Such Family"
 
     private static let size = CGSize(width: 800, height: 450)
 

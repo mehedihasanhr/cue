@@ -1,0 +1,73 @@
+#!/bin/sh
+# cue — drive Cue from the command line through its cue:// URL scheme.
+#
+#   cue capture [area|full|scrolling|text]     cue color
+#   cue task "Title" [-n notes] [-p priority] [-P project]
+#   cue note ["Text"]      (no text, or piped text: the note; none at all opens the form)
+#   cue snippet ";kw" "Template text" [-n name]
+#   cue copy "text"        cue palette | clipboard | panel | clock | settings
+#   cue url 'cue://…'     (any URL, as is)
+#
+# Install: ln -s "$PWD/Tools/cue" /usr/local/bin/cue   (or copy it anywhere on your PATH)
+set -e
+
+encode() {
+    # RFC 3986 percent-encoding of $1, one byte at a time (works in plain /bin/sh).
+    printf '%s' "$1" | od -An -tx1 -v | tr -d '\n' | tr ' ' '\n' | grep -v '^$' | while read -r byte; do
+        case "$byte" in
+            3[0-9]|4[1-9a-f]|5[0-9a]|6[1-9a-f]|7[0-9a]|2d|2e|5f|7e)  # 0-9 A-Z a-z - . _ ~
+                printf "\\$(printf '%03o' "0x$byte")" ;;
+            *) printf '%%%s' "$byte" ;;
+        esac
+    done
+}
+
+usage() { sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+
+open_url() { open "$1"; }
+
+[ $# -ge 1 ] || usage
+command="$1"; shift
+case "$command" in
+    capture)
+        kind="${1:-area}"
+        open_url "cue://capture/$kind" ;;
+    color|pick)
+        open_url "cue://color/pick" ;;
+    task)
+        [ $# -ge 1 ] || usage
+        title="$1"; shift
+        notes=""; priority=""; project=""
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                -n|--notes) notes="$2"; shift 2 ;;
+                -p|--priority) priority="$2"; shift 2 ;;
+                -P|--project) project="$2"; shift 2 ;;
+                *) usage ;;
+            esac
+        done
+        open_url "cue://task/new?title=$(encode "$title")&notes=$(encode "$notes")&priority=$(encode "$priority")&project=$(encode "$project")" ;;
+    note)
+        if [ $# -ge 1 ]; then text="$1"; elif [ ! -t 0 ]; then text=$(cat); else text=""; fi
+        open_url "cue://note/new?text=$(encode "$text")" ;;
+    snippet)
+        [ $# -ge 2 ] || usage
+        keyword="$1"; text="$2"; shift 2
+        name=""
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                -n|--name) name="$2"; shift 2 ;;
+                *) usage ;;
+            esac
+        done
+        open_url "cue://snippet/add?keyword=$(encode "$keyword")&text=$(encode "$text")&name=$(encode "$name")" ;;
+    copy)
+        if [ $# -ge 1 ]; then text="$1"; else text="$(cat)"; fi
+        open_url "cue://clipboard/copy?text=$(encode "$text")" ;;
+    palette|clipboard|panel|clock|settings)
+        open_url "cue://$command" ;;
+    url)
+        [ $# -ge 1 ] || usage
+        open_url "$1" ;;
+    *) usage ;;
+esac

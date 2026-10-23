@@ -48,7 +48,7 @@ public final class CursorArtworkWriter: @unchecked Sendable {
     private let relativeFolder: String
     private let state = OSAllocatedUnfairLock(initialState: [CursorShape: Entry]())
 
-    private static let log = Logger(subsystem: "com.stackrover.klik.recordkit", category: "cursor-artwork")
+    private static let log = Logger(subsystem: "com.stackrover.cue.recordkit", category: "cursor-artwork")
 
     public init(folder: URL, relativeFolder: String) {
         self.folder = folder

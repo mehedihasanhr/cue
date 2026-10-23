@@ -1,4 +1,4 @@
-// One page for every Klik Studio window; the window's label says which one this is:
+// One page for every Cue Studio window; the window's label says which one this is:
 // `bar`, `picker-N` (the hash is the mode), `library`, `editor-<id>` (the hash is the
 // recording's path).
 

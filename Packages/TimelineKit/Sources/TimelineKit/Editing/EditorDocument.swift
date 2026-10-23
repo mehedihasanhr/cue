@@ -376,7 +376,7 @@ public final class EditorDocument {
 
     private static let decoder = JSONDecoder()
 
-    private static let log = Logger(subsystem: "com.stackrover.klik.studio", category: "document")
+    private static let log = Logger(subsystem: "com.stackrover.cue.studio", category: "document")
 }
 
 /// Reads a JSON Lines sidecar back.

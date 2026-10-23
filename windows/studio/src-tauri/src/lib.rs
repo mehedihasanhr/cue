@@ -1,5 +1,5 @@
-//! Klik Studio for Windows: record the screen, then edit it into something that looks
-//! made — the Mac's Klik Studio, built on Windows' own capture, sound and video APIs.
+//! Cue Studio for Windows: record the screen, then edit it into something that looks
+//! made — the Mac's Cue Studio, built on Windows' own capture, sound and video APIs.
 //!
 //! Windows here are made when asked for; the web side picks what to draw from the label:
 //! `bar` (the recorder), `picker-N` (choosing what to record on display N), `countdown`,
@@ -19,7 +19,7 @@ pub struct AppState {
 
 pub fn run() {
     tauri::Builder::default()
-        // A second launch, or a `klik-studio://` link from Klik, reaches this one.
+        // A second launch, or a `cue-studio://` link from Cue, reaches this one.
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             windows::handle_args(app, &args);
         }))
@@ -71,5 +71,5 @@ pub fn run() {
             media::export_end,
         ])
         .run(tauri::generate_context!())
-        .expect("error while starting Klik Studio");
+        .expect("error while starting Cue Studio");
 }

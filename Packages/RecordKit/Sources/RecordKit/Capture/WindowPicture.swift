@@ -44,10 +44,10 @@ enum WindowPicture {
                       height: geometry.contentRect.height / geometry.contentScale)
     }
 
-    private static let log = Logger(subsystem: "com.stackrover.klik.recordkit", category: "screen")
+    private static let log = Logger(subsystem: "com.stackrover.cue.recordkit", category: "screen")
 
     private final class Probe: NSObject, SCStreamOutput, @unchecked Sendable {
-        let queue = DispatchQueue(label: "com.stackrover.klik.window-picture")
+        let queue = DispatchQueue(label: "com.stackrover.cue.window-picture")
         private let found = OSAllocatedUnfairLock<CheckedContinuation<CGSize?, Never>?>(initialState: nil)
         private let result = OSAllocatedUnfairLock<CGSize??>(initialState: nil)
 

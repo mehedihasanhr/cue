@@ -1,4 +1,4 @@
-# Klik for Windows: type-check, test and build the installer on a real Windows machine.
+# Cue for Windows: type-check, test and build the installer on a real Windows machine.
 # The installer is attached to the run as an artifact; releases are published with
 # windows/scripts/publish-release.sh.
 name: Windows
@@ -58,13 +58,13 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: klik-windows-installer
+          name: cue-windows-installer
           path: |
             windows/src-tauri/target/release/bundle/nsis/*.exe
             windows/src-tauri/target/release/bundle/nsis/*.sig
           if-no-files-found: error
 
-  # Klik Studio for Windows: its own app, sharing Klik's packages and UI kit.
+  # Cue Studio for Windows: its own app, sharing Cue's packages and UI kit.
   studio:
     runs-on: windows-latest
     defaults:
@@ -110,7 +110,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: klik-studio-windows-installer
+          name: cue-studio-windows-installer
           path: |
             windows/studio/src-tauri/target/release/bundle/nsis/*.exe
             windows/studio/src-tauri/target/release/bundle/nsis/*.sig

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Klik",
+  "productName": "Cue",
   "version": "0.2.2",
-  "identifier": "com.stackrover.klik",
+  "identifier": "com.stackrover.cue",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -45,7 +45,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDE2N0ZGOUZFREMxNjNDMjMKUldRalBCYmMvdmwvRnJKdG9pNnJSNzBFWHhPbHNhRFdUdHk1ZUhnZUhuOEQ0MU5yK2tYbFZhNVkK",
       "endpoints": [
-        "https://github.com/mehedihasanhr/klik-releases/releases/download/windows-feed/latest.json"
+        "https://github.com/mehedihasanhr/cue-releases/releases/download/windows-feed/latest.json"
       ],
       "windows": {
         "installMode": "passive"

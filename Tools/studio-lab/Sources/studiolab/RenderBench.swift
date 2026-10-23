@@ -5,14 +5,14 @@ import RecordKit
 import RenderKit
 import TimelineKit
 
-/// `studiolab renderbench <recording.klikrec> <zoomed-second> <unzoomed-second>` — how long
+/// `studiolab renderbench <recording.cuerec> <zoomed-second> <unzoomed-second>` — how long
 /// the renderer takes to draw one preview frame, zoomed and not, and which layer costs what.
 /// Uses a flat stand-in for the recorded picture, so decoding is not measured.
 @MainActor
 enum RenderBench {
     static func run(_ arguments: [String]) async -> Int32 {
         guard arguments.count >= 3, let zoomedAt = Double(arguments[1]), let flatAt = Double(arguments[2]) else {
-            print("usage: studiolab renderbench <recording.klikrec> <zoomed-second> <unzoomed-second> [fidelity]")
+            print("usage: studiolab renderbench <recording.cuerec> <zoomed-second> <unzoomed-second> [fidelity]")
             return 2
         }
         let package = RecordingPackage(url: URL(fileURLWithPath: arguments[0]))

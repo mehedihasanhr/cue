@@ -2,14 +2,14 @@ import Foundation
 import RecordKit
 import TimelineKit
 
-/// `studiolab pace <recording.klikrec>` — what "Speed Up Waiting…" would offer for a
+/// `studiolab pace <recording.cuerec>` — what "Speed Up Waiting…" would offer for a
 /// recording, and what each stretch was measured from: the same analysis the editor runs,
 /// printed rather than put in a sheet.
 @MainActor
 enum PaceCheck {
     static func run(_ arguments: [String]) async -> Int32 {
         guard let path = arguments.first else {
-            print("usage: studiolab pace <recording.klikrec>")
+            print("usage: studiolab pace <recording.cuerec>")
             return 2
         }
         let package = RecordingPackage(url: URL(fileURLWithPath: path))

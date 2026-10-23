@@ -325,13 +325,13 @@ pub fn island_geometry() -> serde_json::Value {
     })
 }
 
-/// The shortcuts Klik starts with, for Settings › Shortcuts › Restore Defaults.
+/// The shortcuts Cue starts with, for Settings › Shortcuts › Restore Defaults.
 #[tauri::command]
 pub fn default_shortcuts() -> std::collections::BTreeMap<String, String> {
     crate::settings::default_shortcuts()
 }
 
-/// What Settings › About shows: where Klik is, and the system it runs on.
+/// What Settings › About shows: where Cue is, and the system it runs on.
 #[tauri::command]
 pub fn app_info() -> serde_json::Value {
     let exe = std::env::current_exe().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
@@ -394,7 +394,7 @@ pub fn island_displays(app: AppHandle) -> Vec<DisplayChoice> {
         .collect()
 }
 
-/// Opens a page of Windows Settings that a Klik setting depends on.
+/// Opens a page of Windows Settings that a Cue setting depends on.
 #[tauri::command]
 pub fn open_windows_settings(app: AppHandle, page: String) -> Result<()> {
     use tauri_plugin_opener::OpenerExt;

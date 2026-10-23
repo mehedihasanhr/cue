@@ -1,6 +1,6 @@
-//! Klik Studio, from Klik — the Mac's AddOnKit bridge on Windows. Klik asks Studio to
+//! Cue Studio, from Cue — the Mac's AddOnKit bridge on Windows. Cue asks Studio to
 //! record by writing a `RecordingRequest` (the Mac's JSON) to a file and opening
-//! `klik-studio://record?request=<path>`; Studio shows its bar ready for it.
+//! `cue-studio://record?request=<path>`; Studio shows its bar ready for it.
 
 use crate::state::AppState;
 use anyhow::{Context, Result};
@@ -26,10 +26,10 @@ impl Default for StudioSettings {
     }
 }
 
-/// Where Klik Studio's installer puts it, for this user or for everyone.
+/// Where Cue Studio's installer puts it, for this user or for everyone.
 fn installed_at() -> Option<PathBuf> {
-    let roots = [std::env::var_os("LOCALAPPDATA").map(|p| PathBuf::from(p).join("Klik Studio")), std::env::var_os("ProgramFiles").map(|p| PathBuf::from(p).join("Klik Studio"))];
-    roots.into_iter().flatten().flat_map(|root| [root.join("Klik Studio.exe"), root.join("klik-studio.exe")]).find(|exe| exe.is_file())
+    let roots = [std::env::var_os("LOCALAPPDATA").map(|p| PathBuf::from(p).join("Cue Studio")), std::env::var_os("ProgramFiles").map(|p| PathBuf::from(p).join("Cue Studio"))];
+    roots.into_iter().flatten().flat_map(|root| [root.join("Cue Studio.exe"), root.join("cue-studio.exe")]).find(|exe| exe.is_file())
 }
 
 #[derive(Serialize)]
@@ -61,10 +61,10 @@ pub fn record(app: &AppHandle) -> Result<()> {
         "opensEditorWhenFinished": settings.opens_editor_after_recording,
         "correlationID": uuid::Uuid::new_v4().to_string().to_uppercase(),
     });
-    let path = std::env::temp_dir().join(format!("klik-studio-request-{}.json", uuid::Uuid::new_v4()));
-    std::fs::write(&path, serde_json::to_vec_pretty(&request)?).context("Couldn't write the request for Klik Studio")?;
+    let path = std::env::temp_dir().join(format!("cue-studio-request-{}.json", uuid::Uuid::new_v4()));
+    std::fs::write(&path, serde_json::to_vec_pretty(&request)?).context("Couldn't write the request for Cue Studio")?;
     let encoded: String = path.to_string_lossy().bytes().map(|b| if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect();
-    app.opener().open_url(format!("klik-studio://record?request={encoded}"), None::<&str>).context("Couldn't open Klik Studio")?;
+    app.opener().open_url(format!("cue-studio://record?request={encoded}"), None::<&str>).context("Couldn't open Cue Studio")?;
     Ok(())
 }
 
@@ -73,7 +73,7 @@ pub fn open_library(app: &AppHandle) -> Result<()> {
     if installed_at().is_none() {
         return crate::windows::open_settings(app, Some("studio"));
     }
-    app.opener().open_url("klik-studio://library", None::<&str>).context("Couldn't open Klik Studio")?;
+    app.opener().open_url("cue-studio://library", None::<&str>).context("Couldn't open Cue Studio")?;
     Ok(())
 }
 

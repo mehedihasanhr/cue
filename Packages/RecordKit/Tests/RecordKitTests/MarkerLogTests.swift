@@ -116,7 +116,7 @@ struct MarkerLogTests {
         let json = """
         {"formatVersion":1,"name":"Old","createdAt":"2025-01-01T00:00:00Z","duration":3,
          "displayScale":2,"tracks":[],"telemetry":{"cursor":"telemetry/cursor.jsonl"},
-         "recordedBy":"Klik Studio"}
+         "recordedBy":"Cue Studio"}
         """
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601

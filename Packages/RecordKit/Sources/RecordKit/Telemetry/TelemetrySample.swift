@@ -46,7 +46,7 @@ public enum InputSample: Codable, Equatable, Sendable {
     ///
     /// This case used to carry `characters: String`, the text the keystroke produced.
     /// Nothing ever wrote it, but the shape of the data is a promise about what a
-    /// recording may contain, and that one said a `.klikrec` could hold everything its
+    /// recording may contain, and that one said a `.cuerec` could hold everything its
     /// author typed — passwords, messages, anything on screen or off it — in plain text
     /// beside the video, in a package people share.
     ///

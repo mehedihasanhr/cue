@@ -1,4 +1,3 @@
-import AddOnKit
 import CoreGraphics
 import Foundation
 import Testing
@@ -153,7 +152,7 @@ struct DeviceCaptureTests {
     private let oldManifest = """
     {"formatVersion":1,"name":"Old take","createdAt":"2025-11-02T10:00:00Z","duration":12.5,
      "displayScale":2,"tracks":[{"kind":"screen","path":"media/screen.mov","pixelSize":[3024,1964],"frameRate":60}],
-     "telemetry":{"cursor":"telemetry/cursor.jsonl","input":"telemetry/input.jsonl"},"recordedBy":"Klik Studio"}
+     "telemetry":{"cursor":"telemetry/cursor.jsonl","input":"telemetry/input.jsonl"},"recordedBy":"Cue Studio"}
     """
 
     @Test func aRecordingFromBeforeDevicesStillOpensAsAScreenTake() throws {
@@ -197,7 +196,7 @@ struct DeviceCaptureTests {
     @Test func anUnknownFamilyDoesNotCostTheRecording() throws {
         let json = """
         {"formatVersion":1,"name":"Future","createdAt":"2027-01-01T00:00:00Z","duration":1,"displayScale":2,
-         "tracks":[],"telemetry":{},"recordedBy":"Klik Studio",
+         "tracks":[],"telemetry":{},"recordedBy":"Cue Studio",
          "device":{"name":"Goggles","family":"visionPro"}}
         """
         let manifest = try decode(json)

@@ -10,7 +10,7 @@ import Foundation
 public struct WallpaperID: Hashable, Codable, Sendable, RawRepresentable, CustomStringConvertible {
     public enum Namespace: String, Sendable, CaseIterable {
         /// A gradient this app generates, by preset name.
-        case klik
+        case cue
         /// A desktop picture shipped with macOS, by file name.
         case system
         /// A file the user picked, by bookmark id.
@@ -21,10 +21,12 @@ public struct WallpaperID: Hashable, Codable, Sendable, RawRepresentable, Custom
 
     public init?(rawValue: String) {
         guard let separator = rawValue.firstIndex(of: ":") else { return nil }
-        let namespace = String(rawValue[rawValue.startIndex..<separator])
-        guard Namespace(rawValue: namespace) != nil else { return nil }
-        guard rawValue.index(after: separator) < rawValue.endIndex else { return nil }
-        self.rawValue = rawValue
+        var namespace = String(rawValue[rawValue.startIndex..<separator])
+        let name = rawValue[rawValue.index(after: separator)...]
+        // Saved before the app was renamed from Klik to Cue.
+        if namespace == "klik" { namespace = Namespace.cue.rawValue }
+        guard Namespace(rawValue: namespace) != nil, !name.isEmpty else { return nil }
+        self.rawValue = "\(namespace):\(name)"
     }
 
     public init(_ namespace: Namespace, _ name: some StringProtocol) {
@@ -33,7 +35,7 @@ public struct WallpaperID: Hashable, Codable, Sendable, RawRepresentable, Custom
 
     public var namespace: Namespace {
         // Safe: `init?` rejects anything without a known namespace.
-        Namespace(rawValue: String(rawValue.prefix(while: { $0 != ":" }))) ?? .klik
+        Namespace(rawValue: String(rawValue.prefix(while: { $0 != ":" }))) ?? .cue
     }
 
     /// Everything after the colon. A system picture's name may contain a slash.
@@ -45,7 +47,7 @@ public struct WallpaperID: Hashable, Codable, Sendable, RawRepresentable, Custom
     public var description: String { rawValue }
 
     public static func preset(_ gradient: GradientPreset) -> WallpaperID {
-        WallpaperID(.klik, gradient.rawValue)
+        WallpaperID(.cue, gradient.rawValue)
     }
 
     public static func system(_ wallpaper: Wallpaper) -> WallpaperID {

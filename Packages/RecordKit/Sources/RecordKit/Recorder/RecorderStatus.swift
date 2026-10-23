@@ -32,7 +32,7 @@ public struct RecorderStatus: Equatable, Sendable {
     public init(_ state: RecordingSession.State, at now: Date) {
         switch state {
         case .idle, .finished, .failed:
-            self.init(phase: .idle, symbol: "record.circle", title: "", description: "Klik Studio")
+            self.init(phase: .idle, symbol: "record.circle", title: "", description: "Cue Studio")
         case .preparing:
             self.init(phase: .starting, symbol: "record.circle", title: "", description: "Getting ready to record")
         case .countdown(let remaining):

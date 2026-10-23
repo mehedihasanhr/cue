@@ -1,7 +1,7 @@
 //! Secrets — a bucket's secret key, an endpoint's token — in Windows Credential Manager,
 //! never in the settings file.
 
-const SERVICE: &str = "Klik";
+const SERVICE: &str = "Cue";
 
 /// The names a secret can be stored under.
 pub const NAMES: [&str; 2] = ["share.s3.secretKey", "share.custom.headerValue"];

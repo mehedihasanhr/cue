@@ -1,7 +1,7 @@
-//! The `.klikrec` package — a folder, laid out as the Mac's:
+//! The `.cuerec` package — a folder, laid out as the Mac's:
 //!
 //! ```text
-//! Recording 2026-10-15 at 18.04.12.klikrec/
+//! Recording 2026-10-15 at 18.04.12.cuerec/
 //!   manifest.json     what was recorded
 //!   project.json      the edit, once there is one
 //!   media/            screen.mp4, system-audio.wav, microphone-1.wav
@@ -17,13 +17,13 @@ use chrono::{DateTime, Local, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-pub const EXTENSION: &str = "klikrec";
+pub const EXTENSION: &str = "cuerec";
 pub const IN_PROGRESS: &str = "in-progress.json";
 
-/// Where recordings go: `Videos\Klik Studio`.
+/// Where recordings go: `Videos\Cue Studio`.
 pub fn library_folder() -> PathBuf {
     let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
-    home.join("Videos").join("Klik Studio")
+    home.join("Videos").join("Cue Studio")
 }
 
 /// "Recording 2026-10-15 at 18.04.12", the Mac's name for a take.
@@ -164,10 +164,10 @@ mod tests {
     fn names_and_numbers_takes() {
         let at = Local.with_ymd_and_hms(2026, 10, 15, 18, 4, 12).unwrap();
         assert_eq!(take_name(at), "Recording 2026-10-15 at 18.04.12");
-        let dir = std::env::temp_dir().join(format!("klik-studio-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("cue-studio-{}", uuid::Uuid::new_v4()));
         let a = create(&dir, "Take").unwrap();
         let b = create(&dir, "Take").unwrap();
-        assert!(a.ends_with("Take.klikrec") && b.ends_with("Take 2.klikrec"));
+        assert!(a.ends_with("Take.cuerec") && b.ends_with("Take 2.cuerec"));
         assert!(b.join("telemetry").is_dir());
         std::fs::remove_dir_all(dir).ok();
     }
@@ -183,7 +183,7 @@ mod tests {
             source_rect: None,
             tracks: vec![Track { kind: "screen".into(), path: "media/screen.mp4".into(), pixel_size: Some([1920.0, 1080.0]), frame_rate: Some(60), codec: Some("avc1".into()), name: None, device_id: None }],
             telemetry: TelemetryFiles { cursor: Some("telemetry/cursor.jsonl".into()), ..Default::default() },
-            recorded_by: "Klik Studio".into(),
+            recorded_by: "Cue Studio".into(),
         };
         let text = serde_json::to_string(&manifest).unwrap();
         for key in ["formatVersion", "displayScale", "pixelSize", "frameRate", "recordedBy", "\"cursor\""] {
