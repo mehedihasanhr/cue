@@ -67,6 +67,7 @@ final class AppPreferences {
         static let tasksWebhookURL = "tasks.webhook.url"
         static let tasksWebhookEnabled = "tasks.webhook.enabled"
         static let tasksWebhookEvents = "tasks.webhook.events"
+        static let tasksMCPEnabled = "tasks.mcp.enabled"
         static let snippetsEnabled = "snippets.enabled"
         static let snippetPrefix = "snippets.prefix"
         static let ocrLanguages = "ocr.languages"
@@ -160,6 +161,11 @@ final class AppPreferences {
 
     var tasksWebhookEnabled: Bool {
         didSet { defaults.set(tasksWebhookEnabled, forKey: Key.tasksWebhookEnabled) }
+    }
+
+    /// Whether AI agents can reach the task list over MCP (Settings › Tasks).
+    var tasksMCPEnabled: Bool {
+        didSet { defaults.set(tasksMCPEnabled, forKey: Key.tasksMCPEnabled) }
     }
 
     /// Which changes the webhook gets: `created`, `updated`, `status`, `deleted`.
@@ -701,6 +707,7 @@ final class AppPreferences {
         tasksWebhookURL = defaults.string(forKey: Key.tasksWebhookURL) ?? ""
         tasksWebhookSecret = Keychain.get("tasks.webhook.secret") ?? ""
         tasksWebhookEnabled = defaults.object(forKey: Key.tasksWebhookEnabled) as? Bool ?? false
+        tasksMCPEnabled = defaults.object(forKey: Key.tasksMCPEnabled) as? Bool ?? true
         tasksWebhookEvents = Set(defaults.stringArray(forKey: Key.tasksWebhookEvents) ?? ["created", "updated", "status", "deleted"])
         snippetsEnabled = defaults.object(forKey: Key.snippetsEnabled) as? Bool ?? true
         snippetPrefix = defaults.string(forKey: Key.snippetPrefix) ?? ";"

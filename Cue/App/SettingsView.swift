@@ -599,8 +599,23 @@ struct NotesSettingsView: View {
 // MARK: - Tasks
 
 struct TasksSettingsView: View {
+    private var mcpStatus: String? {
+        guard preferences.tasksMCPEnabled, let mcp else { return nil }
+        return mcp.problem ?? (mcp.isRunning ? "On: agents set up below can connect." : nil)
+    }
+
+    private func copyButton(_ text: String, id: String) -> some View {
+        Button(copied == id ? "Copied" : "Copy") {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            copied = id
+        }
+    }
+
     @Environment(AppPreferences.self) private var preferences
     @Environment(TaskSync.self) private var sync: TaskSync?
+    @Environment(TaskMCPController.self) private var mcp: TaskMCPController?
+    @State private var copied: String?
     @State private var serverCheck: String?
     @State private var checking = false
     @State private var testing = false
@@ -608,6 +623,23 @@ struct TasksSettingsView: View {
     var body: some View {
         @Bindable var preferences = preferences
         SettingsPane(.tasks) {
+            SettingsGroup("AI agents (MCP)", footer: "Agents can list, read, create and update tasks, and add notes to them. They can’t delete anything. Cue starts by itself when an agent connects.") {
+                SettingsRow("Let AI agents use your tasks", subtitle: mcpStatus) {
+                    Toggle("MCP", isOn: $preferences.tasksMCPEnabled).toggleStyle(.switch)
+                }
+                if preferences.tasksMCPEnabled {
+                    SettingsRow("Claude Code", subtitle: TaskMCPController.claudeCodeCommand) {
+                        copyButton(TaskMCPController.claudeCodeCommand, id: "claude")
+                    }
+                    SettingsRow("Codex", subtitle: TaskMCPController.codexCommand) {
+                        copyButton(TaskMCPController.codexCommand, id: "codex")
+                    }
+                    SettingsRow("Other apps", subtitle: "Claude Desktop, Cursor and others: JSON for their MCP settings") {
+                        copyButton(TaskMCPController.jsonConfiguration, id: "json")
+                    }
+                }
+            }
+
             SettingsGroup("Remote server") {
                 SettingsRow("Server URL") {
                     TextField("URL", text: $preferences.tasksServerURL, prompt: Text("https://example.com/cue/sync"))

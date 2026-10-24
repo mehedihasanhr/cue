@@ -1,0 +1,31 @@
+#!/bin/sh
+# cue-mcp — Cue's task list for AI agents, over MCP (stdio).
+#
+# An MCP client runs this; it connects the client's stdin and stdout to Cue, which
+# answers on a socket in its own container (the sandbox lets it listen nowhere else).
+# Cue is started in the background when it is not running. Turn it on or off, and
+# copy the command for your agent, in Cue's Settings › Tasks.
+#
+#   claude mcp add --scope user cue -- /Applications/Cue.app/Contents/Resources/cue-mcp
+sock="$HOME/Library/Containers/com.stackrover.cue/Data/mcp.sock"
+
+# A bare connection: `nc -z` cannot probe a Unix socket.
+listening() { [ -S "$sock" ] && /usr/bin/nc -U "$sock" </dev/null >/dev/null 2>&1; }
+
+if ! listening; then
+    # This copy of Cue, the one the script is inside; LaunchServices' choice otherwise.
+    app="$(cd "$(dirname "$0")/../../.." 2>/dev/null && pwd)"
+    case "$app" in
+        *.app) /usr/bin/open -g -j "$app" 2>/dev/null ;;
+        *) /usr/bin/open -g -j -b com.stackrover.cue 2>/dev/null ;;
+    esac
+    i=0
+    while ! listening && [ "$i" -lt 75 ]; do sleep 0.2; i=$((i + 1)); done
+fi
+
+if ! listening; then
+    echo "cue-mcp: Cue isn't answering. Open Cue, and check Settings › Tasks › AI agents (MCP) is on." >&2
+    exit 1
+fi
+
+exec /usr/bin/nc -U "$sock"
