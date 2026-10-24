@@ -48,6 +48,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Claude Code and Codex sessions, shown and answered on the island.
     private let agentStore = AgentStore()
     private lazy var agentConnector = AgentConnector(store: agentStore)
+    /// The task list for AI agents, over MCP (Settings › Tasks).
+    private lazy var taskMCP = TaskMCPController(tasks: tasks, preferences: preferences)
 
     private var settingsWindow: SettingsWindowController?
     private var taskDashboard: TaskDashboardWindowController?
@@ -59,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         Clipboard.resolvePromises()
         agentConnector.tearDown() // waiting agents ask in their terminals again
+        taskMCP.tearDown()
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -89,6 +92,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         installStatusItem()
         AppUpdater.shared.start()
         _ = taskSync // listens for task changes from now on
+        taskMCP.apply()
 
         coordinator.onCaptured = { [weak self] image in self?.handleCapture(image) }
         coordinator.onTextRecognized = { [weak self] text in self?.handleRecognizedText(text) }
@@ -1335,7 +1339,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func showSettings(_ sender: Any?) {
         if settingsWindow == nil {
-            let controller = SettingsWindowController(model: model, shortcuts: shortcuts, library: library, clipboard: clipboard, preferences: preferences, clock: prayerClock, share: share, sync: syncFolder, notes: notes, taskSync: taskSync, ocrEngines: ocrEngines, agents: agentConnector, studio: studio)
+            let controller = SettingsWindowController(model: model, shortcuts: shortcuts, library: library, clipboard: clipboard, preferences: preferences, clock: prayerClock, share: share, sync: syncFolder, notes: notes, taskSync: taskSync, ocrEngines: ocrEngines, agents: agentConnector, studio: studio, taskMCP: taskMCP)
             controller.onClose = { [weak self] in
                 self?.settingsWindow = nil
                 self?.shortcuts.isRecording = false

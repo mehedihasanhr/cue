@@ -256,6 +256,43 @@ when a **Secret** is set, `X-Cue-Signature: sha256=<hex HMAC-SHA256 of the body>
 The event kinds can be ticked on and off; **Send Test** posts a `ping` event.
 Changes taken from the server are not sent back to it or to the webhook.
 
+### Tasks for AI agents (MCP)
+
+AI agents — Claude Code, Codex, Claude Desktop, Cursor, anything that speaks the
+[Model Context Protocol](https://modelcontextprotocol.io) — can read and work through
+the task list. It is on by default; Settings › **Tasks** › **AI agents (MCP)** turns it
+off, and copies the line that connects each agent:
+
+```sh
+claude mcp add --scope user cue -- /Applications/Cue.app/Contents/Resources/cue-mcp
+codex mcp add cue -- /Applications/Cue.app/Contents/Resources/cue-mcp
+```
+
+or, for a client configured in JSON:
+
+```json
+{ "mcpServers": { "cue": { "command": "/Applications/Cue.app/Contents/Resources/cue-mcp" } } }
+```
+
+| Tool | What it does |
+| --- | --- |
+| `list_tasks` | Open tasks, most pressing first. Filters: `status` (one or a list), `include_complete`, `project` (name or id, sub-projects included; `none` for no project), `priority`, `query`, `limit` |
+| `get_task` | One task with its whole Markdown description |
+| `list_projects` | Every project, its path and how many open tasks it has |
+| `create_task` | `title`, and optionally `notes`, `project` (made if new), `priority`, `status` |
+| `update_task` | Any of `status`, `priority`, `title`, `project` (`none` takes it out) |
+| `add_note` | A paragraph added to the end of the description |
+
+Statuses are `todo`, `in_process`, `review`, `complete` (an agent's "done" or "in
+progress" is understood too). A task's id can be shortened to its first few characters.
+Nothing can be deleted over MCP. Changes go through the same paths as changes made by
+hand, so they show in the dashboard at once, sync, and fire webhooks.
+
+How it is wired: Cue is sandboxed and may only listen in its own container, so it serves
+MCP on `~/Library/Containers/com.stackrover.cue/Data/mcp.sock` (yours alone, `0600`).
+`cue-mcp` is a few lines of shell that connect the agent's stdin and stdout to it — and
+start Cue in the background first, when it is not running.
+
 ### Preview pane
 
 A click on a card copies it (a capture's Edit button opens the editor). **Preview**
