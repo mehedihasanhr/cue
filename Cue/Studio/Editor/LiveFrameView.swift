@@ -74,19 +74,40 @@ nonisolated struct LiveFrameBuffer: @unchecked Sendable {
 struct LiveFrameView: NSViewRepresentable {
     let sink: LiveFrameSink
 
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        view.wantsLayer = true
-        let layer = CALayer()
-        layer.contentsGravity = .resize
-        layer.minificationFilter = .trilinear
-        layer.magnificationFilter = .linear
-        view.layer = layer
-        sink.layer = layer
+    func makeNSView(context: Context) -> HostingView {
+        let view = HostingView()
+        sink.layer = view.hosted
         return view
     }
 
-    func updateNSView(_ view: NSView, context: Context) {
-        sink.layer = view.layer
+    func updateNSView(_ view: HostingView, context: Context) {
+        sink.layer = view.hosted
+    }
+
+    /// A view that hosts its layer rather than being backed by one.
+    ///
+    /// The order is the whole point: the layer is given to the view *before* it is told to
+    /// want one. The other way round makes a layer-backed view, whose layer AppKit owns and
+    /// may swap for one of its own — and it did, a second or so into playback, which freed
+    /// this layer (the sink holds it weakly) and left every frame after it drawn into
+    /// nothing: the editor played black. A hosted layer is left alone, and kept here.
+    final class HostingView: NSView {
+        let hosted: CALayer = {
+            let layer = CALayer()
+            layer.contentsGravity = .resize
+            layer.minificationFilter = .trilinear
+            layer.magnificationFilter = .linear
+            return layer
+        }()
+
+        init() {
+            super.init(frame: .zero)
+            layer = hosted
+            wantsLayer = true
+            layerContentsRedrawPolicy = .never
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     }
 }
