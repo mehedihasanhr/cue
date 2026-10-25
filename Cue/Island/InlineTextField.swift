@@ -20,10 +20,13 @@ struct InlineTextField: View {
         TextField(placeholder, text: $text)
             .textFieldStyle(.plain)
             .font(font)
-            .foregroundStyle(.white)
+            // The scheme's own ink, not white: the island forces dark, so this is white
+            // there, but the floating task panel follows the system, and in light mode a
+            // white project name was typed onto light glass, unreadable.
+            .foregroundStyle(.primary)
             .padding(.horizontal, 8)
             .padding(.vertical, 2)
-            .background(.white.opacity(boxed ? 0.18 : 0), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .background(.primary.opacity(boxed ? 0.18 : 0), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
             .focused($focused)
             .background(KeyWindowMaker())
             .onAppear {
