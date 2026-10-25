@@ -48,6 +48,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Claude Code and Codex sessions, shown and answered on the island.
     private let agentStore = AgentStore()
     private lazy var agentConnector = AgentConnector(store: agentStore)
+    /// Puts the keyboard back in Cue's window when the user returns to its Space.
+    private let spaceFocus = SpaceFocusKeeper()
     /// The task list for AI agents, over MCP (Settings › Tasks).
     private lazy var taskMCP = TaskMCPController(tasks: tasks, preferences: preferences)
 
@@ -91,6 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let icon = NSImage(named: "AppIcon") { NSApp.applicationIconImage = icon }
         installStatusItem()
         AppUpdater.shared.start()
+        spaceFocus.start()
         _ = taskSync // listens for task changes from now on
         taskMCP.apply()
 
