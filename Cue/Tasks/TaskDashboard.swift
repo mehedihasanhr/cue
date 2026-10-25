@@ -249,13 +249,31 @@ struct TaskDashboardView: View {
     static let sidebarWidth: CGFloat = 240
     static let peekWidth: CGFloat = 460
     static let peekWidths: ClosedRange<CGFloat> = 380...1100
+    /// The least the list in the middle is given while the peek is open.
+    static let mainMinimum: CGFloat = 360
     static let topBarHeight: CGFloat = 44
     /// Rounder than Notion's own window, to sit with Cue's other windows.
     static let windowRadius: CGFloat = 14
 
+    /// The peek's width in a window `width` wide: the one chosen, but never so wide that
+    /// the sidebar and the list no longer fit beside it. Without this the three columns
+    /// added up to more than a narrow window and the whole row overflowed both edges —
+    /// the sidebar pushed out past the left one. The chosen width is kept, so the peek
+    /// grows back as the window does.
+    private func fittedPeekWidth(in width: CGFloat) -> CGFloat {
+        let room = width - (model.sidebarCollapsed ? 0 : Self.sidebarWidth) - Self.mainMinimum
+        return min(model.peekWidth, max(room, Self.peekWidths.lowerBound))
+    }
+
     var body: some View {
+        GeometryReader { proxy in
+            columns(width: proxy.size.width)
+        }
+    }
+
+    private func columns(width: CGFloat) -> some View {
         @Bindable var model = model
-        HStack(spacing: 0) {
+        return HStack(spacing: 0) {
             if !model.sidebarCollapsed {
                 TaskDashboardSidebar(store: store, buttons: buttons)
                     .frame(width: Self.sidebarWidth)
@@ -277,13 +295,17 @@ struct TaskDashboardView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            // Below the width all three need, the list gives way (clipped), never the
+            // window's edges.
+            .frame(minWidth: 0, maxWidth: .infinity)
+            .clipped()
             if !model.taskAsPage, let task = openTask {
                 TaskPageView(store: store, task: task, style: .peek)
                     .id(task.id)
-                    .frame(width: model.peekWidth)
+                    .frame(width: fittedPeekWidth(in: width))
                     .background(NotionStyle.page)
                     .overlay(alignment: .leading) {
-                        PeekResizer(width: Binding(get: { model.peekWidth }, set: { model.peekWidth = $0 }))
+                        PeekResizer(width: Binding(get: { model.peekWidth }, set: { model.peekWidth = $0 }), sidebarShown: !model.sidebarCollapsed)
                     }
                     .transition(.move(edge: .trailing))
             }
@@ -363,6 +385,8 @@ struct TaskDashboardView: View {
 /// the peek wider or narrower, leaving the table at least some room.
 private struct PeekResizer: View {
     @Binding var width: CGFloat
+    /// Whether the sidebar takes room beside the peek, for how wide it may be dragged.
+    var sidebarShown = true
     @State private var hovering = false
     @State private var start: CGFloat?
 
@@ -385,10 +409,13 @@ private struct PeekResizer: View {
                 .gesture(
                     DragGesture(minimumDistance: 1, coordinateSpace: .global)
                         .onChanged { value in
-                            let origin = start ?? width
-                            start = origin
                             let windowWidth = NSApp.keyWindow?.frame.width ?? 1200
-                            let most = min(TaskDashboardView.peekWidths.upperBound, windowWidth - 420)
+                            let beside = (sidebarShown ? TaskDashboardView.sidebarWidth : 0) + TaskDashboardView.mainMinimum
+                            let most = min(TaskDashboardView.peekWidths.upperBound, windowWidth - beside)
+                            // From the width on screen, which may be less than the one chosen
+                            // (see `fittedPeekWidth`), so the edge does not jump on the first move.
+                            let origin = start ?? min(width, max(most, TaskDashboardView.peekWidths.lowerBound))
+                            start = origin
                             width = min(max(origin - value.translation.width, TaskDashboardView.peekWidths.lowerBound), max(most, TaskDashboardView.peekWidths.lowerBound))
                         }
                         .onEnded { _ in start = nil }
