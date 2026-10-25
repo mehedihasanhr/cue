@@ -49,8 +49,14 @@ final class TaskDashboardModel {
     }
     /// The sidebar folded away (⌃⌘S), for more room for the tasks.
     var sidebarCollapsed: Bool {
-        didSet { UserDefaults.standard.set(sidebarCollapsed, forKey: Self.sidebarKey) }
+        didSet {
+            UserDefaults.standard.set(sidebarCollapsed, forKey: Self.sidebarKey)
+            sidebarFloating = false
+        }
     }
+    /// The folded sidebar shown for a moment, floating over the page, while the pointer
+    /// is at the window's left edge or on it — Notion's hover sidebar.
+    var sidebarFloating = false
     var query = ""
     /// The task in the side peek — or on its own page.
     var openTaskID: UUID? {
@@ -312,6 +318,11 @@ struct TaskDashboardView: View {
         }
         .foregroundStyle(NotionStyle.text)
         .background(NotionStyle.page)
+        .overlay(alignment: .topLeading) {
+            if model.sidebarCollapsed {
+                FloatingSidebar(store: store, buttons: buttons)
+            }
+        }
         .overlay {
             if let url = model.viewingImage {
                 TaskImageViewer(url: url) { model.viewingImage = nil }
@@ -437,6 +448,75 @@ private struct WindowChrome: View {
             NotionIconButton(symbol: "sidebar.left", help: model.sidebarCollapsed ? "Show sidebar (⌃⌘S)" : "Hide sidebar (⌃⌘S)", size: 14) {
                 model.toggleSidebar()
             }
+            // Folded, pointing at the button shows the sidebar floating, as Notion does;
+            // clicking it docks the sidebar again.
+            .onHover { over in
+                if over, model.sidebarCollapsed { model.sidebarFloating = true }
+            }
+        }
+    }
+}
+
+/// The folded sidebar, brought out over the page while the pointer wants it: a strip
+/// along the window's left edge shows it, and it slides away a moment after the
+/// pointer has left both the strip and the sidebar. The page under it does not move.
+private struct FloatingSidebar: View {
+    let store: TaskStore
+    let buttons: WindowButtons
+    @Environment(TaskDashboardModel.self) private var model
+    @State private var hiding: Task<Void, Never>?
+
+    /// How wide the edge that brings the sidebar out is.
+    private static let edge: CGFloat = 8
+    /// How long it waits once the pointer has gone, so crossing from the edge to the
+    /// sidebar, or brushing past its border, does not flicker it.
+    private static let linger: Duration = .milliseconds(300)
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Color.clear
+                .frame(width: Self.edge)
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .onHover { $0 ? show() : hideSoon() }
+            if model.sidebarFloating {
+                TaskDashboardSidebar(store: store, buttons: buttons, floating: true)
+                    .frame(width: TaskDashboardView.sidebarWidth)
+                    .frame(maxHeight: .infinity)
+                    .background(NotionStyle.card, in: shape)
+                    .overlay { shape.stroke(NotionStyle.divider) }
+                    .clipShape(shape)
+                    .shadow(color: .black.opacity(0.12), radius: 16, x: 4, y: 6)
+                    .padding(.bottom, 10)
+                    .onHover { $0 ? show() : hideSoon() }
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+            }
+        }
+        // Under the top bar, whose buttons stay where they are.
+        .padding(.top, TaskDashboardView.topBarHeight)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .animation(.easeOut(duration: 0.18), value: model.sidebarFloating)
+        .onDisappear { hiding?.cancel() }
+    }
+
+    private var shape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(topLeadingRadius: 0, bottomLeadingRadius: 0, bottomTrailingRadius: 10, topTrailingRadius: 10, style: .continuous)
+    }
+
+    private func show() {
+        hiding?.cancel()
+        hiding = nil
+        if !model.sidebarFloating { model.sidebarFloating = true }
+    }
+
+    private func hideSoon() {
+        hiding?.cancel()
+        hiding = Task {
+            try? await Task.sleep(for: Self.linger)
+            guard !Task.isCancelled,
+                  // Kept while it is asking for a project's name, which takes the pointer away.
+                  model.projectPrompt == nil else { return }
+            model.sidebarFloating = false
         }
     }
 }
@@ -557,19 +637,26 @@ struct NotionHoverStyle: ButtonStyle {
 private struct TaskDashboardSidebar: View {
     let store: TaskStore
     let buttons: WindowButtons
+    /// Brought out over the page while folded (`FloatingSidebar`): the window's buttons
+    /// stay in the top bar, so the sidebar starts at its search field.
+    var floating = false
     @Environment(TaskDashboardModel.self) private var model
     @FocusState private var searching: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 0) {
-                WindowChrome(buttons: buttons)
-                Spacer(minLength: 0)
-                NotionIconButton(symbol: "square.and.pencil", help: "New task (⌘N)", size: 14) { model.composeNew() }
+            if floating {
+                Spacer().frame(height: 10)
+            } else {
+                HStack(spacing: 0) {
+                    WindowChrome(buttons: buttons)
+                    Spacer(minLength: 0)
+                    NotionIconButton(symbol: "square.and.pencil", help: "New task (⌘N)", size: 14) { model.composeNew() }
+                }
+                .padding(.leading, 8)
+                .padding(.trailing, 8)
+                .frame(height: TaskDashboardView.topBarHeight)
             }
-            .padding(.leading, 8)
-            .padding(.trailing, 8)
-            .frame(height: TaskDashboardView.topBarHeight)
 
             searchField
                 .padding(.horizontal, 8)
