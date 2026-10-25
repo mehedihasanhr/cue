@@ -945,34 +945,62 @@ private struct TaskDashboardMain: View {
             HStack(spacing: 4) {
                 tab(.list, title: "Table", symbol: "tablecells")
                 tab(.board, title: "Board", symbol: "rectangle.split.3x1")
-                Spacer()
-                if case .project(let id) = model.selection {
-                    Button {
-                        model.projectPrompt = .new(parent: id)
-                    } label: {
-                        Label("Sub-project", systemImage: "folder.badge.plus")
-                            .font(.system(size: 13))
-                            .foregroundStyle(NotionStyle.secondary)
-                            .padding(.horizontal, 8)
-                            .frame(height: 28)
-                    }
-                    .buttonStyle(NotionHoverStyle())
-                    .help("New sub-project")
+                Spacer(minLength: 8)
+                // Labelled while they fit; icons when the column is narrow, never a label
+                // cut down to "…".
+                ViewThatFits(in: .horizontal) {
+                    actions(labelled: true)
+                    actions(labelled: false)
                 }
-                Button(action: model.composeNew) {
-                    Text("New")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 12)
-                        .frame(height: 28)
-                        .background(NotionStyle.accent, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .help("New task (⌘N)")
             }
             .padding(.bottom, 6)
             Hairline()
         }
+    }
+
+    /// Sub-project (in a project) and New, with their labels or as icons.
+    private func actions(labelled: Bool) -> some View {
+        HStack(spacing: 4) {
+            if case .project(let id) = model.selection {
+                Button {
+                    model.projectPrompt = .new(parent: id)
+                } label: {
+                    Group {
+                        if labelled {
+                            Label("Sub-project", systemImage: "folder.badge.plus")
+                                .padding(.horizontal, 8)
+                        } else {
+                            Image(systemName: "folder.badge.plus")
+                                .frame(width: 28)
+                        }
+                    }
+                    .font(.system(size: 13))
+                    .foregroundStyle(NotionStyle.secondary)
+                    .frame(height: 28)
+                }
+                .buttonStyle(NotionHoverStyle())
+                .help("New sub-project")
+            }
+            Button(action: model.composeNew) {
+                Group {
+                    if labelled {
+                        Text("New")
+                            .font(.system(size: 14, weight: .medium))
+                            .padding(.horizontal, 12)
+                    } else {
+                        Image(systemName: "plus")
+                            .font(.system(size: 13, weight: .semibold))
+                            .frame(width: 28)
+                    }
+                }
+                .foregroundStyle(.white)
+                .frame(height: 28)
+                .background(NotionStyle.accent, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .help("New task (⌘N)")
+        }
+        .fixedSize()
     }
 
     private func tab(_ layout: TaskDashboardModel.Layout, title: String, symbol: String) -> some View {
@@ -1192,8 +1220,12 @@ private struct TableRow: View {
         HStack(spacing: 0) {
             DragDots()
                 .frame(width: TableColumns.gutter, height: 24)
+                .contentShape(Rectangle())
                 .opacity(hovering ? 1 : 0)
-                .help("Drag to reorder, to another group, a board column or a project")
+                // A click is a button, a drag still carries the row (the row's own drag
+                // starts only once the pointer moves, so the two never meet).
+                .onTapGesture { TaskActionMenu.show(for: task, store: store, model: model) }
+                .help("Click for actions; drag to reorder, or onto another group, a board column or a project")
             HStack(spacing: 0) {
                 nameCell
                 Hairline(axis: .vertical)
@@ -1342,6 +1374,75 @@ private struct NewTaskLine: View {
 }
 
 /// A row's or card's right-click menu.
+/// A task's actions as a menu at the pointer — what a click on a row's handle shows,
+/// and the same as the row's right-click menu (`TaskRowMenu`). An AppKit menu, popped
+/// up from the click: a SwiftUI `Menu` there would take the mouse-down and leave the
+/// handle unable to start a drag.
+@MainActor
+enum TaskActionMenu {
+    static func show(for task: TaskItem, store: TaskStore, model: TaskDashboardModel) {
+        guard let event = NSApp.currentEvent, let view = event.window?.contentView else { return }
+        let menu = NSMenu()
+        menu.addItem(ActionItem("Open in Side Peek", symbol: "sidebar.right") { model.openTaskID = task.id })
+        menu.addItem(ActionItem("Open as Page", symbol: "arrow.up.left.and.arrow.down.right") {
+            model.openTaskID = task.id
+            model.taskAsPage = true
+        })
+        menu.addItem(.separator())
+        menu.addItem(submenu("Status", symbol: "circle.dashed", TaskStatus.allCases.map { status in
+            ActionItem(status.title, symbol: status.symbol, checked: status == task.status) { store.setStatus(status, for: task) }
+        }))
+        menu.addItem(submenu("Priority", symbol: "flag", TaskPriority.allCases.map { priority in
+            ActionItem(priority.title, symbol: priority.symbol, checked: priority == task.priority) { store.setPriority(priority, for: task) }
+        }))
+        let path = { (project: TaskProject) in store.path(to: project.id).map(\.name).joined(separator: " › ") }
+        var places = [ActionItem("No project", checked: task.projectID == nil) { store.move(task, to: nil) }]
+        places += store.projects
+            .sorted { path($0).localizedStandardCompare(path($1)) == .orderedAscending }
+            .map { project in ActionItem(path(project), checked: task.projectID == project.id) { store.move(task, to: project.id) } }
+        menu.addItem(submenu("Move to", symbol: "folder", places))
+        menu.addItem(.separator())
+        menu.addItem(ActionItem("Copy Text", symbol: "doc.on.doc") {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(task.text, forType: .string)
+        })
+        menu.addItem(.separator())
+        menu.addItem(ActionItem("Delete…", symbol: "trash") { model.pendingDeletion = .task(task) })
+        NSMenu.popUpContextMenu(menu, with: event, for: view)
+    }
+
+    private static func submenu(_ title: String, symbol: String, _ items: [NSMenuItem]) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        let menu = NSMenu(title: title)
+        items.forEach(menu.addItem)
+        item.submenu = menu
+        return item
+    }
+
+    /// A menu item that runs a closure.
+    nonisolated private final class ActionItem: NSMenuItem {
+        private let handler: @MainActor () -> Void
+
+        init(_ title: String, symbol: String? = nil, checked: Bool = false, handler: @escaping @MainActor () -> Void) {
+            self.handler = handler
+            super.init(title: title, action: #selector(run), keyEquivalent: "")
+            target = self
+            state = checked ? .on : .off
+            image = symbol.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: nil) }
+        }
+
+        @available(*, unavailable)
+        required init(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        // Menus act on the main thread.
+        @objc private func run() {
+            let handler = handler
+            MainActor.assumeIsolated { handler() }
+        }
+    }
+}
+
 private struct TaskRowMenu: View {
     let store: TaskStore
     let task: TaskItem
