@@ -16,6 +16,14 @@ final class QuickTaskPanel: NSPanel {
     private static let margin: CGFloat = 24
     private var monitors: [Any] = []
     private let finish: (PromptAnswer?) -> Void
+    /// Watches for the user switching Spaces — see `activeSpaceChanged`.
+    private var spaceObserver: (any NSObjectProtocol)?
+    /// When this panel last lost key status, to tell whether it still had the keyboard
+    /// when its Space was left (the switch takes key status a moment before it is
+    /// announced).
+    private var resignedKeyAt: Date?
+    /// It had the keyboard when its Space was left: it takes it back on the way in.
+    private var refocusOnReturn = false
     /// The glass's size, pin and clarity; the form reads and changes them through the environment.
     let chrome = Chrome()
 
@@ -164,6 +172,11 @@ final class QuickTaskPanel: NSPanel {
         sharingType = .readOnly // shows in screen sharing; Cue's own shots filter it out
         collectionBehavior = [.canJoinAllSpaces, .transient, .fullScreenAuxiliary]
         animationBehavior = .utilityWindow
+        spaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.activeSpaceChanged() }
+        }
 
         chrome.panel = self
         let root = Sized(chrome: chrome, content: form { [weak self] in self?.close() })
@@ -414,7 +427,26 @@ final class QuickTaskPanel: NSPanel {
 
     override func close() {
         removeMonitors()
+        refocusOnReturn = false
+        // A panel is made for each showing and not shown again once closed.
+        if let spaceObserver { NSWorkspace.shared.notificationCenter.removeObserver(spaceObserver) }
+        spaceObserver = nil
         super.close()
+    }
+
+    /// A pinned panel lives on the Space it was opened on (see `pinnedDidChange`). Leaving
+    /// that Space while typing in it, then coming back, puts the keyboard back in it, as
+    /// macOS does for an ordinary app's window — but not, left to itself, for a panel of
+    /// a menu bar app, which came back unfocused under whatever had been clicked since.
+    private func activeSpaceChanged() {
+        guard isVisible else { return }
+        if isOnActiveSpace {
+            guard refocusOnReturn else { return }
+            refocusOnReturn = false
+            makeKeyAndOrderFront(nil)
+        } else {
+            refocusOnReturn = isKeyWindow || resignedKeyAt.map { Date().timeIntervalSince($0) < 1 } == true
+        }
     }
 
     override func cancelOperation(_ sender: Any?) {
@@ -424,6 +456,7 @@ final class QuickTaskPanel: NSPanel {
 
     override func resignKey() {
         super.resignKey()
+        resignedKeyAt = Date()
         // A menu (the project dropdown) takes key status briefly; only a real switch closes.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             guard let self, !isPinned, isVisible, !isKeyWindow, NSApp.keyWindow == nil || NSApp.keyWindow?.isKind(of: NSPanel.self) == false else { return }
@@ -436,13 +469,16 @@ final class QuickTaskPanel: NSPanel {
     var isPinned: Bool { chrome.pinned }
 
     /// Pinned, the panel stops closing on its own: no click-outside monitor, no
-    /// close on losing key status, and it stays put when the app switches.
+    /// close on losing key status, and it stays put when the app switches — and on its
+    /// own Space. Unpinned it is gone the moment it loses the keyboard, so it can follow
+    /// the user to every Space; pinned and still on all of them, it floated over every
+    /// other desktop's windows.
     private func pinnedDidChange() {
         if chrome.pinned {
             removeMonitors()
-            collectionBehavior.remove(.transient)
+            collectionBehavior.remove([.transient, .canJoinAllSpaces])
         } else {
-            collectionBehavior.insert(.transient)
+            collectionBehavior.insert([.transient, .canJoinAllSpaces])
             if isVisible { installMonitors() }
         }
     }
