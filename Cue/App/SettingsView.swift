@@ -330,6 +330,12 @@ struct IslandSettingsView: View {
                     Toggle("Notch background", isOn: $preferences.islandNotchBackground).toggleStyle(.switch)
                 }
                 .disabled(!preferences.dynamicIslandEnabled)
+                if #available(macOS 26, *) {
+                    SettingsRow("Liquid glass", subtitle: "The open island as dark glass, the desktop showing through its edges. Off, it’s solid black.") {
+                        Toggle("Liquid glass", isOn: $preferences.islandGlass).toggleStyle(.switch)
+                    }
+                    .disabled(!preferences.dynamicIslandEnabled)
+                }
             }
 
             SettingsGroup("Opening and closing") {

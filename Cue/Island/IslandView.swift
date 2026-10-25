@@ -156,6 +156,37 @@ final class IslandModel {
 /// The island silhouette: top corners flare outward into the bezel (a small flare
 /// closed, a wide one open), bottom corners are rounded. All radii animate, so the
 /// closed notch morphs into the open panel.
+/// The open island as dark Liquid Glass: solid black where it meets the notch, so the
+/// two still read as one, easing into tinted glass below, where the desktop shows
+/// through the edges and bends with them. Before macOS 26 there is no Liquid Glass, and
+/// it stays the solid black it always was.
+private struct IslandGlass: View {
+    let shape: NotchShape
+    /// The notch's height: black to there at least.
+    let strip: CGFloat
+
+    var body: some View {
+        if #available(macOS 26, *) {
+            GeometryReader { proxy in
+                let notch = min(1, strip / max(proxy.size.height, 1))
+                shape.fill(.clear)
+                    .glassEffect(.regular.tint(.black.opacity(0.62)), in: shape)
+                    .overlay {
+                        // Black over the notch, fading out a little below it.
+                        LinearGradient(stops: [
+                            .init(color: .black, location: 0),
+                            .init(color: .black, location: notch),
+                            .init(color: .black.opacity(0), location: min(1, notch + 0.22)),
+                        ], startPoint: .top, endPoint: .bottom)
+                        .clipShape(shape)
+                    }
+            }
+        } else {
+            shape.fill(Color.black)
+        }
+    }
+}
+
 nonisolated struct NotchShape: Shape {
     /// Outward curve at the top corners (the notch meeting the bezel).
     var flare: CGFloat
@@ -240,7 +271,11 @@ struct IslandView: View {
             ZStack(alignment: .top) {
                 // Invisible once collapsed (nothing peeks out beside the notch, nor sits
                 // on a plain menu bar); the tap target stays.
-                shape.fill(faded && !preferences.islandNotchBackground ? Color.clear : Color.black)
+                if preferences.islandGlass, Self.hasBackdrop(phase) {
+                    IslandGlass(shape: shape, strip: geometry.stripHeight)
+                } else {
+                    shape.fill(faded && !preferences.islandNotchBackground ? Color.clear : Color.black)
+                }
                 content(for: phase, strip: geometry.stripHeight)
                     .compositingGroup()
                     .padding(.horizontal, flare) // the body; the flares lie outside it

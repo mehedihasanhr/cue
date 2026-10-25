@@ -24,6 +24,7 @@ final class AppPreferences {
         static let islandCloseDelay = "island.closeDelay"
         static let islandCloseOnLeave = "island.closeOnLeave"
         static let islandNotchBackground = "island.notchBackground"
+        static let islandGlass = "island.glass"
         static let islandFlashCaptures = "island.flashCaptures"
         static let islandFlashDuration = "island.flashDuration"
         static let islandStatuses = "island.statuses"
@@ -397,6 +398,11 @@ final class AppPreferences {
         didSet { defaults.set(islandNotchBackground, forKey: Key.islandNotchBackground) }
     }
 
+    /// The open island as dark Liquid Glass (macOS 26 and later) rather than solid black.
+    var islandGlass: Bool {
+        didSet { defaults.set(islandGlass, forKey: Key.islandGlass) }
+    }
+
     enum AfterCapture: String, CaseIterable {
         case edit, copy
 
@@ -659,6 +665,7 @@ final class AppPreferences {
         islandCloseDelay = defaults.object(forKey: Key.islandCloseDelay) as? Double ?? 0.25
         islandCloseOnLeave = defaults.object(forKey: Key.islandCloseOnLeave) as? Bool ?? true
         islandNotchBackground = defaults.object(forKey: Key.islandNotchBackground) as? Bool ?? false
+        islandGlass = defaults.object(forKey: Key.islandGlass) as? Bool ?? true
         islandFlashCaptures = defaults.object(forKey: Key.islandFlashCaptures) as? Bool ?? true
         islandFlashDuration = defaults.object(forKey: Key.islandFlashDuration) as? Double ?? 1.8
         islandStatuses = defaults.object(forKey: Key.islandStatuses) as? Bool ?? true
