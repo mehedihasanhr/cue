@@ -18,7 +18,8 @@ nonisolated final class MCPServer: @unchecked Sendable {
     static var socketPath: String { URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(socketName).path }
 
     let path: String
-    private let handle: @MainActor (Data) -> Data?
+    private let handle: @MainActor (UUID, Data) -> Data?
+    private let sessionEnded: @MainActor (UUID) -> Void
     private var fd: Int32 = -1
     private var source: (any DispatchSourceRead)?
     /// The socket file this server made, so another copy of Cue replacing it — and then
@@ -30,11 +31,13 @@ nonisolated final class MCPServer: @unchecked Sendable {
 
     private static let log = Logger(subsystem: "com.stackrover.cue", category: "mcp")
 
-    /// `handle` takes one message and returns the reply to send, or nil for none (a
-    /// notification).
-    init(path: String = MCPServer.socketPath, handle: @escaping @MainActor (Data) -> Data?) {
+    /// `handle` takes one message, with the session it came in on, and returns the reply
+    /// to send, or nil for none (a notification). `sessionEnded` hears when an agent hangs up.
+    init(path: String = MCPServer.socketPath, handle: @escaping @MainActor (UUID, Data) -> Data?,
+         sessionEnded: @escaping @MainActor (UUID) -> Void = { _ in }) {
         self.path = path
         self.handle = handle
+        self.sessionEnded = sessionEnded
     }
 
     var isRunning: Bool { queue.sync { fd >= 0 } }
@@ -129,8 +132,10 @@ nonisolated final class MCPServer: @unchecked Sendable {
             var on: Int32 = 1
             setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
             _ = fcntl(client, F_SETFL, fcntl(client, F_GETFL) & ~O_NONBLOCK)
+            let sessionEnded = sessionEnded
             let session = MCPSession(fd: client, handle: handle) { [weak self] id in
                 self?.queue.async { self?.sessions[id] = nil }
+                DispatchQueue.main.async { MainActor.assumeIsolated { sessionEnded(id) } }
             }
             sessions[session.id] = session
             session.start()
@@ -142,7 +147,7 @@ nonisolated final class MCPServer: @unchecked Sendable {
 nonisolated final class MCPSession: @unchecked Sendable {
     let id = UUID()
     private let fd: Int32
-    private let handle: @MainActor (Data) -> Data?
+    private let handle: @MainActor (UUID, Data) -> Data?
     private let onEnd: @Sendable (UUID) -> Void
     private let writes = DispatchQueue(label: "com.stackrover.cue.mcp.session.write")
     private let lock = NSLock()
@@ -152,7 +157,7 @@ nonisolated final class MCPSession: @unchecked Sendable {
     /// this is not speaking the protocol.
     private static let lineLimit = 16 << 20
 
-    fileprivate init(fd: Int32, handle: @escaping @MainActor (Data) -> Data?, onEnd: @escaping @Sendable (UUID) -> Void) {
+    fileprivate init(fd: Int32, handle: @escaping @MainActor (UUID, Data) -> Data?, onEnd: @escaping @Sendable (UUID) -> Void) {
         self.fd = fd
         self.handle = handle
         self.onEnd = onEnd
@@ -190,8 +195,9 @@ nonisolated final class MCPSession: @unchecked Sendable {
 
     private func receive(_ line: Data) {
         let handle = handle
+        let id = id
         DispatchQueue.main.async { [self] in
-            guard let reply = MainActor.assumeIsolated({ handle(line) }) else { return }
+            guard let reply = MainActor.assumeIsolated({ handle(id, line) }) else { return }
             send(reply)
         }
     }

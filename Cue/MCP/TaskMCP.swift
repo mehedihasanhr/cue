@@ -12,6 +12,10 @@ import Foundation
 final class TaskMCP {
     private let store: TaskStore
 
+    /// Hears which agent a session belongs to, from what it says about itself when it
+    /// connects — for Settings › MCP's list of who is connected.
+    var onClient: (_ session: UUID, _ name: String, _ version: String?) -> Void = { _, _, _ in }
+
     init(store: TaskStore) {
         self.store = store
     }
@@ -23,7 +27,7 @@ final class TaskMCP {
     // MARK: - JSON-RPC
 
     /// The reply to one message, or nil when it was a notification.
-    func handle(_ data: Data) -> Data? {
+    func handle(_ data: Data, session: UUID = UUID()) -> Data? {
         guard let message = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return Self.encode(["jsonrpc": "2.0", "id": NSNull(), "error": ["code": -32700, "message": "Parse error"]])
         }
@@ -31,7 +35,7 @@ final class TaskMCP {
         guard let id = message["id"], let method = message["method"] as? String else { return nil }
         let params = message["params"] as? [String: Any] ?? [:]
         do {
-            let result = try respond(to: method, params: params)
+            let result = try respond(to: method, params: params, session: session)
             return Self.encode(["jsonrpc": "2.0", "id": id, "result": result])
         } catch {
             return Self.encode(["jsonrpc": "2.0", "id": id, "error": ["code": error.code, "message": error.message]])
@@ -45,9 +49,11 @@ final class TaskMCP {
         static func invalidParams(_ message: String) -> RPCError { RPCError(code: -32602, message: message) }
     }
 
-    private func respond(to method: String, params: [String: Any]) throws(RPCError) -> [String: Any] {
+    private func respond(to method: String, params: [String: Any], session: UUID) throws(RPCError) -> [String: Any] {
         switch method {
         case "initialize":
+            let client = params["clientInfo"] as? [String: Any]
+            onClient(session, client?["title"] as? String ?? client?["name"] as? String ?? "An MCP client", client?["version"] as? String)
             let asked = params["protocolVersion"] as? String
             let version = asked.flatMap { Self.protocolVersions.contains($0) ? $0 : nil } ?? Self.protocolVersions[0]
             return [

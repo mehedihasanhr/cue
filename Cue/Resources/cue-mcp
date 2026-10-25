@@ -4,7 +4,7 @@
 # An MCP client runs this; it connects the client's stdin and stdout to Cue, which
 # answers on a socket in its own container (the sandbox lets it listen nowhere else).
 # Cue is started in the background when it is not running. Turn it on or off, and
-# copy the command for your agent, in Cue's Settings › Tasks.
+# copy the command for your agent, in Cue's Settings › MCP.
 #
 #   claude mcp add --scope user cue -- /Applications/Cue.app/Contents/Resources/cue-mcp
 sock="$HOME/Library/Containers/com.stackrover.cue/Data/mcp.sock"
@@ -24,7 +24,7 @@ if ! listening; then
 fi
 
 if ! listening; then
-    echo "cue-mcp: Cue isn't answering. Open Cue, and check Settings › Tasks › AI agents (MCP) is on." >&2
+    echo "cue-mcp: Cue isn't answering. Open Cue, and check MCP is on: open cue://settings/mcp" >&2
     exit 1
 fi
 

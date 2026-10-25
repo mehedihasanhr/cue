@@ -222,6 +222,7 @@ private struct AppearancePreview: View {
 struct AgentSettingsView: View {
     @Environment(AppPreferences.self) private var preferences
     @Environment(AgentConnector.self) private var agents: AgentConnector?
+    @Environment(SettingsNavigation.self) private var navigation
 
     var body: some View {
         @Bindable var preferences = preferences
@@ -257,6 +258,13 @@ struct AgentSettingsView: View {
                 Text("Turn on the Dynamic Island (Settings › Island) to see agent sessions.")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
+            }
+
+            SettingsGroup("Your tasks") {
+                SettingsRow("Let agents read and update your tasks", subtitle: "Over MCP, from Claude Code, Codex, Claude Desktop and others.",
+                            symbol: SettingsSection.mcp.symbol, tint: SettingsSection.mcp.tint) {
+                    Button("Set Up…") { navigation.go(.mcp) }
+                }
             }
 
         }
@@ -599,23 +607,20 @@ struct NotesSettingsView: View {
 // MARK: - Tasks
 
 struct TasksSettingsView: View {
-    private var mcpStatus: String? {
-        guard preferences.tasksMCPEnabled, let mcp else { return nil }
-        return mcp.problem ?? (mcp.isRunning ? "On: agents set up below can connect." : nil)
-    }
-
-    private func copyButton(_ text: String, id: String) -> some View {
-        Button(copied == id ? "Copied" : "Copy") {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text, forType: .string)
-            copied = id
+    private var mcpStatus: String {
+        guard preferences.tasksMCPEnabled else { return "Off: AI agents can’t reach your tasks." }
+        guard let mcp, mcp.isRunning else { return mcp?.problem ?? "Not running." }
+        switch mcp.clients.count {
+        case 0: return "On: Claude Code, Codex and other AI apps can read and update your tasks."
+        case 1: return "On: \(mcp.clients[0].name) is connected."
+        default: return "On: \(mcp.clients.count) agents are connected."
         }
     }
 
     @Environment(AppPreferences.self) private var preferences
     @Environment(TaskSync.self) private var sync: TaskSync?
     @Environment(TaskMCPController.self) private var mcp: TaskMCPController?
-    @State private var copied: String?
+    @Environment(SettingsNavigation.self) private var navigation
     @State private var serverCheck: String?
     @State private var checking = false
     @State private var testing = false
@@ -623,20 +628,9 @@ struct TasksSettingsView: View {
     var body: some View {
         @Bindable var preferences = preferences
         SettingsPane(.tasks) {
-            SettingsGroup("AI agents (MCP)", footer: "Agents can list, read, create and update tasks, and add notes to them. They can’t delete anything. Cue starts by itself when an agent connects.") {
-                SettingsRow("Let AI agents use your tasks", subtitle: mcpStatus) {
-                    Toggle("MCP", isOn: $preferences.tasksMCPEnabled).toggleStyle(.switch)
-                }
-                if preferences.tasksMCPEnabled {
-                    SettingsRow("Claude Code", subtitle: TaskMCPController.claudeCodeCommand) {
-                        copyButton(TaskMCPController.claudeCodeCommand, id: "claude")
-                    }
-                    SettingsRow("Codex", subtitle: TaskMCPController.codexCommand) {
-                        copyButton(TaskMCPController.codexCommand, id: "codex")
-                    }
-                    SettingsRow("Other apps", subtitle: "Claude Desktop, Cursor and others: JSON for their MCP settings") {
-                        copyButton(TaskMCPController.jsonConfiguration, id: "json")
-                    }
+            SettingsGroup("AI agents") {
+                SettingsRow("MCP", subtitle: mcpStatus, symbol: SettingsSection.mcp.symbol, tint: SettingsSection.mcp.tint) {
+                    Button("Set Up…") { navigation.go(.mcp) }
                 }
             }
 

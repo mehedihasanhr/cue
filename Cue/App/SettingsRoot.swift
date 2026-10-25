@@ -6,7 +6,7 @@ import SwiftUI
 /// The pages of the Settings window, in sidebar order.
 enum SettingsSection: String, CaseIterable, Identifiable {
     case general, appearance, shortcuts, sharing, permissions, about
-    case island, agents, capture, editor, clipboard, tasks, snippets, notes, colors, time
+    case island, agents, capture, editor, clipboard, tasks, mcp, snippets, notes, colors, time
     case recording, captionsAudio, export
 
     var id: String { rawValue }
@@ -14,7 +14,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     /// The sidebar shows the app-wide pages first, then a group per feature.
     static let groups: [[SettingsSection]] = [
         [.general, .appearance, .shortcuts, .sharing, .permissions, .about],
-        [.island, .agents, .capture, .editor, .clipboard, .tasks, .snippets, .notes, .colors, .time],
+        [.island, .agents, .capture, .editor, .clipboard, .tasks, .mcp, .snippets, .notes, .colors, .time],
         [.recording, .captionsAudio, .export],
     ]
 
@@ -48,6 +48,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .editor: "Editor"
         case .clipboard: "Clipboard"
         case .tasks: "Tasks"
+        case .mcp: "MCP"
         case .snippets: "Snippets"
         case .notes: "Notes"
         case .colors: "Colors"
@@ -70,6 +71,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .editor: "What every new annotation starts as, and how the video editor behaves"
         case .clipboard: "What Cue remembers of what you copy"
         case .tasks: "A server to keep tasks in step with, and webhooks for each change"
+        case .mcp: "Let AI agents like Claude Code and Codex read and update your tasks"
         case .snippets: "Text that expands as you type"
         case .notes: "Quick notes, where they live, and where they can be sent"
         case .colors: "The color picker and its formats"
@@ -94,6 +96,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .editor: "paintbrush.pointed.fill"
         case .clipboard: "doc.on.clipboard.fill"
         case .tasks: "checklist"
+        case .mcp: "point.3.filled.connected.trianglepath.dotted"
         case .snippets: "text.badge.checkmark"
         case .notes: "note.text"
         case .colors: "eyedropper.halffull"
@@ -118,6 +121,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .editor: .purple
         case .clipboard: .teal
         case .tasks: .green
+        case .mcp: .purple
         case .snippets: .mint
         case .notes: .yellow
         case .colors: .red
@@ -140,6 +144,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .island: ["dynamic island", "notch", "pill", "panel", "position", "hover", "click", "delay", "open", "close", "background", "flash", "status", "animation", "tab"]
         case .agents: ["agent", "claude", "claude code", "codex", "ai", "coding", "session", "permission", "approve", "allow", "deny", "question", "hook", "terminal"]
         case .tasks: ["task", "todo", "project", "server", "remote", "sync", "api", "post", "webhook", "token", "json", "endpoint"]
+        case .mcp: ["mcp", "model context protocol", "ai", "agent", "claude", "claude code", "claude desktop", "codex", "cursor", "llm", "connect", "setup", "tasks", "tools"]
         case .snippets: ["snippet", "expand", "keyword", "trigger", "text", "type", "accessibility"]
         case .notes: ["note", "quick note", "markdown", "folder", "icloud", "obsidian", "vault", "apple notes", "notion", "sync"]
         case .colors: ["color", "picker", "format", "hex", "rgb", "hsl", "swift", "css"]
@@ -270,6 +275,7 @@ struct SettingsRootView: View {
         case .editor: EditorSettingsView()
         case .clipboard: ClipboardSettingsView()
         case .tasks: TasksSettingsView()
+        case .mcp: MCPSettingsView()
         case .snippets: SnippetSettingsView()
         case .notes: NotesSettingsView()
         case .colors: ColorSettingsView()

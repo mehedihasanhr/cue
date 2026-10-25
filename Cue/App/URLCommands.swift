@@ -8,7 +8,7 @@ import AppKit
 ///     cue://task/new?title=…&notes=…&priority=urgent|high|medium|low&project=…
 ///     cue://snippet/add?keyword=;sig&text=…&name=…
 ///     cue://clipboard/copy?text=…
-///     cue://palette · cue://clipboard · cue://panel · cue://clock · cue://settings
+///     cue://palette · cue://clipboard · cue://panel · cue://clock · cue://settings[/page]
 ///     cue://record · cue://recordings · cue://tasks
 ///     cue://update (check for updates now, quietly, as the daily check does)
 enum URLCommand: Equatable {
@@ -18,7 +18,9 @@ enum URLCommand: Equatable {
     /// A note from `text` (nil: the quick note form).
     case newNote(text: String?)
     case copy(String)
-    case palette, clipboard, panel, clock, settings
+    case palette, clipboard, panel, clock
+    /// Settings, on a page when one is named (`cue://settings/mcp`).
+    case settings(SettingsSection?)
     case record, recordings
     /// The task dashboard.
     case tasks
@@ -53,7 +55,9 @@ enum URLCommand: Equatable {
         case ["clipboard"], ["clipboard", "list"]: self = .clipboard
         case ["panel"], ["library"]: self = .panel
         case ["clock"], ["prayer"]: self = .clock
-        case ["settings"], ["preferences"]: self = .settings
+        case ["settings"], ["preferences"]: self = .settings(nil)
+        case let named where named.count == 2 && (named[0] == "settings" || named[0] == "preferences"):
+            self = .settings(SettingsSection.allCases.first { $0.rawValue.lowercased() == named[1] })
         case ["record"], ["video", "record"], ["recorder"]: self = .record
         case ["recordings"], ["video"], ["videos"]: self = .recordings
         case ["tasks"], ["tasks", "dashboard"], ["task", "dashboard"], ["dashboard"]: self = .tasks
