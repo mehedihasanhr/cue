@@ -80,6 +80,12 @@ nonisolated struct InlineTraits: Equatable {
 @MainActor
 struct EditorStyle {
     var size: CGFloat = 12
+    /// Room between the lines of a wrapped paragraph, list item or quote. Small by
+    /// default, for the compact forms; the task page, where descriptions are read and
+    /// written at length, asks for more. Added under each line rather than as a line
+    /// height, so a block's first line — and the handles and markers level with it —
+    /// stays where it was.
+    var proseLineSpacing: CGFloat = 1
     /// The room list markers and quote bars take on the left.
     static let listIndent: CGFloat = 20
     static let quoteIndent: CGFloat = 14
@@ -103,10 +109,11 @@ struct EditorStyle {
 
     func paragraphStyle(for block: EditorBlock) -> NSParagraphStyle {
         let style = NSMutableParagraphStyle()
-        style.lineSpacing = 1
+        style.lineSpacing = proseLineSpacing
         style.paragraphSpacing = 3
         switch block {
         case .heading1, .heading2, .heading3:
+            style.lineSpacing = 1
             style.paragraphSpacingBefore = 6
             style.paragraphSpacing = 4
         case .bullet, .numbered, .todo, .done:

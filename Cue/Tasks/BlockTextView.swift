@@ -218,7 +218,9 @@ struct BlockTextRepresentable: NSViewRepresentable {
         let view = BlockTextView(frame: .zero, textContainer: container)
         view.blockID = id
         view.model = model
-        view.style = EditorStyle(size: fontSize)
+        // About 1.5× line height for the page's prose, as Notion sets it: at the
+        // forms' spacing, a long description read as a wall of text.
+        view.style = EditorStyle(size: fontSize, proseLineSpacing: (fontSize * 0.45).rounded())
         view.listStart = listStart
         view.textColor = .labelColor
         view.insertionPointColor = .labelColor
