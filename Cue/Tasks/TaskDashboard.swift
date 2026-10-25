@@ -49,8 +49,30 @@ final class TaskDashboardModel {
     }
     /// The sidebar folded away (⌃⌘S), for more room for the tasks.
     var sidebarCollapsed: Bool {
-        didSet { UserDefaults.standard.set(sidebarCollapsed, forKey: Self.sidebarKey) }
+        didSet {
+            UserDefaults.standard.set(sidebarCollapsed, forKey: Self.sidebarKey)
+            sidebarFloating = false
+        }
     }
+    /// The folded sidebar shown for a moment, floating over the page, while the pointer
+    /// is at the window's left edge or on it — Notion's hover sidebar.
+    var sidebarFloating = false
+    /// How wide the window's content is, kept by the dashboard as it lays out.
+    var contentWidth: CGFloat = 0 {
+        didSet { if !sidebarHidden { sidebarFloating = false } }
+    }
+
+    /// The sidebar folds itself away when the window cannot fit it beside the list and
+    /// the open peek. `sidebarCollapsed`, the user's choice, is left alone: the sidebar
+    /// comes back as soon as there is room again.
+    var sidebarSqueezedOut: Bool {
+        guard contentWidth > 0 else { return false }
+        let peek = openTaskID != nil && !taskAsPage ? TaskDashboardView.peekWidths.lowerBound : 0
+        return contentWidth < TaskDashboardView.sidebarWidth + TaskDashboardView.mainMinimum + peek
+    }
+
+    /// Whether the sidebar is away, by choice or for want of room.
+    var sidebarHidden: Bool { sidebarCollapsed || sidebarSqueezedOut }
     var query = ""
     /// The task in the side peek — or on its own page.
     var openTaskID: UUID? {
@@ -141,8 +163,20 @@ final class TaskDashboardModel {
         openTaskID = nil
     }
 
+    /// ⌃⌘S and the sidebar button. With no room to dock it, the sidebar floats out (or
+    /// back in) instead: docking it would only push the window's edges out again.
     func toggleSidebar() {
+        if sidebarSqueezedOut, !sidebarCollapsed {
+            sidebarFloating.toggle()
+            return
+        }
         withAnimation(.easeOut(duration: 0.2)) { sidebarCollapsed.toggle() }
+    }
+
+    /// Brings the sidebar to hand: docked when it can be, floating when it cannot.
+    func revealSidebar() {
+        if sidebarCollapsed { toggleSidebar() }
+        if sidebarSqueezedOut { sidebarFloating = true }
     }
 
     /// Opens the new-task line in `status`'s group, unfolding it.
@@ -249,14 +283,34 @@ struct TaskDashboardView: View {
     static let sidebarWidth: CGFloat = 240
     static let peekWidth: CGFloat = 460
     static let peekWidths: ClosedRange<CGFloat> = 380...1100
+    /// The least the list in the middle is given while the peek is open.
+    static let mainMinimum: CGFloat = 360
     static let topBarHeight: CGFloat = 44
     /// Rounder than Notion's own window, to sit with Cue's other windows.
     static let windowRadius: CGFloat = 14
 
+    /// The peek's width in a window `width` wide: the one chosen, but never so wide that
+    /// the sidebar and the list no longer fit beside it. Without this the three columns
+    /// added up to more than a narrow window and the whole row overflowed both edges —
+    /// the sidebar pushed out past the left one. The chosen width is kept, so the peek
+    /// grows back as the window does.
+    private func fittedPeekWidth(in width: CGFloat) -> CGFloat {
+        let room = width - (model.sidebarHidden ? 0 : Self.sidebarWidth) - Self.mainMinimum
+        return min(model.peekWidth, max(room, Self.peekWidths.lowerBound))
+    }
+
     var body: some View {
+        GeometryReader { proxy in
+            columns(width: proxy.size.width)
+                .onAppear { model.contentWidth = proxy.size.width }
+                .onChange(of: proxy.size.width) { _, width in model.contentWidth = width }
+        }
+    }
+
+    private func columns(width: CGFloat) -> some View {
         @Bindable var model = model
-        HStack(spacing: 0) {
-            if !model.sidebarCollapsed {
+        return HStack(spacing: 0) {
+            if !model.sidebarHidden {
                 TaskDashboardSidebar(store: store, buttons: buttons)
                     .frame(width: Self.sidebarWidth)
                     .background(NotionStyle.sidebar)
@@ -277,19 +331,28 @@ struct TaskDashboardView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            // Below the width all three need, the list gives way (clipped), never the
+            // window's edges.
+            .frame(minWidth: 0, maxWidth: .infinity)
+            .clipped()
             if !model.taskAsPage, let task = openTask {
                 TaskPageView(store: store, task: task, style: .peek)
                     .id(task.id)
-                    .frame(width: model.peekWidth)
+                    .frame(width: fittedPeekWidth(in: width))
                     .background(NotionStyle.page)
                     .overlay(alignment: .leading) {
-                        PeekResizer(width: Binding(get: { model.peekWidth }, set: { model.peekWidth = $0 }))
+                        PeekResizer(width: Binding(get: { model.peekWidth }, set: { model.peekWidth = $0 }), sidebarShown: !model.sidebarHidden)
                     }
                     .transition(.move(edge: .trailing))
             }
         }
         .foregroundStyle(NotionStyle.text)
         .background(NotionStyle.page)
+        .overlay(alignment: .topLeading) {
+            if model.sidebarHidden {
+                FloatingSidebar(store: store, buttons: buttons)
+            }
+        }
         .overlay {
             if let url = model.viewingImage {
                 TaskImageViewer(url: url) { model.viewingImage = nil }
@@ -298,7 +361,7 @@ struct TaskDashboardView: View {
         .animation(.easeOut(duration: 0.15), value: model.viewingImage)
         // Opening and closing the peek slide; switching tasks inside it does not.
         .animation(.spring(response: 0.3, dampingFraction: 0.9), value: openTask == nil)
-        .animation(.easeOut(duration: 0.2), value: model.sidebarCollapsed)
+        .animation(.easeOut(duration: 0.2), value: model.sidebarHidden)
         .animation(.easeOut(duration: 0.2), value: model.taskAsPage)
         .clipShape(RoundedRectangle(cornerRadius: Self.windowRadius, style: .continuous))
         .ignoresSafeArea()
@@ -363,6 +426,8 @@ struct TaskDashboardView: View {
 /// the peek wider or narrower, leaving the table at least some room.
 private struct PeekResizer: View {
     @Binding var width: CGFloat
+    /// Whether the sidebar takes room beside the peek, for how wide it may be dragged.
+    var sidebarShown = true
     @State private var hovering = false
     @State private var start: CGFloat?
 
@@ -385,10 +450,13 @@ private struct PeekResizer: View {
                 .gesture(
                     DragGesture(minimumDistance: 1, coordinateSpace: .global)
                         .onChanged { value in
-                            let origin = start ?? width
-                            start = origin
                             let windowWidth = NSApp.keyWindow?.frame.width ?? 1200
-                            let most = min(TaskDashboardView.peekWidths.upperBound, windowWidth - 420)
+                            let beside = (sidebarShown ? TaskDashboardView.sidebarWidth : 0) + TaskDashboardView.mainMinimum
+                            let most = min(TaskDashboardView.peekWidths.upperBound, windowWidth - beside)
+                            // From the width on screen, which may be less than the one chosen
+                            // (see `fittedPeekWidth`), so the edge does not jump on the first move.
+                            let origin = start ?? min(width, max(most, TaskDashboardView.peekWidths.lowerBound))
+                            start = origin
                             width = min(max(origin - value.translation.width, TaskDashboardView.peekWidths.lowerBound), max(most, TaskDashboardView.peekWidths.lowerBound))
                         }
                         .onEnded { _ in start = nil }
@@ -407,9 +475,78 @@ private struct WindowChrome: View {
     var body: some View {
         HStack(spacing: 2) {
             TrafficLights(onClose: buttons.close, onMinimize: buttons.minimize, onZoom: buttons.zoom)
-            NotionIconButton(symbol: "sidebar.left", help: model.sidebarCollapsed ? "Show sidebar (⌃⌘S)" : "Hide sidebar (⌃⌘S)", size: 14) {
+            NotionIconButton(symbol: "sidebar.left", help: model.sidebarHidden ? "Show sidebar (⌃⌘S)" : "Hide sidebar (⌃⌘S)", size: 14) {
                 model.toggleSidebar()
             }
+            // Folded, pointing at the button shows the sidebar floating, as Notion does;
+            // clicking it docks the sidebar again.
+            .onHover { over in
+                if over, model.sidebarHidden { model.sidebarFloating = true }
+            }
+        }
+    }
+}
+
+/// The folded sidebar, brought out over the page while the pointer wants it: a strip
+/// along the window's left edge shows it, and it slides away a moment after the
+/// pointer has left both the strip and the sidebar. The page under it does not move.
+private struct FloatingSidebar: View {
+    let store: TaskStore
+    let buttons: WindowButtons
+    @Environment(TaskDashboardModel.self) private var model
+    @State private var hiding: Task<Void, Never>?
+
+    /// How wide the edge that brings the sidebar out is.
+    private static let edge: CGFloat = 8
+    /// How long it waits once the pointer has gone, so crossing from the edge to the
+    /// sidebar, or brushing past its border, does not flicker it.
+    private static let linger: Duration = .milliseconds(300)
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Color.clear
+                .frame(width: Self.edge)
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .onHover { $0 ? show() : hideSoon() }
+            if model.sidebarFloating {
+                TaskDashboardSidebar(store: store, buttons: buttons, floating: true)
+                    .frame(width: TaskDashboardView.sidebarWidth)
+                    .frame(maxHeight: .infinity)
+                    .background(NotionStyle.card, in: shape)
+                    .overlay { shape.stroke(NotionStyle.divider) }
+                    .clipShape(shape)
+                    .shadow(color: .black.opacity(0.12), radius: 16, x: 4, y: 6)
+                    .padding(.bottom, 10)
+                    .onHover { $0 ? show() : hideSoon() }
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+            }
+        }
+        // Under the top bar, whose buttons stay where they are.
+        .padding(.top, TaskDashboardView.topBarHeight)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .animation(.easeOut(duration: 0.18), value: model.sidebarFloating)
+        .onDisappear { hiding?.cancel() }
+    }
+
+    private var shape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(topLeadingRadius: 0, bottomLeadingRadius: 0, bottomTrailingRadius: 10, topTrailingRadius: 10, style: .continuous)
+    }
+
+    private func show() {
+        hiding?.cancel()
+        hiding = nil
+        if !model.sidebarFloating { model.sidebarFloating = true }
+    }
+
+    private func hideSoon() {
+        hiding?.cancel()
+        hiding = Task {
+            try? await Task.sleep(for: Self.linger)
+            guard !Task.isCancelled,
+                  // Kept while it is asking for a project's name, which takes the pointer away.
+                  model.projectPrompt == nil else { return }
+            model.sidebarFloating = false
         }
     }
 }
@@ -426,7 +563,7 @@ private struct TaskTopBar: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            if model.sidebarCollapsed {
+            if model.sidebarHidden {
                 WindowChrome(buttons: buttons)
             }
             NotionIconButton(symbol: "chevron.left", help: model.taskAsPage ? "Back to \(model.title(in: store)) (⎋)" : "Back", size: 13,
@@ -530,19 +667,26 @@ struct NotionHoverStyle: ButtonStyle {
 private struct TaskDashboardSidebar: View {
     let store: TaskStore
     let buttons: WindowButtons
+    /// Brought out over the page while folded (`FloatingSidebar`): the window's buttons
+    /// stay in the top bar, so the sidebar starts at its search field.
+    var floating = false
     @Environment(TaskDashboardModel.self) private var model
     @FocusState private var searching: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 0) {
-                WindowChrome(buttons: buttons)
-                Spacer(minLength: 0)
-                NotionIconButton(symbol: "square.and.pencil", help: "New task (⌘N)", size: 14) { model.composeNew() }
+            if floating {
+                Spacer().frame(height: 10)
+            } else {
+                HStack(spacing: 0) {
+                    WindowChrome(buttons: buttons)
+                    Spacer(minLength: 0)
+                    NotionIconButton(symbol: "square.and.pencil", help: "New task (⌘N)", size: 14) { model.composeNew() }
+                }
+                .padding(.leading, 8)
+                .padding(.trailing, 8)
+                .frame(height: TaskDashboardView.topBarHeight)
             }
-            .padding(.leading, 8)
-            .padding(.trailing, 8)
-            .frame(height: TaskDashboardView.topBarHeight)
 
             searchField
                 .padding(.horizontal, 8)
@@ -588,7 +732,7 @@ private struct TaskDashboardSidebar: View {
             .onTapGesture { model.closePeek() }
         }
         .onChange(of: model.searchFocus) { _, _ in
-            if model.sidebarCollapsed { model.toggleSidebar() }
+            model.revealSidebar()
             searching = true
         }
     }
