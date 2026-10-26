@@ -63,6 +63,7 @@ final class IslandController {
     var onSnippetFilled: (Snippet, [String: String]?) -> Void = { _, _ in }
     /// The Tasks tab asked for the dashboard window; set by the app.
     var onOpenTaskDashboard: () -> Void = {}
+    var onOpenSettings: () -> Void = {}
 
     init(library: CaptureLibrary, clipboard: ClipboardHistory, assets: AssetStore, colors: ColorStore, groups: GroupStore, tasks: TaskStore, snippets: SnippetStore,
          notes: NoteStore, actions: HistoryActions, preferences: AppPreferences, clock: PrayerClock? = nil, focus: FocusTimer? = nil, agents: AgentStore? = nil) {
@@ -143,6 +144,10 @@ final class IslandController {
         model.onOpenTaskDashboard = { [weak self] in
             self?.collapse()
             self?.onOpenTaskDashboard()
+        }
+        model.onOpenSettings = { [weak self] in
+            self?.collapse()
+            self?.onOpenSettings()
         }
         model.onPanelWidthChanged = { [weak self] in
             // Reported from inside a layout pass; the window resizes after it.

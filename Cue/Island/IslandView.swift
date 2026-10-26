@@ -168,6 +168,8 @@ final class IslandModel {
     var onShowTask: (TaskItem) -> Void = { _ in }
     /// Opens the task dashboard window; called by the panel, set by the controller.
     var onOpenTaskDashboard: () -> Void = {}
+    /// Opens Settings; called by the panel, set by the controller.
+    var onOpenSettings: () -> Void = {}
     /// Leaves the task detail (back to the open panel); set by the controller.
     var onTaskDetailClosed: (TaskItem?) -> Void = { _ in }
     /// A click on the closed shape opens it.
@@ -656,7 +658,7 @@ struct IslandView: View {
                 Color.clear.frame(height: strip)
                 IslandPanel(library: library, clipboard: clipboard, assets: assets, colors: colors, tasksStore: tasks, snippets: snippets, actions: actions,
                             width: model.panelWidth, onIdealWidth: { model.setPanelWidth($0) }, onIdealHeight: { model.setPanelHeight($0) },
-                            onPrompt: { model.onPrompt($0) }, onShowTask: { model.onShowTask($0) }, onOpenTaskDashboard: { model.onOpenTaskDashboard() },
+                            onPrompt: { model.onPrompt($0) }, onShowTask: { model.onShowTask($0) }, onOpenTaskDashboard: { model.onOpenTaskDashboard() }, onOpenSettings: { model.onOpenSettings() },
                             onShowClock: { model.onShowClock() }, onShowMedia: { model.onShowMedia() }, onShowWeather: { model.onShowWeather() }, onShowMirror: { model.onShowMirror() }, onPreviewPane: { model.onPreviewPane($0, $1) }, isPreviewOpen: { model.previewOpen },
                             onHidePreview: { model.onHidePreview() }, isPointerInPreview: { model.isPointerInPreview() }, previewLeaveTick: model.previewLeaveTick, arrowPress: model.arrowPress)
                     .padding(.horizontal, IslandGeometry.panelHorizontalPadding)

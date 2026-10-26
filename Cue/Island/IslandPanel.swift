@@ -84,6 +84,7 @@ struct IslandPanel: View {
     var onShowTask: (TaskItem) -> Void = { _ in }
     /// Opens the task dashboard window (the Tasks tab's expand button).
     var onOpenTaskDashboard: () -> Void = {}
+    var onOpenSettings: () -> Void = {}
     /// Opens the clock in the compact island (the prayer pill).
     var onShowClock: () -> Void = {}
     var onShowMedia: () -> Void = {}
@@ -462,6 +463,7 @@ struct IslandPanel: View {
                 }
                 // Tasks, last in the bar: the dashboard, in its own window.
                 HoverButton(symbol: "checklist", help: "Tasks", size: 30, quiet: true, action: onOpenTaskDashboard)
+                HoverButton(symbol: "gearshape", help: "Settings", size: 30, quiet: true, action: onOpenSettings)
             }
             .animation(.easeOut(duration: 0.18), value: searching)
             .modifier(IdealWidth { headerWidth = $0; reportWidth() })
