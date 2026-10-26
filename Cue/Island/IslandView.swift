@@ -153,33 +153,52 @@ final class IslandModel {
     var onOpenTimeSettings: () -> Void = {}
 }
 
-/// The island silhouette: top corners flare outward into the bezel (a small flare
-/// closed, a wide one open), bottom corners are rounded. All radii animate, so the
-/// closed notch morphs into the open panel.
-/// The open island as dark Liquid Glass: solid black where it meets the notch, so the
-/// two still read as one, easing into tinted glass below, where the desktop shows
-/// through the edges and bends with them. Before macOS 26 there is no Liquid Glass, and
-/// it stays the solid black it always was.
+/// The open island as dark Liquid Glass, after the look it was asked for: a dark core
+/// where the content sits — solid black where it meets the notch, so the two still read
+/// as one — inside a rim of clear glass down the sides and along the bottom, where the
+/// desktop shows through and bends at the edge. Before macOS 26 there is no Liquid
+/// Glass, and it stays the solid black it always was.
 private struct IslandGlass: View {
     let shape: NotchShape
     /// The notch's height: black to there at least.
     let strip: CGFloat
+
+    /// How wide the clear glass shows around the dark core.
+    private static let rim: CGFloat = 12
+    /// The core's darkness: under the content at the top, and toward the bottom.
+    private static let coreTop = 0.88
+    private static let coreBottom = 0.6
+    /// How softly the core fades into the rim.
+    private static let coreSoftness: CGFloat = 6
+    /// The glass's own tint, kept light so the desktop shows through the rim.
+    private static let glassTint = 0.15
 
     var body: some View {
         if #available(macOS 26, *) {
             GeometryReader { proxy in
                 let notch = min(1, strip / max(proxy.size.height, 1))
                 shape.fill(.clear)
-                    .glassEffect(.regular.tint(.black.opacity(0.62)), in: shape)
+                    .glassEffect(.clear.tint(.black.opacity(Self.glassTint)), in: shape)
+                    .overlay {
+                        // The core: dark under the content, inset from the sides and the
+                        // bottom by the rim, and blurred at its edge so it melts into it.
+                        UnevenRoundedRectangle(bottomLeadingRadius: max(shape.bottomRadius - Self.rim, 6),
+                                               bottomTrailingRadius: max(shape.bottomRadius - Self.rim, 6), style: .continuous)
+                            .fill(LinearGradient(colors: [.black.opacity(Self.coreTop), .black.opacity(Self.coreBottom)],
+                                                 startPoint: .top, endPoint: .bottom))
+                            .padding(.horizontal, shape.flare + Self.rim)
+                            .padding(.bottom, Self.rim)
+                            .blur(radius: Self.coreSoftness)
+                    }
                     .overlay {
                         // Black over the notch, fading out a little below it.
                         LinearGradient(stops: [
                             .init(color: .black, location: 0),
                             .init(color: .black, location: notch),
-                            .init(color: .black.opacity(0), location: min(1, notch + 0.22)),
+                            .init(color: .black.opacity(0), location: min(1, notch + 0.12)),
                         ], startPoint: .top, endPoint: .bottom)
-                        .clipShape(shape)
                     }
+                    .clipShape(shape)
             }
         } else {
             shape.fill(Color.black)
@@ -187,6 +206,9 @@ private struct IslandGlass: View {
     }
 }
 
+/// The island silhouette: top corners flare outward into the bezel (a small flare
+/// closed, a wide one open), bottom corners are rounded. All radii animate, so the
+/// closed notch morphs into the open panel.
 nonisolated struct NotchShape: Shape {
     /// Outward curve at the top corners (the notch meeting the bezel).
     var flare: CGFloat
@@ -289,7 +311,9 @@ struct IslandView: View {
             // only faded, so it shrinks with the shape as the island closes rather than
             // being left behind at the open size while it fades.
             .overlay {
-                shape.stroke(LinearGradient(colors: [.clear, .white.opacity(0.05), .white.opacity(0.16)], startPoint: .top, endPoint: .bottom),
+                // Brighter on glass, where the edge is the glass's own and should catch the light.
+                let glass = preferences.islandGlass && Self.hasBackdrop(phase)
+                shape.stroke(LinearGradient(colors: [.clear, .white.opacity(glass ? 0.08 : 0.05), .white.opacity(glass ? 0.3 : 0.16)], startPoint: .top, endPoint: .bottom),
                              lineWidth: 1)
                     .opacity(Self.hasBackdrop(phase) ? 1 : 0)
                     .allowsHitTesting(false)
