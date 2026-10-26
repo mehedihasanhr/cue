@@ -686,8 +686,11 @@ struct AgentsView: View {
         if let id = detailID, let session = store.sessions.first(where: { $0.id == id }), !questionOnly {
             AgentDetailView(session: session, store: store,
                             back: { withAnimation(IslandView.listAnimation) { detailID = nil } }, close: close)
-                .padding(.horizontal, 14)
-                .padding(.bottom, 14)
+                // Plain rows, not cards, so they keep clear of the island's rounded
+                // corners themselves: in from the sides, and room under the last one.
+                .padding(.horizontal, 24)
+                .padding(.top, 2)
+                .padding(.bottom, 22)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { reportHeight($0.rounded(.up)) }
                 .transition(.opacity.combined(with: .offset(x: 12)))
         } else {
