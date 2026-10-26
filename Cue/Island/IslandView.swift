@@ -100,6 +100,7 @@ final class IslandModel {
     /// The drawn shape in `phase`: the fixed rect, or the content-fitted one.
     func shapeRect(for phase: Phase) -> CGRect {
         guard let geometry else { return .zero }
+        if phase == .expanded, dropping { return geometry.dropZone(contentSize: IslandDropZone.size) }
         let width: CGFloat? = switch phase {
         case .expanded: panelWidth
         case .clock: clockWidth
@@ -327,6 +328,7 @@ struct IslandView: View {
             .animation(Self.openAnimation, value: model.contentWidth)
             .animation(Self.openAnimation, value: model.panelWidth)
             .animation(Self.openAnimation, value: model.panelHeight)
+            .animation(Self.openAnimation, value: model.dropping)
             .animation(Self.openAnimation, value: model.clockHeight)
             .animation(Self.openAnimation, value: model.clockWidth)
             .animation(Self.listAnimation, value: model.agentsHeight)
@@ -337,6 +339,18 @@ struct IslandView: View {
                 withAnimation(.easeOut(duration: 0.3)) { faded = true }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            // While files are dragged over, the drop zone is smaller than the island's
+            // span, where the drag is held under the menu bar. A drag beside it must still
+            // land on the island (a fully clear pixel lets it through to whatever is
+            // behind, and the island would close and reopen under it): a band across the
+            // window's width, too faint to see, keeps it.
+            .background(alignment: .top) {
+                if model.dropping {
+                    Color.black.opacity(0.01)
+                        .frame(height: geometry.stripHeight + IslandDropZone.size.height + 24)
+                        .allowsHitTesting(false)
+                }
+            }
             .environment(\.colorScheme, .dark)
         }
     }
@@ -435,13 +449,21 @@ struct IslandView: View {
         case .expanded:
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
-                IslandPanel(library: library, clipboard: clipboard, assets: assets, colors: colors, tasksStore: tasks, snippets: snippets, actions: actions, dropping: model.dropping,
+                IslandPanel(library: library, clipboard: clipboard, assets: assets, colors: colors, tasksStore: tasks, snippets: snippets, actions: actions,
                             width: model.panelWidth, onIdealWidth: { model.setPanelWidth($0) }, onIdealHeight: { model.setPanelHeight($0) },
                             onPrompt: { model.onPrompt($0) }, onShowTask: { model.onShowTask($0) }, onOpenTaskDashboard: { model.onOpenTaskDashboard() },
                             onShowClock: { model.onShowClock() }, onPreviewPane: { model.onPreviewPane($0, $1) }, isPreviewOpen: { model.previewOpen },
                             onHidePreview: { model.onHidePreview() }, isPointerInPreview: { model.isPointerInPreview() }, previewLeaveTick: model.previewLeaveTick, arrowPress: model.arrowPress)
                     .padding(.horizontal, IslandGeometry.panelHorizontalPadding)
                     .padding(.bottom, IslandGeometry.panelBottomPadding)
+                    // Files dragged over: the panel steps aside (kept, so its search and
+                    // tab are as they were after) for the drop zone.
+                    .opacity(model.dropping ? 0 : 1)
+                    .overlay(alignment: .top) {
+                        if model.dropping {
+                            IslandDropZone().transition(.opacity.animation(Self.contentAnimation))
+                        }
+                    }
             }
             .transition(Self.contentTransition)
         }

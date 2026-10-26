@@ -58,8 +58,6 @@ struct IslandPanel: View {
     @Environment(PrayerClock.self) private var clock: PrayerClock?
     @Environment(FocusTimer.self) private var focusTimer: FocusTimer?
     @Environment(GroupStore.self) private var groups
-    /// A file or image is being dragged over the island.
-    var dropping = false
     /// Captures picked for one comparison sheet, in the order they were picked.
     @State private var compareSelection: [UUID] = []
     /// Asks the island for a line of text in its compact form.
@@ -596,18 +594,6 @@ struct IslandPanel: View {
         // Straight under the menu bar (the strip above is its height), plus a hair.
         .padding(.top, 1)
         .padding(.bottom, groupKind != nil || tab == .all ? 10 : 16)
-        // A drag over the island: the drop zone has the panel to itself, the toolbar,
-        // tabs and cards gone from under it, at the panel's size so nothing jumps.
-        .opacity(dropping ? 0 : 1)
-        .overlay {
-            if dropping {
-                dropHint
-                    .padding(.horizontal, Self.horizontalPadding)
-                    .padding(.top, 1)
-                    .padding(.bottom, 16)
-            }
-        }
-        .animation(.easeOut(duration: 0.15), value: dropping)
         .modifier(IdealHeight { onIdealHeight($0) })
         .frame(width: width, alignment: .top)
         .frame(maxHeight: Self.size.height, alignment: .top)
@@ -1006,23 +992,6 @@ struct IslandPanel: View {
     private func smallButton(_ title: String, symbol: String, help: String, action: @escaping () -> Void) -> some View {
         QuietButton(title: title, symbol: symbol, destructive: symbol == "trash", action: action)
             .help(help)
-    }
-
-    /// Shown in place of the panel while a drag hovers the island.
-    private var dropHint: some View {
-        RoundedRectangle(cornerRadius: IslandChrome.cardRadius, style: .continuous)
-            .fill(.black.opacity(0.75))
-            .background(IslandStyle.accent.opacity(0.22), in: RoundedRectangle(cornerRadius: IslandChrome.cardRadius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: IslandChrome.cardRadius, style: .continuous).strokeBorder(IslandStyle.accent.opacity(0.8), style: SwiftUI.StrokeStyle(lineWidth: 1.5, dash: [8, 6])))
-            .overlay {
-                VStack(spacing: 6) {
-                    Icon("tray.and.arrow.down.fill", size: 35).foregroundStyle(.white)
-                    Text("Drop to save as an asset").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
-                    Text("Images and files are kept in Assets").font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.55))
-                }
-            }
-            .allowsHitTesting(false)
-            .transition(.opacity)
     }
 
     /// Height of the card row: header plus cards.
