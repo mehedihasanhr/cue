@@ -94,6 +94,7 @@ final class IslandController {
         model.calendar = calendar
         model.weather = weather
         model.onShowWeather = { [weak self] in self?.showWeather() }
+        model.onShowMirror = { [weak self] in self?.showMirror() }
         weather.knownPlace = { [weak clock] in clock?.place.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) } }
         model.onOpenURL = { [weak self] url in
             NSWorkspace.shared.open(url)
@@ -602,7 +603,7 @@ final class IslandController {
         guard preferences.agentAutoOpen, model.geometry != nil, !hidden else { return }
         switch model.phase {
         case .collapsed, .flash, .status, .expanded: showAgents()
-        case .agents, .prompt, .taskDetail, .clock, .media, .weather: break
+        case .agents, .prompt, .taskDetail, .clock, .media, .weather, .mirror: break
         }
     }
 
@@ -798,6 +799,16 @@ final class IslandController {
         }
     }
 
+    /// Opens the camera as a mirror in the island; ⎋ or a click outside closes it.
+    func showMirror() {
+        guard model.geometry != nil, model.phase != .mirror else { return }
+        closeTask?.cancel()
+        flashTask?.cancel()
+        setPhase(.mirror, animated: true)
+        installOutsideClickMonitor()
+        window.makeKey() // so ⎋ reaches the island
+    }
+
     /// Opens the forecast in the island; ⎋ or a click outside closes it.
     func showWeather() {
         guard model.geometry != nil, model.phase != .weather else { return }
@@ -848,7 +859,7 @@ final class IslandController {
             model.onClockClosed()
         case .media:
             model.onMediaClosed()
-        case .weather:
+        case .weather, .mirror:
             model.onMediaClosed()
         case .prompt(let prompt):
             model.onPromptFinished(prompt, nil)
@@ -876,7 +887,7 @@ final class IslandController {
             switch model.phase {
             // The task form closes only by its own Cancel / Create or ⎋.
             case .prompt(let prompt) where prompt.isTaskForm: return
-            case .prompt, .taskDetail, .clock, .media, .weather, .agents: break
+            case .prompt, .taskDetail, .clock, .media, .weather, .mirror, .agents: break
             case .expanded where forExpanded: break
             default: return
             }
@@ -1032,7 +1043,7 @@ final class IslandController {
         // The compact prompt / task detail stay as they are until ↩, ⎋ or a click
         // outside; the pointer does not reopen the panel.
         switch model.phase {
-        case .prompt, .taskDetail, .clock, .media, .weather, .agents: return
+        case .prompt, .taskDetail, .clock, .media, .weather, .mirror, .agents: return
         case .status(let status) where status.clock != nil:
             // The clock ignores the pointer: it neither opens the panel nor stays;
             // a click opens the clock view, otherwise it closes on its own.

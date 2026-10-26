@@ -20,6 +20,8 @@ final class IslandModel {
         case media
         /// The weather: now, and the next hours.
         case weather
+        /// The camera as a mirror.
+        case mirror
         /// The running agent sessions, and what they are asking.
         case agents
         case expanded
@@ -30,7 +32,7 @@ final class IslandModel {
             case .flash: .flash
             case .status(let status): status.clock == nil ? .flash : .prompt
             case .prompt(let prompt): prompt.isForm ? .form : .prompt
-            case .taskDetail, .clock, .media, .weather, .agents: .form
+            case .taskDetail, .clock, .media, .weather, .mirror, .agents: .form
             case .expanded: .expanded
             }
         }
@@ -38,7 +40,7 @@ final class IslandModel {
         var isFlash: Bool {
             switch self {
             case .flash, .status: true
-            case .collapsed, .expanded, .prompt, .taskDetail, .clock, .media, .weather, .agents: false
+            case .collapsed, .expanded, .prompt, .taskDetail, .clock, .media, .weather, .mirror, .agents: false
             }
         }
 
@@ -48,7 +50,7 @@ final class IslandModel {
             switch self {
             case .flash, .status: true
             case .prompt(let prompt): prompt.isConfirm
-            case .collapsed, .expanded, .taskDetail, .clock, .media, .weather, .agents: false
+            case .collapsed, .expanded, .taskDetail, .clock, .media, .weather, .mirror, .agents: false
             }
         }
     }
@@ -73,6 +75,8 @@ final class IslandModel {
     var weather: WeatherStore?
     /// Opens the forecast; set by the controller.
     var onShowWeather: () -> Void = {}
+    /// Opens the camera mirror; set by the controller.
+    var onShowMirror: () -> Void = {}
     /// Opens a link (a meeting's call) and closes; set by the controller.
     var onOpenURL: (URL) -> Void = { _ in }
     /// The tiles beside the closed notch, as the settings and what plays have them;
@@ -131,6 +135,7 @@ final class IslandModel {
         case .clock: clockWidth
         case .media: NowPlayingDetail.width
         case .weather: WeatherDetail.width
+        case .mirror: MirrorView.width
         case .agents: IslandGeometry.agentsWidth + (showsPlayerBesideAgents ? NowPlayingDetail.columnWidth : 0)
         default: phase.fitsContent ? contentWidth : nil
         }
@@ -138,6 +143,7 @@ final class IslandModel {
         case .clock: clockHeight
         case .media: NowPlayingDetail.height
         case .weather: WeatherDetail.height
+        case .mirror: MirrorView.height
         case .agents: max(agentsHeight ?? estimatedAgentsHeight, showsPlayerBesideAgents ? NowPlayingDetail.columnHeight : 0)
         case .expanded: panelHeight
         default: nil
@@ -548,6 +554,12 @@ struct IslandView: View {
                     .frame(width: model.shapeRect(for: .clock).width, height: model.clockHeight ?? IslandGeometry.formContentHeight)
             }
             .transition(Self.contentTransition)
+        case .mirror:
+            VStack(spacing: 0) {
+                Color.clear.frame(height: strip)
+                MirrorView(close: { model.onMediaClosed() })
+            }
+            .transition(Self.contentTransition)
         case .weather:
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
@@ -596,7 +608,7 @@ struct IslandView: View {
                 IslandPanel(library: library, clipboard: clipboard, assets: assets, colors: colors, tasksStore: tasks, snippets: snippets, actions: actions,
                             width: model.panelWidth, onIdealWidth: { model.setPanelWidth($0) }, onIdealHeight: { model.setPanelHeight($0) },
                             onPrompt: { model.onPrompt($0) }, onShowTask: { model.onShowTask($0) }, onOpenTaskDashboard: { model.onOpenTaskDashboard() },
-                            onShowClock: { model.onShowClock() }, onShowMedia: { model.onShowMedia() }, onShowWeather: { model.onShowWeather() }, onPreviewPane: { model.onPreviewPane($0, $1) }, isPreviewOpen: { model.previewOpen },
+                            onShowClock: { model.onShowClock() }, onShowMedia: { model.onShowMedia() }, onShowWeather: { model.onShowWeather() }, onShowMirror: { model.onShowMirror() }, onPreviewPane: { model.onPreviewPane($0, $1) }, isPreviewOpen: { model.previewOpen },
                             onHidePreview: { model.onHidePreview() }, isPointerInPreview: { model.isPointerInPreview() }, previewLeaveTick: model.previewLeaveTick, arrowPress: model.arrowPress)
                     .padding(.horizontal, IslandGeometry.panelHorizontalPadding)
                     .padding(.bottom, IslandGeometry.panelBottomPadding)
@@ -617,7 +629,7 @@ struct IslandView: View {
     /// The panels that stay open to be used: they get the rim.
     static func hasBackdrop(_ phase: IslandModel.Phase) -> Bool {
         switch phase {
-        case .expanded, .agents, .clock, .media, .weather, .taskDetail, .prompt: true
+        case .expanded, .agents, .clock, .media, .weather, .mirror, .taskDetail, .prompt: true
         case .collapsed, .flash, .status: false
         }
     }

@@ -88,6 +88,7 @@ struct IslandPanel: View {
     var onShowClock: () -> Void = {}
     var onShowMedia: () -> Void = {}
     var onShowWeather: () -> Void = {}
+    var onShowMirror: () -> Void = {}
     /// Opens a card in the pane under the island (Settings › Island › Preview opens);
     /// the direction says which way the pane slides to it.
     var onPreviewPane: (IslandDetail, Int) -> Void = { _, _ in }
@@ -862,8 +863,10 @@ struct IslandPanel: View {
                             if value == tab { Label { Text(title) } icon: { Icon("checkmark", weight: .medium) } } else { Text(title) }
                         }
                     }
+                    if !tuckedTabs.isEmpty { Divider() }
+                    Button("Mirror", action: onShowMirror)
                     if let clear = clearAction {
-                        if !tuckedTabs.isEmpty { Divider() }
+                        Divider()
                         Button(clear.title, role: .destructive, action: clear.perform)
                     }
                 }

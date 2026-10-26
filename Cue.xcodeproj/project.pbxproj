@@ -512,7 +512,7 @@
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Cue shows your next meeting beside the notch and reminds you, with Join, just before it starts.";
 				INFOPLIST_KEY_NSFocusStatusUsageDescription = "Cue shows in the Dynamic Island when a Focus turns on or off.";
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Cue sends notes to Apple Notes when you ask it to, and shows and controls what Music, Spotify or a YouTube tab is playing.";
-				INFOPLIST_KEY_NSCameraUsageDescription = "Cue records your camera when you add a webcam overlay, and the screen of an iPhone or iPad connected by cable when you choose to record one.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Cue shows your camera as a mirror in the Dynamic Island when you open it, records your camera when you add a webcam overlay, and the screen of an iPhone or iPad connected by cable when you choose to record one.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Cue records your microphone when you narrate a recording.";
 				INFOPLIST_KEY_NSLocationUsageDescription = "Cue uses your location to compute prayer times on this Mac. It never leaves the device.";
@@ -547,7 +547,7 @@
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Cue shows your next meeting beside the notch and reminds you, with Join, just before it starts.";
 				INFOPLIST_KEY_NSFocusStatusUsageDescription = "Cue shows in the Dynamic Island when a Focus turns on or off.";
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Cue sends notes to Apple Notes when you ask it to, and shows and controls what Music, Spotify or a YouTube tab is playing.";
-				INFOPLIST_KEY_NSCameraUsageDescription = "Cue records your camera when you add a webcam overlay, and the screen of an iPhone or iPad connected by cable when you choose to record one.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Cue shows your camera as a mirror in the Dynamic Island when you open it, records your camera when you add a webcam overlay, and the screen of an iPhone or iPad connected by cable when you choose to record one.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Cue records your microphone when you narrate a recording.";
 				INFOPLIST_KEY_NSLocationUsageDescription = "Cue uses your location to compute prayer times on this Mac. It never leaves the device.";

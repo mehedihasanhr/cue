@@ -447,6 +447,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if let tab = IslandTab(rawValue: tabName) { UserDefaults.standard.set(tab.rawValue, forKey: IslandTab.storageKey) }
                 switch tabName {
                 case "agents": self?.island?.showAgents()
+                case "mirror": self?.island?.showMirror()
                 case "level": self?.island?.debugShowLevel()
                 case "caps", "focus", "capsoff", "focusoff":
                     self?.island?.showToggle(ToggleHUD(kind: tabName.hasPrefix("caps") ? .capsLock : .focus, on: !tabName.hasSuffix("off")))
@@ -707,6 +708,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .recordings: studio.showLibrary()
         case .tasks: showTaskDashboard(nil)
         case .basket: basket.reopen()
+        case .mirror: island?.showMirror()
         case .checkForUpdates: AppUpdater.shared.checkInBackground()
         }
     }
