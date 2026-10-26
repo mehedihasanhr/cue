@@ -555,9 +555,6 @@ struct IslandPanel: View {
                     }
                 }
                 }
-                if dropping {
-                    dropHint
-                }
             }
             .frame(height: Self.rowHeight) // the same whether a tab has cards or not
             .padding(.top, 6)
@@ -599,6 +596,18 @@ struct IslandPanel: View {
         // Straight under the menu bar (the strip above is its height), plus a hair.
         .padding(.top, 1)
         .padding(.bottom, groupKind != nil || tab == .all ? 10 : 16)
+        // A drag over the island: the drop zone has the panel to itself, the toolbar,
+        // tabs and cards gone from under it, at the panel's size so nothing jumps.
+        .opacity(dropping ? 0 : 1)
+        .overlay {
+            if dropping {
+                dropHint
+                    .padding(.horizontal, Self.horizontalPadding)
+                    .padding(.top, 1)
+                    .padding(.bottom, 16)
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: dropping)
         .modifier(IdealHeight { onIdealHeight($0) })
         .frame(width: width, alignment: .top)
         .frame(maxHeight: Self.size.height, alignment: .top)
@@ -999,7 +1008,7 @@ struct IslandPanel: View {
             .help(help)
     }
 
-    /// Shown over the row while a drag hovers the island.
+    /// Shown in place of the panel while a drag hovers the island.
     private var dropHint: some View {
         RoundedRectangle(cornerRadius: IslandChrome.cardRadius, style: .continuous)
             .fill(.black.opacity(0.75))
@@ -1009,6 +1018,7 @@ struct IslandPanel: View {
                 VStack(spacing: 6) {
                     Icon("tray.and.arrow.down.fill", size: 35).foregroundStyle(.white)
                     Text("Drop to save as an asset").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                    Text("Images and files are kept in Assets").font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.55))
                 }
             }
             .allowsHitTesting(false)

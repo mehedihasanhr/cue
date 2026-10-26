@@ -360,12 +360,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
         // Diagnostics: `--env CUE_DEBUG_ISLAND_SHOT=captures` opens the island on that tab (`agents`:
-        // the agent sessions) and
+        // the agent sessions; `drop`: as with a file dragged over it) and
         // writes a picture of it to Pictures/Cue/_island.png.
         if let tabName = ProcessInfo.processInfo.environment["CUE_DEBUG_ISLAND_SHOT"] {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
                 if let tab = IslandTab(rawValue: tabName) { UserDefaults.standard.set(tab.rawValue, forKey: IslandTab.storageKey) }
-                if tabName == "agents" { self?.island?.showAgents() } else { self?.island?.expand() }
+                switch tabName {
+                case "agents": self?.island?.showAgents()
+                case "drop": self?.island?.debugShowDropZone()
+                default: self?.island?.expand()
+                }
                 // CUE_DEBUG_ISLAND_PREVIEW=capture|clipboard|color|asset opens the tab's first
                 // such item in the pane under the island; the shot then takes the screen around both.
                 let previewKind = ProcessInfo.processInfo.environment["CUE_DEBUG_ISLAND_PREVIEW"]
