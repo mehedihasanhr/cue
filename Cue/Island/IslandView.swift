@@ -16,6 +16,8 @@ final class IslandModel {
         case taskDetail(UUID)
         /// The clock opened in the compact island: time, dates, prayer times.
         case clock
+        /// The music player: what Music or Spotify plays, and its controls.
+        case media
         /// The running agent sessions, and what they are asking.
         case agents
         case expanded
@@ -26,7 +28,7 @@ final class IslandModel {
             case .flash: .flash
             case .status(let status): status.clock == nil ? .flash : .prompt
             case .prompt(let prompt): prompt.isForm ? .form : .prompt
-            case .taskDetail, .clock, .agents: .form
+            case .taskDetail, .clock, .media, .agents: .form
             case .expanded: .expanded
             }
         }
@@ -34,7 +36,7 @@ final class IslandModel {
         var isFlash: Bool {
             switch self {
             case .flash, .status: true
-            case .collapsed, .expanded, .prompt, .taskDetail, .clock, .agents: false
+            case .collapsed, .expanded, .prompt, .taskDetail, .clock, .media, .agents: false
             }
         }
 
@@ -44,7 +46,7 @@ final class IslandModel {
             switch self {
             case .flash, .status: true
             case .prompt(let prompt): prompt.isConfirm
-            case .collapsed, .expanded, .taskDetail, .clock, .agents: false
+            case .collapsed, .expanded, .taskDetail, .clock, .media, .agents: false
             }
         }
     }
@@ -104,11 +106,13 @@ final class IslandModel {
         let width: CGFloat? = switch phase {
         case .expanded: panelWidth
         case .clock: clockWidth
+        case .media: NowPlayingDetail.width
         case .agents: IslandGeometry.agentsWidth
         default: phase.fitsContent ? contentWidth : nil
         }
         let height: CGFloat? = switch phase {
         case .clock: clockHeight
+        case .media: NowPlayingDetail.height
         case .agents: agentsHeight ?? estimatedAgentsHeight
         case .expanded: panelHeight
         default: nil
@@ -156,6 +160,10 @@ final class IslandModel {
     var arrowPress: (delta: Int, tick: Int) = (0, 0)
     /// Leaves the clock; set by the controller.
     var onClockClosed: () -> Void = {}
+    /// Opens the music player; set by the controller.
+    var onShowMedia: () -> Void = {}
+    /// Leaves the music player; set by the controller.
+    var onMediaClosed: () -> Void = {}
     /// Settings › Time, from the clock; set by the controller.
     var onOpenTimeSettings: () -> Void = {}
 }
@@ -296,6 +304,7 @@ struct IslandView: View {
     @Environment(PrayerClock.self) private var clock: PrayerClock?
     @Environment(AppPreferences.self) private var preferences
     @Environment(NoteStore.self) private var notes
+    @Environment(NowPlaying.self) private var nowPlaying
 
     /// Opening overshoots a touch; closing settles without a bounce. With Reduce
     /// Motion on, everything is a short ease instead. The springs quicken on faster
@@ -472,6 +481,12 @@ struct IslandView: View {
                     .frame(width: model.shapeRect(for: .clock).width, height: model.clockHeight ?? IslandGeometry.formContentHeight)
             }
             .transition(Self.contentTransition)
+        case .media:
+            VStack(spacing: 0) {
+                Color.clear.frame(height: strip)
+                NowPlayingDetail(nowPlaying: nowPlaying, close: { model.onMediaClosed() })
+            }
+            .transition(Self.contentTransition)
         case .agents:
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
@@ -500,7 +515,7 @@ struct IslandView: View {
                 IslandPanel(library: library, clipboard: clipboard, assets: assets, colors: colors, tasksStore: tasks, snippets: snippets, actions: actions,
                             width: model.panelWidth, onIdealWidth: { model.setPanelWidth($0) }, onIdealHeight: { model.setPanelHeight($0) },
                             onPrompt: { model.onPrompt($0) }, onShowTask: { model.onShowTask($0) }, onOpenTaskDashboard: { model.onOpenTaskDashboard() },
-                            onShowClock: { model.onShowClock() }, onPreviewPane: { model.onPreviewPane($0, $1) }, isPreviewOpen: { model.previewOpen },
+                            onShowClock: { model.onShowClock() }, onShowMedia: { model.onShowMedia() }, onPreviewPane: { model.onPreviewPane($0, $1) }, isPreviewOpen: { model.previewOpen },
                             onHidePreview: { model.onHidePreview() }, isPointerInPreview: { model.isPointerInPreview() }, previewLeaveTick: model.previewLeaveTick, arrowPress: model.arrowPress)
                     .padding(.horizontal, IslandGeometry.panelHorizontalPadding)
                     .padding(.bottom, IslandGeometry.panelBottomPadding)
@@ -521,7 +536,7 @@ struct IslandView: View {
     /// The panels that stay open to be used: they get the rim.
     static func hasBackdrop(_ phase: IslandModel.Phase) -> Bool {
         switch phase {
-        case .expanded, .agents, .clock, .taskDetail, .prompt: true
+        case .expanded, .agents, .clock, .media, .taskDetail, .prompt: true
         case .collapsed, .flash, .status: false
         }
     }

@@ -508,7 +508,7 @@
 				INFOPLIST_FILE = Config/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Cue sends notes to Apple Notes when you ask it to.";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Cue sends notes to Apple Notes when you ask it to, and shows and controls what Music or Spotify is playing.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Cue records your camera when you add a webcam overlay, and the screen of an iPhone or iPad connected by cable when you choose to record one.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Cue records your microphone when you narrate a recording.";
@@ -541,7 +541,7 @@
 				INFOPLIST_FILE = Config/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Cue sends notes to Apple Notes when you ask it to.";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Cue sends notes to Apple Notes when you ask it to, and shows and controls what Music or Spotify is playing.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Cue records your camera when you add a webcam overlay, and the screen of an iPhone or iPad connected by cable when you choose to record one.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Cue records your microphone when you narrate a recording.";

@@ -15,6 +15,8 @@ final class IslandController {
     private let model = IslandModel()
     /// Files parked in the island for now (this session only).
     let shelf = ShelfStore()
+    /// What Music or Spotify plays.
+    let nowPlaying = NowPlaying()
     private let preferences: AppPreferences
     private let tasks: TaskStore
     private let snippets: SnippetStore
@@ -64,7 +66,7 @@ final class IslandController {
         content.onDragMoved = { [weak self] point in self?.aimDrop(at: point) }
         content.onDrop = { [weak self] urls, image in self?.drop(urls: urls, image: image, into: assets) }
         let host = FirstMouseHostingView(rootView: IslandView(model: model, library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasks, snippets: snippets, actions: actions)
-            .environment(preferences).environment(clock).environment(focus).environment(groups).environment(notes).environment(shelf))
+            .environment(preferences).environment(clock).environment(focus).environment(groups).environment(notes).environment(shelf).environment(nowPlaying))
         host.sizingOptions = []
         host.autoresizingMask = [.width, .height]
         host.frame = content.bounds
@@ -72,6 +74,8 @@ final class IslandController {
         window.contentView = content
         window.onEscape = { [weak self] in self?.escape() }
         shelf.onEmptied = { [weak self] in self?.shelfEmptied() }
+        nowPlaying.isEnabled = { [weak preferences] in preferences?.islandNowPlaying ?? false }
+        nowPlaying.start()
         model.onTap = { [weak self] in self?.open() }
         model.agents = agents
         model.onOpenPanel = { [weak self] in self?.expand() }
@@ -90,6 +94,7 @@ final class IslandController {
             DispatchQueue.main.async { self?.fitWindow(); self?.placePreview() }
         }
         model.onShowClock = { [weak self] in self?.showClock() }
+        model.onShowMedia = { [weak self] in self?.showMedia() }
         model.onPreviewPane = { [weak self] detail, direction in self?.showPreview(detail, direction: direction) }
         model.onHidePreview = { [weak self] in self?.hidePreview() }
         model.isPointerInPreview = { [weak self] in self?.pointerInPreview() ?? false }
@@ -108,6 +113,7 @@ final class IslandController {
                 collapse()
             }
         }
+        model.onMediaClosed = model.onClockClosed
         model.onOpenTimeSettings = { [weak self] in
             self?.collapse()
             actions.openSettings()
@@ -426,6 +432,7 @@ final class IslandController {
 
     /// Removes the island; the controller is dropped afterwards.
     func tearDown() {
+        nowPlaying.stop()
         closeTask?.cancel()
         flashTask?.cancel()
         observers.forEach { NotificationCenter.default.removeObserver($0) }
@@ -527,7 +534,7 @@ final class IslandController {
         guard preferences.agentAutoOpen, model.geometry != nil, !hidden else { return }
         switch model.phase {
         case .collapsed, .flash, .status, .expanded: showAgents()
-        case .agents, .prompt, .taskDetail, .clock: break
+        case .agents, .prompt, .taskDetail, .clock, .media: break
         }
     }
 
@@ -628,6 +635,16 @@ final class IslandController {
         window.makeKey() // so ⎋ reaches the island
     }
 
+    /// Opens the music player in the island; ⎋ or a click outside closes it.
+    func showMedia() {
+        guard model.geometry != nil, model.phase != .media else { return }
+        closeTask?.cancel()
+        flashTask?.cancel()
+        setPhase(.media, animated: true)
+        installOutsideClickMonitor()
+        window.makeKey() // so ⎋ reaches the island
+    }
+
     /// Applies a rename from the compact box to the right store.
     private func renamed(_ detail: IslandDetail, to name: String) {
         switch detail {
@@ -646,6 +663,8 @@ final class IslandController {
             model.onTaskDetailClosed(nil)
         case .clock:
             model.onClockClosed()
+        case .media:
+            model.onMediaClosed()
         case .prompt(let prompt):
             model.onPromptFinished(prompt, nil)
         default:
@@ -672,7 +691,7 @@ final class IslandController {
             switch model.phase {
             // The task form closes only by its own Cancel / Create or ⎋.
             case .prompt(let prompt) where prompt.isTaskForm: return
-            case .prompt, .taskDetail, .clock, .agents: break
+            case .prompt, .taskDetail, .clock, .media, .agents: break
             case .expanded where forExpanded: break
             default: return
             }
@@ -827,7 +846,7 @@ final class IslandController {
         // The compact prompt / task detail stay as they are until ↩, ⎋ or a click
         // outside; the pointer does not reopen the panel.
         switch model.phase {
-        case .prompt, .taskDetail, .clock, .agents: return
+        case .prompt, .taskDetail, .clock, .media, .agents: return
         case .status(let status) where status.clock != nil:
             // The clock ignores the pointer: it neither opens the panel nor stays;
             // a click opens the clock view, otherwise it closes on its own.

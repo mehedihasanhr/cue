@@ -68,6 +68,7 @@ struct IslandPanel: View {
     @Environment(FocusTimer.self) private var focusTimer: FocusTimer?
     @Environment(GroupStore.self) private var groups
     @Environment(ShelfStore.self) private var shelf
+    @Environment(NowPlaying.self) private var nowPlaying
     /// Captures picked for one comparison sheet, in the order they were picked.
     @State private var compareSelection: [UUID] = []
     /// Asks the island for a line of text in its compact form.
@@ -84,6 +85,7 @@ struct IslandPanel: View {
     var onOpenTaskDashboard: () -> Void = {}
     /// Opens the clock in the compact island (the prayer pill).
     var onShowClock: () -> Void = {}
+    var onShowMedia: () -> Void = {}
     /// Opens a card in the pane under the island (Settings › Island › Preview opens);
     /// the direction says which way the pane slides to it.
     var onPreviewPane: (IslandDetail, Int) -> Void = { _, _ in }
@@ -442,6 +444,9 @@ struct IslandPanel: View {
                     tabActions
                 }
                 if !searching {
+                    if preferences.islandNowPlaying, nowPlaying.track != nil {
+                        NowPlayingPill(nowPlaying: nowPlaying, onShow: onShowMedia)
+                    }
                     if let focusTimer, focusTimer.isRunning {
                         FocusPill(timer: focusTimer, onShowTask: onShowTask)
                     }

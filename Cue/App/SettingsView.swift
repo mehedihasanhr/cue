@@ -420,6 +420,9 @@ struct IslandSettingsView: View {
                         SecondsSlider(value: $preferences.islandFlashDuration, range: 0.5...5, step: 0.1, zero: nil)
                     }
                 }
+                SettingsRow("Now Playing", subtitle: "What Music or Spotify plays, with its controls, in the panel's header. macOS asks once per app, the first time it plays.") {
+                    Toggle("Now Playing", isOn: $preferences.islandNowPlaying).toggleStyle(.switch)
+                }
                 SettingsRow("Statuses", subtitle: "Pastes, uploads, focus sessions and saved snippets.") {
                     Toggle("Statuses", isOn: $preferences.islandStatuses).toggleStyle(.switch)
                 }

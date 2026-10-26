@@ -33,6 +33,7 @@ final class AppPreferences {
         static let islandShelfOpenAfterDrop = "island.shelf.openAfterDrop"
         static let islandShelfAutoCollapse = "island.shelf.autoCollapse"
         static let basketEnabled = "basket.enabled"
+        static let islandNowPlaying = "island.nowPlaying"
         static let basketHideDelay = "basket.hideDelay"
         static let islandPreview = "island.preview"
         static let islandPreviewOnHover = "island.previewOnHover"
@@ -515,6 +516,11 @@ final class AppPreferences {
         didSet { defaults.set(islandShelfOpenAfterDrop, forKey: Key.islandShelfOpenAfterDrop) }
     }
 
+    /// What Music or Spotify plays shows in the island, with its controls.
+    var islandNowPlaying: Bool {
+        didSet { defaults.set(islandNowPlaying, forKey: Key.islandNowPlaying) }
+    }
+
     /// Shaking the pointer while dragging files brings up the floating basket.
     var basketEnabled: Bool {
         didSet { defaults.set(basketEnabled, forKey: Key.basketEnabled) }
@@ -725,6 +731,7 @@ final class AppPreferences {
         islandShelfOpenAfterDrop = defaults.object(forKey: Key.islandShelfOpenAfterDrop) as? Bool ?? true
         islandShelfAutoCollapse = defaults.object(forKey: Key.islandShelfAutoCollapse) as? Bool ?? true
         basketEnabled = defaults.object(forKey: Key.basketEnabled) as? Bool ?? true
+        islandNowPlaying = defaults.object(forKey: Key.islandNowPlaying) as? Bool ?? true
         basketHideDelay = defaults.object(forKey: Key.basketHideDelay) as? Double ?? 1.5
         islandPreview = IslandPreview(rawValue: defaults.string(forKey: Key.islandPreview) ?? "") ?? .inline
         islandPreviewOnHover = defaults.object(forKey: Key.islandPreviewOnHover) as? Bool ?? true

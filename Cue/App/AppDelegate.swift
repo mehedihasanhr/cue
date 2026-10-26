@@ -381,6 +381,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     _ = self?.island?.showStatus(IslandStatus(symbol: "checkmark.circle.fill", title: "Copied", subtitle: "Image 148 × 116",
                                                               image: NSImage(named: "AppIcon"), duration: .seconds(6)))
                 case "drop": self?.island?.debugShowDropZone()
+                case "media", "mediapill":
+                    self?.island?.nowPlaying.debugFake()
+                    if tabName == "media" { self?.island?.showMedia() } else { self?.island?.expand() }
                 case "shelf":
                     // A few of the app's own files parked, one picked.
                     let resources = Bundle.main.resourceURL!

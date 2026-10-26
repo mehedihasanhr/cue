@@ -36,6 +36,8 @@
 	<key>com.apple.security.temporary-exception.apple-events</key>
 	<array>
 		<string>com.apple.Notes</string>
+		<string>com.apple.Music</string>
+		<string>com.spotify.client</string>
 	</array>
 </dict>
 </plist>
