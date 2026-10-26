@@ -47,6 +47,8 @@ struct IslandPanel: View {
     /// The least width and the most height: the panel grows wider for its tab row
     /// and takes only the height its content needs.
     static let size = CGSize(width: 780, height: 330)
+    /// The search field at rest: room for its placeholder, the rest of the bar for tabs.
+    static let searchWidth: CGFloat = 210
     static let horizontalPadding: CGFloat = 20
 
     let library: CaptureLibrary
@@ -163,7 +165,6 @@ struct IslandPanel: View {
     @State private var prayerExpanded = false
     /// Natural widths of the two top rows; the island fits the wider one.
     @State private var headerWidth: CGFloat = 0
-    @State private var tabRowWidth: CGFloat = 0
     /// A card opened in place of the row.
     @State private var detail: IslandDetail?
     /// The card ← → moved to (an `IslandItem` id), outlined in the strip.
@@ -400,14 +401,22 @@ struct IslandPanel: View {
                         .help("Clear the search")
                     }
                 }
-                // The search field leads the bar: it takes the room the quieter tools leave.
+                // Compact, leading the bar with the tabs beside it; it widens while a
+                // search runs, the tabs making way for its results.
                 .padding(.horizontal, 12)
                 .frame(height: IslandChrome.controlHeight)
-                .frame(minWidth: 240, maxWidth: .infinity)
+                .frame(width: searching ? 340 : Self.searchWidth)
                 .background(.white.opacity(searching ? 0.11 : 0.08), in: RoundedRectangle(cornerRadius: IslandChrome.controlRadius, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: IslandChrome.controlRadius, style: .continuous)
                     .strokeBorder(searching ? IslandStyle.accent.opacity(0.6) : .white.opacity(0.06), lineWidth: 1))
                 .background(KeyOnFocus(focused: searchFocused))
+                if !searching, detail == nil {
+                    tabIcons
+                }
+                Spacer(minLength: 8)
+                if !searching, detail == nil {
+                    tabActions
+                }
                 // Tasks: the dashboard, in its own window (the island has no Tasks tab).
                 HoverButton(symbol: "checklist", help: "Tasks", size: 30, quiet: true, action: onOpenTaskDashboard)
                 if !searching {
@@ -429,56 +438,6 @@ struct IslandPanel: View {
                 IslandDetailHeader(detail: detail, library: library, assets: assets, actions: actions) {
                     withAnimation(.easeOut(duration: 0.15)) { self.detail = nil }
                 }
-            } else {
-            HStack(spacing: 2) {
-                ForEach(pillTabs, id: \.self) { value in
-                    tabPill(value, count: count(for: value), shortcut: numberedTabs.firstIndex(of: value).map { $0 + 1 })
-                }
-                Spacer(minLength: 16)
-                if tab == .captures, !comparing.isEmpty {
-                    smallButton("Compare \(comparing.count)", symbol: "rectangle.split.2x1",
-                                help: "Lay the picked captures out in one picture and copy it", action: compareSelected)
-                    smallButton("Deselect", symbol: "xmark", help: "Drop the comparison picks") { compareSelection = [] }
-                }
-                if tab == .snippets {
-                    smallButton("New", symbol: "plus", help: "A new snippet") { onPrompt(IslandPrompt(kind: .snippet(nil, initialText: "", assetID: nil))) }
-                }
-                if tab == .notes {
-                    smallButton("New", symbol: "plus", help: "A new note (⌥⇧M anywhere)") { onPrompt(IslandPrompt(kind: .note(nil))) }
-                }
-                if tab == .colors {
-                    smallButton("Pick", symbol: "eyedropper", help: "Pick a color from the screen", action: actions.pickColor)
-                }
-                if tab == .assets {
-                    smallButton("Paste", symbol: "doc.on.clipboard", help: "Save the image or files on the clipboard as assets") {
-                        if let added = assets.addFromPasteboard() {
-                            FeedbackHUD.show(added.count == 1 ? "Saved to Assets" : "\(added.count) saved to Assets", symbol: "tray.and.arrow.down.fill", duration: .seconds(1.2))
-                        } else {
-                            FeedbackHUD.show("No image or file on the clipboard", symbol: "tray")
-                        }
-                    }
-                }
-                // The tabs used little, and clearing (rare, and it can't be undone),
-                // wait behind "…".
-                if !tuckedTabs.isEmpty || clearAction != nil {
-                    OverflowMenu(help: "More") {
-                        ForEach(tuckedTabs, id: \.self) { value in
-                            Button {
-                                tab = value
-                            } label: {
-                                let count = count(for: value)
-                                let title = count > 0 ? "\(value.title)  \(count)" : value.title
-                                if value == tab { Label { Text(title) } icon: { Icon("checkmark", weight: .medium) } } else { Text(title) }
-                            }
-                        }
-                        if let clear = clearAction {
-                            if !tuckedTabs.isEmpty { Divider() }
-                            Button(clear.title, role: .destructive, action: clear.perform)
-                        }
-                    }
-                }
-            }
-            .modifier(IdealWidth { tabRowWidth = $0; reportWidth() })
             }
 
             // The cards a little further from the tabs than the rows above are from each other.
@@ -838,7 +797,7 @@ struct IslandPanel: View {
     }
 
     private func reportWidth() {
-        onIdealWidth(max(headerWidth, tabRowWidth) + Self.horizontalPadding * 2)
+        onIdealWidth(headerWidth + Self.horizontalPadding * 2)
     }
 
     /// The capture tools as one group, so they read as a toolbar rather than five
@@ -858,6 +817,63 @@ struct IslandPanel: View {
             }
         }
         .frame(height: IslandChrome.controlHeight)
+    }
+
+    /// The tabs, as icons beside the search (the name, count and shortcut in the
+    /// tooltip), and the "…" behind which the little-used tabs and clearing wait.
+    private var tabIcons: some View {
+        HStack(spacing: 2) {
+            ForEach(pillTabs, id: \.self) { value in
+                tabPill(value, count: count(for: value), shortcut: numberedTabs.firstIndex(of: value).map { $0 + 1 })
+            }
+            // The tabs used little, and clearing (rare, and it can't be undone),
+            // wait behind "…".
+            if !tuckedTabs.isEmpty || clearAction != nil {
+                OverflowMenu(help: "More") {
+                    ForEach(tuckedTabs, id: \.self) { value in
+                        Button {
+                            tab = value
+                        } label: {
+                            let count = count(for: value)
+                            let title = count > 0 ? "\(value.title)  \(count)" : value.title
+                            if value == tab { Label { Text(title) } icon: { Icon("checkmark", weight: .medium) } } else { Text(title) }
+                        }
+                    }
+                    if let clear = clearAction {
+                        if !tuckedTabs.isEmpty { Divider() }
+                        Button(clear.title, role: .destructive, action: clear.perform)
+                    }
+                }
+            }
+        }
+    }
+
+    /// What the open tab offers: Paste, Pick, New, Compare.
+    @ViewBuilder
+    private var tabActions: some View {
+        if tab == .captures, !comparing.isEmpty {
+            smallButton("Compare \(comparing.count)", symbol: "rectangle.split.2x1",
+                        help: "Lay the picked captures out in one picture and copy it", action: compareSelected)
+            smallButton("Deselect", symbol: "xmark", help: "Drop the comparison picks") { compareSelection = [] }
+        }
+        if tab == .snippets {
+            smallButton("New", symbol: "plus", help: "A new snippet") { onPrompt(IslandPrompt(kind: .snippet(nil, initialText: "", assetID: nil))) }
+        }
+        if tab == .notes {
+            smallButton("New", symbol: "plus", help: "A new note (⌥⇧M anywhere)") { onPrompt(IslandPrompt(kind: .note(nil))) }
+        }
+        if tab == .colors {
+            smallButton("Pick", symbol: "eyedropper", help: "Pick a color from the screen", action: actions.pickColor)
+        }
+        if tab == .assets {
+            smallButton("Paste", symbol: "doc.on.clipboard", help: "Save the image or files on the clipboard as assets") {
+                if let added = assets.addFromPasteboard() {
+                    FeedbackHUD.show(added.count == 1 ? "Saved to Assets" : "\(added.count) saved to Assets", symbol: "tray.and.arrow.down.fill", duration: .seconds(1.2))
+                } else {
+                    FeedbackHUD.show("No image or file on the clipboard", symbol: "tray")
+                }
+            }
+        }
     }
 
     private func tabPill(_ value: IslandTab, count: Int, shortcut: Int?) -> some View {
@@ -1498,18 +1514,10 @@ struct TabPill: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 5) {
-                Text(tab.title).font(.system(size: 12, weight: selected ? .semibold : .medium))
-                if count > 0 {
-                    Text("\(count)")
-                        .font(.system(size: 10.5, weight: .medium).monospacedDigit())
-                        .opacity(0.5)
-                }
-            }
-            .foregroundStyle(selected ? .white : .white.opacity(hovering ? 0.9 : 0.55))
-            .fixedSize()
-            .padding(.horizontal, 10)
-            .frame(height: 26)
+            // An icon; the name and count are in the tooltip.
+            Icon(tab.symbol, size: 17, weight: selected ? .semibold : .medium)
+                .foregroundStyle(selected ? .white : .white.opacity(hovering ? 0.9 : 0.55))
+                .frame(width: 36, height: IslandChrome.controlHeight)
             // The chosen one on a soft fill, the rest plain text that lights on hover.
             .background(Color.white.opacity(selected ? 0.12 : (hovering ? 0.06 : 0)),
                         in: RoundedRectangle(cornerRadius: IslandChrome.chipRadius, style: .continuous))
@@ -1518,7 +1526,7 @@ struct TabPill: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
-        .help(shortcut.map { "\(tab.title)  ⌘\($0)" } ?? tab.title)
+        .help([count > 0 ? "\(tab.title) · \(count)" : tab.title, shortcut.map { "⌘\($0)" }].compactMap { $0 }.joined(separator: "  "))
         .accessibilityLabel(tab.title)
         .accessibilityValue(count > 0 ? "\(count) items" : "empty")
         .accessibilityAddTraits(selected ? [.isSelected] : [])
