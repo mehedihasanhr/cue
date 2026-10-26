@@ -36,6 +36,13 @@ final class IslandWindow: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
+    /// Liquid Glass draws flat grey in a window without an active appearance, and the
+    /// island opens on hover without taking the keyboard: without this, its glass came
+    /// alive only once clicked. AppKit asks these (private) questions to pick that look;
+    /// the island always answers as if it were in front. Key status itself is untouched.
+    @objc func _hasActiveAppearance() -> Bool { true }
+    @objc func _hasActiveAppearanceIgnoringKeyFocus() -> Bool { true }
+
     /// AppKit keeps windows below the menu bar; the island lives on top of it.
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
         frameRect
