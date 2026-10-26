@@ -153,56 +153,58 @@ final class IslandModel {
     var onOpenTimeSettings: () -> Void = {}
 }
 
-/// The open island as dark Liquid Glass, after the look it was asked for: a dark core
-/// where the content sits — solid black where it meets the notch, so the two still read
-/// as one — inside a rim of clear glass down the sides and along the bottom, where the
-/// desktop shows through and bends at the edge. Before macOS 26 there is no Liquid
-/// Glass, and it stays the solid black it always was.
+/// The open island with a Liquid Glass edge: solid black inside, where the content
+/// sits and where it meets the notch, ringed down the sides and along the bottom by a
+/// thin band of clear glass. A band that narrow is nearly all edge, which is where
+/// Liquid Glass bends what is behind it; the whole panel in glass only frosted it.
+/// Before macOS 26 there is no Liquid Glass, and it is solid black throughout.
 private struct IslandGlass: View {
     let shape: NotchShape
-    /// The notch's height: black to there at least.
+    /// The notch's height: solid black all the way across to there.
     let strip: CGFloat
 
-    /// How wide the clear glass shows around the dark core.
-    private static let rim: CGFloat = 12
-    /// The core's darkness: under the content at the top, and toward the bottom.
-    private static let coreTop = 0.88
-    private static let coreBottom = 0.6
-    /// How softly the core fades into the rim.
-    private static let coreSoftness: CGFloat = 6
-    /// The glass's own tint, kept light so the desktop shows through the rim.
-    private static let glassTint = 0.15
+    /// How wide the glass band is.
+    private static let rim: CGFloat = 9
 
     var body: some View {
         if #available(macOS 26, *) {
-            GeometryReader { proxy in
-                let notch = min(1, strip / max(proxy.size.height, 1))
-                shape.fill(.clear)
-                    .glassEffect(.clear.tint(.black.opacity(Self.glassTint)), in: shape)
-                    .overlay {
-                        // The core: dark under the content, inset from the sides and the
-                        // bottom by the rim, and blurred at its edge so it melts into it.
-                        UnevenRoundedRectangle(bottomLeadingRadius: max(shape.bottomRadius - Self.rim, 6),
-                                               bottomTrailingRadius: max(shape.bottomRadius - Self.rim, 6), style: .continuous)
-                            .fill(LinearGradient(colors: [.black.opacity(Self.coreTop), .black.opacity(Self.coreBottom)],
-                                                 startPoint: .top, endPoint: .bottom))
-                            .padding(.horizontal, shape.flare + Self.rim)
-                            .padding(.bottom, Self.rim)
-                            .blur(radius: Self.coreSoftness)
-                    }
-                    .overlay {
-                        // Black over the notch, fading out a little below it.
-                        LinearGradient(stops: [
-                            .init(color: .black, location: 0),
-                            .init(color: .black, location: notch),
-                            .init(color: .black.opacity(0), location: min(1, notch + 0.12)),
-                        ], startPoint: .top, endPoint: .bottom)
-                    }
-                    .clipShape(shape)
+            ZStack {
+                IslandCore(outline: shape, strip: strip, rim: Self.rim, ring: false)
+                    .fill(Color.black)
+                Color.clear
+                    .glassEffect(.clear, in: IslandCore(outline: shape, strip: strip, rim: Self.rim, ring: true))
             }
         } else {
             shape.fill(Color.black)
         }
+    }
+}
+
+/// The island's outline split in two: the black core (the full width down to the
+/// notch, then inset from the sides and the bottom by `rim`), or with `ring`, the band
+/// left around it.
+nonisolated private struct IslandCore: Shape {
+    var outline: NotchShape
+    var strip: CGFloat
+    var rim: CGFloat
+    var ring: Bool
+
+    var animatableData: NotchShape.AnimatableData {
+        get { outline.animatableData }
+        set { outline.animatableData = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let flare = min(outline.flare, rect.width / 4)
+        let body = rect.insetBy(dx: flare + rim, dy: 0)
+        var core = Path(CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: min(strip, rect.height)))
+        if body.width > 0, rect.height > rim {
+            let inset = CGRect(x: body.minX, y: rect.minY, width: body.width, height: rect.height - rim)
+            let radius = max(min(outline.bottomRadius - rim, inset.width / 2, inset.height / 2), 2)
+            core = core.union(UnevenRoundedRectangle(bottomLeadingRadius: radius, bottomTrailingRadius: radius, style: .continuous).path(in: inset))
+        }
+        let whole = outline.path(in: rect)
+        return ring ? whole.subtracting(core) : whole.intersection(core)
     }
 }
 
