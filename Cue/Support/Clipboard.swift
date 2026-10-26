@@ -28,16 +28,26 @@ enum Clipboard {
         providers.append(provider)
     }
 
-    /// For data that is already encoded (a saved capture): plain and immediate. TIFF
-    /// rides along, since apps that take only that (Pages, Mail's older editor) would
-    /// otherwise see nothing to paste.
+    /// For data that is already encoded (a saved capture): the PNG goes on at once.
+    /// TIFF rides along for the apps that take only that (Pages, Mail's older editor)
+    /// as a promise, made only if one of them asks: decoding a large capture to
+    /// re-encode it took long enough to hold up the click that copied it.
     static func copy(pngData: Data, to pasteboard: NSPasteboard = .general) {
+        let provider = TIFFProvider(pngData: pngData)
+        let item = NSPasteboardItem()
+        item.setData(pngData, forType: .png)
+        item.setDataProvider(provider, forTypes: [.tiff])
+        item.setData(Data(), forType: Clipboard.ownMarker)
         pasteboard.clearContents()
-        pasteboard.setData(pngData, forType: .png)
-        if let tiff = NSBitmapImageRep(data: pngData)?.tiffRepresentation {
-            pasteboard.setData(tiff, forType: .tiff)
-        }
-        pasteboard.setData(Data(), forType: Clipboard.ownMarker)
+        pasteboard.writeObjects([item])
+        tiffProviders.append(provider)
+    }
+
+    /// TIFF promises stay alive until the pasteboard is done with them.
+    private static var tiffProviders: [TIFFProvider] = []
+
+    fileprivate static func finished(_ provider: TIFFProvider) {
+        tiffProviders.removeAll { $0 === provider }
     }
 
     /// Turns any outstanding promise into real data. Called before the app quits, so a
@@ -89,6 +99,24 @@ private nonisolated final class ImageProvider: NSObject, NSPasteboardItemDataPro
         default:
             break
         }
+    }
+
+    nonisolated func pasteboardFinishedWithDataProvider(_ pasteboard: NSPasteboard) {
+        MainActor.assumeIsolated { Clipboard.finished(self) }
+    }
+}
+
+/// A PNG's TIFF, made only when an app asks for it.
+private nonisolated final class TIFFProvider: NSObject, NSPasteboardItemDataProvider, @unchecked Sendable {
+    private let pngData: Data
+
+    init(pngData: Data) {
+        self.pngData = pngData
+    }
+
+    nonisolated func pasteboard(_ pasteboard: NSPasteboard?, item: NSPasteboardItem, provideDataForType type: NSPasteboard.PasteboardType) {
+        guard type == .tiff, let tiff = NSBitmapImageRep(data: pngData)?.tiffRepresentation else { return }
+        item.setData(tiff, forType: .tiff)
     }
 
     nonisolated func pasteboardFinishedWithDataProvider(_ pasteboard: NSPasteboard) {
