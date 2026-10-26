@@ -66,17 +66,20 @@ private enum AgentAppIcon {
     }
 }
 
-/// A session's tile: the agent's app icon, or its mark on a glass square when the
-/// app is not installed. While the agent works, a slow ring of light circles it;
-/// Claude at work is its little pixel critter instead, walking in place.
+/// A session's tile. Claude is its pixel critter, its face following the session
+/// (typing while it works, asking, pleased when done). Other agents show their
+/// app icon, or their mark on a glass square when the app is not installed, with a
+/// slow ring of light circling it while they work.
 private struct AgentTile: View {
     let agent: AgentKind
-    let working: Bool
+    let state: AgentSession.State
     var side: CGFloat = 30
 
+    private var working: Bool { state == .running }
+
     var body: some View {
-        if working, agent == .claude {
-            ClaudeCritter(side: side)
+        if agent == .claude {
+            ClaudeCritter(side: side, mood: ClaudeCritter.Mood(state))
         } else {
             tile
         }
@@ -109,15 +112,30 @@ private struct AgentTile: View {
     }
 }
 
-/// Claude's pixel critter, as Claude Code shows it while it works: an orange block
-/// with a shaded side, two eyes and slanted legs, typing on a little grey laptop.
-/// Drawn square by square: the front arm taps in an uneven rhythm, the laptop's
-/// screen flickers with each key, and now and then it blinks.
+/// Claude's pixel critter, after the one Claude Code shows: an orange block with a
+/// shaded side, two eyes and slanted legs. Drawn square by square, two frames a
+/// mood: at work it types on a little grey laptop in an uneven rhythm, a key lighting
+/// with each tap; asking, it waves an arm under a bobbing question mark; done, it
+/// smiles beside its closed laptop while a sparkle twinkles. Now and then it blinks.
 private struct ClaudeCritter: View {
-    let side: CGFloat
+    enum Mood {
+        case working, asking, done
 
-    /// o body · d its shaded side · a the typing arm · k eyes · g laptop · c a lit key.
-    private static let armUp: [String] = [
+        init(_ state: AgentSession.State) {
+            self = switch state {
+            case .running: .working
+            case .waiting: .asking
+            case .idle: .done
+            }
+        }
+    }
+
+    let side: CGFloat
+    var mood: Mood = .working
+
+    /// o body · d its shaded side · a an arm · k eyes and smile · g laptop · c a lit
+    /// key · q the question mark · s a sparkle.
+    private static let typeUp: [String] = [
         "       ooooooodd  ",
         "       ooooooodd  ",
         "       koookoodd  ",
@@ -128,7 +146,7 @@ private struct ClaudeCritter: View {
         "  g     o o o o   ",
         "   gggg  o o o o  ",
     ]
-    private static let armDown: [String] = [
+    private static let typeDown: [String] = [
         "       ooooooodd  ",
         "       ooooooodd  ",
         "       koookoodd  ",
@@ -139,6 +157,51 @@ private struct ClaudeCritter: View {
         "  g     o o o o   ",
         "   gggg  o o o o  ",
     ]
+    private static let askA: [String] = [
+        " qqq a ooooooodd  ",
+        "   q aaooooooodd  ",
+        "  q   akoookoodd  ",
+        "       ooooooodd  ",
+        "  q    ooooooodd  ",
+        "       ooooooodd  ",
+        "       ooooooodd  ",
+        "        o o o o   ",
+        "         o o o o  ",
+    ]
+    private static let askB: [String] = [
+        "       ooooooodd  ",
+        " qqq aaooooooodd  ",
+        "   q aakoookoodd  ",
+        "  q    ooooooodd  ",
+        "       ooooooodd  ",
+        "  q    ooooooodd  ",
+        "       ooooooodd  ",
+        "        o o o o   ",
+        "         o o o o  ",
+    ]
+    private static let doneA: [String] = [
+        "   s   ooooooodd  ",
+        "       okookoodd  ",
+        "       ooooooodd  ",
+        "     aaokookoodd  ",
+        "     aaookkooodd  ",
+        "       ooooooodd  ",
+        "       ooooooodd  ",
+        " ggggg  o o o o   ",
+        " ggggg   o o o o  ",
+    ]
+    private static let doneB: [String] = [
+        "   s   ooooooodd  ",
+        "  sss  okookoodd  ",
+        "   s   ooooooodd  ",
+        "     aaokookoodd  ",
+        "     aaookkooodd  ",
+        "       ooooooodd  ",
+        "       ooooooodd  ",
+        " ggggg  o o o o   ",
+        " ggggg   o o o o  ",
+    ]
+
     /// Down (true) or up for each beat: typing, not a metronome.
     private static let rhythm: [Bool] = [true, false, true, false, false, true, true, false, true, false, false, false]
     private static let beat = 0.13
@@ -148,18 +211,28 @@ private struct ClaudeCritter: View {
     private static let arm = Color(red: 0.8, green: 0.43, blue: 0.31)
     private static let laptop = Color(white: 0.6)
     private static let key = Color(red: 0.6, green: 0.85, blue: 1.0)
+    private static let sparkle = Color(red: 1.0, green: 0.92, blue: 0.6)
+
+    /// The frame at `tick` (one per beat).
+    private func grid(_ tick: Int) -> [String] {
+        switch mood {
+        case .working: Self.rhythm[tick % Self.rhythm.count] ? Self.typeDown : Self.typeUp
+        case .asking: (tick / 4) % 2 == 0 ? Self.askA : Self.askB
+        case .done: (tick / 6) % 2 == 0 ? Self.doneA : Self.doneB
+        }
+    }
 
     var body: some View {
         // Wider than the tile: the laptop sits out to its left, in the row's margin.
         let width = side * 1.4
         TimelineView(.animation(minimumInterval: Self.beat, paused: IslandView.reduceMotion)) { context in
             let tick = IslandView.reduceMotion ? 0 : Int(context.date.timeIntervalSinceReferenceDate / Self.beat)
-            let down = Self.rhythm[tick % Self.rhythm.count]
-            let blinking = tick % 31 == 0
+            let blinking = mood != .done && tick % 31 == 0
+            let grid = grid(tick)
             Canvas { canvas, size in
                 let pixel = min(size.width / CGFloat(Self.columns), size.height / CGFloat(Self.rows))
                 let origin = CGPoint(x: size.width - pixel * CGFloat(Self.columns), y: (size.height - pixel * CGFloat(Self.rows)) / 2)
-                for (row, line) in (down ? Self.armDown : Self.armUp).enumerated() {
+                for (row, line) in grid.enumerated() {
                     for (column, mark) in line.enumerated() where mark != " " {
                         let color: Color = switch mark {
                         case "d": Self.shade
@@ -167,6 +240,8 @@ private struct ClaudeCritter: View {
                         case "k": blinking ? Self.orange : .black
                         case "g": Self.laptop
                         case "c": Self.key
+                        case "q": askingTint
+                        case "s": Self.sparkle
                         default: Self.orange
                         }
                         // A hair over a pixel so neighbours meet without seams.
@@ -179,7 +254,15 @@ private struct ClaudeCritter: View {
         }
         .frame(width: width, height: side)
         .padding(.leading, side - width)
-        .accessibilityLabel("Claude is working")
+        .accessibilityLabel(label)
+    }
+
+    private var label: String {
+        switch mood {
+        case .working: "Claude is working"
+        case .asking: "Claude needs you"
+        case .done: "Claude is done"
+        }
     }
 }
 
@@ -420,7 +503,7 @@ struct AgentDoneRow: View {
     }
 
     private var tile: some View {
-        AgentTile(agent: done.agent, working: false, side: 28)
+        AgentTile(agent: done.agent, state: .idle, side: 28)
             .padding(3)
             .overlay(alignment: .bottomTrailing) {
                 Image(systemName: "checkmark")
@@ -520,7 +603,7 @@ struct AgentAmbientRow: View {
         HStack(spacing: 0) {
             Group {
                 if let lead {
-                    AgentTile(agent: lead.agent, working: lead.state == .running, side: 16)
+                    AgentTile(agent: lead.agent, state: lead.state, side: 16)
                         .opacity(lead.state == .idle ? 0.55 : 1)
                 }
             }
@@ -897,9 +980,9 @@ private struct AgentDetailView: View {
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 12) {
-                        AgentTile(agent: session.agent, working: session.state == .running, side: 26)
+                        AgentTile(agent: session.agent, state: session.state, side: 26)
                             // The critter's laptop reaches out to the left: room for it.
-                            .padding(.leading, session.state == .running && session.agent == .claude ? 10 : 0)
+                            .padding(.leading, session.agent == .claude ? 10 : 0)
                         Text(session.project)
                             .font(.system(size: 15, weight: .bold))
                             .foregroundStyle(.white)
@@ -1109,7 +1192,7 @@ private struct AgentSessionCard: View {
     /// which agent; where it runs and for how long are in the tooltip.
     private var line: some View {
         HStack(spacing: 12) {
-            AgentTile(agent: session.agent, working: session.state == .running, side: 26)
+            AgentTile(agent: session.agent, state: session.state, side: 26)
             name(size: 13.5, weight: .semibold, color: .white.opacity(hovered ? 1 : 0.92))
             Spacer(minLength: 12)
             // On hover the status makes way for the dismiss button, in the same place.
@@ -1183,7 +1266,7 @@ private struct AgentSessionCard: View {
 
     private var summary: some View {
         HStack(alignment: .top, spacing: 12) {
-            AgentTile(agent: session.agent, working: session.state == .running, side: 26)
+            AgentTile(agent: session.agent, state: session.state, side: 26)
             VStack(alignment: .leading, spacing: 1) {
                 name(size: 14, weight: .semibold, color: .white, attention: requests.first?.attention)
                 // While it asks, the question says it all; the command is shown below.
