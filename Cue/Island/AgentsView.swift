@@ -900,7 +900,9 @@ private struct AgentSessionCard: View {
         .padding(.bottom, 4)
         // Clear until the pointer is on it, like the plain rows: the island's own fill
         // shows through, and the card only lifts when it's the one being looked at.
-        .background(.white.opacity(hovered ? 0.08 : 0), in: RoundedRectangle(cornerRadius: AgentsView.cardRadius, style: .continuous))
+        // Never for a question: it is all there is to look at, and its boxes and
+        // buttons already set it out.
+        .background(.white.opacity(hovered && requests.isEmpty ? 0.08 : 0), in: RoundedRectangle(cornerRadius: AgentsView.cardRadius, style: .continuous))
         .overlay(alignment: .topTrailing) {
             dismissButton
                 .padding(8)
