@@ -420,6 +420,15 @@ struct IslandSettingsView: View {
                         SecondsSlider(value: $preferences.islandFlashDuration, range: 0.5...5, step: 0.1, zero: nil)
                     }
                 }
+                SettingsRow("Network", subtitle: "Going offline and back, a new Wi-Fi network, a VPN connecting.") {
+                    Toggle("Network", isOn: $preferences.islandNetwork).toggleStyle(.switch)
+                }
+                SettingsRow("Drives", subtitle: "A drive or disk image mounting, with its free space, or ejecting.") {
+                    Toggle("Drives", isOn: $preferences.islandDrives).toggleStyle(.switch)
+                }
+                SettingsRow("Downloads", subtitle: "A download finishing in Downloads; click it to show the file.") {
+                    Toggle("Downloads", isOn: $preferences.islandDownloads).toggleStyle(.switch)
+                }
                 SettingsRow("Caps Lock") {
                     Toggle("Caps Lock", isOn: $preferences.islandCapsLock).toggleStyle(.switch)
                 }

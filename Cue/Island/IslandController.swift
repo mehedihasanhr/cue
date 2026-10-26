@@ -23,6 +23,8 @@ final class IslandController {
     private var audioDevices: AudioDeviceMonitor?
     /// Caps Lock and Focus switching.
     private var toggles: ToggleMonitor?
+    /// The network, drives and downloads.
+    private var notices: NoticeMonitor?
     private let preferences: AppPreferences
     private let tasks: TaskStore
     private let snippets: SnippetStore
@@ -104,6 +106,10 @@ final class IslandController {
         model.onShowClock = { [weak self] in self?.showClock() }
         model.onShowMedia = { [weak self] in self?.showMedia() }
         model.onHoldStatus = { [weak self] in self?.holdStatus() }
+        model.onReveal = { [weak self] url in
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+            self?.collapse()
+        }
         model.onPreviewPane = { [weak self] detail, direction in self?.showPreview(detail, direction: direction) }
         model.onHidePreview = { [weak self] in self?.hidePreview() }
         model.isPointerInPreview = { [weak self] in self?.pointerInPreview() ?? false }
@@ -232,6 +238,7 @@ final class IslandController {
         battery = BatteryMonitor { [weak self] hud in self?.showBattery(hud) }
         audioDevices = AudioDeviceMonitor { [weak self] hud in self?.showAudioDevice(hud) }
         toggles = ToggleMonitor { [weak self] hud in self?.showToggle(hud) }
+        notices = NoticeMonitor { [weak self] notice in self?.showNotice(notice) }
         let levels = LevelKeys.start { [weak self] level in self?.showLevel(level) }
         Log.app.info("Island level keys: \(levels ? "on" : "off (needs Accessibility)", privacy: .public); volume settable: \(SystemLevels.canSetVolume); brightness: \(SystemLevels.brightness.map { String($0) } ?? "unavailable", privacy: .public)")
         place()
@@ -455,6 +462,7 @@ final class IslandController {
         battery?.stop()
         audioDevices?.stop()
         toggles?.stop()
+        notices?.stop()
         nowPlaying.stop()
         LevelKeys.stop()
         closeTask?.cancel()
@@ -674,6 +682,19 @@ final class IslandController {
 
     private static let levelDuration: Duration = .milliseconds(1500)
 
+    /// The network changed, a drive came or went, a download finished. Going offline
+    /// comes over an open panel too; the rest only over the closed island.
+    func showNotice(_ notice: NoticeHUD) {
+        switch notice.kind {
+        case .offline, .online, .vpnOn, .vpnOff: guard preferences.islandNetwork else { return }
+        case .driveMounted, .driveEjected: guard preferences.islandDrives else { return }
+        case .downloaded: guard preferences.islandDownloads else { return }
+        }
+        guard model.geometry != nil, !hidden else { return }
+        let duration: Duration = notice.kind == .downloaded ? .seconds(4) : .milliseconds(2600)
+        flash(phase: .status(IslandStatus(symbol: notice.symbol, title: notice.title, duration: duration, notice: notice)), overPanel: notice.kind == .offline)
+    }
+
     /// Caps Lock or a Focus switched: a moment's HUD over the closed island.
     func showToggle(_ hud: ToggleHUD) {
         switch hud.kind {
@@ -831,7 +852,7 @@ final class IslandController {
         setPhase(phase, animated: true)
         let duration: Duration = if case .status(let status) = phase { status.duration } else { .seconds(preferences.islandFlashDuration) }
         // The clock and a level just close: neither is a way into the panel.
-        let isClock = if case .status(let status) = phase { status.clock != nil || status.level != nil } else { false }
+        let isClock = if case .status(let status) = phase { status.clock != nil || status.level != nil || status.notice?.isClickable == true } else { false }
         flashTask = Task { [weak self] in
             try? await Task.sleep(for: duration)
             guard !Task.isCancelled, let self, model.phase.isFlash else { return }
@@ -949,8 +970,8 @@ final class IslandController {
         guard !pressWithoutDrop else { return }
         // A flash opens at once when hovered; the closed island waits for the delay
         // — or, in click mode, for a click.
-        if case .status(let status) = model.phase, status.level != nil {
-            // A level is for dragging, not a way into the panel.
+        if case .status(let status) = model.phase, status.level != nil || status.notice?.isClickable == true {
+            // A level is for dragging, a download's notice for clicking: not ways into the panel.
             return
         } else if model.phase.isFlash {
             expand()

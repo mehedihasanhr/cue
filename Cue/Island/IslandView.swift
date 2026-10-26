@@ -167,6 +167,8 @@ final class IslandModel {
     var arrowPress: (delta: Int, tick: Int) = (0, 0)
     /// Leaves the clock; set by the controller.
     var onClockClosed: () -> Void = {}
+    /// Shows a file in Finder (a download's notice clicked) and closes; set by the controller.
+    var onReveal: (URL) -> Void = { _ in }
     /// The status showing is being used (a level dragged): it stays a while longer.
     var onHoldStatus: () -> Void = {}
     /// Opens the music player; set by the controller.
@@ -388,6 +390,8 @@ struct IslandView: View {
                     model.onTap()
                 } else if case .status(let status) = phase, status.clock != nil {
                     model.onShowClock()
+                } else if case .status(let status) = phase, let notice = status.notice, notice.isClickable, let url = notice.url {
+                    model.onReveal(url)
                 }
             }
             .animation(collapsed ? Self.closeAnimation : Self.openAnimation, value: phase)
@@ -446,6 +450,10 @@ struct IslandView: View {
                     ClockRow(status: clock)
                         .modifier(IdealWidth { model.contentWidth = $0 })
                         .frame(height: IslandGeometry.promptContentHeight)
+                } else if let notice = status.notice {
+                    NoticeRow(notice: notice)
+                        .modifier(IdealWidth { model.contentWidth = $0 })
+                        .frame(height: IslandGeometry.flashContentHeight)
                 } else if let toggle = status.toggle {
                     ToggleRow(toggle: toggle)
                         .modifier(IdealWidth { model.contentWidth = $0 })
@@ -663,6 +671,8 @@ struct IslandStatus: Equatable, Identifiable {
     var audioDevice: AudioDeviceHUD? = nil
     /// Drawn as something switched on or off (Caps Lock, a Focus).
     var toggle: ToggleHUD? = nil
+    /// Drawn as a notice: the network, a drive, a download.
+    var notice: NoticeHUD? = nil
 
     /// Green for done, orange for "nothing to do", white otherwise.
     var tint: Color {

@@ -343,6 +343,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
+        // Diagnostics: `--env CUE_DEBUG_RENDER=notices` draws the network, drive and download HUDs to Pictures/Cue/_render.png.
+        if ProcessInfo.processInfo.environment["CUE_DEBUG_RENDER"] == "notices" {
+            let samples = [
+                NoticeHUD(kind: .offline, title: "No internet", subtitle: "Check your Wi-Fi or cable"),
+                NoticeHUD(kind: .online, title: "Back online", subtitle: "Stackrover 5G"),
+                NoticeHUD(kind: .vpnOn, title: "VPN connected", subtitle: "Stackrover 5G"),
+                NoticeHUD(kind: .driveMounted, title: "Samsung T7", subtitle: "412 GB free of 1 TB", url: URL(fileURLWithPath: "/Volumes/Samsung T7"), used: 0.59),
+                NoticeHUD(kind: .driveEjected, title: "Samsung T7 ejected", subtitle: "Safe to unplug"),
+                NoticeHUD(kind: .downloaded, title: "Cue-0.10.4.dmg", subtitle: "18.2 MB · Click to show", url: URL(fileURLWithPath: "/System/Applications/Calculator.app")),
+            ]
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                let view = VStack(alignment: .leading, spacing: 10) {
+                    ForEach(Array(samples.enumerated()), id: \.offset) { _, notice in
+                        NoticeRow(notice: notice)
+                            .frame(height: 60)
+                            .background(.black, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    }
+                }
+                .padding(16)
+                .background(Color(red: 0.47, green: 0.55, blue: 0.67))
+                .environment(\.colorScheme, .dark)
+                let renderer = ImageRenderer(content: view)
+                renderer.scale = 2
+                if let cg = renderer.cgImage, let png = ImageEncoding.png(cg) {
+                    try? png.write(to: CaptureLibrary.defaultFolder().appendingPathComponent("_render.png"))
+                }
+            }
+        }
         // Diagnostics: `--env CUE_DEBUG_RENDER=critter` draws the pixel Cue's frames to Pictures/Cue/_render.png.
         if ProcessInfo.processInfo.environment["CUE_DEBUG_RENDER"] == "critter" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
@@ -390,6 +418,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 case "level": self?.island?.debugShowLevel()
                 case "caps", "focus", "capsoff", "focusoff":
                     self?.island?.showToggle(ToggleHUD(kind: tabName.hasPrefix("caps") ? .capsLock : .focus, on: !tabName.hasSuffix("off")))
+                case "offline": self?.island?.showNotice(NoticeHUD(kind: .offline, title: "No internet", subtitle: "Check your Wi-Fi or cable"))
+                case "drive":
+                    self?.island?.showNotice(NoticeHUD(kind: .driveMounted, title: "Samsung T7", subtitle: "412 GB free of 1 TB", url: URL(fileURLWithPath: "/Volumes/Samsung T7"), used: 0.59))
+                case "download":
+                    self?.island?.showNotice(NoticeHUD(kind: .downloaded, title: "Cue-0.10.4.dmg", subtitle: "18.2 MB · Click to show", url: URL(fileURLWithPath: "/System/Applications/Calculator.app")))
                 case "airpods":
                     self?.island?.showAudioDevice(AudioDeviceHUD(name: "AirPods Pro", connected: true, left: 82, right: 78, batteryCase: 15))
                 case "battery", "batterylow", "batteryout", "batterycharging":

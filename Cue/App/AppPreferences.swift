@@ -39,6 +39,9 @@ final class AppPreferences {
         static let islandAudioDevices = "island.audioDevices"
         static let islandCapsLock = "island.capsLock"
         static let islandFocus = "island.focus"
+        static let islandNetwork = "island.network"
+        static let islandDrives = "island.drives"
+        static let islandDownloads = "island.downloads"
         static let basketHideDelay = "basket.hideDelay"
         static let islandPreview = "island.preview"
         static let islandPreviewOnHover = "island.previewOnHover"
@@ -521,6 +524,21 @@ final class AppPreferences {
         didSet { defaults.set(islandShelfOpenAfterDrop, forKey: Key.islandShelfOpenAfterDrop) }
     }
 
+    /// The island shows the network dropping or changing, and a VPN connecting.
+    var islandNetwork: Bool {
+        didSet { defaults.set(islandNetwork, forKey: Key.islandNetwork) }
+    }
+
+    /// The island shows a drive or disk image mounting or ejecting.
+    var islandDrives: Bool {
+        didSet { defaults.set(islandDrives, forKey: Key.islandDrives) }
+    }
+
+    /// The island shows a download finishing in Downloads; clicking it reveals the file.
+    var islandDownloads: Bool {
+        didSet { defaults.set(islandDownloads, forKey: Key.islandDownloads) }
+    }
+
     /// The island shows Caps Lock turning on and off.
     var islandCapsLock: Bool {
         didSet { defaults.set(islandCapsLock, forKey: Key.islandCapsLock) }
@@ -766,6 +784,9 @@ final class AppPreferences {
         islandBattery = defaults.object(forKey: Key.islandBattery) as? Bool ?? true
         islandAudioDevices = defaults.object(forKey: Key.islandAudioDevices) as? Bool ?? true
         islandCapsLock = defaults.object(forKey: Key.islandCapsLock) as? Bool ?? true
+        islandNetwork = defaults.object(forKey: Key.islandNetwork) as? Bool ?? true
+        islandDrives = defaults.object(forKey: Key.islandDrives) as? Bool ?? true
+        islandDownloads = defaults.object(forKey: Key.islandDownloads) as? Bool ?? true
         islandFocus = defaults.object(forKey: Key.islandFocus) as? Bool ?? true
         basketHideDelay = defaults.object(forKey: Key.basketHideDelay) as? Double ?? 1.5
         islandPreview = IslandPreview(rawValue: defaults.string(forKey: Key.islandPreview) ?? "") ?? .inline
