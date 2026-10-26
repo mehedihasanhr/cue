@@ -563,7 +563,7 @@ struct AgentDoneRow: View {
 }
 
 /// Comes into focus: from a little blurred, faded and low to sharp and in place.
-private struct FocusIn: ViewModifier {
+struct FocusIn: ViewModifier {
     let shown: Bool
     let delay: Double
 

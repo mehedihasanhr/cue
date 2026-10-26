@@ -361,13 +361,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         // Diagnostics: `--env CUE_DEBUG_ISLAND_SHOT=captures` opens the island on that tab (`agents`:
         // the agent sessions; `drop`: as with a file dragged over it;
-        // `dropsaved`: then as just dropped) and
+        // `dropsaved`: then as just dropped; `status`: a sample "Copied") and
         // writes a picture of it to Pictures/Cue/_island.png.
         if let tabName = ProcessInfo.processInfo.environment["CUE_DEBUG_ISLAND_SHOT"] {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
                 if let tab = IslandTab(rawValue: tabName) { UserDefaults.standard.set(tab.rawValue, forKey: IslandTab.storageKey) }
                 switch tabName {
                 case "agents": self?.island?.showAgents()
+                case "status":
+                    _ = self?.island?.showStatus(IslandStatus(symbol: "checkmark.circle.fill", title: "Copied", subtitle: "Image 148 × 116",
+                                                              image: NSImage(named: "AppIcon"), duration: .seconds(6)))
                 case "drop": self?.island?.debugShowDropZone()
                 case "dropsaved":
                     self?.island?.debugShowDropZone()

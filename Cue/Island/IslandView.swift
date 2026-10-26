@@ -527,32 +527,15 @@ private struct FlashRow: View {
     let library: CaptureLibrary
 
     var body: some View {
-        HStack(spacing: 10) {
-            Group {
+        StatusLayout(title: "Copied to clipboard", subtitle: item.dimensions, badge: .success) {
+            StatusTile {
                 if let thumbnail = library.thumbnail(for: item) {
                     Image(nsImage: thumbnail).resizable().scaledToFill()
                 } else {
-                    Color.gray.opacity(0.3)
+                    Color.white.opacity(0.1)
                 }
             }
-            .frame(width: 48, height: 32)
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(.white.opacity(0.15)))
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Copied to clipboard")
-                    .font(.system(size: 12.5, weight: .semibold))
-                Text(item.dimensions)
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.secondary)
-            }
-            .lineLimit(1)
-            Spacer(minLength: 12)
-            Icon("checkmark.circle.fill", size: 21, weight: .semibold)
-                .foregroundStyle(.green)
         }
-        .foregroundStyle(.white)
-        .padding(.horizontal, 16)
     }
 }
 
@@ -580,39 +563,164 @@ struct IslandStatus: Equatable, Identifiable {
     }
 }
 
-/// The status as a row: its image or swatch, title, subtitle, and the symbol.
+/// The status as a row: its image or swatch (or its symbol, on a soft disc), title,
+/// subtitle, and a badge saying how it went.
 private struct StatusRow: View {
     let status: IslandStatus
 
+    private var badge: StatusBadge {
+        switch status.tint {
+        case .green: .success
+        case .orange: .warning
+        default: .none
+        }
+    }
+
     var body: some View {
-        HStack(spacing: 10) {
-            if let swatch = status.swatch {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(swatch.swiftUIColor)
-                    .frame(width: 32, height: 32)
-                    .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(.white.opacity(0.2)))
-            } else if let image = status.image {
-                Image(nsImage: image).resizable().scaledToFill()
-                    .frame(width: 48, height: 32)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(.white.opacity(0.15)))
-            }
-            VStack(alignment: .leading, spacing: 1) {
-                Text(status.title)
-                    .font(.system(size: 12.5, weight: .semibold))
-                if let subtitle = status.subtitle, !subtitle.isEmpty {
+        StatusLayout(title: status.title, subtitle: status.subtitle, badge: badge, duration: status.duration) {
+            leading
+        }
+    }
+
+    @ViewBuilder
+    private var leading: some View {
+        if let swatch = status.swatch {
+            StatusTile { swatch.swiftUIColor }
+        } else if let image = status.image {
+            StatusTile { Image(nsImage: image).resizable().scaledToFill() }
+        } else {
+            Icon(status.symbol, size: 16, weight: .semibold)
+                .foregroundStyle(status.tint)
+                .frame(width: statusTileSide, height: statusTileSide)
+                .background(status.tint.opacity(0.16), in: Circle())
+                .overlay(Circle().strokeBorder(status.tint.opacity(0.25), lineWidth: 1))
+        }
+    }
+}
+
+/// A status's picture, or its symbol's disc: 34 pt, 7 in from the island's edge.
+private let statusTileSide: CGFloat = 34
+
+/// How a status went, as the badge on its right.
+private enum StatusBadge { case success, warning, none }
+
+/// The picture a status is about, on corners nested in the island's (its 18 less
+/// the 7 between them).
+private struct StatusTile<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        content()
+            .frame(width: statusTileSide, height: statusTileSide)
+            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(.white.opacity(0.14), lineWidth: 1))
+    }
+}
+
+/// Every status alike: what it's about on the left, the words focusing in one after
+/// the other, a badge popping in on the right (a tick that draws itself, for one
+/// that went well), and a hairline along the foot running down the time it stays.
+private struct StatusLayout<Leading: View>: View {
+    let title: String
+    var subtitle: String?
+    var badge: StatusBadge = .none
+    /// How long it shows: the hairline runs out with it.
+    var duration: Duration?
+    @ViewBuilder let leading: () -> Leading
+
+    @State private var shown = false
+    @State private var remaining: CGFloat = 1
+
+    private static var green: Color { Color(red: 0.36, green: 0.86, blue: 0.56) }
+    private static var orange: Color { Color(red: 1.0, green: 0.71, blue: 0.3) }
+
+    var body: some View {
+        HStack(spacing: 11) {
+            leading()
+                .scaleEffect(shown ? 1 : 0.85)
+                .opacity(shown ? 1 : 0)
+                .animation(.spring(response: 0.4, dampingFraction: 0.7), value: shown)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .modifier(FocusIn(shown: shown, delay: 0.06))
+                if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 11))
+                        .monospacedDigit()
+                        .foregroundStyle(.white.opacity(0.55))
+                        .modifier(FocusIn(shown: shown, delay: 0.13))
                 }
             }
             .lineLimit(1)
-            Spacer(minLength: 12)
-            Icon(status.symbol, size: 21, weight: .semibold)
-                .foregroundStyle(status.tint)
+            Spacer(minLength: 14)
+            badgeView
         }
-        .foregroundStyle(.white)
         .padding(.horizontal, 16)
+        // A touch above centre, leaving the foot to the hairline.
+        .padding(.bottom, duration == nil ? 0 : 4)
+        .frame(maxHeight: .infinity)
+        .overlay(alignment: .bottom) {
+            if duration != nil {
+                GeometryReader { proxy in
+                    Capsule()
+                        .fill(.white.opacity(0.18))
+                        .frame(width: proxy.size.width * remaining, height: 1.5)
+                        .frame(maxWidth: .infinity)
+                }
+                .frame(height: 1.5)
+                // Clear of the island's rounded corners.
+                .padding(.horizontal, 24)
+                .padding(.bottom, 2)
+            }
+        }
+        .onAppear {
+            shown = true
+            if let duration, !IslandView.reduceMotion {
+                let seconds = Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
+                withAnimation(.linear(duration: seconds)) { remaining = 0 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var badgeView: some View {
+        switch badge {
+        case .success:
+            ZStack {
+                Circle().fill(Self.green.opacity(0.18))
+                Circle().strokeBorder(Self.green.opacity(0.45), lineWidth: 1.2)
+                TickShape()
+                    .trim(from: 0, to: shown ? 1 : 0)
+                    .stroke(Self.green, style: SwiftUI.StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                    .animation(.easeOut(duration: 0.35).delay(0.18), value: shown)
+            }
+            .frame(width: 24, height: 24)
+            .scaleEffect(shown ? 1 : 0.4)
+            .animation(.spring(response: 0.38, dampingFraction: 0.6).delay(0.08), value: shown)
+        case .warning:
+            Icon("exclamationmark", size: 13, weight: .bold)
+                .foregroundStyle(Self.orange)
+                .frame(width: 24, height: 24)
+                .background(Self.orange.opacity(0.18), in: Circle())
+                .overlay(Circle().strokeBorder(Self.orange.opacity(0.45), lineWidth: 1.2))
+                .scaleEffect(shown ? 1 : 0.4)
+                .animation(.spring(response: 0.38, dampingFraction: 0.6).delay(0.08), value: shown)
+        case .none:
+            EmptyView()
+        }
+    }
+}
+
+/// A tick, drawn as one stroke so it can draw itself.
+private nonisolated struct TickShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX + rect.width * 0.3, y: rect.minY + rect.height * 0.52))
+        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.44, y: rect.minY + rect.height * 0.66))
+        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.71, y: rect.minY + rect.height * 0.37))
+        return path
     }
 }
 
