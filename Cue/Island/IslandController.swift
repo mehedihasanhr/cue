@@ -333,6 +333,12 @@ final class IslandController {
     func debugMakeKey() { window.makeKey() }
     /// For diagnostics: the island as while a file is dragged over it.
     func debugShowDropZone() { dragEntered() }
+    /// For diagnostics: the drop zone saying one file was saved, held until the next drag.
+    func debugShowDropSaved() {
+        dragEntered()
+        model.dropSaved = 1
+        model.dropping = false
+    }
     /// For diagnostics: the open shape, in screen coordinates.
     var debugExpandedRect: CGRect { model.shapeRect(for: .expanded) }
 
@@ -755,21 +761,33 @@ final class IslandController {
     private func dragEntered() {
         // A card of the island's own, on its way to a group chip — not a file arriving.
         guard IslandDrag.current == nil else { return }
+        dropSavedTask?.cancel()
+        model.dropSaved = nil
         UserDefaults.standard.set(IslandTab.assets.rawValue, forKey: IslandTab.storageKey)
         expand()
         model.dropping = true
     }
 
     private func drop(urls: [URL], image: Data?, into assets: AssetStore) {
-        model.dropping = false
         var added = assets.add(fileURLs: urls)
         if let image, let item = assets.add(imageData: image) { added.append(item) }
         if added.isEmpty {
+            model.dropping = false
             FeedbackHUD.show("Nothing to save", symbol: "tray")
-        } else {
-            FeedbackHUD.show(added.count == 1 ? "Saved to Assets" : "\(added.count) saved to Assets", symbol: "tray.and.arrow.down.fill", duration: .seconds(1.2))
+            return
+        }
+        // The drop zone turns to "saved" before the drag's end clears it, so it stays
+        // up to say so, then gives way to the panel (on Assets, where the files went).
+        model.dropSaved = added.count
+        model.dropping = false
+        dropSavedTask?.cancel()
+        dropSavedTask = Task { [weak self] in
+            try? await Task.sleep(for: IslandDropZone.savedDuration)
+            guard !Task.isCancelled else { return }
+            self?.model.dropSaved = nil
         }
     }
+    private var dropSavedTask: Task<Void, Never>?
 
     // MARK: - Pointer
 

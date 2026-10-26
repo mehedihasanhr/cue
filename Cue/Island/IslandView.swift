@@ -100,7 +100,7 @@ final class IslandModel {
     /// The drawn shape in `phase`: the fixed rect, or the content-fitted one.
     func shapeRect(for phase: Phase) -> CGRect {
         guard let geometry else { return .zero }
-        if phase == .expanded, dropping { return geometry.dropZone(contentSize: IslandDropZone.size) }
+        if phase == .expanded, showsDropZone { return geometry.dropZone(contentSize: IslandDropZone.size) }
         let width: CGFloat? = switch phase {
         case .expanded: panelWidth
         case .clock: clockWidth
@@ -117,6 +117,10 @@ final class IslandModel {
     }
     /// A drag with files or an image is over the island.
     var dropping = false
+    /// Files were just dropped and saved (how many): the drop zone says so a moment.
+    var dropSaved: Int?
+    /// The drop zone is showing, waiting for the drop or saying it was saved.
+    var showsDropZone: Bool { dropping || dropSaved != nil }
     /// Asks the compact box for a line of text; called by the panel.
     var onPrompt: (IslandPrompt) -> Void = { _ in }
     /// The prompt's answer (nil: cancelled); set by the controller.
@@ -328,7 +332,7 @@ struct IslandView: View {
             .animation(Self.openAnimation, value: model.contentWidth)
             .animation(Self.openAnimation, value: model.panelWidth)
             .animation(Self.openAnimation, value: model.panelHeight)
-            .animation(Self.openAnimation, value: model.dropping)
+            .animation(Self.openAnimation, value: model.showsDropZone)
             .animation(Self.openAnimation, value: model.clockHeight)
             .animation(Self.openAnimation, value: model.clockWidth)
             .animation(Self.listAnimation, value: model.agentsHeight)
@@ -458,10 +462,11 @@ struct IslandView: View {
                     .padding(.bottom, IslandGeometry.panelBottomPadding)
                     // Files dragged over: the panel steps aside (kept, so its search and
                     // tab are as they were after) for the drop zone.
-                    .opacity(model.dropping ? 0 : 1)
+                    .opacity(model.showsDropZone ? 0 : 1)
                     .overlay(alignment: .top) {
-                        if model.dropping {
-                            IslandDropZone().transition(.opacity.animation(Self.contentAnimation))
+                        if model.showsDropZone {
+                            IslandDropZone(saved: model.dropSaved)
+                                .transition(.scale(scale: 0.92, anchor: .top).combined(with: .opacity).animation(Self.contentAnimation))
                         }
                     }
             }
