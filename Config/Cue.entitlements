@@ -16,6 +16,12 @@
 	<true/>
 	<key>com.apple.security.device.audio-input</key>
 	<true/>
+	<key>com.apple.security.device.bluetooth</key>
+	<true/>
+	<key>com.apple.security.files.downloads.read-only</key>
+	<true/>
+	<key>com.apple.security.personal-information.calendars</key>
+	<true/>
 	<key>com.apple.security.personal-information.location</key>
 	<true/>
 	<key>com.apple.security.network.client</key>
@@ -27,15 +33,30 @@
 	     Team ID does not match the app's. Can go once Cue is signed with a Developer ID. -->
 	<key>com.apple.security.cs.disable-library-validation</key>
 	<true/>
-	<!-- Sparkle's installer launcher and its status channel, for updating a sandboxed app. -->
+	<!-- Sparkle's installer launcher and its status channel, for updating a sandboxed app;
+	     and backlightd, for the display's brightness (the brightness keys' HUD). -->
 	<key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
 	<array>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER)-spks</string>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER)-spki</string>
+		<string>com.apple.backlightd</string>
+	</array>
+	<!-- The accessibility server each app runs (looked up per process), for reading other
+	     apps once Cue is trusted: notification banners, the focused field, windows. -->
+	<key>com.apple.security.temporary-exception.mach-lookup.local-name</key>
+	<array>
+		<string>com.apple.axserver</string>
 	</array>
 	<key>com.apple.security.temporary-exception.apple-events</key>
 	<array>
 		<string>com.apple.Notes</string>
+		<string>com.apple.Music</string>
+		<string>com.spotify.client</string>
+		<string>com.apple.Safari</string>
+		<string>com.google.Chrome</string>
+		<string>company.thebrowser.Browser</string>
+		<string>com.brave.Browser</string>
+		<string>com.microsoft.edgemac</string>
 	</array>
 </dict>
 </plist>

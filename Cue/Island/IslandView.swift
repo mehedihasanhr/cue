@@ -16,6 +16,12 @@ final class IslandModel {
         case taskDetail(UUID)
         /// The clock opened in the compact island: time, dates, prayer times.
         case clock
+        /// The music player: what Music or Spotify plays, and its controls.
+        case media
+        /// The weather: now, and the next hours.
+        case weather
+        /// The camera as a mirror.
+        case mirror
         /// The running agent sessions, and what they are asking.
         case agents
         case expanded
@@ -26,7 +32,7 @@ final class IslandModel {
             case .flash: .flash
             case .status(let status): status.clock == nil ? .flash : .prompt
             case .prompt(let prompt): prompt.isForm ? .form : .prompt
-            case .taskDetail, .clock, .agents: .form
+            case .taskDetail, .clock, .media, .weather, .mirror, .agents: .form
             case .expanded: .expanded
             }
         }
@@ -34,7 +40,7 @@ final class IslandModel {
         var isFlash: Bool {
             switch self {
             case .flash, .status: true
-            case .collapsed, .expanded, .prompt, .taskDetail, .clock, .agents: false
+            case .collapsed, .expanded, .prompt, .taskDetail, .clock, .media, .weather, .mirror, .agents: false
             }
         }
 
@@ -44,7 +50,7 @@ final class IslandModel {
             switch self {
             case .flash, .status: true
             case .prompt(let prompt): prompt.isConfirm
-            case .collapsed, .expanded, .taskDetail, .clock, .agents: false
+            case .collapsed, .expanded, .taskDetail, .clock, .media, .weather, .mirror, .agents: false
             }
         }
     }
@@ -59,6 +65,30 @@ final class IslandModel {
     var clockWidth: CGFloat?
     /// Coding-agent sessions; nil until the app delegate hands them over.
     var agents: AgentStore?
+    /// What plays; set by the controller.
+    var nowPlaying: NowPlaying?
+    /// A focus session, for its tile; set by the controller.
+    var focus: FocusTimer?
+    /// The calendar, for its tile; set by the controller.
+    var calendar: CalendarWatcher?
+    /// The weather, for its tile and view; set by the controller.
+    var weather: WeatherStore?
+    /// Opens the forecast; set by the controller.
+    var onShowWeather: () -> Void = {}
+    /// Opens the camera mirror; set by the controller.
+    var onShowMirror: () -> Void = {}
+    /// Pops the player out into the mini player; set by the controller.
+    var onDetachPlayer: () -> Void = {}
+    /// Opens a link (a meeting's call) and closes; set by the controller.
+    var onOpenURL: (URL) -> Void = { _ in }
+    /// The tiles beside the closed notch, as the settings and what plays have them;
+    /// set by the controller.
+    var compactTiles: () -> CompactTiles = { CompactTiles() }
+    var nowPlayingEnabled: () -> Bool = { false }
+    /// Something plays and nobody is asking: the sessions list has the player beside it.
+    var showsPlayerBesideAgents: Bool {
+        nowPlayingEnabled() && nowPlaying?.track != nil && agents?.requests.isEmpty != false
+    }
     /// The sessions list's height, reported by the view.
     var agentsHeight: CGFloat?
     /// Closed, but agents are at work: the notch shows them.
@@ -100,15 +130,23 @@ final class IslandModel {
     /// The drawn shape in `phase`: the fixed rect, or the content-fitted one.
     func shapeRect(for phase: Phase) -> CGRect {
         guard let geometry else { return .zero }
+        if phase == .collapsed, !compactTiles().isEmpty { return geometry.collapsed.insetBy(dx: -CompactTiles.sideWidth, dy: 0) }
+        if phase == .expanded, showsDropZone { return geometry.dropZone(contentSize: IslandDropZone.size) }
         let width: CGFloat? = switch phase {
         case .expanded: panelWidth
         case .clock: clockWidth
-        case .agents: IslandGeometry.agentsWidth
+        case .media: NowPlayingDetail.width
+        case .weather: WeatherDetail.width
+        case .mirror: MirrorView.width
+        case .agents: IslandGeometry.agentsWidth + (showsPlayerBesideAgents ? NowPlayingDetail.columnWidth : 0)
         default: phase.fitsContent ? contentWidth : nil
         }
         let height: CGFloat? = switch phase {
         case .clock: clockHeight
-        case .agents: agentsHeight ?? estimatedAgentsHeight
+        case .media: NowPlayingDetail.height
+        case .weather: WeatherDetail.height
+        case .mirror: MirrorView.height
+        case .agents: max(agentsHeight ?? estimatedAgentsHeight, showsPlayerBesideAgents ? NowPlayingDetail.columnHeight : 0)
         case .expanded: panelHeight
         default: nil
         }
@@ -116,6 +154,12 @@ final class IslandModel {
     }
     /// A drag with files or an image is over the island.
     var dropping = false
+    /// Which of the drop zone's cards the pointer is over.
+    var dropTarget: IslandDropZone.Target = .shelf
+    /// Files were just dropped (how many, and where): the drop zone says so a moment.
+    var dropSaved: IslandDropZone.Saved?
+    /// The drop zone is showing, waiting for the drop or saying it was saved.
+    var showsDropZone: Bool { dropping || dropSaved != nil }
     /// Asks the compact box for a line of text; called by the panel.
     var onPrompt: (IslandPrompt) -> Void = { _ in }
     /// The prompt's answer (nil: cancelled); set by the controller.
@@ -124,6 +168,8 @@ final class IslandModel {
     var onShowTask: (TaskItem) -> Void = { _ in }
     /// Opens the task dashboard window; called by the panel, set by the controller.
     var onOpenTaskDashboard: () -> Void = {}
+    /// Opens Settings; called by the panel, set by the controller.
+    var onOpenSettings: () -> Void = {}
     /// Leaves the task detail (back to the open panel); set by the controller.
     var onTaskDetailClosed: (TaskItem?) -> Void = { _ in }
     /// A click on the closed shape opens it.
@@ -149,8 +195,127 @@ final class IslandModel {
     var arrowPress: (delta: Int, tick: Int) = (0, 0)
     /// Leaves the clock; set by the controller.
     var onClockClosed: () -> Void = {}
+    /// Shows a file in Finder (a download's notice clicked) and closes; set by the controller.
+    var onReveal: (URL) -> Void = { _ in }
+    /// Opens a notification shown in the island and closes; set by the controller.
+    var onOpenBanner: (BannerNotification) -> Void = { _ in }
+    /// The status showing is being used (a level dragged): it stays a while longer.
+    var onHoldStatus: () -> Void = {}
+    /// Opens the music player; set by the controller.
+    var onShowMedia: () -> Void = {}
+    /// Leaves the music player; set by the controller.
+    var onMediaClosed: () -> Void = {}
     /// Settings › Time, from the clock; set by the controller.
     var onOpenTimeSettings: () -> Void = {}
+}
+
+/// The island's fill. Open panels in Liquid Glass, after the look it was asked for:
+/// solid black at the top, where it meets the notch and where the content starts,
+/// fading down into glass, so the desktop shows through the lower part of the panel.
+/// Not glass all over, and no rim. Everything else (and every panel with the glass
+/// off, or before macOS 26) is solid black.
+///
+/// One view for both looks, crossfading, rather than swapping a black fill for the
+/// glass: swapped, both stayed on screen mid-change, the glass at its old size inside
+/// the black at the new one, a second island inside the first.
+private struct IslandFill: View {
+    let shape: NotchShape
+    /// Glass is on in Settings: the glass layer exists.
+    let glassAllowed: Bool
+    /// This panel shows the glass now.
+    let glass: Bool
+    /// Nothing drawn: the settled closed island beside the notch.
+    let clear: Bool
+    /// Settings › Island › Glass: clear or frosted, how dark, a tint.
+    var style: AppPreferences.GlassStyle = .clear
+    var darkness: Double = 0.45
+    var tint: Color?
+    /// No notch to meet (a plain display, with lighter glass on): no black band at the top.
+    var light = false
+
+    /// Where the black starts giving way to glass.
+    private var fadeFrom: Double { light ? 0.12 : 0.45 }
+
+    @available(macOS 26, *)
+    private var glassKind: Glass {
+        let base: Glass = style == .frosted ? .regular : .clear
+        return tint.map { base.tint($0.opacity(0.25)) } ?? base
+    }
+
+    var body: some View {
+        ZStack {
+            if #available(macOS 26, *), glassAllowed {
+                shape.fill(.clear)
+                    .glassEffect(glassKind, in: shape)
+                    .opacity(glass ? 1 : 0)
+                LinearGradient(stops: [
+                    .init(color: .black.opacity(light ? max(darkness, 0.55) : 1), location: 0),
+                    .init(color: .black.opacity(light ? max(darkness, 0.4) : 1), location: fadeFrom),
+                    .init(color: .black.opacity(darkness), location: 1),
+                ], startPoint: .top, endPoint: .bottom)
+                // The tint, faint over the dark and stronger down where the glass shows.
+                if let tint {
+                    LinearGradient(colors: [tint.opacity(0.08), tint.opacity(0.28)], startPoint: .top, endPoint: .bottom)
+                        .blendMode(.plusLighter)
+                        .opacity(glass ? 1 : 0)
+                }
+            }
+            Color.black.opacity(glass && glassAllowed ? 0 : 1)
+        }
+        .clipShape(shape)
+        .opacity(clear ? 0 : 1)
+    }
+}
+
+/// New content arriving in the island: faded, a little small and soft until shown.
+private struct ContentArrival: ViewModifier {
+    let shown: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .scaleEffect(shown ? 1 : 0.94, anchor: .top)
+            .blur(radius: shown ? 0 : 4)
+    }
+}
+
+/// A shade around the open island, darkest below it and fading out at its edges,
+/// so the panel stands off a busy desktop. Drawn only outside the shape: under the
+/// glass it would darken what the glass shows.
+private struct IslandHalo: View {
+    let shape: NotchShape
+
+    private static let blur: CGFloat = 18
+    private static let room: CGFloat = 60
+
+    var body: some View {
+        shape
+            .fill(LinearGradient(colors: [.clear, .black.opacity(0.22), .black.opacity(0.4)], startPoint: .top, endPoint: .bottom))
+            .offset(y: 6)
+            .blur(radius: Self.blur)
+            .mask {
+                Rectangle()
+                    .padding(-Self.room)
+                    .overlay { shape.padding(Self.room).blendMode(.destinationOut) }
+                    .compositingGroup()
+            }
+            .allowsHitTesting(false)
+    }
+}
+
+extension AppPreferences.GlassTint {
+    /// The colour washed over the island's glass.
+    var color: Color? {
+        switch self {
+        case .none: nil
+        case .blue: Color(red: 0.2, green: 0.5, blue: 1.0)
+        case .purple: Color(red: 0.55, green: 0.35, blue: 1.0)
+        case .pink: Color(red: 1.0, green: 0.35, blue: 0.65)
+        case .orange: Color(red: 1.0, green: 0.55, blue: 0.2)
+        case .green: Color(red: 0.25, green: 0.8, blue: 0.5)
+        case .graphite: Color(white: 0.55)
+        }
+    }
 }
 
 /// The island silhouette: top corners flare outward into the bezel (a small flare
@@ -211,26 +376,40 @@ struct IslandView: View {
     @Environment(PrayerClock.self) private var clock: PrayerClock?
     @Environment(AppPreferences.self) private var preferences
     @Environment(NoteStore.self) private var notes
+    @Environment(NowPlaying.self) private var nowPlaying
 
     /// Opening overshoots a touch; closing settles without a bounce. With Reduce
-    /// Motion on, everything is a short ease instead.
+    /// Motion on, everything is a short ease instead. The springs quicken on faster
+    /// displays (`IslandMotion`): the times here are those at 60 Hz.
     /// Settings › Island › Animation; the view sets it from the preferences it reads.
     nonisolated(unsafe) static var animationStyle: AppPreferences.IslandAnimation = .lively
     static var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion || animationStyle != .lively }
-    static var openAnimation: Animation { animationStyle == .none ? .linear(duration: 0) : reduceMotion ? .easeOut(duration: 0.18) : .spring(response: 0.36, dampingFraction: 0.82, blendDuration: 0) }
-    static var closeAnimation: Animation { animationStyle == .none ? .linear(duration: 0) : reduceMotion ? .easeOut(duration: 0.18) : .spring(response: 0.45, dampingFraction: 1.0, blendDuration: 0) }
+    static var openAnimation: Animation { animationStyle == .none ? .linear(duration: 0) : reduceMotion ? .easeOut(duration: 0.18) : .spring(response: IslandMotion.response(0.36), dampingFraction: 0.82, blendDuration: 0) }
+    static var closeAnimation: Animation { animationStyle == .none ? .linear(duration: 0) : reduceMotion ? .easeOut(duration: 0.18) : .spring(response: IslandMotion.response(0.45), dampingFraction: 1.0, blendDuration: 0) }
     /// The agents list: rows moving, cards opening, and the island's height
     /// following them, all on one critically damped spring so they move together.
-    static var listAnimation: Animation { animationStyle == .none ? .linear(duration: 0) : reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.42, dampingFraction: 1.0) }
-    static var contentAnimation: Animation { animationStyle == .none ? .linear(duration: 0) : reduceMotion ? .easeOut(duration: 0.15) : .smooth(duration: 0.28) }
+    static var listAnimation: Animation { animationStyle == .none ? .linear(duration: 0) : reduceMotion ? .easeOut(duration: 0.2) : .spring(response: IslandMotion.response(0.42), dampingFraction: 1.0) }
+    static var contentAnimation: Animation { animationStyle == .none ? .linear(duration: 0) : reduceMotion ? .easeOut(duration: 0.15) : .smooth(duration: IslandMotion.response(0.28)) }
 
     /// Collapsed and settled: the shape is drawn clear so nothing shows beside the
     /// notch. Closing shrinks into the notch first (black all the way), then fades.
     @State private var faded = true
 
+    /// Diagnostics: `--env CUE_DEBUG_GLASS=frosted,purple,0.3` shows that glass, whatever the settings say.
+    private static let debugGlass: (style: AppPreferences.GlassStyle, tint: AppPreferences.GlassTint, darkness: Double)? = {
+        #if DEBUG
+        guard let parts = ProcessInfo.processInfo.environment["CUE_DEBUG_GLASS"]?.split(separator: ","), parts.count == 3,
+              let style = AppPreferences.GlassStyle(rawValue: String(parts[0])), let tint = AppPreferences.GlassTint(rawValue: String(parts[1])),
+              let darkness = Double(parts[2]) else { return nil }
+        return (style, tint, darkness)
+        #else
+        return nil
+        #endif
+    }()
+
     var body: some View {
         let phase = model.phase
-        let _ = { Self.animationStyle = preferences.islandAnimation }()
+        let _ = { Self.animationStyle = preferences.islandAnimation; IslandMotion.speed = preferences.islandAnimationSpeed }()
         if let geometry = model.geometry {
             let asking = model.agents?.requests.isEmpty == false
             let size = model.shapeRect(for: phase).size
@@ -240,7 +419,13 @@ struct IslandView: View {
             ZStack(alignment: .top) {
                 // Invisible once collapsed (nothing peeks out beside the notch, nor sits
                 // on a plain menu bar); the tap target stays.
-                shape.fill(faded && !preferences.islandNotchBackground ? Color.clear : Color.black)
+                IslandFill(shape: shape, glassAllowed: preferences.islandGlass,
+                           glass: preferences.islandGlass && Self.hasBackdrop(phase),
+                           clear: faded && !preferences.islandNotchBackground && model.compactTiles().isEmpty,
+                           style: Self.debugGlass?.style ?? preferences.islandGlassStyle,
+                           darkness: Self.debugGlass?.darkness ?? preferences.islandGlassDarkness,
+                           tint: (Self.debugGlass?.tint ?? preferences.islandGlassTint).color,
+                           light: preferences.islandGlassLightNotchless && !geometry.screen.hasNotch)
                 content(for: phase, strip: geometry.stripHeight)
                     .compositingGroup()
                     .padding(.horizontal, flare) // the body; the flares lie outside it
@@ -254,10 +439,18 @@ struct IslandView: View {
             // only faded, so it shrinks with the shape as the island closes rather than
             // being left behind at the open size while it fades.
             .overlay {
+                // None on glass: the glass has an edge of its own, and a line drawn over it
+                // reads as a border.
+                let glass = preferences.islandGlass && Self.hasBackdrop(phase)
                 shape.stroke(LinearGradient(colors: [.clear, .white.opacity(0.05), .white.opacity(0.16)], startPoint: .top, endPoint: .bottom),
                              lineWidth: 1)
-                    .opacity(Self.hasBackdrop(phase) ? 1 : 0)
+                    .opacity(Self.hasBackdrop(phase) && !glass ? 1 : 0)
                     .allowsHitTesting(false)
+            }
+            // A soft shade around every open panel, lifting it off whatever is behind.
+            .background {
+                IslandHalo(shape: shape)
+                    .opacity(Self.hasBackdrop(phase) && Self.animationStyle != .none ? 1 : 0)
             }
             // While agents run, a thin line of light under the closed notch; the
             // notch itself stays plain black.
@@ -274,22 +467,41 @@ struct IslandView: View {
                     model.onTap()
                 } else if case .status(let status) = phase, status.clock != nil {
                     model.onShowClock()
+                } else if case .status(let status) = phase, let notice = status.notice, notice.isClickable, let url = notice.url {
+                    model.onReveal(url)
+                } else if case .status(let status) = phase, let banner = status.banner {
+                    model.onOpenBanner(banner)
                 }
             }
             .animation(collapsed ? Self.closeAnimation : Self.openAnimation, value: phase)
             .animation(Self.openAnimation, value: model.contentWidth)
             .animation(Self.openAnimation, value: model.panelWidth)
             .animation(Self.openAnimation, value: model.panelHeight)
+            .animation(Self.openAnimation, value: model.showsDropZone)
             .animation(Self.openAnimation, value: model.clockHeight)
             .animation(Self.openAnimation, value: model.clockWidth)
             .animation(Self.listAnimation, value: model.agentsHeight)
+            .animation(Self.listAnimation, value: model.showsPlayerBesideAgents)
+            .animation(Self.openAnimation, value: model.compactTiles())
             .task(id: phase) {
                 guard collapsed else { faded = false; return } // black at once, then grows
-                try? await Task.sleep(for: .milliseconds(460)) // the close animation
+                try? await Task.sleep(for: .seconds(IslandMotion.response(0.46))) // the close animation
                 guard !Task.isCancelled else { return }
                 withAnimation(.easeOut(duration: 0.3)) { faded = true }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            // While files are dragged over, the drop zone is smaller than the island's
+            // span, where the drag is held under the menu bar. A drag beside it must still
+            // land on the island (a fully clear pixel lets it through to whatever is
+            // behind, and the island would close and reopen under it): a band across the
+            // window's width, too faint to see, keeps it.
+            .background(alignment: .top) {
+                if model.dropping {
+                    Color.black.opacity(0.01)
+                        .frame(height: geometry.stripHeight + IslandDropZone.size.height + 24)
+                        .allowsHitTesting(false)
+                }
+            }
             .environment(\.colorScheme, .dark)
         }
     }
@@ -298,7 +510,17 @@ struct IslandView: View {
     private func content(for phase: IslandModel.Phase, strip: CGFloat) -> some View {
         switch phase {
         case .collapsed:
-            if model.showsAmbient, let agents = model.agents, let geometry = model.geometry, !geometry.screen.hasNotch {
+            let tiles = model.compactTiles()
+            if !tiles.isEmpty, let geometry = model.geometry {
+                // A tile either side of the notch, the notch itself left clear.
+                HStack(spacing: 0) {
+                    CompactTileView(tile: tiles.left, height: strip, nowPlaying: model.nowPlaying, focus: model.focus, calendar: model.calendar, weather: model.weather)
+                    Color.clear.frame(width: geometry.collapsed.width)
+                    CompactTileView(tile: tiles.right, height: strip, nowPlaying: model.nowPlaying, focus: model.focus, calendar: model.calendar, weather: model.weather)
+                }
+                .frame(height: strip)
+                .transition(.opacity.animation(Self.contentAnimation))
+            } else if model.showsAmbient, let agents = model.agents, let geometry = model.geometry, !geometry.screen.hasNotch {
                 AgentAmbientRow(store: agents, notchWidth: max(0, geometry.collapsed.width - 64))
                     .frame(height: strip)
                     .transition(.opacity.animation(Self.contentAnimation))
@@ -318,6 +540,34 @@ struct IslandView: View {
                     ClockRow(status: clock)
                         .modifier(IdealWidth { model.contentWidth = $0 })
                         .frame(height: IslandGeometry.promptContentHeight)
+                } else if let meeting = status.meeting {
+                    MeetingRow(meeting: meeting, onJoin: { model.onOpenURL($0) })
+                        .modifier(IdealWidth { model.contentWidth = $0 })
+                        .frame(height: IslandGeometry.flashContentHeight)
+                } else if let banner = status.banner {
+                    BannerRow(banner: banner)
+                        .modifier(IdealWidth { model.contentWidth = $0 })
+                        .frame(height: IslandGeometry.flashContentHeight)
+                } else if let notice = status.notice {
+                    NoticeRow(notice: notice)
+                        .modifier(IdealWidth { model.contentWidth = $0 })
+                        .frame(height: IslandGeometry.flashContentHeight)
+                } else if let toggle = status.toggle {
+                    ToggleRow(toggle: toggle)
+                        .modifier(IdealWidth { model.contentWidth = $0 })
+                        .frame(height: IslandGeometry.flashContentHeight)
+                } else if let device = status.audioDevice {
+                    AudioDeviceRow(device: device)
+                        .modifier(IdealWidth { model.contentWidth = $0 })
+                        .frame(height: IslandGeometry.flashContentHeight)
+                } else if let battery = status.battery {
+                    BatteryRow(battery: battery)
+                        .modifier(IdealWidth { model.contentWidth = $0 })
+                        .frame(height: IslandGeometry.flashContentHeight)
+                } else if let level = status.level {
+                    LevelRow(level: level, onDrag: { model.onHoldStatus() })
+                        .modifier(IdealWidth { model.contentWidth = $0 })
+                        .frame(height: IslandGeometry.flashContentHeight)
                 } else if let done = status.agentDone {
                     AgentDoneRow(done: done)
                         .modifier(IdealWidth { model.contentWidth = $0 })
@@ -363,14 +613,40 @@ struct IslandView: View {
                     .frame(width: model.shapeRect(for: .clock).width, height: model.clockHeight ?? IslandGeometry.formContentHeight)
             }
             .transition(Self.contentTransition)
+        case .mirror:
+            VStack(spacing: 0) {
+                Color.clear.frame(height: strip)
+                MirrorView(close: { model.onMediaClosed() })
+            }
+            .transition(Self.contentTransition)
+        case .weather:
+            VStack(spacing: 0) {
+                Color.clear.frame(height: strip)
+                if let weather = model.weather { WeatherDetail(weather: weather) }
+            }
+            .transition(Self.contentTransition)
+        case .media:
+            VStack(spacing: 0) {
+                Color.clear.frame(height: strip)
+                NowPlayingDetail(nowPlaying: nowPlaying, close: { model.onMediaClosed() }, detach: { model.onDetachPlayer() })
+            }
+            .transition(Self.contentTransition)
         case .agents:
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
                 if let agents = model.agents {
-                    AgentsView(store: agents, openPanel: { model.onOpenPanel() }, close: { model.onAgentsClosed() },
-                               reportHeight: { model.agentsHeight = $0 },
-                               maxHeight: model.geometry.map { $0.expanded.height - $0.stripHeight } ?? IslandPanel.size.height)
-                        .frame(width: IslandGeometry.agentsWidth, height: model.agentsHeight ?? model.estimatedAgentsHeight, alignment: .top)
+                    // Music playing: the player in a column on the left, the sessions beside it.
+                    HStack(alignment: .top, spacing: 0) {
+                        if model.showsPlayerBesideAgents {
+                            NowPlayingDetail(nowPlaying: nowPlaying, column: true)
+                                .transition(.opacity.combined(with: .move(edge: .leading)))
+                        }
+                        AgentsView(store: agents, openPanel: { model.onOpenPanel() }, close: { model.onAgentsClosed() },
+                                   reportHeight: { model.agentsHeight = $0 },
+                                   maxHeight: model.geometry.map { $0.expanded.height - $0.stripHeight } ?? IslandPanel.size.height)
+                            .frame(width: IslandGeometry.agentsWidth, height: model.agentsHeight ?? model.estimatedAgentsHeight, alignment: .top)
+                    }
+                    .animation(Self.listAnimation, value: model.showsPlayerBesideAgents)
                 }
             }
             .transition(Self.contentTransition)
@@ -388,13 +664,22 @@ struct IslandView: View {
         case .expanded:
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
-                IslandPanel(library: library, clipboard: clipboard, assets: assets, colors: colors, tasksStore: tasks, snippets: snippets, actions: actions, dropping: model.dropping,
+                IslandPanel(library: library, clipboard: clipboard, assets: assets, colors: colors, tasksStore: tasks, snippets: snippets, actions: actions,
                             width: model.panelWidth, onIdealWidth: { model.setPanelWidth($0) }, onIdealHeight: { model.setPanelHeight($0) },
-                            onPrompt: { model.onPrompt($0) }, onShowTask: { model.onShowTask($0) }, onOpenTaskDashboard: { model.onOpenTaskDashboard() },
-                            onShowClock: { model.onShowClock() }, onPreviewPane: { model.onPreviewPane($0, $1) }, isPreviewOpen: { model.previewOpen },
+                            onPrompt: { model.onPrompt($0) }, onShowTask: { model.onShowTask($0) }, onOpenTaskDashboard: { model.onOpenTaskDashboard() }, onOpenSettings: { model.onOpenSettings() },
+                            onShowClock: { model.onShowClock() }, onShowMedia: { model.onShowMedia() }, onShowWeather: { model.onShowWeather() }, onShowMirror: { model.onShowMirror() }, onPreviewPane: { model.onPreviewPane($0, $1) }, isPreviewOpen: { model.previewOpen },
                             onHidePreview: { model.onHidePreview() }, isPointerInPreview: { model.isPointerInPreview() }, previewLeaveTick: model.previewLeaveTick, arrowPress: model.arrowPress)
                     .padding(.horizontal, IslandGeometry.panelHorizontalPadding)
                     .padding(.bottom, IslandGeometry.panelBottomPadding)
+                    // Files dragged over: the panel steps aside (kept, so its search and
+                    // tab are as they were after) for the drop zone.
+                    .opacity(model.showsDropZone ? 0 : 1)
+                    .overlay(alignment: .top) {
+                        if model.showsDropZone {
+                            IslandDropZone(target: model.dropTarget, saved: model.dropSaved)
+                                .transition(.scale(scale: 0.92, anchor: .top).combined(with: .opacity).animation(Self.contentAnimation))
+                        }
+                    }
             }
             .transition(Self.contentTransition)
         }
@@ -403,13 +688,21 @@ struct IslandView: View {
     /// The panels that stay open to be used: they get the rim.
     static func hasBackdrop(_ phase: IslandModel.Phase) -> Bool {
         switch phase {
-        case .expanded, .agents, .clock, .taskDetail, .prompt: true
+        case .expanded, .agents, .clock, .media, .weather, .mirror, .taskDetail, .prompt: true
         case .collapsed, .flash, .status: false
         }
     }
 
+    /// The outline leads, the content follows: what was showing leaves at once (a
+    /// quick fade, so nothing is left hanging outside the outline as it shrinks), and
+    /// the new content comes in once the outline is under way, settling out of a soft
+    /// blur as it grows to size.
     private static var contentTransition: AnyTransition {
-        reduceMotion ? .opacity.animation(contentAnimation) : .scale(scale: 0.8, anchor: .top).combined(with: .opacity).animation(contentAnimation)
+        guard !reduceMotion else { return .opacity.animation(contentAnimation) }
+        return .asymmetric(
+            insertion: .modifier(active: ContentArrival(shown: false), identity: ContentArrival(shown: true))
+                .animation(.easeOut(duration: IslandMotion.response(0.22)).delay(IslandMotion.response(0.06))),
+            removal: .opacity.animation(.easeOut(duration: IslandMotion.response(0.1))))
     }
 }
 
@@ -453,32 +746,15 @@ private struct FlashRow: View {
     let library: CaptureLibrary
 
     var body: some View {
-        HStack(spacing: 10) {
-            Group {
+        StatusLayout(title: "Copied to clipboard", subtitle: item.dimensions, badge: .success) {
+            StatusTile {
                 if let thumbnail = library.thumbnail(for: item) {
                     Image(nsImage: thumbnail).resizable().scaledToFill()
                 } else {
-                    Color.gray.opacity(0.3)
+                    Color.white.opacity(0.1)
                 }
             }
-            .frame(width: 48, height: 32)
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(.white.opacity(0.15)))
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Copied to clipboard")
-                    .font(.system(size: 12.5, weight: .semibold))
-                Text(item.dimensions)
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.secondary)
-            }
-            .lineLimit(1)
-            Spacer(minLength: 12)
-            Icon("checkmark.circle.fill", size: 21, weight: .semibold)
-                .foregroundStyle(.green)
         }
-        .foregroundStyle(.white)
-        .padding(.horizontal, 16)
     }
 }
 
@@ -497,6 +773,20 @@ struct IslandStatus: Equatable, Identifiable {
     var clock: ClockStatus? = nil
     /// Drawn as an agent's finished turn instead of the plain line.
     var agentDone: AgentDone? = nil
+    /// Drawn as a level bar (the volume, the brightness) instead of the plain line.
+    var level: LevelHUD? = nil
+    /// Drawn as the battery (charger in or out, running low) instead of the plain line.
+    var battery: BatteryHUD? = nil
+    /// Drawn as a Bluetooth audio device coming or going, with its batteries.
+    var audioDevice: AudioDeviceHUD? = nil
+    /// Drawn as something switched on or off (Caps Lock, a Focus).
+    var toggle: ToggleHUD? = nil
+    /// Drawn as a notice: the network, a drive, a download.
+    var notice: NoticeHUD? = nil
+    /// Drawn as a meeting about to start, with Join for a call.
+    var meeting: MeetingHUD? = nil
+    /// Drawn as a notification another app posted; clicking opens it.
+    var banner: BannerNotification? = nil
 
     /// Green for done, orange for "nothing to do", white otherwise.
     var tint: Color {
@@ -506,39 +796,207 @@ struct IslandStatus: Equatable, Identifiable {
     }
 }
 
-/// The status as a row: its image or swatch, title, subtitle, and the symbol.
+/// The status as a row: its image or swatch (or its symbol, on a soft disc), title,
+/// subtitle, and a badge saying how it went.
 private struct StatusRow: View {
     let status: IslandStatus
 
+    private var badge: StatusBadge {
+        switch status.tint {
+        case .green: .success
+        case .orange: .warning
+        default: .none
+        }
+    }
+
     var body: some View {
-        HStack(spacing: 10) {
-            if let swatch = status.swatch {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(swatch.swiftUIColor)
-                    .frame(width: 32, height: 32)
-                    .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(.white.opacity(0.2)))
-            } else if let image = status.image {
-                Image(nsImage: image).resizable().scaledToFill()
-                    .frame(width: 48, height: 32)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(.white.opacity(0.15)))
-            }
-            VStack(alignment: .leading, spacing: 1) {
-                Text(status.title)
-                    .font(.system(size: 12.5, weight: .semibold))
-                if let subtitle = status.subtitle, !subtitle.isEmpty {
+        StatusLayout(title: status.title, subtitle: status.subtitle, badge: badge, duration: status.duration) {
+            leading
+        }
+    }
+
+    @ViewBuilder
+    private var leading: some View {
+        if let swatch = status.swatch {
+            StatusTile { swatch.swiftUIColor }
+        } else if let image = status.image {
+            StatusTile { Image(nsImage: image).resizable().scaledToFill() }
+        } else {
+            // A bead in the status's colour: green done, orange "nothing to do", else blue.
+            GlossyDisc(symbol: status.symbol, tint: status.tint == .white ? IslandStyle.accent : status.tint, size: statusTileSide)
+        }
+    }
+}
+
+/// A status's picture, or its symbol's disc: 34 pt, 7 in from the island's edge.
+private let statusTileSide: CGFloat = 34
+
+/// How a status went, as the badge on its right.
+private enum StatusBadge { case success, warning, none }
+
+/// The picture a status is about, on corners nested in the island's (its 18 less
+/// the 7 between them).
+private struct StatusTile<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        content()
+            .frame(width: statusTileSide, height: statusTileSide)
+            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(.white.opacity(0.14), lineWidth: 1))
+    }
+}
+
+/// Every status alike: what it's about on the left, the words focusing in one after
+/// the other, a badge popping in on the right (a tick that draws itself, for one
+/// that went well), and a hairline along the foot running down the time it stays.
+private struct StatusLayout<Leading: View>: View {
+    let title: String
+    var subtitle: String?
+    var badge: StatusBadge = .none
+    /// How long it shows: the hairline runs out with it.
+    var duration: Duration?
+    @ViewBuilder let leading: () -> Leading
+
+    @State private var shown = false
+    @State private var remaining: CGFloat = 1
+    /// The tick has landed: a ring pulses out and sparks fly.
+    @State private var burst = false
+    /// A sheen runs across the picture once it has settled.
+    @State private var sheen: CGFloat = -1
+
+    private static var green: Color { Color(red: 0.36, green: 0.86, blue: 0.56) }
+    private static var orange: Color { Color(red: 1.0, green: 0.71, blue: 0.3) }
+
+    var body: some View {
+        HStack(spacing: 11) {
+            leading()
+                // A sheen across it once it has settled, like light catching it.
+                .overlay {
+                    LinearGradient(colors: [.clear, .white.opacity(0.45), .clear], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: 18)
+                        .rotationEffect(.degrees(20))
+                        .offset(x: sheen * 40)
+                        .blendMode(.plusLighter)
+                        .allowsHitTesting(false)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                // Dropped in from above with a tilt, settling on a spring.
+                .scaleEffect(shown ? 1 : 0.7)
+                .rotationEffect(.degrees(shown ? 0 : -8))
+                .offset(y: shown ? 0 : -10)
+                .opacity(shown ? 1 : 0)
+                .animation(IslandMotion.bouncy(0.42, damping: 0.62), value: shown)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .modifier(FocusIn(shown: shown, delay: 0.06))
+                if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 11))
+                        .monospacedDigit()
+                        .foregroundStyle(.white.opacity(0.55))
+                        .modifier(FocusIn(shown: shown, delay: 0.13))
                 }
             }
             .lineLimit(1)
-            Spacer(minLength: 12)
-            Icon(status.symbol, size: 21, weight: .semibold)
-                .foregroundStyle(status.tint)
+            Spacer(minLength: 14)
+            badgeView
         }
-        .foregroundStyle(.white)
         .padding(.horizontal, 16)
+        // A touch above centre, leaving the foot to the hairline.
+        .padding(.bottom, duration == nil ? 0 : 4)
+        .frame(maxHeight: .infinity)
+        .overlay(alignment: .bottom) {
+            if duration != nil {
+                GeometryReader { proxy in
+                    Capsule()
+                        .fill(.white.opacity(0.18))
+                        .frame(width: proxy.size.width * remaining, height: 1.5)
+                        .frame(maxWidth: .infinity)
+                }
+                .frame(height: 1.5)
+                // Clear of the island's rounded corners.
+                .padding(.horizontal, 24)
+                .padding(.bottom, 2)
+            }
+        }
+        .onAppear {
+            shown = true
+            if !IslandView.reduceMotion {
+                Task {
+                    // As the picture lands, then as the tick finishes drawing.
+                    try? await Task.sleep(for: .milliseconds(380))
+                    withAnimation(.easeInOut(duration: 0.6)) { sheen = 1 }
+                    try? await Task.sleep(for: .milliseconds(120))
+                    burst = true
+                }
+            }
+            if let duration, !IslandView.reduceMotion {
+                let seconds = Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
+                withAnimation(.linear(duration: seconds)) { remaining = 0 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var badgeView: some View {
+        switch badge {
+        case .success:
+            ZStack {
+                // The burst, once: a ring pulsing out and sparks flying from the rim,
+                // both gone before and after.
+                ZStack {
+                    Circle().strokeBorder(Self.green.opacity(0.7), lineWidth: 1.5)
+                    ForEach(0..<6, id: \.self) { index in
+                        Circle()
+                            .fill(Self.green)
+                            .frame(width: 3, height: 3)
+                            .offset(y: -12)
+                            .rotationEffect(.degrees(Double(index) * 60 + 30))
+                    }
+                }
+                .keyframeAnimator(initialValue: 0.0, trigger: burst) { burst, progress in
+                    burst
+                        .scaleEffect(1 + 0.8 * progress)
+                        .opacity(progress == 0 ? 0 : 1 - progress)
+                } keyframes: { _ in
+                    LinearKeyframe(0.0, duration: 0.01)
+                    CubicKeyframe(1.0, duration: 0.6)
+                }
+                Circle().fill(Self.green.opacity(0.18))
+                Circle().strokeBorder(Self.green.opacity(0.45), lineWidth: 1.2)
+                TickShape()
+                    .trim(from: 0, to: shown ? 1 : 0)
+                    .stroke(Self.green, style: SwiftUI.StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                    .animation(.easeOut(duration: 0.35).delay(0.18), value: shown)
+            }
+            .frame(width: 24, height: 24)
+            .scaleEffect(shown ? 1 : 0.4)
+            .animation(IslandMotion.bouncy(0.38, damping: 0.6).delay(0.08), value: shown)
+        case .warning:
+            Icon("exclamationmark", size: 13, weight: .bold)
+                .foregroundStyle(Self.orange)
+                .frame(width: 24, height: 24)
+                .background(Self.orange.opacity(0.18), in: Circle())
+                .overlay(Circle().strokeBorder(Self.orange.opacity(0.45), lineWidth: 1.2))
+                .scaleEffect(shown ? 1 : 0.4)
+                .animation(IslandMotion.bouncy(0.38, damping: 0.6).delay(0.08), value: shown)
+        case .none:
+            EmptyView()
+        }
+    }
+}
+
+/// A tick, drawn as one stroke so it can draw itself.
+private nonisolated struct TickShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX + rect.width * 0.3, y: rect.minY + rect.height * 0.52))
+        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.44, y: rect.minY + rect.height * 0.66))
+        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.71, y: rect.minY + rect.height * 0.37))
+        return path
     }
 }
 

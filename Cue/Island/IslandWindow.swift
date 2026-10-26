@@ -36,6 +36,13 @@ final class IslandWindow: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
+    /// Liquid Glass draws flat grey in a window without an active appearance, and the
+    /// island opens on hover without taking the keyboard: without this, its glass came
+    /// alive only once clicked. AppKit asks these (private) questions to pick that look;
+    /// the island always answers as if it were in front. Key status itself is untouched.
+    @objc func _hasActiveAppearance() -> Bool { true }
+    @objc func _hasActiveAppearanceIgnoringKeyFocus() -> Bool { true }
+
     /// AppKit keeps windows below the menu bar; the island lives on top of it.
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
         frameRect
@@ -72,10 +79,12 @@ final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
 }
 
 /// The island's content view doubles as a drop target: files and images dragged
-/// onto the notch or the open panel are saved as assets.
+/// onto the notch or the open panel go on the shelf or are saved as assets.
 final class IslandDropView: NSView {
     var onDragEntered: (() -> Void)?
     var onDragExited: (() -> Void)?
+    /// The pointer moved during the drag (screen coordinates).
+    var onDragMoved: ((CGPoint) -> Void)?
     /// File URLs and/or raw image data from the drop.
     var onDrop: (([URL], Data?) -> Void)?
 
@@ -96,7 +105,9 @@ final class IslandDropView: NSView {
     }
 
     override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        IslandDrag.current == nil && Self.canAccept(sender) ? .copy : []
+        guard IslandDrag.current == nil, Self.canAccept(sender) else { return [] }
+        if let window { onDragMoved?(window.convertPoint(toScreen: sender.draggingLocation)) }
+        return .copy
     }
 
     override func draggingExited(_ sender: (any NSDraggingInfo)?) {

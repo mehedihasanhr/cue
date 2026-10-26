@@ -260,8 +260,9 @@ Changes taken from the server are not sent back to it or to the webhook.
 
 AI agents — Claude Code, Codex, Claude Desktop, Cursor, anything that speaks the
 [Model Context Protocol](https://modelcontextprotocol.io) — can read and work through
-the task list. It is on by default; Settings › **Tasks** › **AI agents (MCP)** turns it
-off, and copies the line that connects each agent:
+the task list. It is on by default. Settings › **MCP** (or `cue://settings/mcp`) has the
+switch, step-by-step setup for Claude Code, Codex, Claude Desktop and Cursor, and shows
+which agents are connected right now. The lines it gives you:
 
 ```sh
 claude mcp add --scope user cue -- /Applications/Cue.app/Contents/Resources/cue-mcp

@@ -24,16 +24,46 @@ final class AppPreferences {
         static let islandCloseDelay = "island.closeDelay"
         static let islandCloseOnLeave = "island.closeOnLeave"
         static let islandNotchBackground = "island.notchBackground"
+        static let islandGlass = "island.glass"
+        static let islandGlassStyle = "island.glass.style"
+        static let islandGlassDarkness = "island.glass.darkness"
+        static let islandGlassTint = "island.glass.tint"
+        static let islandGlassLightNotchless = "island.glass.lightNotchless"
         static let islandFlashCaptures = "island.flashCaptures"
         static let islandFlashDuration = "island.flashDuration"
         static let islandStatuses = "island.statuses"
         static let islandAnimation = "island.animation"
+        static let islandAnimationSpeed = "island.animationSpeed"
+        static let islandShelfOpenAfterDrop = "island.shelf.openAfterDrop"
+        static let islandShelfAutoCollapse = "island.shelf.autoCollapse"
+        static let basketEnabled = "basket.enabled"
+        static let islandNowPlaying = "island.nowPlaying"
+        static let islandLevelHUD = "island.levelHUD"
+        static let islandBattery = "island.battery"
+        static let islandAudioDevices = "island.audioDevices"
+        static let islandCapsLock = "island.capsLock"
+        static let islandFocus = "island.focus"
+        static let islandNetwork = "island.network"
+        static let islandCompactTiles = "island.tiles"
+        static let islandTileLeft = "island.tiles.left"
+        static let islandTileRight = "island.tiles.right"
+        static let islandTilesNowPlaying = "island.tiles.nowPlaying"
+        static let islandDrives = "island.drives"
+        static let islandDownloads = "island.downloads"
+        static let islandNotifications = "island.notifications"
+        static let islandHidesBanners = "island.notifications.hideBanners"
+        static let islandCalendar = "island.calendar"
+        static let islandWeather = "island.weather"
+        static let islandLockScreen = "island.lockScreen"
+        static let basketHideDelay = "basket.hideDelay"
+        static let basketQuickActions = "basket.quickActions"
         static let islandPreview = "island.preview"
         static let islandPreviewOnHover = "island.previewOnHover"
         static let islandPreviewHoverDelay = "island.previewHoverDelay"
         static let islandOpensOn = "island.opensOn"
         static let agentSessions = "agents.enabled"
         static let agentAutoOpen = "agents.autoOpen"
+        static let agentUsageLimits = "agents.usageLimits"
         static let afterCapture = "capture.after"
         static let clipboardEnabled = "clipboard.enabled"
         static let clipboardLimit = "clipboard.limit"
@@ -397,6 +427,44 @@ final class AppPreferences {
         didSet { defaults.set(islandNotchBackground, forKey: Key.islandNotchBackground) }
     }
 
+    /// The open island as dark Liquid Glass (macOS 26 and later) rather than solid black.
+    var islandGlass: Bool {
+        didSet { defaults.set(islandGlass, forKey: Key.islandGlass) }
+    }
+
+    /// Clear glass (sharp, the desktop bent at its edges) or frosted (blurred).
+    enum GlassStyle: String, CaseIterable {
+        case clear, frosted
+
+        var title: String { self == .clear ? "Clear" : "Frosted" }
+    }
+
+    /// A colour washed over the glass.
+    enum GlassTint: String, CaseIterable {
+        case none, blue, purple, pink, orange, green, graphite
+
+        var title: String { self == .none ? "None" : rawValue.capitalized }
+    }
+
+    var islandGlassStyle: GlassStyle {
+        didSet { defaults.set(islandGlassStyle.rawValue, forKey: Key.islandGlassStyle) }
+    }
+
+    /// How dark the glass stays below the content, 0 (clear) to 1 (black): enough
+    /// that what sits there stays readable over a bright desktop.
+    var islandGlassDarkness: Double {
+        didSet { defaults.set(islandGlassDarkness, forKey: Key.islandGlassDarkness) }
+    }
+
+    var islandGlassTint: GlassTint {
+        didSet { defaults.set(islandGlassTint.rawValue, forKey: Key.islandGlassTint) }
+    }
+
+    /// Without a notch to meet, the island needs no black band at the top: lighter glass all down.
+    var islandGlassLightNotchless: Bool {
+        didSet { defaults.set(islandGlassLightNotchless, forKey: Key.islandGlassLightNotchless) }
+    }
+
     enum AfterCapture: String, CaseIterable {
         case edit, copy
 
@@ -442,6 +510,28 @@ final class AppPreferences {
         }
     }
 
+    /// How fast the lively island moves, around the pace set for the display.
+    enum IslandAnimationSpeed: String, CaseIterable {
+        case slower, normal, faster
+
+        var title: String {
+            switch self {
+            case .slower: "Slower"
+            case .normal: "Normal"
+            case .faster: "Faster"
+            }
+        }
+
+        /// Multiplies every duration and spring response.
+        var factor: Double {
+            switch self {
+            case .slower: 1.3
+            case .normal: 1
+            case .faster: 0.75
+            }
+        }
+    }
+
     enum IslandPreview: String, CaseIterable {
         case inline, pane
 
@@ -473,6 +563,123 @@ final class AppPreferences {
         didSet { defaults.set(islandAnimation.rawValue, forKey: Key.islandAnimation) }
     }
 
+    var islandAnimationSpeed: IslandAnimationSpeed {
+        didSet { defaults.set(islandAnimationSpeed.rawValue, forKey: Key.islandAnimationSpeed) }
+    }
+
+    /// After files go on the shelf, the island stays open showing them; off, it closes.
+    var islandShelfOpenAfterDrop: Bool {
+        didSet { defaults.set(islandShelfOpenAfterDrop, forKey: Key.islandShelfOpenAfterDrop) }
+    }
+
+    /// Tiles beside the closed notch.
+    var islandCompactTiles: Bool {
+        didSet { defaults.set(islandCompactTiles, forKey: Key.islandCompactTiles) }
+    }
+
+    var islandTileLeft: CompactTile {
+        didSet { defaults.set(islandTileLeft.rawValue, forKey: Key.islandTileLeft) }
+    }
+
+    var islandTileRight: CompactTile {
+        didSet { defaults.set(islandTileRight.rawValue, forKey: Key.islandTileRight) }
+    }
+
+    /// While music plays, its artwork and the dancing Cue take both sides.
+    var islandTilesNowPlaying: Bool {
+        didSet { defaults.set(islandTilesNowPlaying, forKey: Key.islandTilesNowPlaying) }
+    }
+
+    /// The island shows the network dropping or changing, and a VPN connecting.
+    var islandNetwork: Bool {
+        didSet { defaults.set(islandNetwork, forKey: Key.islandNetwork) }
+    }
+
+    /// The island shows a drive or disk image mounting or ejecting.
+    var islandDrives: Bool {
+        didSet { defaults.set(islandDrives, forKey: Key.islandDrives) }
+    }
+
+    /// What plays and a focus session over the lock screen (experimental, private calls).
+    var islandLockScreen: Bool {
+        didSet { defaults.set(islandLockScreen, forKey: Key.islandLockScreen) }
+    }
+
+    /// The weather in the panel's header, and its forecast in the island.
+    var islandWeather: Bool {
+        didSet { defaults.set(islandWeather, forKey: Key.islandWeather) }
+    }
+
+    /// Five minutes before a meeting the island says so, with Join for a call.
+    var islandCalendar: Bool {
+        didSet { defaults.set(islandCalendar, forKey: Key.islandCalendar) }
+    }
+
+    /// The island shows a download finishing in Downloads; clicking it reveals the file.
+    var islandDownloads: Bool {
+        didSet { defaults.set(islandDownloads, forKey: Key.islandDownloads) }
+    }
+
+    /// The island shows the notifications macOS shows, and keeps them in a tab.
+    var islandNotifications: Bool {
+        didSet { defaults.set(islandNotifications, forKey: Key.islandNotifications) }
+    }
+
+    /// With those on: macOS's own banner in the corner is closed once the island has it.
+    var islandHidesBanners: Bool {
+        didSet { defaults.set(islandHidesBanners, forKey: Key.islandHidesBanners) }
+    }
+
+    /// The island shows Caps Lock turning on and off.
+    var islandCapsLock: Bool {
+        didSet { defaults.set(islandCapsLock, forKey: Key.islandCapsLock) }
+    }
+
+    /// The island shows a Focus (Do Not Disturb and the rest) turning on and off.
+    var islandFocus: Bool {
+        didSet { defaults.set(islandFocus, forKey: Key.islandFocus) }
+    }
+
+    /// The island shows AirPods and other Bluetooth audio devices connecting, with their batteries.
+    var islandAudioDevices: Bool {
+        didSet { defaults.set(islandAudioDevices, forKey: Key.islandAudioDevices) }
+    }
+
+    /// The island shows the charger going in or out, and the battery running low.
+    var islandBattery: Bool {
+        didSet { defaults.set(islandBattery, forKey: Key.islandBattery) }
+    }
+
+    /// The volume and brightness keys show their level in the island, not the system's overlay.
+    var islandLevelHUD: Bool {
+        didSet { defaults.set(islandLevelHUD, forKey: Key.islandLevelHUD) }
+    }
+
+    /// What Music or Spotify plays shows in the island, with its controls.
+    var islandNowPlaying: Bool {
+        didSet { defaults.set(islandNowPlaying, forKey: Key.islandNowPlaying) }
+    }
+
+    /// Shaking the pointer while dragging files brings up the floating basket.
+    var basketEnabled: Bool {
+        didSet { defaults.set(basketEnabled, forKey: Key.basketEnabled) }
+    }
+
+    /// Shaking offers four places (basket, Transform, share link, AirDrop), not just the basket.
+    var basketQuickActions: Bool {
+        didSet { defaults.set(basketQuickActions, forKey: Key.basketQuickActions) }
+    }
+
+    /// How long an empty basket stays after the drag that brought it ends.
+    var basketHideDelay: Double {
+        didSet { defaults.set(basketHideDelay, forKey: Key.basketHideDelay) }
+    }
+
+    /// The island closes once the shelf's last files have been dragged out.
+    var islandShelfAutoCollapse: Bool {
+        didSet { defaults.set(islandShelfAutoCollapse, forKey: Key.islandShelfAutoCollapse) }
+    }
+
     /// The tab the island opens on; nil is the last one used.
     var islandOpensOn: IslandTab? {
         didSet { defaults.set(islandOpensOn?.rawValue ?? "", forKey: Key.islandOpensOn) }
@@ -486,6 +693,11 @@ final class AppPreferences {
     }
 
     /// The island opens by itself when an agent asks something.
+    /// Claude Code's usage limits in the sessions list, through a relay in front of its status line.
+    var agentUsageLimits: Bool {
+        didSet { defaults.set(agentUsageLimits, forKey: Key.agentUsageLimits) }
+    }
+
     var agentAutoOpen: Bool {
         didSet { defaults.set(agentAutoOpen, forKey: Key.agentAutoOpen) }
     }
@@ -659,16 +871,46 @@ final class AppPreferences {
         islandCloseDelay = defaults.object(forKey: Key.islandCloseDelay) as? Double ?? 0.25
         islandCloseOnLeave = defaults.object(forKey: Key.islandCloseOnLeave) as? Bool ?? true
         islandNotchBackground = defaults.object(forKey: Key.islandNotchBackground) as? Bool ?? false
+        islandGlass = defaults.object(forKey: Key.islandGlass) as? Bool ?? true
+        islandGlassStyle = GlassStyle(rawValue: defaults.string(forKey: Key.islandGlassStyle) ?? "") ?? .clear
+        islandGlassDarkness = defaults.object(forKey: Key.islandGlassDarkness) as? Double ?? 0.45
+        islandGlassTint = GlassTint(rawValue: defaults.string(forKey: Key.islandGlassTint) ?? "") ?? .none
+        islandGlassLightNotchless = defaults.object(forKey: Key.islandGlassLightNotchless) as? Bool ?? true
         islandFlashCaptures = defaults.object(forKey: Key.islandFlashCaptures) as? Bool ?? true
         islandFlashDuration = defaults.object(forKey: Key.islandFlashDuration) as? Double ?? 1.8
         islandStatuses = defaults.object(forKey: Key.islandStatuses) as? Bool ?? true
         islandAnimation = IslandAnimation(rawValue: defaults.string(forKey: Key.islandAnimation) ?? "") ?? .lively
+        islandAnimationSpeed = IslandAnimationSpeed(rawValue: defaults.string(forKey: Key.islandAnimationSpeed) ?? "") ?? .normal
+        islandShelfOpenAfterDrop = defaults.object(forKey: Key.islandShelfOpenAfterDrop) as? Bool ?? true
+        islandShelfAutoCollapse = defaults.object(forKey: Key.islandShelfAutoCollapse) as? Bool ?? true
+        basketEnabled = defaults.object(forKey: Key.basketEnabled) as? Bool ?? true
+        islandNowPlaying = defaults.object(forKey: Key.islandNowPlaying) as? Bool ?? true
+        islandLevelHUD = defaults.object(forKey: Key.islandLevelHUD) as? Bool ?? true
+        islandBattery = defaults.object(forKey: Key.islandBattery) as? Bool ?? true
+        islandAudioDevices = defaults.object(forKey: Key.islandAudioDevices) as? Bool ?? true
+        islandCapsLock = defaults.object(forKey: Key.islandCapsLock) as? Bool ?? true
+        islandNetwork = defaults.object(forKey: Key.islandNetwork) as? Bool ?? true
+        islandCompactTiles = defaults.object(forKey: Key.islandCompactTiles) as? Bool ?? true
+        islandTileLeft = CompactTile(rawValue: defaults.string(forKey: Key.islandTileLeft) ?? "") ?? .none
+        islandTileRight = CompactTile(rawValue: defaults.string(forKey: Key.islandTileRight) ?? "") ?? .none
+        islandTilesNowPlaying = defaults.object(forKey: Key.islandTilesNowPlaying) as? Bool ?? true
+        islandDrives = defaults.object(forKey: Key.islandDrives) as? Bool ?? true
+        islandDownloads = defaults.object(forKey: Key.islandDownloads) as? Bool ?? true
+        islandNotifications = defaults.object(forKey: Key.islandNotifications) as? Bool ?? false
+        islandHidesBanners = defaults.object(forKey: Key.islandHidesBanners) as? Bool ?? true
+        islandCalendar = defaults.object(forKey: Key.islandCalendar) as? Bool ?? false
+        islandWeather = defaults.object(forKey: Key.islandWeather) as? Bool ?? false
+        islandLockScreen = defaults.object(forKey: Key.islandLockScreen) as? Bool ?? false
+        islandFocus = defaults.object(forKey: Key.islandFocus) as? Bool ?? true
+        basketHideDelay = defaults.object(forKey: Key.basketHideDelay) as? Double ?? 1.5
+        basketQuickActions = defaults.object(forKey: Key.basketQuickActions) as? Bool ?? true
         islandPreview = IslandPreview(rawValue: defaults.string(forKey: Key.islandPreview) ?? "") ?? .inline
         islandPreviewOnHover = defaults.object(forKey: Key.islandPreviewOnHover) as? Bool ?? true
         islandPreviewHoverDelay = defaults.object(forKey: Key.islandPreviewHoverDelay) as? Double ?? 0.5
         islandOpensOn = IslandTab(rawValue: defaults.string(forKey: Key.islandOpensOn) ?? "")
         agentSessionsEnabled = defaults.object(forKey: Key.agentSessions) as? Bool ?? true
         agentAutoOpen = defaults.object(forKey: Key.agentAutoOpen) as? Bool ?? true
+        agentUsageLimits = defaults.object(forKey: Key.agentUsageLimits) as? Bool ?? true
         clipboardHistoryEnabled = defaults.object(forKey: Key.clipboardEnabled) as? Bool ?? true
         clipboardHistoryLimit = defaults.object(forKey: Key.clipboardLimit) as? Int ?? 200
         colorPickerEnabled = defaults.object(forKey: Key.colorPickerEnabled) as? Bool ?? true

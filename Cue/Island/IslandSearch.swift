@@ -121,6 +121,7 @@ extension AppPreferences {
         case .snippets: snippetsEnabled
         case .notes: notesEnabled
         case .colors: colorPickerEnabled
+        case .notifications: islandNotifications
         // Tasks live in the dashboard now, reached by the button beside the search.
         case .tasks: false
         default: true

@@ -156,6 +156,13 @@ nonisolated struct IslandGeometry: Equatable {
         return Self.hang(size: CGSize(width: width, height: height), centerX: centerX, top: screen.frame.maxY, in: screen.frame)
     }
 
+    /// The small card shown while files are dragged over the island, hung from the
+    /// notch like every other phase; `contentSize` is below the notch strip.
+    func dropZone(contentSize: CGSize) -> CGRect {
+        Self.hang(size: CGSize(width: contentSize.width, height: collapsed.height + contentSize.height),
+                  centerX: centerX, top: screen.frame.maxY, in: screen.frame)
+    }
+
     func radius(for phase: Phase) -> CGFloat {
         switch phase {
         case .collapsed: collapsedRadius

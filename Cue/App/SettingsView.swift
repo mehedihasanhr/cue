@@ -222,6 +222,7 @@ private struct AppearancePreview: View {
 struct AgentSettingsView: View {
     @Environment(AppPreferences.self) private var preferences
     @Environment(AgentConnector.self) private var agents: AgentConnector?
+    @Environment(SettingsNavigation.self) private var navigation
 
     var body: some View {
         @Bindable var preferences = preferences
@@ -232,6 +233,10 @@ struct AgentSettingsView: View {
                 }
                 SettingsRow("Open when an agent asks", subtitle: "Otherwise the closed island pulses until you hover it.") {
                     Toggle("Open when asked", isOn: $preferences.agentAutoOpen).toggleStyle(.switch)
+                }
+                .disabled(!preferences.agentSessionsEnabled)
+                SettingsRow("Usage limits", subtitle: "How much of Claude Code's 5-hour and weekly limits you've used, as rings in the sessions list. Claude Code tells only its status line, so Cue puts a relay in front of yours: it still shows exactly as before, and turning this off puts it back.") {
+                    Toggle("Usage limits", isOn: $preferences.agentUsageLimits).toggleStyle(.switch)
                 }
                 .disabled(!preferences.agentSessionsEnabled)
                 if let agents {
@@ -257,6 +262,13 @@ struct AgentSettingsView: View {
                 Text("Turn on the Dynamic Island (Settings › Island) to see agent sessions.")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
+            }
+
+            SettingsGroup("Your tasks") {
+                SettingsRow("Let agents read and update your tasks", subtitle: "Over MCP, from Claude Code, Codex, Claude Desktop and others.",
+                            symbol: SettingsSection.mcp.symbol, tint: SettingsSection.mcp.tint) {
+                    Button("Set Up…") { navigation.go(.mcp) }
+                }
             }
 
         }
@@ -322,6 +334,48 @@ struct IslandSettingsView: View {
                     Toggle("Notch background", isOn: $preferences.islandNotchBackground).toggleStyle(.switch)
                 }
                 .disabled(!preferences.dynamicIslandEnabled)
+                if #available(macOS 26, *) {
+                    SettingsRow("Liquid glass", subtitle: "The open island fades from black at the top into glass below. Off, it’s solid black.") {
+                        Toggle("Liquid glass", isOn: $preferences.islandGlass).toggleStyle(.switch)
+                    }
+                    .disabled(!preferences.dynamicIslandEnabled)
+                    if preferences.islandGlass {
+                        SettingsRow("Glass") {
+                            Picker("Glass", selection: $preferences.islandGlassStyle) {
+                                ForEach(AppPreferences.GlassStyle.allCases, id: \.self) { Text($0.title).tag($0) }
+                            }
+                            .pickerStyle(.segmented)
+                            .fixedSize()
+                        }
+                        SettingsRow("Darkness", subtitle: "How dark the glass stays under the content.") {
+                            HStack(spacing: 8) {
+                                Slider(value: $preferences.islandGlassDarkness, in: 0.1...0.9)
+                                    .frame(width: 160)
+                                Text("\(Int((preferences.islandGlassDarkness * 100).rounded()))%")
+                                    .monospacedDigit()
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 36, alignment: .trailing)
+                            }
+                        }
+                        SettingsRow("Tint") {
+                            Picker("Tint", selection: $preferences.islandGlassTint) {
+                                ForEach(AppPreferences.GlassTint.allCases, id: \.self) { tint in
+                                    Label {
+                                        Text(tint.title)
+                                    } icon: {
+                                        Image(systemName: tint == .none ? "circle.slash" : "circle.fill")
+                                            .foregroundStyle(tint.color ?? .secondary)
+                                    }
+                                    .tag(tint)
+                                }
+                            }
+                            .fixedSize()
+                        }
+                        SettingsRow("Lighter on displays without a notch", subtitle: "With no notch to blend into, the glass needn't start black at the top.") {
+                            Toggle("Lighter without a notch", isOn: $preferences.islandGlassLightNotchless).toggleStyle(.switch)
+                        }
+                    }
+                }
             }
 
             SettingsGroup("Opening and closing") {
@@ -356,6 +410,74 @@ struct IslandSettingsView: View {
             }
             .disabled(!preferences.dynamicIslandEnabled)
 
+            SettingsGroup("Motion") {
+                SettingsRow("Animation") {
+                    Picker("Animation", selection: $preferences.islandAnimation) {
+                        ForEach(AppPreferences.IslandAnimation.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .fixedSize()
+                }
+                if preferences.islandAnimation == .lively {
+                    SettingsRow("Speed", subtitle: "Already quicker on 120 Hz displays. Reduce Motion in Accessibility settings turns the springs into short fades.") {
+                        Picker("Speed", selection: $preferences.islandAnimationSpeed) {
+                            ForEach(AppPreferences.IslandAnimationSpeed.allCases, id: \.self) { Text($0.title).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+                        .fixedSize()
+                    }
+                }
+            }
+            .disabled(!preferences.dynamicIslandEnabled)
+
+            SettingsGroup("Beside the notch") {
+                SettingsRow("Tiles beside the notch", subtitle: "Small tiles either side of the closed island. They cover the menu bar just beside the notch.") {
+                    Toggle("Tiles", isOn: $preferences.islandCompactTiles).toggleStyle(.switch)
+                }
+                if preferences.islandCompactTiles {
+                    SettingsRow("Left") {
+                        Picker("Left", selection: $preferences.islandTileLeft) {
+                            ForEach(CompactTile.choices, id: \.self) { Text($0.title).tag($0) }
+                        }
+                        .fixedSize()
+                    }
+                    SettingsRow("Right") {
+                        Picker("Right", selection: $preferences.islandTileRight) {
+                            ForEach(CompactTile.choices, id: \.self) { Text($0.title).tag($0) }
+                        }
+                        .fixedSize()
+                    }
+                    SettingsRow("Music takes both sides", subtitle: "While something plays: its artwork on the left, Cue dancing on the right.") {
+                        Toggle("Music takes both sides", isOn: $preferences.islandTilesNowPlaying).toggleStyle(.switch)
+                    }
+                }
+            }
+            .disabled(!preferences.dynamicIslandEnabled)
+
+            SettingsGroup("Shelf") {
+                SettingsRow("Stay open after a drop", subtitle: "Drop files on the left card while dragging over the island to park them on the shelf; drag them out again when you need them.") {
+                    Toggle("Stay open after a drop", isOn: $preferences.islandShelfOpenAfterDrop).toggleStyle(.switch)
+                }
+                SettingsRow("Close when the shelf empties") {
+                    Toggle("Close when emptied", isOn: $preferences.islandShelfAutoCollapse).toggleStyle(.switch)
+                }
+            }
+            .disabled(!preferences.dynamicIslandEnabled)
+
+            SettingsGroup("Basket") {
+                SettingsRow("Shake to show the basket", subtitle: "While dragging files anywhere, shake the pointer: a basket appears under it to drop them in, then drag the whole stack out later. Reopen a closed basket from the menu bar.") {
+                    Toggle("Shake to show the basket", isOn: $preferences.basketEnabled).toggleStyle(.switch)
+                }
+                if preferences.basketEnabled {
+                    SettingsRow("Choose where they go", subtitle: "Shaking shows four places instead of the basket alone: the basket, Transform (convert, make smaller, zip), a share link, and AirDrop.") {
+                        Toggle("Choose where they go", isOn: $preferences.basketQuickActions).toggleStyle(.switch)
+                    }
+                    SettingsRow("Hide an empty basket after") {
+                        SecondsSlider(value: $preferences.basketHideDelay, range: 0.5...5, step: 0.1, zero: nil)
+                    }
+                }
+            }
+
             SettingsGroup("What it shows") {
                 SettingsRow("Flash new captures") {
                     Toggle("Flash captures", isOn: $preferences.islandFlashCaptures).toggleStyle(.switch)
@@ -364,6 +486,50 @@ struct IslandSettingsView: View {
                     SettingsRow("For") {
                         SecondsSlider(value: $preferences.islandFlashDuration, range: 0.5...5, step: 0.1, zero: nil)
                     }
+                }
+                SettingsRow("On the lock screen (experimental)", subtitle: "What plays, with its controls, and a running focus session, shown over the lock screen. Uses private macOS calls, so it may stop working after an update.") {
+                    Toggle("On the lock screen", isOn: $preferences.islandLockScreen).toggleStyle(.switch)
+                }
+                SettingsRow("Weather", subtitle: "The temperature in the panel's header; click it for the next hours. From Open-Meteo, for the place the prayer times use, or your location.") {
+                    Toggle("Weather", isOn: $preferences.islandWeather).toggleStyle(.switch)
+                }
+                SettingsRow("Meetings", subtitle: "Five minutes before an event in your calendar, with Join for a Zoom, Meet or Teams call. macOS asks once for the calendar.") {
+                    Toggle("Meetings", isOn: $preferences.islandCalendar).toggleStyle(.switch)
+                }
+                SettingsRow("Network", subtitle: "Going offline and back, a new Wi-Fi network, a VPN connecting.") {
+                    Toggle("Network", isOn: $preferences.islandNetwork).toggleStyle(.switch)
+                }
+                SettingsRow("Drives", subtitle: "A drive or disk image mounting, with its free space, or ejecting.") {
+                    Toggle("Drives", isOn: $preferences.islandDrives).toggleStyle(.switch)
+                }
+                SettingsRow("Downloads", subtitle: "A download finishing in Downloads; click it to show the file.") {
+                    Toggle("Downloads", isOn: $preferences.islandDownloads).toggleStyle(.switch)
+                }
+                SettingsRow("Notifications", subtitle: "Notifications from every app, shown in the island and kept in a Notifications tab while Cue runs. Needs Accessibility.") {
+                    Toggle("Notifications", isOn: $preferences.islandNotifications).toggleStyle(.switch)
+                }
+                if preferences.islandNotifications {
+                    SettingsRow("Hide macOS's banners", subtitle: "Closes the system's banner in the corner once the island shows it. Closed banners leave Notification Center too; Cue's tab keeps them.") {
+                        Toggle("Hide macOS's banners", isOn: $preferences.islandHidesBanners).toggleStyle(.switch)
+                    }
+                }
+                SettingsRow("Caps Lock") {
+                    Toggle("Caps Lock", isOn: $preferences.islandCapsLock).toggleStyle(.switch)
+                }
+                SettingsRow("Focus", subtitle: "A Focus or Do Not Disturb turning on or off. macOS asks once to share it.") {
+                    Toggle("Focus", isOn: $preferences.islandFocus).toggleStyle(.switch)
+                }
+                SettingsRow("AirPods and headphones", subtitle: "A Bluetooth audio device connecting or going, with its batteries when it reports them.") {
+                    Toggle("AirPods and headphones", isOn: $preferences.islandAudioDevices).toggleStyle(.switch)
+                }
+                SettingsRow("Battery", subtitle: "Plugging in or unplugging the charger, a full charge, and a warning at 20% and 10%.") {
+                    Toggle("Battery", isOn: $preferences.islandBattery).toggleStyle(.switch)
+                }
+                SettingsRow("Volume and brightness", subtitle: "The keys show their level in the island, with a bar to drag, instead of the system's overlay. Needs Accessibility.") {
+                    Toggle("Volume and brightness", isOn: $preferences.islandLevelHUD).toggleStyle(.switch)
+                }
+                SettingsRow("Now Playing", subtitle: "What Music, Spotify or YouTube in Safari, Chrome, Arc, Brave or Edge plays, with its controls, in the panel's header. macOS asks once per app. For YouTube, turn on the browser's Allow JavaScript from Apple Events (in its Developer menu).") {
+                    Toggle("Now Playing", isOn: $preferences.islandNowPlaying).toggleStyle(.switch)
                 }
                 SettingsRow("Statuses", subtitle: "Pastes, uploads, focus sessions and saved snippets.") {
                     Toggle("Statuses", isOn: $preferences.islandStatuses).toggleStyle(.switch)
@@ -384,13 +550,6 @@ struct IslandSettingsView: View {
                             SecondsSlider(value: $preferences.islandPreviewHoverDelay, range: 0...2, step: 0.05, zero: "At once")
                         }
                     }
-                }
-                SettingsRow("Animation") {
-                    Picker("Animation", selection: $preferences.islandAnimation) {
-                        ForEach(AppPreferences.IslandAnimation.allCases, id: \.self) { Text($0.title).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .fixedSize()
                 }
             }
             .disabled(!preferences.dynamicIslandEnabled)
@@ -599,23 +758,20 @@ struct NotesSettingsView: View {
 // MARK: - Tasks
 
 struct TasksSettingsView: View {
-    private var mcpStatus: String? {
-        guard preferences.tasksMCPEnabled, let mcp else { return nil }
-        return mcp.problem ?? (mcp.isRunning ? "On: agents set up below can connect." : nil)
-    }
-
-    private func copyButton(_ text: String, id: String) -> some View {
-        Button(copied == id ? "Copied" : "Copy") {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text, forType: .string)
-            copied = id
+    private var mcpStatus: String {
+        guard preferences.tasksMCPEnabled else { return "Off: AI agents can’t reach your tasks." }
+        guard let mcp, mcp.isRunning else { return mcp?.problem ?? "Not running." }
+        switch mcp.clients.count {
+        case 0: return "On: Claude Code, Codex and other AI apps can read and update your tasks."
+        case 1: return "On: \(mcp.clients[0].name) is connected."
+        default: return "On: \(mcp.clients.count) agents are connected."
         }
     }
 
     @Environment(AppPreferences.self) private var preferences
     @Environment(TaskSync.self) private var sync: TaskSync?
     @Environment(TaskMCPController.self) private var mcp: TaskMCPController?
-    @State private var copied: String?
+    @Environment(SettingsNavigation.self) private var navigation
     @State private var serverCheck: String?
     @State private var checking = false
     @State private var testing = false
@@ -623,20 +779,9 @@ struct TasksSettingsView: View {
     var body: some View {
         @Bindable var preferences = preferences
         SettingsPane(.tasks) {
-            SettingsGroup("AI agents (MCP)", footer: "Agents can list, read, create and update tasks, and add notes to them. They can’t delete anything. Cue starts by itself when an agent connects.") {
-                SettingsRow("Let AI agents use your tasks", subtitle: mcpStatus) {
-                    Toggle("MCP", isOn: $preferences.tasksMCPEnabled).toggleStyle(.switch)
-                }
-                if preferences.tasksMCPEnabled {
-                    SettingsRow("Claude Code", subtitle: TaskMCPController.claudeCodeCommand) {
-                        copyButton(TaskMCPController.claudeCodeCommand, id: "claude")
-                    }
-                    SettingsRow("Codex", subtitle: TaskMCPController.codexCommand) {
-                        copyButton(TaskMCPController.codexCommand, id: "codex")
-                    }
-                    SettingsRow("Other apps", subtitle: "Claude Desktop, Cursor and others: JSON for their MCP settings") {
-                        copyButton(TaskMCPController.jsonConfiguration, id: "json")
-                    }
+            SettingsGroup("AI agents") {
+                SettingsRow("MCP", subtitle: mcpStatus, symbol: SettingsSection.mcp.symbol, tint: SettingsSection.mcp.tint) {
+                    Button("Set Up…") { navigation.go(.mcp) }
                 }
             }
 

@@ -4,6 +4,7 @@ import AppKit
 import BackgroundKit
 import RecordKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let model = AppModel()
@@ -23,6 +24,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var snippetFrontField: FrontField?
     private var prayerClock: PrayerClock?
     let preferences = AppPreferences()
+    #if DEBUG
+    /// For diagnostics: a window kept on screen to be captured.
+    var debugPanel: NSPanel?
+    #endif
+    /// The floating basket, shaken up while dragging files.
+    private lazy var basket = BasketController(preferences: preferences)
     /// The recognisers Capture Text can use, and the language packs behind them.
     private lazy var ocrEngines = OCREngines(preferences: preferences)
     /// Screen recording and the video editor.
@@ -48,6 +55,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Claude Code and Codex sessions, shown and answered on the island.
     private let agentStore = AgentStore()
     private lazy var agentConnector = AgentConnector(store: agentStore)
+    /// Puts the keyboard back in Cue's window when the user returns to its Space.
+    private let spaceFocus = SpaceFocusKeeper()
     /// The task list for AI agents, over MCP (Settings › Tasks).
     private lazy var taskMCP = TaskMCPController(tasks: tasks, preferences: preferences)
 
@@ -65,6 +74,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        // One Cue at a time. A second copy (the installed app started by `cue-mcp` while a
+        // development build restarts, say) would draw a second island over the first and
+        // fight it for the sockets. It leaves before setting anything up, and without
+        // `terminate`, whose teardown would remove the running copy's sockets.
+        let others = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
+            .filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier && !$0.isTerminated }
+        if !others.isEmpty { exit(0) }
         // Before anything a launch was asked to open: `cue://settings` arrives ahead of
         // didFinishLaunching, and its recording pages need the recorder's settings.
         if let handOff = Self.studioHandOff {
@@ -91,6 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let icon = NSImage(named: "AppIcon") { NSApp.applicationIconImage = icon }
         installStatusItem()
         AppUpdater.shared.start()
+        spaceFocus.start()
         _ = taskSync // listens for task changes from now on
         taskMCP.apply()
 
@@ -126,6 +143,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         applyIslandPreference()
         applyAgentPreference()
         applyClipboardPreference()
+        basket.canShare = { [weak self] in self?.share.isConfigured ?? false }
+        basket.onShareLink = { [weak self] urls in self?.shareFiles(urls) }
+        basket.start()
 
         let expander = SnippetExpander(store: snippets, assets: assets, preferences: preferences)
         expander.askToFill = { [weak self] snippet, field in self?.fillSnippet(snippet, from: field) }
@@ -330,6 +350,76 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
+        // Diagnostics: `--env CUE_DEBUG_RENDER=weather` fetches the weather and draws its view, pill and tile to Pictures/Cue/_render.png.
+        if ProcessInfo.processInfo.environment["CUE_DEBUG_RENDER"] == "weather" {
+            let store = WeatherStore()
+            store.start()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
+                let view = VStack(alignment: .leading, spacing: 12) {
+                    WeatherDetail(weather: store)
+                        .background(.black, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+                    HStack(spacing: 16) {
+                        WeatherPill(weather: store)
+                        WeatherTile(weather: store).padding(8).background(.black)
+                    }
+                }
+                .padding(16)
+                .background(Color(red: 0.47, green: 0.55, blue: 0.67))
+                .environment(\.colorScheme, .dark)
+                let renderer = ImageRenderer(content: view)
+                renderer.scale = 2
+                if let cg = renderer.cgImage, let png = ImageEncoding.png(cg) {
+                    try? png.write(to: CaptureLibrary.defaultFolder().appendingPathComponent("_render.png"))
+                }
+                _ = store
+            }
+        }
+        // Diagnostics: `--env CUE_DEBUG_RENDER=notices` draws the network, drive and download HUDs to Pictures/Cue/_render.png.
+        if ProcessInfo.processInfo.environment["CUE_DEBUG_RENDER"] == "notices" {
+            let samples = [
+                NoticeHUD(kind: .offline, title: "No internet", subtitle: "Check your Wi-Fi or cable"),
+                NoticeHUD(kind: .online, title: "Back online", subtitle: "Stackrover 5G"),
+                NoticeHUD(kind: .vpnOn, title: "VPN connected", subtitle: "Stackrover 5G"),
+                NoticeHUD(kind: .driveMounted, title: "Samsung T7", subtitle: "412 GB free of 1 TB", url: URL(fileURLWithPath: "/Volumes/Samsung T7"), used: 0.59),
+                NoticeHUD(kind: .driveEjected, title: "Samsung T7 ejected", subtitle: "Safe to unplug"),
+                NoticeHUD(kind: .downloaded, title: "Cue-0.10.4.dmg", subtitle: "18.2 MB · Click to show", url: URL(fileURLWithPath: "/System/Applications/Calculator.app")),
+            ]
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                let view = VStack(alignment: .leading, spacing: 10) {
+                    ForEach(Array(samples.enumerated()), id: \.offset) { _, notice in
+                        NoticeRow(notice: notice)
+                            .frame(height: 60)
+                            .background(.black, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    }
+                    MeetingRow(meeting: MeetingHUD(id: "a", title: "Design review", start: .now.addingTimeInterval(240), end: .now.addingTimeInterval(2040),
+                                                   joinURL: URL(string: "https://meet.google.com/abc"), color: .orange))
+                        .frame(height: 60)
+                        .background(.black, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    MeetingRow(meeting: MeetingHUD(id: "b", title: "Lunch with Sam", start: .now.addingTimeInterval(300), end: .now.addingTimeInterval(3900),
+                                                   joinURL: nil, color: .purple))
+                        .frame(height: 60)
+                        .background(.black, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                }
+                .padding(16)
+                .background(Color(red: 0.47, green: 0.55, blue: 0.67))
+                .environment(\.colorScheme, .dark)
+                let renderer = ImageRenderer(content: view)
+                renderer.scale = 2
+                if let cg = renderer.cgImage, let png = ImageEncoding.png(cg) {
+                    try? png.write(to: CaptureLibrary.defaultFolder().appendingPathComponent("_render.png"))
+                }
+            }
+        }
+        // Diagnostics: `--env CUE_DEBUG_RENDER=critter` draws the pixel Cue's frames to Pictures/Cue/_render.png.
+        if ProcessInfo.processInfo.environment["CUE_DEBUG_RENDER"] == "critter" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                let renderer = ImageRenderer(content: CueCritter.sheet())
+                renderer.scale = 2
+                if let cg = renderer.cgImage, let png = ImageEncoding.png(cg) {
+                    try? png.write(to: CaptureLibrary.defaultFolder().appendingPathComponent("_render.png"))
+                }
+            }
+        }
         // Diagnostics: `--env CUE_DEBUG_RENDER=panels` draws the panel-position pictures to Pictures/Cue/_render.png.
         if ProcessInfo.processInfo.environment["CUE_DEBUG_RENDER"] == "panels" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
@@ -349,12 +439,96 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
-        // Diagnostics: `--env CUE_DEBUG_ISLAND_SHOT=captures` opens the island on that tab and
+        // Diagnostics: `--env CUE_DEBUG_BASKET=1` shows the basket with a few of the app's own files
+        // (`empty`: with none).
+        if let mode = ProcessInfo.processInfo.environment["CUE_DEBUG_BASKET"] {
+            let files = ((try? FileManager.default.contentsOfDirectory(at: Bundle.main.resourceURL!, includingPropertiesForKeys: nil)) ?? []).prefix(mode == "empty" ? 0 : 3)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                // `grid`: the four places a shake offers, Transform lit.
+                if mode == "grid" { self?.basket.debugShowGrid(hovered: .transform) } else { self?.basket.debugShow(Array(files)) }
+            }
+        }
+        // Diagnostics: `--env CUE_DEBUG_ISLAND_SHOT=captures` opens the island on that tab (`agents`:
+        // the agent sessions; `drop`: as with a file dragged over it;
+        // `dropsaved`: then as just dropped; `status`: a sample "Copied") and
         // writes a picture of it to Pictures/Cue/_island.png.
         if let tabName = ProcessInfo.processInfo.environment["CUE_DEBUG_ISLAND_SHOT"] {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
                 if let tab = IslandTab(rawValue: tabName) { UserDefaults.standard.set(tab.rawValue, forKey: IslandTab.storageKey) }
-                self?.island?.expand()
+                switch tabName {
+                case "agents": self?.island?.showAgents()
+                #if DEBUG
+                case "probe": SandboxProbe.run()
+                case "brightnesskeys": SandboxProbe.pressBrightness()
+                case "mirrorcamera": SandboxProbe.mirrorCamera()
+                case "skylight": Log.app.info("SkyLight probe: \(LockScreenWidgets.probe(), privacy: .public)")
+                case "lockpanel":
+                    // The lock screen's card on the desktop, to look at.
+                    self?.island?.nowPlaying.debugFake()
+                    let panel = NSPanel(contentRect: CGRect(x: 400, y: 300, width: LockScreenPanel.size.width, height: LockScreenPanel.size.height),
+                                        styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+                    panel.isOpaque = false
+                    panel.backgroundColor = .clear
+                    panel.level = .floating
+                    if let nowPlaying = self?.island?.nowPlaying { panel.contentView = NSHostingView(rootView: LockScreenPanel(nowPlaying: nowPlaying, focus: nil)) }
+                    panel.orderFrontRegardless()
+                    self?.debugPanel = panel
+                #endif
+                case "mirror": self?.island?.showMirror()
+                case "mini", "minicard":
+                    self?.island?.nowPlaying.debugFake()
+                    self?.island?.miniPlayer.show()
+                    if tabName == "minicard" { self?.island?.miniPlayer.toggleSize() }
+                case "level": self?.island?.debugShowLevel()
+                case "caps", "focus", "capsoff", "focusoff":
+                    self?.island?.showToggle(ToggleHUD(kind: tabName.hasPrefix("caps") ? .capsLock : .focus, on: !tabName.hasSuffix("off")))
+                case "offline": self?.island?.showNotice(NoticeHUD(kind: .offline, title: "No internet", subtitle: "Check your Wi-Fi or cable"))
+                case "drive":
+                    self?.island?.showNotice(NoticeHUD(kind: .driveMounted, title: "Samsung T7", subtitle: "412 GB free of 1 TB", url: URL(fileURLWithPath: "/Volumes/Samsung T7"), used: 0.59))
+                case "download":
+                    self?.island?.showNotice(NoticeHUD(kind: .downloaded, title: "Cue-0.10.4.dmg", subtitle: "18.2 MB · Click to show", url: URL(fileURLWithPath: "/System/Applications/Calculator.app")))
+                case "weather":
+                    self?.island?.weather.start()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self?.island?.showWeather() }
+                case "meeting":
+                    self?.island?.showMeeting(MeetingHUD(id: "debug", title: "Design review", start: .now.addingTimeInterval(240), end: .now.addingTimeInterval(2040),
+                                                         joinURL: URL(string: "https://meet.google.com/abc-defg-hij"), color: .orange))
+                case "airpods":
+                    self?.island?.showAudioDevice(AudioDeviceHUD(name: "AirPods Pro", connected: true, left: 82, right: 78, batteryCase: 15))
+                case "battery", "batterylow", "batteryout", "batterycharging":
+                    let event: BatteryHUD.Event = switch tabName { case "batterylow": .low; case "batteryout": .unplugged; default: .pluggedIn }
+                    if var hud = BatteryMonitor.current(event) {
+                        if tabName == "batterycharging" { hud = BatteryHUD(event: .pluggedIn, percent: hud.percent, charging: true, minutes: 42) }
+                        self?.island?.showBattery(hud)
+                    }
+                case "agentsmedia":
+                    self?.island?.nowPlaying.debugFake()
+                    self?.island?.showAgents()
+                case "status":
+                    _ = self?.island?.showStatus(IslandStatus(symbol: "checkmark.circle.fill", title: "Copied", subtitle: "Image 148 × 116",
+                                                              image: NSImage(named: "AppIcon"), duration: .seconds(6)))
+                case "drop": self?.island?.debugShowDropZone()
+                case "medialyrics":
+                    UserDefaults.standard.set(true, forKey: "island.player.lyrics")
+                    self?.island?.nowPlaying.debugFake()
+                    self?.island?.showMedia()
+                case "media", "mediapill", "mediablocked":
+                    self?.island?.nowPlaying.debugFake(blocked: tabName == "mediablocked")
+                    if tabName != "mediapill" { self?.island?.showMedia() } else { self?.island?.expand() }
+                case "shelf":
+                    // A few of the app's own files parked, one picked.
+                    let resources = Bundle.main.resourceURL!
+                    let files = ((try? FileManager.default.contentsOfDirectory(at: resources, includingPropertiesForKeys: nil)) ?? []).prefix(4)
+                    if let shelf = self?.island?.shelf {
+                        shelf.add(fileURLs: Array(files))
+                        if let first = shelf.items.first { shelf.selection = [first.id] }
+                    }
+                    self?.island?.expand()
+                case "dropsaved":
+                    self?.island?.debugShowDropZone()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self?.island?.debugShowDropSaved() }
+                default: self?.island?.expand()
+                }
                 // CUE_DEBUG_ISLAND_PREVIEW=capture|clipboard|color|asset opens the tab's first
                 // such item in the pane under the island; the shot then takes the screen around both.
                 let previewKind = ProcessInfo.processInfo.environment["CUE_DEBUG_ISLAND_PREVIEW"]
@@ -558,10 +732,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .clipboard: showClipboardPanel(nil)
         case .panel: toggleHistoryAtPointer()
         case .clock: island?.showClock() ?? showSettings(nil)
-        case .settings: showSettings(nil)
+        case .settings(let name):
+            showSettings(nil)
+            if let page = SettingsSection.allCases.first(where: { $0.rawValue.lowercased() == name }) { settingsWindow?.present(page) }
         case .record: studio.showRecorder()
         case .recordings: studio.showLibrary()
         case .tasks: showTaskDashboard(nil)
+        case .basket: basket.reopen()
+        case .mirror: island?.showMirror()
+        case .miniPlayer: island?.miniPlayer.show()
         case .checkForUpdates: AppUpdater.shared.checkInBackground()
         }
     }
@@ -619,6 +798,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ]
         for (title, selector, id) in panels { menu.addItem(shortcutItem(title, selector, id)) }
         menu.addItem(makeItem("Tasks…", #selector(showTaskDashboard(_:))))
+        if basket.canReopen { menu.addItem(makeItem("Reopen Last Basket", #selector(reopenBasket(_:)))) }
         menu.addItem(.separator())
         menu.addItem(makeItem("Settings…", #selector(showSettings(_:)), keyEquivalent: ",", modifiers: .command))
         menu.addItem(makeItem("Check for Updates…", #selector(checkForUpdates(_:))))
@@ -736,6 +916,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                           notes: notes, actions: historyActions, preferences: preferences, clock: prayerClock, focus: focusTimer, agents: agentStore)
                 island?.onSnippetFilled = { [weak self] snippet, values in self?.snippetFilled(snippet, values: values) }
                 island?.onOpenTaskDashboard = { [weak self] in self?.showTaskDashboard(nil) }
+                island?.onOpenSettings = { [weak self] in self?.showSettings(nil) }
                 library.warmThumbnails()
                 FeedbackHUD.island = { [weak self] status in self?.island?.showStatus(status) ?? false }
             }
@@ -747,12 +928,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Listens for agent sessions while Settings › Island › Agent sessions is on.
     private func applyAgentPreference() {
-        let enabled = withObservationTracking {
-            preferences.agentSessionsEnabled
+        let (enabled, usage) = withObservationTracking {
+            (preferences.agentSessionsEnabled, preferences.agentUsageLimits)
         } onChange: { [weak self] in
             Task { @MainActor in self?.applyAgentPreference() }
         }
         agentConnector.setRunning(enabled)
+        agentConnector.relaysUsage = usage
     }
 
     /// Starts or stops recording the pasteboard as the Settings toggles change.
@@ -1143,6 +1325,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// Uploads dropped files where Settings › Sharing says and puts their links on the
+    /// clipboard, one per line. Files over 200 MB are left out.
+    private func shareFiles(_ urls: [URL]) {
+        guard share.isConfigured else {
+            FeedbackHUD.show("Set up sharing first", symbol: "link.badge.plus", subtitle: "Settings › Sharing")
+            showSettings(nil)
+            return
+        }
+        let limit = 200 * 1024 * 1024
+        let files = urls.filter { ((try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) <= limit && !$0.hasDirectoryPath }
+        guard !files.isEmpty else {
+            FeedbackHUD.show("Nothing to share", symbol: "exclamationmark.triangle.fill", subtitle: "Folders and files over 200 MB can't be shared")
+            return
+        }
+        island?.showStatus(IslandStatus(symbol: "arrow.up.circle", title: "Uploading…", subtitle: files.count == 1 ? files[0].lastPathComponent : "\(files.count) files", duration: .seconds(30)), quiet: false)
+        let share = share
+        Task { @MainActor [weak self] in
+            var links: [String] = []
+            do {
+                for file in files {
+                    let data = try Data(contentsOf: file, options: .mappedIfSafe)
+                    let type = UTType(filenameExtension: file.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+                    let url = try await ShareUploader.upload(data, name: share.objectName(for: .now, file: file.lastPathComponent), contentType: type, settings: share)
+                    links.append(url.absoluteString)
+                }
+                self?.clipboard.copy(text: links.joined(separator: "\n"))
+                FeedbackHUD.show(links.count == 1 ? "Link copied" : "\(links.count) links copied", symbol: "link", duration: .seconds(2.5), subtitle: links.count == 1 ? links[0] : nil)
+                Log.app.info("Shared \(files.count) dropped file(s)")
+            } catch {
+                FeedbackHUD.show("Upload failed", symbol: "exclamationmark.triangle.fill", duration: .seconds(4), subtitle: error.localizedDescription)
+                Log.app.error("Share failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
     /// The capture as a floating window to work against (see PinnedCaptureWindow).
     private func pinToScreen(_ item: CaptureItem) {
         guard let image = library.image(for: item) else { return }
@@ -1262,6 +1479,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Every task in a window of its own: lists and projects, as a list or a board,
     /// with the chosen task open beside them.
+    @objc func reopenBasket(_ sender: Any?) {
+        basket.reopen()
+    }
+
     @objc func showTaskDashboard(_ sender: Any?) {
         openTaskDashboard(task: nil)
     }

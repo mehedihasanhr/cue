@@ -8,8 +8,10 @@ import AppKit
 ///     cue://task/new?title=…&notes=…&priority=urgent|high|medium|low&project=…
 ///     cue://snippet/add?keyword=;sig&text=…&name=…
 ///     cue://clipboard/copy?text=…
-///     cue://palette · cue://clipboard · cue://panel · cue://clock · cue://settings
+///     cue://palette · cue://clipboard · cue://panel · cue://clock · cue://settings[/page]
 ///     cue://record · cue://recordings · cue://tasks
+///     cue://basket (reopen the floating basket last closed with files in it)
+///     cue://mirror (the camera as a mirror in the island) · cue://miniplayer
 ///     cue://update (check for updates now, quietly, as the daily check does)
 enum URLCommand: Equatable {
     case captureArea, captureWindow, captureFullScreen, captureScrolling, captureText, pickColor
@@ -18,10 +20,19 @@ enum URLCommand: Equatable {
     /// A note from `text` (nil: the quick note form).
     case newNote(text: String?)
     case copy(String)
-    case palette, clipboard, panel, clock, settings
+    case palette, clipboard, panel, clock
+    /// Settings, on a page when one is named (`cue://settings/mcp`): the page's name,
+    /// matched to a page by whoever opens it (so this stays free of the Settings UI).
+    case settings(String?)
     case record, recordings
     /// The task dashboard.
     case tasks
+    /// The floating basket last closed with files in it, back.
+    case basket
+    /// The camera as a mirror in the island.
+    case mirror
+    /// The floating mini player.
+    case miniPlayer
     case checkForUpdates
 
     /// nil for a URL Cue does not understand.
@@ -53,10 +64,15 @@ enum URLCommand: Equatable {
         case ["clipboard"], ["clipboard", "list"]: self = .clipboard
         case ["panel"], ["library"]: self = .panel
         case ["clock"], ["prayer"]: self = .clock
-        case ["settings"], ["preferences"]: self = .settings
+        case ["settings"], ["preferences"]: self = .settings(nil)
+        case let named where named.count == 2 && (named[0] == "settings" || named[0] == "preferences"):
+            self = .settings(named[1])
         case ["record"], ["video", "record"], ["recorder"]: self = .record
         case ["recordings"], ["video"], ["videos"]: self = .recordings
         case ["tasks"], ["tasks", "dashboard"], ["task", "dashboard"], ["dashboard"]: self = .tasks
+        case ["basket"], ["basket", "reopen"]: self = .basket
+        case ["mirror"], ["camera"]: self = .mirror
+        case ["miniplayer"], ["player"]: self = .miniPlayer
         case ["update"], ["updates"], ["check-for-updates"]: self = .checkForUpdates
         default: return nil
         }
