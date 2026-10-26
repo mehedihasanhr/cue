@@ -666,6 +666,8 @@ struct AgentsView: View {
     static let cardRadius: CGFloat = 20
     static let innerRadius: CGFloat = 8
 
+    /// The session whose details are open, in place of the list.
+    @State private var detailID: String?
     /// The user asked to see every session while a question waits.
     @State private var showAll = false
     /// A question is waiting: the island shows it alone, not the whole list.
@@ -681,6 +683,30 @@ struct AgentsView: View {
     private var moreBelow: Bool { overflows && scrollOffset + listLimit < listHeight - 2 }
 
     var body: some View {
+        if let id = detailID, let session = store.sessions.first(where: { $0.id == id }), !questionOnly {
+            AgentDetailView(session: session, store: store,
+                            back: { withAnimation(IslandView.listAnimation) { detailID = nil } }, close: close)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 14)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { reportHeight($0.rounded(.up)) }
+                .transition(.opacity.combined(with: .offset(x: 12)))
+        } else {
+            list
+            #if DEBUG
+                // Diagnostics: `CUE_DEBUG_AGENT_DETAIL=1` opens the first session's details
+                // as soon as there is one.
+                .task {
+                    guard ProcessInfo.processInfo.environment["CUE_DEBUG_AGENT_DETAIL"] != nil else { return }
+                    while detailID == nil, !Task.isCancelled {
+                        if let first = store.sessions.first { detailID = first.id }
+                        try? await Task.sleep(for: .milliseconds(300))
+                    }
+                }
+            #endif
+        }
+    }
+
+    private var list: some View {
         VStack(alignment: .leading, spacing: 12) {
             if questionOnly { questionHeader } else { header }
             if store.sessions.isEmpty {
@@ -699,7 +725,8 @@ struct AgentsView: View {
                                    !AgentSessionCard.showsCard(session, requests: store.requests(for: session)) {
                                     Rectangle().fill(.white.opacity(0.07)).frame(height: 0.5).padding(.leading, 50)
                                 }
-                                AgentSessionCard(session: session, requests: store.requests(for: session), store: store)
+                                AgentSessionCard(session: session, requests: store.requests(for: session), store: store,
+                                                 open: { withAnimation(IslandView.listAnimation) { detailID = session.id } })
                                     .padding(.vertical, AgentSessionCard.showsCard(session, requests: store.requests(for: session)) ? 4 : 0)
                             }
                                 .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.97, anchor: .top)),
@@ -810,6 +837,168 @@ struct AgentsView: View {
     }
 }
 
+/// One session up close, opened by clicking it in the list: what it is working on,
+/// its to-do list (or, without one, the steps of its turn) ticked off as it goes,
+/// and the file it is editing with the lines it adds and takes away.
+private struct AgentDetailView: View {
+    let session: AgentSession
+    let store: AgentStore
+    let back: () -> Void
+    let close: () -> Void
+
+    private static let claudeOrange = Color(red: 0.85, green: 0.47, blue: 0.34)
+    /// How many items the list shows: the latest, where the work is.
+    private static let shown = 6
+
+    private enum Mark { case done, active, pending }
+    private struct Item: Identifiable {
+        let id: String
+        let title: String
+        let mark: Mark
+    }
+
+    private var items: [Item] {
+        if !session.todos.isEmpty {
+            // The list around the item at work: what's just done, it, and what's next.
+            let todos = session.todos.enumerated().map { index, todo in
+                Item(id: "todo\(index)", title: todo.title, mark: todo.status == .done ? .done : todo.status == .active ? .active : .pending)
+            }
+            let focus = todos.firstIndex { $0.mark != .done } ?? todos.count - 1
+            let start = max(0, min(focus - 2, todos.count - Self.shown))
+            return Array(todos[start..<min(todos.count, start + Self.shown)])
+        }
+        return session.steps.suffix(Self.shown).map { step in
+            Item(id: "step\(step.id)", title: step.title, mark: step.done ? .done : .active)
+        }
+    }
+
+    /// The latest step's file edit, while it's the step at hand.
+    private var edit: (AgentEdit, done: Bool)? {
+        guard let step = session.steps.last, let edit = step.edit else { return nil }
+        return (edit, step.done)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                HeaderButton(symbol: "chevron.left", help: "Back to all sessions", action: back)
+                Icon("checklist", size: 13, weight: .semibold).foregroundStyle(.white.opacity(0.55))
+                Text("Progress").foregroundStyle(.white.opacity(0.7))
+                Spacer()
+                HeaderButton(symbol: "terminal", help: "Show in \(store.hosts[session.id]?.name ?? "its terminal")") { store.focus(session) }
+                HeaderButton(symbol: "xmark", help: "Close", action: close)
+            }
+            .font(.system(size: 12.5, weight: .semibold))
+            .frame(height: 24)
+
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 12) {
+                        AgentTile(agent: session.agent, working: session.state == .running, side: 26)
+                            // The critter's laptop reaches out to the left: room for it.
+                            .padding(.leading, session.state == .running && session.agent == .claude ? 10 : 0)
+                        Text(session.project)
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                        if let title = session.title {
+                            HStack(spacing: 6) {
+                                Circle().fill(Self.claudeOrange).frame(width: 6, height: 6)
+                                Text(title).foregroundStyle(Self.claudeOrange).lineLimit(1)
+                            }
+                            .font(.system(size: 13, weight: .semibold))
+                        }
+                    }
+                    if items.isEmpty {
+                        Text(session.activity ?? "Nothing done yet this turn")
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(.white.opacity(0.5))
+                            .lineLimit(2)
+                    } else {
+                        VStack(alignment: .leading, spacing: 7) {
+                            ForEach(items) { item in row(item) }
+                        }
+                        .padding(.leading, 7)
+                        .animation(IslandView.listAnimation, value: items.map(\.id))
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if let edit {
+                    EditCard(edit: edit.0, done: edit.done || session.state != .running, tint: Self.claudeOrange)
+                        .frame(width: 190)
+                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                }
+            }
+            .animation(IslandView.listAnimation, value: edit?.0)
+        }
+    }
+
+    private func row(_ item: Item) -> some View {
+        HStack(spacing: 10) {
+            Group {
+                switch item.mark {
+                case .done: Icon("checkmark", size: 12, weight: .bold).foregroundStyle(Self.claudeOrange)
+                case .active: Icon("play.fill", size: 10).foregroundStyle(Self.claudeOrange)
+                case .pending: Circle().strokeBorder(.white.opacity(0.3), lineWidth: 1.2).frame(width: 10, height: 10)
+                }
+            }
+            .frame(width: 14)
+            Text(item.title)
+                .font(.system(size: 13, weight: item.mark == .active ? .semibold : .medium))
+                .foregroundStyle(.white.opacity(item.mark == .pending ? 0.45 : item.mark == .active ? 1 : 0.8))
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .transition(.opacity.combined(with: .offset(y: 4)))
+    }
+}
+
+/// The file at hand: its name, the lines added and taken away, and a bar that runs
+/// while the edit is being made.
+private struct EditCard: View {
+    let edit: AgentEdit
+    let done: Bool
+    let tint: Color
+    @State private var sweep = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Icon("doc.text.fill", size: 12).foregroundStyle(tint)
+                Text(edit.file)
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(tint)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 4)
+                Text("+\(edit.added)").foregroundStyle(Color(red: 0.36, green: 0.82, blue: 0.48))
+                Text("−\(edit.removed)").foregroundStyle(Color(red: 1, green: 0.42, blue: 0.4))
+            }
+            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+            Text(done ? "Saved" : "Saving…")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.white.opacity(0.5))
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.white.opacity(0.08))
+                    Capsule().fill(tint)
+                        .frame(width: done ? proxy.size.width : proxy.size.width * 0.3)
+                        .offset(x: done ? 0 : (sweep ? proxy.size.width * 0.7 : 0))
+                }
+            }
+            .frame(height: 3)
+            .clipShape(Capsule())
+        }
+        .padding(12)
+        .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: AgentsView.innerRadius + 4, style: .continuous))
+        .animation(.easeOut(duration: 0.3), value: done)
+        .onAppear {
+            guard !IslandView.reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { sweep = true }
+        }
+    }
+}
+
 private struct HeaderButton: View {
     let symbol: String
     let help: String
@@ -850,6 +1039,8 @@ private struct AgentSessionCard: View {
     let session: AgentSession
     let requests: [AgentRequest]
     let store: AgentStore
+    /// A click opens the session's details.
+    let open: () -> Void
     @State private var hovered = false
 
     /// At work it stays on one line; finished, or waiting on the user, it shows in full.
@@ -872,9 +1063,9 @@ private struct AgentSessionCard: View {
     private var full: some View {
         VStack(alignment: .leading, spacing: 4) {
             summary
-                .onTapGesture { store.focus(session) }
+                .onTapGesture(perform: open)
                 .accessibilityAddTraits(.isButton)
-                .help(jumpHelp)
+                .help("Show its progress")
             if !session.workers.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(session.workers) { worker in
@@ -932,13 +1123,9 @@ private struct AgentSessionCard: View {
         .padding(.vertical, 10)
         .background(.white.opacity(hovered ? 0.045 : 0), in: RoundedRectangle(cornerRadius: AgentsView.cardRadius, style: .continuous))
         .contentShape(Rectangle())
-        .onTapGesture { store.focus(session) }
+        .onTapGesture(perform: open)
         .accessibilityAddTraits(.isButton)
-        .help(session.activity.map { "\($0)\n\(jumpHelp)" } ?? jumpHelp)
-    }
-
-    private var jumpHelp: String {
-        "Show in \(store.hosts[session.id]?.name ?? session.terminal.map(Self.terminalName) ?? "its terminal")"
+        .help(session.activity.map { "\($0)\nShow its progress" } ?? "Show its progress")
     }
 
     private func dismiss() {
@@ -1017,7 +1204,7 @@ private struct AgentSessionCard: View {
         .contentShape(Rectangle())
     }
 
-    /// "● Working 12s", "Needs you", "● Done — click to jump": a coloured dot and a
+    /// "● Working 12s", "Needs you", "● Done": a coloured dot and a
     /// quiet label, bright colour kept for what needs the user.
     @ViewBuilder
     private var stateLabel: some View {
@@ -1032,7 +1219,7 @@ private struct AgentSessionCard: View {
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(askingTint)
         case .idle:
-            StatusLabel(text: "Done — click to jump", tone: SessionTone.done)
+            StatusLabel(text: "Done", tone: SessionTone.done)
         }
     }
 

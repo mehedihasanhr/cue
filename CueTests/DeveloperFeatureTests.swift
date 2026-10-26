@@ -41,7 +41,7 @@ final class DeveloperFeatureTests: XCTestCase {
         XCTAssertEqual(URLCommand(URL(string: "cue://palette")!), .palette)
         XCTAssertEqual(URLCommand(URL(string: "cue://update")!), .checkForUpdates)
         XCTAssertEqual(URLCommand(URL(string: "cue://settings")!), .settings(nil))
-        XCTAssertEqual(URLCommand(URL(string: "cue://settings/tasks")!), .settings(.tasks))
+        XCTAssertEqual(URLCommand(URL(string: "cue://settings/tasks")!), .settings("tasks"))
         XCTAssertEqual(URLCommand(URL(string: "cue://task/new?title=Fix%20it&priority=high&project=Cue")!),
                        .newTask(title: "Fix it", notes: "", priority: .high, project: "Cue"))
         XCTAssertEqual(URLCommand(URL(string: "cue://task/new")!), .newTask(title: nil, notes: "", priority: .medium, project: nil))

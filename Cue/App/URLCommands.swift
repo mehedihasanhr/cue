@@ -19,8 +19,9 @@ enum URLCommand: Equatable {
     case newNote(text: String?)
     case copy(String)
     case palette, clipboard, panel, clock
-    /// Settings, on a page when one is named (`cue://settings/mcp`).
-    case settings(SettingsSection?)
+    /// Settings, on a page when one is named (`cue://settings/mcp`): the page's name,
+    /// matched to a page by whoever opens it (so this stays free of the Settings UI).
+    case settings(String?)
     case record, recordings
     /// The task dashboard.
     case tasks
@@ -57,7 +58,7 @@ enum URLCommand: Equatable {
         case ["clock"], ["prayer"]: self = .clock
         case ["settings"], ["preferences"]: self = .settings(nil)
         case let named where named.count == 2 && (named[0] == "settings" || named[0] == "preferences"):
-            self = .settings(SettingsSection.allCases.first { $0.rawValue.lowercased() == named[1] })
+            self = .settings(named[1])
         case ["record"], ["video", "record"], ["recorder"]: self = .record
         case ["recordings"], ["video"], ["videos"]: self = .recordings
         case ["tasks"], ["tasks", "dashboard"], ["task", "dashboard"], ["dashboard"]: self = .tasks

@@ -577,9 +577,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .clipboard: showClipboardPanel(nil)
         case .panel: toggleHistoryAtPointer()
         case .clock: island?.showClock() ?? showSettings(nil)
-        case .settings(let page):
+        case .settings(let name):
             showSettings(nil)
-            if let page { settingsWindow?.present(page) }
+            if let page = SettingsSection.allCases.first(where: { $0.rawValue.lowercased() == name }) { settingsWindow?.present(page) }
         case .record: studio.showRecorder()
         case .recordings: studio.showLibrary()
         case .tasks: showTaskDashboard(nil)

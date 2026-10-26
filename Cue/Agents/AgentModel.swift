@@ -280,11 +280,88 @@ nonisolated struct AgentSession: Identifiable, Equatable, Sendable {
     /// Work it has handed off and that is still going: subagents and background
     /// shell commands, in the order they started.
     var workers: [AgentWorker] = []
+    /// What it has done this turn, a step per tool call, the latest last.
+    var steps: [AgentStep] = []
+    /// Its own to-do list (Claude Code's TodoWrite), as last written.
+    var todos: [AgentTodo] = []
 
     /// The folder's name: what tells two sessions apart at a glance.
     var project: String {
         guard let cwd, !cwd.isEmpty else { return agent.shortName }
         return URL(fileURLWithPath: cwd).lastPathComponent
+    }
+}
+
+/// One thing a session did this turn: "Read CartStore.swift", ticked once done.
+nonisolated struct AgentStep: Identifiable, Equatable, Sendable {
+    let id: Int
+    let title: String
+    var done = false
+    /// A file edit's file and the lines it adds and takes away.
+    var edit: AgentEdit?
+
+    /// The most steps kept: the details show the last few.
+    static let limit = 24
+
+    init(id: Int, tool: String, input: JSONValue?) {
+        self.id = id
+        let input = input ?? .null
+        let file = (input["file_path"]?.string ?? input["notebook_path"]?.string ?? input["path"]?.string)
+            .map { URL(fileURLWithPath: $0).lastPathComponent }
+        let lines = { (text: String?) -> Int in
+            guard let text, !text.isEmpty else { return 0 }
+            return text.reduce(1) { $1 == "\n" ? $0 + 1 : $0 }
+        }
+        switch tool {
+        case "Read": title = "Read \(file ?? "a file")"
+        case "Edit":
+            title = "Edit \(file ?? "a file")"
+            edit = file.map { AgentEdit(file: $0, added: lines(input["new_string"]?.string), removed: lines(input["old_string"]?.string)) }
+        case "MultiEdit":
+            title = "Edit \(file ?? "a file")"
+            let edits = input["edits"]?.array ?? []
+            edit = file.map { AgentEdit(file: $0, added: edits.reduce(0) { $0 + lines($1["new_string"]?.string) },
+                                        removed: edits.reduce(0) { $0 + lines($1["old_string"]?.string) }) }
+        case "Write":
+            title = "Write \(file ?? "a file")"
+            edit = file.map { AgentEdit(file: $0, added: lines(input["content"]?.string), removed: 0) }
+        case "NotebookEdit": title = "Edit \(file ?? "a notebook")"
+        case "Grep", "Glob": title = "Search \(input["pattern"]?.string.map { "“\($0.prefix(40))”" } ?? "the code")"
+        case "WebSearch": title = "Search the web for \(input["query"]?.string?.prefix(40) ?? "…")"
+        case "WebFetch": title = "Read \(input["url"]?.string.flatMap { URL(string: $0)?.host } ?? "a page")"
+        case "Agent", "Task": title = input["description"]?.string ?? "Hand off to an agent"
+        case "Bash": title = input["description"]?.string ?? "Run \(input["command"]?.commandLine?.prefix(60) ?? "a command")"
+        default: title = String(AgentToolSummary(tool: tool, input: input).line.prefix(80))
+        }
+    }
+}
+
+nonisolated struct AgentEdit: Equatable, Sendable {
+    let file: String
+    let added: Int
+    let removed: Int
+}
+
+/// One item of the session's own to-do list.
+nonisolated struct AgentTodo: Equatable, Sendable {
+    enum Status: Equatable, Sendable { case pending, active, done }
+    let title: String
+    let status: Status
+
+    /// The list a TodoWrite call sets: `{todos: [{content, status, activeForm}]}`.
+    static func list(from input: JSONValue?) -> [AgentTodo]? {
+        guard let todos = input?["todos"]?.array else { return nil }
+        return todos.compactMap { todo in
+            guard let content = todo["content"]?.string else { return nil }
+            let status: Status = switch todo["status"]?.string {
+            case "completed": .done
+            case "in_progress": .active
+            default: .pending
+            }
+            // The item at work reads as what is happening ("Fixing the cart total").
+            let title = status == .active ? (todo["activeForm"]?.string ?? content) : content
+            return AgentTodo(title: title, status: status)
+        }
     }
 }
 
@@ -358,6 +435,7 @@ nonisolated struct AgentSessionBook: Equatable, Sendable {
             session.state = .running
             session.turnStartedAt = now
             session.usedTool = false
+            session.steps = []
             session.activity = event.prompt.map(Self.oneLine)
             if session.title == nil, let prompt = event.prompt { session.title = Self.title(from: prompt) }
         case .preToolUse, .postToolUse:
@@ -366,6 +444,7 @@ nonisolated struct AgentSessionBook: Equatable, Sendable {
             if let tool = event.toolName {
                 session.activity = AgentToolSummary(tool: tool, input: event.toolInput).line
                 session.usedTool = true
+                record(tool, event, in: &session)
                 // A plan to approve or a question to answer waits on the user even when
                 // no permission request comes with it (bypass mode skips that hook).
                 if event.name == .preToolUse, tool == "ExitPlanMode" || tool == "AskUserQuestion" { session.state = .waiting }
@@ -376,6 +455,7 @@ nonisolated struct AgentSessionBook: Equatable, Sendable {
             if event.notificationType == "idle_prompt" { session.state = .idle }
         case .stop:
             session.state = .idle
+            for index in session.steps.indices { session.steps[index].done = true }
             // A subagent that does not run in the background ends with the turn, even
             // when its own stop was never reported.
             session.workers.removeAll { $0.kind == .subagent && !$0.background }
@@ -390,6 +470,23 @@ nonisolated struct AgentSessionBook: Equatable, Sendable {
             session.finishedAt = now
         }
         store(session)
+    }
+
+    /// A tool call in the session's steps: a new one as it starts, ticked as it ends.
+    /// A to-do list it writes replaces its list instead.
+    private func record(_ tool: String, _ event: AgentEvent, in session: inout AgentSession) {
+        if tool == "TodoWrite" {
+            if event.name == .preToolUse, let todos = AgentTodo.list(from: event.toolInput) { session.todos = todos }
+            return
+        }
+        guard !["AskUserQuestion", "ExitPlanMode"].contains(tool) else { return }
+        if event.name == .preToolUse {
+            let id = (session.steps.last?.id ?? 0) + 1
+            session.steps.append(AgentStep(id: id, tool: tool, input: event.toolInput))
+            if session.steps.count > AgentStep.limit { session.steps.removeFirst(session.steps.count - AgentStep.limit) }
+        } else if let index = session.steps.lastIndex(where: { !$0.done }) {
+            session.steps[index].done = true
+        }
     }
 
     private mutating func store(_ session: AgentSession) {
