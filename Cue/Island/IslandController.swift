@@ -209,24 +209,60 @@ final class IslandController {
     private var wakeObserver: (any NSObjectProtocol)?
     private var pointerMonitors: [Any] = []
     private var pointerInside = false
+    /// The left button is down (from the press events, which also covers presses the
+    /// hardware state misses), and the drag pasteboard's change count at that press.
+    private var pressed = false
+    private var dragCountAtPress = NSPasteboard(name: .drag).changeCount
+
+    private func pressChanged(down: Bool) {
+        pressed = down
+        if down { dragCountAtPress = NSPasteboard(name: .drag).changeCount }
+    }
+
+    /// The button is held, carrying nothing to drop: a window on its way to another
+    /// Space, a selection, a slider. Not files, which write the drag pasteboard.
+    private var pressWithoutDrop: Bool {
+        pressed && NSPasteboard(name: .drag).changeCount == dragCountAtPress
+    }
 
     /// The window server sends no tracking-area events for a window on the notch, so
     /// the island watches mouse-moved events instead: the global monitor covers the
     /// pointer over other apps, the local one the island itself. The handler is a
     /// single rect test, and nothing runs while the pointer is still.
     private func installPointerMonitors() {
-        let global = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged], handler: { [weak self] _ in
-            MainActor.assumeIsolated { self?.pointerMoved() }
+        // Moving with no button down also means any press is over, should its release
+        // have gone unseen (a drag session out of the island swallows it).
+        let global = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged], handler: { [weak self] event in
+            let released = event.type == .mouseMoved
+            MainActor.assumeIsolated {
+                if released { self?.pressed = false }
+                self?.pointerMoved()
+            }
         })
         let local = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged], handler: { [weak self] event in
-            MainActor.assumeIsolated { self?.pointerMoved() }
+            let released = event.type == .mouseMoved
+            MainActor.assumeIsolated {
+                if released { self?.pressed = false }
+                self?.pointerMoved()
+            }
             return event
         })
         // Two-finger swipes over the island move between the agents list and the panel.
         let swipes = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel], handler: { [weak self] event in
             MainActor.assumeIsolated { self?.swipe(event) ?? false } ? nil : event
         })
-        pointerMonitors = [global, local, swipes].compactMap { $0 }
+        // Every press notes the drag pasteboard, so a drag passing over the island can
+        // tell files (a drag and drop writes it) from a window being moved.
+        let presses = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp], handler: { [weak self] event in
+            let down = event.type == .leftMouseDown
+            MainActor.assumeIsolated { self?.pressChanged(down: down) }
+        })
+        let localPresses = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp], handler: { [weak self] event in
+            let down = event.type == .leftMouseDown
+            MainActor.assumeIsolated { self?.pressChanged(down: down) }
+            return event
+        })
+        pointerMonitors = [global, local, swipes, presses, localPresses].compactMap { $0 }
     }
 
     // MARK: - Swipes
@@ -748,6 +784,9 @@ final class IslandController {
         default: break
         }
         guard model.phase != .expanded else { return }
+        // Something dragged over the island that isn't files (a window being moved to
+        // another Space) passes under it without opening it; files open it to drop.
+        guard !pressWithoutDrop else { return }
         // A flash opens at once when hovered; the closed island waits for the delay
         // — or, in click mode, for a click.
         if model.phase.isFlash {
@@ -758,7 +797,7 @@ final class IslandController {
             hoverTask?.cancel()
             hoverTask = Task { [weak self] in
                 try? await Task.sleep(for: .milliseconds(Int(delay * 1000)))
-                guard !Task.isCancelled, let self, pointerInside else { return }
+                guard !Task.isCancelled, let self, pointerInside, !pressWithoutDrop else { return }
                 open()
             }
         }
