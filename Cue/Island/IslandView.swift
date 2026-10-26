@@ -77,6 +77,8 @@ final class IslandModel {
     var onShowWeather: () -> Void = {}
     /// Opens the camera mirror; set by the controller.
     var onShowMirror: () -> Void = {}
+    /// Pops the player out into the mini player; set by the controller.
+    var onDetachPlayer: () -> Void = {}
     /// Opens a link (a meeting's call) and closes; set by the controller.
     var onOpenURL: (URL) -> Void = { _ in }
     /// The tiles beside the closed notch, as the settings and what plays have them;
@@ -616,7 +618,7 @@ struct IslandView: View {
         case .media:
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
-                NowPlayingDetail(nowPlaying: nowPlaying, close: { model.onMediaClosed() })
+                NowPlayingDetail(nowPlaying: nowPlaying, close: { model.onMediaClosed() }, detach: { model.onDetachPlayer() })
             }
             .transition(Self.contentTransition)
         case .agents:

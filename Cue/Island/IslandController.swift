@@ -30,6 +30,8 @@ final class IslandController {
     let calendar = CalendarWatcher()
     /// The weather, once it is turned on.
     let weather = WeatherStore()
+    /// The player popped out of the island.
+    private(set) lazy var miniPlayer = MiniPlayerController(nowPlaying: nowPlaying)
     private let preferences: AppPreferences
     private let tasks: TaskStore
     private let snippets: SnippetStore
@@ -95,6 +97,10 @@ final class IslandController {
         model.weather = weather
         model.onShowWeather = { [weak self] in self?.showWeather() }
         model.onShowMirror = { [weak self] in self?.showMirror() }
+        model.onDetachPlayer = { [weak self] in
+            self?.miniPlayer.show()
+            self?.collapse()
+        }
         weather.knownPlace = { [weak clock] in clock?.place.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) } }
         model.onOpenURL = { [weak self] url in
             NSWorkspace.shared.open(url)

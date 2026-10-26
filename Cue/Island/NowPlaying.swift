@@ -581,6 +581,8 @@ struct NowPlayingDetail: View {
 
     let nowPlaying: NowPlaying
     var close: () -> Void = {}
+    /// Pops the player out of the island into its own small window.
+    var detach: (() -> Void)?
     var column = false
     @State private var scrub: Double?
     /// The lyrics in place of the artist and the timeline.
@@ -783,6 +785,16 @@ struct NowPlayingDetail: View {
             }
             .buttonStyle(.plain)
             .help(showsLyrics ? "Hide the lyrics" : "Show the lyrics")
+            if let detach {
+                Button(action: detach) {
+                    Icon("pip.exit", size: 12)
+                        .foregroundStyle(.white.opacity(0.6))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Pop the player out into a small window")
+            }
             Spacer()
             transport(small: false)
             Spacer()

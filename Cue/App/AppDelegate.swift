@@ -448,6 +448,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 switch tabName {
                 case "agents": self?.island?.showAgents()
                 case "mirror": self?.island?.showMirror()
+                case "mini", "minicard":
+                    self?.island?.nowPlaying.debugFake()
+                    self?.island?.miniPlayer.show()
+                    if tabName == "minicard" { self?.island?.miniPlayer.toggleSize() }
                 case "level": self?.island?.debugShowLevel()
                 case "caps", "focus", "capsoff", "focusoff":
                     self?.island?.showToggle(ToggleHUD(kind: tabName.hasPrefix("caps") ? .capsLock : .focus, on: !tabName.hasSuffix("off")))
@@ -709,6 +713,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .tasks: showTaskDashboard(nil)
         case .basket: basket.reopen()
         case .mirror: island?.showMirror()
+        case .miniPlayer: island?.miniPlayer.show()
         case .checkForUpdates: AppUpdater.shared.checkInBackground()
         }
     }

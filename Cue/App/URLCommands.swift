@@ -11,7 +11,7 @@ import AppKit
 ///     cue://palette · cue://clipboard · cue://panel · cue://clock · cue://settings[/page]
 ///     cue://record · cue://recordings · cue://tasks
 ///     cue://basket (reopen the floating basket last closed with files in it)
-///     cue://mirror (the camera as a mirror in the island)
+///     cue://mirror (the camera as a mirror in the island) · cue://miniplayer
 ///     cue://update (check for updates now, quietly, as the daily check does)
 enum URLCommand: Equatable {
     case captureArea, captureWindow, captureFullScreen, captureScrolling, captureText, pickColor
@@ -31,6 +31,8 @@ enum URLCommand: Equatable {
     case basket
     /// The camera as a mirror in the island.
     case mirror
+    /// The floating mini player.
+    case miniPlayer
     case checkForUpdates
 
     /// nil for a URL Cue does not understand.
@@ -70,6 +72,7 @@ enum URLCommand: Equatable {
         case ["tasks"], ["tasks", "dashboard"], ["task", "dashboard"], ["dashboard"]: self = .tasks
         case ["basket"], ["basket", "reopen"]: self = .basket
         case ["mirror"], ["camera"]: self = .mirror
+        case ["miniplayer"], ["player"]: self = .miniPlayer
         case ["update"], ["updates"], ["check-for-updates"]: self = .checkForUpdates
         default: return nil
         }
