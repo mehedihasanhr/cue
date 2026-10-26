@@ -1239,6 +1239,10 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
 enum IslandChrome {
     static let controlHeight: CGFloat = 32
     static let cardRadius: CGFloat = 14
+    /// A card's frame around its content; the content's corners are the card's less
+    /// this (14 − 4), so the two curves run parallel.
+    static let cardInset: CGFloat = 4
+    static var cardContentRadius: CGFloat { cardRadius - cardInset }
     static let controlRadius: CGFloat = 10
     static let chipRadius: CGFloat = 8
 }
@@ -1327,7 +1331,11 @@ struct CardChrome<Content: View, Actions: View, Menu: View>: View {
                     .opacity(hovering ? 1 : 0)
                     .allowsHitTesting(hovering)
             }
-            .frame(width: DayStrip<CaptureItem, EmptyView>.cardSize.width, height: DayStrip<CaptureItem, EmptyView>.cardSize.height)
+            // The content sits inset in the card, on corners nested inside the card's.
+            .frame(width: DayStrip<CaptureItem, EmptyView>.cardSize.width - IslandChrome.cardInset * 2,
+                   height: DayStrip<CaptureItem, EmptyView>.cardSize.height - IslandChrome.cardInset * 2)
+            .clipShape(RoundedRectangle(cornerRadius: IslandChrome.cardContentRadius, style: .continuous))
+            .padding(IslandChrome.cardInset)
             .background(.white.opacity(0.06))
             .clipShape(RoundedRectangle(cornerRadius: Self.radius, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Self.radius, style: .continuous).strokeBorder(hovering ? IslandStyle.hoverRing : .white.opacity(0.07), lineWidth: IslandStyle.hoverRingWidth))

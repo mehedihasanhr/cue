@@ -578,6 +578,11 @@ struct AgentsView: View {
 
     private static let scrollSpace = "agentsList"
 
+    /// Corners nest: a card's radius is the island's less the list's inset from its
+    /// edge (34 − 14), and a box inside a card is the card's less its padding (20 − 12).
+    static let cardRadius: CGFloat = 20
+    static let innerRadius: CGFloat = 8
+
     /// The user asked to see every session while a question waits.
     @State private var showAll = false
     /// A question is waiting: the island shows it alone, not the whole list.
@@ -810,7 +815,9 @@ private struct AgentSessionCard: View {
         .padding(.horizontal, 12)
         .padding(.top, 6)
         .padding(.bottom, 4)
-        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        // Clear until the pointer is on it, like the plain rows: the island's own fill
+        // shows through, and the card only lifts when it's the one being looked at.
+        .background(.white.opacity(hovered ? 0.08 : 0), in: RoundedRectangle(cornerRadius: AgentsView.cardRadius, style: .continuous))
         .overlay(alignment: .topTrailing) {
             dismissButton
                 .padding(8)
@@ -838,7 +845,7 @@ private struct AgentSessionCard: View {
         .lineLimit(1)
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(.white.opacity(hovered ? 0.045 : 0), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(.white.opacity(hovered ? 0.045 : 0), in: RoundedRectangle(cornerRadius: AgentsView.cardRadius, style: .continuous))
         .contentShape(Rectangle())
         .onTapGesture { store.focus(session) }
         .accessibilityAddTraits(.isButton)
@@ -1159,7 +1166,7 @@ private struct PermissionCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(.black.opacity(0.28), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(.black.opacity(0.28), in: RoundedRectangle(cornerRadius: AgentsView.innerRadius, style: .continuous))
                     .help(detail)
             }
             // All the answers together on the right, the default one last; a session in
@@ -1229,7 +1236,7 @@ private struct PlanCard: View {
                 .scrollIndicators(.never)
                 .frame(maxHeight: 150)
                 .fixedSize(horizontal: false, vertical: true)
-                .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: AgentsView.innerRadius, style: .continuous))
             }
             HStack(spacing: 6) {
                 AnswerButton("Keep planning", role: .quiet) { store.answer(request, .deny) }
