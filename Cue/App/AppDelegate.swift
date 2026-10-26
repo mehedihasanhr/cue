@@ -343,6 +343,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
+        // Diagnostics: `--env CUE_DEBUG_RENDER=critter` draws the pixel Cue's frames to Pictures/Cue/_render.png.
+        if ProcessInfo.processInfo.environment["CUE_DEBUG_RENDER"] == "critter" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                let renderer = ImageRenderer(content: CueCritter.sheet())
+                renderer.scale = 2
+                if let cg = renderer.cgImage, let png = ImageEncoding.png(cg) {
+                    try? png.write(to: CaptureLibrary.defaultFolder().appendingPathComponent("_render.png"))
+                }
+            }
+        }
         // Diagnostics: `--env CUE_DEBUG_RENDER=panels` draws the panel-position pictures to Pictures/Cue/_render.png.
         if ProcessInfo.processInfo.environment["CUE_DEBUG_RENDER"] == "panels" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {

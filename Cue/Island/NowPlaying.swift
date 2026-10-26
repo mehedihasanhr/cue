@@ -82,6 +82,9 @@ final class NowPlaying {
     /// Where the track was at `positionDate`; it runs on from there while playing.
     private var position: Double = 0
     private var positionDate = Date()
+    /// Whether a tab that can't be read plays, as far as Cue can tell: taken to be
+    /// playing when found, flipped by each play/pause pressed through Cue.
+    @ObservationIgnored private var guessed: (id: String, playing: Bool)?
     /// The YouTube tab shown (window and tab index), for the controls.
     @ObservationIgnored private var tab: (window: Int, index: Int)?
 
@@ -196,6 +199,10 @@ final class NowPlaying {
         guard let player, permitted.contains(player), player.isRunning else { return }
         if player.isBrowser, needsJavaScript {
             mediaKey?.send()
+            if mediaKey == .play, let track {
+                isPlaying.toggle()
+                guessed = (track.id, isPlaying)
+            }
             return
         }
         if player.isBrowser {
@@ -352,8 +359,9 @@ final class NowPlaying {
             // "(3) Title - YouTube": the count is YouTube's unread notifications.
             let name = chosen.title.replacingOccurrences(of: " - YouTube Music", with: "").replacingOccurrences(of: " - YouTube", with: "")
                 .replacingOccurrences(of: #"^\(\d+\)\s*"#, with: "", options: .regularExpression)
+            let playing = guessed?.id == videoID ? guessed?.playing ?? true : true
             show(Track(id: videoID, title: name, artist: "", album: "YouTube", duration: 0), from: browser,
-                 playing: false, at: 0, artworkURL: artworkURL, blocked: true)
+                 playing: playing, at: 0, artworkURL: artworkURL, blocked: true)
         }
         if player == browser { tab = (chosen.window, chosen.index) }
     }
@@ -527,7 +535,7 @@ struct NowPlayingPill: View {
         if let track = nowPlaying.track {
             HStack(spacing: 8) {
                 Artwork(image: nowPlaying.artwork, player: nowPlaying.player, side: 24, radius: 6)
-                AudioBars(playing: nowPlaying.isPlaying, height: 11)
+                CueCritter(side: 22, mood: .playing(nowPlaying.isPlaying, trackID: track.id))
                 Text(track.title)
                     .font(.system(size: 11.5, weight: .semibold))
                     .lineLimit(1)
@@ -535,7 +543,7 @@ struct NowPlayingPill: View {
                     .fixedSize(horizontal: true, vertical: false)
                 if !nowPlaying.needsJavaScript || nowPlaying.controlsWithMediaKeys {
                     Button(action: nowPlaying.playPause) {
-                        Icon(nowPlaying.needsJavaScript ? "playpause.fill" : nowPlaying.isPlaying ? "pause.fill" : "play.fill", size: 11, weight: .bold)
+                        Icon(nowPlaying.isPlaying ? "pause.fill" : "play.fill", size: 11, weight: .bold)
                             .foregroundStyle(.white.opacity(0.85))
                             .frame(width: 22, height: 22)
                             .background(.white.opacity(0.1), in: Circle())
@@ -597,7 +605,7 @@ struct NowPlayingDetail: View {
                             .lineLimit(1)
                     }
                     Spacer(minLength: 0)
-                    AudioBars(playing: nowPlaying.isPlaying, height: 12)
+                    CueCritter(side: 30, mood: .playing(nowPlaying.isPlaying, trackID: track.id))
                 }
                 if !nowPlaying.needsJavaScript {
                     scrubber(track)
@@ -634,9 +642,16 @@ struct NowPlayingDetail: View {
             Artwork(image: nowPlaying.artwork, player: nowPlaying.player, side: 96, radius: 16)
             VStack(alignment: .leading, spacing: 0) {
                 if let track = nowPlaying.track {
-                    Text(track.title)
-                        .font(.system(size: 14, weight: .semibold))
-                        .lineLimit(1)
+                    HStack(alignment: .top, spacing: 8) {
+                        Text(track.title)
+                            .font(.system(size: 14, weight: .semibold))
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                        // Dancing or strumming along, up in the corner.
+                        CueCritter(side: 38, mood: .playing(nowPlaying.isPlaying, trackID: track.id))
+                            .padding(.top, -16)
+                    }
+                    .frame(height: 18, alignment: .top)
                     Text([track.artist, track.album].filter { !$0.isEmpty }.joined(separator: " — "))
                         .font(.system(size: 11.5, weight: .medium))
                         .foregroundStyle(.white.opacity(0.55))
@@ -767,8 +782,8 @@ struct NowPlayingDetail: View {
     private func transport(small: Bool) -> some View {
         HStack(spacing: 0) {
             ControlButton(symbol: "backward.fill", size: small ? 12 : 14, help: "Previous", action: nowPlaying.previous)
-            ControlButton(symbol: nowPlaying.needsJavaScript ? "playpause.fill" : nowPlaying.isPlaying ? "pause.fill" : "play.fill", size: small ? 17 : 20,
-                          help: nowPlaying.needsJavaScript ? "Play or pause" : nowPlaying.isPlaying ? "Pause" : "Play", action: nowPlaying.playPause)
+            ControlButton(symbol: nowPlaying.isPlaying ? "pause.fill" : "play.fill", size: small ? 17 : 20,
+                          help: nowPlaying.isPlaying ? "Pause" : "Play", action: nowPlaying.playPause)
                 .padding(.horizontal, small ? 6 : 10)
             ControlButton(symbol: "forward.fill", size: small ? 12 : 14, help: "Next", action: nowPlaying.next)
         }
