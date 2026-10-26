@@ -55,7 +55,7 @@ struct IslandDropZone: View {
         .padding(.bottom, 14)
         .frame(width: Self.size.width, height: Self.size.height)
         .allowsHitTesting(false)
-        .animation(.spring(response: 0.35, dampingFraction: 0.7), value: saved)
+        .animation(.spring(response: IslandMotion.response(0.35), dampingFraction: 0.7), value: saved)
         .onAppear {
             guard motion else { return }
             withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { lifted = true }

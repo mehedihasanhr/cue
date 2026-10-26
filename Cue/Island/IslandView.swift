@@ -260,16 +260,17 @@ struct IslandView: View {
     @Environment(NoteStore.self) private var notes
 
     /// Opening overshoots a touch; closing settles without a bounce. With Reduce
-    /// Motion on, everything is a short ease instead.
+    /// Motion on, everything is a short ease instead. The springs quicken on faster
+    /// displays (`IslandMotion`): the times here are those at 60 Hz.
     /// Settings › Island › Animation; the view sets it from the preferences it reads.
     nonisolated(unsafe) static var animationStyle: AppPreferences.IslandAnimation = .lively
     static var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion || animationStyle != .lively }
-    static var openAnimation: Animation { animationStyle == .none ? .linear(duration: 0) : reduceMotion ? .easeOut(duration: 0.18) : .spring(response: 0.36, dampingFraction: 0.82, blendDuration: 0) }
-    static var closeAnimation: Animation { animationStyle == .none ? .linear(duration: 0) : reduceMotion ? .easeOut(duration: 0.18) : .spring(response: 0.45, dampingFraction: 1.0, blendDuration: 0) }
+    static var openAnimation: Animation { animationStyle == .none ? .linear(duration: 0) : reduceMotion ? .easeOut(duration: 0.18) : .spring(response: IslandMotion.response(0.36), dampingFraction: 0.82, blendDuration: 0) }
+    static var closeAnimation: Animation { animationStyle == .none ? .linear(duration: 0) : reduceMotion ? .easeOut(duration: 0.18) : .spring(response: IslandMotion.response(0.45), dampingFraction: 1.0, blendDuration: 0) }
     /// The agents list: rows moving, cards opening, and the island's height
     /// following them, all on one critically damped spring so they move together.
-    static var listAnimation: Animation { animationStyle == .none ? .linear(duration: 0) : reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.42, dampingFraction: 1.0) }
-    static var contentAnimation: Animation { animationStyle == .none ? .linear(duration: 0) : reduceMotion ? .easeOut(duration: 0.15) : .smooth(duration: 0.28) }
+    static var listAnimation: Animation { animationStyle == .none ? .linear(duration: 0) : reduceMotion ? .easeOut(duration: 0.2) : .spring(response: IslandMotion.response(0.42), dampingFraction: 1.0) }
+    static var contentAnimation: Animation { animationStyle == .none ? .linear(duration: 0) : reduceMotion ? .easeOut(duration: 0.15) : .smooth(duration: IslandMotion.response(0.28)) }
 
     /// Collapsed and settled: the shape is drawn clear so nothing shows beside the
     /// notch. Closing shrinks into the notch first (black all the way), then fades.
@@ -656,7 +657,7 @@ private struct StatusLayout<Leading: View>: View {
                 .rotationEffect(.degrees(shown ? 0 : -8))
                 .offset(y: shown ? 0 : -10)
                 .opacity(shown ? 1 : 0)
-                .animation(.spring(response: 0.42, dampingFraction: 0.62), value: shown)
+                .animation(.spring(response: IslandMotion.response(0.42), dampingFraction: 0.62), value: shown)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.system(size: 13, weight: .semibold))
@@ -744,7 +745,7 @@ private struct StatusLayout<Leading: View>: View {
             }
             .frame(width: 24, height: 24)
             .scaleEffect(shown ? 1 : 0.4)
-            .animation(.spring(response: 0.38, dampingFraction: 0.6).delay(0.08), value: shown)
+            .animation(.spring(response: IslandMotion.response(0.38), dampingFraction: 0.6).delay(0.08), value: shown)
         case .warning:
             Icon("exclamationmark", size: 13, weight: .bold)
                 .foregroundStyle(Self.orange)
@@ -752,7 +753,7 @@ private struct StatusLayout<Leading: View>: View {
                 .background(Self.orange.opacity(0.18), in: Circle())
                 .overlay(Circle().strokeBorder(Self.orange.opacity(0.45), lineWidth: 1.2))
                 .scaleEffect(shown ? 1 : 0.4)
-                .animation(.spring(response: 0.38, dampingFraction: 0.6).delay(0.08), value: shown)
+                .animation(.spring(response: IslandMotion.response(0.38), dampingFraction: 0.6).delay(0.08), value: shown)
         case .none:
             EmptyView()
         }
