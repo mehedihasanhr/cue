@@ -25,12 +25,15 @@ enum IslandTab: String, CaseIterable {
         }
     }
 
+    /// The tab's icon (named straight from the Hugeicons set where the SF Symbol's
+    /// stand-in reads as something else: a folder for the kept files, a picture for
+    /// the screenshots, a clipboard, not two cards, for the clipboard).
     var symbol: String {
         switch self {
         case .all: "square.grid.2x2"
-        case .captures: "photo.on.rectangle"
-        case .clipboard: "doc.on.clipboard"
-        case .assets: "tray.full"
+        case .captures: "Image01"
+        case .clipboard: "ClipboardPaste"
+        case .assets: "Folder01"
         case .colors: "paintpalette"
         case .tasks: "checklist"
         case .snippets: "text.badge.plus"
