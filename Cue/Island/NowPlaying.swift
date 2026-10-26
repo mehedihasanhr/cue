@@ -134,9 +134,11 @@ final class NowPlaying {
     }
 
     #if DEBUG
-    /// For diagnostics: a made-up track, playing in Music.
-    func debugFake() {
-        player = .music
+    /// For diagnostics: a made-up track, playing in Music (`blocked`: a YouTube tab
+    /// in Chrome that won't run JavaScript).
+    func debugFake(blocked: Bool = false) {
+        player = blocked ? .chrome : .music
+        needsJavaScript = blocked
         track = Track(id: "debug", title: "Midnight City", artist: "M83", album: "Hurry Up, We're Dreaming", duration: 243)
         isPlaying = true
         position = 81
@@ -148,16 +150,21 @@ final class NowPlaying {
     // MARK: - Controls
 
     func playPause() {
-        command("playpause", javascript: "var v=document.querySelector('video');if(v){v.paused?v.play():v.pause()}")
+        command("playpause", javascript: "var v=document.querySelector('video');if(v){v.paused?v.play():v.pause()}", mediaKey: .play)
     }
 
     func next() {
-        command("next track", javascript: "var b=document.querySelector('.ytp-next-button, ytmusic-player-bar .next-button');if(b)b.click()")
+        command("next track", javascript: "var b=document.querySelector('.ytp-next-button, ytmusic-player-bar .next-button');if(b)b.click()", mediaKey: .next)
     }
 
     func previous() {
-        command("previous track", javascript: "var v=document.querySelector('video');if(v&&v.currentTime>3){v.currentTime=0}else{history.back()}")
+        command("previous track", javascript: "var v=document.querySelector('video');if(v&&v.currentTime>3){v.currentTime=0}else{history.back()}", mediaKey: .previous)
     }
+
+    /// The tab can't be read, but the keyboard's media keys still reach it (the
+    /// browser takes them while its video is the Mac's Now Playing). Seeking needs
+    /// the JavaScript.
+    var controlsWithMediaKeys: Bool { needsJavaScript && MediaKey.canSend }
 
     func seek(to seconds: Double) {
         position = seconds
@@ -185,10 +192,14 @@ final class NowPlaying {
         positionDate = .now
     }
 
-    private func command(_ verb: String, javascript: String) {
+    private func command(_ verb: String, javascript: String, mediaKey: MediaKey? = nil) {
         guard let player, permitted.contains(player), player.isRunning else { return }
+        if player.isBrowser, needsJavaScript {
+            mediaKey?.send()
+            return
+        }
         if player.isBrowser {
-            guard let tab, !needsJavaScript else { return }
+            guard let tab else { return }
             _ = run(Self.browserScript(player, javascript: javascript, in: tab))
         } else {
             _ = run("tell application id \"\(player.rawValue)\" to \(verb)")
@@ -338,7 +349,9 @@ final class NowPlaying {
                  playing: video.s, at: video.p, artworkURL: artworkURL, blocked: false)
         } else {
             // JavaScript off: what the tab's title says, and nothing more.
+            // "(3) Title - YouTube": the count is YouTube's unread notifications.
             let name = chosen.title.replacingOccurrences(of: " - YouTube Music", with: "").replacingOccurrences(of: " - YouTube", with: "")
+                .replacingOccurrences(of: #"^\(\d+\)\s*"#, with: "", options: .regularExpression)
             show(Track(id: videoID, title: name, artist: "", album: "YouTube", duration: 0), from: browser,
                  playing: false, at: 0, artworkURL: artworkURL, blocked: true)
         }
@@ -405,6 +418,25 @@ final class NowPlaying {
         var error: NSDictionary?
         let result = NSAppleScript(source: source)?.executeAndReturnError(&error)
         return error == nil ? result : nil
+    }
+}
+
+/// The keyboard's media keys, pressed for the user: they go to whatever is the
+/// Mac's Now Playing app. Posting them needs the Accessibility permission.
+enum MediaKey: Int32 {
+    // NX_KEYTYPE_PLAY, NX_KEYTYPE_NEXT, NX_KEYTYPE_PREVIOUS.
+    case play = 16, next = 17, previous = 18
+
+    static var canSend: Bool { AXIsProcessTrusted() }
+
+    func send() {
+        for down in [true, false] {
+            let flags = NSEvent.ModifierFlags(rawValue: down ? 0xA00 : 0xB00)
+            let data = Int((rawValue << 16) | (down ? 0xA00 : 0xB00))
+            NSEvent.otherEvent(with: .systemDefined, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: 0,
+                               context: nil, subtype: 8, data1: data, data2: -1)?
+                .cgEvent?.post(tap: .cghidEventTap)
+        }
     }
 }
 
@@ -501,9 +533,9 @@ struct NowPlayingPill: View {
                     .lineLimit(1)
                     .frame(maxWidth: 130, alignment: .leading)
                     .fixedSize(horizontal: true, vertical: false)
-                if !nowPlaying.needsJavaScript {
+                if !nowPlaying.needsJavaScript || nowPlaying.controlsWithMediaKeys {
                     Button(action: nowPlaying.playPause) {
-                        Icon(nowPlaying.isPlaying ? "pause.fill" : "play.fill", size: 11, weight: .bold)
+                        Icon(nowPlaying.needsJavaScript ? "playpause.fill" : nowPlaying.isPlaying ? "pause.fill" : "play.fill", size: 11, weight: .bold)
                             .foregroundStyle(.white.opacity(0.85))
                             .frame(width: 22, height: 22)
                             .background(.white.opacity(0.1), in: Circle())
@@ -553,12 +585,18 @@ struct NowPlayingDetail: View {
                         .lineLimit(1)
                         .padding(.top, 2)
                     if nowPlaying.needsJavaScript, let player = nowPlaying.player {
-                        Text("To follow and control the video, turn on \(player.javascriptSetting).")
-                            .font(.system(size: 10.5, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.5))
-                            .lineLimit(3)
+                        if nowPlaying.controlsWithMediaKeys {
+                            controls
+                                .padding(.top, 8)
+                        }
+                        Text(nowPlaying.controlsWithMediaKeys
+                             ? "For the timeline, turn on \(player.javascriptSetting)."
+                             : "To follow and control the video, turn on \(player.javascriptSetting).")
+                            .font(.system(size: nowPlaying.controlsWithMediaKeys ? 9.5 : 10.5, weight: .medium))
+                            .foregroundStyle(.white.opacity(nowPlaying.controlsWithMediaKeys ? 0.4 : 0.5))
+                            .lineLimit(nowPlaying.controlsWithMediaKeys ? 2 : 3)
                             .fixedSize(horizontal: false, vertical: true)
-                            .padding(.top, 10)
+                            .padding(.top, nowPlaying.controlsWithMediaKeys ? 2 : 10)
                     } else {
                         scrubber(track)
                             .padding(.top, 10)
@@ -652,7 +690,8 @@ struct NowPlayingDetail: View {
             .help("Play sound on…")
             Spacer()
             ControlButton(symbol: "backward.fill", size: 14, help: "Previous", action: nowPlaying.previous)
-            ControlButton(symbol: nowPlaying.isPlaying ? "pause.fill" : "play.fill", size: 20, help: nowPlaying.isPlaying ? "Pause" : "Play", action: nowPlaying.playPause)
+            ControlButton(symbol: nowPlaying.needsJavaScript ? "playpause.fill" : nowPlaying.isPlaying ? "pause.fill" : "play.fill", size: 20,
+                          help: nowPlaying.needsJavaScript ? "Play or pause" : nowPlaying.isPlaying ? "Pause" : "Play", action: nowPlaying.playPause)
                 .padding(.horizontal, 10)
             ControlButton(symbol: "forward.fill", size: 14, help: "Next", action: nowPlaying.next)
             Spacer()
