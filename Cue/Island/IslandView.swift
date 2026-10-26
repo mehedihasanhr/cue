@@ -446,6 +446,10 @@ struct IslandView: View {
                     ClockRow(status: clock)
                         .modifier(IdealWidth { model.contentWidth = $0 })
                         .frame(height: IslandGeometry.promptContentHeight)
+                } else if let toggle = status.toggle {
+                    ToggleRow(toggle: toggle)
+                        .modifier(IdealWidth { model.contentWidth = $0 })
+                        .frame(height: IslandGeometry.flashContentHeight)
                 } else if let device = status.audioDevice {
                     AudioDeviceRow(device: device)
                         .modifier(IdealWidth { model.contentWidth = $0 })
@@ -657,6 +661,8 @@ struct IslandStatus: Equatable, Identifiable {
     var battery: BatteryHUD? = nil
     /// Drawn as a Bluetooth audio device coming or going, with its batteries.
     var audioDevice: AudioDeviceHUD? = nil
+    /// Drawn as something switched on or off (Caps Lock, a Focus).
+    var toggle: ToggleHUD? = nil
 
     /// Green for done, orange for "nothing to do", white otherwise.
     var tint: Color {

@@ -420,6 +420,12 @@ struct IslandSettingsView: View {
                         SecondsSlider(value: $preferences.islandFlashDuration, range: 0.5...5, step: 0.1, zero: nil)
                     }
                 }
+                SettingsRow("Caps Lock") {
+                    Toggle("Caps Lock", isOn: $preferences.islandCapsLock).toggleStyle(.switch)
+                }
+                SettingsRow("Focus", subtitle: "A Focus or Do Not Disturb turning on or off. macOS asks once to share it.") {
+                    Toggle("Focus", isOn: $preferences.islandFocus).toggleStyle(.switch)
+                }
                 SettingsRow("AirPods and headphones", subtitle: "A Bluetooth audio device connecting or going, with its batteries when it reports them.") {
                     Toggle("AirPods and headphones", isOn: $preferences.islandAudioDevices).toggleStyle(.switch)
                 }

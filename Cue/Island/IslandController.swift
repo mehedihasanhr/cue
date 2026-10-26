@@ -21,6 +21,8 @@ final class IslandController {
     private var battery: BatteryMonitor?
     /// AirPods and other Bluetooth audio devices coming and going.
     private var audioDevices: AudioDeviceMonitor?
+    /// Caps Lock and Focus switching.
+    private var toggles: ToggleMonitor?
     private let preferences: AppPreferences
     private let tasks: TaskStore
     private let snippets: SnippetStore
@@ -229,6 +231,7 @@ final class IslandController {
         }
         battery = BatteryMonitor { [weak self] hud in self?.showBattery(hud) }
         audioDevices = AudioDeviceMonitor { [weak self] hud in self?.showAudioDevice(hud) }
+        toggles = ToggleMonitor { [weak self] hud in self?.showToggle(hud) }
         let levels = LevelKeys.start { [weak self] level in self?.showLevel(level) }
         Log.app.info("Island level keys: \(levels ? "on" : "off (needs Accessibility)", privacy: .public); volume settable: \(SystemLevels.canSetVolume); brightness: \(SystemLevels.brightness.map { String($0) } ?? "unavailable", privacy: .public)")
         place()
@@ -451,6 +454,7 @@ final class IslandController {
     func tearDown() {
         battery?.stop()
         audioDevices?.stop()
+        toggles?.stop()
         nowPlaying.stop()
         LevelKeys.stop()
         closeTask?.cancel()
@@ -669,6 +673,16 @@ final class IslandController {
     }
 
     private static let levelDuration: Duration = .milliseconds(1500)
+
+    /// Caps Lock or a Focus switched: a moment's HUD over the closed island.
+    func showToggle(_ hud: ToggleHUD) {
+        switch hud.kind {
+        case .capsLock: guard preferences.islandCapsLock else { return }
+        case .focus: guard preferences.islandFocus else { return }
+        }
+        guard model.geometry != nil, !hidden else { return }
+        flash(phase: .status(IslandStatus(symbol: hud.symbol, title: hud.title, duration: .milliseconds(1400), toggle: hud)))
+    }
 
     /// AirPods or another Bluetooth audio device connected or went. Only over the
     /// closed island; its batteries, read a moment later, fill in the same HUD.

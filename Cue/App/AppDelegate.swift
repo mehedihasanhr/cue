@@ -388,6 +388,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 switch tabName {
                 case "agents": self?.island?.showAgents()
                 case "level": self?.island?.debugShowLevel()
+                case "caps", "focus":
+                    self?.island?.showToggle(ToggleHUD(kind: tabName == "caps" ? .capsLock : .focus, on: true))
                 case "airpods":
                     self?.island?.showAudioDevice(AudioDeviceHUD(name: "AirPods Pro", connected: true, left: 82, right: 78, batteryCase: 15))
                 case "battery", "batterylow", "batteryout", "batterycharging":

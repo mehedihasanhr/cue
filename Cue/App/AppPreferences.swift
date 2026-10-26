@@ -37,6 +37,8 @@ final class AppPreferences {
         static let islandLevelHUD = "island.levelHUD"
         static let islandBattery = "island.battery"
         static let islandAudioDevices = "island.audioDevices"
+        static let islandCapsLock = "island.capsLock"
+        static let islandFocus = "island.focus"
         static let basketHideDelay = "basket.hideDelay"
         static let islandPreview = "island.preview"
         static let islandPreviewOnHover = "island.previewOnHover"
@@ -519,6 +521,16 @@ final class AppPreferences {
         didSet { defaults.set(islandShelfOpenAfterDrop, forKey: Key.islandShelfOpenAfterDrop) }
     }
 
+    /// The island shows Caps Lock turning on and off.
+    var islandCapsLock: Bool {
+        didSet { defaults.set(islandCapsLock, forKey: Key.islandCapsLock) }
+    }
+
+    /// The island shows a Focus (Do Not Disturb and the rest) turning on and off.
+    var islandFocus: Bool {
+        didSet { defaults.set(islandFocus, forKey: Key.islandFocus) }
+    }
+
     /// The island shows AirPods and other Bluetooth audio devices connecting, with their batteries.
     var islandAudioDevices: Bool {
         didSet { defaults.set(islandAudioDevices, forKey: Key.islandAudioDevices) }
@@ -753,6 +765,8 @@ final class AppPreferences {
         islandLevelHUD = defaults.object(forKey: Key.islandLevelHUD) as? Bool ?? true
         islandBattery = defaults.object(forKey: Key.islandBattery) as? Bool ?? true
         islandAudioDevices = defaults.object(forKey: Key.islandAudioDevices) as? Bool ?? true
+        islandCapsLock = defaults.object(forKey: Key.islandCapsLock) as? Bool ?? true
+        islandFocus = defaults.object(forKey: Key.islandFocus) as? Bool ?? true
         basketHideDelay = defaults.object(forKey: Key.basketHideDelay) as? Double ?? 1.5
         islandPreview = IslandPreview(rawValue: defaults.string(forKey: Key.islandPreview) ?? "") ?? .inline
         islandPreviewOnHover = defaults.object(forKey: Key.islandPreviewOnHover) as? Bool ?? true
