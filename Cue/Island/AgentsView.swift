@@ -578,6 +578,15 @@ struct AgentsView: View {
 
     private static let scrollSpace = "agentsList"
 
+    /// The user asked to see every session while a question waits.
+    @State private var showAll = false
+    /// A question is waiting: the island shows it alone, not the whole list.
+    private var questionOnly: Bool { !store.requests.isEmpty && !showAll }
+    /// The sessions listed: only those asking while a question waits, else all.
+    private var shownSessions: [AgentSession] {
+        questionOnly ? store.sessions.filter { !store.requests(for: $0).isEmpty } : store.sessions
+    }
+
     private var listLimit: CGFloat { max(120, maxHeight - Self.chrome) }
     private var overflows: Bool { listHeight > listLimit + 1 }
     /// More below the fold: the list is taller than its window and not scrolled to the end.
@@ -585,7 +594,7 @@ struct AgentsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            header
+            if questionOnly { questionHeader } else { header }
             if store.sessions.isEmpty {
                 Text("No agent sessions running")
                     .font(.system(size: 12))
@@ -594,10 +603,11 @@ struct AgentsView: View {
             } else {
                 ScrollView(.vertical) {
                     VStack(spacing: 0) {
-                        ForEach(Array(store.sessions.enumerated()), id: \.element.id) { index, session in
+                        let sessions = shownSessions
+                        ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
                             VStack(spacing: 0) {
                                 // Plain rows, parted by a hairline; a card is set apart by its own fill.
-                                if index > 0, !AgentSessionCard.showsCard(store.sessions[index - 1], requests: store.requests(for: store.sessions[index - 1])),
+                                if index > 0, !AgentSessionCard.showsCard(sessions[index - 1], requests: store.requests(for: sessions[index - 1])),
                                    !AgentSessionCard.showsCard(session, requests: store.requests(for: session)) {
                                     Rectangle().fill(.white.opacity(0.07)).frame(height: 0.5).padding(.leading, 50)
                                 }
@@ -648,6 +658,39 @@ struct AgentsView: View {
         }
         .animation(IslandView.listAnimation, value: store.requests.map(\.id))
         .animation(IslandView.listAnimation, value: store.sessions.map(\.id))
+        .animation(IslandView.listAnimation, value: showAll)
+        // Every question answered: the next one shows alone again.
+        .onChange(of: store.requests.isEmpty) { _, none in if none { showAll = false } }
+    }
+
+    /// While a question waits: who is asking, and the way back to every session.
+    private var questionHeader: some View {
+        let asking = shownSessions
+        let others = store.sessions.count - asking.count
+        return HStack(spacing: 8) {
+            PulseDot()
+            Text(asking.count == 1 ? "\(asking[0].project) needs you" : "\(asking.count) sessions need you")
+                .foregroundStyle(.white.opacity(0.92))
+                .lineLimit(1)
+            Spacer()
+            if others > 0 {
+                Button { showAll = true } label: {
+                    Text("All sessions · \(store.sessions.count)")
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .padding(.horizontal, 9)
+                        .frame(height: 22)
+                        .background(.white.opacity(0.08), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .help("Show every session")
+            }
+            HeaderButton(symbol: "xmark", help: "Close", action: close)
+        }
+        .font(.system(size: 12.5, weight: .semibold))
+        .tracking(-0.1)
+        .frame(height: 24)
+        .padding(.leading, 6)
     }
 
 
