@@ -32,6 +32,8 @@ final class IslandController {
     let weather = WeatherStore()
     /// The player popped out of the island.
     private(set) lazy var miniPlayer = MiniPlayerController(nowPlaying: nowPlaying)
+    /// What plays and a focus session, over the lock screen (experimental).
+    private var lockScreen: LockScreenWidgets?
     private let preferences: AppPreferences
     private let tasks: TaskStore
     private let snippets: SnippetStore
@@ -97,6 +99,8 @@ final class IslandController {
         model.weather = weather
         model.onShowWeather = { [weak self] in self?.showWeather() }
         model.onShowMirror = { [weak self] in self?.showMirror() }
+        lockScreen = LockScreenWidgets(nowPlaying: nowPlaying, focus: focus)
+        lockScreen?.isEnabled = { [weak preferences] in preferences?.islandLockScreen ?? false }
         model.onDetachPlayer = { [weak self] in
             self?.miniPlayer.show()
             self?.collapse()
@@ -506,6 +510,7 @@ final class IslandController {
         notices?.stop()
         calendar.stop()
         weather.stop()
+        lockScreen?.stop()
         nowPlaying.stop()
         LevelKeys.stop()
         closeTask?.cancel()

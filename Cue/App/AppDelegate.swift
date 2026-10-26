@@ -23,6 +23,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var snippetFrontField: FrontField?
     private var prayerClock: PrayerClock?
     let preferences = AppPreferences()
+    #if DEBUG
+    /// For diagnostics: a window kept on screen to be captured.
+    var debugPanel: NSPanel?
+    #endif
     /// The floating basket, shaken up while dragging files.
     private lazy var basket = BasketController(preferences: preferences)
     /// The recognisers Capture Text can use, and the language packs behind them.
@@ -447,6 +451,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if let tab = IslandTab(rawValue: tabName) { UserDefaults.standard.set(tab.rawValue, forKey: IslandTab.storageKey) }
                 switch tabName {
                 case "agents": self?.island?.showAgents()
+                case "skylight": Log.app.info("SkyLight probe: \(LockScreenWidgets.probe(), privacy: .public)")
+                case "lockpanel":
+                    // The lock screen's card on the desktop, to look at.
+                    self?.island?.nowPlaying.debugFake()
+                    let panel = NSPanel(contentRect: CGRect(x: 400, y: 300, width: LockScreenPanel.size.width, height: LockScreenPanel.size.height),
+                                        styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+                    panel.isOpaque = false
+                    panel.backgroundColor = .clear
+                    panel.level = .floating
+                    if let nowPlaying = self?.island?.nowPlaying { panel.contentView = NSHostingView(rootView: LockScreenPanel(nowPlaying: nowPlaying, focus: nil)) }
+                    panel.orderFrontRegardless()
+                    self?.debugPanel = panel
                 case "mirror": self?.island?.showMirror()
                 case "mini", "minicard":
                     self?.island?.nowPlaying.debugFake()

@@ -484,6 +484,9 @@ struct IslandSettingsView: View {
                         SecondsSlider(value: $preferences.islandFlashDuration, range: 0.5...5, step: 0.1, zero: nil)
                     }
                 }
+                SettingsRow("On the lock screen (experimental)", subtitle: "What plays, with its controls, and a running focus session, shown over the lock screen. Uses private macOS calls, so it may stop working after an update.") {
+                    Toggle("On the lock screen", isOn: $preferences.islandLockScreen).toggleStyle(.switch)
+                }
                 SettingsRow("Weather", subtitle: "The temperature in the panel's header; click it for the next hours. From Open-Meteo, for the place the prayer times use, or your location.") {
                     Toggle("Weather", isOn: $preferences.islandWeather).toggleStyle(.switch)
                 }
