@@ -23,7 +23,11 @@ struct MirrorView: View {
                         .clipShape(shape)
                         .transition(.opacity)
                 case .denied:
-                    message("Camera access is off", "Allow Cue in System Settings › Privacy & Security › Camera.")
+                    message("Camera access is off", "Allow Cue in Privacy & Security › Camera, then open the mirror again.",
+                            action: ("Open Camera Settings", {
+                                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")!)
+                                close()
+                            }))
                 case .unavailable:
                     message("No camera", "Connect one, or check it isn't in use.")
                 case .starting:
@@ -87,11 +91,24 @@ struct MirrorView: View {
         .contentShape(Capsule())
     }
 
-    private func message(_ title: String, _ detail: String) -> some View {
+    private func message(_ title: String, _ detail: String, action: (title: String, perform: () -> Void)? = nil) -> some View {
         VStack(spacing: 4) {
             Icon("video.slash.fill", size: 20).foregroundStyle(.white.opacity(0.5))
             Text(title).font(.system(size: 13, weight: .semibold))
             Text(detail).font(.system(size: 11)).foregroundStyle(.white.opacity(0.5)).multilineTextAlignment(.center)
+            if let action {
+                Button(action: action.perform) {
+                    Text(action.title)
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 12)
+                        .frame(height: 26)
+                        .background(.white, in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 8)
+            }
         }
         .padding(20)
     }
