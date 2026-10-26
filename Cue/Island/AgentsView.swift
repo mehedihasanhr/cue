@@ -77,6 +77,11 @@ private struct AgentTile: View {
 
     private var working: Bool { state == .running }
 
+    /// How wide the tile is laid out: Claude's critter is wider than a square.
+    static func width(for agent: AgentKind, side: CGFloat) -> CGFloat {
+        agent == .claude ? ClaudeCritter.width(side: side) : side
+    }
+
     var body: some View {
         if agent == .claude {
             ClaudeCritter(side: side, mood: ClaudeCritter.Mood(state))
@@ -132,6 +137,10 @@ private struct ClaudeCritter: View {
 
     let side: CGFloat
     var mood: Mood = .working
+
+    /// Wider than a square tile, laptop and all; the layout gives it the room, so it
+    /// never reaches past a row's padding.
+    static func width(side: CGFloat) -> CGFloat { (side * 1.4).rounded() }
 
     /// o body · d its shaded side · a an arm · k eyes and smile · g laptop · c a lit
     /// key · q the question mark · s a sparkle.
@@ -223,8 +232,7 @@ private struct ClaudeCritter: View {
     }
 
     var body: some View {
-        // Wider than the tile: the laptop sits out to its left, in the row's margin.
-        let width = side * 1.4
+        let width = Self.width(side: side)
         TimelineView(.animation(minimumInterval: Self.beat, paused: IslandView.reduceMotion)) { context in
             let tick = IslandView.reduceMotion ? 0 : Int(context.date.timeIntervalSinceReferenceDate / Self.beat)
             let blinking = mood != .done && tick % 31 == 0
@@ -253,7 +261,6 @@ private struct ClaudeCritter: View {
             }
         }
         .frame(width: width, height: side)
-        .padding(.leading, side - width)
         .accessibilityLabel(label)
     }
 
@@ -806,11 +813,9 @@ struct AgentsView: View {
                         let sessions = shownSessions
                         ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
                             VStack(spacing: 0) {
-                                // Plain rows, parted by a hairline; a card is set apart by its own fill.
-                                if index > 0, !AgentSessionCard.showsCard(sessions[index - 1], requests: store.requests(for: sessions[index - 1])),
-                                   !AgentSessionCard.showsCard(session, requests: store.requests(for: session)) {
-                                    Rectangle().fill(.white.opacity(0.07)).frame(height: 0.5).padding(.leading, 50)
-                                }
+                                // Rows are parted by a little space, not a line: a line ran
+                                // into the highlight of the row under the pointer.
+                                if index > 0 { Color.clear.frame(height: 2) }
                                 AgentSessionCard(session: session, requests: store.requests(for: session), store: store,
                                                  open: { withAnimation(IslandView.listAnimation) { detailID = session.id } })
                                     .padding(.vertical, AgentSessionCard.showsCard(session, requests: store.requests(for: session)) ? 4 : 0)
@@ -981,8 +986,6 @@ private struct AgentDetailView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 12) {
                         AgentTile(agent: session.agent, state: session.state, side: 26)
-                            // The critter's laptop reaches out to the left: room for it.
-                            .padding(.leading, session.agent == .claude ? 10 : 0)
                         Text(session.project)
                             .font(.system(size: 15, weight: .bold))
                             .foregroundStyle(.white)
@@ -1127,6 +1130,9 @@ private struct AgentSessionCard: View {
     let store: AgentStore
     /// A click opens the session's details.
     let open: () -> Void
+
+    /// Where the text starts, past the tile (Claude's critter is wider) and its gap.
+    private var textIndent: CGFloat { AgentTile.width(for: session.agent, side: 26) + 12 }
     @State private var hovered = false
 
     /// At work it stays on one line; finished, or waiting on the user, it shows in full.
@@ -1159,13 +1165,13 @@ private struct AgentSessionCard: View {
                             .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                 }
-                .padding(.leading, 38)
+                .padding(.leading, textIndent)
                 .animation(IslandView.listAnimation, value: session.workers.map(\.id))
             }
             ForEach(requests) { request in
                 // In line with the text, not the logo.
                 AgentRequestCard(request: request, store: store)
-                    .padding(.leading, 38)
+                    .padding(.leading, textIndent)
                     .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
             }
         }
