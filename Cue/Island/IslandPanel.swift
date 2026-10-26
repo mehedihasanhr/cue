@@ -364,6 +364,15 @@ struct IslandPanel: View {
         }
     }
 
+    /// The strip under the cards shows once there is something to sort by: a pin or
+    /// a group (or one is chosen, so it can be left again).
+    private var showsStrip: Bool {
+        if let kind = groupKind {
+            return hasPinned(kind) || !groups.groups(for: kind).isEmpty || filter(kind) != .recent
+        }
+        return tab == .all && (GroupKind.allCases.contains(where: hasPinned) || !groups.groups.isEmpty || allFilter != .recent)
+    }
+
     /// Whether anything of `kind` is pinned.
     private func hasPinned(_ kind: GroupKind) -> Bool {
         switch kind {
@@ -575,14 +584,10 @@ struct IslandPanel: View {
             .onChange(of: library.items.count + clipboard.items.count + assets.items.count + colors.items.count + tasksStore.tasks.count, refreshHits)
             // The groups under the cards, a footer to the tab: set off from the cards,
             // close to the edge.
-            // Only once there is something to sort by: a pin or a group (or one is
-            // chosen, so it can be left again).
-            if let kind = groupKind {
-                if hasPinned(kind) || !groups.groups(for: kind).isEmpty || filter(kind) != .recent {
+            if showsStrip {
+                if let kind = groupKind {
                     groupStrip(kind).padding(.top, 12)
-                }
-            } else if tab == .all {
-                if GroupKind.allCases.contains(where: hasPinned) || !groups.groups.isEmpty || allFilter != .recent {
+                } else {
                     allStrip.padding(.top, 12)
                 }
             }
@@ -590,7 +595,7 @@ struct IslandPanel: View {
         .padding(.horizontal, Self.horizontalPadding)
         // Straight under the menu bar (the strip above is its height), plus a hair.
         .padding(.top, 1)
-        .padding(.bottom, groupKind != nil || tab == .all ? 10 : 16)
+        .padding(.bottom, showsStrip ? 10 : 16)
         .modifier(IdealHeight { onIdealHeight($0) })
         .frame(width: width, alignment: .top)
         .frame(maxHeight: Self.size.height, alignment: .top)
@@ -1123,7 +1128,7 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
         self.layout = Self.layout(for: items, sections: items.map(section))
     }
 
-    static var cardSize: CGSize { CGSize(width: 156, height: 124) }
+    static var cardSize: CGSize { CGSize(width: 180, height: 142) }
     static var spacing: CGFloat { 10 }
     static var groupSpacing: CGFloat { 20 }
     static var headerHeight: CGFloat { 24 }
