@@ -420,6 +420,9 @@ struct IslandSettingsView: View {
                         SecondsSlider(value: $preferences.islandFlashDuration, range: 0.5...5, step: 0.1, zero: nil)
                     }
                 }
+                SettingsRow("AirPods and headphones", subtitle: "A Bluetooth audio device connecting or going, with its batteries when it reports them.") {
+                    Toggle("AirPods and headphones", isOn: $preferences.islandAudioDevices).toggleStyle(.switch)
+                }
                 SettingsRow("Battery", subtitle: "Plugging in or unplugging the charger, a full charge, and a warning at 20% and 10%.") {
                     Toggle("Battery", isOn: $preferences.islandBattery).toggleStyle(.switch)
                 }

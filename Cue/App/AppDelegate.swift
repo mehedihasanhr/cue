@@ -388,6 +388,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 switch tabName {
                 case "agents": self?.island?.showAgents()
                 case "level": self?.island?.debugShowLevel()
+                case "airpods":
+                    self?.island?.showAudioDevice(AudioDeviceHUD(name: "AirPods Pro", connected: true, left: 82, right: 78, batteryCase: 15))
                 case "battery", "batterylow", "batteryout", "batterycharging":
                     let event: BatteryHUD.Event = switch tabName { case "batterylow": .low; case "batteryout": .unplugged; default: .pluggedIn }
                     if var hud = BatteryMonitor.current(event) {

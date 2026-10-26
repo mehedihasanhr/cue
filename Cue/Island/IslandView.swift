@@ -446,6 +446,10 @@ struct IslandView: View {
                     ClockRow(status: clock)
                         .modifier(IdealWidth { model.contentWidth = $0 })
                         .frame(height: IslandGeometry.promptContentHeight)
+                } else if let device = status.audioDevice {
+                    AudioDeviceRow(device: device)
+                        .modifier(IdealWidth { model.contentWidth = $0 })
+                        .frame(height: IslandGeometry.flashContentHeight)
                 } else if let battery = status.battery {
                     BatteryRow(battery: battery)
                         .modifier(IdealWidth { model.contentWidth = $0 })
@@ -651,6 +655,8 @@ struct IslandStatus: Equatable, Identifiable {
     var level: LevelHUD? = nil
     /// Drawn as the battery (charger in or out, running low) instead of the plain line.
     var battery: BatteryHUD? = nil
+    /// Drawn as a Bluetooth audio device coming or going, with its batteries.
+    var audioDevice: AudioDeviceHUD? = nil
 
     /// Green for done, orange for "nothing to do", white otherwise.
     var tint: Color {

@@ -19,6 +19,8 @@ final class IslandController {
     let nowPlaying = NowPlaying()
     /// The charger going in or out, the battery running low; nil without a battery.
     private var battery: BatteryMonitor?
+    /// AirPods and other Bluetooth audio devices coming and going.
+    private var audioDevices: AudioDeviceMonitor?
     private let preferences: AppPreferences
     private let tasks: TaskStore
     private let snippets: SnippetStore
@@ -226,6 +228,7 @@ final class IslandController {
             return model.phase == .collapsed || model.phase.isFlash
         }
         battery = BatteryMonitor { [weak self] hud in self?.showBattery(hud) }
+        audioDevices = AudioDeviceMonitor { [weak self] hud in self?.showAudioDevice(hud) }
         let levels = LevelKeys.start { [weak self] level in self?.showLevel(level) }
         Log.app.info("Island level keys: \(levels ? "on" : "off (needs Accessibility)", privacy: .public); volume settable: \(SystemLevels.canSetVolume); brightness: \(SystemLevels.brightness.map { String($0) } ?? "unavailable", privacy: .public)")
         place()
@@ -447,6 +450,7 @@ final class IslandController {
     /// Removes the island; the controller is dropped afterwards.
     func tearDown() {
         battery?.stop()
+        audioDevices?.stop()
         nowPlaying.stop()
         LevelKeys.stop()
         closeTask?.cancel()
@@ -665,6 +669,18 @@ final class IslandController {
     }
 
     private static let levelDuration: Duration = .milliseconds(1500)
+
+    /// AirPods or another Bluetooth audio device connected or went. Only over the
+    /// closed island; its batteries, read a moment later, fill in the same HUD.
+    func showAudioDevice(_ hud: AudioDeviceHUD) {
+        guard preferences.islandAudioDevices, model.geometry != nil, !hidden else { return }
+        let status = IslandStatus(symbol: hud.symbol, title: hud.name, duration: hud.connected ? .seconds(3) : .milliseconds(1600), audioDevice: hud)
+        if case .status(let current) = model.phase, let shown = current.audioDevice, shown.name == hud.name, shown.connected == hud.connected {
+            withAnimation(.easeOut(duration: 0.25)) { model.phase = .status(status) }
+            return
+        }
+        flash(phase: .status(status))
+    }
 
     /// The charger went in or out, or the battery runs low. Low battery comes over an
     /// open panel too; the rest only over the closed island, as a status would.
