@@ -38,6 +38,11 @@
 		<string>com.apple.Notes</string>
 		<string>com.apple.Music</string>
 		<string>com.spotify.client</string>
+		<string>com.apple.Safari</string>
+		<string>com.google.Chrome</string>
+		<string>company.thebrowser.Browser</string>
+		<string>com.brave.Browser</string>
+		<string>com.microsoft.edgemac</string>
 	</array>
 </dict>
 </plist>

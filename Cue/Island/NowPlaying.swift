@@ -2,32 +2,59 @@ import AppKit
 import CoreAudio
 import SwiftUI
 
-/// What Apple Music or Spotify is playing, and their transport controls.
+/// What Apple Music, Spotify or a YouTube tab is playing, and its controls.
 ///
 /// The system-wide Now Playing info is closed to other apps since macOS 15.4, and
 /// to sandboxed ones before that; so each player is asked directly, over Apple
-/// Events. Both post a distributed notification whenever a track or its state
-/// changes, which is when Cue asks; a player that isn't running is never asked (that
-/// would launch it). macOS asks the user once per player, the first time it plays
-/// with Cue running — never at launch.
+/// Events. Music and Spotify post a distributed notification whenever a track or
+/// its state changes, which is when Cue asks. Browsers post nothing: Cue looks every
+/// two seconds for a YouTube tab and reads the video in it with a line of
+/// JavaScript, which the browser allows only with "Allow JavaScript from Apple
+/// Events" on (without it, only the video's title shows).
+///
+/// A player that isn't running is never asked (that would launch it). macOS asks
+/// the user once per app: for Music and Spotify the first time they play, for a
+/// browser the first time one of its windows shows YouTube — never at launch.
 @MainActor @Observable
 final class NowPlaying {
     enum Player: String, CaseIterable {
         case music = "com.apple.Music"
         case spotify = "com.spotify.client"
+        case safari = "com.apple.Safari"
+        case chrome = "com.google.Chrome"
+        case arc = "company.thebrowser.Browser"
+        case brave = "com.brave.Browser"
+        case edge = "com.microsoft.edgemac"
+
+        static let browsers: [Player] = [.safari, .chrome, .arc, .brave, .edge]
+
+        var isBrowser: Bool { Self.browsers.contains(self) }
 
         var name: String {
             switch self {
             case .music: "Music"
             case .spotify: "Spotify"
+            case .safari: "Safari"
+            case .chrome: "Chrome"
+            case .arc: "Arc"
+            case .brave: "Brave"
+            case .edge: "Edge"
             }
         }
 
-        fileprivate var notification: String {
+        fileprivate var notification: String? {
             switch self {
             case .music: "com.apple.Music.playerInfo"
             case .spotify: "com.spotify.client.PlaybackStateChanged"
+            default: nil
             }
+        }
+
+        /// Where the browser's switch for "Allow JavaScript from Apple Events" is.
+        var javascriptSetting: String {
+            self == .safari
+                ? "Safari › Settings › Advanced › Show features for web developers, then Develop › Allow JavaScript from Apple Events"
+                : "\(name) › View › Developer › Allow JavaScript from Apple Events"
         }
 
         var isRunning: Bool { !NSRunningApplication.runningApplications(withBundleIdentifier: rawValue).isEmpty }
@@ -49,12 +76,20 @@ final class NowPlaying {
     private(set) var track: Track?
     private(set) var isPlaying = false
     private(set) var artwork: NSImage?
+    /// A YouTube tab whose browser won't run JavaScript for Cue: its title shows, but
+    /// nothing can be read or controlled until the user allows it.
+    private(set) var needsJavaScript = false
     /// Where the track was at `positionDate`; it runs on from there while playing.
     private var position: Double = 0
     private var positionDate = Date()
+    /// The YouTube tab shown (window and tab index), for the controls.
+    @ObservationIgnored private var tab: (window: Int, index: Int)?
 
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
     @ObservationIgnored private var permitted: Set<Player> = []
+    /// Browsers already asked this session (a "no" is not asked again).
+    @ObservationIgnored private var asked: Set<Player> = []
+    @ObservationIgnored private var pollTask: Task<Void, Never>?
     /// Off in Settings: the players are neither asked nor followed.
     @ObservationIgnored var isEnabled: () -> Bool = { true }
 
@@ -62,7 +97,8 @@ final class NowPlaying {
         guard observers.isEmpty else { return }
         let center = DistributedNotificationCenter.default()
         for player in Player.allCases {
-            observers.append(center.addObserver(forName: Notification.Name(player.notification), object: nil, queue: .main) { [weak self] _ in
+            guard let name = player.notification else { continue }
+            observers.append(center.addObserver(forName: Notification.Name(name), object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.changed(player, mayAsk: true) }
             })
         }
@@ -74,12 +110,20 @@ final class NowPlaying {
             }
         })
         // Already playing at launch: only from a player Cue may already talk to.
-        for player in Player.allCases where player.isRunning { changed(player, mayAsk: false) }
+        for player in Player.allCases where player.isRunning && !player.isBrowser { changed(player, mayAsk: false) }
+        pollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                self?.pollBrowsers()
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
     }
 
     func stop() {
         observers.forEach { DistributedNotificationCenter.default().removeObserver($0); NSWorkspace.shared.notificationCenter.removeObserver($0) }
         observers = []
+        pollTask?.cancel()
+        pollTask = nil
         clear()
     }
 
@@ -103,14 +147,23 @@ final class NowPlaying {
 
     // MARK: - Controls
 
-    func playPause() { command("playpause") }
-    func next() { command("next track") }
-    func previous() { command("previous track") }
+    func playPause() {
+        command("playpause", javascript: "var v=document.querySelector('video');if(v){v.paused?v.play():v.pause()}")
+    }
+
+    func next() {
+        command("next track", javascript: "var b=document.querySelector('.ytp-next-button, ytmusic-player-bar .next-button');if(b)b.click()")
+    }
+
+    func previous() {
+        command("previous track", javascript: "var v=document.querySelector('video');if(v&&v.currentTime>3){v.currentTime=0}else{history.back()}")
+    }
 
     func seek(to seconds: Double) {
         position = seconds
         positionDate = .now
-        command("set player position to \(String(format: "%.2f", seconds))")
+        let time = String(format: "%.2f", seconds)
+        command("set player position to \(time)", javascript: "var v=document.querySelector('video');if(v)v.currentTime=\(time)")
     }
 
     func openPlayer() {
@@ -121,29 +174,38 @@ final class NowPlaying {
     /// The position again from the player (the view asks every second while open,
     /// so a seek in the player itself shows).
     func refreshPosition() {
-        guard let player, permitted.contains(player), player.isRunning,
-              let text = run("tell application id \"\(player.rawValue)\" to get player position"),
+        guard let player, permitted.contains(player), player.isRunning else { return }
+        if player.isBrowser {
+            readBrowser(player)
+            return
+        }
+        guard let text = run("tell application id \"\(player.rawValue)\" to get player position"),
               let seconds = Double(text.replacingOccurrences(of: ",", with: ".")) else { return }
         position = seconds
         positionDate = .now
     }
 
-    private func command(_ verb: String) {
+    private func command(_ verb: String, javascript: String) {
         guard let player, permitted.contains(player), player.isRunning else { return }
-        _ = run("tell application id \"\(player.rawValue)\" to \(verb)")
-        // The player's own notification follows; the position is wanted at once.
+        if player.isBrowser {
+            guard let tab, !needsJavaScript else { return }
+            _ = run(Self.browserScript(player, javascript: javascript, in: tab))
+        } else {
+            _ = run("tell application id \"\(player.rawValue)\" to \(verb)")
+        }
+        // The player's own notification follows (or the next look); the state is wanted at once.
         Task {
             try? await Task.sleep(for: .milliseconds(150))
-            changed(player, mayAsk: false)
+            if player.isBrowser { readBrowser(player) } else { changed(player, mayAsk: false) }
         }
     }
 
-    // MARK: - Reading the player
+    // MARK: - Music and Spotify
 
     private func changed(_ source: Player, mayAsk: Bool) {
         guard isEnabled(), source.isRunning else { return }
         if permitted.contains(source) {
-            read(source)
+            source.isBrowser ? readBrowser(source) : read(source)
             return
         }
         // Asking may put up the consent prompt, which waits on the user: off the main thread.
@@ -153,7 +215,7 @@ final class NowPlaying {
             await MainActor.run { [weak self] in
                 guard let self, granted else { return }
                 permitted.insert(source)
-                read(source)
+                source.isBrowser ? readBrowser(source) : read(source)
             }
         }
     }
@@ -181,35 +243,148 @@ final class NowPlaying {
             if player == source { clear() }
             return
         }
-        let playing = lines[0] == "playing"
-        // The other player paused or stopped: keep showing the one that plays.
-        if let player, player != source, isPlaying, !playing { return }
         func number(_ text: String) -> Double { Double(text.replacingOccurrences(of: ",", with: ".")) ?? 0 }
         // Music gives seconds, Spotify milliseconds.
         let duration = number(lines[4]) / (source == .spotify ? 1000 : 1)
         let new = Track(id: lines[6], title: lines[1], artist: lines[2], album: lines[3], duration: duration)
+        show(new, from: source, playing: lines[0] == "playing", at: number(lines[5]),
+             artworkURL: source == .spotify && lines.count > 7 ? URL(string: lines[7]) : nil)
+    }
+
+    // MARK: - YouTube in a browser
+
+    /// Reads the video in the first YouTube tab that plays (or the first one there is).
+    private static let readVideo = """
+    (function(){var v=document.querySelector('video');if(!v)return '';\
+    var h=document.querySelector('ytd-watch-metadata h1, ytmusic-player-bar .title');\
+    var a=document.querySelector('ytd-watch-metadata #owner #channel-name a, ytmusic-player-bar .byline a');\
+    var t=(h&&h.textContent.trim())||document.title.replace(/ - YouTube( Music)?$/,'');\
+    var id=new URL(location.href).searchParams.get('v')||'';\
+    return JSON.stringify({t:t,a:a?a.textContent.trim():'',d:isFinite(v.duration)?v.duration:0,p:v.currentTime||0,s:!v.paused,id:id});})()
+    """
+
+    private func pollBrowsers() {
+        guard isEnabled() else { return }
+        let running = Player.browsers.filter(\.isRunning)
+        // The shown tab's browser quit, or its tab is gone (read finds none).
+        for browser in running where permitted.contains(browser) { readBrowser(browser) }
+        // A browser not yet asked: only once one of its windows shows YouTube.
+        let unasked = running.filter { !permitted.contains($0) && !asked.contains($0) }
+        guard !unasked.isEmpty else { return }
+        for browser in Self.browsersShowingYouTube() where unasked.contains(browser) {
+            asked.insert(browser)
+            changed(browser, mayAsk: true)
+        }
+    }
+
+    /// Browsers with a window titled with YouTube (the window list's titles need the
+    /// screen-recording permission Cue has for captures; without it, none are found).
+    private static func browsersShowingYouTube() -> Set<Player> {
+        guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return [] }
+        var found: Set<Player> = []
+        for window in windows {
+            guard let title = window[kCGWindowName as String] as? String, title.contains("YouTube"),
+                  let pid = window[kCGWindowOwnerPID as String] as? pid_t,
+                  let id = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier,
+                  let player = Player(rawValue: id), player.isBrowser else { continue }
+            found.insert(player)
+        }
+        return found
+    }
+
+    private func readBrowser(_ browser: Player) {
+        let id = browser.rawValue
+        let javascript = Self.appleScriptString(Self.readVideo)
+        let run = browser == .safari ? "do JavaScript \(javascript) in tab i of window w" : "execute (tab i of window w) javascript \(javascript)"
+        let title = browser == .safari ? "name" : "title"
+        let script = """
+        tell application id "\(id)"
+            set sep to ASCII character 9
+            set out to ""
+            set allURLs to URL of every tab of every window
+            repeat with w from 1 to count allURLs
+                set us to item w of allURLs
+                repeat with i from 1 to count us
+                    set u to item i of us
+                    if u is not missing value and (u contains "youtube.com/watch" or u contains "music.youtube.com") then
+                        set r to "nojs"
+                        try
+                            set r to \(run)
+                        end try
+                        set out to out & w & sep & i & sep & (\(title) of tab i of window w) & sep & u & sep & r & linefeed
+                    end if
+                end repeat
+            end repeat
+            return out
+        end tell
+        """
+        guard let text = self.run(script) else { return }
+        struct Video: Decodable { let t: String; let a: String; let d: Double; let p: Double; let s: Bool; let id: String }
+        struct Tab { let window: Int; let index: Int; let title: String; let url: String; let video: Video? }
+        let tabs: [Tab] = text.split(separator: "\n").compactMap { line in
+            let fields = line.components(separatedBy: "\t")
+            guard fields.count >= 5, let window = Int(fields[0]), let index = Int(fields[1]) else { return nil }
+            let video = fields[4] == "nojs" ? nil : fields[4].data(using: .utf8).flatMap { try? JSONDecoder().decode(Video.self, from: $0) }
+            return Tab(window: window, index: index, title: fields[2], url: fields[3], video: video)
+        }
+        guard let chosen = tabs.first(where: { $0.video?.s == true }) ?? tabs.first else {
+            if player == browser { clear() }
+            return
+        }
+        let videoID = chosen.video?.id ?? URLComponents(string: chosen.url)?.queryItems?.first { $0.name == "v" }?.value ?? chosen.url
+        let artworkURL = URL(string: "https://i.ytimg.com/vi/\(videoID)/mqdefault.jpg")
+        if let video = chosen.video {
+            show(Track(id: videoID, title: video.t, artist: video.a, album: "YouTube", duration: video.d), from: browser,
+                 playing: video.s, at: video.p, artworkURL: artworkURL, blocked: false)
+        } else {
+            // JavaScript off: what the tab's title says, and nothing more.
+            let name = chosen.title.replacingOccurrences(of: " - YouTube Music", with: "").replacingOccurrences(of: " - YouTube", with: "")
+            show(Track(id: videoID, title: name, artist: "", album: "YouTube", duration: 0), from: browser,
+                 playing: false, at: 0, artworkURL: artworkURL, blocked: true)
+        }
+        if player == browser { tab = (chosen.window, chosen.index) }
+    }
+
+    /// A browser script that runs `javascript` in the tab at `tab`.
+    private static func browserScript(_ browser: Player, javascript: String, in tab: (window: Int, index: Int)) -> String {
+        let source = appleScriptString(javascript)
+        let target = "tab \(tab.index) of window \(tab.window)"
+        return browser == .safari
+            ? "tell application id \"\(browser.rawValue)\" to do JavaScript \(source) in \(target)"
+            : "tell application id \"\(browser.rawValue)\" to execute (\(target)) javascript \(source)"
+    }
+
+    private static func appleScriptString(_ text: String) -> String {
+        "\"" + text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
+    }
+
+    // MARK: - Showing it
+
+    /// Takes the track from `source`, unless another player is playing and this one isn't.
+    private func show(_ new: Track, from source: Player, playing: Bool, at seconds: Double, artworkURL: URL?, blocked: Bool = false) {
+        if let player, player != source, isPlaying, !playing { return }
         if new.id != track?.id || source != player {
             artwork = nil
-            loadArtwork(source, trackID: new.id, url: source == .spotify && lines.count > 7 ? URL(string: lines[7]) : nil)
+            loadArtwork(source, trackID: new.id, url: artworkURL)
         }
         player = source
         track = new
         isPlaying = playing
-        position = number(lines[5])
+        needsJavaScript = blocked
+        position = seconds
         positionDate = .now
     }
 
     private func loadArtwork(_ source: Player, trackID: String, url: URL?) {
-        switch source {
-        case .music:
+        if source == .music {
             let descriptor = runDescriptor("tell application id \"\(source.rawValue)\" to get raw data of artwork 1 of current track")
             if let data = descriptor?.data, !data.isEmpty { artwork = NSImage(data: data) }
-        case .spotify:
-            guard let url else { return }
-            Task {
-                guard let (data, _) = try? await URLSession.shared.data(from: url), track?.id == trackID else { return }
-                artwork = NSImage(data: data)
-            }
+            return
+        }
+        guard let url else { return }
+        Task {
+            guard let (data, _) = try? await URLSession.shared.data(from: url), track?.id == trackID else { return }
+            artwork = NSImage(data: data)
         }
     }
 
@@ -218,6 +393,8 @@ final class NowPlaying {
         track = nil
         isPlaying = false
         artwork = nil
+        needsJavaScript = false
+        tab = nil
     }
 
     private func run(_ source: String) -> String? {
@@ -324,15 +501,17 @@ struct NowPlayingPill: View {
                     .lineLimit(1)
                     .frame(maxWidth: 130, alignment: .leading)
                     .fixedSize(horizontal: true, vertical: false)
-                Button(action: nowPlaying.playPause) {
-                    Icon(nowPlaying.isPlaying ? "pause.fill" : "play.fill", size: 11, weight: .bold)
-                        .foregroundStyle(.white.opacity(0.85))
-                        .frame(width: 22, height: 22)
-                        .background(.white.opacity(0.1), in: Circle())
-                        .contentShape(Circle())
+                if !nowPlaying.needsJavaScript {
+                    Button(action: nowPlaying.playPause) {
+                        Icon(nowPlaying.isPlaying ? "pause.fill" : "play.fill", size: 11, weight: .bold)
+                            .foregroundStyle(.white.opacity(0.85))
+                            .frame(width: 22, height: 22)
+                            .background(.white.opacity(0.1), in: Circle())
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(nowPlaying.isPlaying ? "Pause" : "Play")
                 }
-                .buttonStyle(.plain)
-                .help(nowPlaying.isPlaying ? "Pause" : "Play")
             }
             .foregroundStyle(.white.opacity(0.9))
             .padding(.leading, 4).padding(.trailing, 5)
@@ -373,10 +552,19 @@ struct NowPlayingDetail: View {
                         .foregroundStyle(.white.opacity(0.55))
                         .lineLimit(1)
                         .padding(.top, 2)
-                    scrubber(track)
-                        .padding(.top, 10)
-                    controls
-                        .padding(.top, 6)
+                    if nowPlaying.needsJavaScript, let player = nowPlaying.player {
+                        Text("To follow and control the video, turn on \(player.javascriptSetting).")
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.5))
+                            .lineLimit(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 10)
+                    } else {
+                        scrubber(track)
+                            .padding(.top, 10)
+                        controls
+                            .padding(.top, 6)
+                    }
                 } else {
                     Text("Nothing playing")
                         .font(.system(size: 13, weight: .medium))
