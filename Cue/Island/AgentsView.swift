@@ -67,13 +67,22 @@ private enum AgentAppIcon {
 }
 
 /// A session's tile: the agent's app icon, or its mark on a glass square when the
-/// app is not installed. While the agent works, a slow ring of light circles it.
+/// app is not installed. While the agent works, a slow ring of light circles it;
+/// Claude at work is its little pixel critter instead, walking in place.
 private struct AgentTile: View {
     let agent: AgentKind
     let working: Bool
     var side: CGFloat = 30
 
     var body: some View {
+        if working, agent == .claude {
+            ClaudeCritter(side: side)
+        } else {
+            tile
+        }
+    }
+
+    private var tile: some View {
         Group {
             if let icon = AgentAppIcon.image(for: agent) {
                 // App icons carry their own margin; scaled up a touch so the art fills the tile.
@@ -97,6 +106,50 @@ private struct AgentTile: View {
         .overlay {
             if working { WorkingRing(radius: side * 0.22) }
         }
+    }
+}
+
+/// Claude's pixel critter, as Claude Code shows it while it works: an orange block
+/// with two eyes and stubby arms, stepping on four legs. Drawn square by square,
+/// two frames of legs and a one-pixel bob.
+private struct ClaudeCritter: View {
+    let side: CGFloat
+
+    private static let body: [String] = [
+        "  ########  ",
+        "  #k####k#  ",
+        "############",
+        "  ########  ",
+        "  ########  ",
+    ]
+    private static let legs: [[String]] = [
+        [" # #    # # ", " # #    # # "],
+        ["  # #  # #  ", "  # #  # #  "],
+    ]
+    private static let orange = Color(red: 0.85, green: 0.47, blue: 0.34)
+    private static let shade = Color(red: 0.72, green: 0.37, blue: 0.27)
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 0.18, paused: IslandView.reduceMotion)) { context in
+            let frame = IslandView.reduceMotion ? 0 : Int(context.date.timeIntervalSinceReferenceDate / 0.18) % 2
+            Canvas { canvas, size in
+                let columns = 12, rows = Self.body.count + 2
+                let pixel = floor(min(size.width / CGFloat(columns), size.height / CGFloat(rows + 1)))
+                let origin = CGPoint(x: (size.width - pixel * CGFloat(columns)) / 2,
+                                     y: (size.height - pixel * CGFloat(rows)) / 2 + (frame == 0 ? 0 : -pixel / 2))
+                let grid = Self.body + Self.legs[frame]
+                for (row, line) in grid.enumerated() {
+                    for (column, mark) in line.enumerated() where mark != " " {
+                        let rect = CGRect(x: origin.x + CGFloat(column) * pixel, y: origin.y + CGFloat(row) * pixel, width: pixel, height: pixel)
+                        // The right edge of the block in shadow, as on the original.
+                        let color: Color = mark == "k" ? .black : (column >= 9 && row < Self.body.count ? Self.shade : Self.orange)
+                        canvas.fill(Path(rect), with: .color(color))
+                    }
+                }
+            }
+        }
+        .frame(width: side, height: side)
+        .accessibilityLabel("Claude is working")
     }
 }
 
@@ -437,7 +490,7 @@ struct AgentAmbientRow: View {
         HStack(spacing: 0) {
             Group {
                 if let lead {
-                    AgentTile(agent: lead.agent, working: false, side: 16)
+                    AgentTile(agent: lead.agent, working: lead.state == .running, side: 16)
                         .opacity(lead.state == .idle ? 0.55 : 1)
                 }
             }
@@ -830,7 +883,7 @@ private struct AgentSessionCard: View {
     /// which agent; where it runs and for how long are in the tooltip.
     private var line: some View {
         HStack(spacing: 12) {
-            AgentTile(agent: session.agent, working: false, side: 26)
+            AgentTile(agent: session.agent, working: session.state == .running, side: 26)
             name(size: 13.5, weight: .semibold, color: .white.opacity(hovered ? 1 : 0.92))
             Spacer(minLength: 12)
             // On hover the status makes way for the dismiss button, in the same place.
@@ -908,7 +961,7 @@ private struct AgentSessionCard: View {
 
     private var summary: some View {
         HStack(alignment: .top, spacing: 12) {
-            AgentTile(agent: session.agent, working: false, side: 26)
+            AgentTile(agent: session.agent, working: session.state == .running, side: 26)
             VStack(alignment: .leading, spacing: 1) {
                 name(size: 14, weight: .semibold, color: .white, attention: requests.first?.attention)
                 // While it asks, the question says it all; the command is shown below.
