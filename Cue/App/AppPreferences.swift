@@ -47,6 +47,7 @@ final class AppPreferences {
         static let islandDrives = "island.drives"
         static let islandDownloads = "island.downloads"
         static let islandCalendar = "island.calendar"
+        static let islandWeather = "island.weather"
         static let basketHideDelay = "basket.hideDelay"
         static let islandPreview = "island.preview"
         static let islandPreviewOnHover = "island.previewOnHover"
@@ -557,6 +558,11 @@ final class AppPreferences {
         didSet { defaults.set(islandDrives, forKey: Key.islandDrives) }
     }
 
+    /// The weather in the panel's header, and its forecast in the island.
+    var islandWeather: Bool {
+        didSet { defaults.set(islandWeather, forKey: Key.islandWeather) }
+    }
+
     /// Five minutes before a meeting the island says so, with Join for a call.
     var islandCalendar: Bool {
         didSet { defaults.set(islandCalendar, forKey: Key.islandCalendar) }
@@ -820,6 +826,7 @@ final class AppPreferences {
         islandDrives = defaults.object(forKey: Key.islandDrives) as? Bool ?? true
         islandDownloads = defaults.object(forKey: Key.islandDownloads) as? Bool ?? true
         islandCalendar = defaults.object(forKey: Key.islandCalendar) as? Bool ?? false
+        islandWeather = defaults.object(forKey: Key.islandWeather) as? Bool ?? false
         islandFocus = defaults.object(forKey: Key.islandFocus) as? Bool ?? true
         basketHideDelay = defaults.object(forKey: Key.basketHideDelay) as? Double ?? 1.5
         islandPreview = IslandPreview(rawValue: defaults.string(forKey: Key.islandPreview) ?? "") ?? .inline

@@ -1,5 +1,6 @@
 import os
 import AppKit
+import CoreLocation
 import SwiftUI
 
 /// Owns the Dynamic Island: places it on the notch (or as a pill on a plain display),
@@ -27,6 +28,8 @@ final class IslandController {
     private var notices: NoticeMonitor?
     /// The user's calendar, once they turn it on.
     let calendar = CalendarWatcher()
+    /// The weather, once it is turned on.
+    let weather = WeatherStore()
     private let preferences: AppPreferences
     private let tasks: TaskStore
     private let snippets: SnippetStore
@@ -76,7 +79,7 @@ final class IslandController {
         content.onDragMoved = { [weak self] point in self?.aimDrop(at: point) }
         content.onDrop = { [weak self] urls, image in self?.drop(urls: urls, image: image, into: assets) }
         let host = FirstMouseHostingView(rootView: IslandView(model: model, library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasks, snippets: snippets, actions: actions)
-            .environment(preferences).environment(clock).environment(focus).environment(groups).environment(notes).environment(shelf).environment(nowPlaying))
+            .environment(preferences).environment(clock).environment(focus).environment(groups).environment(notes).environment(shelf).environment(nowPlaying).environment(weather))
         host.sizingOptions = []
         host.autoresizingMask = [.width, .height]
         host.frame = content.bounds
@@ -89,12 +92,16 @@ final class IslandController {
         model.nowPlaying = nowPlaying
         model.focus = focus
         model.calendar = calendar
+        model.weather = weather
+        model.onShowWeather = { [weak self] in self?.showWeather() }
+        weather.knownPlace = { [weak clock] in clock?.place.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) } }
         model.onOpenURL = { [weak self] url in
             NSWorkspace.shared.open(url)
             self?.collapse()
         }
         calendar.onAlert = { [weak self] meeting in self?.showMeeting(meeting) }
         applyCalendarPreference()
+        applyWeatherPreference()
         model.compactTiles = { [weak self, weak preferences, weak focus] in
             guard let self, let preferences, preferences.islandCompactTiles else { return CompactTiles() }
             #if DEBUG
@@ -491,6 +498,7 @@ final class IslandController {
         toggles?.stop()
         notices?.stop()
         calendar.stop()
+        weather.stop()
         nowPlaying.stop()
         LevelKeys.stop()
         closeTask?.cancel()
@@ -594,7 +602,7 @@ final class IslandController {
         guard preferences.agentAutoOpen, model.geometry != nil, !hidden else { return }
         switch model.phase {
         case .collapsed, .flash, .status, .expanded: showAgents()
-        case .agents, .prompt, .taskDetail, .clock, .media: break
+        case .agents, .prompt, .taskDetail, .clock, .media, .weather: break
         }
     }
 
@@ -790,6 +798,26 @@ final class IslandController {
         }
     }
 
+    /// Opens the forecast in the island; ⎋ or a click outside closes it.
+    func showWeather() {
+        guard model.geometry != nil, model.phase != .weather else { return }
+        closeTask?.cancel()
+        flashTask?.cancel()
+        setPhase(.weather, animated: true)
+        installOutsideClickMonitor()
+        window.makeKey() // so ⎋ reaches the island
+    }
+
+    /// Fetches the weather while it is on, or a weather tile is.
+    private func applyWeatherPreference() {
+        let wanted = withObservationTracking {
+            preferences.islandWeather || (preferences.islandCompactTiles && (preferences.islandTileLeft == .weather || preferences.islandTileRight == .weather))
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.applyWeatherPreference() }
+        }
+        if wanted { weather.start() } else { weather.stop() }
+    }
+
     /// Opens the music player in the island; ⎋ or a click outside closes it.
     func showMedia() {
         guard model.geometry != nil, model.phase != .media else { return }
@@ -820,6 +848,8 @@ final class IslandController {
             model.onClockClosed()
         case .media:
             model.onMediaClosed()
+        case .weather:
+            model.onMediaClosed()
         case .prompt(let prompt):
             model.onPromptFinished(prompt, nil)
         default:
@@ -846,7 +876,7 @@ final class IslandController {
             switch model.phase {
             // The task form closes only by its own Cancel / Create or ⎋.
             case .prompt(let prompt) where prompt.isTaskForm: return
-            case .prompt, .taskDetail, .clock, .media, .agents: break
+            case .prompt, .taskDetail, .clock, .media, .weather, .agents: break
             case .expanded where forExpanded: break
             default: return
             }
@@ -1002,7 +1032,7 @@ final class IslandController {
         // The compact prompt / task detail stay as they are until ↩, ⎋ or a click
         // outside; the pointer does not reopen the panel.
         switch model.phase {
-        case .prompt, .taskDetail, .clock, .media, .agents: return
+        case .prompt, .taskDetail, .clock, .media, .weather, .agents: return
         case .status(let status) where status.clock != nil:
             // The clock ignores the pointer: it neither opens the panel nor stays;
             // a click opens the clock view, otherwise it closes on its own.

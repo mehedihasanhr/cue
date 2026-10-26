@@ -444,6 +444,9 @@ struct IslandSettingsView: View {
                         SecondsSlider(value: $preferences.islandFlashDuration, range: 0.5...5, step: 0.1, zero: nil)
                     }
                 }
+                SettingsRow("Weather", subtitle: "The temperature in the panel's header; click it for the next hours. From Open-Meteo, for the place the prayer times use, or your location.") {
+                    Toggle("Weather", isOn: $preferences.islandWeather).toggleStyle(.switch)
+                }
                 SettingsRow("Meetings", subtitle: "Five minutes before an event in your calendar, with Join for a Zoom, Meet or Teams call. macOS asks once for the calendar.") {
                     Toggle("Meetings", isOn: $preferences.islandCalendar).toggleStyle(.switch)
                 }

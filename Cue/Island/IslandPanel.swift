@@ -69,6 +69,7 @@ struct IslandPanel: View {
     @Environment(GroupStore.self) private var groups
     @Environment(ShelfStore.self) private var shelf
     @Environment(NowPlaying.self) private var nowPlaying
+    @Environment(WeatherStore.self) private var weather
     /// Captures picked for one comparison sheet, in the order they were picked.
     @State private var compareSelection: [UUID] = []
     /// Asks the island for a line of text in its compact form.
@@ -86,6 +87,7 @@ struct IslandPanel: View {
     /// Opens the clock in the compact island (the prayer pill).
     var onShowClock: () -> Void = {}
     var onShowMedia: () -> Void = {}
+    var onShowWeather: () -> Void = {}
     /// Opens a card in the pane under the island (Settings › Island › Preview opens);
     /// the direction says which way the pane slides to it.
     var onPreviewPane: (IslandDetail, Int) -> Void = { _, _ in }
@@ -444,6 +446,9 @@ struct IslandPanel: View {
                     tabActions
                 }
                 if !searching {
+                    if preferences.islandWeather, weather.conditions != nil {
+                        WeatherPill(weather: weather, onShow: onShowWeather)
+                    }
                     if preferences.islandNowPlaying, nowPlaying.track != nil {
                         NowPlayingPill(nowPlaying: nowPlaying, onShow: onShowMedia)
                     }

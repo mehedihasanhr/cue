@@ -343,6 +343,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
+        // Diagnostics: `--env CUE_DEBUG_RENDER=weather` fetches the weather and draws its view, pill and tile to Pictures/Cue/_render.png.
+        if ProcessInfo.processInfo.environment["CUE_DEBUG_RENDER"] == "weather" {
+            let store = WeatherStore()
+            store.start()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
+                let view = VStack(alignment: .leading, spacing: 12) {
+                    WeatherDetail(weather: store)
+                        .background(.black, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+                    HStack(spacing: 16) {
+                        WeatherPill(weather: store)
+                        WeatherTile(weather: store).padding(8).background(.black)
+                    }
+                }
+                .padding(16)
+                .background(Color(red: 0.47, green: 0.55, blue: 0.67))
+                .environment(\.colorScheme, .dark)
+                let renderer = ImageRenderer(content: view)
+                renderer.scale = 2
+                if let cg = renderer.cgImage, let png = ImageEncoding.png(cg) {
+                    try? png.write(to: CaptureLibrary.defaultFolder().appendingPathComponent("_render.png"))
+                }
+                _ = store
+            }
+        }
         // Diagnostics: `--env CUE_DEBUG_RENDER=notices` draws the network, drive and download HUDs to Pictures/Cue/_render.png.
         if ProcessInfo.processInfo.environment["CUE_DEBUG_RENDER"] == "notices" {
             let samples = [
@@ -431,6 +455,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     self?.island?.showNotice(NoticeHUD(kind: .driveMounted, title: "Samsung T7", subtitle: "412 GB free of 1 TB", url: URL(fileURLWithPath: "/Volumes/Samsung T7"), used: 0.59))
                 case "download":
                     self?.island?.showNotice(NoticeHUD(kind: .downloaded, title: "Cue-0.10.4.dmg", subtitle: "18.2 MB · Click to show", url: URL(fileURLWithPath: "/System/Applications/Calculator.app")))
+                case "weather":
+                    self?.island?.weather.start()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self?.island?.showWeather() }
                 case "meeting":
                     self?.island?.showMeeting(MeetingHUD(id: "debug", title: "Design review", start: .now.addingTimeInterval(240), end: .now.addingTimeInterval(2040),
                                                          joinURL: URL(string: "https://meet.google.com/abc-defg-hij"), color: .orange))

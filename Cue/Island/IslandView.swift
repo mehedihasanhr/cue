@@ -18,6 +18,8 @@ final class IslandModel {
         case clock
         /// The music player: what Music or Spotify plays, and its controls.
         case media
+        /// The weather: now, and the next hours.
+        case weather
         /// The running agent sessions, and what they are asking.
         case agents
         case expanded
@@ -28,7 +30,7 @@ final class IslandModel {
             case .flash: .flash
             case .status(let status): status.clock == nil ? .flash : .prompt
             case .prompt(let prompt): prompt.isForm ? .form : .prompt
-            case .taskDetail, .clock, .media, .agents: .form
+            case .taskDetail, .clock, .media, .weather, .agents: .form
             case .expanded: .expanded
             }
         }
@@ -36,7 +38,7 @@ final class IslandModel {
         var isFlash: Bool {
             switch self {
             case .flash, .status: true
-            case .collapsed, .expanded, .prompt, .taskDetail, .clock, .media, .agents: false
+            case .collapsed, .expanded, .prompt, .taskDetail, .clock, .media, .weather, .agents: false
             }
         }
 
@@ -46,7 +48,7 @@ final class IslandModel {
             switch self {
             case .flash, .status: true
             case .prompt(let prompt): prompt.isConfirm
-            case .collapsed, .expanded, .taskDetail, .clock, .media, .agents: false
+            case .collapsed, .expanded, .taskDetail, .clock, .media, .weather, .agents: false
             }
         }
     }
@@ -67,6 +69,10 @@ final class IslandModel {
     var focus: FocusTimer?
     /// The calendar, for its tile; set by the controller.
     var calendar: CalendarWatcher?
+    /// The weather, for its tile and view; set by the controller.
+    var weather: WeatherStore?
+    /// Opens the forecast; set by the controller.
+    var onShowWeather: () -> Void = {}
     /// Opens a link (a meeting's call) and closes; set by the controller.
     var onOpenURL: (URL) -> Void = { _ in }
     /// The tiles beside the closed notch, as the settings and what plays have them;
@@ -124,12 +130,14 @@ final class IslandModel {
         case .expanded: panelWidth
         case .clock: clockWidth
         case .media: NowPlayingDetail.width
+        case .weather: WeatherDetail.width
         case .agents: IslandGeometry.agentsWidth + (showsPlayerBesideAgents ? NowPlayingDetail.columnWidth : 0)
         default: phase.fitsContent ? contentWidth : nil
         }
         let height: CGFloat? = switch phase {
         case .clock: clockHeight
         case .media: NowPlayingDetail.height
+        case .weather: WeatherDetail.height
         case .agents: max(agentsHeight ?? estimatedAgentsHeight, showsPlayerBesideAgents ? NowPlayingDetail.columnHeight : 0)
         case .expanded: panelHeight
         default: nil
@@ -445,9 +453,9 @@ struct IslandView: View {
             if !tiles.isEmpty, let geometry = model.geometry {
                 // A tile either side of the notch, the notch itself left clear.
                 HStack(spacing: 0) {
-                    CompactTileView(tile: tiles.left, height: strip, nowPlaying: model.nowPlaying, focus: model.focus, calendar: model.calendar)
+                    CompactTileView(tile: tiles.left, height: strip, nowPlaying: model.nowPlaying, focus: model.focus, calendar: model.calendar, weather: model.weather)
                     Color.clear.frame(width: geometry.collapsed.width)
-                    CompactTileView(tile: tiles.right, height: strip, nowPlaying: model.nowPlaying, focus: model.focus, calendar: model.calendar)
+                    CompactTileView(tile: tiles.right, height: strip, nowPlaying: model.nowPlaying, focus: model.focus, calendar: model.calendar, weather: model.weather)
                 }
                 .frame(height: strip)
                 .transition(.opacity.animation(Self.contentAnimation))
@@ -540,6 +548,12 @@ struct IslandView: View {
                     .frame(width: model.shapeRect(for: .clock).width, height: model.clockHeight ?? IslandGeometry.formContentHeight)
             }
             .transition(Self.contentTransition)
+        case .weather:
+            VStack(spacing: 0) {
+                Color.clear.frame(height: strip)
+                if let weather = model.weather { WeatherDetail(weather: weather) }
+            }
+            .transition(Self.contentTransition)
         case .media:
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
@@ -582,7 +596,7 @@ struct IslandView: View {
                 IslandPanel(library: library, clipboard: clipboard, assets: assets, colors: colors, tasksStore: tasks, snippets: snippets, actions: actions,
                             width: model.panelWidth, onIdealWidth: { model.setPanelWidth($0) }, onIdealHeight: { model.setPanelHeight($0) },
                             onPrompt: { model.onPrompt($0) }, onShowTask: { model.onShowTask($0) }, onOpenTaskDashboard: { model.onOpenTaskDashboard() },
-                            onShowClock: { model.onShowClock() }, onShowMedia: { model.onShowMedia() }, onPreviewPane: { model.onPreviewPane($0, $1) }, isPreviewOpen: { model.previewOpen },
+                            onShowClock: { model.onShowClock() }, onShowMedia: { model.onShowMedia() }, onShowWeather: { model.onShowWeather() }, onPreviewPane: { model.onPreviewPane($0, $1) }, isPreviewOpen: { model.previewOpen },
                             onHidePreview: { model.onHidePreview() }, isPointerInPreview: { model.isPointerInPreview() }, previewLeaveTick: model.previewLeaveTick, arrowPress: model.arrowPress)
                     .padding(.horizontal, IslandGeometry.panelHorizontalPadding)
                     .padding(.bottom, IslandGeometry.panelBottomPadding)
@@ -603,7 +617,7 @@ struct IslandView: View {
     /// The panels that stay open to be used: they get the rim.
     static func hasBackdrop(_ phase: IslandModel.Phase) -> Bool {
         switch phase {
-        case .expanded, .agents, .clock, .media, .taskDetail, .prompt: true
+        case .expanded, .agents, .clock, .media, .weather, .taskDetail, .prompt: true
         case .collapsed, .flash, .status: false
         }
     }
