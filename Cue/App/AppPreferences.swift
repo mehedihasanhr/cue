@@ -46,6 +46,7 @@ final class AppPreferences {
         static let islandTilesNowPlaying = "island.tiles.nowPlaying"
         static let islandDrives = "island.drives"
         static let islandDownloads = "island.downloads"
+        static let islandCalendar = "island.calendar"
         static let basketHideDelay = "basket.hideDelay"
         static let islandPreview = "island.preview"
         static let islandPreviewOnHover = "island.previewOnHover"
@@ -556,6 +557,11 @@ final class AppPreferences {
         didSet { defaults.set(islandDrives, forKey: Key.islandDrives) }
     }
 
+    /// Five minutes before a meeting the island says so, with Join for a call.
+    var islandCalendar: Bool {
+        didSet { defaults.set(islandCalendar, forKey: Key.islandCalendar) }
+    }
+
     /// The island shows a download finishing in Downloads; clicking it reveals the file.
     var islandDownloads: Bool {
         didSet { defaults.set(islandDownloads, forKey: Key.islandDownloads) }
@@ -813,6 +819,7 @@ final class AppPreferences {
         islandTilesNowPlaying = defaults.object(forKey: Key.islandTilesNowPlaying) as? Bool ?? true
         islandDrives = defaults.object(forKey: Key.islandDrives) as? Bool ?? true
         islandDownloads = defaults.object(forKey: Key.islandDownloads) as? Bool ?? true
+        islandCalendar = defaults.object(forKey: Key.islandCalendar) as? Bool ?? false
         islandFocus = defaults.object(forKey: Key.islandFocus) as? Bool ?? true
         basketHideDelay = defaults.object(forKey: Key.basketHideDelay) as? Double ?? 1.5
         islandPreview = IslandPreview(rawValue: defaults.string(forKey: Key.islandPreview) ?? "") ?? .inline

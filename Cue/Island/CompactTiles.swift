@@ -4,11 +4,11 @@ import SwiftUI
 /// little without opening: the time, the battery, a focus session counting down;
 /// while music plays, its artwork on the left and the pixel Cue on the right.
 enum CompactTile: String, CaseIterable, Equatable {
-    case none, clock, battery, focus
+    case none, clock, battery, focus, calendar
     /// Only while music plays (not offered as a choice).
     case artwork, critter
 
-    static let choices: [CompactTile] = [.none, .clock, .battery, .focus]
+    static let choices: [CompactTile] = [.none, .clock, .battery, .focus, .calendar]
 
     var title: String {
         switch self {
@@ -16,6 +16,7 @@ enum CompactTile: String, CaseIterable, Equatable {
         case .clock: "Clock"
         case .battery: "Battery"
         case .focus: "Focus timer"
+        case .calendar: "Calendar"
         case .artwork: "Artwork"
         case .critter: "Cue"
         }
@@ -39,6 +40,7 @@ struct CompactTileView: View {
     let height: CGFloat
     let nowPlaying: NowPlaying?
     let focus: FocusTimer?
+    var calendar: CalendarWatcher? = nil
 
     var body: some View {
         Group {
@@ -77,6 +79,8 @@ struct CompactTileView: View {
                             .foregroundStyle(.white)
                     }
                 }
+            case .calendar:
+                if let calendar { CalendarTile(watcher: calendar) }
             case .artwork:
                 if let nowPlaying {
                     ZStack {

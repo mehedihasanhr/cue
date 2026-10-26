@@ -360,6 +360,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                             .frame(height: 60)
                             .background(.black, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
                     }
+                    MeetingRow(meeting: MeetingHUD(id: "a", title: "Design review", start: .now.addingTimeInterval(240), end: .now.addingTimeInterval(2040),
+                                                   joinURL: URL(string: "https://meet.google.com/abc"), color: .orange))
+                        .frame(height: 60)
+                        .background(.black, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    MeetingRow(meeting: MeetingHUD(id: "b", title: "Lunch with Sam", start: .now.addingTimeInterval(300), end: .now.addingTimeInterval(3900),
+                                                   joinURL: nil, color: .purple))
+                        .frame(height: 60)
+                        .background(.black, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
                 }
                 .padding(16)
                 .background(Color(red: 0.47, green: 0.55, blue: 0.67))
@@ -423,6 +431,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     self?.island?.showNotice(NoticeHUD(kind: .driveMounted, title: "Samsung T7", subtitle: "412 GB free of 1 TB", url: URL(fileURLWithPath: "/Volumes/Samsung T7"), used: 0.59))
                 case "download":
                     self?.island?.showNotice(NoticeHUD(kind: .downloaded, title: "Cue-0.10.4.dmg", subtitle: "18.2 MB · Click to show", url: URL(fileURLWithPath: "/System/Applications/Calculator.app")))
+                case "meeting":
+                    self?.island?.showMeeting(MeetingHUD(id: "debug", title: "Design review", start: .now.addingTimeInterval(240), end: .now.addingTimeInterval(2040),
+                                                         joinURL: URL(string: "https://meet.google.com/abc-defg-hij"), color: .orange))
                 case "airpods":
                     self?.island?.showAudioDevice(AudioDeviceHUD(name: "AirPods Pro", connected: true, left: 82, right: 78, batteryCase: 15))
                 case "battery", "batterylow", "batteryout", "batterycharging":

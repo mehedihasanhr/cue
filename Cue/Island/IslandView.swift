@@ -65,6 +65,10 @@ final class IslandModel {
     var nowPlaying: NowPlaying?
     /// A focus session, for its tile; set by the controller.
     var focus: FocusTimer?
+    /// The calendar, for its tile; set by the controller.
+    var calendar: CalendarWatcher?
+    /// Opens a link (a meeting's call) and closes; set by the controller.
+    var onOpenURL: (URL) -> Void = { _ in }
     /// The tiles beside the closed notch, as the settings and what plays have them;
     /// set by the controller.
     var compactTiles: () -> CompactTiles = { CompactTiles() }
@@ -441,9 +445,9 @@ struct IslandView: View {
             if !tiles.isEmpty, let geometry = model.geometry {
                 // A tile either side of the notch, the notch itself left clear.
                 HStack(spacing: 0) {
-                    CompactTileView(tile: tiles.left, height: strip, nowPlaying: model.nowPlaying, focus: model.focus)
+                    CompactTileView(tile: tiles.left, height: strip, nowPlaying: model.nowPlaying, focus: model.focus, calendar: model.calendar)
                     Color.clear.frame(width: geometry.collapsed.width)
-                    CompactTileView(tile: tiles.right, height: strip, nowPlaying: model.nowPlaying, focus: model.focus)
+                    CompactTileView(tile: tiles.right, height: strip, nowPlaying: model.nowPlaying, focus: model.focus, calendar: model.calendar)
                 }
                 .frame(height: strip)
                 .transition(.opacity.animation(Self.contentAnimation))
@@ -467,6 +471,10 @@ struct IslandView: View {
                     ClockRow(status: clock)
                         .modifier(IdealWidth { model.contentWidth = $0 })
                         .frame(height: IslandGeometry.promptContentHeight)
+                } else if let meeting = status.meeting {
+                    MeetingRow(meeting: meeting, onJoin: { model.onOpenURL($0) })
+                        .modifier(IdealWidth { model.contentWidth = $0 })
+                        .frame(height: IslandGeometry.flashContentHeight)
                 } else if let notice = status.notice {
                     NoticeRow(notice: notice)
                         .modifier(IdealWidth { model.contentWidth = $0 })
@@ -690,6 +698,8 @@ struct IslandStatus: Equatable, Identifiable {
     var toggle: ToggleHUD? = nil
     /// Drawn as a notice: the network, a drive, a download.
     var notice: NoticeHUD? = nil
+    /// Drawn as a meeting about to start, with Join for a call.
+    var meeting: MeetingHUD? = nil
 
     /// Green for done, orange for "nothing to do", white otherwise.
     var tint: Color {

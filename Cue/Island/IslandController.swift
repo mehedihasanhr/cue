@@ -25,6 +25,8 @@ final class IslandController {
     private var toggles: ToggleMonitor?
     /// The network, drives and downloads.
     private var notices: NoticeMonitor?
+    /// The user's calendar, once they turn it on.
+    let calendar = CalendarWatcher()
     private let preferences: AppPreferences
     private let tasks: TaskStore
     private let snippets: SnippetStore
@@ -86,6 +88,13 @@ final class IslandController {
         nowPlaying.start()
         model.nowPlaying = nowPlaying
         model.focus = focus
+        model.calendar = calendar
+        model.onOpenURL = { [weak self] url in
+            NSWorkspace.shared.open(url)
+            self?.collapse()
+        }
+        calendar.onAlert = { [weak self] meeting in self?.showMeeting(meeting) }
+        applyCalendarPreference()
         model.compactTiles = { [weak self, weak preferences, weak focus] in
             guard let self, let preferences, preferences.islandCompactTiles else { return CompactTiles() }
             #if DEBUG
@@ -481,6 +490,7 @@ final class IslandController {
         audioDevices?.stop()
         toggles?.stop()
         notices?.stop()
+        calendar.stop()
         nowPlaying.stop()
         LevelKeys.stop()
         closeTask?.cancel()
@@ -700,6 +710,23 @@ final class IslandController {
 
     private static let levelDuration: Duration = .milliseconds(1500)
 
+    /// Watches the calendar while meeting alerts or a calendar tile are on (macOS asks
+    /// for access the first time), and stops when neither is.
+    private func applyCalendarPreference() {
+        let wanted = withObservationTracking {
+            preferences.islandCalendar || (preferences.islandCompactTiles && (preferences.islandTileLeft == .calendar || preferences.islandTileRight == .calendar))
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.applyCalendarPreference() }
+        }
+        if wanted { calendar.start() } else { calendar.stop() }
+    }
+
+    /// A meeting starts in five minutes: the island says so, with Join for a call.
+    func showMeeting(_ meeting: MeetingHUD) {
+        guard preferences.islandCalendar, model.geometry != nil, !hidden else { return }
+        flash(phase: .status(IslandStatus(symbol: "calendar", title: meeting.title, duration: .seconds(12), meeting: meeting)))
+    }
+
     /// The network changed, a drive came or went, a download finished. Going offline
     /// comes over an open panel too; the rest only over the closed island.
     func showNotice(_ notice: NoticeHUD) {
@@ -870,7 +897,7 @@ final class IslandController {
         setPhase(phase, animated: true)
         let duration: Duration = if case .status(let status) = phase { status.duration } else { .seconds(preferences.islandFlashDuration) }
         // The clock and a level just close: neither is a way into the panel.
-        let isClock = if case .status(let status) = phase { status.clock != nil || status.level != nil || status.notice?.isClickable == true } else { false }
+        let isClock = if case .status(let status) = phase { status.clock != nil || status.level != nil || status.notice?.isClickable == true || status.meeting?.joinURL != nil } else { false }
         flashTask = Task { [weak self] in
             try? await Task.sleep(for: duration)
             guard !Task.isCancelled, let self, model.phase.isFlash else { return }
@@ -988,7 +1015,7 @@ final class IslandController {
         guard !pressWithoutDrop else { return }
         // A flash opens at once when hovered; the closed island waits for the delay
         // — or, in click mode, for a click.
-        if case .status(let status) = model.phase, status.level != nil || status.notice?.isClickable == true {
+        if case .status(let status) = model.phase, status.level != nil || status.notice?.isClickable == true || status.meeting?.joinURL != nil {
             // A level is for dragging, a download's notice for clicking: not ways into the panel.
             return
         } else if model.phase.isFlash {

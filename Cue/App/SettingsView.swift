@@ -444,6 +444,9 @@ struct IslandSettingsView: View {
                         SecondsSlider(value: $preferences.islandFlashDuration, range: 0.5...5, step: 0.1, zero: nil)
                     }
                 }
+                SettingsRow("Meetings", subtitle: "Five minutes before an event in your calendar, with Join for a Zoom, Meet or Teams call. macOS asks once for the calendar.") {
+                    Toggle("Meetings", isOn: $preferences.islandCalendar).toggleStyle(.switch)
+                }
                 SettingsRow("Network", subtitle: "Going offline and back, a new Wi-Fi network, a VPN connecting.") {
                     Toggle("Network", isOn: $preferences.islandNetwork).toggleStyle(.switch)
                 }
