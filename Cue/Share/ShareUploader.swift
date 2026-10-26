@@ -73,13 +73,15 @@ final class ShareSettings {
         }
     }
 
-    /// The object name for an upload.
-    func objectName(for date: Date) -> String {
+    /// The object name for an upload: a capture's PNG, or `file` (a dropped file's
+    /// own name, made safe for a URL) after the stem.
+    func objectName(for date: Date, file: String? = nil) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd-HHmmss"
         let stem = datedNames ? formatter.string(from: date) + "-" + String(UUID().uuidString.prefix(4)).lowercased()
                               : String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(10)).lowercased()
-        return stem + ".png"
+        guard let file else { return stem + ".png" }
+        return stem + "-" + file.replacingOccurrences(of: "[^A-Za-z0-9._-]+", with: "-", options: .regularExpression)
     }
 }
 
@@ -98,19 +100,19 @@ enum ShareUploader {
         }
     }
 
-    /// Uploads the PNG and returns the public link.
-    static func upload(_ png: Data, name: String, settings: ShareSettings) async throws -> URL {
+    /// Uploads the data (a PNG unless `contentType` says otherwise) and returns the public link.
+    static func upload(_ data: Data, name: String, contentType: String = "image/png", settings: ShareSettings) async throws -> URL {
         guard settings.isConfigured else { throw Failure.notConfigured }
         switch settings.provider {
         case .off: throw Failure.notConfigured
-        case .s3: return try await uploadS3(png, name: name, settings: settings)
-        case .custom: return try await uploadCustom(png, name: name, settings: settings)
+        case .s3: return try await uploadS3(data, name: name, contentType: contentType, settings: settings)
+        case .custom: return try await uploadCustom(data, name: name, contentType: contentType, settings: settings)
         }
     }
 
     // MARK: - S3 (SigV4, path-style)
 
-    private static func uploadS3(_ png: Data, name: String, settings: ShareSettings) async throws -> URL {
+    private static func uploadS3(_ png: Data, name: String, contentType: String, settings: ShareSettings) async throws -> URL {
         var host = settings.endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         if let range = host.range(of: "://") { host = String(host[range.upperBound...]) }
         host = host.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
@@ -124,7 +126,7 @@ enum ShareUploader {
         let dateOnly = String(amzDate.prefix(8))
         let region = settings.region.isEmpty ? "auto" : settings.region
         let payloadHash = hex(SHA256.hash(data: png))
-        let canonicalHeaders = "content-type:image/png\nhost:\(host)\nx-amz-acl:public-read\nx-amz-content-sha256:\(payloadHash)\nx-amz-date:\(amzDate)\n"
+        let canonicalHeaders = "content-type:\(contentType)\nhost:\(host)\nx-amz-acl:public-read\nx-amz-content-sha256:\(payloadHash)\nx-amz-date:\(amzDate)\n"
         let signedHeaders = "content-type;host;x-amz-acl;x-amz-content-sha256;x-amz-date"
         let canonicalRequest = ["PUT", uriEncode(path, keepSlashes: true), "", canonicalHeaders, signedHeaders, payloadHash].joined(separator: "\n")
         let scope = "\(dateOnly)/\(region)/s3/aws4_request"
@@ -137,7 +139,7 @@ enum ShareUploader {
 
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
-        request.setValue("image/png", forHTTPHeaderField: "Content-Type")
+        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
         request.setValue("public-read", forHTTPHeaderField: "x-amz-acl")
         request.setValue(payloadHash, forHTTPHeaderField: "x-amz-content-sha256")
         request.setValue(amzDate, forHTTPHeaderField: "x-amz-date")
@@ -167,7 +169,7 @@ enum ShareUploader {
 
     // MARK: - Custom endpoint
 
-    private static func uploadCustom(_ png: Data, name: String, settings: ShareSettings) async throws -> URL {
+    private static func uploadCustom(_ png: Data, name: String, contentType: String, settings: ShareSettings) async throws -> URL {
         guard var url = URL(string: settings.customURL.trimmingCharacters(in: .whitespacesAndNewlines)) else { throw Failure.badEndpoint }
         // "{name}" in the URL takes the file name; a PUT without it gets the name appended.
         if url.absoluteString.contains("{name}") {
@@ -185,12 +187,12 @@ enum ShareUploader {
             let boundary = "cue-" + UUID().uuidString
             request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
             var form = Data()
-            form.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"\(name)\"\r\nContent-Type: image/png\r\n\r\n".utf8))
+            form.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"\(name)\"\r\nContent-Type: \(contentType)\r\n\r\n".utf8))
             form.append(png)
             form.append(Data("\r\n--\(boundary)--\r\n".utf8))
             body = form
         } else {
-            request.setValue("image/png", forHTTPHeaderField: "Content-Type")
+            request.setValue(contentType, forHTTPHeaderField: "Content-Type")
             body = png
         }
         let (answer, response) = try await URLSession.shared.upload(for: request, from: body)

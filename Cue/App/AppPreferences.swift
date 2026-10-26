@@ -56,6 +56,7 @@ final class AppPreferences {
         static let islandWeather = "island.weather"
         static let islandLockScreen = "island.lockScreen"
         static let basketHideDelay = "basket.hideDelay"
+        static let basketQuickActions = "basket.quickActions"
         static let islandPreview = "island.preview"
         static let islandPreviewOnHover = "island.previewOnHover"
         static let islandPreviewHoverDelay = "island.previewHoverDelay"
@@ -664,6 +665,11 @@ final class AppPreferences {
         didSet { defaults.set(basketEnabled, forKey: Key.basketEnabled) }
     }
 
+    /// Shaking offers four places (basket, Transform, share link, AirDrop), not just the basket.
+    var basketQuickActions: Bool {
+        didSet { defaults.set(basketQuickActions, forKey: Key.basketQuickActions) }
+    }
+
     /// How long an empty basket stays after the drag that brought it ends.
     var basketHideDelay: Double {
         didSet { defaults.set(basketHideDelay, forKey: Key.basketHideDelay) }
@@ -897,6 +903,7 @@ final class AppPreferences {
         islandLockScreen = defaults.object(forKey: Key.islandLockScreen) as? Bool ?? false
         islandFocus = defaults.object(forKey: Key.islandFocus) as? Bool ?? true
         basketHideDelay = defaults.object(forKey: Key.basketHideDelay) as? Double ?? 1.5
+        basketQuickActions = defaults.object(forKey: Key.basketQuickActions) as? Bool ?? true
         islandPreview = IslandPreview(rawValue: defaults.string(forKey: Key.islandPreview) ?? "") ?? .inline
         islandPreviewOnHover = defaults.object(forKey: Key.islandPreviewOnHover) as? Bool ?? true
         islandPreviewHoverDelay = defaults.object(forKey: Key.islandPreviewHoverDelay) as? Double ?? 0.5

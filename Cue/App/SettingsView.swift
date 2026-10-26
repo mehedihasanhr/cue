@@ -469,6 +469,9 @@ struct IslandSettingsView: View {
                     Toggle("Shake to show the basket", isOn: $preferences.basketEnabled).toggleStyle(.switch)
                 }
                 if preferences.basketEnabled {
+                    SettingsRow("Choose where they go", subtitle: "Shaking shows four places instead of the basket alone: the basket, Transform (convert, make smaller, zip), a share link, and AirDrop.") {
+                        Toggle("Choose where they go", isOn: $preferences.basketQuickActions).toggleStyle(.switch)
+                    }
                     SettingsRow("Hide an empty basket after") {
                         SecondsSlider(value: $preferences.basketHideDelay, range: 0.5...5, step: 0.1, zero: nil)
                     }

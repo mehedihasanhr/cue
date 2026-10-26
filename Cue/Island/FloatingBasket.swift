@@ -2,9 +2,10 @@ import AppKit
 import SwiftUI
 
 /// A small basket that floats over everything, for files on their way somewhere.
-/// Shaking the pointer while dragging files (in any app) brings it up under the
-/// pointer: let go and the files wait in it; later the whole stack is dragged out
-/// at once, and the basket goes once it is empty. An empty basket hides itself a
+/// Shaking the pointer while dragging files (in any app) brings up four places
+/// under the pointer (the basket, Transform, a share link, AirDrop), or the basket
+/// alone if Settings says so. In the basket the files wait; later the whole stack
+/// is dragged out at once, and the basket goes once it is empty. An empty basket hides itself a
 /// moment after the drag ends; one closed with files in it can be reopened from the
 /// menu bar.
 ///
@@ -23,6 +24,14 @@ final class BasketController {
     private var hideTask: Task<Void, Never>?
     /// What was in the basket when it was last closed with files in it.
     private var lastClosed: [URL] = []
+    private var gridPanel: NSPanel?
+    private let grid = QuickDropModel()
+    private var gridHideTask: Task<Void, Never>?
+
+    /// Makes share links for files (set by the app, which has the sharing settings).
+    var onShareLink: ([URL]) -> Void = { _ in }
+    /// Whether share links can be made.
+    var canShare: () -> Bool = { false }
 
     var canReopen: Bool { !lastClosed.isEmpty && panel?.isVisible != true }
 
@@ -50,6 +59,7 @@ final class BasketController {
         monitors.forEach(NSEvent.removeMonitor)
         monitors = []
         close()
+        hideGrid()
     }
 
     /// Brings back the basket last closed with files in it, under the pointer.
@@ -66,6 +76,12 @@ final class BasketController {
     func debugShow(_ urls: [URL]) {
         show(at: NSEvent.mouseLocation)
         store.add(fileURLs: urls)
+    }
+
+    /// For diagnostics: the four places under the pointer, `target` lit.
+    func debugShowGrid(hovered target: QuickDropTarget?) {
+        showGrid(at: NSEvent.mouseLocation)
+        grid.hovered = target
     }
 
     /// Puts the basket away; what is in it is kept to reopen.
@@ -88,13 +104,16 @@ final class BasketController {
             pressCount = NSPasteboard(name: .drag).changeCount
             shake.reset()
         case .leftMouseDragged:
-            guard preferences.basketEnabled, panel?.isVisible != true else { return }
+            guard preferences.basketEnabled, panel?.isVisible != true, gridPanel?.isVisible != true else { return }
             let drag = NSPasteboard(name: .drag)
             guard drag.changeCount != pressCount, drag.types?.contains(.fileURL) == true else { return }
-            if shake.feed(x: NSEvent.mouseLocation.x, at: time) { show(at: NSEvent.mouseLocation) }
+            if shake.feed(x: NSEvent.mouseLocation.x, at: time) {
+                if preferences.basketQuickActions { showGrid(at: NSEvent.mouseLocation) } else { show(at: NSEvent.mouseLocation) }
+            }
         case .leftMouseUp:
             shake.reset()
             hideIfEmpty()
+            hideGridSoon()
         default:
             break
         }
@@ -116,16 +135,137 @@ final class BasketController {
         hideTask?.cancel()
         let panel = panel ?? makePanel()
         self.panel = panel
-        let size = BasketView.size
+        panel.setFrame(Self.frame(around: point, size: BasketView.size), display: false)
+        panel.orderFrontRegardless()
+        model.shown = true
+    }
+
+    // MARK: - The four places
+
+    private func showGrid(at point: CGPoint) {
+        gridHideTask?.cancel()
+        let panel = gridPanel ?? makeGridPanel()
+        gridPanel = panel
+        panel.setFrame(Self.frame(around: point, size: QuickDropGrid.size), display: false)
+        grid.canShare = canShare()
+        grid.hovered = nil
+        panel.orderFrontRegardless()
+        grid.shown = true
+    }
+
+    private func hideGrid() {
+        gridHideTask?.cancel()
+        guard let gridPanel, gridPanel.isVisible else { return }
+        grid.shown = false
+        grid.hovered = nil
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(180))
+            guard let self, !grid.shown else { return }
+            self.gridPanel?.orderOut(nil)
+        }
+    }
+
+    /// The drag ended somewhere else (or was let go of nowhere): the grid goes.
+    private func hideGridSoon() {
+        guard gridPanel?.isVisible == true else { return }
+        gridHideTask?.cancel()
+        gridHideTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
+            self?.hideGrid()
+        }
+    }
+
+    private func drop(on target: QuickDropTarget, urls: [URL], image: Data?) {
+        let point = gridPanel.map { CGPoint(x: $0.frame.midX, y: $0.frame.midY) } ?? NSEvent.mouseLocation
+        hideGrid()
+        // A picture dragged out of an app (no file): only the basket can hold it.
+        guard !urls.isEmpty else {
+            show(at: point)
+            if let image { store.add(imageData: image) }
+            return
+        }
+        switch target {
+        case .basket:
+            show(at: point)
+            store.add(fileURLs: urls)
+        case .transform:
+            transform(urls, at: point)
+        case .share:
+            onShareLink(urls)
+        case .airDrop:
+            NSApp.activate()
+            guard let airDrop = NSSharingService(named: .sendViaAirDrop), airDrop.canPerform(withItems: urls) else {
+                FeedbackHUD.show("AirDrop isn't available", symbol: "exclamationmark.triangle.fill", subtitle: "Turn on Wi-Fi and Bluetooth")
+                return
+            }
+            airDrop.perform(withItems: urls)
+        }
+    }
+
+    /// What can be made of the files, as a menu at the pointer; what's made lands in
+    /// the basket, ready to be dragged on.
+    private func transform(_ urls: [URL], at point: CGPoint) {
+        let images = urls.filter(FileActions.isImage)
+        let menu = NSMenu()
+        func run(_ done: String, from: [URL], each: Bool = true, _ work: @escaping @Sendable ([URL], URL) -> [URL]) {
+            show(at: point)
+            store.produce(done, from: from, each: each, work)
+        }
+        if !images.isEmpty {
+            let convert = NSMenuItem(title: "Convert to", action: nil, keyEquivalent: "")
+            let formats = NSMenu()
+            for format in FileActions.ImageFormat.writable {
+                formats.addItem(QuickDropMenuItem(format.title) {
+                    run("Converted to \(format.title)", from: images) { urls, folder in urls.compactMap { FileActions.convert($0, to: format, into: folder) } }
+                })
+            }
+            convert.submenu = formats
+            menu.addItem(convert)
+            menu.addItem(QuickDropMenuItem("Make Smaller") {
+                run("Made smaller", from: images) { urls, folder in urls.compactMap { FileActions.compress($0, into: folder) } }
+            })
+        }
+        menu.addItem(QuickDropMenuItem(urls.count == 1 ? "Make a ZIP" : "Make a ZIP of \(urls.count)") {
+            run("Zipped", from: urls, each: false) { urls, folder in FileActions.zip(urls, into: folder).map { [$0] } ?? [] }
+        })
+        NSApp.activate()
+        menu.popUp(positioning: nil, at: point, in: nil)
+    }
+
+    private func makeGridPanel() -> NSPanel {
+        let panel = NSPanel(contentRect: CGRect(origin: .zero, size: QuickDropGrid.size), styleMask: [.borderless, .nonactivatingPanel],
+                            backing: .buffered, defer: false)
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.level = .floating
+        panel.hidesOnDeactivate = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        let content = QuickDropView(frame: CGRect(origin: .zero, size: QuickDropGrid.size))
+        content.onHover = { [weak self] target in
+            self?.gridHideTask?.cancel()
+            self?.grid.hovered = target
+        }
+        content.onDrop = { [weak self] target, urls, image in self?.drop(on: target, urls: urls, image: image) }
+        let host = NSHostingView(rootView: QuickDropGrid(model: grid))
+        host.sizingOptions = []
+        host.autoresizingMask = [.width, .height]
+        host.frame = content.bounds
+        content.addSubview(host)
+        panel.contentView = content
+        return panel
+    }
+
+    /// A window of `size` centred on `point`, kept on its screen.
+    private static func frame(around point: CGPoint, size: CGSize) -> CGRect {
         let screen = NSScreen.screens.first { $0.frame.contains(point) } ?? NSScreen.main
         var frame = CGRect(x: point.x - size.width / 2, y: point.y - size.height / 2, width: size.width, height: size.height)
         if let visible = screen?.visibleFrame {
             frame.origin.x = min(max(frame.minX, visible.minX + 8), visible.maxX - size.width - 8)
             frame.origin.y = min(max(frame.minY, visible.minY + 8), visible.maxY - size.height - 8)
         }
-        panel.setFrame(frame, display: false)
-        panel.orderFrontRegardless()
-        model.shown = true
+        return frame
     }
 
     private func makePanel() -> NSPanel {

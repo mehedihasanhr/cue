@@ -4,6 +4,7 @@ import AppKit
 import BackgroundKit
 import RecordKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let model = AppModel()
@@ -142,6 +143,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         applyIslandPreference()
         applyAgentPreference()
         applyClipboardPreference()
+        basket.canShare = { [weak self] in self?.share.isConfigured ?? false }
+        basket.onShareLink = { [weak self] urls in self?.shareFiles(urls) }
         basket.start()
 
         let expander = SnippetExpander(store: snippets, assets: assets, preferences: preferences)
@@ -440,7 +443,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // (`empty`: with none).
         if let mode = ProcessInfo.processInfo.environment["CUE_DEBUG_BASKET"] {
             let files = ((try? FileManager.default.contentsOfDirectory(at: Bundle.main.resourceURL!, includingPropertiesForKeys: nil)) ?? []).prefix(mode == "empty" ? 0 : 3)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.basket.debugShow(Array(files)) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                // `grid`: the four places a shake offers, Transform lit.
+                if mode == "grid" { self?.basket.debugShowGrid(hovered: .transform) } else { self?.basket.debugShow(Array(files)) }
+            }
         }
         // Diagnostics: `--env CUE_DEBUG_ISLAND_SHOT=captures` opens the island on that tab (`agents`:
         // the agent sessions; `drop`: as with a file dragged over it;
@@ -1312,6 +1318,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self?.clipboard.copy(text: url.absoluteString)
                 FeedbackHUD.show("Link copied", symbol: "link", duration: .seconds(2.5), subtitle: url.absoluteString, image: self?.library.thumbnail(for: item))
                 Log.app.info("Shared \(item.fileName, privacy: .public) → \(url.absoluteString, privacy: .public)")
+            } catch {
+                FeedbackHUD.show("Upload failed", symbol: "exclamationmark.triangle.fill", duration: .seconds(4), subtitle: error.localizedDescription)
+                Log.app.error("Share failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
+    /// Uploads dropped files where Settings › Sharing says and puts their links on the
+    /// clipboard, one per line. Files over 200 MB are left out.
+    private func shareFiles(_ urls: [URL]) {
+        guard share.isConfigured else {
+            FeedbackHUD.show("Set up sharing first", symbol: "link.badge.plus", subtitle: "Settings › Sharing")
+            showSettings(nil)
+            return
+        }
+        let limit = 200 * 1024 * 1024
+        let files = urls.filter { ((try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) <= limit && !$0.hasDirectoryPath }
+        guard !files.isEmpty else {
+            FeedbackHUD.show("Nothing to share", symbol: "exclamationmark.triangle.fill", subtitle: "Folders and files over 200 MB can't be shared")
+            return
+        }
+        island?.showStatus(IslandStatus(symbol: "arrow.up.circle", title: "Uploading…", subtitle: files.count == 1 ? files[0].lastPathComponent : "\(files.count) files", duration: .seconds(30)), quiet: false)
+        let share = share
+        Task { @MainActor [weak self] in
+            var links: [String] = []
+            do {
+                for file in files {
+                    let data = try Data(contentsOf: file, options: .mappedIfSafe)
+                    let type = UTType(filenameExtension: file.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+                    let url = try await ShareUploader.upload(data, name: share.objectName(for: .now, file: file.lastPathComponent), contentType: type, settings: share)
+                    links.append(url.absoluteString)
+                }
+                self?.clipboard.copy(text: links.joined(separator: "\n"))
+                FeedbackHUD.show(links.count == 1 ? "Link copied" : "\(links.count) links copied", symbol: "link", duration: .seconds(2.5), subtitle: links.count == 1 ? links[0] : nil)
+                Log.app.info("Shared \(files.count) dropped file(s)")
             } catch {
                 FeedbackHUD.show("Upload failed", symbol: "exclamationmark.triangle.fill", duration: .seconds(4), subtitle: error.localizedDescription)
                 Log.app.error("Share failed: \(error.localizedDescription, privacy: .public)")
