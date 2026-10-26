@@ -13,6 +13,8 @@
 		4B4C494B000000000000A060 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 4B4C494B000000000000A062 /* Sparkle */; };
 		4B4C494B000000000000A038 /* BackgroundKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B4C494B000000000000A03A /* BackgroundKit */; };
 		4B4C494B000000000000A039 /* BackgroundKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B4C494B000000000000A03B /* BackgroundKit */; };
+		4B4C494B000000000000A063 /* WebPKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B4C494B000000000000A065 /* WebPKit */; };
+		4B4C494B000000000000A064 /* WebPKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B4C494B000000000000A066 /* WebPKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -113,6 +115,7 @@
 				4B4C494B000000000000A054 /* RenderKit in Frameworks */,
 				4B4C494B000000000000A057 /* TimelineKit in Frameworks */,
 				4B4C494B000000000000A060 /* Sparkle in Frameworks */,
+				4B4C494B000000000000A063 /* WebPKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -121,6 +124,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				4B4C494B000000000000A039 /* BackgroundKit in Frameworks */,
+				4B4C494B000000000000A064 /* WebPKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -181,6 +185,7 @@
 				4B4C494B000000000000A055 /* RenderKit */,
 				4B4C494B000000000000A058 /* TimelineKit */,
 				4B4C494B000000000000A062 /* Sparkle */,
+				4B4C494B000000000000A065 /* WebPKit */,
 			);
 			productName = Cue;
 			productReference = 4B4C494B000000000000A001 /* Cue.app */;
@@ -204,6 +209,7 @@
 			name = CueTests;
 			packageProductDependencies = (
 				4B4C494B000000000000A03B /* BackgroundKit */,
+				4B4C494B000000000000A066 /* WebPKit */,
 			);
 			productName = CueTests;
 			productReference = 4B4C494B000000000000A011 /* CueTests.xctest */;
@@ -249,6 +255,7 @@
 				4B4C494B000000000000A050 /* XCLocalSwiftPackageReference "Packages/RecordKit" */,
 				4B4C494B000000000000A053 /* XCLocalSwiftPackageReference "Packages/RenderKit" */,
 				4B4C494B000000000000A056 /* XCLocalSwiftPackageReference "Packages/TimelineKit" */,
+				4B4C494B000000000000A067 /* XCLocalSwiftPackageReference "Packages/WebPKit" */,
 				4B4C494B000000000000A061 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -313,6 +320,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/TimelineKit;
 		};
+		4B4C494B000000000000A067 /* XCLocalSwiftPackageReference "Packages/WebPKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/WebPKit;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -351,6 +362,14 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 4B4C494B000000000000A061 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
+		};
+		4B4C494B000000000000A065 /* WebPKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = WebPKit;
+		};
+		4B4C494B000000000000A066 /* WebPKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = WebPKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 

@@ -2,6 +2,7 @@ import AppKit
 import ImageIO
 import Quartz
 import UniformTypeIdentifiers
+import WebPKit
 
 /// What can be done to files on the shelf: convert images, make them smaller, zip,
 /// look at them, send them. New files are written into the shelf's own folder (Cue
@@ -9,12 +10,13 @@ import UniformTypeIdentifiers
 /// dragged on.
 enum FileActions {
     nonisolated enum ImageFormat: String, CaseIterable, Sendable {
-        case jpeg, png, heic, avif, tiff
+        case jpeg, png, webp, heic, avif, tiff
 
         var title: String {
             switch self {
             case .jpeg: "JPEG"
             case .png: "PNG"
+            case .webp: "WebP"
             case .heic: "HEIC"
             case .avif: "AVIF"
             case .tiff: "TIFF"
@@ -25,6 +27,7 @@ enum FileActions {
             switch self {
             case .jpeg: .jpeg
             case .png: .png
+            case .webp: .webP
             case .heic: .heic
             case .avif: UTType("public.avif") ?? .heic
             case .tiff: .tiff
@@ -33,10 +36,11 @@ enum FileActions {
 
         var fileExtension: String { self == .jpeg ? "jpg" : rawValue }
 
-        /// The ones this Mac's ImageIO can write (WebP it can only read).
+        /// The ones this Mac can write: what ImageIO writes, and WebP (which it only
+        /// reads) through libwebp.
         static var writable: [ImageFormat] {
             let types = Set((CGImageDestinationCopyTypeIdentifiers() as? [String]) ?? [])
-            return allCases.filter { types.contains($0.type.identifier) }
+            return allCases.filter { $0 == .webp || types.contains($0.type.identifier) }
         }
     }
 
@@ -50,6 +54,17 @@ enum FileActions {
         let name = url.deletingPathExtension().lastPathComponent + "." + format.fileExtension
         let output = folder.appendingPathComponent(UUID().uuidString, isDirectory: true).appendingPathComponent(name)
         try? FileManager.default.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if format == .webp {
+            // Drawn upright (as the orientation tag says), at full size, then encoded.
+            let size = (CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]).map {
+                max($0[kCGImagePropertyPixelWidth] as? Int ?? 0, $0[kCGImagePropertyPixelHeight] as? Int ?? 0)
+            } ?? 0
+            let upright: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true,
+                                            kCGImageSourceThumbnailMaxPixelSize: max(size, 1)]
+            guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, upright as CFDictionary),
+                  let data = WebP.encode(image, quality: 0.9) else { return nil }
+            return (try? data.write(to: output)) != nil ? output : nil
+        }
         guard let destination = CGImageDestinationCreateWithURL(output as CFURL, format.type.identifier as CFString, 1, nil) else { return nil }
         let options: [CFString: Any] = format == .png || format == .tiff ? [:] : [kCGImageDestinationLossyCompressionQuality: 0.9]
         CGImageDestinationAddImageFromSource(destination, source, 0, options as CFDictionary)
