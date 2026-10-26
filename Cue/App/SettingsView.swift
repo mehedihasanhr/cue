@@ -390,6 +390,16 @@ struct IslandSettingsView: View {
             }
             .disabled(!preferences.dynamicIslandEnabled)
 
+            SettingsGroup("Shelf") {
+                SettingsRow("Stay open after a drop", subtitle: "Drop files on the left card while dragging over the island to park them on the shelf; drag them out again when you need them.") {
+                    Toggle("Stay open after a drop", isOn: $preferences.islandShelfOpenAfterDrop).toggleStyle(.switch)
+                }
+                SettingsRow("Close when the shelf empties") {
+                    Toggle("Close when emptied", isOn: $preferences.islandShelfAutoCollapse).toggleStyle(.switch)
+                }
+            }
+            .disabled(!preferences.dynamicIslandEnabled)
+
             SettingsGroup("What it shows") {
                 SettingsRow("Flash new captures") {
                     Toggle("Flash captures", isOn: $preferences.islandFlashCaptures).toggleStyle(.switch)

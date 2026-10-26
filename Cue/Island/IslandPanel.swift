@@ -49,7 +49,8 @@ struct IslandPanel: View {
     /// The panel's smallest size; it widens for a tab row that needs more room.
     /// The least width and the most height: the panel grows wider for its tab row
     /// and takes only the height its content needs.
-    static let size = CGSize(width: 780, height: 330)
+    /// The tallest it gets: a full tab with the groups under it and the shelf above.
+    static let size = CGSize(width: 780, height: 330 + ShelfRow.height + 10)
     /// The search field at rest: room for its placeholder, the rest of the bar for tabs.
     static let searchWidth: CGFloat = 210
     static let horizontalPadding: CGFloat = 20
@@ -66,6 +67,7 @@ struct IslandPanel: View {
     @Environment(PrayerClock.self) private var clock: PrayerClock?
     @Environment(FocusTimer.self) private var focusTimer: FocusTimer?
     @Environment(GroupStore.self) private var groups
+    @Environment(ShelfStore.self) private var shelf
     /// Captures picked for one comparison sheet, in the order they were picked.
     @State private var compareSelection: [UUID] = []
     /// Asks the island for a line of text in its compact form.
@@ -452,6 +454,13 @@ struct IslandPanel: View {
             }
             .animation(.easeOut(duration: 0.18), value: searching)
             .modifier(IdealWidth { headerWidth = $0; reportWidth() })
+
+            // Files parked on the shelf wait here, over every tab, until dragged out.
+            if !searching, detail == nil, !shelf.items.isEmpty {
+                ShelfRow()
+                    .padding(.top, 10)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
 
             if searching {
                 resultBar
@@ -2284,6 +2293,8 @@ struct DragPayload {
 /// own card for a file arriving from outside.
 enum IslandDrag {
     nonisolated(unsafe) static var current: GroupAssignment?
+    /// Files on their way out of the shelf: never taken for files arriving.
+    nonisolated(unsafe) static var fromShelf = false
 }
 
 /// The AppKit side of the row: starts drags out of the island and reports

@@ -372,6 +372,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     _ = self?.island?.showStatus(IslandStatus(symbol: "checkmark.circle.fill", title: "Copied", subtitle: "Image 148 × 116",
                                                               image: NSImage(named: "AppIcon"), duration: .seconds(6)))
                 case "drop": self?.island?.debugShowDropZone()
+                case "shelf":
+                    // A few of the app's own files parked, one picked.
+                    let resources = Bundle.main.resourceURL!
+                    let files = ((try? FileManager.default.contentsOfDirectory(at: resources, includingPropertiesForKeys: nil)) ?? []).prefix(4)
+                    if let shelf = self?.island?.shelf {
+                        shelf.add(fileURLs: Array(files))
+                        if let first = shelf.items.first { shelf.selection = [first.id] }
+                    }
+                    self?.island?.expand()
                 case "dropsaved":
                     self?.island?.debugShowDropZone()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self?.island?.debugShowDropSaved() }
