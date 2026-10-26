@@ -110,45 +110,75 @@ private struct AgentTile: View {
 }
 
 /// Claude's pixel critter, as Claude Code shows it while it works: an orange block
-/// with two eyes and stubby arms, stepping on four legs. Drawn square by square,
-/// two frames of legs and a one-pixel bob.
+/// with a shaded side, two eyes and slanted legs, typing on a little grey laptop.
+/// Drawn square by square: the front arm taps in an uneven rhythm, the laptop's
+/// screen flickers with each key, and now and then it blinks.
 private struct ClaudeCritter: View {
     let side: CGFloat
 
-    private static let body: [String] = [
-        "  ########  ",
-        "  #k####k#  ",
-        "############",
-        "  ########  ",
-        "  ########  ",
+    /// o body · d its shaded side · a the typing arm · k eyes · g laptop · c a lit key.
+    private static let armUp: [String] = [
+        "       ooooooodd  ",
+        "       ooooooodd  ",
+        "       koookoodd  ",
+        "     aaooooooodd  ",
+        "     aaooooooodd  ",
+        "g      ooooooodd  ",
+        " g     ooooooodd  ",
+        "  g     o o o o   ",
+        "   gggg  o o o o  ",
     ]
-    private static let legs: [[String]] = [
-        [" # #    # # ", " # #    # # "],
-        ["  # #  # #  ", "  # #  # #  "],
+    private static let armDown: [String] = [
+        "       ooooooodd  ",
+        "       ooooooodd  ",
+        "       koookoodd  ",
+        "       ooooooodd  ",
+        "     aaooooooodd  ",
+        "gc   aaooooooodd  ",
+        " g     ooooooodd  ",
+        "  g     o o o o   ",
+        "   gggg  o o o o  ",
     ]
+    /// Down (true) or up for each beat: typing, not a metronome.
+    private static let rhythm: [Bool] = [true, false, true, false, false, true, true, false, true, false, false, false]
+    private static let beat = 0.13
+    private static let columns = 18, rows = 9
     private static let orange = Color(red: 0.85, green: 0.47, blue: 0.34)
-    private static let shade = Color(red: 0.72, green: 0.37, blue: 0.27)
+    private static let shade = Color(red: 0.72, green: 0.38, blue: 0.28)
+    private static let arm = Color(red: 0.8, green: 0.43, blue: 0.31)
+    private static let laptop = Color(white: 0.6)
+    private static let key = Color(red: 0.6, green: 0.85, blue: 1.0)
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 0.18, paused: IslandView.reduceMotion)) { context in
-            let frame = IslandView.reduceMotion ? 0 : Int(context.date.timeIntervalSinceReferenceDate / 0.18) % 2
+        // Wider than the tile: the laptop sits out to its left, in the row's margin.
+        let width = side * 1.4
+        TimelineView(.animation(minimumInterval: Self.beat, paused: IslandView.reduceMotion)) { context in
+            let tick = IslandView.reduceMotion ? 0 : Int(context.date.timeIntervalSinceReferenceDate / Self.beat)
+            let down = Self.rhythm[tick % Self.rhythm.count]
+            let blinking = tick % 31 == 0
             Canvas { canvas, size in
-                let columns = 12, rows = Self.body.count + 2
-                let pixel = floor(min(size.width / CGFloat(columns), size.height / CGFloat(rows + 1)))
-                let origin = CGPoint(x: (size.width - pixel * CGFloat(columns)) / 2,
-                                     y: (size.height - pixel * CGFloat(rows)) / 2 + (frame == 0 ? 0 : -pixel / 2))
-                let grid = Self.body + Self.legs[frame]
-                for (row, line) in grid.enumerated() {
+                let pixel = min(size.width / CGFloat(Self.columns), size.height / CGFloat(Self.rows))
+                let origin = CGPoint(x: size.width - pixel * CGFloat(Self.columns), y: (size.height - pixel * CGFloat(Self.rows)) / 2)
+                for (row, line) in (down ? Self.armDown : Self.armUp).enumerated() {
                     for (column, mark) in line.enumerated() where mark != " " {
-                        let rect = CGRect(x: origin.x + CGFloat(column) * pixel, y: origin.y + CGFloat(row) * pixel, width: pixel, height: pixel)
-                        // The right edge of the block in shadow, as on the original.
-                        let color: Color = mark == "k" ? .black : (column >= 9 && row < Self.body.count ? Self.shade : Self.orange)
+                        let color: Color = switch mark {
+                        case "d": Self.shade
+                        case "a": Self.arm
+                        case "k": blinking ? Self.orange : .black
+                        case "g": Self.laptop
+                        case "c": Self.key
+                        default: Self.orange
+                        }
+                        // A hair over a pixel so neighbours meet without seams.
+                        let rect = CGRect(x: origin.x + CGFloat(column) * pixel, y: origin.y + CGFloat(row) * pixel,
+                                          width: pixel + 0.3, height: pixel + 0.3)
                         canvas.fill(Path(rect), with: .color(color))
                     }
                 }
             }
         }
-        .frame(width: side, height: side)
+        .frame(width: width, height: side)
+        .padding(.leading, side - width)
         .accessibilityLabel("Claude is working")
     }
 }
