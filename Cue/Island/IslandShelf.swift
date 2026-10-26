@@ -85,6 +85,29 @@ final class ShelfStore {
         return urls
     }
 
+    /// The files an action works on: the picked ones, or all when none are picked.
+    var targets: [Item] { selection.isEmpty ? items : items.filter { selection.contains($0.id) } }
+
+    /// Runs `work` on each file off the main thread, puts what it makes on the shelf
+    /// (picked, so it is the next thing dragged out) and says how it went.
+    func produce(_ done: String, from urls: [URL], each: Bool = true, _ work: @escaping @Sendable (_ urls: [URL], _ folder: URL) -> [URL]) {
+        let folder = self.folder
+        Task.detached {
+            let made = each ? urls.flatMap { work([$0], folder) } : work(urls, folder)
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                guard !made.isEmpty else {
+                    FeedbackHUD.show("Couldn't do that", symbol: "exclamationmark.triangle.fill")
+                    return
+                }
+                let before = Set(items.map(\.id))
+                add(fileURLs: made)
+                selection = Set(items.map(\.id)).subtracting(before)
+                FeedbackHUD.show(done, symbol: "checkmark.circle.fill", subtitle: made.count == 1 ? made[0].lastPathComponent : "\(made.count) files on the shelf")
+            }
+        }
+    }
+
     /// What a drag starting on `item` carries: the whole selection when the item is
     /// in it, otherwise the item alone.
     func dragItems(from item: Item) -> [Item] {
@@ -141,6 +164,24 @@ struct ShelfRow: View {
                     LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: 16)
                 }
             }
+            Menu {
+                ShelfActions(targets: shelf.targets)
+            } label: {
+                HStack(spacing: 4) {
+                    Icon("wand.and.stars", size: 11, weight: .semibold)
+                    Text("Actions").font(.system(size: 11.5, weight: .medium))
+                }
+                .foregroundStyle(.white.opacity(0.75))
+                .padding(.horizontal, 10)
+                .frame(height: 26)
+                .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: IslandChrome.chipRadius, style: .continuous))
+                .contentShape(Rectangle())
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help(shelf.selection.isEmpty ? "Convert, compress, look at or send everything on the shelf" : "Convert, compress, look at or send the picked files")
             Button {
                 withAnimation(.easeOut(duration: 0.18)) {
                     if shelf.selection.isEmpty { shelf.clear() } else { shelf.remove(shelf.selection) }
@@ -202,6 +243,7 @@ private struct ShelfChip: View {
             })
         }
         .onHover { hovering = $0 }
+        .contextMenu { ShelfActions(targets: shelf.dragItems(from: item)) }
         .help(item.url.path)
     }
 }
@@ -278,5 +320,46 @@ struct ShelfDragSource: NSViewRepresentable {
             if operation != [] { onDelivered?(dragged) }
             dragged = []
         }
+    }
+}
+
+/// The shelf's actions on `targets`, for its Actions menu and a file's own menu.
+struct ShelfActions: View {
+    @Environment(ShelfStore.self) private var shelf
+    let targets: [ShelfStore.Item]
+
+    private var urls: [URL] { targets.map(\.url) }
+    private var images: [URL] { urls.filter(FileActions.isImage) }
+
+    var body: some View {
+        if !images.isEmpty {
+            Menu("Convert to") {
+                ForEach(FileActions.ImageFormat.writable, id: \.self) { format in
+                    Button(format.title) {
+                        shelf.produce("Converted to \(format.title)", from: images) { urls, folder in
+                            urls.compactMap { FileActions.convert($0, to: format, into: folder) }
+                        }
+                    }
+                }
+            }
+            Button("Make Smaller") {
+                shelf.produce("Made smaller", from: images) { urls, folder in
+                    urls.compactMap { FileActions.compress($0, into: folder) }
+                }
+            }
+        }
+        Button(urls.count == 1 ? "Make a ZIP" : "Make a ZIP of \(urls.count)") {
+            shelf.produce("Zipped", from: urls, each: false) { urls, folder in
+                FileActions.zip(urls, into: folder).map { [$0] } ?? []
+            }
+        }
+        Divider()
+        Button("Quick Look") { FileActions.quickLook(urls) }
+        Menu("Share") {
+            Button("AirDrop") { FileActions.share(urls, via: .sendViaAirDrop) }
+            Button("Mail") { FileActions.share(urls, via: .composeEmail) }
+            Button("Messages") { FileActions.share(urls, via: .composeMessage) }
+        }
+        Button("Show in Finder") { FileActions.reveal(urls) }
     }
 }
