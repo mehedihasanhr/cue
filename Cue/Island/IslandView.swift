@@ -153,12 +153,23 @@ final class IslandModel {
     var onOpenTimeSettings: () -> Void = {}
 }
 
-/// The open island in Liquid Glass, after the look it was asked for: solid black at the
-/// top, where it meets the notch and where the content starts, fading down into glass,
-/// so the desktop shows through the lower part of the panel. Not glass all over, and no
-/// rim. Before macOS 26 there is no Liquid Glass, and it is solid black throughout.
-private struct IslandGlass: View {
+/// The island's fill. Open panels in Liquid Glass, after the look it was asked for:
+/// solid black at the top, where it meets the notch and where the content starts,
+/// fading down into glass, so the desktop shows through the lower part of the panel.
+/// Not glass all over, and no rim. Everything else (and every panel with the glass
+/// off, or before macOS 26) is solid black.
+///
+/// One view for both looks, crossfading, rather than swapping a black fill for the
+/// glass: swapped, both stayed on screen mid-change, the glass at its old size inside
+/// the black at the new one, a second island inside the first.
+private struct IslandFill: View {
     let shape: NotchShape
+    /// Glass is on in Settings: the glass layer exists.
+    let glassAllowed: Bool
+    /// This panel shows the glass now.
+    let glass: Bool
+    /// Nothing drawn: the settled closed island beside the notch.
+    let clear: Bool
 
     /// Where the black starts giving way to glass, and how dark it still is at the
     /// bottom edge: enough that what sits there stays readable over a bright desktop.
@@ -166,20 +177,21 @@ private struct IslandGlass: View {
     private static let bottomDarkness = 0.45
 
     var body: some View {
-        if #available(macOS 26, *) {
-            shape.fill(.clear)
-                .glassEffect(.clear, in: shape)
-                .overlay {
-                    LinearGradient(stops: [
-                        .init(color: .black, location: 0),
-                        .init(color: .black, location: Self.fadeFrom),
-                        .init(color: .black.opacity(Self.bottomDarkness), location: 1),
-                    ], startPoint: .top, endPoint: .bottom)
-                    .clipShape(shape)
-                }
-        } else {
-            shape.fill(Color.black)
+        ZStack {
+            if #available(macOS 26, *), glassAllowed {
+                shape.fill(.clear)
+                    .glassEffect(.clear, in: shape)
+                    .opacity(glass ? 1 : 0)
+                LinearGradient(stops: [
+                    .init(color: .black, location: 0),
+                    .init(color: .black, location: Self.fadeFrom),
+                    .init(color: .black.opacity(Self.bottomDarkness), location: 1),
+                ], startPoint: .top, endPoint: .bottom)
+            }
+            Color.black.opacity(glass && glassAllowed ? 0 : 1)
         }
+        .clipShape(shape)
+        .opacity(clear ? 0 : 1)
     }
 }
 
@@ -270,11 +282,9 @@ struct IslandView: View {
             ZStack(alignment: .top) {
                 // Invisible once collapsed (nothing peeks out beside the notch, nor sits
                 // on a plain menu bar); the tap target stays.
-                if preferences.islandGlass, Self.hasBackdrop(phase) {
-                    IslandGlass(shape: shape)
-                } else {
-                    shape.fill(faded && !preferences.islandNotchBackground ? Color.clear : Color.black)
-                }
+                IslandFill(shape: shape, glassAllowed: preferences.islandGlass,
+                           glass: preferences.islandGlass && Self.hasBackdrop(phase),
+                           clear: faded && !preferences.islandNotchBackground)
                 content(for: phase, strip: geometry.stripHeight)
                     .compositingGroup()
                     .padding(.horizontal, flare) // the body; the flares lie outside it
