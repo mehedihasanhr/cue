@@ -85,6 +85,24 @@ final class IslandController {
         nowPlaying.isEnabled = { [weak preferences] in preferences?.islandNowPlaying ?? false }
         nowPlaying.start()
         model.nowPlaying = nowPlaying
+        model.focus = focus
+        model.compactTiles = { [weak self, weak preferences, weak focus] in
+            guard let self, let preferences, preferences.islandCompactTiles else { return CompactTiles() }
+            #if DEBUG
+            // Diagnostics: `--env CUE_DEBUG_TILES=clock,battery` shows those two, whatever the settings say.
+            if let debug = ProcessInfo.processInfo.environment["CUE_DEBUG_TILES"]?.split(separator: ","), debug.count == 2 {
+                return CompactTiles(left: CompactTile(rawValue: String(debug[0])) ?? .none, right: CompactTile(rawValue: String(debug[1])) ?? .none)
+            }
+            #endif
+            // Music playing takes both sides: its artwork, and Cue dancing to it.
+            if preferences.islandTilesNowPlaying, preferences.islandNowPlaying, nowPlaying.track != nil, nowPlaying.isPlaying {
+                return CompactTiles(left: .artwork, right: .critter)
+            }
+            // A focus tile with no session running shows nothing.
+            let focusing = focus?.isRunning == true
+            let left = preferences.islandTileLeft, right = preferences.islandTileRight
+            return CompactTiles(left: left == .focus && !focusing ? .none : left, right: right == .focus && !focusing ? .none : right)
+        }
         model.nowPlayingEnabled = { [weak preferences] in preferences?.islandNowPlaying ?? false }
         model.onTap = { [weak self] in self?.open() }
         model.agents = agents

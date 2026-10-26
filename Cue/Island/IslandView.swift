@@ -63,6 +63,11 @@ final class IslandModel {
     var agents: AgentStore?
     /// What plays; set by the controller.
     var nowPlaying: NowPlaying?
+    /// A focus session, for its tile; set by the controller.
+    var focus: FocusTimer?
+    /// The tiles beside the closed notch, as the settings and what plays have them;
+    /// set by the controller.
+    var compactTiles: () -> CompactTiles = { CompactTiles() }
     var nowPlayingEnabled: () -> Bool = { false }
     /// Something plays and nobody is asking: the sessions list has the player beside it.
     var showsPlayerBesideAgents: Bool {
@@ -109,6 +114,7 @@ final class IslandModel {
     /// The drawn shape in `phase`: the fixed rect, or the content-fitted one.
     func shapeRect(for phase: Phase) -> CGRect {
         guard let geometry else { return .zero }
+        if phase == .collapsed, !compactTiles().isEmpty { return geometry.collapsed.insetBy(dx: -CompactTiles.sideWidth, dy: 0) }
         if phase == .expanded, showsDropZone { return geometry.dropZone(contentSize: IslandDropZone.size) }
         let width: CGFloat? = switch phase {
         case .expanded: panelWidth
@@ -348,7 +354,7 @@ struct IslandView: View {
                 // on a plain menu bar); the tap target stays.
                 IslandFill(shape: shape, glassAllowed: preferences.islandGlass,
                            glass: preferences.islandGlass && Self.hasBackdrop(phase),
-                           clear: faded && !preferences.islandNotchBackground)
+                           clear: faded && !preferences.islandNotchBackground && model.compactTiles().isEmpty)
                 content(for: phase, strip: geometry.stripHeight)
                     .compositingGroup()
                     .padding(.horizontal, flare) // the body; the flares lie outside it
@@ -403,6 +409,7 @@ struct IslandView: View {
             .animation(Self.openAnimation, value: model.clockWidth)
             .animation(Self.listAnimation, value: model.agentsHeight)
             .animation(Self.listAnimation, value: model.showsPlayerBesideAgents)
+            .animation(Self.openAnimation, value: model.compactTiles())
             .task(id: phase) {
                 guard collapsed else { faded = false; return } // black at once, then grows
                 try? await Task.sleep(for: .seconds(IslandMotion.response(0.46))) // the close animation
@@ -430,7 +437,17 @@ struct IslandView: View {
     private func content(for phase: IslandModel.Phase, strip: CGFloat) -> some View {
         switch phase {
         case .collapsed:
-            if model.showsAmbient, let agents = model.agents, let geometry = model.geometry, !geometry.screen.hasNotch {
+            let tiles = model.compactTiles()
+            if !tiles.isEmpty, let geometry = model.geometry {
+                // A tile either side of the notch, the notch itself left clear.
+                HStack(spacing: 0) {
+                    CompactTileView(tile: tiles.left, height: strip, nowPlaying: model.nowPlaying, focus: model.focus)
+                    Color.clear.frame(width: geometry.collapsed.width)
+                    CompactTileView(tile: tiles.right, height: strip, nowPlaying: model.nowPlaying, focus: model.focus)
+                }
+                .frame(height: strip)
+                .transition(.opacity.animation(Self.contentAnimation))
+            } else if model.showsAmbient, let agents = model.agents, let geometry = model.geometry, !geometry.screen.hasNotch {
                 AgentAmbientRow(store: agents, notchWidth: max(0, geometry.collapsed.width - 64))
                     .frame(height: strip)
                     .transition(.opacity.animation(Self.contentAnimation))

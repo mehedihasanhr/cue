@@ -40,6 +40,10 @@ final class AppPreferences {
         static let islandCapsLock = "island.capsLock"
         static let islandFocus = "island.focus"
         static let islandNetwork = "island.network"
+        static let islandCompactTiles = "island.tiles"
+        static let islandTileLeft = "island.tiles.left"
+        static let islandTileRight = "island.tiles.right"
+        static let islandTilesNowPlaying = "island.tiles.nowPlaying"
         static let islandDrives = "island.drives"
         static let islandDownloads = "island.downloads"
         static let basketHideDelay = "basket.hideDelay"
@@ -524,6 +528,24 @@ final class AppPreferences {
         didSet { defaults.set(islandShelfOpenAfterDrop, forKey: Key.islandShelfOpenAfterDrop) }
     }
 
+    /// Tiles beside the closed notch.
+    var islandCompactTiles: Bool {
+        didSet { defaults.set(islandCompactTiles, forKey: Key.islandCompactTiles) }
+    }
+
+    var islandTileLeft: CompactTile {
+        didSet { defaults.set(islandTileLeft.rawValue, forKey: Key.islandTileLeft) }
+    }
+
+    var islandTileRight: CompactTile {
+        didSet { defaults.set(islandTileRight.rawValue, forKey: Key.islandTileRight) }
+    }
+
+    /// While music plays, its artwork and the dancing Cue take both sides.
+    var islandTilesNowPlaying: Bool {
+        didSet { defaults.set(islandTilesNowPlaying, forKey: Key.islandTilesNowPlaying) }
+    }
+
     /// The island shows the network dropping or changing, and a VPN connecting.
     var islandNetwork: Bool {
         didSet { defaults.set(islandNetwork, forKey: Key.islandNetwork) }
@@ -785,6 +807,10 @@ final class AppPreferences {
         islandAudioDevices = defaults.object(forKey: Key.islandAudioDevices) as? Bool ?? true
         islandCapsLock = defaults.object(forKey: Key.islandCapsLock) as? Bool ?? true
         islandNetwork = defaults.object(forKey: Key.islandNetwork) as? Bool ?? true
+        islandCompactTiles = defaults.object(forKey: Key.islandCompactTiles) as? Bool ?? true
+        islandTileLeft = CompactTile(rawValue: defaults.string(forKey: Key.islandTileLeft) ?? "") ?? .none
+        islandTileRight = CompactTile(rawValue: defaults.string(forKey: Key.islandTileRight) ?? "") ?? .none
+        islandTilesNowPlaying = defaults.object(forKey: Key.islandTilesNowPlaying) as? Bool ?? true
         islandDrives = defaults.object(forKey: Key.islandDrives) as? Bool ?? true
         islandDownloads = defaults.object(forKey: Key.islandDownloads) as? Bool ?? true
         islandFocus = defaults.object(forKey: Key.islandFocus) as? Bool ?? true

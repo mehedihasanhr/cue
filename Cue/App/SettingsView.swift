@@ -390,6 +390,30 @@ struct IslandSettingsView: View {
             }
             .disabled(!preferences.dynamicIslandEnabled)
 
+            SettingsGroup("Beside the notch") {
+                SettingsRow("Tiles beside the notch", subtitle: "Small tiles either side of the closed island. They cover the menu bar just beside the notch.") {
+                    Toggle("Tiles", isOn: $preferences.islandCompactTiles).toggleStyle(.switch)
+                }
+                if preferences.islandCompactTiles {
+                    SettingsRow("Left") {
+                        Picker("Left", selection: $preferences.islandTileLeft) {
+                            ForEach(CompactTile.choices, id: \.self) { Text($0.title).tag($0) }
+                        }
+                        .fixedSize()
+                    }
+                    SettingsRow("Right") {
+                        Picker("Right", selection: $preferences.islandTileRight) {
+                            ForEach(CompactTile.choices, id: \.self) { Text($0.title).tag($0) }
+                        }
+                        .fixedSize()
+                    }
+                    SettingsRow("Music takes both sides", subtitle: "While something plays: its artwork on the left, Cue dancing on the right.") {
+                        Toggle("Music takes both sides", isOn: $preferences.islandTilesNowPlaying).toggleStyle(.switch)
+                    }
+                }
+            }
+            .disabled(!preferences.dynamicIslandEnabled)
+
             SettingsGroup("Shelf") {
                 SettingsRow("Stay open after a drop", subtitle: "Drop files on the left card while dragging over the island to park them on the shelf; drag them out again when you need them.") {
                     Toggle("Stay open after a drop", isOn: $preferences.islandShelfOpenAfterDrop).toggleStyle(.switch)
