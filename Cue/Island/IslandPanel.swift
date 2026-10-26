@@ -447,6 +447,8 @@ struct IslandPanel: View {
                         PrayerPill(clock: clock, expanded: $prayerExpanded, onShowClock: onShowClock)
                     }
                 }
+                // Tasks, last in the bar: the dashboard, in its own window.
+                HoverButton(symbol: "checklist", help: "Tasks", size: 30, quiet: true, action: onOpenTaskDashboard)
             }
             .animation(.easeOut(duration: 0.18), value: searching)
             .modifier(IdealWidth { headerWidth = $0; reportWidth() })
