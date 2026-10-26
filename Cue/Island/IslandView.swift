@@ -200,6 +200,42 @@ private struct IslandFill: View {
     }
 }
 
+/// New content arriving in the island: faded, a little small and soft until shown.
+private struct ContentArrival: ViewModifier {
+    let shown: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .scaleEffect(shown ? 1 : 0.94, anchor: .top)
+            .blur(radius: shown ? 0 : 4)
+    }
+}
+
+/// A shade around the open island, darkest below it and fading out at its edges,
+/// so the panel stands off a busy desktop. Drawn only outside the shape: under the
+/// glass it would darken what the glass shows.
+private struct IslandHalo: View {
+    let shape: NotchShape
+
+    private static let blur: CGFloat = 18
+    private static let room: CGFloat = 60
+
+    var body: some View {
+        shape
+            .fill(LinearGradient(colors: [.clear, .black.opacity(0.22), .black.opacity(0.4)], startPoint: .top, endPoint: .bottom))
+            .offset(y: 6)
+            .blur(radius: Self.blur)
+            .mask {
+                Rectangle()
+                    .padding(-Self.room)
+                    .overlay { shape.padding(Self.room).blendMode(.destinationOut) }
+                    .compositingGroup()
+            }
+            .allowsHitTesting(false)
+    }
+}
+
 /// The island silhouette: top corners flare outward into the bezel (a small flare
 /// closed, a wide one open), bottom corners are rounded. All radii animate, so the
 /// closed notch morphs into the open panel.
@@ -311,6 +347,11 @@ struct IslandView: View {
                              lineWidth: 1)
                     .opacity(Self.hasBackdrop(phase) && !glass ? 1 : 0)
                     .allowsHitTesting(false)
+            }
+            // A soft shade around every open panel, lifting it off whatever is behind.
+            .background {
+                IslandHalo(shape: shape)
+                    .opacity(Self.hasBackdrop(phase) && Self.animationStyle != .none ? 1 : 0)
             }
             // While agents run, a thin line of light under the closed notch; the
             // notch itself stays plain black.
@@ -483,8 +524,16 @@ struct IslandView: View {
         }
     }
 
+    /// The outline leads, the content follows: what was showing leaves at once (a
+    /// quick fade, so nothing is left hanging outside the outline as it shrinks), and
+    /// the new content comes in once the outline is under way, settling out of a soft
+    /// blur as it grows to size.
     private static var contentTransition: AnyTransition {
-        reduceMotion ? .opacity.animation(contentAnimation) : .scale(scale: 0.8, anchor: .top).combined(with: .opacity).animation(contentAnimation)
+        guard !reduceMotion else { return .opacity.animation(contentAnimation) }
+        return .asymmetric(
+            insertion: .modifier(active: ContentArrival(shown: false), identity: ContentArrival(shown: true))
+                .animation(.easeOut(duration: IslandMotion.response(0.22)).delay(IslandMotion.response(0.06))),
+            removal: .opacity.animation(.easeOut(duration: IslandMotion.response(0.1))))
     }
 }
 
