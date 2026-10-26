@@ -37,8 +37,8 @@ struct BatteryHUD: Equatable {
     }
 
     var tint: Color {
-        if charging || event == .full { return Color(red: 0.36, green: 0.85, blue: 0.45) }
-        if percent <= 20 { return Color(red: 1.0, green: 0.36, blue: 0.32) }
+        if event == .low || (!charging && event == .unplugged && percent <= 20) { return Color(red: 1.0, green: 0.36, blue: 0.32) }
+        if charging || event == .full || event == .pluggedIn { return Color(red: 0.36, green: 0.85, blue: 0.45) }
         return .white
     }
 }
@@ -134,16 +134,20 @@ final class BatteryMonitor {
     }
 }
 
-/// The battery in the island: a drawn glyph that fills to the level (a bolt over it
-/// while charging), what happened, the time, and the percentage.
+/// The battery in the island, after the iPhone's: what happened on a badge that
+/// moves for it (a bolt that zaps in, a plug that pulls away, a pulse when low), the
+/// words, and a battery that fills to the level, a light running along it while it
+/// charges.
 struct BatteryRow: View {
     let battery: BatteryHUD
-    @State private var filled = false
+    @State private var shown = false
+    @State private var burst = false
+
+    private var motion: Bool { !IslandView.reduceMotion }
 
     var body: some View {
         HStack(spacing: 12) {
-            BatteryGlyph(percent: filled ? battery.percent : 0, charging: battery.charging, tint: battery.tint)
-                .frame(width: 34, height: 17)
+            badge
             VStack(alignment: .leading, spacing: 1) {
                 Text(battery.title)
                     .font(.system(size: 13, weight: .semibold))
@@ -153,50 +157,145 @@ struct BatteryRow: View {
                     .foregroundStyle(.white.opacity(0.5))
             }
             .lineLimit(1)
-            Spacer(minLength: 16)
+            .offset(x: shown ? 0 : -6)
+            .opacity(shown ? 1 : 0)
+            Spacer(minLength: 18)
             Text("\(battery.percent)%")
-                .font(.system(size: 17, weight: .semibold).monospacedDigit())
+                .font(.system(size: 15, weight: .semibold).monospacedDigit())
                 .foregroundStyle(battery.tint)
                 .contentTransition(.numericText(value: Double(battery.percent)))
+            BatteryGlyph(level: shown ? Double(battery.percent) / 100 : 0, battery: battery)
+                .frame(width: 46, height: 22)
         }
-        .padding(.horizontal, 22)
+        .padding(.leading, 14)
+        .padding(.trailing, 20)
         .fixedSize()
         .onAppear {
-            withAnimation(IslandView.reduceMotion ? .easeOut(duration: 0.15) : .easeOut(duration: 0.6).delay(0.12)) { filled = true }
+            withAnimation(motion ? .spring(response: 0.55, dampingFraction: 0.8).delay(0.1) : .easeOut(duration: 0.15)) { shown = true }
+            if motion { withAnimation(.easeOut(duration: 0.7).delay(0.15)) { burst = true } }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(battery.title), \(battery.percent) percent, \(battery.subtitle)")
     }
+
+    /// The event's symbol on a tinted disc, moving for it.
+    private var badge: some View {
+        let tint = battery.tint
+        return ZStack {
+            Circle()
+                .fill(tint.opacity(0.35))
+                .blur(radius: 9)
+                .opacity(battery.event == .unplugged ? 0 : shown ? 0.9 : 0)
+            // A ring spreading out as it lands.
+            Circle()
+                .strokeBorder(tint.opacity(0.7), lineWidth: 1.5)
+                .scaleEffect(burst ? 1.9 : 1)
+                .opacity(burst ? 0 : (battery.event == .unplugged ? 0 : 0.8))
+            Circle().fill(tint.opacity(battery.event == .unplugged ? 0.12 : 0.2))
+            Circle().strokeBorder(tint.opacity(0.35), lineWidth: 1)
+            symbol
+        }
+        .frame(width: 34, height: 34)
+    }
+
+    @ViewBuilder
+    private var symbol: some View {
+        switch battery.event {
+        case .pluggedIn:
+            Icon("bolt.fill", size: 15, weight: .bold)
+                .foregroundStyle(battery.tint)
+                .scaleEffect(shown ? 1 : 0.3)
+                .rotationEffect(.degrees(shown ? 0 : -25))
+        case .unplugged:
+            // The plug pulls away from the socket and goes.
+            Icon("powerplug.fill", size: 14, weight: .semibold)
+                .foregroundStyle(.white.opacity(0.85))
+                .rotationEffect(.degrees(90))
+                .offset(x: shown ? -3 : 3)
+                .opacity(shown ? 0.85 : 1)
+        case .low:
+            PulsingIcon(symbol: "exclamationmark", tint: battery.tint)
+        case .full:
+            Icon("checkmark", size: 14, weight: .bold)
+                .foregroundStyle(battery.tint)
+                .scaleEffect(shown ? 1 : 0.3)
+        }
+    }
 }
 
-private struct BatteryGlyph: View {
-    var percent: Int
-    let charging: Bool
+private struct PulsingIcon: View {
+    let symbol: String
     let tint: Color
+    @State private var on = false
 
     var body: some View {
+        Icon(symbol, size: 15, weight: .heavy)
+            .foregroundStyle(tint)
+            .scaleEffect(on ? 1.15 : 0.9)
+            .onAppear {
+                guard !IslandView.reduceMotion else { return }
+                withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) { on = true }
+            }
+    }
+}
+
+/// A battery drawn to the level: a gradient fill, a glow behind it while charging
+/// and a band of light running along the fill.
+private struct BatteryGlyph: View {
+    var level: Double
+    let battery: BatteryHUD
+
+    var body: some View {
+        let tint = battery.tint
         GeometryReader { proxy in
             let nub: CGFloat = 3
-            let body = CGSize(width: proxy.size.width - nub - 1, height: proxy.size.height)
+            let width = proxy.size.width - nub - 1.5
+            let height = proxy.size.height
+            let inner = CGSize(width: width - 6, height: height - 6)
+            let fill = max(3, inner.width * level)
             ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .strokeBorder(.white.opacity(0.45), lineWidth: 1.5)
-                    .frame(width: body.width, height: body.height)
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .fill(tint)
-                    .frame(width: max(2, (body.width - 6) * CGFloat(percent) / 100), height: body.height - 6)
+                // The glow under a charging battery.
+                if battery.charging {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(tint.opacity(0.45))
+                        .frame(width: width, height: height)
+                        .blur(radius: 8)
+                }
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(.white.opacity(0.06))
+                    .frame(width: width, height: height)
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(.white.opacity(0.35), lineWidth: 1.5)
+                    .frame(width: width, height: height)
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(LinearGradient(colors: [tint.opacity(0.75), tint], startPoint: .leading, endPoint: .trailing))
+                    .frame(width: fill, height: inner.height)
+                    .overlay {
+                        if battery.charging { Shine().clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous)) }
+                    }
                     .padding(.leading, 3)
                 RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                    .fill(.white.opacity(0.45))
-                    .frame(width: nub, height: body.height * 0.4)
-                    .offset(x: body.width + 1)
-                if charging {
-                    Icon("bolt.fill", size: 10, weight: .bold)
-                        .foregroundStyle(.white)
-                        .shadow(color: .black.opacity(0.6), radius: 1)
-                        .frame(width: body.width, height: body.height)
-                }
+                    .fill(.white.opacity(0.35))
+                    .frame(width: nub, height: height * 0.38)
+                    .offset(x: width + 1.5)
+            }
+            .frame(maxHeight: .infinity)
+        }
+    }
+}
+
+/// A band of light running along a charging battery's fill, over and over.
+private struct Shine: View {
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: IslandView.reduceMotion)) { context in
+            GeometryReader { proxy in
+                let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.6) / 1.6
+                LinearGradient(colors: [.clear, .white.opacity(0.55), .clear], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: 14)
+                    .offset(x: -14 + (proxy.size.width + 28) * phase)
+                    .blendMode(.plusLighter)
             }
         }
+        .opacity(IslandView.reduceMotion ? 0 : 1)
     }
 }

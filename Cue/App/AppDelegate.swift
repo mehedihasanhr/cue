@@ -388,8 +388,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 switch tabName {
                 case "agents": self?.island?.showAgents()
                 case "level": self?.island?.debugShowLevel()
-                case "battery", "batterylow":
-                    if let hud = BatteryMonitor.current(tabName == "battery" ? .pluggedIn : .low) { self?.island?.showBattery(hud) }
+                case "battery", "batterylow", "batteryout", "batterycharging":
+                    let event: BatteryHUD.Event = switch tabName { case "batterylow": .low; case "batteryout": .unplugged; default: .pluggedIn }
+                    if var hud = BatteryMonitor.current(event) {
+                        if tabName == "batterycharging" { hud = BatteryHUD(event: .pluggedIn, percent: hud.percent, charging: true, minutes: 42) }
+                        self?.island?.showBattery(hud)
+                    }
                 case "agentsmedia":
                     self?.island?.nowPlaying.debugFake()
                     self?.island?.showAgents()
