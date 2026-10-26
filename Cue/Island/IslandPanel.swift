@@ -1195,9 +1195,10 @@ struct DayStrip<Item: Identifiable, Card: View>: View {
             let visible = (offset - Self.cardSize.width)...(offset + proxy.size.width + Self.cardSize.width)
             ZStack(alignment: .topLeading) {
                 ForEach(layout.groups.filter { visible.overlaps($0.x...($0.x + $0.width)) }) { group in
+                    // A quiet label: the cards are the point, the day only sorts them.
                     Text(group.title)
-                        .font(.system(size: 11.5, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.55))
+                        .font(.system(size: 10.5, weight: .light))
+                        .foregroundStyle(.white.opacity(0.45))
                         .frame(height: Self.headerHeight, alignment: .leading)
                         .offset(x: group.x - offset)
                         .accessibilityAddTraits(.isHeader)
