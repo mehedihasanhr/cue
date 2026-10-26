@@ -370,6 +370,26 @@ struct IslandSettingsView: View {
             }
             .disabled(!preferences.dynamicIslandEnabled)
 
+            SettingsGroup("Motion") {
+                SettingsRow("Animation") {
+                    Picker("Animation", selection: $preferences.islandAnimation) {
+                        ForEach(AppPreferences.IslandAnimation.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .fixedSize()
+                }
+                if preferences.islandAnimation == .lively {
+                    SettingsRow("Speed", subtitle: "Already quicker on 120 Hz displays. Reduce Motion in Accessibility settings turns the springs into short fades.") {
+                        Picker("Speed", selection: $preferences.islandAnimationSpeed) {
+                            ForEach(AppPreferences.IslandAnimationSpeed.allCases, id: \.self) { Text($0.title).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+                        .fixedSize()
+                    }
+                }
+            }
+            .disabled(!preferences.dynamicIslandEnabled)
+
             SettingsGroup("What it shows") {
                 SettingsRow("Flash new captures") {
                     Toggle("Flash captures", isOn: $preferences.islandFlashCaptures).toggleStyle(.switch)
@@ -398,13 +418,6 @@ struct IslandSettingsView: View {
                             SecondsSlider(value: $preferences.islandPreviewHoverDelay, range: 0...2, step: 0.05, zero: "At once")
                         }
                     }
-                }
-                SettingsRow("Animation") {
-                    Picker("Animation", selection: $preferences.islandAnimation) {
-                        ForEach(AppPreferences.IslandAnimation.allCases, id: \.self) { Text($0.title).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .fixedSize()
                 }
             }
             .disabled(!preferences.dynamicIslandEnabled)

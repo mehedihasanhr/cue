@@ -29,6 +29,7 @@ final class AppPreferences {
         static let islandFlashDuration = "island.flashDuration"
         static let islandStatuses = "island.statuses"
         static let islandAnimation = "island.animation"
+        static let islandAnimationSpeed = "island.animationSpeed"
         static let islandPreview = "island.preview"
         static let islandPreviewOnHover = "island.previewOnHover"
         static let islandPreviewHoverDelay = "island.previewHoverDelay"
@@ -448,6 +449,28 @@ final class AppPreferences {
         }
     }
 
+    /// How fast the lively island moves, around the pace set for the display.
+    enum IslandAnimationSpeed: String, CaseIterable {
+        case slower, normal, faster
+
+        var title: String {
+            switch self {
+            case .slower: "Slower"
+            case .normal: "Normal"
+            case .faster: "Faster"
+            }
+        }
+
+        /// Multiplies every duration and spring response.
+        var factor: Double {
+            switch self {
+            case .slower: 1.3
+            case .normal: 1
+            case .faster: 0.75
+            }
+        }
+    }
+
     enum IslandPreview: String, CaseIterable {
         case inline, pane
 
@@ -477,6 +500,10 @@ final class AppPreferences {
     /// How the island moves: a spring, a short ease, or straight there.
     var islandAnimation: IslandAnimation {
         didSet { defaults.set(islandAnimation.rawValue, forKey: Key.islandAnimation) }
+    }
+
+    var islandAnimationSpeed: IslandAnimationSpeed {
+        didSet { defaults.set(islandAnimationSpeed.rawValue, forKey: Key.islandAnimationSpeed) }
     }
 
     /// The tab the island opens on; nil is the last one used.
@@ -670,6 +697,7 @@ final class AppPreferences {
         islandFlashDuration = defaults.object(forKey: Key.islandFlashDuration) as? Double ?? 1.8
         islandStatuses = defaults.object(forKey: Key.islandStatuses) as? Bool ?? true
         islandAnimation = IslandAnimation(rawValue: defaults.string(forKey: Key.islandAnimation) ?? "") ?? .lively
+        islandAnimationSpeed = IslandAnimationSpeed(rawValue: defaults.string(forKey: Key.islandAnimationSpeed) ?? "") ?? .normal
         islandPreview = IslandPreview(rawValue: defaults.string(forKey: Key.islandPreview) ?? "") ?? .inline
         islandPreviewOnHover = defaults.object(forKey: Key.islandPreviewOnHover) as? Bool ?? true
         islandPreviewHoverDelay = defaults.object(forKey: Key.islandPreviewHoverDelay) as? Double ?? 0.5

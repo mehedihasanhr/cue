@@ -314,7 +314,7 @@ struct IslandView: View {
 
     var body: some View {
         let phase = model.phase
-        let _ = { Self.animationStyle = preferences.islandAnimation }()
+        let _ = { Self.animationStyle = preferences.islandAnimation; IslandMotion.speed = preferences.islandAnimationSpeed }()
         if let geometry = model.geometry {
             let asking = model.agents?.requests.isEmpty == false
             let size = model.shapeRect(for: phase).size
@@ -380,7 +380,7 @@ struct IslandView: View {
             .animation(Self.listAnimation, value: model.agentsHeight)
             .task(id: phase) {
                 guard collapsed else { faded = false; return } // black at once, then grows
-                try? await Task.sleep(for: .milliseconds(460)) // the close animation
+                try? await Task.sleep(for: .seconds(IslandMotion.response(0.46))) // the close animation
                 guard !Task.isCancelled else { return }
                 withAnimation(.easeOut(duration: 0.3)) { faded = true }
             }
@@ -706,7 +706,7 @@ private struct StatusLayout<Leading: View>: View {
                 .rotationEffect(.degrees(shown ? 0 : -8))
                 .offset(y: shown ? 0 : -10)
                 .opacity(shown ? 1 : 0)
-                .animation(.spring(response: IslandMotion.response(0.42), dampingFraction: 0.62), value: shown)
+                .animation(IslandMotion.bouncy(0.42, damping: 0.62), value: shown)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.system(size: 13, weight: .semibold))
@@ -794,7 +794,7 @@ private struct StatusLayout<Leading: View>: View {
             }
             .frame(width: 24, height: 24)
             .scaleEffect(shown ? 1 : 0.4)
-            .animation(.spring(response: IslandMotion.response(0.38), dampingFraction: 0.6).delay(0.08), value: shown)
+            .animation(IslandMotion.bouncy(0.38, damping: 0.6).delay(0.08), value: shown)
         case .warning:
             Icon("exclamationmark", size: 13, weight: .bold)
                 .foregroundStyle(Self.orange)
@@ -802,7 +802,7 @@ private struct StatusLayout<Leading: View>: View {
                 .background(Self.orange.opacity(0.18), in: Circle())
                 .overlay(Circle().strokeBorder(Self.orange.opacity(0.45), lineWidth: 1.2))
                 .scaleEffect(shown ? 1 : 0.4)
-                .animation(.spring(response: IslandMotion.response(0.38), dampingFraction: 0.6).delay(0.08), value: shown)
+                .animation(IslandMotion.bouncy(0.38, damping: 0.6).delay(0.08), value: shown)
         case .none:
             EmptyView()
         }

@@ -76,7 +76,8 @@ struct PreviewPaneRoot: View {
     /// Enter from the side the pointer moved towards, leave the other way — the same
     /// path in both directions, so the pane reads as a strip of cards.
     private var transition: AnyTransition {
-        switch model.direction {
+        guard !IslandView.reduceMotion else { return .opacity }
+        return switch model.direction {
         case 1: .asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .move(edge: .leading).combined(with: .opacity))
         case -1: .asymmetric(insertion: .move(edge: .leading).combined(with: .opacity), removal: .move(edge: .trailing).combined(with: .opacity))
         default: .opacity

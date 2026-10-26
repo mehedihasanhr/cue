@@ -1,5 +1,6 @@
 import AppKit
 import QuartzCore
+import SwiftUI
 
 /// The island's pace, set by the display it moves on. A spring that settles nicely
 /// at 60 frames a second looks sluggish on a 120 Hz ProMotion panel, where every
@@ -7,7 +8,8 @@ import QuartzCore
 /// response scales from 1 at 60 Hz to 0.93 at 90 Hz and 0.85 at 120 Hz.
 ///
 /// Read from the screen under the pointer (where the island in use is), and looked
-/// up at most every two seconds: the island asks on every animation it starts.
+/// up at most every two seconds: the island asks on every animation it starts. The
+/// speed chosen in Settings › Island multiplies it.
 @MainActor
 enum IslandMotion {
     /// The springs' response at 60 Hz; faster displays take less.
@@ -16,6 +18,8 @@ enum IslandMotion {
         (75, 0.264 / 0.2832),
     ]
     private static var cached: (scale: Double, at: CFTimeInterval)?
+    /// Settings › Island › Speed; the island view sets it from the preferences it reads.
+    static var speed: AppPreferences.IslandAnimationSpeed = .normal
 
     /// 1 on a 60 Hz display, less (quicker) on faster ones.
     static var scale: Double {
@@ -29,7 +33,13 @@ enum IslandMotion {
 
     /// `seconds`, the response a spring takes at 60 Hz, for the display in use.
     static func response(_ seconds: Double) -> Double {
-        seconds * scale
+        seconds * scale * speed.factor
+    }
+
+    /// A spring that settles with a bounce, or with Reduce Motion (or the island's
+    /// animation set to Quick or Off) a short fade-out ease instead.
+    static func bouncy(_ response: Double, damping: Double) -> Animation {
+        IslandView.reduceMotion ? .easeOut(duration: 0.15) : .spring(response: Self.response(response), dampingFraction: damping)
     }
 
     private static func refreshRate() -> Int {

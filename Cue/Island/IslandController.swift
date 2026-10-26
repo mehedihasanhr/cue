@@ -34,7 +34,8 @@ final class IslandController {
     private var observers: [any NSObjectProtocol] = []
 
     private var hoverTask: Task<Void, Never>?
-    private static let collapseAnimation: Duration = .milliseconds(380)
+    /// How long the close animation runs, at the island's pace.
+    private static var collapseAnimation: Duration { .seconds(IslandMotion.response(0.38)) }
 
     /// A snippet's blanks were filled in the compact box (nil: cancelled); set by
     /// the app delegate.
@@ -375,7 +376,7 @@ final class IslandController {
             // direction is drawn once before the item changes, or it would leave the wrong way.
             let turned = previewModel.direction != direction
             previewModel.direction = direction
-            let slide = { withAnimation(.smooth(duration: 0.32)) { self.previewModel.detail = detail } }
+            let slide = { withAnimation(IslandView.reduceMotion ? .easeOut(duration: 0.15) : .smooth(duration: IslandMotion.response(0.32))) { self.previewModel.detail = detail } }
             if turned { DispatchQueue.main.async(execute: slide) } else { slide() }
         } else {
             var transaction = Transaction()
