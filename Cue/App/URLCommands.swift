@@ -10,6 +10,7 @@ import AppKit
 ///     cue://clipboard/copy?text=…
 ///     cue://palette · cue://clipboard · cue://panel · cue://clock · cue://settings[/page]
 ///     cue://record · cue://recordings · cue://tasks
+///     cue://basket (reopen the floating basket last closed with files in it)
 ///     cue://update (check for updates now, quietly, as the daily check does)
 enum URLCommand: Equatable {
     case captureArea, captureWindow, captureFullScreen, captureScrolling, captureText, pickColor
@@ -25,6 +26,8 @@ enum URLCommand: Equatable {
     case record, recordings
     /// The task dashboard.
     case tasks
+    /// The floating basket last closed with files in it, back.
+    case basket
     case checkForUpdates
 
     /// nil for a URL Cue does not understand.
@@ -62,6 +65,7 @@ enum URLCommand: Equatable {
         case ["record"], ["video", "record"], ["recorder"]: self = .record
         case ["recordings"], ["video"], ["videos"]: self = .recordings
         case ["tasks"], ["tasks", "dashboard"], ["task", "dashboard"], ["dashboard"]: self = .tasks
+        case ["basket"], ["basket", "reopen"]: self = .basket
         case ["update"], ["updates"], ["check-for-updates"]: self = .checkForUpdates
         default: return nil
         }

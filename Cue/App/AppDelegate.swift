@@ -23,6 +23,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var snippetFrontField: FrontField?
     private var prayerClock: PrayerClock?
     let preferences = AppPreferences()
+    /// The floating basket, shaken up while dragging files.
+    private lazy var basket = BasketController(preferences: preferences)
     /// The recognisers Capture Text can use, and the language packs behind them.
     private lazy var ocrEngines = OCREngines(preferences: preferences)
     /// Screen recording and the video editor.
@@ -136,6 +138,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         applyIslandPreference()
         applyAgentPreference()
         applyClipboardPreference()
+        basket.start()
 
         let expander = SnippetExpander(store: snippets, assets: assets, preferences: preferences)
         expander.askToFill = { [weak self] snippet, field in self?.fillSnippet(snippet, from: field) }
@@ -358,6 +361,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     try? png.write(to: CaptureLibrary.defaultFolder().appendingPathComponent("_render.png"))
                 }
             }
+        }
+        // Diagnostics: `--env CUE_DEBUG_BASKET=1` shows the basket with a few of the app's own files
+        // (`empty`: with none).
+        if let mode = ProcessInfo.processInfo.environment["CUE_DEBUG_BASKET"] {
+            let files = ((try? FileManager.default.contentsOfDirectory(at: Bundle.main.resourceURL!, includingPropertiesForKeys: nil)) ?? []).prefix(mode == "empty" ? 0 : 3)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.basket.debugShow(Array(files)) }
         }
         // Diagnostics: `--env CUE_DEBUG_ISLAND_SHOT=captures` opens the island on that tab (`agents`:
         // the agent sessions; `drop`: as with a file dragged over it;
@@ -595,6 +604,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .record: studio.showRecorder()
         case .recordings: studio.showLibrary()
         case .tasks: showTaskDashboard(nil)
+        case .basket: basket.reopen()
         case .checkForUpdates: AppUpdater.shared.checkInBackground()
         }
     }
@@ -652,6 +662,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ]
         for (title, selector, id) in panels { menu.addItem(shortcutItem(title, selector, id)) }
         menu.addItem(makeItem("Tasks…", #selector(showTaskDashboard(_:))))
+        if basket.canReopen { menu.addItem(makeItem("Reopen Last Basket", #selector(reopenBasket(_:)))) }
         menu.addItem(.separator())
         menu.addItem(makeItem("Settings…", #selector(showSettings(_:)), keyEquivalent: ",", modifiers: .command))
         menu.addItem(makeItem("Check for Updates…", #selector(checkForUpdates(_:))))
@@ -1295,6 +1306,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Every task in a window of its own: lists and projects, as a list or a board,
     /// with the chosen task open beside them.
+    @objc func reopenBasket(_ sender: Any?) {
+        basket.reopen()
+    }
+
     @objc func showTaskDashboard(_ sender: Any?) {
         openTaskDashboard(task: nil)
     }

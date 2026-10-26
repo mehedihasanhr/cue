@@ -3,9 +3,9 @@ import QuickLookThumbnailing
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Files parked in the island for a moment: dropped on the shelf (not kept as
-/// assets), they wait at the top of the open island until dragged out somewhere
-/// else, and leave the shelf as they go.
+/// Files parked for a moment: dropped on the island's shelf (not kept as assets),
+/// or in the floating basket, they wait until dragged out somewhere else, and leave
+/// as they go.
 ///
 /// For this session only: a parked file is the user's own, where it was, and Cue
 /// may read it only while it runs. Images dropped without a file (from a browser)
@@ -28,9 +28,10 @@ final class ShelfStore {
 
     @ObservationIgnored private let folder: URL
 
-    init() {
+    /// `folderName`: where images that came without a file are written, in Caches.
+    init(folderName: String = "Shelf") {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        folder = caches.appendingPathComponent("Cue/Shelf", isDirectory: true)
+        folder = caches.appendingPathComponent("Cue/\(folderName)", isDirectory: true)
         try? FileManager.default.removeItem(at: folder)
     }
 
@@ -74,6 +75,14 @@ final class ShelfStore {
 
     func clear() {
         remove(Set(items.map(\.id)))
+    }
+
+    /// Empties it without deleting anything, handing back what was in it (to put back later).
+    func takeAll() -> [URL] {
+        let urls = items.map(\.url)
+        items = []
+        selection = []
+        return urls
     }
 
     /// What a drag starting on `item` carries: the whole selection when the item is
@@ -200,7 +209,7 @@ private struct ShelfChip: View {
 /// Takes a chip's clicks and drags in AppKit: a SwiftUI drag carries a single item,
 /// and the shelf drags several files at once (each as a file URL, with the sandbox
 /// access the app receiving them needs).
-private struct ShelfDragSource: NSViewRepresentable {
+struct ShelfDragSource: NSViewRepresentable {
     var items: () -> [ShelfStore.Item]
     var onClick: () -> Void
     /// The files were dropped somewhere that took them.

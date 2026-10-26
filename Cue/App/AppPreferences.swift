@@ -32,6 +32,8 @@ final class AppPreferences {
         static let islandAnimationSpeed = "island.animationSpeed"
         static let islandShelfOpenAfterDrop = "island.shelf.openAfterDrop"
         static let islandShelfAutoCollapse = "island.shelf.autoCollapse"
+        static let basketEnabled = "basket.enabled"
+        static let basketHideDelay = "basket.hideDelay"
         static let islandPreview = "island.preview"
         static let islandPreviewOnHover = "island.previewOnHover"
         static let islandPreviewHoverDelay = "island.previewHoverDelay"
@@ -513,6 +515,16 @@ final class AppPreferences {
         didSet { defaults.set(islandShelfOpenAfterDrop, forKey: Key.islandShelfOpenAfterDrop) }
     }
 
+    /// Shaking the pointer while dragging files brings up the floating basket.
+    var basketEnabled: Bool {
+        didSet { defaults.set(basketEnabled, forKey: Key.basketEnabled) }
+    }
+
+    /// How long an empty basket stays after the drag that brought it ends.
+    var basketHideDelay: Double {
+        didSet { defaults.set(basketHideDelay, forKey: Key.basketHideDelay) }
+    }
+
     /// The island closes once the shelf's last files have been dragged out.
     var islandShelfAutoCollapse: Bool {
         didSet { defaults.set(islandShelfAutoCollapse, forKey: Key.islandShelfAutoCollapse) }
@@ -712,6 +724,8 @@ final class AppPreferences {
         islandAnimationSpeed = IslandAnimationSpeed(rawValue: defaults.string(forKey: Key.islandAnimationSpeed) ?? "") ?? .normal
         islandShelfOpenAfterDrop = defaults.object(forKey: Key.islandShelfOpenAfterDrop) as? Bool ?? true
         islandShelfAutoCollapse = defaults.object(forKey: Key.islandShelfAutoCollapse) as? Bool ?? true
+        basketEnabled = defaults.object(forKey: Key.basketEnabled) as? Bool ?? true
+        basketHideDelay = defaults.object(forKey: Key.basketHideDelay) as? Double ?? 1.5
         islandPreview = IslandPreview(rawValue: defaults.string(forKey: Key.islandPreview) ?? "") ?? .inline
         islandPreviewOnHover = defaults.object(forKey: Key.islandPreviewOnHover) as? Bool ?? true
         islandPreviewHoverDelay = defaults.object(forKey: Key.islandPreviewHoverDelay) as? Double ?? 0.5

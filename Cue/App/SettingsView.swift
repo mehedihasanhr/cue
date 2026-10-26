@@ -400,6 +400,17 @@ struct IslandSettingsView: View {
             }
             .disabled(!preferences.dynamicIslandEnabled)
 
+            SettingsGroup("Basket") {
+                SettingsRow("Shake to show the basket", subtitle: "While dragging files anywhere, shake the pointer: a basket appears under it to drop them in, then drag the whole stack out later. Reopen a closed basket from the menu bar.") {
+                    Toggle("Shake to show the basket", isOn: $preferences.basketEnabled).toggleStyle(.switch)
+                }
+                if preferences.basketEnabled {
+                    SettingsRow("Hide an empty basket after") {
+                        SecondsSlider(value: $preferences.basketHideDelay, range: 0.5...5, step: 0.1, zero: nil)
+                    }
+                }
+            }
+
             SettingsGroup("What it shows") {
                 SettingsRow("Flash new captures") {
                     Toggle("Flash captures", isOn: $preferences.islandFlashCaptures).toggleStyle(.switch)
