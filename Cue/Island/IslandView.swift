@@ -446,6 +446,10 @@ struct IslandView: View {
                     ClockRow(status: clock)
                         .modifier(IdealWidth { model.contentWidth = $0 })
                         .frame(height: IslandGeometry.promptContentHeight)
+                } else if let battery = status.battery {
+                    BatteryRow(battery: battery)
+                        .modifier(IdealWidth { model.contentWidth = $0 })
+                        .frame(height: IslandGeometry.flashContentHeight)
                 } else if let level = status.level {
                     LevelRow(level: level, onDrag: { model.onHoldStatus() })
                         .modifier(IdealWidth { model.contentWidth = $0 })
@@ -645,6 +649,8 @@ struct IslandStatus: Equatable, Identifiable {
     var agentDone: AgentDone? = nil
     /// Drawn as a level bar (the volume, the brightness) instead of the plain line.
     var level: LevelHUD? = nil
+    /// Drawn as the battery (charger in or out, running low) instead of the plain line.
+    var battery: BatteryHUD? = nil
 
     /// Green for done, orange for "nothing to do", white otherwise.
     var tint: Color {

@@ -420,6 +420,9 @@ struct IslandSettingsView: View {
                         SecondsSlider(value: $preferences.islandFlashDuration, range: 0.5...5, step: 0.1, zero: nil)
                     }
                 }
+                SettingsRow("Battery", subtitle: "Plugging in or unplugging the charger, a full charge, and a warning at 20% and 10%.") {
+                    Toggle("Battery", isOn: $preferences.islandBattery).toggleStyle(.switch)
+                }
                 SettingsRow("Volume and brightness", subtitle: "The keys show their level in the island, with a bar to drag, instead of the system's overlay. Needs Accessibility.") {
                     Toggle("Volume and brightness", isOn: $preferences.islandLevelHUD).toggleStyle(.switch)
                 }

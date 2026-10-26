@@ -17,6 +17,8 @@ final class IslandController {
     let shelf = ShelfStore()
     /// What Music or Spotify plays.
     let nowPlaying = NowPlaying()
+    /// The charger going in or out, the battery running low; nil without a battery.
+    private var battery: BatteryMonitor?
     private let preferences: AppPreferences
     private let tasks: TaskStore
     private let snippets: SnippetStore
@@ -223,6 +225,7 @@ final class IslandController {
             guard let self, preferences.islandLevelHUD, model.geometry != nil, !hidden else { return false }
             return model.phase == .collapsed || model.phase.isFlash
         }
+        battery = BatteryMonitor { [weak self] hud in self?.showBattery(hud) }
         let levels = LevelKeys.start { [weak self] level in self?.showLevel(level) }
         Log.app.info("Island level keys: \(levels ? "on" : "off (needs Accessibility)", privacy: .public); volume settable: \(SystemLevels.canSetVolume); brightness: \(SystemLevels.brightness.map { String($0) } ?? "unavailable", privacy: .public)")
         place()
@@ -443,6 +446,7 @@ final class IslandController {
 
     /// Removes the island; the controller is dropped afterwards.
     func tearDown() {
+        battery?.stop()
         nowPlaying.stop()
         LevelKeys.stop()
         closeTask?.cancel()
@@ -661,6 +665,14 @@ final class IslandController {
     }
 
     private static let levelDuration: Duration = .milliseconds(1500)
+
+    /// The charger went in or out, or the battery runs low. Low battery comes over an
+    /// open panel too; the rest only over the closed island, as a status would.
+    func showBattery(_ hud: BatteryHUD) {
+        guard preferences.islandBattery, model.geometry != nil, !hidden else { return }
+        let status = IslandStatus(symbol: "battery.100", title: hud.title, duration: hud.event == .low ? .seconds(4) : .milliseconds(2600), battery: hud)
+        flash(phase: .status(status), overPanel: hud.event == .low)
+    }
 
     #if DEBUG
     /// For diagnostics: the volume HUD at 60%.

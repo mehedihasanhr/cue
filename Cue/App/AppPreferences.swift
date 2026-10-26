@@ -35,6 +35,7 @@ final class AppPreferences {
         static let basketEnabled = "basket.enabled"
         static let islandNowPlaying = "island.nowPlaying"
         static let islandLevelHUD = "island.levelHUD"
+        static let islandBattery = "island.battery"
         static let basketHideDelay = "basket.hideDelay"
         static let islandPreview = "island.preview"
         static let islandPreviewOnHover = "island.previewOnHover"
@@ -517,6 +518,11 @@ final class AppPreferences {
         didSet { defaults.set(islandShelfOpenAfterDrop, forKey: Key.islandShelfOpenAfterDrop) }
     }
 
+    /// The island shows the charger going in or out, and the battery running low.
+    var islandBattery: Bool {
+        didSet { defaults.set(islandBattery, forKey: Key.islandBattery) }
+    }
+
     /// The volume and brightness keys show their level in the island, not the system's overlay.
     var islandLevelHUD: Bool {
         didSet { defaults.set(islandLevelHUD, forKey: Key.islandLevelHUD) }
@@ -739,6 +745,7 @@ final class AppPreferences {
         basketEnabled = defaults.object(forKey: Key.basketEnabled) as? Bool ?? true
         islandNowPlaying = defaults.object(forKey: Key.islandNowPlaying) as? Bool ?? true
         islandLevelHUD = defaults.object(forKey: Key.islandLevelHUD) as? Bool ?? true
+        islandBattery = defaults.object(forKey: Key.islandBattery) as? Bool ?? true
         basketHideDelay = defaults.object(forKey: Key.basketHideDelay) as? Double ?? 1.5
         islandPreview = IslandPreview(rawValue: defaults.string(forKey: Key.islandPreview) ?? "") ?? .inline
         islandPreviewOnHover = defaults.object(forKey: Key.islandPreviewOnHover) as? Bool ?? true
