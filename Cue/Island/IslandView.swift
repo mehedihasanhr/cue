@@ -61,6 +61,13 @@ final class IslandModel {
     var clockWidth: CGFloat?
     /// Coding-agent sessions; nil until the app delegate hands them over.
     var agents: AgentStore?
+    /// What plays; set by the controller.
+    var nowPlaying: NowPlaying?
+    var nowPlayingEnabled: () -> Bool = { false }
+    /// Something plays and nobody is asking: the sessions list has the player beside it.
+    var showsPlayerBesideAgents: Bool {
+        nowPlayingEnabled() && nowPlaying?.track != nil && agents?.requests.isEmpty != false
+    }
     /// The sessions list's height, reported by the view.
     var agentsHeight: CGFloat?
     /// Closed, but agents are at work: the notch shows them.
@@ -107,13 +114,13 @@ final class IslandModel {
         case .expanded: panelWidth
         case .clock: clockWidth
         case .media: NowPlayingDetail.width
-        case .agents: IslandGeometry.agentsWidth
+        case .agents: IslandGeometry.agentsWidth + (showsPlayerBesideAgents ? NowPlayingDetail.columnWidth : 0)
         default: phase.fitsContent ? contentWidth : nil
         }
         let height: CGFloat? = switch phase {
         case .clock: clockHeight
         case .media: NowPlayingDetail.height
-        case .agents: agentsHeight ?? estimatedAgentsHeight
+        case .agents: max(agentsHeight ?? estimatedAgentsHeight, showsPlayerBesideAgents ? NowPlayingDetail.columnHeight : 0)
         case .expanded: panelHeight
         default: nil
         }
@@ -389,6 +396,7 @@ struct IslandView: View {
             .animation(Self.openAnimation, value: model.clockHeight)
             .animation(Self.openAnimation, value: model.clockWidth)
             .animation(Self.listAnimation, value: model.agentsHeight)
+            .animation(Self.listAnimation, value: model.showsPlayerBesideAgents)
             .task(id: phase) {
                 guard collapsed else { faded = false; return } // black at once, then grows
                 try? await Task.sleep(for: .seconds(IslandMotion.response(0.46))) // the close animation
@@ -491,10 +499,18 @@ struct IslandView: View {
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
                 if let agents = model.agents {
-                    AgentsView(store: agents, openPanel: { model.onOpenPanel() }, close: { model.onAgentsClosed() },
-                               reportHeight: { model.agentsHeight = $0 },
-                               maxHeight: model.geometry.map { $0.expanded.height - $0.stripHeight } ?? IslandPanel.size.height)
-                        .frame(width: IslandGeometry.agentsWidth, height: model.agentsHeight ?? model.estimatedAgentsHeight, alignment: .top)
+                    // Music playing: the player in a column on the left, the sessions beside it.
+                    HStack(alignment: .top, spacing: 0) {
+                        if model.showsPlayerBesideAgents {
+                            NowPlayingDetail(nowPlaying: nowPlaying, column: true)
+                                .transition(.opacity.combined(with: .move(edge: .leading)))
+                        }
+                        AgentsView(store: agents, openPanel: { model.onOpenPanel() }, close: { model.onAgentsClosed() },
+                                   reportHeight: { model.agentsHeight = $0 },
+                                   maxHeight: model.geometry.map { $0.expanded.height - $0.stripHeight } ?? IslandPanel.size.height)
+                            .frame(width: IslandGeometry.agentsWidth, height: model.agentsHeight ?? model.estimatedAgentsHeight, alignment: .top)
+                    }
+                    .animation(Self.listAnimation, value: model.showsPlayerBesideAgents)
                 }
             }
             .transition(Self.contentTransition)

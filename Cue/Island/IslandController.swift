@@ -76,6 +76,8 @@ final class IslandController {
         shelf.onEmptied = { [weak self] in self?.shelfEmptied() }
         nowPlaying.isEnabled = { [weak preferences] in preferences?.islandNowPlaying ?? false }
         nowPlaying.start()
+        model.nowPlaying = nowPlaying
+        model.nowPlayingEnabled = { [weak preferences] in preferences?.islandNowPlaying ?? false }
         model.onTap = { [weak self] in self?.open() }
         model.agents = agents
         model.onOpenPanel = { [weak self] in self?.expand() }

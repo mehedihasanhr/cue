@@ -564,14 +564,72 @@ struct NowPlayingPill: View {
 struct NowPlayingDetail: View {
     static let width: CGFloat = 420
     static let height: CGFloat = 132
+    /// As a column beside the agent sessions: a card, the artwork and the track over
+    /// the timeline and the controls.
+    static let columnWidth: CGFloat = 240
+    static let columnHeight: CGFloat = 172
 
     let nowPlaying: NowPlaying
-    let close: () -> Void
+    var close: () -> Void = {}
+    var column = false
     @State private var scrub: Double?
     @State private var outputs: [AudioOutputs.Device] = []
     @State private var currentOutput = AudioOutputs.current
 
     var body: some View {
+        if column { columnBody } else { wideBody }
+    }
+
+    private var columnBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let track = nowPlaying.track {
+                HStack(spacing: 10) {
+                    Artwork(image: nowPlaying.artwork, player: nowPlaying.player, side: 44, radius: 10)
+                        .onTapGesture(perform: nowPlaying.openPlayer)
+                        .help("Open \(nowPlaying.player?.name ?? "the player")")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(track.title)
+                            .font(.system(size: 12.5, weight: .semibold))
+                            .lineLimit(1)
+                        Text(track.artist.isEmpty ? track.album : track.artist)
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.55))
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                    AudioBars(playing: nowPlaying.isPlaying, height: 12)
+                }
+                if !nowPlaying.needsJavaScript {
+                    scrubber(track)
+                        .padding(.top, 12)
+                }
+                Spacer(minLength: 0)
+                if !nowPlaying.needsJavaScript || nowPlaying.controlsWithMediaKeys {
+                    HStack(spacing: 6) {
+                        Spacer()
+                        transport(small: true)
+                        Spacer()
+                    }
+                }
+            }
+        }
+        .foregroundStyle(.white)
+        .padding(12)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: AgentsView.cardRadius, style: .continuous))
+        .padding(.leading, 18)
+        .padding(.top, 8)
+        .padding(.bottom, 16)
+        .frame(width: Self.columnWidth, height: Self.columnHeight)
+        .task {
+            while !Task.isCancelled {
+                nowPlaying.refreshPosition()
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
+    }
+
+    private var wideBody: some View {
         HStack(spacing: 16) {
             Artwork(image: nowPlaying.artwork, player: nowPlaying.player, side: 96, radius: 16)
             VStack(alignment: .leading, spacing: 0) {
@@ -689,11 +747,7 @@ struct NowPlayingDetail: View {
             .fixedSize()
             .help("Play sound on…")
             Spacer()
-            ControlButton(symbol: "backward.fill", size: 14, help: "Previous", action: nowPlaying.previous)
-            ControlButton(symbol: nowPlaying.needsJavaScript ? "playpause.fill" : nowPlaying.isPlaying ? "pause.fill" : "play.fill", size: 20,
-                          help: nowPlaying.needsJavaScript ? "Play or pause" : nowPlaying.isPlaying ? "Pause" : "Play", action: nowPlaying.playPause)
-                .padding(.horizontal, 10)
-            ControlButton(symbol: "forward.fill", size: 14, help: "Next", action: nowPlaying.next)
+            transport(small: false)
             Spacer()
             Button(action: nowPlaying.openPlayer) {
                 Group {
@@ -707,6 +761,16 @@ struct NowPlayingDetail: View {
             }
             .buttonStyle(.plain)
             .help("Open \(nowPlaying.player?.name ?? "the player")")
+        }
+    }
+
+    private func transport(small: Bool) -> some View {
+        HStack(spacing: 0) {
+            ControlButton(symbol: "backward.fill", size: small ? 12 : 14, help: "Previous", action: nowPlaying.previous)
+            ControlButton(symbol: nowPlaying.needsJavaScript ? "playpause.fill" : nowPlaying.isPlaying ? "pause.fill" : "play.fill", size: small ? 17 : 20,
+                          help: nowPlaying.needsJavaScript ? "Play or pause" : nowPlaying.isPlaying ? "Pause" : "Play", action: nowPlaying.playPause)
+                .padding(.horizontal, small ? 6 : 10)
+            ControlButton(symbol: "forward.fill", size: small ? 12 : 14, help: "Next", action: nowPlaying.next)
         }
     }
 
