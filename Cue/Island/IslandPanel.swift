@@ -9,6 +9,9 @@ enum IslandTab: String, CaseIterable {
 
     static let storageKey = "island.tab"
 
+    /// Used little: kept behind the tab row's "…", shown as a tab only while open.
+    static let tucked: Set<IslandTab> = [.notes, .snippets]
+
     var title: String {
         switch self {
         case .all: "All"
@@ -187,6 +190,12 @@ struct IslandPanel: View {
     private var searching: Bool { !search.trimmingCharacters(in: .whitespaces).isEmpty }
 
     private var tabs: [IslandTab] { preferences.islandTabs }
+    /// The tabs in the row: all but the tucked ones, which join it only while open.
+    private var pillTabs: [IslandTab] { tabs.filter { !IslandTab.tucked.contains($0) || $0 == tab } }
+    /// The tabs ⌘1, ⌘2… go to: those always in the row, so the numbers never shift.
+    private var numberedTabs: [IslandTab] { tabs.filter { !IslandTab.tucked.contains($0) } }
+    /// The turned-on tabs behind "…".
+    private var tuckedTabs: [IslandTab] { tabs.filter { IslandTab.tucked.contains($0) } }
 
     /// Matches across every tab for the current search — computed once per keystroke,
     /// not once per view that shows them.
@@ -422,8 +431,8 @@ struct IslandPanel: View {
                 }
             } else {
             HStack(spacing: 2) {
-                ForEach(Array(tabs.enumerated()), id: \.element) { index, value in
-                    tabPill(value, count: count(for: value), shortcut: index + 1)
+                ForEach(pillTabs, id: \.self) { value in
+                    tabPill(value, count: count(for: value), shortcut: numberedTabs.firstIndex(of: value).map { $0 + 1 })
                 }
                 Spacer(minLength: 16)
                 if tab == .captures, !comparing.isEmpty {
@@ -449,10 +458,23 @@ struct IslandPanel: View {
                         }
                     }
                 }
-                // Clearing is rare and can't be undone: it waits behind "…".
-                if let clear = clearAction {
+                // The tabs used little, and clearing (rare, and it can't be undone),
+                // wait behind "…".
+                if !tuckedTabs.isEmpty || clearAction != nil {
                     OverflowMenu(help: "More") {
-                        Button(clear.title, role: .destructive, action: clear.perform)
+                        ForEach(tuckedTabs, id: \.self) { value in
+                            Button {
+                                tab = value
+                            } label: {
+                                let count = count(for: value)
+                                let title = count > 0 ? "\(value.title)  \(count)" : value.title
+                                if value == tab { Label { Text(title) } icon: { Icon("checkmark", weight: .medium) } } else { Text(title) }
+                            }
+                        }
+                        if let clear = clearAction {
+                            if !tuckedTabs.isEmpty { Divider() }
+                            Button(clear.title, role: .destructive, action: clear.perform)
+                        }
                     }
                 }
             }
@@ -838,7 +860,7 @@ struct IslandPanel: View {
         .frame(height: IslandChrome.controlHeight)
     }
 
-    private func tabPill(_ value: IslandTab, count: Int, shortcut: Int) -> some View {
+    private func tabPill(_ value: IslandTab, count: Int, shortcut: Int?) -> some View {
         TabPill(tab: value, count: count, selected: tab == value, shortcut: shortcut) {
             withAnimation(IslandView.openAnimation) { tab = value } // the same curve the shape follows, so the two move as one
         }
@@ -848,7 +870,7 @@ struct IslandPanel: View {
     /// tabs, ⌘F goes to the search field.
     private var keyboardShortcuts: some View {
         Group {
-            ForEach(Array(tabs.enumerated()), id: \.element) { index, value in
+            ForEach(Array(numberedTabs.enumerated()), id: \.element) { index, value in
                 Button("") { withAnimation(IslandView.openAnimation) { tab = value } }
                     .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
             }
