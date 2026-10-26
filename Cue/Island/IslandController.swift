@@ -66,6 +66,10 @@ final class IslandController {
     /// The Tasks tab asked for the dashboard window; set by the app.
     var onOpenTaskDashboard: () -> Void = {}
     var onOpenSettings: () -> Void = {}
+    /// Makes share links for dropped files (set by the app, which has the sharing settings).
+    var onShareLink: ([URL]) -> Void = { _ in }
+    /// Whether share links can be made.
+    var canShare: () -> Bool = { false }
 
     init(library: CaptureLibrary, clipboard: ClipboardHistory, assets: AssetStore, colors: ColorStore, groups: GroupStore, tasks: TaskStore, snippets: SnippetStore,
          notes: NoteStore, actions: HistoryActions, preferences: AppPreferences, clock: PrayerClock? = nil, focus: FocusTimer? = nil, agents: AgentStore? = nil) {
@@ -441,7 +445,9 @@ final class IslandController {
     /// For diagnostics: the drop zone saying one file was saved, held until the next drag.
     func debugShowDropSaved() {
         dragEntered()
-        model.dropSaved = IslandDropZone.Saved(count: 1, target: .shelf)
+        let sample = (try? FileManager.default.contentsOfDirectory(at: Bundle.main.resourceURL!, includingPropertiesForKeys: nil))?
+            .filter { ["png", "icns"].contains($0.pathExtension) }.prefix(2) ?? []
+        model.dropSaved = IslandDropZone.Saved(count: max(sample.count, 1), target: .shelf, files: Array(sample))
         model.dropping = false
     }
     /// For diagnostics: the open shape, in screen coordinates.
@@ -1023,26 +1029,48 @@ final class IslandController {
         guard IslandDrag.current == nil, !IslandDrag.fromShelf else { return }
         dropSavedTask?.cancel()
         model.dropSaved = nil
+        model.canShareDrop = canShare()
         expand()
         model.dropping = true
         aimDrop(at: NSEvent.mouseLocation)
     }
 
-    /// The drop zone's left card is the shelf, its right one Assets.
+    /// The drop zone's tiles, left to right in equal parts of its width.
     private func aimDrop(at point: CGPoint) {
         guard model.dropping else { return }
-        let target: IslandDropZone.Target = point.x < model.shapeRect(for: .expanded).midX ? .shelf : .assets
+        let rect = model.shapeRect(for: .expanded)
+        let targets = IslandDropZone.Target.allCases
+        let index = Int(((point.x - rect.minX) / max(rect.width, 1) * CGFloat(targets.count)).rounded(.down))
+        let target = targets[min(max(index, 0), targets.count - 1)]
         if model.dropTarget != target { model.dropTarget = target }
     }
 
     private func drop(urls: [URL], image: Data?, into assets: AssetStore) {
-        let target = model.dropTarget
+        // A picture dragged out of an app (no file) can only be kept.
+        var target = model.dropTarget
+        if urls.isEmpty, !target.keeps { target = .shelf }
+        if !target.keeps {
+            // Sent on: the island steps aside for the menu, the upload or AirDrop.
+            let point = NSEvent.mouseLocation
+            model.dropping = false
+            collapse()
+            switch target {
+            case .transform:
+                QuickDropActions.transform(urls, at: point) { [weak self] done, from, each, work in
+                    self?.shelf.produce(done, from: from, each: each, work)
+                }
+            case .share: onShareLink(urls)
+            case .airDrop: QuickDropActions.airDrop(urls)
+            case .shelf, .assets: break
+            }
+            return
+        }
         let added: Int
         switch target {
-        case .shelf:
-            added = shelf.add(fileURLs: urls) + (image.map { shelf.add(imageData: $0) } ?? 0)
         case .assets:
             added = assets.add(fileURLs: urls).count + (image.flatMap { assets.add(imageData: $0) } == nil ? 0 : 1)
+        default:
+            added = shelf.add(fileURLs: urls) + (image.map { shelf.add(imageData: $0) } ?? 0)
         }
         if added == 0 {
             model.dropping = false
@@ -1055,7 +1083,7 @@ final class IslandController {
         // The drop zone turns to "saved" before the drag's end clears it, so it stays
         // up to say so, then gives way to the panel — or, if the shelf isn't to open
         // after a drop, the island closes.
-        model.dropSaved = IslandDropZone.Saved(count: added, target: target)
+        model.dropSaved = IslandDropZone.Saved(count: added, target: target, files: urls)
         model.dropping = false
         dropSavedTask?.cancel()
         dropSavedTask = Task { [weak self] in

@@ -158,6 +158,8 @@ final class IslandModel {
     var dropTarget: IslandDropZone.Target = .shelf
     /// Files were just dropped (how many, and where): the drop zone says so a moment.
     var dropSaved: IslandDropZone.Saved?
+    /// A share link can be made from a drop.
+    var canShareDrop = false
     /// The drop zone is showing, waiting for the drop or saying it was saved.
     var showsDropZone: Bool { dropping || dropSaved != nil }
     /// Asks the compact box for a line of text; called by the panel.
@@ -676,7 +678,7 @@ struct IslandView: View {
                     .opacity(model.showsDropZone ? 0 : 1)
                     .overlay(alignment: .top) {
                         if model.showsDropZone {
-                            IslandDropZone(target: model.dropTarget, saved: model.dropSaved)
+                            IslandDropZone(target: model.dropTarget, saved: model.dropSaved, canShare: model.canShareDrop)
                                 .transition(.scale(scale: 0.92, anchor: .top).combined(with: .opacity).animation(Self.contentAnimation))
                         }
                     }

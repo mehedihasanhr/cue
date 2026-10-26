@@ -149,28 +149,81 @@ struct QuickDropGrid: View {
         .overlay(shape.strokeBorder(.white.opacity(lit ? 0.12 : 0.035), lineWidth: 1))
     }
 
-    /// The tile's picture: a softly lit glyph, or for the share link a small app icon.
-    @ViewBuilder
     private func glyph(_ target: QuickDropTarget, off: Bool) -> some View {
-        if target == .share {
-            let badge = RoundedRectangle(cornerRadius: 12, style: .continuous)
+        DropGlyph(symbol: target.symbol, badge: target == .share, off: off, dim: target == .basket)
+    }
+}
+
+/// A drop tile's picture, as Droppy draws them: a softly lit glyph, or (`badge`) a
+/// small app icon with a coloured glyph, for the share link.
+struct DropGlyph: View {
+    let symbol: String
+    var badge = false
+    var off = false
+    /// A heavier glyph shaded darker at its foot, so it doesn't outweigh the rest.
+    var dim = false
+    var size: CGFloat = 30
+
+    var body: some View {
+        if badge {
+            let shape = RoundedRectangle(cornerRadius: size * 0.4, style: .continuous)
             ZStack {
-                badge.fill(LinearGradient(colors: [Color(white: 0.2), Color(white: 0.1)], startPoint: .top, endPoint: .bottom))
-                badge.strokeBorder(.white.opacity(0.1), lineWidth: 0.75)
-                Icon("link", size: 21, weight: .bold)
+                shape.fill(LinearGradient(colors: [Color(white: 0.2), Color(white: 0.1)], startPoint: .top, endPoint: .bottom))
+                shape.strokeBorder(.white.opacity(0.1), lineWidth: 0.75)
+                Icon("link", size: size * 0.7, weight: .bold)
                     .foregroundStyle(LinearGradient(colors: [Color(red: 0.62, green: 0.6, blue: 1), Color(red: 0.4, green: 0.42, blue: 0.98)],
                                                     startPoint: .top, endPoint: .bottom))
             }
-            .frame(width: 46, height: 46)
+            .frame(width: size * 1.53, height: size * 1.53)
             .shadow(color: .black.opacity(0.5), radius: 3, y: 2)
             .saturation(off ? 0 : 1)
             .opacity(off ? 0.5 : 1)
         } else {
-            Icon(target.symbol, size: 30, weight: .medium)
-                .foregroundStyle(LinearGradient(colors: [Color(white: 0.95), Color(white: target == .basket ? 0.55 : 0.75)],
-                                                startPoint: .top, endPoint: .bottom))
+            Icon(symbol, size: size, weight: .medium)
+                .foregroundStyle(LinearGradient(colors: [Color(white: 0.95), Color(white: dim ? 0.55 : 0.75)], startPoint: .top, endPoint: .bottom))
                 .shadow(color: .black.opacity(0.6), radius: 2, y: 1.5)
         }
+    }
+}
+
+/// What the drop places do with files, shared by the shake grid and the island.
+@MainActor
+enum QuickDropActions {
+    /// What can be made of `urls` (convert, make smaller, zip), as a menu at `point`;
+    /// `run` makes it (and says where it lands).
+    static func transform(_ urls: [URL], at point: CGPoint,
+                          run: @escaping (_ done: String, _ from: [URL], _ each: Bool, _ work: @escaping @Sendable ([URL], URL) -> [URL]) -> Void) {
+        let images = urls.filter(FileActions.isImage)
+        let menu = NSMenu()
+        if !images.isEmpty {
+            let convert = NSMenuItem(title: "Convert to", action: nil, keyEquivalent: "")
+            let formats = NSMenu()
+            for format in FileActions.ImageFormat.writable {
+                formats.addItem(QuickDropMenuItem(format.title) {
+                    run("Converted to \(format.title)", images, true) { urls, folder in urls.compactMap { FileActions.convert($0, to: format, into: folder) } }
+                })
+            }
+            convert.submenu = formats
+            menu.addItem(convert)
+            menu.addItem(QuickDropMenuItem("Make Smaller") {
+                run("Made smaller", images, true) { urls, folder in urls.compactMap { FileActions.compress($0, into: folder) } }
+            })
+        }
+        menu.addItem(QuickDropMenuItem(urls.count == 1 ? "Make a ZIP" : "Make a ZIP of \(urls.count)") {
+            run("Zipped", urls, false) { urls, folder in FileActions.zip(urls, into: folder).map { [$0] } ?? [] }
+        })
+        NSApp.activate()
+        menu.popUp(positioning: nil, at: point, in: nil)
+    }
+
+    /// The files to AirDrop's picker.
+    static func airDrop(_ urls: [URL]) {
+        NSApp.activate()
+        guard let service = NSSharingService(named: .sendViaAirDrop), service.canPerform(withItems: urls) else {
+            FeedbackHUD.show("AirDrop isn't available", symbol: "exclamationmark.triangle.fill", subtitle: "Turn on Wi-Fi and Bluetooth")
+            return
+        }
+        service.perform(withItems: urls)
     }
 }
 

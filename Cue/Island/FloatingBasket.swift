@@ -194,43 +194,17 @@ final class BasketController {
         case .share:
             onShareLink(urls)
         case .airDrop:
-            NSApp.activate()
-            guard let airDrop = NSSharingService(named: .sendViaAirDrop), airDrop.canPerform(withItems: urls) else {
-                FeedbackHUD.show("AirDrop isn't available", symbol: "exclamationmark.triangle.fill", subtitle: "Turn on Wi-Fi and Bluetooth")
-                return
-            }
-            airDrop.perform(withItems: urls)
+            QuickDropActions.airDrop(urls)
         }
     }
 
-    /// What can be made of the files, as a menu at the pointer; what's made lands in
-    /// the basket, ready to be dragged on.
+    /// What can be made of the files; what's made lands in the basket, ready to be dragged on.
     private func transform(_ urls: [URL], at point: CGPoint) {
-        let images = urls.filter(FileActions.isImage)
-        let menu = NSMenu()
-        func run(_ done: String, from: [URL], each: Bool = true, _ work: @escaping @Sendable ([URL], URL) -> [URL]) {
+        QuickDropActions.transform(urls, at: point) { [weak self] done, from, each, work in
+            guard let self else { return }
             show(at: point)
             store.produce(done, from: from, each: each, work)
         }
-        if !images.isEmpty {
-            let convert = NSMenuItem(title: "Convert to", action: nil, keyEquivalent: "")
-            let formats = NSMenu()
-            for format in FileActions.ImageFormat.writable {
-                formats.addItem(QuickDropMenuItem(format.title) {
-                    run("Converted to \(format.title)", from: images) { urls, folder in urls.compactMap { FileActions.convert($0, to: format, into: folder) } }
-                })
-            }
-            convert.submenu = formats
-            menu.addItem(convert)
-            menu.addItem(QuickDropMenuItem("Make Smaller") {
-                run("Made smaller", from: images) { urls, folder in urls.compactMap { FileActions.compress($0, into: folder) } }
-            })
-        }
-        menu.addItem(QuickDropMenuItem(urls.count == 1 ? "Make a ZIP" : "Make a ZIP of \(urls.count)") {
-            run("Zipped", from: urls, each: false) { urls, folder in FileActions.zip(urls, into: folder).map { [$0] } ?? [] }
-        })
-        NSApp.activate()
-        menu.popUp(positioning: nil, at: point, in: nil)
     }
 
     private func makeGridPanel() -> NSPanel {

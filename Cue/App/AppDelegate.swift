@@ -917,6 +917,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 island?.onSnippetFilled = { [weak self] snippet, values in self?.snippetFilled(snippet, values: values) }
                 island?.onOpenTaskDashboard = { [weak self] in self?.showTaskDashboard(nil) }
                 island?.onOpenSettings = { [weak self] in self?.showSettings(nil) }
+                island?.canShare = { [weak self] in self?.share.isConfigured ?? false }
+                island?.onShareLink = { [weak self] urls in self?.shareFiles(urls) }
                 library.warmThumbnails()
                 FeedbackHUD.island = { [weak self] status in self?.island?.showStatus(status) ?? false }
             }
