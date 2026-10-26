@@ -241,10 +241,11 @@ final class ClipboardHistory {
             // plain text likewise stands in for a flavour only its own app understands.
             if let first = pasteboardItems.first {
                 let types = Set(contents.filter { $0.index == 0 }.map(\.type))
+                // Promised, not made: decoding a large picture to re-encode it held up
+                // the paste.
                 if types.contains(NSPasteboard.PasteboardType.png.rawValue), !types.contains(NSPasteboard.PasteboardType.tiff.rawValue),
-                   let png = contents.first(where: { $0.index == 0 && $0.type == NSPasteboard.PasteboardType.png.rawValue })?.data,
-                   let tiff = NSBitmapImageRep(data: png)?.tiffRepresentation {
-                    first.setData(tiff, forType: .tiff)
+                   let png = contents.first(where: { $0.index == 0 && $0.type == NSPasteboard.PasteboardType.png.rawValue })?.data {
+                    Clipboard.promiseTIFF(on: first, from: png)
                 }
                 if !types.contains(NSPasteboard.PasteboardType.string.rawValue), !item.text.isEmpty, item.kind != .image {
                     first.setString(item.text, forType: .string)
@@ -398,7 +399,7 @@ final class ClipboardHistory {
             field.restore { Self.postCommandV() }
         } else {
             // A beat for the pasteboard to settle before the key press lands.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: Self.postCommandV)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: Self.postCommandV)
         }
         return true
     }
@@ -421,10 +422,10 @@ final class ClipboardHistory {
 
     /// Runs `action` once `app` is the frontmost application (polled, with a beat for
     /// its key window to take focus back), or after a second regardless.
-    static func whenFrontmost(_ app: NSRunningApplication, attempts: Int = 20, then action: @escaping @MainActor () -> Void) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+    static func whenFrontmost(_ app: NSRunningApplication, attempts: Int = 50, then action: @escaping @MainActor () -> Void) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
             if NSWorkspace.shared.frontmostApplication == app || attempts <= 1 {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: action)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: action)
             } else {
                 whenFrontmost(app, attempts: attempts - 1, then: action)
             }

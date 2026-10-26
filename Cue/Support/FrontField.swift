@@ -34,13 +34,13 @@ struct FrontField {
         if NSWorkspace.shared.frontmostApplication == app {
             // Cue never took activation (a non-activating panel): the app kept its
             // cursor; a beat for the panel to be gone, so the keys reach the app.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: action)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.03, execute: action)
             return
         }
         ClipboardHistory.activate(app)
         ClipboardHistory.whenFrontmost(app) {
             focusElement()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: action)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.03, execute: action)
         }
     }
 

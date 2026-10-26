@@ -335,11 +335,9 @@ struct ClipboardPanelView: View {
     private func paste(_ item: ClipboardItem, as transform: TextTransform) {
         guard done == nil, let result = transform.apply(to: item.text) else { return }
         done = item.id
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
-            close()
-            clipboard.copy(text: result)
-            if !clipboard.pressPaste(returningTo: frontField) { onNeedsAccessibility() }
-        }
+        close()
+        clipboard.copy(text: result)
+        if !clipboard.pressPaste(returningTo: frontField) { onNeedsAccessibility() }
     }
 
     /// ⌘↩ copies without pasting; ⌥↩ pastes as plain text; ⌘1–⌘9 take a row straight away.
@@ -409,18 +407,15 @@ struct ClipboardPanelView: View {
         return Array(items[min(anchor, selected)...max(anchor, selected)])
     }
 
-    /// Copies the row, shows its tick for a beat, closes, and presses ⌘V in the front
-    /// app. No status: the tick is the confirmation.
+    /// Copies the row, closes, and presses ⌘V in the front app straight away.
     private func paste(at index: Int, in items: [ClipboardItem]) {
         guard items.indices.contains(index), done == nil else { return }
         // Several rows: one paste, top row first, joined by newlines.
         if index == selected, let several = range(in: items) {
             done = several.last?.id
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
-                close()
-                clipboard.copy(text: several.map(\.text).joined(separator: "\n"))
-                if !clipboard.pressPaste(returningTo: frontField) { onNeedsAccessibility() }
-            }
+            close()
+            clipboard.copy(text: several.map(\.text).joined(separator: "\n"))
+            if !clipboard.pressPaste(returningTo: frontField) { onNeedsAccessibility() }
             return
         }
         let item = items[index]
@@ -434,13 +429,12 @@ struct ClipboardPanelView: View {
         take(item) {}
     }
 
+    /// Copies and closes at once: a paste must not wait on a tick to be seen.
     private func take(_ item: ClipboardItem, then action: @escaping () -> Void) {
         clipboard.copy(item)
         done = item.id
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
-            close()
-            action()
-        }
+        close()
+        action()
     }
 
     private func symbol(for item: ClipboardItem) -> String {

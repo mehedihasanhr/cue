@@ -33,13 +33,18 @@ enum Clipboard {
     /// as a promise, made only if one of them asks: decoding a large capture to
     /// re-encode it took long enough to hold up the click that copied it.
     static func copy(pngData: Data, to pasteboard: NSPasteboard = .general) {
-        let provider = TIFFProvider(pngData: pngData)
         let item = NSPasteboardItem()
         item.setData(pngData, forType: .png)
-        item.setDataProvider(provider, forTypes: [.tiff])
+        promiseTIFF(on: item, from: pngData)
         item.setData(Data(), forType: Clipboard.ownMarker)
         pasteboard.clearContents()
         pasteboard.writeObjects([item])
+    }
+
+    /// Offers `pngData` as TIFF too, made only if an app asks for it.
+    static func promiseTIFF(on item: NSPasteboardItem, from pngData: Data) {
+        let provider = TIFFProvider(pngData: pngData)
+        item.setDataProvider(provider, forTypes: [.tiff])
         tiffProviders.append(provider)
     }
 
