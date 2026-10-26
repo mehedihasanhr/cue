@@ -167,6 +167,8 @@ final class IslandModel {
     var arrowPress: (delta: Int, tick: Int) = (0, 0)
     /// Leaves the clock; set by the controller.
     var onClockClosed: () -> Void = {}
+    /// The status showing is being used (a level dragged): it stays a while longer.
+    var onHoldStatus: () -> Void = {}
     /// Opens the music player; set by the controller.
     var onShowMedia: () -> Void = {}
     /// Leaves the music player; set by the controller.
@@ -444,6 +446,10 @@ struct IslandView: View {
                     ClockRow(status: clock)
                         .modifier(IdealWidth { model.contentWidth = $0 })
                         .frame(height: IslandGeometry.promptContentHeight)
+                } else if let level = status.level {
+                    LevelRow(level: level, onDrag: { model.onHoldStatus() })
+                        .modifier(IdealWidth { model.contentWidth = $0 })
+                        .frame(height: IslandGeometry.flashContentHeight)
                 } else if let done = status.agentDone {
                     AgentDoneRow(done: done)
                         .modifier(IdealWidth { model.contentWidth = $0 })
@@ -637,6 +643,8 @@ struct IslandStatus: Equatable, Identifiable {
     var clock: ClockStatus? = nil
     /// Drawn as an agent's finished turn instead of the plain line.
     var agentDone: AgentDone? = nil
+    /// Drawn as a level bar (the volume, the brightness) instead of the plain line.
+    var level: LevelHUD? = nil
 
     /// Green for done, orange for "nothing to do", white otherwise.
     var tint: Color {

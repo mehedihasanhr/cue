@@ -420,6 +420,9 @@ struct IslandSettingsView: View {
                         SecondsSlider(value: $preferences.islandFlashDuration, range: 0.5...5, step: 0.1, zero: nil)
                     }
                 }
+                SettingsRow("Volume and brightness", subtitle: "The keys show their level in the island, with a bar to drag, instead of the system's overlay. Needs Accessibility.") {
+                    Toggle("Volume and brightness", isOn: $preferences.islandLevelHUD).toggleStyle(.switch)
+                }
                 SettingsRow("Now Playing", subtitle: "What Music, Spotify or YouTube in Safari, Chrome, Arc, Brave or Edge plays, with its controls, in the panel's header. macOS asks once per app. For YouTube, turn on the browser's Allow JavaScript from Apple Events (in its Developer menu).") {
                     Toggle("Now Playing", isOn: $preferences.islandNowPlaying).toggleStyle(.switch)
                 }

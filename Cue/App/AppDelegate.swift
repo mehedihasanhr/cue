@@ -387,6 +387,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if let tab = IslandTab(rawValue: tabName) { UserDefaults.standard.set(tab.rawValue, forKey: IslandTab.storageKey) }
                 switch tabName {
                 case "agents": self?.island?.showAgents()
+                case "level": self?.island?.debugShowLevel()
                 case "agentsmedia":
                     self?.island?.nowPlaying.debugFake()
                     self?.island?.showAgents()

@@ -34,6 +34,7 @@ final class AppPreferences {
         static let islandShelfAutoCollapse = "island.shelf.autoCollapse"
         static let basketEnabled = "basket.enabled"
         static let islandNowPlaying = "island.nowPlaying"
+        static let islandLevelHUD = "island.levelHUD"
         static let basketHideDelay = "basket.hideDelay"
         static let islandPreview = "island.preview"
         static let islandPreviewOnHover = "island.previewOnHover"
@@ -516,6 +517,11 @@ final class AppPreferences {
         didSet { defaults.set(islandShelfOpenAfterDrop, forKey: Key.islandShelfOpenAfterDrop) }
     }
 
+    /// The volume and brightness keys show their level in the island, not the system's overlay.
+    var islandLevelHUD: Bool {
+        didSet { defaults.set(islandLevelHUD, forKey: Key.islandLevelHUD) }
+    }
+
     /// What Music or Spotify plays shows in the island, with its controls.
     var islandNowPlaying: Bool {
         didSet { defaults.set(islandNowPlaying, forKey: Key.islandNowPlaying) }
@@ -732,6 +738,7 @@ final class AppPreferences {
         islandShelfAutoCollapse = defaults.object(forKey: Key.islandShelfAutoCollapse) as? Bool ?? true
         basketEnabled = defaults.object(forKey: Key.basketEnabled) as? Bool ?? true
         islandNowPlaying = defaults.object(forKey: Key.islandNowPlaying) as? Bool ?? true
+        islandLevelHUD = defaults.object(forKey: Key.islandLevelHUD) as? Bool ?? true
         basketHideDelay = defaults.object(forKey: Key.basketHideDelay) as? Double ?? 1.5
         islandPreview = IslandPreview(rawValue: defaults.string(forKey: Key.islandPreview) ?? "") ?? .inline
         islandPreviewOnHover = defaults.object(forKey: Key.islandPreviewOnHover) as? Bool ?? true

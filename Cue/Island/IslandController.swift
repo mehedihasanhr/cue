@@ -97,6 +97,7 @@ final class IslandController {
         }
         model.onShowClock = { [weak self] in self?.showClock() }
         model.onShowMedia = { [weak self] in self?.showMedia() }
+        model.onHoldStatus = { [weak self] in self?.holdStatus() }
         model.onPreviewPane = { [weak self] detail, direction in self?.showPreview(detail, direction: direction) }
         model.onHidePreview = { [weak self] in self?.hidePreview() }
         model.isPointerInPreview = { [weak self] in self?.pointerInPreview() ?? false }
@@ -216,6 +217,14 @@ final class IslandController {
         installPointerMonitors()
         let guarded = IslandDragGuard.start { [weak self] in self?.dragEntered() }
         Log.app.info("Island drag guard: \(guarded ? "on" : "off (needs Accessibility)", privacy: .public)")
+        // The volume and brightness keys, while the island is closed (or flashing) and
+        // free to show them; otherwise the system's overlay, as before.
+        LevelKeys.isEnabled = { [weak self] in
+            guard let self, preferences.islandLevelHUD, model.geometry != nil, !hidden else { return false }
+            return model.phase == .collapsed || model.phase.isFlash
+        }
+        let levels = LevelKeys.start { [weak self] level in self?.showLevel(level) }
+        Log.app.info("Island level keys: \(levels ? "on" : "off (needs Accessibility)", privacy: .public); volume settable: \(SystemLevels.canSetVolume); brightness: \(SystemLevels.brightness.map { String($0) } ?? "unavailable", privacy: .public)")
         place()
     }
 
@@ -435,6 +444,7 @@ final class IslandController {
     /// Removes the island; the controller is dropped afterwards.
     func tearDown() {
         nowPlaying.stop()
+        LevelKeys.stop()
         closeTask?.cancel()
         flashTask?.cancel()
         observers.forEach { NotificationCenter.default.removeObserver($0) }
@@ -637,6 +647,41 @@ final class IslandController {
         window.makeKey() // so ⎋ reaches the island
     }
 
+    /// The volume or brightness just changed: the island shows it in place of the
+    /// system's overlay. Only over the closed island (or another flash): with a panel
+    /// open the keys are left to the system (see `start`), so nothing is covered.
+    private func showLevel(_ level: LevelHUD) {
+        guard case .status(let current) = model.phase, let shown = current.level, shown.kind == level.kind else {
+            flash(phase: .status(IslandStatus(symbol: level.symbol, title: "", duration: Self.levelDuration, level: level)))
+            return
+        }
+        // Already up: the bar moves; the same view stays (no new entrance), and it holds.
+        model.phase = .status(IslandStatus(symbol: level.symbol, title: "", duration: Self.levelDuration, level: level))
+        holdStatus()
+    }
+
+    private static let levelDuration: Duration = .milliseconds(1500)
+
+    #if DEBUG
+    /// For diagnostics: the volume HUD at 60%.
+    func debugShowLevel() {
+        flash(phase: .status(IslandStatus(symbol: "speaker.wave.2.fill", title: "", duration: .seconds(6), level: LevelHUD(kind: .volume, value: 0.6))))
+    }
+    #endif
+
+    /// Restarts the countdown of the level showing.
+    private func holdStatus() {
+        guard case .status(let status) = model.phase, status.level != nil else { return }
+        flashTask?.cancel()
+        flashTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.levelDuration)
+            guard !Task.isCancelled, let self, model.phase.isFlash else { return }
+            // Still dragging: once more.
+            if NSEvent.pressedMouseButtons != 0 { holdStatus(); return }
+            collapse()
+        }
+    }
+
     /// Opens the music player in the island; ⎋ or a click outside closes it.
     func showMedia() {
         guard model.geometry != nil, model.phase != .media else { return }
@@ -743,7 +788,8 @@ final class IslandController {
         window.orderFrontRegardless()
         setPhase(phase, animated: true)
         let duration: Duration = if case .status(let status) = phase { status.duration } else { .seconds(preferences.islandFlashDuration) }
-        let isClock = if case .status(let status) = phase { status.clock != nil } else { false }
+        // The clock and a level just close: neither is a way into the panel.
+        let isClock = if case .status(let status) = phase { status.clock != nil || status.level != nil } else { false }
         flashTask = Task { [weak self] in
             try? await Task.sleep(for: duration)
             guard !Task.isCancelled, let self, model.phase.isFlash else { return }
@@ -861,7 +907,10 @@ final class IslandController {
         guard !pressWithoutDrop else { return }
         // A flash opens at once when hovered; the closed island waits for the delay
         // — or, in click mode, for a click.
-        if model.phase.isFlash {
+        if case .status(let status) = model.phase, status.level != nil {
+            // A level is for dragging, not a way into the panel.
+            return
+        } else if model.phase.isFlash {
             expand()
         } else if preferences.islandOpenMode == .hover {
             let delay = preferences.islandHoverDelay
