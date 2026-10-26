@@ -210,10 +210,7 @@ struct LevelRow: View {
     var body: some View {
         let value = dragged ?? (level.muted ? 0 : level.value)
         HStack(spacing: 12) {
-            Icon(dragged.map { LevelHUD(kind: level.kind, value: $0).symbol } ?? level.symbol, size: 15, weight: .semibold)
-                .foregroundStyle(.white)
-                .frame(width: 22)
-                .contentTransition(.symbolEffect(.replace))
+            LevelArt(level: dragged.map { LevelHUD(kind: level.kind, value: $0, muted: $0 == 0) } ?? level, size: 32)
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
                     Capsule().fill(.white.opacity(0.16))
@@ -245,7 +242,8 @@ struct LevelRow: View {
                 .frame(width: 28, alignment: .trailing)
                 .contentTransition(.numericText(value: value))
         }
-        .padding(.horizontal, 20)
+        .padding(.leading, 12)
+        .padding(.trailing, 20)
         .frame(width: Self.width)
         .animation(.easeOut(duration: 0.12), value: value)
         .animation(.easeOut(duration: 0.12), value: dragged == nil)

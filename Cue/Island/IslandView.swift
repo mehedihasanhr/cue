@@ -698,11 +698,8 @@ private struct StatusRow: View {
         } else if let image = status.image {
             StatusTile { Image(nsImage: image).resizable().scaledToFill() }
         } else {
-            Icon(status.symbol, size: 16, weight: .semibold)
-                .foregroundStyle(status.tint)
-                .frame(width: statusTileSide, height: statusTileSide)
-                .background(status.tint.opacity(0.16), in: Circle())
-                .overlay(Circle().strokeBorder(status.tint.opacity(0.25), lineWidth: 1))
+            // A bead in the status's colour: green done, orange "nothing to do", else blue.
+            GlossyDisc(symbol: status.symbol, tint: status.tint == .white ? IslandStyle.accent : status.tint, size: statusTileSide)
         }
     }
 }

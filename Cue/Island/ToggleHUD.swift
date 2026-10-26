@@ -97,41 +97,34 @@ final class ToggleMonitor {
     }
 }
 
-/// The switch in the island: its symbol on a disc lit when on, what it is, and a
-/// small switch sliding over.
+/// The switch in the island: the thing itself (the Caps Lock key, its light
+/// coming on; the Focus orb) and what it is, On in its colour or Off.
 struct ToggleRow: View {
     let toggle: ToggleHUD
-    @State private var flipped = false
+    @State private var shown = false
 
     var body: some View {
-        let on = flipped ? toggle.on : !toggle.on
-        HStack(spacing: 11) {
-            Icon(toggle.symbol, size: 14, weight: .semibold)
-                .foregroundStyle(on ? toggle.tint : .white.opacity(0.6))
-                .frame(width: 30, height: 30)
-                .background((on ? toggle.tint : .white).opacity(on ? 0.18 : 0.08), in: Circle())
-                .overlay(Circle().strokeBorder((on ? toggle.tint : .white).opacity(0.3), lineWidth: 1))
-                .shadow(color: on ? toggle.tint.opacity(0.6) : .clear, radius: 8)
-            Text(toggle.title)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white)
-            Spacer(minLength: 14)
-            Text(toggle.on ? "On" : "Off")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white.opacity(0.55))
-                .contentTransition(.opacity)
-            // A little switch: the knob slides as it appears.
-            ZStack(alignment: on ? .trailing : .leading) {
-                Capsule().fill(on ? toggle.tint : .white.opacity(0.18))
-                Circle().fill(.white).padding(2).shadow(color: .black.opacity(0.3), radius: 1, y: 0.5)
+        HStack(spacing: 13) {
+            switch toggle.kind {
+            case .capsLock: CapsKeycap(on: toggle.on, size: 36)
+            case .focus: FocusOrb(on: toggle.on, size: 36)
             }
-            .frame(width: 32, height: 19)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(toggle.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                Text(toggle.on ? "On" : "Off")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(toggle.on ? toggle.tint : .white.opacity(0.45))
+            }
+            .offset(x: shown ? 0 : -6)
+            .opacity(shown ? 1 : 0)
         }
-        .padding(.leading, 14)
-        .padding(.trailing, 20)
+        .padding(.leading, 12)
+        .padding(.trailing, 24)
         .fixedSize()
         .onAppear {
-            withAnimation(IslandView.reduceMotion ? .easeOut(duration: 0.12) : .spring(response: 0.35, dampingFraction: 0.7).delay(0.15)) { flipped = true }
+            withAnimation(IslandView.reduceMotion ? .easeOut(duration: 0.12) : .spring(response: 0.4, dampingFraction: 0.8).delay(0.1)) { shown = true }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(toggle.title) \(toggle.on ? "on" : "off")")
