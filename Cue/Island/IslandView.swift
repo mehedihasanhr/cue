@@ -630,6 +630,10 @@ private struct StatusLayout<Leading: View>: View {
 
     @State private var shown = false
     @State private var remaining: CGFloat = 1
+    /// The tick has landed: a ring pulses out and sparks fly.
+    @State private var burst = false
+    /// A sheen runs across the picture once it has settled.
+    @State private var sheen: CGFloat = -1
 
     private static var green: Color { Color(red: 0.36, green: 0.86, blue: 0.56) }
     private static var orange: Color { Color(red: 1.0, green: 0.71, blue: 0.3) }
@@ -637,9 +641,22 @@ private struct StatusLayout<Leading: View>: View {
     var body: some View {
         HStack(spacing: 11) {
             leading()
-                .scaleEffect(shown ? 1 : 0.85)
+                // A sheen across it once it has settled, like light catching it.
+                .overlay {
+                    LinearGradient(colors: [.clear, .white.opacity(0.45), .clear], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: 18)
+                        .rotationEffect(.degrees(20))
+                        .offset(x: sheen * 40)
+                        .blendMode(.plusLighter)
+                        .allowsHitTesting(false)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                // Dropped in from above with a tilt, settling on a spring.
+                .scaleEffect(shown ? 1 : 0.7)
+                .rotationEffect(.degrees(shown ? 0 : -8))
+                .offset(y: shown ? 0 : -10)
                 .opacity(shown ? 1 : 0)
-                .animation(.spring(response: 0.4, dampingFraction: 0.7), value: shown)
+                .animation(.spring(response: 0.42, dampingFraction: 0.62), value: shown)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.system(size: 13, weight: .semibold))
@@ -677,6 +694,15 @@ private struct StatusLayout<Leading: View>: View {
         }
         .onAppear {
             shown = true
+            if !IslandView.reduceMotion {
+                Task {
+                    // As the picture lands, then as the tick finishes drawing.
+                    try? await Task.sleep(for: .milliseconds(380))
+                    withAnimation(.easeInOut(duration: 0.6)) { sheen = 1 }
+                    try? await Task.sleep(for: .milliseconds(120))
+                    burst = true
+                }
+            }
             if let duration, !IslandView.reduceMotion {
                 let seconds = Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
                 withAnimation(.linear(duration: seconds)) { remaining = 0 }
@@ -689,6 +715,26 @@ private struct StatusLayout<Leading: View>: View {
         switch badge {
         case .success:
             ZStack {
+                // The burst, once: a ring pulsing out and sparks flying from the rim,
+                // both gone before and after.
+                ZStack {
+                    Circle().strokeBorder(Self.green.opacity(0.7), lineWidth: 1.5)
+                    ForEach(0..<6, id: \.self) { index in
+                        Circle()
+                            .fill(Self.green)
+                            .frame(width: 3, height: 3)
+                            .offset(y: -12)
+                            .rotationEffect(.degrees(Double(index) * 60 + 30))
+                    }
+                }
+                .keyframeAnimator(initialValue: 0.0, trigger: burst) { burst, progress in
+                    burst
+                        .scaleEffect(1 + 0.8 * progress)
+                        .opacity(progress == 0 ? 0 : 1 - progress)
+                } keyframes: { _ in
+                    LinearKeyframe(0.0, duration: 0.01)
+                    CubicKeyframe(1.0, duration: 0.6)
+                }
                 Circle().fill(Self.green.opacity(0.18))
                 Circle().strokeBorder(Self.green.opacity(0.45), lineWidth: 1.2)
                 TickShape()
