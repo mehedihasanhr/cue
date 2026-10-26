@@ -84,16 +84,19 @@ final class QuickDropView: NSView {
     }
 }
 
-/// Four tiles in a glass square: drop on one to send the files there.
+/// Four tiles on a black slab: drop on one to send the files there. Drawn after
+/// Droppy's: near-black tiles, softly lit glyphs, the share link as a small app
+/// icon, and the tile under the files lifted rather than outlined.
 struct QuickDropGrid: View {
     static let size = CGSize(width: 300, height: 300)
-    private static let radius: CGFloat = 34
+    private static let radius: CGFloat = 38
+    private static let tileRadius: CGFloat = 24
 
     let model: QuickDropModel
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
-        Grid(horizontalSpacing: 8, verticalSpacing: 8) {
+        Grid(horizontalSpacing: 6, verticalSpacing: 6) {
             ForEach(0..<2) { row in
                 GridRow {
                     ForEach(QuickDropTarget.allCases.filter { $0.row == row }, id: \.self) { target in
@@ -102,51 +105,72 @@ struct QuickDropGrid: View {
                 }
             }
         }
-        .padding(10)
-        .frame(width: Self.size.width - 20, height: Self.size.height - 20)
+        .padding(12)
+        .frame(width: Self.size.width - 24, height: Self.size.height - 24)
         .background {
-            ZStack {
-                if #available(macOS 26, *) {
-                    shape.fill(.clear).glassEffect(.regular.tint(.black.opacity(0.55)), in: shape)
-                } else {
-                    shape.fill(.ultraThinMaterial)
-                    shape.fill(.black.opacity(0.55))
-                }
-            }
-            .shadow(color: .black.opacity(0.4), radius: 10, y: 4)
+            shape.fill(Color(white: 0.02).opacity(0.97))
+                .shadow(color: .black.opacity(0.5), radius: 14, y: 6)
         }
-        .overlay(shape.strokeBorder(.white.opacity(0.1), lineWidth: 1))
-        .scaleEffect(model.shown ? 1 : 0.8)
+        .overlay(shape.strokeBorder(.white.opacity(0.06), lineWidth: 1))
+        .scaleEffect(model.shown ? 1 : 0.86)
         .opacity(model.shown ? 1 : 0)
         .frame(width: Self.size.width, height: Self.size.height)
-        .animation(IslandView.reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.32, dampingFraction: 0.72), value: model.shown)
-        .animation(.easeOut(duration: 0.14), value: model.hovered)
+        .animation(IslandView.reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.3, dampingFraction: 0.78), value: model.shown)
+        .animation(.easeOut(duration: 0.16), value: model.hovered)
         .environment(\.colorScheme, .dark)
     }
 
     private func tile(_ target: QuickDropTarget) -> some View {
         let lit = model.hovered == target
         let off = target == .share && !model.canShare
-        let shape = RoundedRectangle(cornerRadius: 24, style: .continuous)
-        return VStack(spacing: 10) {
-            Icon(target.symbol, size: 28, weight: .medium)
-                .foregroundStyle(.white.opacity(off ? 0.35 : (lit ? 1 : 0.8)))
+        let shape = RoundedRectangle(cornerRadius: Self.tileRadius, style: .continuous)
+        return VStack(spacing: 12) {
+            glyph(target, off: off)
+                .frame(height: 46)
+                .scaleEffect(lit ? 1.08 : 1)
                 .offset(y: lit ? -2 : 0)
             VStack(spacing: 2) {
                 Text(target.title)
-                    .font(.system(size: 13.5, weight: .semibold))
-                    .foregroundStyle(.white.opacity(off ? 0.45 : 0.92))
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color(white: off ? 0.45 : (lit ? 0.97 : 0.84)))
+                    .multilineTextAlignment(.center)
                 if off {
                     Text("Set up in Settings")
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.4))
+                        .foregroundStyle(.white.opacity(0.35))
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(shape.fill(.white.opacity(lit ? 0.16 : 0.06)))
-        .overlay(shape.strokeBorder(lit ? IslandStyle.accent.opacity(0.85) : .clear, lineWidth: 1.5))
-        .scaleEffect(lit ? 1.04 : 1)
+        .background {
+            shape.fill(LinearGradient(colors: [Color(white: lit ? 0.2 : 0.085), Color(white: lit ? 0.15 : 0.055)],
+                                      startPoint: .top, endPoint: .bottom))
+        }
+        .overlay(shape.strokeBorder(.white.opacity(lit ? 0.12 : 0.035), lineWidth: 1))
+    }
+
+    /// The tile's picture: a softly lit glyph, or for the share link a small app icon.
+    @ViewBuilder
+    private func glyph(_ target: QuickDropTarget, off: Bool) -> some View {
+        if target == .share {
+            let badge = RoundedRectangle(cornerRadius: 12, style: .continuous)
+            ZStack {
+                badge.fill(LinearGradient(colors: [Color(white: 0.2), Color(white: 0.1)], startPoint: .top, endPoint: .bottom))
+                badge.strokeBorder(.white.opacity(0.1), lineWidth: 0.75)
+                Icon("link", size: 21, weight: .bold)
+                    .foregroundStyle(LinearGradient(colors: [Color(red: 0.62, green: 0.6, blue: 1), Color(red: 0.4, green: 0.42, blue: 0.98)],
+                                                    startPoint: .top, endPoint: .bottom))
+            }
+            .frame(width: 46, height: 46)
+            .shadow(color: .black.opacity(0.5), radius: 3, y: 2)
+            .saturation(off ? 0 : 1)
+            .opacity(off ? 0.5 : 1)
+        } else {
+            Icon(target.symbol, size: 30, weight: .medium)
+                .foregroundStyle(LinearGradient(colors: [Color(white: 0.95), Color(white: target == .basket ? 0.55 : 0.75)],
+                                                startPoint: .top, endPoint: .bottom))
+                .shadow(color: .black.opacity(0.6), radius: 2, y: 1.5)
+        }
     }
 }
 
