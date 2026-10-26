@@ -103,6 +103,14 @@ nonisolated enum JSONValue: Equatable, Sendable, Codable {
         return nil
     }
 
+    var number: Double? {
+        switch self {
+        case .int(let value): Double(value)
+        case .double(let value): value
+        default: nil
+        }
+    }
+
     /// A command given as one string or as its arguments.
     var commandLine: String? {
         if let string { return string }
@@ -135,6 +143,8 @@ nonisolated struct AgentEvent: Sendable, Equatable {
         case stop = "Stop"
         case subagentStart = "SubagentStart"
         case subagentStop = "SubagentStop"
+        /// Not a hook: Claude Code's status line, passed on by Cue's relay for its usage limits.
+        case statusLine = "StatusLine"
         case other
     }
 
@@ -158,6 +168,8 @@ nonisolated struct AgentEvent: Sendable, Equatable {
     /// What the session leaves running: Claude Code lists it on Stop and SubagentStop
     /// (`[{id, type: shell|subagent, status, description, command?}]`).
     var backgroundTasks: [JSONValue]?
+    /// The status line's usage limits (`five_hour`, `seven_day`).
+    var rateLimits: JSONValue?
     /// The hook script itself: while it runs, its question is still open.
     var hookPID: Int32 = 0
     /// The process that ran the hook (the agent, or a shell it started).
@@ -208,6 +220,7 @@ nonisolated struct AgentEvent: Sendable, Equatable {
         subagentID = event["agent_id"]?.string
         subagentType = event["agent_type"]?.string
         backgroundTasks = event["background_tasks"]?.array
+        rateLimits = event["rate_limits"]
         profile = envelope.cue.profile.flatMap { agent.profile(fromFolderName: $0) }
         hookPID = envelope.cue.pid ?? 0
         parentPID = envelope.cue.ppid ?? 0
@@ -460,7 +473,7 @@ nonisolated struct AgentSessionBook: Equatable, Sendable {
             // when its own stop was never reported.
             session.workers.removeAll { $0.kind == .subagent && !$0.background }
             if let message = event.message, let line = Self.readableLine(message) { session.activity = line }
-        case .sessionEnd, .subagentStart, .subagentStop, .other:
+        case .sessionEnd, .subagentStart, .subagentStop, .statusLine, .other:
             break
         }
         // The clock starts when the turn ends; a later idle reminder must not restart it.
@@ -847,5 +860,32 @@ nonisolated struct AgentToolSummary: Equatable, Sendable {
             return nil
         }
         return files.isEmpty ? String(patch.prefix(200)) : files.joined(separator: ", ")
+    }
+}
+
+/// How much of Claude Code's usage windows is used, as its status line last said.
+nonisolated struct AgentUsage: Equatable, Sendable {
+    struct Window: Equatable, Sendable {
+        /// 0…100.
+        let percent: Double
+        let resetsAt: Date?
+    }
+
+    var fiveHour: Window?
+    var sevenDay: Window?
+    var updatedAt: Date
+
+    /// From the status line's `rate_limits`; nil when it carries none (an API key, not a plan).
+    init?(rateLimits: JSONValue?, at date: Date) {
+        func window(_ key: String) -> Window? {
+            guard let entry = rateLimits?[key], let percent = entry["used_percentage"]?.number else { return nil }
+            let resets = entry["resets_at"]?.number.map { Date(timeIntervalSince1970: $0) }
+                ?? entry["resets_at"]?.string.flatMap { ISO8601DateFormatter().date(from: $0) }
+            return Window(percent: percent, resetsAt: resets)
+        }
+        fiveHour = window("five_hour")
+        sevenDay = window("seven_day")
+        updatedAt = date
+        if fiveHour == nil && sevenDay == nil { return nil }
     }
 }

@@ -8,6 +8,11 @@ nonisolated enum AgentHooks {
     static let folderName = "cue"
     static let scriptName = "cue-agent-hook"
     static let socketName = "agents.sock"
+    /// Claude Code's usage limits reach only its status line: this script, put in
+    /// front of the user's own status-line command, passes them on to Cue and then
+    /// runs that command as before (its words kept in `statusOriginalName`).
+    static let statusScriptName = "cue-statusline"
+    static let statusOriginalName = "statusline-original"
     /// Where the app put the script when it was called Klik: entries running it are
     /// Cue's too, so turning the hooks on replaces them and turning them off removes them.
     static let legacyFolderName = "klik"
@@ -132,6 +137,68 @@ nonisolated enum AgentHooks {
     /// from its own dialog (a hook's "allow" for ExitPlanMode is ignored; its "deny"
     /// is honoured), so the script presses the dialog's key in the agent's own pane.
     static let keysReplyPrefix = "CUE-KEYS "
+
+    /// Whether `settings`' status line is Cue's relay.
+    static func hasStatusRelay(in settings: [String: Any]) -> Bool {
+        ((settings["statusLine"] as? [String: Any])?["command"] as? String)?.contains("/\(folderName)/\(statusScriptName)") == true
+    }
+
+    /// The user's status-line command, if any (nil when it is Cue's relay already).
+    static func statusCommand(in settings: [String: Any]) -> String? {
+        guard !hasStatusRelay(in: settings) else { return nil }
+        return (settings["statusLine"] as? [String: Any])?["command"] as? String
+    }
+
+    /// `settings` with the relay as the status line, its other keys (the refresh
+    /// interval, the padding) kept.
+    static func installStatusRelay(into settings: [String: Any], scriptPath: String) -> [String: Any] {
+        var settings = settings
+        var line = settings["statusLine"] as? [String: Any] ?? ["type": "command"]
+        line["type"] = "command"
+        line["command"] = "sh '\(scriptPath.replacingOccurrences(of: "'", with: "'\\''"))'"
+        if line["refreshInterval"] == nil { line["refreshInterval"] = 30 }
+        settings["statusLine"] = line
+        return settings
+    }
+
+    /// `settings` with the user's own status line back (`original`), or none if they had none.
+    static func removeStatusRelay(from settings: [String: Any], original: String?) -> [String: Any] {
+        guard hasStatusRelay(in: settings) else { return settings }
+        var settings = settings
+        if let original, !original.isEmpty, var line = settings["statusLine"] as? [String: Any] {
+            line["command"] = original
+            settings["statusLine"] = line
+        } else {
+            settings["statusLine"] = nil
+        }
+        return settings
+    }
+
+    /// The status-line relay. It hands Claude Code's status (with its usage limits)
+    /// to Cue in the background, never waiting on it, then runs the user's own status
+    /// line with the same input, so what the terminal shows is unchanged.
+    static func statusScript(socketPath: String) -> String {
+        """
+    #!/bin/sh
+    # Cue: passes Claude Code's usage limits to Cue for the Dynamic Island, then runs
+    # the status line it stands in front of (kept in \(statusOriginalName)). Installed by
+    # Cue (Settings › Agents › Usage limits), which also puts the original back.
+    sock='\(socketPath.replacingOccurrences(of: "'", with: "'\\''"))'
+    here=$(dirname "$0")
+    profile=$(basename "$(dirname "$here")" | tr -cd 'A-Za-z0-9._ -')
+    input=$(cat)
+    event=$(printf %s "$input" | tr -d '\\r\\n' | sed 's/^[[:space:]]*{/{"hook_event_name":"StatusLine",/')
+    case "$event" in
+    '{"hook_event_name"'*)
+        ( printf '{"cue":{"agent":"claude","profile":"%s","pid":%d,"ppid":%d},"event":%s}\\n' "$profile" "$$" "$PPID" "$event" \\
+            | /usr/bin/nc -U -w 1 "$sock" >/dev/null 2>&1 & ) ;;
+    esac
+    original=$(cat "$here/\(statusOriginalName)" 2>/dev/null)
+    [ -n "$original" ] && printf %s "$input" | sh -c "$original"
+    exit 0
+
+    """
+    }
 
     /// The hook script. It adds which agent ran it, the process that did, the terminal
     /// and its pane, then hands the event to Cue and prints the reply — or, for a

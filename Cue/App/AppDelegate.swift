@@ -895,12 +895,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Listens for agent sessions while Settings › Island › Agent sessions is on.
     private func applyAgentPreference() {
-        let enabled = withObservationTracking {
-            preferences.agentSessionsEnabled
+        let (enabled, usage) = withObservationTracking {
+            (preferences.agentSessionsEnabled, preferences.agentUsageLimits)
         } onChange: { [weak self] in
             Task { @MainActor in self?.applyAgentPreference() }
         }
         agentConnector.setRunning(enabled)
+        agentConnector.relaysUsage = usage
     }
 
     /// Starts or stops recording the pasteboard as the Settings toggles change.

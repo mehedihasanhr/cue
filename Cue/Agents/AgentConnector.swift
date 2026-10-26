@@ -29,6 +29,11 @@ final class AgentConnector {
     @ObservationIgnored private var server: AgentServer?
     @ObservationIgnored private let defaults = UserDefaults.standard
     private var running = false
+    /// Put Cue's relay in front of Claude Code's status line, for its usage limits
+    /// (Settings › Agents › Usage limits); set by the app delegate.
+    var relaysUsage = false {
+        didSet { if oldValue != relaysUsage { applyStatusRelays() } }
+    }
 
     private static let linksKey = "agents.links"
 
@@ -124,10 +129,21 @@ final class AgentConnector {
     func setRunning(_ running: Bool) {
         self.running = running
         if running { listen() } else { stopListening() }
-        if !running { store.reset() }
+        if !running {
+            store.reset()
+            applyStatusRelays()
+        }
+    }
+
+    /// The relay in each connected Claude folder, or the user's own status line back.
+    private func applyStatusRelays() {
+        for link in links where link.agent == .claude && link.installed {
+            if relaysUsage && running { try? installStatusRelay(in: link.folder) } else { try? removeStatusRelay(in: link.folder) }
+        }
     }
 
     private func listen() {
+        defer { applyStatusRelays() }
         let installed = links.filter(\.installed).map(\.id)
         for id in installed {
             guard let folder = links.first(where: { $0.id == id })?.folder else { continue }
@@ -270,7 +286,33 @@ final class AgentConnector {
         try? FileManager.default.removeItem(at: folder.appendingPathComponent(AgentHooks.legacyFolderName))
     }
 
+    private func installStatusRelay(in folder: URL) throws {
+        let cueFolder = folder.appendingPathComponent(AgentHooks.folderName)
+        try FileManager.default.createDirectory(at: cueFolder, withIntermediateDirectories: true)
+        let script = cueFolder.appendingPathComponent(AgentHooks.statusScriptName)
+        let data = Data(AgentHooks.statusScript(socketPath: Self.socketPath).utf8)
+        if (try? Data(contentsOf: script)) != data { try data.write(to: script, options: .atomic) }
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+        let file = folder.appendingPathComponent(AgentHooks.settingsFile(for: .claude))
+        let settings = try AgentHooks.decode(try? Data(contentsOf: file))
+        guard !AgentHooks.hasStatusRelay(in: settings) else { return }
+        // The user's own command, kept for the relay to run and to be put back.
+        let original = cueFolder.appendingPathComponent(AgentHooks.statusOriginalName)
+        try Data((AgentHooks.statusCommand(in: settings) ?? "").utf8).write(to: original, options: .atomic)
+        try write(AgentHooks.encode(AgentHooks.installStatusRelay(into: settings, scriptPath: script.path)), to: file)
+    }
+
+    private func removeStatusRelay(in folder: URL) throws {
+        let file = folder.appendingPathComponent(AgentHooks.settingsFile(for: .claude))
+        let settings = try AgentHooks.decode(try? Data(contentsOf: file))
+        guard AgentHooks.hasStatusRelay(in: settings) else { return }
+        let original = folder.appendingPathComponent(AgentHooks.folderName).appendingPathComponent(AgentHooks.statusOriginalName)
+        let command = (try? String(contentsOf: original, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        try write(AgentHooks.encode(AgentHooks.removeStatusRelay(from: settings, original: command)), to: file)
+    }
+
     private func uninstall(_ agent: AgentKind, in folder: URL) throws {
+        if agent == .claude { try? removeStatusRelay(in: folder) }
         let file = folder.appendingPathComponent(AgentHooks.settingsFile(for: agent))
         if let data = try? Data(contentsOf: file) {
             let settings = try AgentHooks.decode(data)

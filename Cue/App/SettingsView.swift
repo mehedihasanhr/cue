@@ -235,6 +235,10 @@ struct AgentSettingsView: View {
                     Toggle("Open when asked", isOn: $preferences.agentAutoOpen).toggleStyle(.switch)
                 }
                 .disabled(!preferences.agentSessionsEnabled)
+                SettingsRow("Usage limits", subtitle: "How much of Claude Code's 5-hour and weekly limits you've used, as rings in the sessions list. Claude Code tells only its status line, so Cue puts a relay in front of yours: it still shows exactly as before, and turning this off puts it back.") {
+                    Toggle("Usage limits", isOn: $preferences.agentUsageLimits).toggleStyle(.switch)
+                }
+                .disabled(!preferences.agentSessionsEnabled)
                 if let agents {
                     ForEach(AgentKind.allCases, id: \.self) { agent in
                         ForEach(agents.links(for: agent)) { link in

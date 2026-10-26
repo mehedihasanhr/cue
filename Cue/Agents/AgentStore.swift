@@ -60,6 +60,8 @@ final class AgentStore {
     @ObservationIgnored private var agentPIDs: [String: Int32] = [:]
     /// The app each session runs in (its terminal, or the agent's app), by session id.
     private(set) var hosts: [String: AgentHost] = [:]
+    /// Claude Code's usage limits, as its status line last said (through Cue's relay).
+    private(set) var usage: AgentUsage?
     @ObservationIgnored private var pruneTimer: Timer?
 
     init() {
@@ -71,6 +73,14 @@ final class AgentStore {
     // MARK: Events
 
     func receive(_ event: AgentEvent, from connection: AgentConnection) {
+        // The status line: only its usage limits, not a session's news.
+        if event.name == .statusLine {
+            if let usage = AgentUsage(rateLimits: event.rateLimits, at: .now), usage.fiveHour != self.usage?.fiveHour || usage.sevenDay != self.usage?.sevenDay {
+                Log.app.info("Agent usage: 5h \(usage.fiveHour?.percent ?? -1, privacy: .public)%, 7d \(usage.sevenDay?.percent ?? -1, privacy: .public)%")
+                self.usage = usage
+            }
+            return
+        }
         Log.app.debug("Agent sessions: \(event.agent.rawValue, privacy: .public) \(event.name.rawValue, privacy: .public)")
         let key = "\(event.agent.rawValue):\(event.sessionID)"
         let wasWorking = book.sessions.first { $0.id == key }.map { $0.state != .idle } ?? false

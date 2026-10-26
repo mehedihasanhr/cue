@@ -917,6 +917,9 @@ struct AgentsView: View {
                 Text("\(asking) \(asking == 1 ? "needs" : "need") you").foregroundStyle(askingTint)
             }
             Spacer()
+            if let usage = store.usage {
+                UsageRings(usage: usage)
+            }
             HeaderButton(symbol: "square.grid.2x2", help: "Open the panel", action: openPanel)
             HeaderButton(symbol: "xmark", help: "Close", action: close)
         }
@@ -1867,5 +1870,47 @@ private struct AnswerButton: View {
         case .secondary: .white.opacity(hovered ? 0.12 : 0.07)
         case .quiet: .white.opacity(hovered ? 0.1 : 0)
         }
+    }
+}
+
+/// Claude Code's usage limits: a ring for the five-hour window and one for the
+/// week, each filled to what is used and coloured by how close it is to the limit,
+/// with when it resets on hover.
+private struct UsageRings: View {
+    let usage: AgentUsage
+
+    var body: some View {
+        HStack(spacing: 10) {
+            if let window = usage.fiveHour { ring("5h", window) }
+            if let window = usage.sevenDay { ring("7d", window) }
+        }
+    }
+
+    private func ring(_ label: String, _ window: AgentUsage.Window) -> some View {
+        let fraction = min(max(window.percent / 100, 0), 1)
+        let tint: Color = fraction >= 0.8 ? Color(red: 1, green: 0.4, blue: 0.36) : fraction >= 0.5 ? Color(red: 1, green: 0.72, blue: 0.3) : Color(red: 0.36, green: 0.85, blue: 0.45)
+        return HStack(spacing: 5) {
+            ZStack {
+                Circle().stroke(.white.opacity(0.14), lineWidth: 2.5)
+                Circle().trim(from: 0, to: max(0.02, fraction))
+                    .stroke(tint, style: SwiftUI.StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+            }
+            .frame(width: 15, height: 15)
+            Text(label).foregroundStyle(.white.opacity(0.45))
+            Text("\(Int(window.percent.rounded()))%").foregroundStyle(.white.opacity(0.85))
+        }
+        .font(.system(size: 11, weight: .semibold).monospacedDigit())
+        .help(Self.help(label, window))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(label == "5h" ? "Five-hour" : "Weekly") limit, \(Int(window.percent.rounded())) percent used")
+    }
+
+    private static func help(_ label: String, _ window: AgentUsage.Window) -> String {
+        let name = label == "5h" ? "5-hour limit" : "Weekly limit"
+        guard let resets = window.resetsAt, resets > .now else { return "\(name): \(Int(window.percent.rounded()))% used" }
+        let minutes = Int(resets.timeIntervalSinceNow / 60)
+        let when = minutes >= 1440 ? "\(minutes / 1440)d \(minutes % 1440 / 60)h" : minutes >= 60 ? "\(minutes / 60)h \(minutes % 60)m" : "\(minutes)m"
+        return "\(name): \(Int(window.percent.rounded()))% used · resets in \(when)"
     }
 }
