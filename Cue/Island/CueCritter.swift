@@ -73,7 +73,6 @@ struct CueCritter: View {
         .accessibilityLabel(label)
     }
 
-    #if DEBUG
     /// For diagnostics: each mood's first frames in a row, to look at.
     static func sheet(frames: Int = 8) -> some View {
         VStack(spacing: 8) {
@@ -90,7 +89,6 @@ struct CueCritter: View {
         .padding(12)
         .background(.black)
     }
-    #endif
 
     private static func sprite(_ pixels: [Pixel]) -> some View {
             Canvas { canvas, size in

@@ -62,13 +62,11 @@ final class BasketController {
         store.add(fileURLs: urls)
     }
 
-    #if DEBUG
     /// For diagnostics: the basket under the pointer, holding `urls`.
     func debugShow(_ urls: [URL]) {
         show(at: NSEvent.mouseLocation)
         store.add(fileURLs: urls)
     }
-    #endif
 
     /// Puts the basket away; what is in it is kept to reopen.
     func close() {

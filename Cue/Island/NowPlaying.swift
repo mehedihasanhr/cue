@@ -138,7 +138,6 @@ final class NowPlaying {
         return min(isPlaying ? position + date.timeIntervalSince(positionDate) : position, track.duration)
     }
 
-    #if DEBUG
     /// For diagnostics: a made-up track, playing in Music (`blocked`: a YouTube tab
     /// in Chrome that won't run JavaScript).
     func debugFake(blocked: Bool = false) {
@@ -150,7 +149,6 @@ final class NowPlaying {
         positionDate = .now
         artwork = NSImage(named: "AppIcon")
     }
-    #endif
 
     // MARK: - Controls
 
