@@ -451,6 +451,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if let tab = IslandTab(rawValue: tabName) { UserDefaults.standard.set(tab.rawValue, forKey: IslandTab.storageKey) }
                 switch tabName {
                 case "agents": self?.island?.showAgents()
+                #if DEBUG
+                case "probe": SandboxProbe.run()
+                case "brightnesskeys": SandboxProbe.pressBrightness()
+                case "mirrorcamera": SandboxProbe.mirrorCamera()
                 case "skylight": Log.app.info("SkyLight probe: \(LockScreenWidgets.probe(), privacy: .public)")
                 case "lockpanel":
                     // The lock screen's card on the desktop, to look at.
@@ -463,6 +467,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     if let nowPlaying = self?.island?.nowPlaying { panel.contentView = NSHostingView(rootView: LockScreenPanel(nowPlaying: nowPlaying, focus: nil)) }
                     panel.orderFrontRegardless()
                     self?.debugPanel = panel
+                #endif
                 case "mirror": self?.island?.showMirror()
                 case "mini", "minicard":
                     self?.island?.nowPlaying.debugFake()

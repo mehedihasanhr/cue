@@ -96,9 +96,9 @@ enum SystemLevels {
         return screen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
     }
 
-    /// The display's brightness, where DisplayServices answers. Inside the app sandbox
-    /// it doesn't (as of macOS 26), so the brightness keys stay with the system and
-    /// its overlay; CoreDisplay's reading was no help, a constant 1 on Apple silicon.
+    /// The display's brightness, where DisplayServices answers (an external display
+    /// without DDC doesn't: its keys stay with the system). In the sandbox it needs
+    /// the backlightd lookup the entitlements allow.
     static var brightness: Double? {
         get {
             guard let services = displayServices, let display else { return nil }
