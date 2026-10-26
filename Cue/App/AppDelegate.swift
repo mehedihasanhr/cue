@@ -67,6 +67,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        // One Cue at a time. A second copy (the installed app started by `cue-mcp` while a
+        // development build restarts, say) would draw a second island over the first and
+        // fight it for the sockets. It leaves before setting anything up, and without
+        // `terminate`, whose teardown would remove the running copy's sockets.
+        let others = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
+            .filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier && !$0.isTerminated }
+        if !others.isEmpty { exit(0) }
         // Before anything a launch was asked to open: `cue://settings` arrives ahead of
         // didFinishLaunching, and its recording pages need the recorder's settings.
         if let handOff = Self.studioHandOff {
