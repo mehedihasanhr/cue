@@ -339,6 +339,42 @@ struct IslandSettingsView: View {
                         Toggle("Liquid glass", isOn: $preferences.islandGlass).toggleStyle(.switch)
                     }
                     .disabled(!preferences.dynamicIslandEnabled)
+                    if preferences.islandGlass {
+                        SettingsRow("Glass") {
+                            Picker("Glass", selection: $preferences.islandGlassStyle) {
+                                ForEach(AppPreferences.GlassStyle.allCases, id: \.self) { Text($0.title).tag($0) }
+                            }
+                            .pickerStyle(.segmented)
+                            .fixedSize()
+                        }
+                        SettingsRow("Darkness", subtitle: "How dark the glass stays under the content.") {
+                            HStack(spacing: 8) {
+                                Slider(value: $preferences.islandGlassDarkness, in: 0.1...0.9)
+                                    .frame(width: 160)
+                                Text("\(Int((preferences.islandGlassDarkness * 100).rounded()))%")
+                                    .monospacedDigit()
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 36, alignment: .trailing)
+                            }
+                        }
+                        SettingsRow("Tint") {
+                            Picker("Tint", selection: $preferences.islandGlassTint) {
+                                ForEach(AppPreferences.GlassTint.allCases, id: \.self) { tint in
+                                    Label {
+                                        Text(tint.title)
+                                    } icon: {
+                                        Image(systemName: tint == .none ? "circle.slash" : "circle.fill")
+                                            .foregroundStyle(tint.color ?? .secondary)
+                                    }
+                                    .tag(tint)
+                                }
+                            }
+                            .fixedSize()
+                        }
+                        SettingsRow("Lighter on displays without a notch", subtitle: "With no notch to blend into, the glass needn't start black at the top.") {
+                            Toggle("Lighter without a notch", isOn: $preferences.islandGlassLightNotchless).toggleStyle(.switch)
+                        }
+                    }
                 }
             }
 

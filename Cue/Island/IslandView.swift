@@ -220,23 +220,39 @@ private struct IslandFill: View {
     let glass: Bool
     /// Nothing drawn: the settled closed island beside the notch.
     let clear: Bool
+    /// Settings › Island › Glass: clear or frosted, how dark, a tint.
+    var style: AppPreferences.GlassStyle = .clear
+    var darkness: Double = 0.45
+    var tint: Color?
+    /// No notch to meet (a plain display, with lighter glass on): no black band at the top.
+    var light = false
 
-    /// Where the black starts giving way to glass, and how dark it still is at the
-    /// bottom edge: enough that what sits there stays readable over a bright desktop.
-    private static let fadeFrom = 0.45
-    private static let bottomDarkness = 0.45
+    /// Where the black starts giving way to glass.
+    private var fadeFrom: Double { light ? 0.12 : 0.45 }
+
+    @available(macOS 26, *)
+    private var glassKind: Glass {
+        let base: Glass = style == .frosted ? .regular : .clear
+        return tint.map { base.tint($0.opacity(0.25)) } ?? base
+    }
 
     var body: some View {
         ZStack {
             if #available(macOS 26, *), glassAllowed {
                 shape.fill(.clear)
-                    .glassEffect(.clear, in: shape)
+                    .glassEffect(glassKind, in: shape)
                     .opacity(glass ? 1 : 0)
                 LinearGradient(stops: [
-                    .init(color: .black, location: 0),
-                    .init(color: .black, location: Self.fadeFrom),
-                    .init(color: .black.opacity(Self.bottomDarkness), location: 1),
+                    .init(color: .black.opacity(light ? max(darkness, 0.55) : 1), location: 0),
+                    .init(color: .black.opacity(light ? max(darkness, 0.4) : 1), location: fadeFrom),
+                    .init(color: .black.opacity(darkness), location: 1),
                 ], startPoint: .top, endPoint: .bottom)
+                // The tint, faint over the dark and stronger down where the glass shows.
+                if let tint {
+                    LinearGradient(colors: [tint.opacity(0.08), tint.opacity(0.28)], startPoint: .top, endPoint: .bottom)
+                        .blendMode(.plusLighter)
+                        .opacity(glass ? 1 : 0)
+                }
             }
             Color.black.opacity(glass && glassAllowed ? 0 : 1)
         }
@@ -278,6 +294,21 @@ private struct IslandHalo: View {
                     .compositingGroup()
             }
             .allowsHitTesting(false)
+    }
+}
+
+extension AppPreferences.GlassTint {
+    /// The colour washed over the island's glass.
+    var color: Color? {
+        switch self {
+        case .none: nil
+        case .blue: Color(red: 0.2, green: 0.5, blue: 1.0)
+        case .purple: Color(red: 0.55, green: 0.35, blue: 1.0)
+        case .pink: Color(red: 1.0, green: 0.35, blue: 0.65)
+        case .orange: Color(red: 1.0, green: 0.55, blue: 0.2)
+        case .green: Color(red: 0.25, green: 0.8, blue: 0.5)
+        case .graphite: Color(white: 0.55)
+        }
     }
 }
 
@@ -358,6 +389,18 @@ struct IslandView: View {
     /// notch. Closing shrinks into the notch first (black all the way), then fades.
     @State private var faded = true
 
+    /// Diagnostics: `--env CUE_DEBUG_GLASS=frosted,purple,0.3` shows that glass, whatever the settings say.
+    private static let debugGlass: (style: AppPreferences.GlassStyle, tint: AppPreferences.GlassTint, darkness: Double)? = {
+        #if DEBUG
+        guard let parts = ProcessInfo.processInfo.environment["CUE_DEBUG_GLASS"]?.split(separator: ","), parts.count == 3,
+              let style = AppPreferences.GlassStyle(rawValue: String(parts[0])), let tint = AppPreferences.GlassTint(rawValue: String(parts[1])),
+              let darkness = Double(parts[2]) else { return nil }
+        return (style, tint, darkness)
+        #else
+        return nil
+        #endif
+    }()
+
     var body: some View {
         let phase = model.phase
         let _ = { Self.animationStyle = preferences.islandAnimation; IslandMotion.speed = preferences.islandAnimationSpeed }()
@@ -372,7 +415,11 @@ struct IslandView: View {
                 // on a plain menu bar); the tap target stays.
                 IslandFill(shape: shape, glassAllowed: preferences.islandGlass,
                            glass: preferences.islandGlass && Self.hasBackdrop(phase),
-                           clear: faded && !preferences.islandNotchBackground && model.compactTiles().isEmpty)
+                           clear: faded && !preferences.islandNotchBackground && model.compactTiles().isEmpty,
+                           style: Self.debugGlass?.style ?? preferences.islandGlassStyle,
+                           darkness: Self.debugGlass?.darkness ?? preferences.islandGlassDarkness,
+                           tint: (Self.debugGlass?.tint ?? preferences.islandGlassTint).color,
+                           light: preferences.islandGlassLightNotchless && !geometry.screen.hasNotch)
                 content(for: phase, strip: geometry.stripHeight)
                     .compositingGroup()
                     .padding(.horizontal, flare) // the body; the flares lie outside it

@@ -25,6 +25,10 @@ final class AppPreferences {
         static let islandCloseOnLeave = "island.closeOnLeave"
         static let islandNotchBackground = "island.notchBackground"
         static let islandGlass = "island.glass"
+        static let islandGlassStyle = "island.glass.style"
+        static let islandGlassDarkness = "island.glass.darkness"
+        static let islandGlassTint = "island.glass.tint"
+        static let islandGlassLightNotchless = "island.glass.lightNotchless"
         static let islandFlashCaptures = "island.flashCaptures"
         static let islandFlashDuration = "island.flashDuration"
         static let islandStatuses = "island.statuses"
@@ -424,6 +428,39 @@ final class AppPreferences {
         didSet { defaults.set(islandGlass, forKey: Key.islandGlass) }
     }
 
+    /// Clear glass (sharp, the desktop bent at its edges) or frosted (blurred).
+    enum GlassStyle: String, CaseIterable {
+        case clear, frosted
+
+        var title: String { self == .clear ? "Clear" : "Frosted" }
+    }
+
+    /// A colour washed over the glass.
+    enum GlassTint: String, CaseIterable {
+        case none, blue, purple, pink, orange, green, graphite
+
+        var title: String { self == .none ? "None" : rawValue.capitalized }
+    }
+
+    var islandGlassStyle: GlassStyle {
+        didSet { defaults.set(islandGlassStyle.rawValue, forKey: Key.islandGlassStyle) }
+    }
+
+    /// How dark the glass stays below the content, 0 (clear) to 1 (black): enough
+    /// that what sits there stays readable over a bright desktop.
+    var islandGlassDarkness: Double {
+        didSet { defaults.set(islandGlassDarkness, forKey: Key.islandGlassDarkness) }
+    }
+
+    var islandGlassTint: GlassTint {
+        didSet { defaults.set(islandGlassTint.rawValue, forKey: Key.islandGlassTint) }
+    }
+
+    /// Without a notch to meet, the island needs no black band at the top: lighter glass all down.
+    var islandGlassLightNotchless: Bool {
+        didSet { defaults.set(islandGlassLightNotchless, forKey: Key.islandGlassLightNotchless) }
+    }
+
     enum AfterCapture: String, CaseIterable {
         case edit, copy
 
@@ -811,6 +848,10 @@ final class AppPreferences {
         islandCloseOnLeave = defaults.object(forKey: Key.islandCloseOnLeave) as? Bool ?? true
         islandNotchBackground = defaults.object(forKey: Key.islandNotchBackground) as? Bool ?? false
         islandGlass = defaults.object(forKey: Key.islandGlass) as? Bool ?? true
+        islandGlassStyle = GlassStyle(rawValue: defaults.string(forKey: Key.islandGlassStyle) ?? "") ?? .clear
+        islandGlassDarkness = defaults.object(forKey: Key.islandGlassDarkness) as? Double ?? 0.45
+        islandGlassTint = GlassTint(rawValue: defaults.string(forKey: Key.islandGlassTint) ?? "") ?? .none
+        islandGlassLightNotchless = defaults.object(forKey: Key.islandGlassLightNotchless) as? Bool ?? true
         islandFlashCaptures = defaults.object(forKey: Key.islandFlashCaptures) as? Bool ?? true
         islandFlashDuration = defaults.object(forKey: Key.islandFlashDuration) as? Double ?? 1.8
         islandStatuses = defaults.object(forKey: Key.islandStatuses) as? Bool ?? true
