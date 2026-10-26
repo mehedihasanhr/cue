@@ -364,6 +364,16 @@ struct IslandPanel: View {
         }
     }
 
+    /// Whether anything of `kind` is pinned.
+    private func hasPinned(_ kind: GroupKind) -> Bool {
+        switch kind {
+        case .captures: library.items.contains { $0.pinned }
+        case .clipboard: clipboard.items.contains { $0.pinned }
+        case .colors: colors.items.contains { $0.pinned }
+        case .assets: assets.items.contains { $0.pinned }
+        }
+    }
+
     /// Which tab's groups the strip shows, if the tab has any.
     private var groupKind: GroupKind? {
         switch tab {
@@ -420,8 +430,6 @@ struct IslandPanel: View {
                 if !searching, detail == nil {
                     tabActions
                 }
-                // Tasks: the dashboard, in its own window (the island has no Tasks tab).
-                HoverButton(symbol: "checklist", help: "Tasks", size: 30, quiet: true, action: onOpenTaskDashboard)
                 if !searching {
                     if let focusTimer, focusTimer.isRunning {
                         FocusPill(timer: focusTimer, onShowTask: onShowTask)
@@ -429,7 +437,6 @@ struct IslandPanel: View {
                     if let clock, clock.status != nil {
                         PrayerPill(clock: clock, expanded: $prayerExpanded, onShowClock: onShowClock)
                     }
-                    captureBar
                 }
             }
             .animation(.easeOut(duration: 0.18), value: searching)
@@ -568,10 +575,16 @@ struct IslandPanel: View {
             .onChange(of: library.items.count + clipboard.items.count + assets.items.count + colors.items.count + tasksStore.tasks.count, refreshHits)
             // The groups under the cards, a footer to the tab: set off from the cards,
             // close to the edge.
+            // Only once there is something to sort by: a pin or a group (or one is
+            // chosen, so it can be left again).
             if let kind = groupKind {
-                groupStrip(kind).padding(.top, 12)
+                if hasPinned(kind) || !groups.groups(for: kind).isEmpty || filter(kind) != .recent {
+                    groupStrip(kind).padding(.top, 12)
+                }
             } else if tab == .all {
-                allStrip.padding(.top, 12)
+                if GroupKind.allCases.contains(where: hasPinned) || !groups.groups.isEmpty || allFilter != .recent {
+                    allStrip.padding(.top, 12)
+                }
             }
         }
         .padding(.horizontal, Self.horizontalPadding)
@@ -801,25 +814,6 @@ struct IslandPanel: View {
 
     private func reportWidth() {
         onIdealWidth(headerWidth + Self.horizontalPadding * 2)
-    }
-
-    /// The capture tools as one group, so they read as a toolbar rather than five
-    /// loose buttons; each names itself in a tooltip.
-    private var captureBar: some View {
-        // The two captures used most stay out; the rest, and Settings, wait behind "…".
-        HStack(spacing: 0) {
-            HoverButton(symbol: "viewfinder", help: "Capture area", size: 30, quiet: true, action: actions.captureArea)
-            HoverButton(symbol: "display", help: "Capture full screen", size: 30, quiet: true, action: actions.captureFullScreen)
-            OverflowMenu(help: "More tools", size: 30) {
-                Button("Capture Window", systemImage: "macwindow", action: actions.captureWindow)
-                Button("Scrolling Capture", systemImage: "rectangle.expand.vertical", action: actions.captureScrolling)
-                Button("Capture Text", systemImage: "text.viewfinder", action: actions.captureText)
-                Button("Pick a Color", systemImage: "eyedropper", action: actions.pickColor)
-                Divider()
-                Button("Settings…", systemImage: "gearshape", action: actions.openSettings)
-            }
-        }
-        .frame(height: IslandChrome.controlHeight)
     }
 
     /// The tabs, as icons beside the search (the name, count and shortcut in the
