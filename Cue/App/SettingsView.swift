@@ -331,8 +331,8 @@ struct IslandSettingsView: View {
                 }
                 .disabled(!preferences.dynamicIslandEnabled)
                 if #available(macOS 26, *) {
-                    SettingsRow("Liquid glass edge", subtitle: "A thin rim of glass around the open island. Off, it’s solid black.") {
-                        Toggle("Liquid glass edge", isOn: $preferences.islandGlass).toggleStyle(.switch)
+                    SettingsRow("Liquid glass", subtitle: "The open island fades from black at the top into glass below. Off, it’s solid black.") {
+                        Toggle("Liquid glass", isOn: $preferences.islandGlass).toggleStyle(.switch)
                     }
                     .disabled(!preferences.dynamicIslandEnabled)
                 }

@@ -153,58 +153,33 @@ final class IslandModel {
     var onOpenTimeSettings: () -> Void = {}
 }
 
-/// The open island with a Liquid Glass edge: solid black inside, where the content
-/// sits and where it meets the notch, ringed down the sides and along the bottom by a
-/// thin band of clear glass. A band that narrow is nearly all edge, which is where
-/// Liquid Glass bends what is behind it; the whole panel in glass only frosted it.
-/// Before macOS 26 there is no Liquid Glass, and it is solid black throughout.
+/// The open island in Liquid Glass, after the look it was asked for: solid black at the
+/// top, where it meets the notch and where the content starts, fading down into glass,
+/// so the desktop shows through the lower part of the panel. Not glass all over, and no
+/// rim. Before macOS 26 there is no Liquid Glass, and it is solid black throughout.
 private struct IslandGlass: View {
     let shape: NotchShape
-    /// The notch's height: solid black all the way across to there.
-    let strip: CGFloat
 
-    /// How wide the glass band is.
-    private static let rim: CGFloat = 9
+    /// Where the black starts giving way to glass, and how dark it still is at the
+    /// bottom edge: enough that what sits there stays readable over a bright desktop.
+    private static let fadeFrom = 0.45
+    private static let bottomDarkness = 0.45
 
     var body: some View {
         if #available(macOS 26, *) {
-            ZStack {
-                IslandCore(outline: shape, strip: strip, rim: Self.rim, ring: false)
-                    .fill(Color.black)
-                Color.clear
-                    .glassEffect(.clear, in: IslandCore(outline: shape, strip: strip, rim: Self.rim, ring: true))
-            }
+            shape.fill(.clear)
+                .glassEffect(.clear, in: shape)
+                .overlay {
+                    LinearGradient(stops: [
+                        .init(color: .black, location: 0),
+                        .init(color: .black, location: Self.fadeFrom),
+                        .init(color: .black.opacity(Self.bottomDarkness), location: 1),
+                    ], startPoint: .top, endPoint: .bottom)
+                    .clipShape(shape)
+                }
         } else {
             shape.fill(Color.black)
         }
-    }
-}
-
-/// The island's outline split in two: the black core (the full width down to the
-/// notch, then inset from the sides and the bottom by `rim`), or with `ring`, the band
-/// left around it.
-nonisolated private struct IslandCore: Shape {
-    var outline: NotchShape
-    var strip: CGFloat
-    var rim: CGFloat
-    var ring: Bool
-
-    var animatableData: NotchShape.AnimatableData {
-        get { outline.animatableData }
-        set { outline.animatableData = newValue }
-    }
-
-    func path(in rect: CGRect) -> Path {
-        let flare = min(outline.flare, rect.width / 4)
-        let body = rect.insetBy(dx: flare + rim, dy: 0)
-        var core = Path(CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: min(strip, rect.height)))
-        if body.width > 0, rect.height > rim {
-            let inset = CGRect(x: body.minX, y: rect.minY, width: body.width, height: rect.height - rim)
-            let radius = max(min(outline.bottomRadius - rim, inset.width / 2, inset.height / 2), 2)
-            core = core.union(UnevenRoundedRectangle(bottomLeadingRadius: radius, bottomTrailingRadius: radius, style: .continuous).path(in: inset))
-        }
-        let whole = outline.path(in: rect)
-        return ring ? whole.subtracting(core) : whole.intersection(core)
     }
 }
 
@@ -296,7 +271,7 @@ struct IslandView: View {
                 // Invisible once collapsed (nothing peeks out beside the notch, nor sits
                 // on a plain menu bar); the tap target stays.
                 if preferences.islandGlass, Self.hasBackdrop(phase) {
-                    IslandGlass(shape: shape, strip: geometry.stripHeight)
+                    IslandGlass(shape: shape)
                 } else {
                     shape.fill(faded && !preferences.islandNotchBackground ? Color.clear : Color.black)
                 }
@@ -313,11 +288,12 @@ struct IslandView: View {
             // only faded, so it shrinks with the shape as the island closes rather than
             // being left behind at the open size while it fades.
             .overlay {
-                // Brighter on glass, where the edge is the glass's own and should catch the light.
+                // None on glass: the glass has an edge of its own, and a line drawn over it
+                // reads as a border.
                 let glass = preferences.islandGlass && Self.hasBackdrop(phase)
-                shape.stroke(LinearGradient(colors: [.clear, .white.opacity(glass ? 0.08 : 0.05), .white.opacity(glass ? 0.3 : 0.16)], startPoint: .top, endPoint: .bottom),
+                shape.stroke(LinearGradient(colors: [.clear, .white.opacity(0.05), .white.opacity(0.16)], startPoint: .top, endPoint: .bottom),
                              lineWidth: 1)
-                    .opacity(Self.hasBackdrop(phase) ? 1 : 0)
+                    .opacity(Self.hasBackdrop(phase) && !glass ? 1 : 0)
                     .allowsHitTesting(false)
             }
             // While agents run, a thin line of light under the closed notch; the
