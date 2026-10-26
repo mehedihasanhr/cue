@@ -79,6 +79,8 @@ final class NowPlaying {
     /// A YouTube tab whose browser won't run JavaScript for Cue: its title shows, but
     /// nothing can be read or controlled until the user allows it.
     private(set) var needsJavaScript = false
+    /// The words of the track, fetched when the player shows them.
+    let lyrics = LyricsStore()
     /// Where the track was at `positionDate`; it runs on from there while playing.
     private var position: Double = 0
     private var positionDate = Date()
@@ -581,6 +583,8 @@ struct NowPlayingDetail: View {
     var close: () -> Void = {}
     var column = false
     @State private var scrub: Double?
+    /// The lyrics in place of the artist and the timeline.
+    @AppStorage("island.player.lyrics") private var showsLyrics = false
     @State private var outputs: [AudioOutputs.Device] = []
     @State private var currentOutput = AudioOutputs.current
 
@@ -652,6 +656,15 @@ struct NowPlayingDetail: View {
                             .padding(.top, -16)
                     }
                     .frame(height: 18, alignment: .top)
+                    if showsLyrics {
+                        LyricsView(lyrics: nowPlaying.lyrics, nowPlaying: nowPlaying)
+                            .frame(height: 66)
+                            .padding(.top, 4)
+                            .clipped()
+                            .onAppear { nowPlaying.lyrics.load(track) }
+                            .onChange(of: track.id) { _, _ in nowPlaying.lyrics.load(track) }
+                        controls
+                    } else {
                     Text([track.artist, track.album].filter { !$0.isEmpty }.joined(separator: " — "))
                         .font(.system(size: 11.5, weight: .medium))
                         .foregroundStyle(.white.opacity(0.55))
@@ -675,6 +688,7 @@ struct NowPlayingDetail: View {
                             .padding(.top, 10)
                         controls
                             .padding(.top, 6)
+                    }
                     }
                 } else {
                     Text("Nothing playing")
@@ -761,6 +775,14 @@ struct NowPlayingDetail: View {
             .menuIndicator(.hidden)
             .fixedSize()
             .help("Play sound on…")
+            Button { withAnimation(.easeOut(duration: 0.2)) { showsLyrics.toggle() } } label: {
+                Icon("quote.bubble.fill", size: 12)
+                    .foregroundStyle(showsLyrics ? IslandStyle.accent : .white.opacity(0.6))
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(showsLyrics ? "Hide the lyrics" : "Show the lyrics")
             Spacer()
             transport(small: false)
             Spacer()

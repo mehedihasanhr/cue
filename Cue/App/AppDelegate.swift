@@ -476,6 +476,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     _ = self?.island?.showStatus(IslandStatus(symbol: "checkmark.circle.fill", title: "Copied", subtitle: "Image 148 × 116",
                                                               image: NSImage(named: "AppIcon"), duration: .seconds(6)))
                 case "drop": self?.island?.debugShowDropZone()
+                case "medialyrics":
+                    UserDefaults.standard.set(true, forKey: "island.player.lyrics")
+                    self?.island?.nowPlaying.debugFake()
+                    self?.island?.showMedia()
                 case "media", "mediapill", "mediablocked":
                     self?.island?.nowPlaying.debugFake(blocked: tabName == "mediablocked")
                     if tabName != "mediapill" { self?.island?.showMedia() } else { self?.island?.expand() }
