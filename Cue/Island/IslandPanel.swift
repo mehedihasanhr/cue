@@ -5,12 +5,12 @@ import SwiftUI
 
 /// The panel's tabs, in display order.
 enum IslandTab: String, CaseIterable {
-    case all, assets, tasks, notes, captures, colors, snippets, clipboard
+    case all, assets, tasks, notes, captures, colors, snippets, clipboard, notifications
 
     static let storageKey = "island.tab"
 
     /// Used little: kept behind the tab row's "…", shown as a tab only while open.
-    static let tucked: Set<IslandTab> = [.notes, .snippets]
+    static let tucked: Set<IslandTab> = [.notes, .snippets, .notifications]
 
     var title: String {
         switch self {
@@ -22,6 +22,7 @@ enum IslandTab: String, CaseIterable {
         case .tasks: "Tasks"
         case .snippets: "Snippets"
         case .notes: "Notes"
+        case .notifications: "Notifications"
         }
     }
 
@@ -38,6 +39,7 @@ enum IslandTab: String, CaseIterable {
         case .tasks: "checklist"
         case .snippets: "text.badge.plus"
         case .notes: "note.text"
+        case .notifications: "bell"
         }
     }
 }
@@ -70,6 +72,7 @@ struct IslandPanel: View {
     @Environment(ShelfStore.self) private var shelf
     @Environment(NowPlaying.self) private var nowPlaying
     @Environment(WeatherStore.self) private var weather
+    @Environment(NotificationFeed.self) private var notifications
     /// Captures picked for one comparison sheet, in the order they were picked.
     @State private var compareSelection: [UUID] = []
     /// Asks the island for a line of text in its compact form.
@@ -554,6 +557,12 @@ struct IslandPanel: View {
                             .selecting { IslandItem.note($0).id == selectedID }
                             .onCardHover { hover(.note($0), inside: $1) }
                     }
+                case .notifications:
+                    if notifications.items.isEmpty {
+                        empty(AXIsProcessTrusted() ? "Notifications land here as they come" : "Allow Cue in Accessibility to see notifications", symbol: "bell")
+                    } else {
+                        DayStrip(items: notifications.items, date: \.date) { item in NotificationCard(item: item, feed: notifications) }
+                    }
                 case .colors:
                     if filteredColors.isEmpty {
                         empty(emptyText(.colors, none: "Pick a color anywhere on screen"), symbol: emptySymbol(.colors, "eyedropper"),
@@ -807,6 +816,7 @@ struct IslandPanel: View {
         case .tasks: tasksStore.tasks.count { $0.status != .complete }
         case .snippets: snippets.items.count
         case .notes: notes.notes.count
+        case .notifications: notifications.items.count
         }
     }
 
@@ -1021,7 +1031,7 @@ struct IslandPanel: View {
         case .colors: return (filteredColors.filter(\.pinned) + filteredColors.filter { !$0.pinned }).map(IslandItem.color)
         case .snippets: return snippets.items.map(IslandItem.snippet)
         case .notes: return notes.notes.map(IslandItem.note)
-        case .tasks: return []
+        case .tasks, .notifications: return []
         }
     }
 

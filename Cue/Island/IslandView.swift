@@ -197,6 +197,8 @@ final class IslandModel {
     var onClockClosed: () -> Void = {}
     /// Shows a file in Finder (a download's notice clicked) and closes; set by the controller.
     var onReveal: (URL) -> Void = { _ in }
+    /// Opens a notification shown in the island and closes; set by the controller.
+    var onOpenBanner: (BannerNotification) -> Void = { _ in }
     /// The status showing is being used (a level dragged): it stays a while longer.
     var onHoldStatus: () -> Void = {}
     /// Opens the music player; set by the controller.
@@ -467,6 +469,8 @@ struct IslandView: View {
                     model.onShowClock()
                 } else if case .status(let status) = phase, let notice = status.notice, notice.isClickable, let url = notice.url {
                     model.onReveal(url)
+                } else if case .status(let status) = phase, let banner = status.banner {
+                    model.onOpenBanner(banner)
                 }
             }
             .animation(collapsed ? Self.closeAnimation : Self.openAnimation, value: phase)
@@ -538,6 +542,10 @@ struct IslandView: View {
                         .frame(height: IslandGeometry.promptContentHeight)
                 } else if let meeting = status.meeting {
                     MeetingRow(meeting: meeting, onJoin: { model.onOpenURL($0) })
+                        .modifier(IdealWidth { model.contentWidth = $0 })
+                        .frame(height: IslandGeometry.flashContentHeight)
+                } else if let banner = status.banner {
+                    BannerRow(banner: banner)
                         .modifier(IdealWidth { model.contentWidth = $0 })
                         .frame(height: IslandGeometry.flashContentHeight)
                 } else if let notice = status.notice {
@@ -777,6 +785,8 @@ struct IslandStatus: Equatable, Identifiable {
     var notice: NoticeHUD? = nil
     /// Drawn as a meeting about to start, with Join for a call.
     var meeting: MeetingHUD? = nil
+    /// Drawn as a notification another app posted; clicking opens it.
+    var banner: BannerNotification? = nil
 
     /// Green for done, orange for "nothing to do", white otherwise.
     var tint: Color {

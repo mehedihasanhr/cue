@@ -26,6 +26,8 @@ final class IslandController {
     private var toggles: ToggleMonitor?
     /// The network, drives and downloads.
     private var notices: NoticeMonitor?
+    /// The notifications macOS shows, read off its banners.
+    let notifications = NotificationFeed()
     /// The user's calendar, once they turn it on.
     let calendar = CalendarWatcher()
     /// The weather, once it is turned on.
@@ -84,7 +86,7 @@ final class IslandController {
         content.onDragMoved = { [weak self] point in self?.aimDrop(at: point) }
         content.onDrop = { [weak self] urls, image in self?.drop(urls: urls, image: image, into: assets) }
         let host = FirstMouseHostingView(rootView: IslandView(model: model, library: library, clipboard: clipboard, assets: assets, colors: colors, tasks: tasks, snippets: snippets, actions: actions)
-            .environment(preferences).environment(clock).environment(focus).environment(groups).environment(notes).environment(shelf).environment(nowPlaying).environment(weather))
+            .environment(preferences).environment(clock).environment(focus).environment(groups).environment(notes).environment(shelf).environment(nowPlaying).environment(weather).environment(notifications))
         host.sizingOptions = []
         host.autoresizingMask = [.width, .height]
         host.frame = content.bounds
@@ -156,6 +158,10 @@ final class IslandController {
         model.onShowClock = { [weak self] in self?.showClock() }
         model.onShowMedia = { [weak self] in self?.showMedia() }
         model.onHoldStatus = { [weak self] in self?.holdStatus() }
+        model.onOpenBanner = { [weak self] banner in
+            self?.notifications.open(banner)
+            self?.collapse()
+        }
         model.onReveal = { [weak self] url in
             NSWorkspace.shared.activateFileViewerSelecting([url])
             self?.collapse()
@@ -289,6 +295,17 @@ final class IslandController {
         audioDevices = AudioDeviceMonitor { [weak self] hud in self?.showAudioDevice(hud) }
         toggles = ToggleMonitor { [weak self] hud in self?.showToggle(hud) }
         notices = NoticeMonitor { [weak self] notice in self?.showNotice(notice) }
+        notifications.isEnabled = { [weak preferences] in preferences?.islandNotifications ?? false }
+        notifications.hidesBanners = { [weak preferences] in preferences?.islandHidesBanners ?? false }
+        notifications.onBanner = { [weak self] banner in self?.showBanner(banner) }
+        #if DEBUG
+        // Diagnostics: `--env CUE_DEBUG_NOTIFICATIONS=1` turns them on (`off`: back off).
+        if let value = ProcessInfo.processInfo.environment["CUE_DEBUG_NOTIFICATIONS"] {
+            preferences.islandNotifications = value != "off"
+            if value != "off" { notifications.isEnabled = { true } }
+        }
+        #endif
+        notifications.start()
         let levels = LevelKeys.start { [weak self] level in self?.showLevel(level) }
         Log.app.info("Island level keys: \(levels ? "on" : "off (needs Accessibility)", privacy: .public); volume settable: \(SystemLevels.canSetVolume); brightness: \(SystemLevels.brightness.map { String($0) } ?? "unavailable", privacy: .public)")
         place()
@@ -513,6 +530,7 @@ final class IslandController {
         audioDevices?.stop()
         toggles?.stop()
         notices?.stop()
+        notifications.stop()
         calendar.stop()
         weather.stop()
         lockScreen?.stop()
@@ -765,6 +783,12 @@ final class IslandController {
         flash(phase: .status(IslandStatus(symbol: notice.symbol, title: notice.title, duration: duration, notice: notice)), overPanel: notice.kind == .offline)
     }
 
+    /// Another app posted a notification: it shows in the island a few seconds.
+    func showBanner(_ banner: BannerNotification) {
+        guard preferences.islandNotifications, model.geometry != nil, !hidden else { return }
+        flash(phase: .status(IslandStatus(symbol: "bell.fill", title: banner.title, duration: .seconds(5), banner: banner)))
+    }
+
     /// Caps Lock or a Focus switched: a moment's HUD over the closed island.
     func showToggle(_ hud: ToggleHUD) {
         switch hud.kind {
@@ -795,12 +819,10 @@ final class IslandController {
         flash(phase: .status(status), overPanel: hud.event == .low)
     }
 
-    #if DEBUG
     /// For diagnostics: the volume HUD at 60%.
     func debugShowLevel() {
         flash(phase: .status(IslandStatus(symbol: "speaker.wave.2.fill", title: "", duration: .seconds(6), level: LevelHUD(kind: .volume, value: 0.6))))
     }
-    #endif
 
     /// Restarts the countdown of the level showing.
     private func holdStatus() {
@@ -954,7 +976,7 @@ final class IslandController {
         setPhase(phase, animated: true)
         let duration: Duration = if case .status(let status) = phase { status.duration } else { .seconds(preferences.islandFlashDuration) }
         // The clock and a level just close: neither is a way into the panel.
-        let isClock = if case .status(let status) = phase { status.clock != nil || status.level != nil || status.notice?.isClickable == true || status.meeting?.joinURL != nil } else { false }
+        let isClock = if case .status(let status) = phase { status.clock != nil || status.level != nil || status.notice?.isClickable == true || status.meeting?.joinURL != nil || status.banner != nil } else { false }
         flashTask = Task { [weak self] in
             try? await Task.sleep(for: duration)
             guard !Task.isCancelled, let self, model.phase.isFlash else { return }
@@ -1072,7 +1094,7 @@ final class IslandController {
         guard !pressWithoutDrop else { return }
         // A flash opens at once when hovered; the closed island waits for the delay
         // — or, in click mode, for a click.
-        if case .status(let status) = model.phase, status.level != nil || status.notice?.isClickable == true || status.meeting?.joinURL != nil {
+        if case .status(let status) = model.phase, status.level != nil || status.notice?.isClickable == true || status.meeting?.joinURL != nil || status.banner != nil {
             // A level is for dragging, a download's notice for clicking: not ways into the panel.
             return
         } else if model.phase.isFlash {

@@ -502,6 +502,14 @@ struct IslandSettingsView: View {
                 SettingsRow("Downloads", subtitle: "A download finishing in Downloads; click it to show the file.") {
                     Toggle("Downloads", isOn: $preferences.islandDownloads).toggleStyle(.switch)
                 }
+                SettingsRow("Notifications", subtitle: "Notifications from every app, shown in the island and kept in a Notifications tab while Cue runs. Needs Accessibility.") {
+                    Toggle("Notifications", isOn: $preferences.islandNotifications).toggleStyle(.switch)
+                }
+                if preferences.islandNotifications {
+                    SettingsRow("Hide macOS's banners", subtitle: "Closes the system's banner in the corner once the island shows it. Closed banners leave Notification Center too; Cue's tab keeps them.") {
+                        Toggle("Hide macOS's banners", isOn: $preferences.islandHidesBanners).toggleStyle(.switch)
+                    }
+                }
                 SettingsRow("Caps Lock") {
                     Toggle("Caps Lock", isOn: $preferences.islandCapsLock).toggleStyle(.switch)
                 }

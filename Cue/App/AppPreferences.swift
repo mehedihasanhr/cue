@@ -50,6 +50,8 @@ final class AppPreferences {
         static let islandTilesNowPlaying = "island.tiles.nowPlaying"
         static let islandDrives = "island.drives"
         static let islandDownloads = "island.downloads"
+        static let islandNotifications = "island.notifications"
+        static let islandHidesBanners = "island.notifications.hideBanners"
         static let islandCalendar = "island.calendar"
         static let islandWeather = "island.weather"
         static let islandLockScreen = "island.lockScreen"
@@ -617,6 +619,16 @@ final class AppPreferences {
         didSet { defaults.set(islandDownloads, forKey: Key.islandDownloads) }
     }
 
+    /// The island shows the notifications macOS shows, and keeps them in a tab.
+    var islandNotifications: Bool {
+        didSet { defaults.set(islandNotifications, forKey: Key.islandNotifications) }
+    }
+
+    /// With those on: macOS's own banner in the corner is closed once the island has it.
+    var islandHidesBanners: Bool {
+        didSet { defaults.set(islandHidesBanners, forKey: Key.islandHidesBanners) }
+    }
+
     /// The island shows Caps Lock turning on and off.
     var islandCapsLock: Bool {
         didSet { defaults.set(islandCapsLock, forKey: Key.islandCapsLock) }
@@ -878,6 +890,8 @@ final class AppPreferences {
         islandTilesNowPlaying = defaults.object(forKey: Key.islandTilesNowPlaying) as? Bool ?? true
         islandDrives = defaults.object(forKey: Key.islandDrives) as? Bool ?? true
         islandDownloads = defaults.object(forKey: Key.islandDownloads) as? Bool ?? true
+        islandNotifications = defaults.object(forKey: Key.islandNotifications) as? Bool ?? false
+        islandHidesBanners = defaults.object(forKey: Key.islandHidesBanners) as? Bool ?? true
         islandCalendar = defaults.object(forKey: Key.islandCalendar) as? Bool ?? false
         islandWeather = defaults.object(forKey: Key.islandWeather) as? Bool ?? false
         islandLockScreen = defaults.object(forKey: Key.islandLockScreen) as? Bool ?? false
