@@ -201,6 +201,8 @@ final class IslandController {
             MainActor.assumeIsolated { self?.place() }
         }
         installPointerMonitors()
+        let guarded = IslandDragGuard.start { [weak self] in self?.dragEntered() }
+        Log.app.info("Island drag guard: \(guarded ? "on" : "off (needs Accessibility)", privacy: .public)")
         place()
     }
 
@@ -401,6 +403,7 @@ final class IslandController {
     func place() {
         guard let screen = targetScreen() else {
             model.geometry = nil
+            IslandDragGuard.active = false
             window.orderOut(nil)
             Log.app.info("Dynamic Island: no eligible display")
             return
@@ -425,6 +428,10 @@ final class IslandController {
     private func fitWindow() {
         guard let geometry = model.geometry else { return }
         let rect = geometry.windowRect(for: .expanded, contentWidth: model.panelWidth)
+        if let screen = targetScreen() {
+            IslandDragGuard.update(span: rect.minX...rect.maxX, on: screen)
+            IslandDragGuard.active = !hidden
+        }
         guard window.frame != rect else { return }
         window.setFrame(rect, display: true)
     }
@@ -433,6 +440,7 @@ final class IslandController {
     func setHidden(_ hidden: Bool) {
         guard self.hidden != hidden else { return }
         self.hidden = hidden
+        IslandDragGuard.active = !hidden && model.geometry != nil
         if hidden {
             collapse(animated: false)
             window.orderOut(nil)

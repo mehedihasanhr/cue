@@ -97,37 +97,13 @@ final class IslandDropView: NSView {
     }
 
     override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        keepOffTopEdge(sender)
         guard IslandDrag.current == nil, Self.canAccept(sender) else { return [] }
         onDragEntered?()
         return .copy
     }
 
     override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        keepOffTopEdge(sender)
-        return IslandDrag.current == nil && Self.canAccept(sender) ? .copy : []
-    }
-
-    /// How far below the top of the screen a drag over the island is held.
-    private static let topEdgeInset: CGFloat = 2
-
-    /// A drag that reaches the top edge of the screen opens Mission Control's Spaces
-    /// bar, and the island sits on that edge: every file dragged onto the notch, and
-    /// every card dragged about inside it, brought the window list down over it. So
-    /// while a drag (from outside or out of the island itself) is over the island, the
-    /// pointer is held just under the edge; the system never sees it arrive. The rest
-    /// of the edge is left alone, for a drag that is meant for another Space.
-    private func keepOffTopEdge(_ info: any NSDraggingInfo) {
-        guard let window else { return }
-        let point = window.convertPoint(toScreen: info.draggingLocation)
-        guard let screen = window.screen ?? NSScreen.main,
-              let primary = NSScreen.screens.first else { return }
-        let limit = screen.frame.maxY - Self.topEdgeInset
-        guard point.y > limit else { return }
-        // Quartz measures from the top of the primary screen; Cocoa from its bottom.
-        CGWarpMouseCursorPosition(CGPoint(x: point.x, y: primary.frame.maxY - limit))
-        // A warp freezes the pointer for a moment by default; keep it moving.
-        CGAssociateMouseAndMouseCursorPosition(1)
+        IslandDrag.current == nil && Self.canAccept(sender) ? .copy : []
     }
 
     override func draggingExited(_ sender: (any NSDraggingInfo)?) {
