@@ -46,6 +46,8 @@ final class ConvertWheelModel {
     var formats: [WheelFormat] = WheelFormat.available
     var file: URL?
     var thumbnail: NSImage?
+    /// The thumbnail is the picture itself, not a stand-in icon.
+    var hasPreview = false
 
     var name: String { file?.lastPathComponent ?? "" }
     var size: String { file.map { TransformModel.bytes(TransformEngine.fileSize($0)) } ?? "" }
@@ -221,6 +223,8 @@ private struct RingSegment: Shape {
 /// The wheel's window content: tells which segment the file is over, and takes it.
 final class ConvertWheelDropView: NSView {
     var count: () -> Int = { 0 }
+    /// The drag came in: macOS now lets Cue read the file, and shows the drag's own picture.
+    var onEnter: ((URL?, NSImage?) -> Void)?
     var onHover: ((Int?) -> Void)?
     var onDrop: ((Int, [URL]) -> Void)?
 
@@ -239,7 +243,16 @@ final class ConvertWheelDropView: NSView {
         return WheelGeometry.index(at: CGPoint(x: point.x - bounds.midX, y: point.y - bounds.midY), count: count())
     }
 
-    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation { draggingUpdated(sender) }
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        let url = (sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL])?.first
+        var picture: NSImage?
+        sender.enumerateDraggingItems(options: [], for: nil, classes: [NSURL.self], searchOptions: [:]) { item, _, stop in
+            picture = item.imageComponents?.first?.contents as? NSImage
+            stop.pointee = true
+        }
+        onEnter?(url, picture)
+        return draggingUpdated(sender)
+    }
 
     override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
         let index = index(sender)

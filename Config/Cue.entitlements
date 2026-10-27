@@ -35,6 +35,14 @@
 	<true/>
 	<!-- Sparkle's installer launcher and its status channel, for updating a sandboxed app;
 	     and backlightd, for the display's brightness (the brightness keys' HUD). -->
+	<key>com.apple.security.temporary-exception.files.home-relative-path.read-write</key>
+	<array>
+		<string>/</string>
+	</array>
+	<key>com.apple.security.temporary-exception.files.absolute-path.read-write</key>
+	<array>
+		<string>/Volumes/</string>
+	</array>
 	<key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
 	<array>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER)-spks</string>

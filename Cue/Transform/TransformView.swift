@@ -340,7 +340,7 @@ struct TransformView: View {
         Picker("Save to", selection: Binding(get: { model.saveTo }, set: { choice in
             if choice == .folder { model.chooseFolder() } else { model.saveTo = choice }
         })) {
-            ForEach([TransformModel.SaveTo.shelf, .pictures, .downloads], id: \.self) { Text($0.title).tag($0) }
+            ForEach([TransformModel.SaveTo.original, .shelf, .pictures, .downloads], id: \.self) { Text($0.title).tag($0) }
             Divider()
             Text(model.folderTitle).tag(TransformModel.SaveTo.folder)
         }

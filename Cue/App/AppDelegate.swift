@@ -448,6 +448,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
         #if DEBUG
+        // Diagnostics: `--env CUE_DEBUG_WHEEL_CONVERT=/path/to/picture.png` converts it to AVIF as
+        // the convert wheel does (next to the original).
+        if let path = ProcessInfo.processInfo.environment["CUE_DEBUG_WHEEL_CONVERT"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                TransformModel.quickConvert(URL(fileURLWithPath: path), to: .avif) { _, _, _, _ in Log.app.error("Wheel convert: fell back to the shelf") }
+            }
+        }
         // Diagnostics: `--env CUE_DEBUG_TRANSFORM=compress` opens Transform on a picture of the
         // app's own, on that action.
         if let name = ProcessInfo.processInfo.environment["CUE_DEBUG_TRANSFORM"] {

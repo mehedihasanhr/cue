@@ -56,10 +56,11 @@ final class TransformModel {
     }
 
     enum SaveTo: String, CaseIterable, Codable {
-        case shelf, pictures, downloads, folder
+        case original, shelf, pictures, downloads, folder
 
         var title: String {
             switch self {
+            case .original: "Next to the original"
             case .shelf: "On the shelf"
             case .pictures: "Pictures"
             case .downloads: "Downloads"
@@ -91,7 +92,7 @@ final class TransformModel {
     var settings = Settings() { didSet { if settings != oldValue { estimateSoon() } } }
     var outputName = ""
     var saveTo: SaveTo {
-        didSet { UserDefaults.standard.set(saveTo.rawValue, forKey: Self.saveToKey) }
+        didSet { if remembersSaveTo { UserDefaults.standard.set(saveTo.rawValue, forKey: Self.saveToKey) } }
     }
     /// The folder chosen for `.folder`.
     private(set) var folder: URL?
@@ -115,12 +116,14 @@ final class TransformModel {
     private static let presetsKey = "transform.presets"
     private var estimateTask: Task<Void, Never>?
     private let estimating: Bool
+    /// Save to is remembered for next time; not for the convert wheel's one-off.
+    private var remembersSaveTo = true
 
     /// `estimating`: works out the sizes as settings change (the window shows them).
     init(files: [URL], estimating: Bool = true) {
         self.estimating = estimating
         self.files = files
-        saveTo = SaveTo(rawValue: UserDefaults.standard.string(forKey: Self.saveToKey) ?? "") ?? .shelf
+        saveTo = SaveTo(rawValue: UserDefaults.standard.string(forKey: Self.saveToKey) ?? "") ?? .original
         saved = (UserDefaults.standard.data(forKey: Self.presetsKey)).flatMap { try? JSONDecoder().decode([Preset].self, from: $0) } ?? []
         if let data = UserDefaults.standard.data(forKey: Self.folderKey) {
             var stale = false
@@ -268,28 +271,35 @@ final class TransformModel {
             finished()
             return
         }
-        let destination: URL? = switch saveTo {
+        // One folder for everything, or (next to the original) each file's own.
+        let fixed: URL? = switch saveTo {
         case .pictures: FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first
         case .downloads: FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
         case .folder: folder
-        case .shelf: nil
+        case .shelf, .original: nil
         }
-        guard let destination else { return }
+        let besideOriginals = saveTo == .original
+        guard besideOriginals || fixed != nil else { return }
         running = true
         Task.detached {
-            let scoped = destination.startAccessingSecurityScopedResource()
-            defer { if scoped { destination.stopAccessingSecurityScopedResource() } }
+            let scoped = fixed?.startAccessingSecurityScopedResource() ?? false
+            defer { if scoped { fixed?.stopAccessingSecurityScopedResource() } }
             let staging = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
             defer { try? FileManager.default.removeItem(at: staging) }
-            let made = each ? inputs.flatMap { run([$0], staging) } : run(inputs, staging)
-            let placed = made.compactMap { Self.place($0, in: destination) }
+            var placed: [URL] = []
+            for batch in each ? inputs.map { [$0] } : [inputs] {
+                let destination = fixed ?? batch[0].deletingLastPathComponent()
+                placed += run(batch, staging).compactMap { Self.place($0, in: destination) }
+            }
             await MainActor.run { [weak self] in
                 self?.running = false
                 if placed.isEmpty {
-                    FeedbackHUD.show("Couldn't do that", symbol: "exclamationmark.triangle.fill")
+                    FeedbackHUD.show("Couldn't do that", symbol: "exclamationmark.triangle.fill", subtitle: besideOriginals ? "Cue can't write in that folder" : nil)
                 } else {
-                    FeedbackHUD.show(done, symbol: "checkmark.circle.fill", subtitle: placed.count == 1 ? placed[0].lastPathComponent : "\(placed.count) files in \(destination.lastPathComponent)")
-                    NSWorkspace.shared.activateFileViewerSelecting(placed)
+                    let place = besideOriginals ? "next to the original" : "in \((fixed ?? placed[0].deletingLastPathComponent()).lastPathComponent)"
+                    FeedbackHUD.show(done, symbol: "checkmark.circle.fill", subtitle: placed.count == 1 ? placed[0].lastPathComponent : "\(placed.count) files \(place)")
+                    // Beside the original it is already in view; elsewhere, show it.
+                    if !besideOriginals { NSWorkspace.shared.activateFileViewerSelecting(placed) }
                     finished()
                 }
             }
@@ -309,6 +319,9 @@ final class TransformModel {
             model.settings.action = .combine
             model.outputName = url.deletingPathExtension().lastPathComponent
         }
+        // Next to the original; on the shelf where Cue can't write there.
+        model.remembersSaveTo = false
+        model.saveTo = FileManager.default.isWritableFile(atPath: url.deletingLastPathComponent().path) ? .original : .shelf
         // Kept until the work is done.
         model.run(produce: produce) { _ = model }
     }

@@ -189,11 +189,15 @@ final class BasketController {
         let panel = wheelPanel ?? makeWheelPanel()
         wheelPanel = panel
         wheel.file = file
-        wheel.thumbnail = Self.thumbnail(of: file)
+        let preview = Self.preview(of: file)
+        wheel.thumbnail = preview ?? NSWorkspace.shared.icon(forFile: file.path)
+        wheel.hasPreview = preview != nil
         wheel.hovered = nil
-        // Round the pointer, kept clear of the menu bar and the notch (the visible frame
-        // stops below them) and the screen's edges.
-        panel.setFrame(Self.frame(around: point, size: WheelGeometry.window), display: false)
+        // Up and to the side of the pointer, as the reference has it: the dragged file
+        // stays just outside the ring, clear of the picture in the middle, and moves in
+        // onto a format. Kept clear of the menu bar and the notch (the visible frame stops
+        // below them) and the screen's edges.
+        panel.setFrame(Self.frame(around: Self.wheelCentre(beside: point), size: WheelGeometry.window), display: false)
         panel.orderFrontRegardless()
         wheel.shown = true
     }
@@ -244,6 +248,17 @@ final class BasketController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         let content = ConvertWheelDropView(frame: CGRect(origin: .zero, size: WheelGeometry.window))
         content.count = { [weak self] in self?.wheel.formats.count ?? 0 }
+        content.onEnter = { [weak self] url, picture in
+            guard let self, !wheel.hasPreview else { return }
+            // Readable now the drag is over Cue's window; else the drag's own picture.
+            if let url, let preview = Self.preview(of: url) {
+                wheel.thumbnail = preview
+                wheel.hasPreview = true
+            } else if let picture {
+                wheel.thumbnail = picture
+                wheel.hasPreview = true
+            }
+        }
         content.onHover = { [weak self] index in
             guard let self else { return }
             wheelHideTask?.cancel()
@@ -263,15 +278,25 @@ final class BasketController {
         return panel
     }
 
-    /// A picture of the file for the wheel's middle.
-    private static func thumbnail(of url: URL) -> NSImage {
+    /// The picture itself, small, for the wheel's middle; nil while the sandbox won't
+    /// let Cue read a file still being dragged.
+    private static func preview(of url: URL) -> NSImage? {
         let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 300,
                                         kCGImageSourceCreateThumbnailWithTransform: true]
-        if let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-           let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {
-            return NSImage(cgImage: image, size: CGSize(width: image.width, height: image.height))
-        }
-        return NSWorkspace.shared.icon(forFile: url.path)
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        return NSImage(cgImage: image, size: CGSize(width: image.width, height: image.height))
+    }
+
+    /// Where the wheel's centre goes for a drag at `point`: up and to the left, the
+    /// pointer just outside the ring; to the right or below where the screen runs out.
+    private static func wheelCentre(beside point: CGPoint) -> CGPoint {
+        let reach = WheelGeometry.outer + 26
+        let dx = reach * 0.8, dy = reach * 0.6
+        let visible = (NSScreen.screens.first { $0.frame.contains(point) } ?? NSScreen.main)?.visibleFrame ?? .zero
+        let left = point.x - dx - WheelGeometry.outer >= visible.minX
+        let up = point.y + dy + WheelGeometry.outer <= visible.maxY
+        return CGPoint(x: point.x + (left ? -dx : dx), y: point.y + (up ? dy : -dy))
     }
 
     /// For diagnostics: the wheel round the pointer, for `file`, `format` lit.
