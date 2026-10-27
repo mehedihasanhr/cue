@@ -243,8 +243,10 @@ struct AnnotationRenderer {
 
     private func drawArrow(from start: CGPoint, to end: CGPoint, bend: CGPoint, style: StrokeStyle, arrowStyle: ArrowStyle, context: CGContext) {
         guard start.distance(to: end) > 0.5 else { return }
-        let headLength = max(12, style.width * 4)
-        let headWidth = headLength * 0.9
+        // The head grows with the line, so a thin line gets a small, sharp head rather
+        // than a big one on a hair; never more than a third of the arrow.
+        let headLength = min(4 + style.width * 3, max(6, start.distance(to: end) / 3))
+        let headWidth = headLength * 0.8
         // Heads follow the curve's tangent at each end so a bent arrow still points the way it travels.
         let endDirection = ArrowGeometry.tangent(at: 1, start: start, end: end, bend: bend)
         let startDirection = ArrowGeometry.tangent(at: 0, start: start, end: end, bend: bend)
