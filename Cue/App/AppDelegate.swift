@@ -512,6 +512,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 case "drop": self?.island?.debugShowDropZone()
                 case "hello": self?.island?.playHello()
                 case "clockstatus": self?.prayerClock?.preview()
+                case "clockpanel": self?.island?.showClock()
                 case "banner":
                     let banner = BannerNotification(id: "debug", app: "Messages", appURL: URL(fileURLWithPath: "/System/Applications/Messages.app"),
                                                     title: "Maya", subtitle: "", body: "Running five minutes late, order me a flat white? I'll be there by ten past.", date: .now)
