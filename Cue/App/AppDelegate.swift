@@ -967,13 +967,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Listens for agent sessions while Settings › Island › Agent sessions is on.
     private func applyAgentPreference() {
-        let (enabled, usage) = withObservationTracking {
-            (preferences.agentSessionsEnabled, preferences.agentUsageLimits)
+        let enabled = withObservationTracking {
+            preferences.agentSessionsEnabled
         } onChange: { [weak self] in
             Task { @MainActor in self?.applyAgentPreference() }
         }
+        // The usage rings are gone, and with them the relay in front of Claude Code's
+        // status line: left off, it is taken out of any folder that still has it.
         agentConnector.setRunning(enabled)
-        agentConnector.relaysUsage = usage
     }
 
     /// Starts or stops recording the pasteboard as the Settings toggles change.

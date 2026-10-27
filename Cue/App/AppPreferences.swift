@@ -66,7 +66,6 @@ final class AppPreferences {
         static let islandOpensOn = "island.opensOn"
         static let agentSessions = "agents.enabled"
         static let agentAutoOpen = "agents.autoOpen"
-        static let agentUsageLimits = "agents.usageLimits"
         static let afterCapture = "capture.after"
         static let clipboardEnabled = "clipboard.enabled"
         static let clipboardLimit = "clipboard.limit"
@@ -707,11 +706,6 @@ final class AppPreferences {
     }
 
     /// The island opens by itself when an agent asks something.
-    /// Claude Code's usage limits in the sessions list, through a relay in front of its status line.
-    var agentUsageLimits: Bool {
-        didSet { defaults.set(agentUsageLimits, forKey: Key.agentUsageLimits) }
-    }
-
     var agentAutoOpen: Bool {
         didSet { defaults.set(agentAutoOpen, forKey: Key.agentAutoOpen) }
     }
@@ -928,7 +922,6 @@ final class AppPreferences {
         islandOpensOn = IslandTab(rawValue: defaults.string(forKey: Key.islandOpensOn) ?? "")
         agentSessionsEnabled = defaults.object(forKey: Key.agentSessions) as? Bool ?? true
         agentAutoOpen = defaults.object(forKey: Key.agentAutoOpen) as? Bool ?? true
-        agentUsageLimits = defaults.object(forKey: Key.agentUsageLimits) as? Bool ?? true
         clipboardHistoryEnabled = defaults.object(forKey: Key.clipboardEnabled) as? Bool ?? true
         clipboardHistoryLimit = defaults.object(forKey: Key.clipboardLimit) as? Int ?? 200
         colorPickerEnabled = defaults.object(forKey: Key.colorPickerEnabled) as? Bool ?? true
