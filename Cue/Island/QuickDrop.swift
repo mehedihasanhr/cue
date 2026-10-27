@@ -84,19 +84,23 @@ final class QuickDropView: NSView {
     }
 }
 
-/// Four tiles on a black slab: drop on one to send the files there. Drawn after
-/// Droppy's: near-black tiles, softly lit glyphs, the share link as a small app
-/// icon, and the tile under the files lifted rather than outlined.
+/// Four tiles on a pane of Liquid Glass: drop on one to send the files there. Drawn
+/// as Droppy's: small (about 210 × 196), light frosted tiles on clear glass that
+/// follows the system's appearance, grey glyphs and small semibold labels, the
+/// share link as a little app icon, and the tile under the files brightening.
 struct QuickDropGrid: View {
-    static let size = CGSize(width: 300, height: 300)
-    private static let radius: CGFloat = 38
-    private static let tileRadius: CGFloat = 24
+    /// The window: the grid and room around it for its shadow.
+    static let size = CGSize(width: 250, height: 236)
+    private static let content = CGSize(width: 210, height: 196)
+    private static let radius: CGFloat = 22
+    private static let tileRadius: CGFloat = 13
 
     let model: QuickDropModel
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
-        Grid(horizontalSpacing: 6, verticalSpacing: 6) {
+        Grid(horizontalSpacing: 5, verticalSpacing: 5) {
             ForEach(0..<2) { row in
                 GridRow {
                     ForEach(QuickDropTarget.allCases.filter { $0.row == row }, id: \.self) { target in
@@ -105,52 +109,87 @@ struct QuickDropGrid: View {
                 }
             }
         }
-        .padding(12)
-        .frame(width: Self.size.width - 24, height: Self.size.height - 24)
-        .background {
-            shape.fill(Color(white: 0.02).opacity(0.97))
-                .shadow(color: .black.opacity(0.5), radius: 14, y: 6)
-        }
-        .overlay(shape.strokeBorder(.white.opacity(0.06), lineWidth: 1))
-        .scaleEffect(model.shown ? 1 : 0.86)
+        .padding(7)
+        .frame(width: Self.content.width, height: Self.content.height)
+        .modifier(PaneGlass(shape: shape, dark: scheme == .dark))
+        .scaleEffect(model.shown ? 1 : 0.82)
         .opacity(model.shown ? 1 : 0)
         .frame(width: Self.size.width, height: Self.size.height)
-        .animation(IslandView.reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.3, dampingFraction: 0.78), value: model.shown)
-        .animation(.easeOut(duration: 0.16), value: model.hovered)
-        .environment(\.colorScheme, .dark)
+        .animation(IslandView.reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.34, dampingFraction: 0.68), value: model.shown)
+        .animation(.spring(response: 0.25, dampingFraction: 0.75), value: model.hovered)
     }
 
     private func tile(_ target: QuickDropTarget) -> some View {
         let lit = model.hovered == target
         let off = target == .share && !model.canShare
+        let dark = scheme == .dark
         let shape = RoundedRectangle(cornerRadius: Self.tileRadius, style: .continuous)
-        return VStack(spacing: 12) {
+        return VStack(spacing: 7) {
             glyph(target, off: off)
-                .frame(height: 46)
-                .scaleEffect(lit ? 1.08 : 1)
-                .offset(y: lit ? -2 : 0)
-            VStack(spacing: 2) {
+                .frame(height: 26)
+            VStack(spacing: 1) {
                 Text(target.title)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Color(white: off ? 0.45 : (lit ? 0.97 : 0.84)))
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(dark ? Color(white: off ? 0.5 : 0.88) : Color(white: off ? 0.55 : 0.27))
                     .multilineTextAlignment(.center)
                 if off {
                     Text("Set up in Settings")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.35))
+                        .font(.system(size: 8.5, weight: .medium))
+                        .foregroundStyle(dark ? Color(white: 0.5) : Color(white: 0.5))
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
-            shape.fill(LinearGradient(colors: [Color(white: lit ? 0.2 : 0.085), Color(white: lit ? 0.15 : 0.055)],
-                                      startPoint: .top, endPoint: .bottom))
+            shape.fill(dark ? Color.white.opacity(lit ? 0.2 : 0.08) : Color.white.opacity(lit ? 0.85 : 0.42))
         }
-        .overlay(shape.strokeBorder(.white.opacity(lit ? 0.12 : 0.035), lineWidth: 1))
+        .overlay(shape.strokeBorder(LinearGradient(colors: [.white.opacity(dark ? 0.12 : 0.6), .white.opacity(dark ? 0.02 : 0.15)],
+                                                   startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
+        .scaleEffect(lit ? 1.04 : 1)
+        .shadow(color: .black.opacity(lit ? 0.12 : 0), radius: 6, y: 2)
     }
 
+    @ViewBuilder
     private func glyph(_ target: QuickDropTarget, off: Bool) -> some View {
-        DropGlyph(symbol: target.symbol, badge: target == .share, off: off, dim: target == .basket)
+        let dark = scheme == .dark
+        if target == .share {
+            // A little app icon, as Droppy shows its cloud.
+            let shape = RoundedRectangle(cornerRadius: 7, style: .continuous)
+            ZStack {
+                shape.fill(dark ? Color(white: 0.22) : .white)
+                Icon("link", size: 15, weight: .bold)
+                    .foregroundStyle(LinearGradient(colors: [Color(red: 0.62, green: 0.6, blue: 1), Color(red: 0.4, green: 0.42, blue: 0.98)],
+                                                    startPoint: .top, endPoint: .bottom))
+            }
+            .frame(width: 26, height: 26)
+            .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
+            .saturation(off ? 0 : 1)
+            .opacity(off ? 0.5 : 1)
+        } else {
+            Icon(target.symbol, size: 22, weight: .medium)
+                .foregroundStyle(LinearGradient(colors: dark ? [Color(white: 0.95), Color(white: 0.72)] : [Color(white: 0.45), Color(white: 0.22)],
+                                                startPoint: .top, endPoint: .bottom))
+        }
+    }
+}
+
+/// The grid's pane: clear Liquid Glass with a soft shadow on macOS 26, a material
+/// pane before it.
+private struct PaneGlass: ViewModifier {
+    let shape: RoundedRectangle
+    let dark: Bool
+
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content
+                .glassEffect(.regular.tint(dark ? .black.opacity(0.2) : .white.opacity(0.18)), in: shape)
+                .shadow(color: .black.opacity(dark ? 0.35 : 0.18), radius: 12, y: 5)
+        } else {
+            content
+                .background(.regularMaterial, in: shape)
+                .overlay(shape.strokeBorder(.white.opacity(dark ? 0.1 : 0.5), lineWidth: 0.75))
+                .shadow(color: .black.opacity(dark ? 0.35 : 0.18), radius: 12, y: 5)
+        }
     }
 }
 
