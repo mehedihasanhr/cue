@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 import SwiftUI
 
 /// A small basket that floats over everything, for files on their way somewhere.
@@ -27,6 +28,9 @@ final class BasketController {
     private var gridPanel: NSPanel?
     private let grid = QuickDropModel()
     private var gridHideTask: Task<Void, Never>?
+    private var wheelPanel: NSPanel?
+    private let wheel = ConvertWheelModel()
+    private var wheelHideTask: Task<Void, Never>?
 
     /// Makes share links for files (set by the app, which has the sharing settings).
     var onShareLink: ([URL]) -> Void = { _ in }
@@ -60,6 +64,7 @@ final class BasketController {
         monitors = []
         close()
         hideGrid()
+        hideWheel()
     }
 
     /// Brings back the basket last closed with files in it, under the pointer.
@@ -104,16 +109,27 @@ final class BasketController {
             pressCount = NSPasteboard(name: .drag).changeCount
             shake.reset()
         case .leftMouseDragged:
-            guard preferences.basketEnabled, panel?.isVisible != true, gridPanel?.isVisible != true else { return }
+            guard preferences.basketEnabled, gridPanel?.isVisible != true, wheelPanel?.isVisible != true else { return }
             let drag = NSPasteboard(name: .drag)
             guard drag.changeCount != pressCount, drag.types?.contains(.fileURL) == true else { return }
+            // Shift held: the convert wheel, for a picture, whether or not the basket is out.
+            let shift = NSEvent.modifierFlags.contains(.shift)
+            guard shift || panel?.isVisible != true else { return }
             if shake.feed(x: NSEvent.mouseLocation.x, at: time) {
-                if preferences.basketQuickActions { showGrid(at: NSEvent.mouseLocation) } else { show(at: NSEvent.mouseLocation) }
+                let files = (drag.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
+                if shift, let image = files.first(where: TransformEngine.isImage) {
+                    showWheel(at: NSEvent.mouseLocation, file: image)
+                } else if preferences.basketQuickActions {
+                    showGrid(at: NSEvent.mouseLocation)
+                } else {
+                    show(at: NSEvent.mouseLocation)
+                }
             }
         case .leftMouseUp:
             shake.reset()
             hideIfEmpty()
             hideGridSoon()
+            hideWheelSoon()
         default:
             break
         }
@@ -135,6 +151,7 @@ final class BasketController {
         hideTask?.cancel()
         let panel = panel ?? makePanel()
         self.panel = panel
+        model.canShare = canShare()
         panel.setFrame(Self.frame(around: point, size: BasketView.size), display: false)
         panel.orderFrontRegardless()
         model.shown = true
@@ -163,6 +180,107 @@ final class BasketController {
             guard let self, !grid.shown else { return }
             self.gridPanel?.orderOut(nil)
         }
+    }
+
+    // MARK: - The convert wheel
+
+    private func showWheel(at point: CGPoint, file: URL) {
+        wheelHideTask?.cancel()
+        let panel = wheelPanel ?? makeWheelPanel()
+        wheelPanel = panel
+        wheel.file = file
+        wheel.hovered = nil
+        // Up and to the side of the pointer, as the reference has it: the dragged file
+        // stays just outside the ring, clear of the size in the middle, and moves in
+        // onto a format. Kept clear of the menu bar and the notch (the visible frame stops
+        // below them) and the screen's edges.
+        panel.setFrame(Self.frame(around: Self.wheelCentre(beside: point), size: WheelGeometry.window), display: false)
+        panel.orderFrontRegardless()
+        wheel.shown = true
+    }
+
+    private func hideWheel() {
+        wheelHideTask?.cancel()
+        guard let wheelPanel, wheelPanel.isVisible else { return }
+        wheel.shown = false
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(220))
+            guard let self, !wheel.shown else { return }
+            self.wheelPanel?.orderOut(nil)
+        }
+    }
+
+    private func hideWheelSoon() {
+        guard wheelPanel?.isVisible == true else { return }
+        wheelHideTask?.cancel()
+        wheelHideTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
+            self?.hideWheel()
+        }
+    }
+
+    /// A copy of the file in the format it was dropped on; what's made for the shelf
+    /// lands in the basket.
+    private func convert(_ urls: [URL], to format: WheelFormat) {
+        let point = wheelPanel.map { CGPoint(x: $0.frame.midX, y: $0.frame.midY) } ?? NSEvent.mouseLocation
+        hideWheel()
+        for url in urls where TransformEngine.isImage(url) {
+            TransformModel.quickConvert(url, to: format.format) { [weak self] done, from, each, work in
+                guard let self else { return }
+                show(at: point)
+                store.produce(done, from: from, each: each, work)
+            }
+        }
+    }
+
+    private func makeWheelPanel() -> NSPanel {
+        let panel = NSPanel(contentRect: CGRect(origin: .zero, size: WheelGeometry.window), styleMask: [.borderless, .nonactivatingPanel],
+                            backing: .buffered, defer: false)
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.level = .floating
+        panel.hidesOnDeactivate = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        let content = ConvertWheelDropView(frame: CGRect(origin: .zero, size: WheelGeometry.window))
+        content.count = { [weak self] in self?.wheel.formats.count ?? 0 }
+        content.onHover = { [weak self] index in
+            guard let self else { return }
+            wheelHideTask?.cancel()
+            let format = index.map { self.wheel.formats[$0] }
+            if wheel.hovered != format { wheel.hovered = format }
+            if let format { wheel.measure(format) }
+        }
+        content.onDrop = { [weak self] index, urls in
+            guard let self else { return }
+            convert(urls, to: wheel.formats[index])
+        }
+        let host = NSHostingView(rootView: ConvertWheelView(model: wheel))
+        host.sizingOptions = []
+        host.autoresizingMask = [.width, .height]
+        host.frame = content.bounds
+        content.addSubview(host)
+        panel.contentView = content
+        return panel
+    }
+
+    /// Where the wheel's centre goes for a drag at `point`: up and to the left, the
+    /// pointer just outside the ring; to the right or below where the screen runs out.
+    private static func wheelCentre(beside point: CGPoint) -> CGPoint {
+        let reach = WheelGeometry.outer + 26
+        let dx = reach * 0.8, dy = reach * 0.6
+        let visible = (NSScreen.screens.first { $0.frame.contains(point) } ?? NSScreen.main)?.visibleFrame ?? .zero
+        let left = point.x - dx - WheelGeometry.outer >= visible.minX
+        let up = point.y + dy + WheelGeometry.outer <= visible.maxY
+        return CGPoint(x: point.x + (left ? -dx : dx), y: point.y + (up ? dy : -dy))
+    }
+
+    /// For diagnostics: the wheel round the pointer, for `file`, `format` lit.
+    func debugShowWheel(file: URL, hovered format: WheelFormat?) {
+        showWheel(at: NSEvent.mouseLocation, file: file)
+        wheel.hovered = format
+        if let format { wheel.measure(format) }
     }
 
     /// The drag ended somewhere else (or was let go of nowhere): the grid goes.
@@ -194,43 +312,30 @@ final class BasketController {
         case .share:
             onShareLink(urls)
         case .airDrop:
-            NSApp.activate()
-            guard let airDrop = NSSharingService(named: .sendViaAirDrop), airDrop.canPerform(withItems: urls) else {
-                FeedbackHUD.show("AirDrop isn't available", symbol: "exclamationmark.triangle.fill", subtitle: "Turn on Wi-Fi and Bluetooth")
-                return
-            }
-            airDrop.perform(withItems: urls)
+            QuickDropActions.airDrop(urls)
         }
     }
 
-    /// What can be made of the files, as a menu at the pointer; what's made lands in
-    /// the basket, ready to be dragged on.
+    /// One of the basket's own places, for files dropped on it or what's in the basket.
+    private func act(_ target: QuickDropTarget, on urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        let point = panel.map { CGPoint(x: $0.frame.maxX, y: $0.frame.maxY) } ?? NSEvent.mouseLocation
+        switch target {
+        case .basket: store.add(fileURLs: urls)
+        case .transform: transform(urls, at: point)
+        case .share: onShareLink(urls)
+        case .airDrop: QuickDropActions.airDrop(urls)
+        }
+    }
+
+    /// Transform's window on the files; what's made for the shelf lands in the basket,
+    /// ready to be dragged on.
     private func transform(_ urls: [URL], at point: CGPoint) {
-        let images = urls.filter(FileActions.isImage)
-        let menu = NSMenu()
-        func run(_ done: String, from: [URL], each: Bool = true, _ work: @escaping @Sendable ([URL], URL) -> [URL]) {
+        TransformWindow.shared.open(urls, near: point) { [weak self] done, from, each, work in
+            guard let self else { return }
             show(at: point)
             store.produce(done, from: from, each: each, work)
         }
-        if !images.isEmpty {
-            let convert = NSMenuItem(title: "Convert to", action: nil, keyEquivalent: "")
-            let formats = NSMenu()
-            for format in FileActions.ImageFormat.writable {
-                formats.addItem(QuickDropMenuItem(format.title) {
-                    run("Converted to \(format.title)", from: images) { urls, folder in urls.compactMap { FileActions.convert($0, to: format, into: folder) } }
-                })
-            }
-            convert.submenu = formats
-            menu.addItem(convert)
-            menu.addItem(QuickDropMenuItem("Make Smaller") {
-                run("Made smaller", from: images) { urls, folder in urls.compactMap { FileActions.compress($0, into: folder) } }
-            })
-        }
-        menu.addItem(QuickDropMenuItem(urls.count == 1 ? "Make a ZIP" : "Make a ZIP of \(urls.count)") {
-            run("Zipped", from: urls, each: false) { urls, folder in FileActions.zip(urls, into: folder).map { [$0] } ?? [] }
-        })
-        NSApp.activate()
-        menu.popUp(positioning: nil, at: point, in: nil)
     }
 
     private func makeGridPanel() -> NSPanel {
@@ -280,13 +385,26 @@ final class BasketController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         let content = BasketDropView(frame: CGRect(origin: .zero, size: BasketView.size))
         content.onTargeted = { [weak self] in self?.model.targeted = $0 }
+        content.onHoverAction = { [weak self] target in
+            guard let self, model.hoveredAction != target else { return }
+            model.hoveredAction = target
+        }
+        content.onAction = { [weak self] target, urls, fromBasket in
+            guard let self else { return }
+            // The basket's own files sent somewhere stay in it.
+            if fromBasket { model.keepDragged = true }
+            act(target, on: urls)
+        }
         content.onDrop = { [weak self] urls, image in
             guard let self else { return }
             store.add(fileURLs: urls)
             if let image { store.add(imageData: image) }
             hideTask?.cancel()
         }
-        let host = FirstMouseHostingView(rootView: BasketView(model: model, close: { [weak self] in self?.close() }).environment(store))
+        let host = FirstMouseHostingView(rootView: BasketView(model: model, close: { [weak self] in self?.close() }, act: { [weak self] target in
+            guard let self else { return }
+            act(target, on: store.items.map(\.url))
+        }).environment(store))
         host.sizingOptions = []
         host.autoresizingMask = [.width, .height]
         host.frame = content.bounds
@@ -302,6 +420,12 @@ final class BasketModel {
     var shown = false
     /// A drag with files is over it.
     var targeted = false
+    /// The quick action under the drag.
+    var hoveredAction: QuickDropTarget?
+    /// A share link can be made (Settings › Sharing is set up).
+    var canShare = false
+    /// The stack was dragged onto one of the basket's own actions: it stays.
+    var keepDragged = false
 }
 
 /// Back and forth, quickly: four turns, each after at least `leg` points of travel,
@@ -345,6 +469,17 @@ private struct ShakeDetector {
 private final class BasketDropView: NSView {
     var onTargeted: ((Bool) -> Void)?
     var onDrop: (([URL], Data?) -> Void)?
+    var onHoverAction: ((QuickDropTarget?) -> Void)?
+    /// Files dropped on a quick action; true when they came from the basket itself.
+    var onAction: ((QuickDropTarget, [URL], Bool) -> Void)?
+
+    private func action(at sender: any NSDraggingInfo) -> QuickDropTarget? {
+        BasketView.action(at: convert(sender.draggingLocation, from: nil), in: bounds)
+    }
+
+    private func fromBasket(_ sender: any NSDraggingInfo) -> Bool {
+        (sender.draggingSource as? NSView)?.window === window
+    }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -357,23 +492,40 @@ private final class BasketDropView: NSView {
     }
 
     override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        // Never its own stack, dragged out and back over it.
-        guard (sender.draggingSource as? NSView)?.window !== window else { return [] }
-        onTargeted?(true)
+        draggingUpdated(sender)
+    }
+
+    override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        let target = action(at: sender)
+        onHoverAction?(target)
+        // Its own stack, dragged out and back over it, only goes to an action.
+        if fromBasket(sender) {
+            onTargeted?(false)
+            return target == nil ? [] : .copy
+        }
+        onTargeted?(target == nil)
         return .copy
     }
 
     override func draggingExited(_ sender: (any NSDraggingInfo)?) {
         onTargeted?(false)
+        onHoverAction?(nil)
     }
 
     override func draggingEnded(_ sender: any NSDraggingInfo) {
         onTargeted?(false)
+        onHoverAction?(nil)
     }
 
     override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
         let pasteboard = sender.draggingPasteboard
         let urls = (pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
+        if let target = action(at: sender) {
+            guard !urls.isEmpty else { return false }
+            onAction?(target, urls, fromBasket(sender))
+            return true
+        }
+        guard !fromBasket(sender) else { return false }
         let image = urls.isEmpty ? (pasteboard.data(forType: .png) ?? pasteboard.data(forType: .tiff)) : nil
         guard !urls.isEmpty || image != nil else { return false }
         onDrop?(urls, image)
@@ -381,61 +533,78 @@ private final class BasketDropView: NSView {
     }
 }
 
-/// The basket: a fanned stack of what is in it, or a place to drop when empty.
+/// The basket, as Droppy's: a pane of light glass (dark in dark mode) with a fanned
+/// stack of what is in it, or a place to drop when empty, and under it the quick
+/// actions (Transform, a share link, AirDrop), which take files dropped on them,
+/// the stack dragged onto them, or a click for what's in the basket.
 private struct BasketView: View {
-    static let size = CGSize(width: 220, height: 200)
-    private static let radius: CGFloat = 28
+    static let size = CGSize(width: 236, height: 262)
+    private static let radius: CGFloat = 22
+    /// Round the pane, inside the window, for its shadow.
+    private static let margin: CGFloat = 12
+    private static let padding: CGFloat = 8
+    private static let actionsHeight: CGFloat = 52
+    static let actions: [QuickDropTarget] = [.transform, .share, .airDrop]
 
     let model: BasketModel
     let close: () -> Void
+    let act: (QuickDropTarget) -> Void
     @Environment(ShelfStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
+
+    /// The quick action at `point` (in the window, from its bottom left), if any.
+    static func action(at point: CGPoint, in bounds: CGRect) -> QuickDropTarget? {
+        let row = CGRect(x: bounds.minX + margin + padding, y: bounds.minY + margin + padding,
+                         width: bounds.width - (margin + padding) * 2, height: actionsHeight)
+        guard row.contains(point) else { return nil }
+        let index = Int((point.x - row.minX) / row.width * CGFloat(actions.count))
+        return actions[min(max(index, 0), actions.count - 1)]
+    }
+
+    private var dark: Bool { scheme == .dark }
+    private var ink: Color { dark ? Color(white: 0.9) : Color(light: 0x222222, dark: 0x222222) }
+    private var quiet: Color { dark ? Color(white: 0.55) : Color(light: 0x6E6E6E, dark: 0x6E6E6E) }
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             HStack {
                 Text(title)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.9))
+                    .foregroundStyle(ink)
                     .contentTransition(.numericText())
                 Spacer()
                 Button(action: close) {
-                    Icon("xmark", size: 9, weight: .bold)
-                        .foregroundStyle(.white.opacity(0.7))
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(quiet)
                         .frame(width: 20, height: 20)
-                        .background(.white.opacity(0.1), in: Circle())
+                        .background((dark ? Color.white.opacity(0.1) : Color.black.opacity(0.06)), in: Circle())
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .help("Put the basket away (reopen it from the menu bar)")
             }
+            .padding(.horizontal, 6)
+            .padding(.top, 4)
             stack
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            Text(store.items.isEmpty ? "Drop files here" : "Drag the stack out")
-                .font(.system(size: 10.5, weight: .medium))
-                .foregroundStyle(.white.opacity(0.45))
-        }
-        .padding(14)
-        .frame(width: Self.size.width - 16, height: Self.size.height - 16)
-        .background {
-            ZStack {
-                if #available(macOS 26, *) {
-                    shape.fill(.clear).glassEffect(.regular.tint(.black.opacity(0.45)), in: shape)
-                } else {
-                    shape.fill(.ultraThinMaterial)
-                    shape.fill(.black.opacity(0.45))
-                }
+            HStack(spacing: 5) {
+                ForEach(Self.actions, id: \.self) { action in actionTile(action) }
             }
-            .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
+            .frame(height: Self.actionsHeight)
         }
-        .overlay(shape.strokeBorder(model.targeted ? IslandStyle.accent.opacity(0.8) : .white.opacity(0.1), lineWidth: model.targeted ? 1.5 : 1))
-        .scaleEffect(model.shown ? (model.targeted ? 1.03 : 1) : 0.8)
+        .padding(Self.padding)
+        .frame(width: Self.size.width - Self.margin * 2, height: Self.size.height - Self.margin * 2)
+        .modifier(DropPane(shape: shape, dark: dark))
+        .overlay(shape.strokeBorder(IslandStyle.accent.opacity(model.targeted ? 0.8 : 0), lineWidth: 1.5))
+        .scaleEffect(model.shown ? (model.targeted ? 1.02 : 1) : 0.82)
         .opacity(model.shown ? 1 : 0)
         .frame(width: Self.size.width, height: Self.size.height)
-        .animation(IslandView.reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.32, dampingFraction: 0.72), value: model.shown)
+        .animation(IslandView.reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.34, dampingFraction: 0.68), value: model.shown)
         .animation(.easeOut(duration: 0.15), value: model.targeted)
+        .animation(.spring(response: 0.25, dampingFraction: 0.75), value: model.hoveredAction)
         .animation(.easeOut(duration: 0.2), value: store.items.map(\.id))
-        .environment(\.colorScheme, .dark)
     }
 
     private var title: String {
@@ -446,17 +615,65 @@ private struct BasketView: View {
         }
     }
 
+    /// A quick action: the grid's tile, small. Lit under a drag; a click acts on the basket.
+    private func actionTile(_ action: QuickDropTarget) -> some View {
+        let lit = model.hoveredAction == action
+        let off = action == .share && !model.canShare
+        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+        return Button { act(action) } label: {
+            VStack(spacing: 4) {
+                Group {
+                    if action == .share {
+                        Image(systemName: "link")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(LinearGradient(colors: [Color(red: 0.62, green: 0.6, blue: 1), Color(red: 0.4, green: 0.42, blue: 0.98)],
+                                                            startPoint: .top, endPoint: .bottom))
+                            .frame(width: 20, height: 20)
+                            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(dark ? Color(white: 0.22) : .white))
+                            .shadow(color: .black.opacity(0.15), radius: 1.5, y: 1)
+                    } else {
+                        Image(systemName: action.symbol)
+                            .font(.system(size: 16, weight: .regular))
+                            .foregroundStyle(ink)
+                    }
+                }
+                .frame(height: 20)
+                Text(action == .share ? "Share" : action.title)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(ink)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background {
+                shape.fill(dark ? AnyShapeStyle(Color.white.opacity(lit ? 0.18 : 0.07))
+                                : AnyShapeStyle(LinearGradient(colors: [.black.opacity(lit ? 0.09 : 0.035), .black.opacity(lit ? 0.06 : 0.01)],
+                                                               startPoint: .top, endPoint: .bottom)))
+            }
+            .scaleEffect(lit ? 1.05 : 1)
+            .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .opacity(off ? 0.45 : 1)
+        .disabled(off || store.items.isEmpty && !lit)
+        .help(off ? "Set up sharing in Settings" : "\(action.title) what's in the basket, or drop files here")
+    }
+
     @ViewBuilder
     private var stack: some View {
         if store.items.isEmpty {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(.white.opacity(model.targeted ? 0.5 : 0.22), style: SwiftUI.StrokeStyle(lineWidth: 1.2, dash: [5, 4]))
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder((dark ? Color.white : Color.black).opacity(model.targeted ? 0.4 : (dark ? 0.22 : 0.16)),
+                              style: SwiftUI.StrokeStyle(lineWidth: 1.2, dash: [5, 4]))
                 .overlay {
-                    Icon("tray.and.arrow.down.fill", size: 22)
-                        .foregroundStyle(.white.opacity(model.targeted ? 0.9 : 0.5))
-                        .offset(y: model.targeted ? 2 : 0)
+                    VStack(spacing: 6) {
+                        Image(systemName: "tray.and.arrow.down.fill")
+                            .font(.system(size: 22))
+                            .foregroundStyle(LinearGradient(colors: dark ? [Color(white: 0.92), Color(white: 0.6)]
+                                                                         : [Color(light: 0x8C8A88, dark: 0x8C8A88), Color(light: 0x5E5C5B, dark: 0x5E5C5B)],
+                                                            startPoint: .top, endPoint: .bottom))
+                            .offset(y: model.targeted ? 2 : 0)
+                        Text("Drop files here").font(.system(size: 10.5, weight: .medium)).foregroundStyle(quiet)
+                    }
                 }
-                .padding(.horizontal, 10)
         } else {
             // The last three in, fanned, the newest on top.
             let shown = Array(store.items.suffix(3))
@@ -468,7 +685,7 @@ private struct BasketView: View {
                         .scaledToFit()
                         .frame(width: 74, height: 74)
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .shadow(color: .black.opacity(0.35), radius: 4, y: 2)
+                        .shadow(color: .black.opacity(dark ? 0.35 : 0.18), radius: 4, y: 2)
                         .rotationEffect(.degrees(spread * 9))
                         .offset(x: spread * 22, y: abs(spread) * 4)
                         .transition(.scale(scale: 0.6).combined(with: .opacity))
@@ -478,6 +695,8 @@ private struct BasketView: View {
             .contentShape(Rectangle())
             .overlay {
                 ShelfDragSource(items: { store.items }, onClick: {}, onDelivered: { ids in
+                    // Sent to one of the basket's own actions, the files stay.
+                    guard !model.keepDragged else { model.keepDragged = false; return }
                     withAnimation(.easeOut(duration: 0.18)) { store.remove(ids) }
                 })
             }

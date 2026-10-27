@@ -125,15 +125,13 @@ struct AudioDeviceRow: View {
     var body: some View {
         HStack(spacing: 12) {
             ZStack {
-                Circle().fill(Self.blue.opacity(0.35)).blur(radius: 9).opacity(device.connected && shown ? 0.9 : 0)
-                Circle()
-                    .strokeBorder(Self.blue.opacity(0.7), lineWidth: 1.5)
-                    .scaleEffect(burst ? 1.9 : 1)
-                    .opacity(burst || !device.connected ? 0 : 0.8)
-                GlossyDisc(symbol: nil, tint: device.connected ? Self.blue : Color(white: 0.3), size: 36, lit: device.connected)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Self.blue.opacity(0.5), lineWidth: 1)
+                    .scaleEffect(burst ? 1.5 : 1)
+                    .opacity(burst || !device.connected ? 0 : 0.6)
+                StatusIcon(symbol: nil, tint: Self.blue, size: 36, active: device.connected)
                 Icon(device.symbol, size: 17, weight: .semibold)
-                    .foregroundStyle(.white.opacity(device.connected ? 1 : 0.6))
-                    .shadow(color: .black.opacity(0.35), radius: 1, y: 1)
+                    .foregroundStyle(StatusIcon.glyphStyle(Self.blue, active: device.connected))
                     .scaleEffect(shown ? 1 : (device.connected ? 0.4 : 1))
                     .rotationEffect(.degrees(shown || !device.connected ? 0 : -30))
                     .offset(y: !device.connected && shown ? 2 : 0)

@@ -63,6 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var settingsWindow: SettingsWindowController?
     private var taskDashboard: TaskDashboardWindowController?
     private var onboardingWindows: [PermissionKind: HostedWindowController] = [:]
+    private var welcome: WelcomeWindowController?
     private var editorWindows: [UUID: EditorWindowController] = [:]
 
     // MARK: - Lifecycle
@@ -99,6 +100,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         preferences.applyAppearance()
+        #if DEBUG
+        // Diagnostics: `--env CUE_DEBUG_APPEARANCE=dark|light` draws Cue so, whatever the settings say.
+        if let name = ProcessInfo.processInfo.environment["CUE_DEBUG_APPEARANCE"] {
+            NSApp.appearance = NSAppearance(named: name == "dark" ? .darkAqua : .aqua)
+        }
+        #endif
         // The bundle launches as an agent; the preference decides whether Cue takes
         // a Dock tile, so it can be turned off without reinstalling.
         preferences.applyDockVisibility()
@@ -106,7 +113,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // catalog, independent of the icon-services cache for this bundle path.
         if let icon = NSImage(named: "AppIcon") { NSApp.applicationIconImage = icon }
         installStatusItem()
-        AppUpdater.shared.start()
+        // The first update check waits for the welcome, so the two never meet.
+        if preferences.welcomeTourSeen { AppUpdater.shared.start() }
         spaceFocus.start()
         _ = taskSync // listens for task changes from now on
         taskMCP.apply()
@@ -439,13 +447,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
+        #if DEBUG
+        // Diagnostics: `--env CUE_DEBUG_WHEEL_CONVERT=/path/to/picture.png` converts it to AVIF as
+        // the convert wheel does (next to the original).
+        if let path = ProcessInfo.processInfo.environment["CUE_DEBUG_WHEEL_CONVERT"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                TransformModel.quickConvert(URL(fileURLWithPath: path), to: .avif) { _, _, _, _ in Log.app.error("Wheel convert: fell back to the shelf") }
+            }
+        }
+        // Diagnostics: `--env CUE_DEBUG_TRANSFORM=compress` opens Transform on a picture of the
+        // app's own, on that action.
+        if let name = ProcessInfo.processInfo.environment["CUE_DEBUG_TRANSFORM"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                guard let self else { return }
+                let files = ((try? FileManager.default.contentsOfDirectory(at: Bundle.main.resourceURL!, includingPropertiesForKeys: nil)) ?? [])
+                    .filter { $0.pathExtension == "png" }.prefix(1)
+                TransformWindow.shared.open(Array(files), near: nil) { [weak self] done, from, each, work in
+                    self?.island?.shelf.produce(done, from: from, each: each, work)
+                }
+                if let action = TransformModel.Action(rawValue: name) { TransformWindow.shared.debugSelect(action) }
+            }
+        }
+        #endif
         // Diagnostics: `--env CUE_DEBUG_BASKET=1` shows the basket with a few of the app's own files
         // (`empty`: with none).
         if let mode = ProcessInfo.processInfo.environment["CUE_DEBUG_BASKET"] {
             let files = ((try? FileManager.default.contentsOfDirectory(at: Bundle.main.resourceURL!, includingPropertiesForKeys: nil)) ?? []).prefix(mode == "empty" ? 0 : 3)
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
                 // `grid`: the four places a shake offers, Transform lit.
-                if mode == "grid" { self?.basket.debugShowGrid(hovered: .transform) } else { self?.basket.debugShow(Array(files)) }
+                if mode == "grid" {
+                    self?.basket.debugShowGrid(hovered: .transform)
+                } else if mode == "wheel", let image = ((try? FileManager.default.contentsOfDirectory(at: Bundle.main.resourceURL!, includingPropertiesForKeys: nil)) ?? []).first(where: { $0.pathExtension == "png" }) {
+                    self?.basket.debugShowWheel(file: image, hovered: .heic)
+                } else {
+                    self?.basket.debugShow(Array(files))
+                }
             }
         }
         // Diagnostics: `--env CUE_DEBUG_ISLAND_SHOT=captures` opens the island on that tab (`agents`:
@@ -508,6 +544,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     _ = self?.island?.showStatus(IslandStatus(symbol: "checkmark.circle.fill", title: "Copied", subtitle: "Image 148 × 116",
                                                               image: NSImage(named: "AppIcon"), duration: .seconds(6)))
                 case "drop": self?.island?.debugShowDropZone()
+                case "hello": self?.island?.playHello()
+                case "clockstatus": self?.prayerClock?.preview()
+                case "clockpanel": self?.island?.showClock()
+                case "banner":
+                    let banner = BannerNotification(id: "debug", app: "Messages", appURL: URL(fileURLWithPath: "/System/Applications/Messages.app"),
+                                                    title: "Maya", subtitle: "", body: "Running five minutes late, order me a flat white? I'll be there by ten past.", date: .now)
+                    _ = self?.island?.showStatus(IslandStatus(symbol: "bell.fill", title: "Maya", duration: .seconds(6), banner: banner))
+                case "agentdone":
+                    let done = AgentDone(agent: .claude, project: "cue", took: .seconds(94), summary: "Fixed the island's status padding")
+                    _ = self?.island?.showStatus(IslandStatus(symbol: "checkmark.circle.fill", title: "Task complete", subtitle: "cue",
+                                                              duration: .seconds(6), agentDone: done))
                 case "medialyrics":
                     UserDefaults.standard.set(true, forKey: "island.player.lyrics")
                     self?.island?.nowPlaying.debugFake()
@@ -670,7 +717,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             library.reindexIfLanguagesChanged(preferences.ocrLanguages)
             library.indexMissingText()
         }
-        if !PermissionManager.hasScreenCaptureAccess {
+        NotificationCenter.default.addObserver(forName: .cueShowWelcome, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.showWelcome() }
+        }
+        #if DEBUG
+        // Diagnostics: `--env CUE_DEBUG_WELCOME=hello|welcome|permissions|finale|<tour page>` opens the
+        // welcome at that step; `firstrun` forgets it was seen, as on a new Mac.
+        if ProcessInfo.processInfo.environment["CUE_DEBUG_WELCOME"] == "firstrun" {
+            preferences.welcomeTourSeen = false
+        } else if let name = ProcessInfo.processInfo.environment["CUE_DEBUG_WELCOME"] {
+            let step: WelcomeView.Step = switch name {
+            case "welcome": .welcome
+            case "permissions": .permissions
+            case "finale": .finale
+            default: TourPage(rawValue: name).map { .tour($0) } ?? .hello
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.showWelcome(at: step) }
+            return
+        }
+        #endif
+        if !preferences.welcomeTourSeen {
+            // The tour asks for Screen Recording itself, on its permissions page.
+            showWelcome()
+        } else if !PermissionManager.hasScreenCaptureAccess {
             Log.app.notice("Screen Recording not granted; showing onboarding")
             showOnboarding(for: .screenRecording)
         }
@@ -917,8 +986,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 island?.onSnippetFilled = { [weak self] snippet, values in self?.snippetFilled(snippet, values: values) }
                 island?.onOpenTaskDashboard = { [weak self] in self?.showTaskDashboard(nil) }
                 island?.onOpenSettings = { [weak self] in self?.showSettings(nil) }
+                island?.canShare = { [weak self] in self?.share.isConfigured ?? false }
+                island?.onShareLink = { [weak self] urls in self?.shareFiles(urls) }
                 library.warmThumbnails()
                 FeedbackHUD.island = { [weak self] status in self?.island?.showStatus(status) ?? false }
+                // On the first launch the welcome says hello instead, and the island after it.
+                if preferences.welcomeTourSeen { sayHello() }
             }
         } else if let island {
             island.tearDown()
@@ -928,13 +1001,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Listens for agent sessions while Settings › Island › Agent sessions is on.
     private func applyAgentPreference() {
-        let (enabled, usage) = withObservationTracking {
-            (preferences.agentSessionsEnabled, preferences.agentUsageLimits)
+        let enabled = withObservationTracking {
+            preferences.agentSessionsEnabled
         } onChange: { [weak self] in
             Task { @MainActor in self?.applyAgentPreference() }
         }
+        // The usage rings are gone, and with them the relay in front of Claude Code's
+        // status line: left off, it is taken out of any folder that still has it.
         agentConnector.setRunning(enabled)
-        agentConnector.relaysUsage = usage
     }
 
     /// Starts or stops recording the pasteboard as the Settings toggles change.
@@ -1711,6 +1785,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             onboardingWindows[kind] = controller
         }
         onboardingWindows[kind]?.present()
+    }
+
+    /// The island's hello, once it is up (Settings › Island › Say hello at launch).
+    private func sayHello() {
+        guard preferences.islandHello else { return }
+        #if DEBUG
+        // A diagnostic picture of the island wants it as asked, not saying hello.
+        if let shot = ProcessInfo.processInfo.environment["CUE_DEBUG_ISLAND_SHOT"], shot != "hello" { return }
+        #endif
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.island?.playHello() }
+    }
+
+    /// The welcome and its tour: on the first launch, and again from Settings.
+    private func showWelcome(at step: WelcomeView.Step = .hello) {
+        if welcome == nil {
+            let controller = WelcomeWindowController(start: step)
+            controller.onClose = { [weak self] in
+                guard let self else { return }
+                welcome = nil
+                model.refreshPermissionState()
+                if !preferences.welcomeTourSeen {
+                    preferences.welcomeTourSeen = true
+                    AppUpdater.shared.start()
+                    sayHello()
+                }
+            }
+            welcome = controller
+        }
+        welcome?.present()
     }
 
     private func presentError(_ error: any Error) {

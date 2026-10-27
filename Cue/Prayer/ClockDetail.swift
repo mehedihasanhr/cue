@@ -48,18 +48,19 @@ struct ClockDetail: View {
         ClockStatus(kind: .time, time: .now, prayer: clock?.status, today: clock?.today).tint
     }
 
+    /// The period's colour, for washes and the lit tile.
+    private var accent: Color { tint.last ?? .orange }
+
     /// The time, and under it the day in both calendars as one line: the Hijri date
     /// follows the Gregorian one it belongs to. The period's colour lives here only.
     private func header(_ now: Date) -> some View {
         HStack(alignment: .center, spacing: 12) {
             ZStack {
-                LiquidFill(colors: tint).clipShape(Circle())
-                Circle().strokeBorder(.white.opacity(0.2), lineWidth: 0.5)
-                Image(systemName: clock?.status?.current?.symbol ?? "clock.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                    .shadow(color: .black.opacity(0.25), radius: 1, y: 1)
+                StatusIcon(symbol: nil, tint: accent, size: 40)
+                Icon(clock?.status?.current?.symbol ?? "clock.fill", size: 19, weight: .semibold)
+                    .foregroundStyle(LinearGradient(colors: tint, startPoint: .top, endPoint: .bottom))
             }
-            .frame(width: 34, height: 34)
+            .frame(width: 40, height: 40)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
                     Text(Self.digits(now))
@@ -81,45 +82,62 @@ struct ClockDetail: View {
             }
             Spacer(minLength: 0)
             Text(TimeZone.current.localizedName(for: .shortStandard, locale: .current) ?? TimeZone.current.identifier)
-                .font(.system(size: 10.5))
-                .foregroundStyle(.white.opacity(0.4))
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(.white.opacity(0.5))
+                .padding(.horizontal, 8)
+                .frame(height: 22)
+                .modifier(DarkTile(radius: 7))
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(now.formatted(date: .complete, time: .standard)), \(Self.hijri(now))")
     }
 
-    /// The six times side by side: the current one on a soft fill, the next one
-    /// outlined, the rest plain text (dimmer once passed).
+    /// The six times side by side, each on a dark tile with its symbol: the current
+    /// one lit and washed with the period's colour, the next one tagged with how long
+    /// until it, the rest quiet (dimmer once passed).
     private func times(_ today: PrayerTimes, status: PrayerStatus, now: Date) -> some View {
-        EqualColumns(spacing: 4) {
+        EqualColumns(spacing: 6) {
             ForEach(today.ordered, id: \.prayer) { entry in
                 let current = status.current == entry.prayer || (status.current == nil && entry.prayer == .sunrise)
                 let next = !current && status.next == entry.prayer && entry.time > now
                 let past = entry.time <= now && !current
-                VStack(spacing: 2) {
-                    Text(next ? "Next" : entry.prayer.title)
+                VStack(spacing: 3) {
+                    Icon(entry.prayer.symbol, size: 14, weight: .semibold)
+                        .foregroundStyle(current ? AnyShapeStyle(LinearGradient(colors: tint, startPoint: .top, endPoint: .bottom))
+                                                 : AnyShapeStyle(.white.opacity(past ? 0.3 : 0.55)))
+                        .frame(height: 16)
+                    Text(entry.prayer.title)
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.white.opacity(current || next ? 0.7 : 0.5))
-                    Text(next ? entry.prayer.title : PrayerClock.clock(entry.time))
+                        .foregroundStyle(.white.opacity(current ? 0.75 : 0.5))
+                    Text(PrayerClock.clock(entry.time))
                         .font(.system(size: 12.5, weight: current || next ? .semibold : .medium))
                         .monospacedDigit()
-                    if next {
-                        Text(PrayerClock.clock(entry.time)).font(.system(size: 10.5, weight: .medium)).monospacedDigit()
-                            .foregroundStyle(.white.opacity(0.7))
-                    }
+                        .foregroundStyle(.white.opacity(past ? 0.4 : (current || next ? 1 : 0.85)))
                 }
                 .lineLimit(1)
                 .fixedSize()
                 .padding(.horizontal, 8)
-                .foregroundStyle(.white.opacity(past ? 0.4 : (current || next ? 1 : 0.8)))
                 .frame(maxWidth: .infinity)
-                .frame(height: 48)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.white.opacity(current ? 0.12 : 0)))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.white.opacity(next ? 0.16 : 0), lineWidth: 1))
+                .frame(height: 64)
+                .modifier(DarkTile(lit: current, wash: current ? accent : nil))
+                .overlay(alignment: .top) {
+                    if next {
+                        Text("in \(PrayerClock.countdown(to: entry.time, from: now))")
+                            .font(.system(size: 8.5, weight: .bold))
+                            .monospacedDigit()
+                            .foregroundStyle(.black)
+                            .padding(.horizontal, 6)
+                            .frame(height: 14)
+                            .background(Capsule().fill(.white.opacity(0.85)))
+                            .fixedSize()
+                            .offset(y: -7)
+                    }
+                }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("\(entry.prayer.title) \(PrayerClock.clock(entry.time))\(current ? ", now" : next ? ", next" : past ? ", passed" : "")")
             }
         }
+        .padding(.top, 4) // room for the next one's tag
     }
 
     /// The current period with its bar and what comes next.
@@ -146,16 +164,22 @@ struct ClockDetail: View {
             .font(.system(size: 11.5, weight: .medium))
             .lineLimit(1)
             Capsule()
-                .fill(.white.opacity(0.1))
-                .frame(height: 3)
+                .fill(.black.opacity(0.45))
+                .overlay(Capsule().strokeBorder(.white.opacity(0.06), lineWidth: 0.5))
+                .frame(height: 5)
                 .overlay(alignment: .leading) {
                     GeometryReader { proxy in
                         Capsule()
-                            .fill(status.forbidden == nil ? Color.white.opacity(0.7) : Self.caution)
-                            .frame(width: proxy.size.width * progress)
+                            .fill(status.forbidden == nil
+                                  ? AnyShapeStyle(LinearGradient(colors: tint, startPoint: .leading, endPoint: .trailing))
+                                  : AnyShapeStyle(Self.caution))
+                            .frame(width: max(5, proxy.size.width * progress))
                     }
                 }
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .modifier(DarkTile())
     }
 
     /// The windows prayer is not allowed in, as one row of compact chips; the live
@@ -181,10 +205,9 @@ struct ClockDetail: View {
                 .font(.system(size: 11, weight: .medium))
                 .lineLimit(1)
                 .fixedSize()
-                .padding(.horizontal, 8)
-                .frame(height: 24)
-                .background((live ? Self.caution : Color.white).opacity(live ? 0.14 : 0.05),
-                            in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .padding(.horizontal, 9)
+                .frame(height: 26)
+                .modifier(DarkTile(radius: 8, wash: live ? Self.caution : nil))
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("\(window.kind.shortTitle), \(PrayerClock.clock(window.start)) to \(PrayerClock.clock(window.end))\(live ? ", now" : "")")
             }
@@ -226,14 +249,36 @@ struct ClockDetail: View {
                 Label("Time settings", systemImage: "gearshape")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.white.opacity(0.6))
-                    .padding(.horizontal, 8).frame(height: 24)
-                    .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .padding(.horizontal, 10).frame(height: 26)
+                    .modifier(DarkTile(radius: 8))
             }
             .buttonStyle(.plain)
         }
     }
 
     // MARK: - Layout
+
+    /// The island's tiles: dark, a little lighter at the top, a hairline catching the
+    /// light; `lit` lifts one, `wash` tints it.
+    struct DarkTile: ViewModifier {
+        var lit = false
+        var radius: CGFloat = 12
+        var wash: Color? = nil
+
+        func body(content: Content) -> some View {
+            let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+            content
+                .background {
+                    shape.fill(LinearGradient(colors: [Color(white: lit ? 0.2 : 0.1), Color(white: lit ? 0.13 : 0.065)],
+                                              startPoint: .top, endPoint: .bottom))
+                    if let wash {
+                        shape.fill(LinearGradient(colors: [wash.opacity(0.28), wash.opacity(0.06)], startPoint: .top, endPoint: .bottom))
+                    }
+                }
+                .overlay(shape.strokeBorder(LinearGradient(colors: [.white.opacity(lit ? 0.16 : 0.08), .white.opacity(0.02)],
+                                                           startPoint: .top, endPoint: .bottom), lineWidth: 1))
+        }
+    }
 
     /// Children side by side at one width each: the widest one's when unconstrained
     /// (so the island can be measured to fit), or an equal share of the width given.

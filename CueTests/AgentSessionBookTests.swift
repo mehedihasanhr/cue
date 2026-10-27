@@ -73,6 +73,26 @@ final class AgentSessionBookTests: XCTestCase {
         XCTAssertEqual(book.sessions.first?.title, "remove island gradient")
     }
 
+    func testFillerPromptsNeverNameASession() {
+        var book = AgentSessionBook()
+        book.apply(AgentEvent(agent: .claude, name: .userPromptSubmit, sessionID: "s1", prompt: "continue"), at: now)
+        XCTAssertNil(book.sessions.first?.title)
+        book.apply(AgentEvent(agent: .claude, name: .userPromptSubmit, sessionID: "s1", prompt: "Yes."), at: now)
+        XCTAssertNil(book.sessions.first?.title)
+        book.apply(AgentEvent(agent: .claude, name: .userPromptSubmit, sessionID: "s1", prompt: "continue the island work"), at: now)
+        XCTAssertEqual(book.sessions.first?.title, "continue the island work")
+    }
+
+    func testAFinishedTurnWithABackgroundCommandIsInBackground() {
+        var book = AgentSessionBook()
+        book.apply(event(.userPromptSubmit, backgroundTasks: [task("b1", type: "shell")]), at: now)
+        book.apply(event(.stop, backgroundTasks: [task("b1", type: "shell")]), at: now)
+        XCTAssertEqual(book.sessions.first?.state, .idle)
+        XCTAssertEqual(book.sessions.first?.inBackground, true)
+        book.apply(event(.stop, backgroundTasks: []), at: now)
+        XCTAssertEqual(book.sessions.first?.inBackground, false)
+    }
+
     func testActivityPrefersTheAgentsOwnDescription() {
         let described = AgentToolSummary(tool: "Bash", input: .object(["command": .string("python3 - <<'EOF'"),
                                                                        "description": .string("Clean up asking panel")]))

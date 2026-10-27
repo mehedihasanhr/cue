@@ -14,6 +14,8 @@ final class AppPreferences {
         static let soundBookmark = "sound.customBookmark"
         static let icon = "menuBar.icon"
         static let iconMarkMigrated = "menuBar.icon.markMigrated.2"
+        static let welcomeTourSeen = "welcome.tourSeen"
+        static let islandHello = "island.hello"
         static let iconBookmark = "menuBar.customBookmark"
         static let appearance = "appearance"
         static let showInDock = "app.showInDock"
@@ -51,7 +53,8 @@ final class AppPreferences {
         static let islandDrives = "island.drives"
         static let islandDownloads = "island.downloads"
         static let islandNotifications = "island.notifications"
-        static let islandHidesBanners = "island.notifications.hideBanners"
+        // A new name: it was on by default, and is now off until asked for, whatever was saved before.
+        static let islandHidesBanners = "island.notifications.hideBanners.2"
         static let islandCalendar = "island.calendar"
         static let islandWeather = "island.weather"
         static let islandLockScreen = "island.lockScreen"
@@ -63,7 +66,6 @@ final class AppPreferences {
         static let islandOpensOn = "island.opensOn"
         static let agentSessions = "agents.enabled"
         static let agentAutoOpen = "agents.autoOpen"
-        static let agentUsageLimits = "agents.usageLimits"
         static let afterCapture = "capture.after"
         static let clipboardEnabled = "clipboard.enabled"
         static let clipboardLimit = "clipboard.limit"
@@ -620,12 +622,23 @@ final class AppPreferences {
         didSet { defaults.set(islandDownloads, forKey: Key.islandDownloads) }
     }
 
+    /// The welcome and its tour have been shown (or closed), so launch goes straight to work.
+    var welcomeTourSeen: Bool {
+        didSet { defaults.set(welcomeTourSeen, forKey: Key.welcomeTourSeen) }
+    }
+
+    /// The island says hello each time Cue starts.
+    var islandHello: Bool {
+        didSet { defaults.set(islandHello, forKey: Key.islandHello) }
+    }
+
     /// The island shows the notifications macOS shows, and keeps them in a tab.
     var islandNotifications: Bool {
         didSet { defaults.set(islandNotifications, forKey: Key.islandNotifications) }
     }
 
-    /// With those on: macOS's own banner in the corner is closed once the island has it.
+    /// With those on, and only when asked: macOS's own banner in the corner is closed
+    /// once the island has it (which drops it from Notification Center). Off by default.
     var islandHidesBanners: Bool {
         didSet { defaults.set(islandHidesBanners, forKey: Key.islandHidesBanners) }
     }
@@ -693,11 +706,6 @@ final class AppPreferences {
     }
 
     /// The island opens by itself when an agent asks something.
-    /// Claude Code's usage limits in the sessions list, through a relay in front of its status line.
-    var agentUsageLimits: Bool {
-        didSet { defaults.set(agentUsageLimits, forKey: Key.agentUsageLimits) }
-    }
-
     var agentAutoOpen: Bool {
         didSet { defaults.set(agentAutoOpen, forKey: Key.agentAutoOpen) }
     }
@@ -850,6 +858,9 @@ final class AppPreferences {
     // MARK: Init
 
     init() {
+        // Someone who had Cue before the tour existed has been through it, in effect:
+        // this flag is set on every launch, so its presence means Cue has run before.
+        welcomeTourSeen = defaults.object(forKey: Key.welcomeTourSeen) as? Bool ?? defaults.bool(forKey: Key.iconMarkMigrated)
         soundEnabled = defaults.object(forKey: Key.soundEnabled) as? Bool ?? true
         sound = Sound(storageValue: defaults.string(forKey: Key.sound) ?? "shutter")
         // Cue borrowed a camera glyph before it had a mark of its own; every one of
@@ -897,7 +908,8 @@ final class AppPreferences {
         islandDrives = defaults.object(forKey: Key.islandDrives) as? Bool ?? true
         islandDownloads = defaults.object(forKey: Key.islandDownloads) as? Bool ?? true
         islandNotifications = defaults.object(forKey: Key.islandNotifications) as? Bool ?? false
-        islandHidesBanners = defaults.object(forKey: Key.islandHidesBanners) as? Bool ?? true
+        islandHidesBanners = defaults.object(forKey: Key.islandHidesBanners) as? Bool ?? false
+        islandHello = defaults.object(forKey: Key.islandHello) as? Bool ?? true
         islandCalendar = defaults.object(forKey: Key.islandCalendar) as? Bool ?? false
         islandWeather = defaults.object(forKey: Key.islandWeather) as? Bool ?? false
         islandLockScreen = defaults.object(forKey: Key.islandLockScreen) as? Bool ?? false
@@ -910,7 +922,6 @@ final class AppPreferences {
         islandOpensOn = IslandTab(rawValue: defaults.string(forKey: Key.islandOpensOn) ?? "")
         agentSessionsEnabled = defaults.object(forKey: Key.agentSessions) as? Bool ?? true
         agentAutoOpen = defaults.object(forKey: Key.agentAutoOpen) as? Bool ?? true
-        agentUsageLimits = defaults.object(forKey: Key.agentUsageLimits) as? Bool ?? true
         clipboardHistoryEnabled = defaults.object(forKey: Key.clipboardEnabled) as? Bool ?? true
         clipboardHistoryLimit = defaults.object(forKey: Key.clipboardLimit) as? Int ?? 200
         colorPickerEnabled = defaults.object(forKey: Key.colorPickerEnabled) as? Bool ?? true

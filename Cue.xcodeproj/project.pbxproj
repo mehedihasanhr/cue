@@ -84,6 +84,7 @@
 				Agents/AgentModel.swift,
 				Agents/AgentHooks.swift,
 				Island/FileActions.swift,
+				Transform/TransformEngine.swift,
 			);
 			target = 4B4C494B000000000000E002 /* CueTests */;
 		};

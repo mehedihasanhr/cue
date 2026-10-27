@@ -98,23 +98,22 @@ struct ClockRow: View {
             }
         }
         .foregroundStyle(.white)
-        .padding(.leading, 14)
+        // The badge's 7 pt from the island's edge, as a status tile's; a touch above
+        // centre, as a status sits.
+        .padding(.leading, 7)
         .padding(.trailing, 18)
+        .padding(.bottom, 4)
         .frame(maxHeight: .infinity)
     }
 
+    /// The status icon washed with the period's colour, its symbol in that colour's gradient.
     private var badge: some View {
         ZStack {
-            LiquidFill(colors: status.tint)
-                .clipShape(Circle())
-            Circle()
-                .strokeBorder(.white.opacity(0.25), lineWidth: 1)
+            StatusIcon(symbol: nil, tint: status.tint.last ?? .orange, size: 38)
             Icon(symbol, size: 19, weight: .semibold)
-                .foregroundStyle(.white)
-                .shadow(color: .black.opacity(0.25), radius: 1, y: 1)
+                .foregroundStyle(LinearGradient(colors: status.tint, startPoint: .top, endPoint: .bottom))
         }
         .frame(width: 38, height: 38)
-        .shadow(color: (status.tint.first ?? .white).opacity(0.5), radius: 8)
     }
 
     private var symbol: String {

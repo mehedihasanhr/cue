@@ -24,12 +24,14 @@ final class IslandModel {
         case mirror
         /// The running agent sessions, and what they are asking.
         case agents
+        /// Cue saying hello as it starts: out of the notch for a moment, then back.
+        case hello
         case expanded
 
         var geometryPhase: IslandGeometry.Phase {
             switch self {
             case .collapsed: .collapsed
-            case .flash: .flash
+            case .flash, .hello: .flash
             case .status(let status): status.clock == nil ? .flash : .prompt
             case .prompt(let prompt): prompt.isForm ? .form : .prompt
             case .taskDetail, .clock, .media, .weather, .mirror, .agents: .form
@@ -40,7 +42,7 @@ final class IslandModel {
         var isFlash: Bool {
             switch self {
             case .flash, .status: true
-            case .collapsed, .expanded, .prompt, .taskDetail, .clock, .media, .weather, .mirror, .agents: false
+            case .collapsed, .expanded, .prompt, .taskDetail, .clock, .media, .weather, .mirror, .agents, .hello: false
             }
         }
 
@@ -48,7 +50,7 @@ final class IslandModel {
         /// text fields and forms keep a fixed width.
         var fitsContent: Bool {
             switch self {
-            case .flash, .status: true
+            case .flash, .status, .hello: true
             case .prompt(let prompt): prompt.isConfirm
             case .collapsed, .expanded, .taskDetail, .clock, .media, .weather, .mirror, .agents: false
             }
@@ -62,6 +64,9 @@ final class IslandModel {
     /// The clock view's height and natural width, reported by the view, so its box
     /// fits it — nothing in it is ever cut short.
     var clockHeight: CGFloat?
+    /// A notification's height with its room above and below, reported by its row: a
+    /// title and two lines of text need more than the usual status row.
+    var bannerHeight: CGFloat?
     var clockWidth: CGFloat?
     /// Coding-agent sessions; nil until the app delegate hands them over.
     var agents: AgentStore?
@@ -148,6 +153,8 @@ final class IslandModel {
         case .mirror: MirrorView.height
         case .agents: max(agentsHeight ?? estimatedAgentsHeight, showsPlayerBesideAgents ? NowPlayingDetail.columnHeight : 0)
         case .expanded: panelHeight
+        case .status(let status) where status.clock != nil: IslandGeometry.clockStatusContentHeight
+        case .status(let status) where status.banner != nil: max(bannerHeight ?? 0, IslandGeometry.flashContentHeight)
         default: nil
         }
         return geometry.rect(for: phase.geometryPhase, contentWidth: width, contentHeight: height)
@@ -158,6 +165,8 @@ final class IslandModel {
     var dropTarget: IslandDropZone.Target = .shelf
     /// Files were just dropped (how many, and where): the drop zone says so a moment.
     var dropSaved: IslandDropZone.Saved?
+    /// A share link can be made from a drop.
+    var canShareDrop = false
     /// The drop zone is showing, waiting for the drop or saying it was saved.
     var showsDropZone: Bool { dropping || dropSaved != nil }
     /// Asks the compact box for a line of text; called by the panel.
@@ -384,7 +393,9 @@ struct IslandView: View {
     /// Settings › Island › Animation; the view sets it from the preferences it reads.
     nonisolated(unsafe) static var animationStyle: AppPreferences.IslandAnimation = .lively
     static var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion || animationStyle != .lively }
-    static var openAnimation: Animation { animationStyle == .none ? .linear(duration: 0) : reduceMotion ? .easeOut(duration: 0.18) : .spring(response: IslandMotion.response(0.36), dampingFraction: 0.82, blendDuration: 0) }
+    /// Opening bounces: the shape overshoots its size a little and settles back, as if
+    /// it sprang out of the notch. Closing is smooth, with no bounce back out.
+    static var openAnimation: Animation { animationStyle == .none ? .linear(duration: 0) : reduceMotion ? .easeOut(duration: 0.18) : .spring(response: IslandMotion.response(0.42), dampingFraction: 0.68, blendDuration: 0) }
     static var closeAnimation: Animation { animationStyle == .none ? .linear(duration: 0) : reduceMotion ? .easeOut(duration: 0.18) : .spring(response: IslandMotion.response(0.45), dampingFraction: 1.0, blendDuration: 0) }
     /// The agents list: rows moving, cards opening, and the island's height
     /// following them, all on one critically damped spring so they move together.
@@ -479,6 +490,7 @@ struct IslandView: View {
             .animation(Self.openAnimation, value: model.panelHeight)
             .animation(Self.openAnimation, value: model.showsDropZone)
             .animation(Self.openAnimation, value: model.clockHeight)
+            .animation(Self.openAnimation, value: model.bannerHeight)
             .animation(Self.openAnimation, value: model.clockWidth)
             .animation(Self.listAnimation, value: model.agentsHeight)
             .animation(Self.listAnimation, value: model.showsPlayerBesideAgents)
@@ -525,6 +537,14 @@ struct IslandView: View {
                     .frame(height: strip)
                     .transition(.opacity.animation(Self.contentAnimation))
             }
+        case .hello:
+            VStack(spacing: 0) {
+                Color.clear.frame(height: strip)
+                IslandHello()
+                    .modifier(IdealWidth { model.contentWidth = $0 })
+                    .frame(height: IslandGeometry.flashContentHeight)
+            }
+            .transition(Self.contentTransition)
         case .flash(let item):
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
@@ -537,17 +557,25 @@ struct IslandView: View {
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
                 if let clock = status.clock {
+                    // Its own width, never squeezed: in a box exactly that wide the prayer line
+                    // would otherwise lose its last characters.
                     ClockRow(status: clock)
+                        .fixedSize(horizontal: true, vertical: false)
                         .modifier(IdealWidth { model.contentWidth = $0 })
-                        .frame(height: IslandGeometry.promptContentHeight)
+                        .frame(height: IslandGeometry.clockStatusContentHeight)
                 } else if let meeting = status.meeting {
                     MeetingRow(meeting: meeting, onJoin: { model.onOpenURL($0) })
                         .modifier(IdealWidth { model.contentWidth = $0 })
                         .frame(height: IslandGeometry.flashContentHeight)
                 } else if let banner = status.banner {
+                    // Its own height, with a little air under the notch and more at the foot,
+                    // as the island's corners curve in there.
                     BannerRow(banner: banner)
+                        .padding(.top, 4)
+                        .padding(.bottom, 10)
+                        .modifier(IdealHeight { model.bannerHeight = $0 })
                         .modifier(IdealWidth { model.contentWidth = $0 })
-                        .frame(height: IslandGeometry.flashContentHeight)
+                        .frame(height: max(model.bannerHeight ?? 0, IslandGeometry.flashContentHeight))
                 } else if let notice = status.notice {
                     NoticeRow(notice: notice)
                         .modifier(IdealWidth { model.contentWidth = $0 })
@@ -571,7 +599,7 @@ struct IslandView: View {
                 } else if let done = status.agentDone {
                     AgentDoneRow(done: done)
                         .modifier(IdealWidth { model.contentWidth = $0 })
-                        .frame(height: IslandGeometry.flashContentHeight, alignment: .top)
+                        .frame(height: IslandGeometry.flashContentHeight)
                 } else {
                     StatusRow(status: status)
                         .modifier(IdealWidth { model.contentWidth = $0 })
@@ -676,7 +704,7 @@ struct IslandView: View {
                     .opacity(model.showsDropZone ? 0 : 1)
                     .overlay(alignment: .top) {
                         if model.showsDropZone {
-                            IslandDropZone(target: model.dropTarget, saved: model.dropSaved)
+                            IslandDropZone(target: model.dropTarget, saved: model.dropSaved, canShare: model.canShareDrop)
                                 .transition(.scale(scale: 0.92, anchor: .top).combined(with: .opacity).animation(Self.contentAnimation))
                         }
                     }
@@ -689,7 +717,7 @@ struct IslandView: View {
     static func hasBackdrop(_ phase: IslandModel.Phase) -> Bool {
         switch phase {
         case .expanded, .agents, .clock, .media, .weather, .mirror, .taskDetail, .prompt: true
-        case .collapsed, .flash, .status: false
+        case .collapsed, .flash, .status, .hello: false
         }
     }
 
@@ -823,7 +851,7 @@ private struct StatusRow: View {
             StatusTile { Image(nsImage: image).resizable().scaledToFill() }
         } else {
             // A bead in the status's colour: green done, orange "nothing to do", else blue.
-            GlossyDisc(symbol: status.symbol, tint: status.tint == .white ? IslandStyle.accent : status.tint, size: statusTileSide)
+            StatusIcon(symbol: status.symbol, tint: status.tint == .white ? Color(red: 0.5, green: 0.7, blue: 1) : status.tint, size: statusTileSide)
         }
     }
 }
@@ -904,7 +932,8 @@ private struct StatusLayout<Leading: View>: View {
             Spacer(minLength: 14)
             badgeView
         }
-        .padding(.horizontal, 16)
+        .padding(.leading, 7)
+        .padding(.trailing, 16)
         // A touch above centre, leaving the foot to the hairline.
         .padding(.bottom, duration == nil ? 0 : 4)
         .frame(maxHeight: .infinity)

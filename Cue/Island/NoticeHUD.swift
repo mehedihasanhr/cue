@@ -241,7 +241,6 @@ struct NoticeRow: View {
         }
         .padding(.leading, 14)
         .padding(.trailing, 20)
-        .frame(minWidth: 320)
         .fixedSize()
         .onAppear {
             let motion = !IslandView.reduceMotion
@@ -265,12 +264,12 @@ struct NoticeRow: View {
                 .scaleEffect(shown ? 1 : 0.7)
         } else {
             ZStack {
-                Circle()
-                    .strokeBorder(notice.tint.opacity(0.7), lineWidth: 1.5)
-                    .scaleEffect(burst ? 1.9 : 1)
-                    .opacity(burst ? 0 : 0.8)
-                GlossyDisc(symbol: notice.symbol, tint: notice.tint, size: 38,
-                           lit: notice.kind != .vpnOff && notice.kind != .driveEjected)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(notice.tint.opacity(0.5), lineWidth: 1)
+                    .scaleEffect(burst ? 1.5 : 1)
+                    .opacity(burst ? 0 : 0.6)
+                StatusIcon(symbol: notice.symbol, tint: notice.tint, size: 38,
+                           active: notice.kind != .vpnOff && notice.kind != .driveEjected)
                     .scaleEffect(shown ? 1 : 0.5)
             }
             .frame(width: 38, height: 38)

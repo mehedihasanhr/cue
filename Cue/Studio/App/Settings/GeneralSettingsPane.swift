@@ -16,7 +16,7 @@ struct GeneralSettingsPane: View {
                             subtitle: settings.library.resolvingSymlinksInPath().path(percentEncoded: false),
                             symbol: "folder.fill", tint: .orange) {
                     HStack(spacing: 8) {
-                        Button("Choose…") { chooseLibrary() }
+                        Button("Choose") { chooseLibrary() }
                         RevealButton(help: "Show in Finder") { revealLibrary() }
                     }
                 }

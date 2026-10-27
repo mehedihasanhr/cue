@@ -90,7 +90,7 @@ struct ExportSettingsPane: View {
                             subtitle: folder?.path(percentEncoded: false) ?? "Where the save panel opens. Not chosen yet — it opens wherever macOS last had it.",
                             symbol: "folder.fill", tint: .orange) {
                     HStack(spacing: 8) {
-                        Button("Choose…") { chooseFolder() }
+                        Button("Choose") { chooseFolder() }
                         if let folder {
                             RevealButton(help: "Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([folder]) }
                         }

@@ -5,6 +5,43 @@ import SwiftUI
 /// above-left: a soft highlight on top, the colour deepening toward the bottom, a rim
 /// that catches the light and a shadow under it.
 
+/// A status's icon: a dark tile washed with its colour, lit softly from the top,
+/// the symbol in the colour itself. Matte and without a glow, so it sits quietly in
+/// the black of the island rather than shining out of it. `active` false: grey, for
+/// something gone (unplugged, disconnected, off).
+struct StatusIcon: View {
+    /// nil: a bare tile, its picture laid over it by the caller (see `glyphStyle`).
+    let symbol: String?
+    var tint: Color
+    var size: CGFloat = 34
+    var active = true
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: size * 0.32, style: .continuous)
+        ZStack {
+            shape.fill(LinearGradient(colors: [Color(white: 0.17), Color(white: 0.09)], startPoint: .top, endPoint: .bottom))
+            shape.fill(LinearGradient(colors: [tint.opacity(active ? 0.36 : 0.1), tint.opacity(active ? 0.1 : 0.03)],
+                                      startPoint: .top, endPoint: .bottom))
+            // The edge catching the light along the top, gone by the foot.
+            shape.strokeBorder(LinearGradient(colors: [.white.opacity(0.18), .white.opacity(0.03)], startPoint: .top, endPoint: .bottom),
+                               lineWidth: 1)
+            if let symbol {
+                Icon(symbol, size: size * 0.48, weight: .semibold)
+                    .foregroundStyle(Self.glyphStyle(tint, active: active))
+            }
+        }
+        .frame(width: size, height: size)
+        .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
+    }
+
+    /// The symbol's colour on the tile: the tint a little lighter at the top.
+    static func glyphStyle(_ tint: Color, active: Bool = true) -> AnyShapeStyle {
+        guard active else { return AnyShapeStyle(Color(white: 0.55)) }
+        return AnyShapeStyle(LinearGradient(colors: [tint.opacity(0.75), tint], startPoint: .top, endPoint: .bottom)
+            .shadow(.inner(color: .white.opacity(0.35), radius: 0.5, y: 0.5)))
+    }
+}
+
 /// A glossy bead in `tint` with a symbol set into it; `lit` adds a glow around it.
 struct GlossyDisc: View {
     /// nil: a bare bead, its picture laid over it by the caller.
@@ -106,13 +143,12 @@ struct FocusOrb: View {
 
     var body: some View {
         ZStack {
-            GlossyDisc(symbol: "moon.fill", tint: on ? Self.purple : Color(white: 0.32), size: size, lit: on,
-                       glyph: on ? Color(red: 1, green: 0.95, blue: 0.75) : .white.opacity(0.7))
+            StatusIcon(symbol: "moon.fill", tint: Color(red: 0.66, green: 0.56, blue: 1), size: size, active: on)
             if on {
                 ForEach(Array(Self.stars.enumerated()), id: \.offset) { index, star in
                     Image(systemName: "sparkle")
                         .font(.system(size: star.size, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color(red: 0.85, green: 0.8, blue: 1))
                         .opacity(twinkle == (index % 2 == 0) ? 1 : 0.25)
                         .scaleEffect(twinkle == (index % 2 == 0) ? 1 : 0.6)
                         .offset(x: star.x * size, y: star.y * size)
@@ -138,19 +174,9 @@ struct LevelArt: View {
     var body: some View {
         switch level.kind {
         case .volume:
-            ZStack {
-                GlossyDisc(symbol: level.symbol, tint: Color(white: level.muted ? 0.5 : 0.82), size: size, lit: false,
-                           glyph: Color(white: level.muted ? 0.25 : 0.18))
-                // Brushed: fine rings round the centre.
-                Circle()
-                    .strokeBorder(AngularGradient(colors: [.white.opacity(0.25), .clear, .white.opacity(0.2), .clear, .white.opacity(0.25)],
-                                                  center: .center), lineWidth: size * 0.5)
-                    .blendMode(.overlay)
-                    .allowsHitTesting(false)
-            }
-            .frame(width: size, height: size)
+            StatusIcon(symbol: level.symbol, tint: Color(white: 0.92), size: size, active: !level.muted)
         case .brightness:
-            GlossyDisc(symbol: level.symbol, tint: Color(red: 1.0, green: 0.68, blue: 0.2), size: size)
+            StatusIcon(symbol: level.symbol, tint: Color(red: 1.0, green: 0.76, blue: 0.3), size: size)
         }
     }
 }

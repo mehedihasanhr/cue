@@ -1,4 +1,5 @@
 import AppKit
+import os
 import QuickLookThumbnailing
 import SwiftUI
 import UniformTypeIdentifiers
@@ -294,7 +295,7 @@ struct ShelfDragSource: NSViewRepresentable {
             let origin = convert(start, from: nil)
             let side: CGFloat = 48
             let draggingItems = items.enumerated().map { index, item in
-                let draggingItem = NSDraggingItem(pasteboardWriter: item.url as NSURL)
+                let draggingItem = NSDraggingItem(pasteboardWriter: ShelfFilePromise.writer(for: item.url))
                 // Fanned a little, so several read as a stack.
                 let offset = CGFloat(min(index, 4)) * 5
                 draggingItem.setDraggingFrame(CGRect(x: origin.x - side / 2 + offset, y: origin.y - side / 2 - offset, width: side, height: side),
@@ -361,5 +362,53 @@ struct ShelfActions: View {
             Button("Messages") { FileActions.share(urls, via: .composeMessage) }
         }
         Button("Show in Finder") { FileActions.reveal(urls) }
+    }
+}
+
+/// A shelf file as a drag hands it on. Files Cue made itself (Transform's results,
+/// pictures that came without a file) live in its sandbox container, which macOS
+/// won't open to the app they are dropped on: Finder fails with -8058. Those go as
+/// file promises, Cue copying each where it is dropped; the rest as plain files.
+nonisolated final class ShelfFilePromise: NSObject, NSFilePromiseProviderDelegate, @unchecked Sendable { // only an immutable URL
+    private let source: URL
+    private static let queue: OperationQueue = {
+        let queue = OperationQueue()
+        queue.qualityOfService = .userInitiated
+        return queue
+    }()
+    /// The provider holds its delegate weakly, and the file is asked for after the
+    /// drop: each is kept here until it has been written.
+    private static let pending = OSAllocatedUnfairLock<[ObjectIdentifier: ShelfFilePromise]>(initialState: [:])
+
+    private init(source: URL) {
+        self.source = source
+    }
+
+    static func writer(for url: URL) -> any NSPasteboardWriting {
+        let container = URL(fileURLWithPath: NSHomeDirectory()).standardizedFileURL.path
+        guard url.standardizedFileURL.path.hasPrefix(container + "/") else { return url as NSURL }
+        let type = (try? url.resourceValues(forKeys: [.contentTypeKey]).contentType) ?? .data
+        let promise = ShelfFilePromise(source: url)
+        pending.withLock { $0[ObjectIdentifier(promise)] = promise }
+        return NSFilePromiseProvider(fileType: type.identifier, delegate: promise)
+    }
+
+    func filePromiseProvider(_ filePromiseProvider: NSFilePromiseProvider, fileNameForType fileType: String) -> String {
+        source.lastPathComponent
+    }
+
+    func operationQueue(for filePromiseProvider: NSFilePromiseProvider) -> OperationQueue {
+        Self.queue
+    }
+
+    func filePromiseProvider(_ filePromiseProvider: NSFilePromiseProvider, writePromiseTo url: URL,
+                             completionHandler: @escaping @Sendable ((any Error)?) -> Void) {
+        defer { _ = Self.pending.withLock { $0.removeValue(forKey: ObjectIdentifier(self)) } }
+        do {
+            try FileManager.default.copyItem(at: source, to: url)
+            completionHandler(nil)
+        } catch {
+            completionHandler(error)
+        }
     }
 }
