@@ -98,8 +98,11 @@ struct ClockRow: View {
             }
         }
         .foregroundStyle(.white)
-        .padding(.leading, 14)
+        // The badge's 7 pt from the island's edge, as a status tile's; a touch above
+        // centre, as a status sits.
+        .padding(.leading, 7)
         .padding(.trailing, 18)
+        .padding(.bottom, 4)
         .frame(maxHeight: .infinity)
     }
 

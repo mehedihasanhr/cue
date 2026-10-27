@@ -150,6 +150,7 @@ final class IslandModel {
         case .mirror: MirrorView.height
         case .agents: max(agentsHeight ?? estimatedAgentsHeight, showsPlayerBesideAgents ? NowPlayingDetail.columnHeight : 0)
         case .expanded: panelHeight
+        case .status(let status) where status.clock != nil: IslandGeometry.clockStatusContentHeight
         default: nil
         }
         return geometry.rect(for: phase.geometryPhase, contentWidth: width, contentHeight: height)
@@ -551,7 +552,7 @@ struct IslandView: View {
                 if let clock = status.clock {
                     ClockRow(status: clock)
                         .modifier(IdealWidth { model.contentWidth = $0 })
-                        .frame(height: IslandGeometry.promptContentHeight)
+                        .frame(height: IslandGeometry.clockStatusContentHeight)
                 } else if let meeting = status.meeting {
                     MeetingRow(meeting: meeting, onJoin: { model.onOpenURL($0) })
                         .modifier(IdealWidth { model.contentWidth = $0 })
@@ -916,7 +917,8 @@ private struct StatusLayout<Leading: View>: View {
             Spacer(minLength: 14)
             badgeView
         }
-        .padding(.horizontal, 16)
+        .padding(.leading, 7)
+        .padding(.trailing, 16)
         // A touch above centre, leaving the foot to the hairline.
         .padding(.bottom, duration == nil ? 0 : 4)
         .frame(maxHeight: .infinity)

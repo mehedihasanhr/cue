@@ -103,8 +103,6 @@ struct ToggleRow: View {
     let toggle: ToggleHUD
     @State private var shown = false
 
-    static let minWidth: CGFloat = 320
-
     private var detail: String {
         switch (toggle.kind, toggle.on) {
         case (.capsLock, true): "Typing in capitals"
@@ -144,7 +142,6 @@ struct ToggleRow: View {
         }
         .padding(.leading, 14)
         .padding(.trailing, 22)
-        .frame(minWidth: Self.minWidth)
         .fixedSize()
         .onAppear {
             withAnimation(IslandView.reduceMotion ? .easeOut(duration: 0.12) : .spring(response: 0.4, dampingFraction: 0.75).delay(0.1)) { shown = true }

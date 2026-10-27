@@ -34,7 +34,7 @@ struct GeneralSettingsView: View {
                     SettingsRow(launchError, symbol: "xmark.octagon.fill", tint: .red)
                 }
                 SettingsRow("Welcome tour", subtitle: "What Cue does, a page at a time, as on the first launch.") {
-                    Button("Replay…") { NotificationCenter.default.post(name: .cueShowWelcome, object: nil) }
+                    Button("Replay") { NotificationCenter.default.post(name: .cueShowWelcome, object: nil) }
                 }
             }
 
@@ -58,7 +58,7 @@ struct GeneralSettingsView: View {
                                 subtitle: sync.url?.path(percentEncoded: false),
                                 symbol: "arrow.triangle.2.circlepath", tint: .blue) {
                         HStack(spacing: 8) {
-                            Button(sync.isOn ? "Change…" : "Choose Folder…") { sync.choose() }
+                            Button(sync.isOn ? "Change" : "Choose Folder") { sync.choose() }
                             if sync.isOn {
                                 Button("Stop") { sync.turnOff() }
                             }
@@ -80,7 +80,7 @@ struct GeneralSettingsView: View {
                 SettingsRow(library.folderIsCustom ? library.folderURL.lastPathComponent : "Pictures › Cue",
                             subtitle: library.folderURL.path(percentEncoded: false), symbol: "folder", tint: .orange) {
                     HStack(spacing: 8) {
-                        Button("Choose…") { library.chooseFolder() }
+                        Button("Choose") { library.chooseFolder() }
                         Button(action: { library.revealFolder() }) {
                             Image(systemName: "arrow.up.forward.app")
                         }
@@ -252,7 +252,7 @@ struct AgentSettingsView: View {
                             // own sessions (in ~/.claude) still never show.
                             SettingsRow("Claude desktop app", subtitle: "Its sessions use ~/.claude, which isn’t connected, so they don’t show on the island.",
                                         symbol: "asterisk", tint: .orange) {
-                                Button("Connect…") { agents.connect(.claude) }
+                                Button("Connect") { agents.connect(.claude) }
                             }
                         }
                         AgentConnectRow(agent: agent, connector: agents)
@@ -270,7 +270,7 @@ struct AgentSettingsView: View {
             SettingsGroup("Your tasks") {
                 SettingsRow("Let agents read and update your tasks", subtitle: "Over MCP, from Claude Code, Codex, Claude Desktop and others.",
                             symbol: SettingsSection.mcp.symbol, tint: SettingsSection.mcp.tint) {
-                    Button("Set Up…") { navigation.go(.mcp) }
+                    Button("Set Up") { navigation.go(.mcp) }
                 }
             }
 
@@ -313,7 +313,7 @@ private struct AgentConnectRow: View {
                     subtitle: another ? "Each profile has its own folder (like ~/.\(agent.rawValue)-work); connect each one whose sessions should show."
                                       : "Not connected. Choose its folder (\(agent == .claude ? "~/.claude" : "~/.codex")) to add Cue’s hook.",
                     symbol: agent == .claude ? "asterisk" : "terminal", tint: agent == .claude ? .orange : .blue) {
-            Button(another ? "Add…" : "Connect…") { connector.connect(agent) }
+            Button(another ? "Add" : "Connect") { connector.connect(agent) }
         }
     }
 }
@@ -629,7 +629,7 @@ struct SnippetSettingsView: View {
                 }
                 if !PermissionManager.hasAccessibilityAccess {
                     SettingsRow("Needs Accessibility access", symbol: "exclamationmark.triangle.fill", tint: .orange) {
-                        Button("Grant…") {
+                        Button("Grant") {
                             PermissionManager.requestAccessibilityAccess()
                             PermissionManager.revealAppInFinder()
                         }
@@ -673,7 +673,7 @@ struct NotesSettingsView: View {
                     SettingsRow(notes.folderIsCustom ? notes.folderURL.lastPathComponent : "Cue's own folder",
                                 subtitle: notes.folderURL.path(percentEncoded: false), symbol: "folder", tint: .yellow) {
                         HStack(spacing: 8) {
-                            Button("Choose…") { notes.chooseFolder() }
+                            Button("Choose") { notes.chooseFolder() }
                             Button(action: { notes.revealFolder() }) {
                                 Image(systemName: "arrow.up.forward.app")
                             }
@@ -724,7 +724,7 @@ struct NotesSettingsView: View {
                         .frame(width: 300)
                 }
                 SettingsRow("Connection", subtitle: notionCheck) {
-                    Button(checking ? "Checking…" : "Check") { checkNotion() }
+                    Button(checking ? "Checking" : "Check") { checkNotion() }
                         .disabled(checking || preferences.notesNotionToken.isEmpty)
                 }
             }
@@ -787,7 +787,7 @@ struct TasksSettingsView: View {
         SettingsPane(.tasks) {
             SettingsGroup("AI agents") {
                 SettingsRow("MCP", subtitle: mcpStatus, symbol: SettingsSection.mcp.symbol, tint: SettingsSection.mcp.tint) {
-                    Button("Set Up…") { navigation.go(.mcp) }
+                    Button("Set Up") { navigation.go(.mcp) }
                 }
             }
 
@@ -803,7 +803,7 @@ struct TasksSettingsView: View {
                         .frame(width: 300)
                 }
                 SettingsRow("Connection", subtitle: serverCheck) {
-                    Button(checking ? "Checking…" : "Check") { checkServer() }
+                    Button(checking ? "Checking" : "Check") { checkServer() }
                         .disabled(checking || sync?.serverURL == nil)
                 }
             }
@@ -827,7 +827,7 @@ struct TasksSettingsView: View {
                 if let sync {
                     SettingsRow(syncTitle(sync), subtitle: sync.lastError, symbol: sync.lastError == nil ? "arrow.triangle.2.circlepath" : "exclamationmark.triangle.fill",
                                 tint: sync.lastError == nil ? .green : .orange) {
-                        Button(sync.syncing ? "Syncing…" : "Sync Now") { Task { await sync.sync() } }
+                        Button(sync.syncing ? "Syncing" : "Sync Now") { Task { await sync.sync() } }
                             .disabled(sync.syncing || sync.serverURL == nil)
                     }
                 }
@@ -862,7 +862,7 @@ struct TasksSettingsView: View {
                 .disabled(!preferences.tasksWebhookEnabled)
                 if let sync {
                     SettingsRow("Last event", subtitle: sync.lastWebhook ?? "None sent yet") {
-                        Button(testing ? "Sending…" : "Send Test") { sendTest(sync) }
+                        Button(testing ? "Sending" : "Send Test") { sendTest(sync) }
                             .disabled(testing || sync.webhookURL == nil)
                     }
                 }
@@ -1032,7 +1032,7 @@ struct CaptureSettingsView: View {
                             Image(systemName: "play.fill")
                         }
                         .help("Preview")
-                        Button("Choose File…") { preferences.chooseCustomSound() }
+                        Button("Choose File") { preferences.chooseCustomSound() }
                     }
                 }
                 .disabled(!preferences.soundEnabled)
@@ -1119,7 +1119,7 @@ struct CaptureSettingsView: View {
             }
             .disabled(!preferences.ocrCloudEnabled)
             SettingsRow("Connection", subtitle: cloudCheck) {
-                Button(checkingCloud ? "Checking…" : "Check") { checkCloud() }
+                Button(checkingCloud ? "Checking" : "Check") { checkCloud() }
                     .disabled(checkingCloud || preferences.ocrCloudSecret.isEmpty)
             }
             .disabled(!preferences.ocrCloudEnabled)
@@ -1440,7 +1440,7 @@ struct ClipboardSettingsView: View {
 
             SettingsGroup {
                 SettingsRow("\(clipboard.items.count) item\(clipboard.items.count == 1 ? "" : "s") stored") {
-                    Button("Clear History…", role: .destructive) { confirmClear = true }
+                    Button("Clear History", role: .destructive) { confirmClear = true }
                         .disabled(clipboard.items.allSatisfy(\.pinned))
                 }
             }
@@ -1539,7 +1539,7 @@ private struct PermissionRow: View {
                         .font(.system(size: 11, weight: .medium))
                         .labelStyle(.titleAndIcon)
                 } else {
-                    Button("Grant Access…", action: request)
+                    Button("Grant Access", action: request)
                     .buttonStyle(.borderedProminent)
                 }
                 Button(action: openSettings) {
@@ -1739,7 +1739,7 @@ struct ShortcutSettingsView: View {
                     SettingsRow("A binding matches a macOS screenshot shortcut",
                                 subtitle: "Turn it off in System Settings › Keyboard › Shortcuts › Screenshots.",
                                 symbol: "exclamationmark.triangle.fill", tint: .orange) {
-                        Button("Keyboard Settings…") { PermissionManager.openKeyboardShortcutSettings() }
+                        Button("Keyboard Settings") { PermissionManager.openKeyboardShortcutSettings() }
                     }
                 }
             }

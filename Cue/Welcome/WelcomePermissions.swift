@@ -39,7 +39,7 @@ struct WelcomePermissions: View {
                 }
                 row("Open at login", "Cue starts with your Mac, so the island is always there.", symbol: "power",
                     tint: Color(red: 0.36, green: 0.82, blue: 0.48), granted: login == .enabled,
-                    grantTitle: login == .requiresApproval ? "Approve…" : "Turn On") {
+                    grantTitle: login == .requiresApproval ? "Approve" : "Turn On") {
                     if login == .requiresApproval {
                         PermissionManager.openLoginItemsSettings()
                     } else {
@@ -73,7 +73,7 @@ struct WelcomePermissions: View {
     }
 
     private func row(_ title: String, _ detail: String, symbol: String, tint: Color, granted: Bool,
-                     grantTitle: String = "Allow…", grant: @escaping () -> Void) -> some View {
+                     grantTitle: String = "Allow", grant: @escaping () -> Void) -> some View {
         HStack(spacing: 14) {
             GlossyDisc(symbol: symbol, tint: tint, size: 34, lit: false)
             VStack(alignment: .leading, spacing: 2) {

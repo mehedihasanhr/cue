@@ -165,7 +165,6 @@ struct MeetingRow: View {
         }
         .padding(.leading, 14)
         .padding(.trailing, 18)
-        .frame(minWidth: 340)
         .fixedSize()
         .onAppear {
             let motion = !IslandView.reduceMotion

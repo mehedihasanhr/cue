@@ -241,7 +241,6 @@ struct NoticeRow: View {
         }
         .padding(.leading, 14)
         .padding(.trailing, 20)
-        .frame(minWidth: 320)
         .fixedSize()
         .onAppear {
             let motion = !IslandView.reduceMotion

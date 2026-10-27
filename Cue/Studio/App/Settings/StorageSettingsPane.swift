@@ -47,7 +47,7 @@ struct StorageSettingsPane: View {
             StudioSettingsGroup("Reset") {
                 StudioSettingsRow("Reset recording and video settings", subtitle: didReset ? "Done. Recording and the video editor are back to their defaults." : "Cue's other settings are kept.",
                             symbol: "arrow.counterclockwise", tint: .red) {
-                    Button("Reset…") { confirmsReset = true }
+                    Button("Reset") { confirmsReset = true }
                 }
             }
         }

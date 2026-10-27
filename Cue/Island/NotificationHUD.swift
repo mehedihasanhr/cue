@@ -275,7 +275,6 @@ struct BannerRow: View {
         }
         .padding(.leading, 14)
         .padding(.trailing, 20)
-        .frame(minWidth: 340)
         .fixedSize()
         .onAppear {
             withAnimation(IslandView.reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.45, dampingFraction: 0.75).delay(0.08)) { shown = true }

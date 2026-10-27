@@ -63,12 +63,16 @@ nonisolated struct IslandGeometry: Equatable {
     static let shadowMargin: CGFloat = 44
     /// Fallback width of the compact box, before its content has been measured.
     static let flashWidth: CGFloat = 340
-    /// The compact box is always at least this much wider than the closed shape,
+    /// The compact box is always at least this much wider than the closed shape (just
+    /// enough to read as grown out of it, not a band of black beside a narrow status),
     /// and never wider than `maxFlashWidth`.
-    static let minFlashGrowth: CGFloat = 40
+    static let minFlashGrowth: CGFloat = 16
     static let maxFlashWidth: CGFloat = 480
     static let flashContentHeight: CGFloat = 48
     static let promptContentHeight: CGFloat = 64
+    /// The clock as a status: its 38 pt badge with the same 7 pt around it as a status
+    /// tile, rather than a text field's height.
+    static let clockStatusContentHeight: CGFloat = 52
     static let formWidth: CGFloat = 460
     static let formContentHeight: CGFloat = 300
     /// The agent sessions list: wider than a form, so a session's name, what it is
@@ -142,6 +146,7 @@ nonisolated struct IslandGeometry: Equatable {
         switch phase {
         case .flash, .prompt:
             if let contentWidth { width = min(max(contentWidth, collapsed.width + Self.minFlashGrowth), Self.maxFlashWidth).rounded() }
+            if let contentHeight { height = (collapsed.height + contentHeight).rounded() }
         case .expanded:
             if let contentWidth { width = min(max(contentWidth + Self.panelHorizontalPadding * 2, fixed.width), screen.frame.width).rounded() }
             // The panel fits its content; the fixed height is the most it gets.

@@ -511,6 +511,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                                               image: NSImage(named: "AppIcon"), duration: .seconds(6)))
                 case "drop": self?.island?.debugShowDropZone()
                 case "hello": self?.island?.playHello()
+                case "clockstatus": self?.prayerClock?.preview()
                 case "medialyrics":
                     UserDefaults.standard.set(true, forKey: "island.player.lyrics")
                     self?.island?.nowPlaying.debugFake()
@@ -1745,6 +1746,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The island's hello, once it is up (Settings › Island › Say hello at launch).
     private func sayHello() {
         guard preferences.islandHello else { return }
+        #if DEBUG
+        // A diagnostic picture of the island wants it as asked, not saying hello.
+        if let shot = ProcessInfo.processInfo.environment["CUE_DEBUG_ISLAND_SHOT"], shot != "hello" { return }
+        #endif
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.island?.playHello() }
     }
 
