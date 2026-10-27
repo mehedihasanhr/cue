@@ -111,7 +111,7 @@ struct QuickDropGrid: View {
         }
         .padding(7)
         .frame(width: Self.content.width, height: Self.content.height)
-        .modifier(PaneGlass(shape: shape, dark: scheme == .dark))
+        .modifier(DropPane(shape: shape, dark: scheme == .dark))
         .scaleEffect(model.shown ? 1 : 0.82)
         .opacity(model.shown ? 1 : 0)
         .frame(width: Self.size.width, height: Self.size.height)
@@ -182,9 +182,9 @@ struct QuickDropGrid: View {
     }
 }
 
-/// The grid's pane: clear Liquid Glass with a soft shadow on macOS 26, a material
-/// pane before it.
-private struct PaneGlass: ViewModifier {
+/// The pane of the grid and the basket: Droppy's near-opaque light grey over Liquid
+/// Glass in light mode, a dark one in dark mode, with a soft shadow.
+struct DropPane: ViewModifier {
     let shape: RoundedRectangle
     let dark: Bool
 

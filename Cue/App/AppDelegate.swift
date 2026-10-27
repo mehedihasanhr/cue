@@ -100,6 +100,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         preferences.applyAppearance()
+        #if DEBUG
+        // Diagnostics: `--env CUE_DEBUG_APPEARANCE=dark|light` draws Cue so, whatever the settings say.
+        if let name = ProcessInfo.processInfo.environment["CUE_DEBUG_APPEARANCE"] {
+            NSApp.appearance = NSAppearance(named: name == "dark" ? .darkAqua : .aqua)
+        }
+        #endif
         // The bundle launches as an agent; the preference decides whether Cue takes
         // a Dock tile, so it can be turned off without reinstalling.
         preferences.applyDockVisibility()
