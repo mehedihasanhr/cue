@@ -106,18 +106,14 @@ struct ClockRow: View {
         .frame(maxHeight: .infinity)
     }
 
+    /// The status icon washed with the period's colour, its symbol in that colour's gradient.
     private var badge: some View {
         ZStack {
-            LiquidFill(colors: status.tint)
-                .clipShape(Circle())
-            Circle()
-                .strokeBorder(.white.opacity(0.25), lineWidth: 1)
+            StatusIcon(symbol: nil, tint: status.tint.last ?? .orange, size: 38)
             Icon(symbol, size: 19, weight: .semibold)
-                .foregroundStyle(.white)
-                .shadow(color: .black.opacity(0.25), radius: 1, y: 1)
+                .foregroundStyle(LinearGradient(colors: status.tint, startPoint: .top, endPoint: .bottom))
         }
         .frame(width: 38, height: 38)
-        .shadow(color: (status.tint.first ?? .white).opacity(0.5), radius: 8)
     }
 
     private var symbol: String {

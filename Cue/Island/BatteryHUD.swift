@@ -182,19 +182,14 @@ struct BatteryRow: View {
     private var badge: some View {
         let tint = battery.tint
         return ZStack {
-            Circle()
-                .fill(tint.opacity(0.35))
-                .blur(radius: 9)
-                .opacity(battery.event == .unplugged ? 0 : shown ? 0.9 : 0)
             // A ring spreading out as it lands.
-            Circle()
-                .strokeBorder(tint.opacity(0.7), lineWidth: 1.5)
-                .scaleEffect(burst ? 1.9 : 1)
-                .opacity(burst ? 0 : (battery.event == .unplugged ? 0 : 0.8))
-            GlossyDisc(symbol: nil, tint: battery.event == .unplugged ? Color(white: 0.34) : tint, size: 34, lit: battery.event != .unplugged)
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .strokeBorder(tint.opacity(0.5), lineWidth: 1)
+                .scaleEffect(burst ? 1.5 : 1)
+                .opacity(burst ? 0 : (battery.event == .unplugged ? 0 : 0.6))
+            StatusIcon(symbol: nil, tint: tint, size: 34, active: battery.event != .unplugged)
             symbol
-                .foregroundStyle(.white)
-                .shadow(color: .black.opacity(0.35), radius: 1, y: 1)
+                .foregroundStyle(StatusIcon.glyphStyle(tint, active: battery.event != .unplugged))
         }
         .frame(width: 34, height: 34)
     }
@@ -213,7 +208,7 @@ struct BatteryRow: View {
                 .offset(x: shown ? -3 : 3)
                 .opacity(shown ? 0.85 : 1)
         case .low:
-            PulsingIcon(symbol: "exclamationmark", tint: .white)
+            PulsingIcon(symbol: "exclamationmark", tint: battery.tint)
         case .full:
             Icon("checkmark", size: 14, weight: .bold)
                 .scaleEffect(shown ? 1 : 0.3)

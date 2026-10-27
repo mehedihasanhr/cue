@@ -550,7 +550,10 @@ struct IslandView: View {
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
                 if let clock = status.clock {
+                    // Its own width, never squeezed: in a box exactly that wide the prayer line
+                    // would otherwise lose its last characters.
                     ClockRow(status: clock)
+                        .fixedSize(horizontal: true, vertical: false)
                         .modifier(IdealWidth { model.contentWidth = $0 })
                         .frame(height: IslandGeometry.clockStatusContentHeight)
                 } else if let meeting = status.meeting {
@@ -836,7 +839,7 @@ private struct StatusRow: View {
             StatusTile { Image(nsImage: image).resizable().scaledToFill() }
         } else {
             // A bead in the status's colour: green done, orange "nothing to do", else blue.
-            GlossyDisc(symbol: status.symbol, tint: status.tint == .white ? IslandStyle.accent : status.tint, size: statusTileSide)
+            StatusIcon(symbol: status.symbol, tint: status.tint == .white ? Color(red: 0.5, green: 0.7, blue: 1) : status.tint, size: statusTileSide)
         }
     }
 }

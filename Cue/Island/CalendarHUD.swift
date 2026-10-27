@@ -121,11 +121,11 @@ struct MeetingRow: View {
     var body: some View {
         HStack(spacing: 13) {
             ZStack {
-                Circle()
-                    .strokeBorder(meeting.color.opacity(0.7), lineWidth: 1.5)
-                    .scaleEffect(burst ? 1.9 : 1)
-                    .opacity(burst ? 0 : 0.8)
-                GlossyDisc(symbol: meeting.joinURL == nil ? "calendar" : "video.fill", tint: meeting.color, size: 38)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(meeting.color.opacity(0.5), lineWidth: 1)
+                    .scaleEffect(burst ? 1.5 : 1)
+                    .opacity(burst ? 0 : 0.6)
+                StatusIcon(symbol: meeting.joinURL == nil ? "calendar" : "video.fill", tint: meeting.color, size: 38)
                     .scaleEffect(shown ? 1 : 0.5)
             }
             .frame(width: 38, height: 38)
@@ -155,7 +155,6 @@ struct MeetingRow: View {
                     .padding(.horizontal, 13)
                     .frame(height: 28)
                     .background(Color(red: 0.2, green: 0.72, blue: 0.4), in: Capsule())
-                    .shadow(color: Color(red: 0.2, green: 0.72, blue: 0.4).opacity(0.5), radius: 6)
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
