@@ -298,6 +298,10 @@ nonisolated struct AgentSession: Identifiable, Equatable, Sendable {
     /// Its own to-do list (Claude Code's TodoWrite), as last written.
     var todos: [AgentTodo] = []
 
+    /// Its turn is over but something it started still runs (a background command,
+    /// a subagent): not done yet, whatever the turn says.
+    var inBackground: Bool { state == .idle && !workers.isEmpty }
+
     /// The folder's name: what tells two sessions apart at a glance.
     var project: String {
         guard let cwd, !cwd.isEmpty else { return agent.shortName }
@@ -595,6 +599,14 @@ nonisolated struct AgentSessionBook: Equatable, Sendable {
         return String(line.trimmingCharacters(in: .whitespaces).prefix(160))
     }
 
+    /// Prompts that only keep a conversation going ("continue" after a resumed
+    /// session, "yes" to a question): they say nothing about the work, so they never
+    /// name a session; the next real prompt does.
+    private static let fillers: Set<String> = [
+        "continue", "go on", "keep going", "carry on", "resume", "proceed", "next", "go", "go ahead", "do it",
+        "yes", "y", "yep", "yeah", "no", "n", "ok", "okay", "k", "sure", "fine", "done", "thanks", "thank you", "retry", "try again",
+    ]
+
     /// A short name for a session from one of its prompts, or nil for a prompt that
     /// says nothing about the work: a slash command, or text the app wrapped in tags.
     static func title(from prompt: String) -> String? {
@@ -603,7 +615,7 @@ nonisolated struct AgentSessionBook: Equatable, Sendable {
         // Pasted images show up as "[Image #1]"; they are not words.
         line = line.replacingOccurrences(of: #"\[Image #\d+\]"#, with: "", options: .regularExpression)
         line = line.split(separator: " ", omittingEmptySubsequences: true).joined(separator: " ")
-        guard !line.isEmpty else { return nil }
+        guard !line.isEmpty, !fillers.contains(line.lowercased().trimmingCharacters(in: .punctuationCharacters.union(.whitespaces))) else { return nil }
         return line.count > 48 ? String(line.prefix(47)).trimmingCharacters(in: .whitespaces) + "…" : line
     }
 

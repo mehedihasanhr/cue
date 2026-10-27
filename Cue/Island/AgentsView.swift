@@ -910,6 +910,7 @@ struct AgentsView: View {
     private var header: some View {
         let sessions = store.sessions
         let working = sessions.filter { $0.state == .running }.count
+        let background = sessions.filter(\.inBackground).count
         let asking = sessions.filter { $0.state == .waiting }.count
         return HStack(spacing: 16) {
             // Plain counts set apart by space alone; only what needs the user is in colour.
@@ -917,6 +918,9 @@ struct AgentsView: View {
                 .foregroundStyle(.white.opacity(0.92))
             if working > 0 {
                 Text("\(working) working").foregroundStyle(.white.opacity(0.5))
+            }
+            if background > 0 {
+                Text("\(background) in background").foregroundStyle(.white.opacity(0.5))
             }
             if asking > 0 {
                 Text("\(asking) \(asking == 1 ? "needs" : "need") you").foregroundStyle(askingTint)
@@ -1318,6 +1322,12 @@ private struct AgentSessionCard: View {
             Text("Needs you")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(askingTint)
+        case .idle where session.inBackground:
+            // The turn is over but what it started still runs: say so, not "Done".
+            let count = session.workers.count
+            let kind = session.workers.allSatisfy { $0.kind == .subagent } ? (count == 1 ? "agent" : "agents")
+                                                                          : (count == 1 ? "task" : "tasks")
+            StatusLabel(text: "Running in background · \(count) \(kind)", tone: SessionTone.working, pulsing: true)
         case .idle:
             StatusLabel(text: "Done", tone: SessionTone.done)
         }
@@ -1384,10 +1394,18 @@ private struct RippleDot: View {
 private struct StatusLabel: View {
     let text: String
     let tone: Color
+    /// Still going: the dot breathes.
+    var pulsing = false
+    @State private var breathe = false
 
     var body: some View {
         HStack(spacing: 6) {
             Circle().fill(tone).frame(width: 4, height: 4)
+                .opacity(pulsing && breathe ? 0.3 : 1)
+                .onAppear {
+                    guard pulsing, !IslandView.reduceMotion else { return }
+                    withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { breathe = true }
+                }
             Text(text)
                 .font(.system(size: 11, weight: .regular))
                 .monospacedDigit()
