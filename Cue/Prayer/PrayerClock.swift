@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import CoreLocation
 import Observation
 import os
@@ -41,6 +42,8 @@ final class PrayerClock: NSObject {
     @ObservationIgnored private var minuteTimer: Timer?
     @ObservationIgnored private var locationManager: CLLocationManager?
     @ObservationIgnored private var observers: [any NSObjectProtocol] = []
+    /// Says the time and prayers aloud when that's on; kept so speech isn't cut off.
+    @ObservationIgnored private let speech = AVSpeechSynthesizer()
 
     init(preferences: AppPreferences) {
         self.preferences = preferences
@@ -202,6 +205,7 @@ final class PrayerClock: NSObject {
         Log.app.info("Island clock: fired, \(due.count) due, late by \(Int(now.timeIntervalSince(self.armed.first?.date ?? now)))s")
         if let event = due.map(\.event).first(where: { $0 != .time }) ?? due.first?.event {
             showStatus(status(for: event, at: now), true)
+            speak(event, at: now)
         }
         armTimer()
     }
@@ -210,6 +214,32 @@ final class PrayerClock: NSObject {
     func preview() {
         updateStatus()
         showStatus(status(for: .time, at: Date()), false)
+        speak(.time, at: Date())
+    }
+
+    /// Says what the island shows, in a sentence: "It's 3:00 PM. Asr at 3:20 PM."
+    private func speak(_ event: Event, at now: Date) {
+        guard preferences.timeSpoken else { return }
+        let line: String
+        switch event {
+        case .prayer(let prayer):
+            line = "It's time for \(prayer.title) prayer."
+        case .forbiddenStart:
+            line = "Prayer is not allowed until \(Self.clock(status?.forbidden?.end ?? now))."
+        case .forbiddenEnd:
+            line = "Prayer is allowed again."
+        case .time:
+            var words = "It's \(Self.clock(now))."
+            if let status, status.forbidden == nil {
+                words += " \(status.next.title) at \(Self.clock(status.nextStarts))."
+            }
+            line = words
+        }
+        speech.stopSpeaking(at: .word)
+        let utterance = AVSpeechUtterance(string: line)
+        // After the prayer chime, not over it.
+        if case .prayer = event { utterance.preUtteranceDelay = 1 }
+        speech.speak(utterance)
     }
 
     /// Every event is drawn by `ClockRow`; the plain title/subtitle serve the HUD

@@ -75,6 +75,7 @@ final class AppPreferences {
         static let panelColumns = "panels.columns"
         static let timeEnabled = "clock.enabled"
         static let timeInterval = "clock.interval"
+        static let timeSpoken = "clock.spoken"
         static let prayerEnabled = "prayer.enabled"
         static let prayerMethod = "prayer.method"
         static let prayerMadhab = "prayer.madhab"
@@ -286,6 +287,11 @@ final class AppPreferences {
     /// Minutes between the island showing the time (0: never).
     var timeStatusInterval: Int {
         didSet { defaults.set(timeStatusInterval, forKey: Key.timeInterval) }
+    }
+
+    /// Say the time, and each prayer, aloud as the island shows them.
+    var timeSpoken: Bool {
+        didSet { defaults.set(timeSpoken, forKey: Key.timeSpoken) }
     }
 
     var prayerTimesEnabled: Bool {
@@ -930,6 +936,7 @@ final class AppPreferences {
         panelColumns = min(max(defaults.object(forKey: Key.panelColumns) as? Int ?? 4, Self.panelColumnRange.lowerBound), Self.panelColumnRange.upperBound)
         timeEnabled = defaults.object(forKey: Key.timeEnabled) as? Bool ?? true
         timeStatusInterval = defaults.object(forKey: Key.timeInterval) as? Int ?? 60
+        timeSpoken = defaults.bool(forKey: Key.timeSpoken)
         prayerTimesEnabled = defaults.bool(forKey: Key.prayerEnabled)
         prayerMethod = CalculationMethod(rawValue: defaults.string(forKey: Key.prayerMethod) ?? "") ?? .muslimWorldLeague
         prayerMadhab = Madhab(rawValue: defaults.string(forKey: Key.prayerMadhab) ?? "") ?? .standard

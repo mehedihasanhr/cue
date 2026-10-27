@@ -1316,6 +1316,9 @@ struct TimeSettingsView: View {
                     }
                     .fixedSize()
                 }
+                SettingsRow("Say it aloud", subtitle: "Speaks the time, and each prayer as it begins.") {
+                    Toggle("Say it aloud", isOn: $preferences.timeSpoken).toggleStyle(.switch)
+                }
                 SettingsRow("Preview") {
                     Button("Show on the Island") { clock?.preview() }
                 }
