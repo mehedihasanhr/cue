@@ -14,6 +14,7 @@ final class AppPreferences {
         static let soundBookmark = "sound.customBookmark"
         static let icon = "menuBar.icon"
         static let iconMarkMigrated = "menuBar.icon.markMigrated.2"
+        static let welcomeTourSeen = "welcome.tourSeen"
         static let iconBookmark = "menuBar.customBookmark"
         static let appearance = "appearance"
         static let showInDock = "app.showInDock"
@@ -620,6 +621,11 @@ final class AppPreferences {
         didSet { defaults.set(islandDownloads, forKey: Key.islandDownloads) }
     }
 
+    /// The welcome and its tour have been shown (or closed), so launch goes straight to work.
+    var welcomeTourSeen: Bool {
+        didSet { defaults.set(welcomeTourSeen, forKey: Key.welcomeTourSeen) }
+    }
+
     /// The island shows the notifications macOS shows, and keeps them in a tab.
     var islandNotifications: Bool {
         didSet { defaults.set(islandNotifications, forKey: Key.islandNotifications) }
@@ -850,6 +856,9 @@ final class AppPreferences {
     // MARK: Init
 
     init() {
+        // Someone who had Cue before the tour existed has been through it, in effect:
+        // this flag is set on every launch, so its presence means Cue has run before.
+        welcomeTourSeen = defaults.object(forKey: Key.welcomeTourSeen) as? Bool ?? defaults.bool(forKey: Key.iconMarkMigrated)
         soundEnabled = defaults.object(forKey: Key.soundEnabled) as? Bool ?? true
         sound = Sound(storageValue: defaults.string(forKey: Key.sound) ?? "shutter")
         // Cue borrowed a camera glyph before it had a mark of its own; every one of

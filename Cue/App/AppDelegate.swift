@@ -63,6 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var settingsWindow: SettingsWindowController?
     private var taskDashboard: TaskDashboardWindowController?
     private var onboardingWindows: [PermissionKind: HostedWindowController] = [:]
+    private var welcome: WelcomeWindowController?
     private var editorWindows: [UUID: EditorWindowController] = [:]
 
     // MARK: - Lifecycle
@@ -106,7 +107,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // catalog, independent of the icon-services cache for this bundle path.
         if let icon = NSImage(named: "AppIcon") { NSApp.applicationIconImage = icon }
         installStatusItem()
-        AppUpdater.shared.start()
+        // The first update check waits for the welcome, so the two never meet.
+        if preferences.welcomeTourSeen { AppUpdater.shared.start() }
         spaceFocus.start()
         _ = taskSync // listens for task changes from now on
         taskMCP.apply()
@@ -670,7 +672,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             library.reindexIfLanguagesChanged(preferences.ocrLanguages)
             library.indexMissingText()
         }
-        if !PermissionManager.hasScreenCaptureAccess {
+        NotificationCenter.default.addObserver(forName: .cueShowWelcome, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.showWelcome() }
+        }
+        #if DEBUG
+        // Diagnostics: `--env CUE_DEBUG_WELCOME=hello|welcome|permissions|finale|<tour page>` opens the
+        // welcome at that step; `firstrun` forgets it was seen, as on a new Mac.
+        if ProcessInfo.processInfo.environment["CUE_DEBUG_WELCOME"] == "firstrun" {
+            preferences.welcomeTourSeen = false
+        } else if let name = ProcessInfo.processInfo.environment["CUE_DEBUG_WELCOME"] {
+            let step: WelcomeView.Step = switch name {
+            case "welcome": .welcome
+            case "permissions": .permissions
+            case "finale": .finale
+            default: TourPage(rawValue: name).map { .tour($0) } ?? .hello
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.showWelcome(at: step) }
+            return
+        }
+        #endif
+        if !preferences.welcomeTourSeen {
+            // The tour asks for Screen Recording itself, on its permissions page.
+            showWelcome()
+        } else if !PermissionManager.hasScreenCaptureAccess {
             Log.app.notice("Screen Recording not granted; showing onboarding")
             showOnboarding(for: .screenRecording)
         }
@@ -1713,6 +1737,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             onboardingWindows[kind] = controller
         }
         onboardingWindows[kind]?.present()
+    }
+
+    /// The welcome and its tour: on the first launch, and again from Settings.
+    private func showWelcome(at step: WelcomeView.Step = .hello) {
+        if welcome == nil {
+            let controller = WelcomeWindowController(start: step)
+            controller.onClose = { [weak self] in
+                guard let self else { return }
+                welcome = nil
+                model.refreshPermissionState()
+                if !preferences.welcomeTourSeen {
+                    preferences.welcomeTourSeen = true
+                    AppUpdater.shared.start()
+                }
+            }
+            welcome = controller
+        }
+        welcome?.present()
     }
 
     private func presentError(_ error: any Error) {

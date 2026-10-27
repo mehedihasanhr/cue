@@ -2,10 +2,11 @@ import SwiftUI
 
 /// Cue's mark as a pixel creature, in the manner of the Claude robot: the white blob
 /// with its two eyes looking left. While music plays it dances or plays a guitar
-/// (each track picks one), notes rising beside it; paused, it stands and blinks.
+/// (each track picks one), notes rising beside it; paused, it stands and blinks. To
+/// say hello (the welcome window), it looks one way, then the other.
 struct CueCritter: View {
     enum Mood: Hashable {
-        case idle, dance, guitar
+        case idle, dance, guitar, lookAround
 
         /// What the critter does to `trackID` while `playing`.
         static func playing(_ playing: Bool, trackID: String?) -> Mood {
@@ -108,6 +109,7 @@ struct CueCritter: View {
         case .idle: "Cue, listening"
         case .dance: "Cue, dancing"
         case .guitar: "Cue, playing guitar"
+        case .lookAround: "Cue, looking around"
         }
     }
 
@@ -118,12 +120,25 @@ struct CueCritter: View {
         case .idle: idle(tick)
         case .dance: dance(tick)
         case .guitar: guitar(tick)
+        case .lookAround: lookAround(tick)
         }
     }
 
     private static func idle(_ tick: Int) -> [Pixel] {
         // A blink now and then; otherwise still.
         blob(dx: 0, dy: 0, blinking: tick % 28 == 0)
+    }
+
+    /// Eyes to one side, back, to the other side, a blink, and a little hop to finish.
+    private static func lookAround(_ tick: Int) -> [Pixel] {
+        let step = tick % 30
+        let eyes = switch step {
+        case 5..<11: -1
+        case 13..<19: 1
+        default: 0
+        }
+        let hop = step == 25 || step == 26 ? -1 : 0
+        return blob(dx: 0, dy: hop, blinking: step == 21, eyes: eyes)
     }
 
     /// Bobbing on the beat, leaning one way then the other, an arm up on each side in turn.
@@ -165,8 +180,10 @@ struct CueCritter: View {
         return pixels
     }
 
-    private static func blob(dx: Int, dy: Int, blinking: Bool) -> [Pixel] {
+    /// `eyes` moves the eyes that many pixels across the face, the body filled in behind them.
+    private static func blob(dx: Int, dy: Int, blinking: Bool, eyes: Int = 0) -> [Pixel] {
         var pixels: [Pixel] = []
+        var eyePixels: [Pixel] = []
         for (row, line) in body.enumerated() {
             let line = blinking ? blinkRows[row] ?? line : line
             for (column, mark) in line.enumerated() {
@@ -177,10 +194,17 @@ struct CueCritter: View {
                 case "e": white
                 default: nil
                 }
-                if let color { pixels.append(Pixel(x: bodyOrigin.x + dx + column, y: bodyOrigin.y + dy + row, color: color)) }
+                guard let color else { continue }
+                let (x, y) = (bodyOrigin.x + dx + column, bodyOrigin.y + dy + row)
+                if eyes != 0, mark == "k" || mark == "e" {
+                    pixels.append(Pixel(x: x, y: y, color: white))
+                    eyePixels.append(Pixel(x: x + eyes, y: y, color: color))
+                } else {
+                    pixels.append(Pixel(x: x, y: y, color: color))
+                }
             }
         }
-        return pixels
+        return pixels + eyePixels
     }
 
     /// Two notes rising in turn from about the critter's shoulder, gone at the top.

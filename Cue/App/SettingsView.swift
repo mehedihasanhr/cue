@@ -33,6 +33,9 @@ struct GeneralSettingsView: View {
                 if let launchError {
                     SettingsRow(launchError, symbol: "xmark.octagon.fill", tint: .red)
                 }
+                SettingsRow("Welcome tour", subtitle: "What Cue does, a page at a time, as on the first launch.") {
+                    Button("Replay…") { NotificationCenter.default.post(name: .cueShowWelcome, object: nil) }
+                }
             }
 
             SettingsGroup("Updates") {
