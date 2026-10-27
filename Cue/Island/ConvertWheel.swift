@@ -44,13 +44,37 @@ final class ConvertWheelModel {
     /// The segment under the dragged file.
     var hovered: WheelFormat?
     var formats: [WheelFormat] = WheelFormat.available
-    var file: URL?
-    var thumbnail: NSImage?
-    /// The thumbnail is the picture itself, not a stand-in icon.
-    var hasPreview = false
+    var file: URL? {
+        didSet { if file != oldValue { sizes = [:]; working = [] } }
+    }
+    /// What each format's copy comes to, worked out as the file is held over it.
+    private(set) var sizes: [WheelFormat: Int] = [:]
+    private var working: Set<WheelFormat> = []
 
     var name: String { file?.lastPathComponent ?? "" }
-    var size: String { file.map { TransformModel.bytes(TransformEngine.fileSize($0)) } ?? "" }
+
+    /// The copy's size for the format held over, else the file's own; nil while it's
+    /// still being worked out.
+    var size: String? {
+        guard let file else { return "" }
+        guard let hovered else { return TransformModel.bytes(TransformEngine.fileSize(file)) }
+        return sizes[hovered].map(TransformModel.bytes)
+    }
+
+    /// Makes the copy in memory, as the drop would (same quality), and keeps its size.
+    func measure(_ format: WheelFormat) {
+        guard let file, sizes[format] == nil, !working.contains(format) else { return }
+        working.insert(format)
+        let target = format.format
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let data = target.map { TransformEngine.converted(file, to: $0, quality: 0.9) } ?? TransformEngine.combined([file])
+            await MainActor.run {
+                guard let self, self.file == file else { return }
+                self.working.remove(format)
+                if let data { self.sizes[format] = data.count }
+            }
+        }
+    }
 }
 
 /// The ring's measures, shared by the drawing and the drop target.
@@ -76,7 +100,7 @@ enum WheelGeometry {
 }
 
 /// A file dragged with Shift held and shaken: a ring of formats round it, the file in
-/// the middle with its size and name. Dropped on a segment, a copy is made in that
+/// the middle its size and name. Dropped on a segment, a copy is made in that
 /// format; the original is left as it was.
 struct ConvertWheelView: View {
     let model: ConvertWheelModel
@@ -134,22 +158,29 @@ struct ConvertWheelView: View {
                                             startPoint: .top, endPoint: .bottom))
     }
 
-    /// The file: its picture in a circle, its size on a glass pill, its name under.
+    /// The size of the copy for the format held over (the file's own before then), on a
+    /// glass pill, the file's name under.
     private var centre: some View {
         let side = (WheelGeometry.inner - 6) * 2
         return ZStack {
             Circle().fill(dark ? Color.white.opacity(0.08) : Color.white.opacity(0.4))
-            if let thumbnail = model.thumbnail {
-                Image(nsImage: thumbnail).resizable().scaledToFill()
-            }
-            VStack(spacing: 4) {
-                Text(model.size)
-                    .font(.system(size: 12, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(ink)
-                    .padding(.horizontal, 12)
-                    .frame(height: 26)
-                    .background(Capsule().fill(.ultraThinMaterial))
-                    .overlay(Capsule().strokeBorder(.white.opacity(0.5), lineWidth: 0.75))
+            VStack(spacing: 5) {
+                Group {
+                    if let size = model.size {
+                        Text(size)
+                            .contentTransition(.numericText())
+                    } else {
+                        ProgressView().controlSize(.mini)
+                    }
+                }
+                .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                .foregroundStyle(ink)
+                .padding(.horizontal, 12)
+                .frame(minWidth: 64)
+                .frame(height: 28)
+                .background(Capsule().fill(.ultraThinMaterial))
+                .overlay(Capsule().strokeBorder(.white.opacity(0.5), lineWidth: 0.75))
+                .animation(.snappy(duration: 0.2), value: model.size)
                 Text(model.name)
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.white)
@@ -160,7 +191,6 @@ struct ConvertWheelView: View {
                     .background(Capsule().fill(Color(red: 0.18, green: 0.42, blue: 0.95)))
                     .frame(maxWidth: side - 14)
             }
-            .offset(y: 10)
         }
         .frame(width: side, height: side)
         .clipShape(Circle())
@@ -223,8 +253,6 @@ private struct RingSegment: Shape {
 /// The wheel's window content: tells which segment the file is over, and takes it.
 final class ConvertWheelDropView: NSView {
     var count: () -> Int = { 0 }
-    /// The drag came in: macOS now lets Cue read the file, and shows the drag's own picture.
-    var onEnter: ((URL?, NSImage?) -> Void)?
     var onHover: ((Int?) -> Void)?
     var onDrop: ((Int, [URL]) -> Void)?
 
@@ -244,14 +272,7 @@ final class ConvertWheelDropView: NSView {
     }
 
     override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        let url = (sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL])?.first
-        var picture: NSImage?
-        sender.enumerateDraggingItems(options: [], for: nil, classes: [NSURL.self], searchOptions: [:]) { item, _, stop in
-            picture = item.imageComponents?.first?.contents as? NSImage
-            stop.pointee = true
-        }
-        onEnter?(url, picture)
-        return draggingUpdated(sender)
+        draggingUpdated(sender)
     }
 
     override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {

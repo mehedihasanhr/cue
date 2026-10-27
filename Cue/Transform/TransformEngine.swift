@@ -296,6 +296,11 @@ nonisolated enum TransformEngine {
 
     /// Images and PDFs, one after the other, as one PDF.
     static func combine(_ urls: [URL], named name: String, into folder: URL) -> URL? {
+        guard let data = combined(urls) else { return nil }
+        return write(data, named: (name.isEmpty ? "Combined" : name) + ".pdf", into: folder)
+    }
+
+    static func combined(_ urls: [URL]) -> Data? {
         let document = PDFDocument()
         for url in urls {
             if isPDF(url), let pdf = PDFDocument(url: url) {
@@ -305,8 +310,7 @@ nonisolated enum TransformEngine {
                 if let page = PDFPage(image: picture) { document.insert(page, at: document.pageCount) }
             }
         }
-        guard document.pageCount > 0, let data = document.dataRepresentation() else { return nil }
-        return write(data, named: (name.isEmpty ? "Combined" : name) + ".pdf", into: folder)
+        return document.pageCount > 0 ? document.dataRepresentation() : nil
     }
 
     static func zip(_ urls: [URL], named name: String, into folder: URL) -> URL? {

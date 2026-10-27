@@ -189,12 +189,9 @@ final class BasketController {
         let panel = wheelPanel ?? makeWheelPanel()
         wheelPanel = panel
         wheel.file = file
-        let preview = Self.preview(of: file)
-        wheel.thumbnail = preview ?? NSWorkspace.shared.icon(forFile: file.path)
-        wheel.hasPreview = preview != nil
         wheel.hovered = nil
         // Up and to the side of the pointer, as the reference has it: the dragged file
-        // stays just outside the ring, clear of the picture in the middle, and moves in
+        // stays just outside the ring, clear of the size in the middle, and moves in
         // onto a format. Kept clear of the menu bar and the notch (the visible frame stops
         // below them) and the screen's edges.
         panel.setFrame(Self.frame(around: Self.wheelCentre(beside: point), size: WheelGeometry.window), display: false)
@@ -248,22 +245,12 @@ final class BasketController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         let content = ConvertWheelDropView(frame: CGRect(origin: .zero, size: WheelGeometry.window))
         content.count = { [weak self] in self?.wheel.formats.count ?? 0 }
-        content.onEnter = { [weak self] url, picture in
-            guard let self, !wheel.hasPreview else { return }
-            // Readable now the drag is over Cue's window; else the drag's own picture.
-            if let url, let preview = Self.preview(of: url) {
-                wheel.thumbnail = preview
-                wheel.hasPreview = true
-            } else if let picture {
-                wheel.thumbnail = picture
-                wheel.hasPreview = true
-            }
-        }
         content.onHover = { [weak self] index in
             guard let self else { return }
             wheelHideTask?.cancel()
             let format = index.map { self.wheel.formats[$0] }
             if wheel.hovered != format { wheel.hovered = format }
+            if let format { wheel.measure(format) }
         }
         content.onDrop = { [weak self] index, urls in
             guard let self else { return }
@@ -276,16 +263,6 @@ final class BasketController {
         content.addSubview(host)
         panel.contentView = content
         return panel
-    }
-
-    /// The picture itself, small, for the wheel's middle; nil while the sandbox won't
-    /// let Cue read a file still being dragged.
-    private static func preview(of url: URL) -> NSImage? {
-        let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 300,
-                                        kCGImageSourceCreateThumbnailWithTransform: true]
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
-        return NSImage(cgImage: image, size: CGSize(width: image.width, height: image.height))
     }
 
     /// Where the wheel's centre goes for a drag at `point`: up and to the left, the
@@ -303,6 +280,7 @@ final class BasketController {
     func debugShowWheel(file: URL, hovered format: WheelFormat?) {
         showWheel(at: NSEvent.mouseLocation, file: file)
         wheel.hovered = format
+        if let format { wheel.measure(format) }
     }
 
     /// The drag ended somewhere else (or was let go of nowhere): the grid goes.
