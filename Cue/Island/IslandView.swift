@@ -393,7 +393,9 @@ struct IslandView: View {
     /// Settings › Island › Animation; the view sets it from the preferences it reads.
     nonisolated(unsafe) static var animationStyle: AppPreferences.IslandAnimation = .lively
     static var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion || animationStyle != .lively }
-    static var openAnimation: Animation { animationStyle == .none ? .linear(duration: 0) : reduceMotion ? .easeOut(duration: 0.18) : .spring(response: IslandMotion.response(0.36), dampingFraction: 0.82, blendDuration: 0) }
+    /// Opening bounces: the shape overshoots its size a little and settles back, as if
+    /// it sprang out of the notch. Closing is smooth, with no bounce back out.
+    static var openAnimation: Animation { animationStyle == .none ? .linear(duration: 0) : reduceMotion ? .easeOut(duration: 0.18) : .spring(response: IslandMotion.response(0.42), dampingFraction: 0.68, blendDuration: 0) }
     static var closeAnimation: Animation { animationStyle == .none ? .linear(duration: 0) : reduceMotion ? .easeOut(duration: 0.18) : .spring(response: IslandMotion.response(0.45), dampingFraction: 1.0, blendDuration: 0) }
     /// The agents list: rows moving, cards opening, and the island's height
     /// following them, all on one critically damped spring so they move together.
