@@ -533,3 +533,8 @@ can change the document behind another part's back.
 6. ✅ Scrolling capture
 7. Polish (✅ custom shortcuts, ✅ preferences window; save locations, dark mode, localization)
 8. Recording and the video editor, built into Cue (✅ plumbing, ✅ capture + telemetry, ✅ editor: timeline, zooms, renderer; export next)
+
+## License
+
+Cue is released under the [MIT License](LICENSE). Libraries it builds with keep their
+own licenses: Tesseract (Apache 2.0, in `Vendor/`), libwebp (BSD) and Sparkle (MIT).
