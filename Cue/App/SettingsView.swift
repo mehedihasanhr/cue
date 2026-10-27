@@ -515,7 +515,7 @@ struct IslandSettingsView: View {
                     Toggle("Notifications", isOn: $preferences.islandNotifications).toggleStyle(.switch)
                 }
                 if preferences.islandNotifications {
-                    SettingsRow("Hide macOS's banners", subtitle: "Closes the system's banner in the corner once the island shows it. Closed banners leave Notification Center too; Cue's tab keeps them.") {
+                    SettingsRow("Hide macOS's banners", subtitle: "Off, macOS shows its own banner as well. On, Cue closes it once the island shows it; macOS then drops it from Notification Center too, and only Cue's tab keeps it.") {
                         Toggle("Hide macOS's banners", isOn: $preferences.islandHidesBanners).toggleStyle(.switch)
                     }
                 }

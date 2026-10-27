@@ -53,7 +53,8 @@ final class AppPreferences {
         static let islandDrives = "island.drives"
         static let islandDownloads = "island.downloads"
         static let islandNotifications = "island.notifications"
-        static let islandHidesBanners = "island.notifications.hideBanners"
+        // A new name: it was on by default, and is now off until asked for, whatever was saved before.
+        static let islandHidesBanners = "island.notifications.hideBanners.2"
         static let islandCalendar = "island.calendar"
         static let islandWeather = "island.weather"
         static let islandLockScreen = "island.lockScreen"
@@ -637,7 +638,8 @@ final class AppPreferences {
         didSet { defaults.set(islandNotifications, forKey: Key.islandNotifications) }
     }
 
-    /// With those on: macOS's own banner in the corner is closed once the island has it.
+    /// With those on, and only when asked: macOS's own banner in the corner is closed
+    /// once the island has it (which drops it from Notification Center). Off by default.
     var islandHidesBanners: Bool {
         didSet { defaults.set(islandHidesBanners, forKey: Key.islandHidesBanners) }
     }
@@ -912,7 +914,7 @@ final class AppPreferences {
         islandDrives = defaults.object(forKey: Key.islandDrives) as? Bool ?? true
         islandDownloads = defaults.object(forKey: Key.islandDownloads) as? Bool ?? true
         islandNotifications = defaults.object(forKey: Key.islandNotifications) as? Bool ?? false
-        islandHidesBanners = defaults.object(forKey: Key.islandHidesBanners) as? Bool ?? true
+        islandHidesBanners = defaults.object(forKey: Key.islandHidesBanners) as? Bool ?? false
         islandHello = defaults.object(forKey: Key.islandHello) as? Bool ?? true
         islandCalendar = defaults.object(forKey: Key.islandCalendar) as? Bool ?? false
         islandWeather = defaults.object(forKey: Key.islandWeather) as? Bool ?? false
