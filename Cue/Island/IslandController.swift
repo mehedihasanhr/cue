@@ -1074,7 +1074,7 @@ final class IslandController {
             collapse()
             switch target {
             case .transform:
-                QuickDropActions.transform(urls, at: point) { [weak self] done, from, each, work in
+                TransformWindow.shared.open(urls, near: point) { [weak self] done, from, each, work in
                     self?.shelf.produce(done, from: from, each: each, work)
                 }
             case .share: onShareLink(urls)

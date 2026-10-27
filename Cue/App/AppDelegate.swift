@@ -441,6 +441,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
+        #if DEBUG
+        // Diagnostics: `--env CUE_DEBUG_TRANSFORM=compress` opens Transform on a picture of the
+        // app's own, on that action.
+        if let name = ProcessInfo.processInfo.environment["CUE_DEBUG_TRANSFORM"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                guard let self else { return }
+                let files = ((try? FileManager.default.contentsOfDirectory(at: Bundle.main.resourceURL!, includingPropertiesForKeys: nil)) ?? [])
+                    .filter { $0.pathExtension == "png" }.prefix(1)
+                TransformWindow.shared.open(Array(files), near: nil) { [weak self] done, from, each, work in
+                    self?.island?.shelf.produce(done, from: from, each: each, work)
+                }
+                if let action = TransformModel.Action(rawValue: name) { TransformWindow.shared.debugSelect(action) }
+            }
+        }
+        #endif
         // Diagnostics: `--env CUE_DEBUG_BASKET=1` shows the basket with a few of the app's own files
         // (`empty`: with none).
         if let mode = ProcessInfo.processInfo.environment["CUE_DEBUG_BASKET"] {

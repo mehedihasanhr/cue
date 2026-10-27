@@ -18,7 +18,7 @@
 	<true/>
 	<key>com.apple.security.device.bluetooth</key>
 	<true/>
-	<key>com.apple.security.files.downloads.read-only</key>
+	<key>com.apple.security.files.downloads.read-write</key>
 	<true/>
 	<key>com.apple.security.personal-information.calendars</key>
 	<true/>

@@ -198,9 +198,10 @@ final class BasketController {
         }
     }
 
-    /// What can be made of the files; what's made lands in the basket, ready to be dragged on.
+    /// Transform's window on the files; what's made for the shelf lands in the basket,
+    /// ready to be dragged on.
     private func transform(_ urls: [URL], at point: CGPoint) {
-        QuickDropActions.transform(urls, at: point) { [weak self] done, from, each, work in
+        TransformWindow.shared.open(urls, near: point) { [weak self] done, from, each, work in
             guard let self else { return }
             show(at: point)
             store.produce(done, from: from, each: each, work)

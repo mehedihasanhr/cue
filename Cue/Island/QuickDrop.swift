@@ -234,33 +234,6 @@ struct DropGlyph: View {
 /// What the drop places do with files, shared by the shake grid and the island.
 @MainActor
 enum QuickDropActions {
-    /// What can be made of `urls` (convert, make smaller, zip), as a menu at `point`;
-    /// `run` makes it (and says where it lands).
-    static func transform(_ urls: [URL], at point: CGPoint,
-                          run: @escaping (_ done: String, _ from: [URL], _ each: Bool, _ work: @escaping @Sendable ([URL], URL) -> [URL]) -> Void) {
-        let images = urls.filter(FileActions.isImage)
-        let menu = NSMenu()
-        if !images.isEmpty {
-            let convert = NSMenuItem(title: "Convert to", action: nil, keyEquivalent: "")
-            let formats = NSMenu()
-            for format in FileActions.ImageFormat.writable {
-                formats.addItem(QuickDropMenuItem(format.title) {
-                    run("Converted to \(format.title)", images, true) { urls, folder in urls.compactMap { FileActions.convert($0, to: format, into: folder) } }
-                })
-            }
-            convert.submenu = formats
-            menu.addItem(convert)
-            menu.addItem(QuickDropMenuItem("Make Smaller") {
-                run("Made smaller", images, true) { urls, folder in urls.compactMap { FileActions.compress($0, into: folder) } }
-            })
-        }
-        menu.addItem(QuickDropMenuItem(urls.count == 1 ? "Make a ZIP" : "Make a ZIP of \(urls.count)") {
-            run("Zipped", urls, false) { urls, folder in FileActions.zip(urls, into: folder).map { [$0] } ?? [] }
-        })
-        NSApp.activate()
-        menu.popUp(positioning: nil, at: point, in: nil)
-    }
-
     /// The files to AirDrop's picker.
     static func airDrop(_ urls: [URL]) {
         NSApp.activate()
@@ -269,25 +242,5 @@ enum QuickDropActions {
             return
         }
         service.perform(withItems: urls)
-    }
-}
-
-/// A menu item that runs a closure.
-nonisolated final class QuickDropMenuItem: NSMenuItem {
-    private let handler: @MainActor () -> Void
-
-    init(_ title: String, handler: @escaping @MainActor () -> Void) {
-        self.handler = handler
-        super.init(title: title, action: #selector(run), keyEquivalent: "")
-        target = self
-    }
-
-    @available(*, unavailable)
-    required init(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-    // Menus act on the main thread.
-    @objc private func run() {
-        let handler = handler
-        MainActor.assumeIsolated { handler() }
     }
 }
