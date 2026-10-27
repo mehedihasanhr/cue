@@ -83,6 +83,7 @@
 				Support/Log.swift,
 				Agents/AgentModel.swift,
 				Agents/AgentHooks.swift,
+				Agents/Antigravity.swift,
 				Island/FileActions.swift,
 				Transform/TransformEngine.swift,
 			);

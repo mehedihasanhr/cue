@@ -2,12 +2,13 @@ import Foundation
 
 /// The coding agents whose sessions show on the island.
 nonisolated enum AgentKind: String, Codable, Sendable, CaseIterable {
-    case claude, codex
+    case claude, codex, antigravity
 
     var name: String {
         switch self {
         case .claude: "Claude Code"
         case .codex: "Codex"
+        case .antigravity: "Antigravity"
         }
     }
 
@@ -15,12 +16,15 @@ nonisolated enum AgentKind: String, Codable, Sendable, CaseIterable {
         switch self {
         case .claude: "Claude"
         case .codex: "Codex"
+        case .antigravity: "Antigravity"
         }
     }
 
     /// A profile's name from its folder: `.claude-work` is "work", `.claude` none.
     /// Any other folder goes by its own name.
     func profile(fromFolderName name: String) -> String? {
+        // Antigravity keeps its settings in Gemini's folder.
+        if self == .antigravity, name == ".gemini" { return nil }
         var rest = Substring(name)
         if rest.hasPrefix(".") { rest = rest.dropFirst() }
         if rest.lowercased().hasPrefix(rawValue) { rest = rest.dropFirst(rawValue.count) }
@@ -141,6 +145,8 @@ nonisolated struct AgentEvent: Sendable, Equatable {
         case permissionRequest = "PermissionRequest"
         case notification = "Notification"
         case stop = "Stop"
+        /// Antigravity, before each call to its model: the first of a turn starts it.
+        case preInvocation = "PreInvocation"
         case subagentStart = "SubagentStart"
         case subagentStop = "SubagentStop"
         /// Not a hook: Claude Code's status line, passed on by Cue's relay for its usage limits.
@@ -203,7 +209,8 @@ nonisolated struct AgentEvent: Sendable, Equatable {
     init?(line: Data) {
         guard let envelope = try? JSONDecoder().decode(Envelope.self, from: line),
               let agent = AgentKind(rawValue: envelope.cue.agent),
-              let sessionID = envelope.event["session_id"]?.string ?? envelope.event["thread-id"]?.string,
+              let sessionID = envelope.event["session_id"]?.string ?? envelope.event["thread-id"]?.string
+                ?? envelope.event["conversationId"]?.string,
               let name = envelope.event["hook_event_name"]?.string
         else { return nil }
         let event = envelope.event
@@ -228,6 +235,24 @@ nonisolated struct AgentEvent: Sendable, Equatable {
         terminal = term?.isEmpty == false ? term : nil
         pane = envelope.cue.pane.flatMap { $0.isEmpty ? nil : $0 }
         entry = envelope.cue.entry.flatMap { $0.isEmpty ? nil : $0 }
+        if agent == .antigravity { readAntigravity(event) }
+    }
+
+    /// Antigravity's fields in place of Claude Code's: the first workspace for the
+    /// folder, its tools as Claude's, and the prompt and reply from the transcript.
+    private mutating func readAntigravity(_ event: JSONValue) {
+        let call = event["toolCall"]
+        cwd = event["workspacePaths"]?.array?.first?.string ?? call?["args"]?["Cwd"]?.string
+        if let call, let tool = Antigravity.tool(call) {
+            toolName = tool.name
+            toolInput = tool.input
+        }
+        let transcript = event["transcriptPath"]?.string
+        switch name {
+        case .preInvocation: prompt = Antigravity.latest(.prompt, in: transcript)
+        case .stop: message = Antigravity.latest(.reply, in: transcript)
+        default: break
+        }
     }
 
     init(agent: AgentKind, name: Name, sessionID: String, cwd: String? = nil, toolName: String? = nil, toolInput: JSONValue? = nil,
@@ -449,12 +474,10 @@ nonisolated struct AgentSessionBook: Equatable, Sendable {
         case .sessionStart:
             session.state = .idle
         case .userPromptSubmit:
-            session.state = .running
-            session.turnStartedAt = now
-            session.usedTool = false
-            session.steps = []
-            session.activity = event.prompt.map(Self.oneLine)
-            if session.title == nil, let prompt = event.prompt { session.title = Self.title(from: prompt) }
+            startTurn(event, in: &session, at: now)
+        case .preInvocation:
+            // Every call to the model sends one; only the first of a turn starts it.
+            if session.state != .running { startTurn(event, in: &session, at: now) }
         case .preToolUse, .postToolUse:
             // A late status event must not hide a question that is still open.
             if session.state != .waiting || event.name == .postToolUse { session.state = .running }
@@ -487,6 +510,16 @@ nonisolated struct AgentSessionBook: Equatable, Sendable {
             session.finishedAt = now
         }
         store(session)
+    }
+
+    /// A new prompt: at work again, with a clean list of steps.
+    private func startTurn(_ event: AgentEvent, in session: inout AgentSession, at now: Date) {
+        session.state = .running
+        session.turnStartedAt = now
+        session.usedTool = false
+        session.steps = []
+        session.activity = event.prompt.map(Self.oneLine)
+        if session.title == nil, let prompt = event.prompt { session.title = Self.title(from: prompt) }
     }
 
     /// A tool call in the session's steps: a new one as it starts, ticked as it ends.

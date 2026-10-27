@@ -2,12 +2,14 @@ import SwiftUI
 
 // MARK: - Glyphs
 
-/// Each agent's mark and colour: Claude's coral asterisk, Codex's terminal.
+/// Each agent's mark and colour: Claude's coral asterisk, Codex's terminal,
+/// Antigravity's rising arrow.
 private extension AgentKind {
     var symbol: String {
         switch self {
         case .claude: "asterisk"
         case .codex: "terminal"
+        case .antigravity: "arrow.up.circle.fill"
         }
     }
 
@@ -15,6 +17,7 @@ private extension AgentKind {
         switch self {
         case .claude: Color(red: 0.85, green: 0.47, blue: 0.34)
         case .codex: Color(red: 0.55, green: 0.78, blue: 1.0)
+        case .antigravity: Color(red: 0.45, green: 0.85, blue: 0.8)
         }
     }
 }
@@ -56,6 +59,7 @@ private enum AgentAppIcon {
         let ids = switch agent {
         case .claude: ["com.anthropic.claudefordesktop"]
         case .codex: ["com.openai.codex", "com.openai.chat"]
+        case .antigravity: ["com.google.antigravity", "com.google.Antigravity"]
         }
         let icon = ids.lazy
             .compactMap { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }

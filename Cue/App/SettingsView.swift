@@ -231,7 +231,7 @@ struct AgentSettingsView: View {
         @Bindable var preferences = preferences
         SettingsPane(.agents) {
             SettingsGroup("Agent sessions") {
-                SettingsRow("Show agent sessions", subtitle: "Claude Code and Codex sessions beside the notch. Hover to see them; allow, deny and answer their questions from the island.") {
+                SettingsRow("Show agent sessions", subtitle: "Claude Code, Codex and Antigravity sessions beside the notch. Hover to see them; allow, deny and answer their questions from the island.") {
                     Toggle("Agent sessions", isOn: $preferences.agentSessionsEnabled).toggleStyle(.switch)
                 }
                 SettingsRow("Open when an agent asks", subtitle: "Otherwise the closed island pulses until you hover it.") {
@@ -281,7 +281,7 @@ private struct AgentLinkRow: View {
 
     var body: some View {
         SettingsRow(link.profile.map { "\(link.agent.name) · \($0)" } ?? link.agent.name, subtitle: subtitle,
-                    symbol: link.agent == .claude ? "asterisk" : "terminal", tint: link.agent == .claude ? .orange : .blue) {
+                    symbol: link.agent.settingsSymbol, tint: link.agent.settingsTint) {
             Button("Disconnect") { connector.disconnect(link.id) }
         }
     }
@@ -298,6 +298,24 @@ private struct AgentLinkRow: View {
     }
 }
 
+private extension AgentKind {
+    var settingsSymbol: String {
+        switch self {
+        case .claude: "asterisk"
+        case .codex: "terminal"
+        case .antigravity: "arrow.up.circle"
+        }
+    }
+
+    var settingsTint: Color {
+        switch self {
+        case .claude: .orange
+        case .codex: .blue
+        case .antigravity: .teal
+        }
+    }
+}
+
 /// Connects an agent's folder: the first one, or another profile.
 private struct AgentConnectRow: View {
     let agent: AgentKind
@@ -307,8 +325,8 @@ private struct AgentConnectRow: View {
         let another = !connector.links(for: agent).isEmpty
         SettingsRow(another ? "Another \(agent.name) profile" : agent.name,
                     subtitle: another ? "Each profile has its own folder (like ~/.\(agent.rawValue)-work); connect each one whose sessions should show."
-                                      : "Not connected. Choose its folder (\(agent == .claude ? "~/.claude" : "~/.codex")) to add Cue’s hook.",
-                    symbol: agent == .claude ? "asterisk" : "terminal", tint: agent == .claude ? .orange : .blue) {
+                                      : "Not connected. Choose its folder (\(AgentConnector.folderHint(for: agent))) to add Cue’s hook.",
+                    symbol: agent.settingsSymbol, tint: agent.settingsTint) {
             Button(another ? "Add" : "Connect") { connector.connect(agent) }
         }
     }

@@ -2,8 +2,9 @@ import AppKit
 import os
 import Foundation
 
-/// Links Cue to Claude Code and Codex. Cue is sandboxed, so the user picks each
-/// agent folder (`~/.claude`, a second profile such as `~/.claude-work`, `~/.codex`)
+/// Links Cue to Claude Code, Codex and Antigravity. Cue is sandboxed, so the user picks
+/// each agent folder (`~/.claude`, a second profile such as `~/.claude-work`, `~/.codex`,
+/// `~/.gemini`)
 /// once; Cue keeps a bookmark to it, writes its hook script and entries there,
 /// and listens on one socket in its own container for all of them.
 @MainActor
@@ -116,6 +117,16 @@ final class AgentConnector {
         switch agent {
         case .claude: home.appendingPathComponent(".claude")
         case .codex: home.appendingPathComponent(".codex")
+        case .antigravity: home.appendingPathComponent(".gemini")
+        }
+    }
+
+    /// Where the agent keeps its settings, in the words Settings uses.
+    static func folderHint(for agent: AgentKind) -> String {
+        switch agent {
+        case .claude: "~/.claude, or a profile’s, like ~/.claude-work"
+        case .codex: "usually ~/.codex"
+        case .antigravity: "~/.gemini, where Antigravity keeps its settings"
         }
     }
 
@@ -187,7 +198,7 @@ final class AgentConnector {
         let panel = NSOpenPanel()
         let another = !links(for: agent).isEmpty
         panel.title = another ? "Connect another \(agent.name) profile" : "Connect \(agent.name)"
-        panel.message = "Choose \(agent.name)’s folder (\(agent == .claude ? "~/.claude, or a profile’s, like ~/.claude-work" : "usually ~/.codex")). Cue adds its hooks to \(AgentHooks.settingsFile(for: agent)) there, so its sessions show on the island."
+        panel.message = "Choose \(agent.name)’s folder (\(Self.folderHint(for: agent))). Cue adds its hooks to \(AgentHooks.settingsFile(for: agent)) there, so its sessions show on the island."
         panel.prompt = "Connect"
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -256,8 +267,17 @@ final class AgentConnector {
     }
 
     private func looksRight(_ folder: URL, for agent: AgentKind) -> Bool {
-        let names = agent == .claude ? ["settings.json", "projects", "CLAUDE.md"] : ["config.toml", "sessions", "auth.json"]
-        return folder.lastPathComponent.hasPrefix(agent == .claude ? ".claude" : ".codex")
+        let names = switch agent {
+        case .claude: ["settings.json", "projects", "CLAUDE.md"]
+        case .codex: ["config.toml", "sessions", "auth.json"]
+        case .antigravity: ["antigravity", "antigravity-cli", "antigravity-ide", "config"]
+        }
+        let prefix = switch agent {
+        case .claude: ".claude"
+        case .codex: ".codex"
+        case .antigravity: ".gemini"
+        }
+        return folder.lastPathComponent.hasPrefix(prefix)
             || names.contains { FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path) }
     }
 
@@ -282,6 +302,8 @@ final class AgentConnector {
         let backup = cueFolder.appendingPathComponent("\(file.lastPathComponent).before-cue")
         if let existing, !FileManager.default.fileExists(atPath: backup.path) { try? existing.write(to: backup) }
         let command = AgentHooks.command(scriptPath: cueFolder.appendingPathComponent(AgentHooks.scriptName).path, agent: agent)
+        // Antigravity's file sits a folder down (`config/`), which may not be there yet.
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try write(AgentHooks.encode(AgentHooks.install(into: settings, command: command, agent: agent)), to: file)
         try? FileManager.default.removeItem(at: folder.appendingPathComponent(AgentHooks.legacyFolderName))
     }

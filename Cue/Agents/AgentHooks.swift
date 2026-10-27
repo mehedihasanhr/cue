@@ -23,6 +23,7 @@ nonisolated enum AgentHooks {
         switch agent {
         case .claude: "settings.json"
         case .codex: "hooks.json"
+        case .antigravity: Antigravity.hooksFile
         }
     }
 
@@ -34,6 +35,7 @@ nonisolated enum AgentHooks {
         switch agent {
         case .claude: 86_400
         case .codex: 600
+        case .antigravity: 10
         }
     }
 
@@ -43,6 +45,7 @@ nonisolated enum AgentHooks {
         case .claude: ["SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Notification", "Stop",
                        "SubagentStart", "SubagentStop"]
         case .codex: ["SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"]
+        case .antigravity: Antigravity.events
         }
     }
 
@@ -62,6 +65,8 @@ nonisolated enum AgentHooks {
     /// `settings` with Cue's hook entries, replacing any it had before; everything
     /// else in the file is left as it was.
     static func install(into settings: [String: Any], command: String, agent: AgentKind) -> [String: Any] {
+        // Antigravity's file is a different shape: named definitions, each with its events.
+        if agent == .antigravity { return Antigravity.install(into: settings, command: command) }
         var settings = remove(from: settings)
         var hooks = settings["hooks"] as? [String: Any] ?? [:]
         func add(_ event: String, _ hook: [String: Any]) {
@@ -79,7 +84,7 @@ nonisolated enum AgentHooks {
 
     /// `settings` without Cue's hook entries; a group or event left empty goes too.
     static func remove(from settings: [String: Any]) -> [String: Any] {
-        var settings = settings
+        var settings = Antigravity.remove(from: settings)
         guard var hooks = settings["hooks"] as? [String: Any] else { return settings }
         for (event, value) in hooks {
             guard let groups = value as? [[String: Any]] else { continue }
@@ -100,6 +105,7 @@ nonisolated enum AgentHooks {
 
     /// Whether any Cue entry is there at all (an older build's set, say).
     static func hasAny(in settings: [String: Any]) -> Bool {
+        if settings[Antigravity.hookName] != nil { return true }
         guard let hooks = settings["hooks"] as? [String: Any] else { return false }
         return hooks.values.contains { value in
             (value as? [[String: Any]] ?? []).contains { group in (group["hooks"] as? [[String: Any]] ?? []).contains(where: isCue) }
@@ -108,6 +114,7 @@ nonisolated enum AgentHooks {
 
     /// Whether every Cue entry is in place (the user may have edited them away).
     static func isInstalled(in settings: [String: Any], agent: AgentKind) -> Bool {
+        if agent == .antigravity { return Antigravity.isInstalled(in: settings) }
         guard let hooks = settings["hooks"] as? [String: Any] else { return false }
         return (statusEvents(for: agent) + ["PermissionRequest"]).allSatisfy { event in
             (hooks[event] as? [[String: Any]] ?? []).contains { group in
@@ -212,6 +219,7 @@ nonisolated enum AgentHooks {
     # removes it; with Cue not running it does nothing.
     sock='\(socketPath.replacingOccurrences(of: "'", with: "'\\''"))'
     agent=$(printf %s "${1:-claude}" | tr -cd 'a-z')
+    none=''
     profile=$(basename "$(dirname "$(dirname "$0")")" | tr -cd 'A-Za-z0-9._ -')
     term=$(printf %s "$TERM_PROGRAM" | tr -cd 'A-Za-z0-9._ -')
     # What started the agent: "claude-desktop" for the Claude app, "cli" in a terminal.
@@ -221,6 +229,15 @@ nonisolated enum AgentHooks {
     [ -n "$WEZTERM_PANE" ] && pane="wezterm:$(printf %s "$WEZTERM_PANE" | tr -cd '0-9')"
     [ -z "$pane" ] && [ -n "$TMUX_PANE" ] && pane="tmux:$(printf %s "$TMUX_PANE" | tr -cd '%0-9')"
     event=$(tr -d '\\r\\n')
+    # Antigravity names the event only in the hook's arguments, and wants an answer
+    # whatever happens: "allow" (its default policy decides) before a tool, nothing after.
+    if [ "$agent" = antigravity ]; then
+        name=$(printf %s "${2:-}" | tr -cd 'A-Za-z')
+        none='{}'
+        [ "$name" = PreToolUse ] && none='{"decision":"allow"}'
+        [ -n "$event" ] || { printf %s "$none"; exit 0; }
+        event=$(printf %s "$event" | sed 's/^[[:space:]]*{/{"hook_event_name":"'"$name"'",/')
+    fi
     [ -n "$event" ] || exit 0
     reply=$(printf '{"cue":{"agent":"%s","profile":"%s","pid":%d,"ppid":%d,"term":"%s","pane":"%s","entry":"%s"},"event":%s}\\n' "$agent" "$profile" "$$" "$PPID" "$term" "$pane" "$entry" "$event" | /usr/bin/nc -U "$sock" 2>/dev/null)
     case "$reply" in
@@ -243,7 +260,7 @@ nonisolated enum AgentHooks {
         ) </dev/null >/dev/null 2>&1 &
         ;;
     *)
-        printf %s "$reply" ;;
+        if [ -n "$none" ] && [ -z "$reply" ]; then printf %s "$none"; else printf %s "$reply"; fi ;;
     esac
     exit 0
 
