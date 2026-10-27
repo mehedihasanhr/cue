@@ -64,6 +64,9 @@ final class IslandModel {
     /// The clock view's height and natural width, reported by the view, so its box
     /// fits it — nothing in it is ever cut short.
     var clockHeight: CGFloat?
+    /// A notification's height with its room above and below, reported by its row: a
+    /// title and two lines of text need more than the usual status row.
+    var bannerHeight: CGFloat?
     var clockWidth: CGFloat?
     /// Coding-agent sessions; nil until the app delegate hands them over.
     var agents: AgentStore?
@@ -151,6 +154,7 @@ final class IslandModel {
         case .agents: max(agentsHeight ?? estimatedAgentsHeight, showsPlayerBesideAgents ? NowPlayingDetail.columnHeight : 0)
         case .expanded: panelHeight
         case .status(let status) where status.clock != nil: IslandGeometry.clockStatusContentHeight
+        case .status(let status) where status.banner != nil: max(bannerHeight ?? 0, IslandGeometry.flashContentHeight)
         default: nil
         }
         return geometry.rect(for: phase.geometryPhase, contentWidth: width, contentHeight: height)
@@ -484,6 +488,7 @@ struct IslandView: View {
             .animation(Self.openAnimation, value: model.panelHeight)
             .animation(Self.openAnimation, value: model.showsDropZone)
             .animation(Self.openAnimation, value: model.clockHeight)
+            .animation(Self.openAnimation, value: model.bannerHeight)
             .animation(Self.openAnimation, value: model.clockWidth)
             .animation(Self.listAnimation, value: model.agentsHeight)
             .animation(Self.listAnimation, value: model.showsPlayerBesideAgents)
@@ -561,9 +566,14 @@ struct IslandView: View {
                         .modifier(IdealWidth { model.contentWidth = $0 })
                         .frame(height: IslandGeometry.flashContentHeight)
                 } else if let banner = status.banner {
+                    // Its own height, with a little air under the notch and more at the foot,
+                    // as the island's corners curve in there.
                     BannerRow(banner: banner)
+                        .padding(.top, 4)
+                        .padding(.bottom, 10)
+                        .modifier(IdealHeight { model.bannerHeight = $0 })
                         .modifier(IdealWidth { model.contentWidth = $0 })
-                        .frame(height: IslandGeometry.flashContentHeight)
+                        .frame(height: max(model.bannerHeight ?? 0, IslandGeometry.flashContentHeight))
                 } else if let notice = status.notice {
                     NoticeRow(notice: notice)
                         .modifier(IdealWidth { model.contentWidth = $0 })
@@ -587,7 +597,7 @@ struct IslandView: View {
                 } else if let done = status.agentDone {
                     AgentDoneRow(done: done)
                         .modifier(IdealWidth { model.contentWidth = $0 })
-                        .frame(height: IslandGeometry.flashContentHeight, alignment: .top)
+                        .frame(height: IslandGeometry.flashContentHeight)
                 } else {
                     StatusRow(status: status)
                         .modifier(IdealWidth { model.contentWidth = $0 })

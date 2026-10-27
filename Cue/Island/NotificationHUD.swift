@@ -275,7 +275,10 @@ struct BannerRow: View {
         }
         .padding(.leading, 14)
         .padding(.trailing, 20)
-        .fixedSize()
+        // Its height is its own, its width the island's: the island is as wide as the
+        // row would be on one line, at most 300 for the words, so a long message wraps
+        // onto its second line rather than being cut at the first.
+        .fixedSize(horizontal: false, vertical: true)
         .onAppear {
             withAnimation(IslandView.reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.45, dampingFraction: 0.75).delay(0.08)) { shown = true }
         }

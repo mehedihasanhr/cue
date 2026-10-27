@@ -512,6 +512,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 case "drop": self?.island?.debugShowDropZone()
                 case "hello": self?.island?.playHello()
                 case "clockstatus": self?.prayerClock?.preview()
+                case "banner":
+                    let banner = BannerNotification(id: "debug", app: "Messages", appURL: URL(fileURLWithPath: "/System/Applications/Messages.app"),
+                                                    title: "Maya", subtitle: "", body: "Running five minutes late, order me a flat white? I'll be there by ten past.", date: .now)
+                    _ = self?.island?.showStatus(IslandStatus(symbol: "bell.fill", title: "Maya", duration: .seconds(6), banner: banner))
+                case "agentdone":
+                    let done = AgentDone(agent: .claude, project: "cue", took: .seconds(94), summary: "Fixed the island's status padding")
+                    _ = self?.island?.showStatus(IslandStatus(symbol: "checkmark.circle.fill", title: "Task complete", subtitle: "cue",
+                                                              duration: .seconds(6), agentDone: done))
                 case "medialyrics":
                     UserDefaults.standard.set(true, forKey: "island.player.lyrics")
                     self?.island?.nowPlaying.debugFake()

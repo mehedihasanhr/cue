@@ -505,7 +505,12 @@ struct AgentDoneRow: View {
             Spacer(minLength: 14)
             timePill
         }
-        .padding(.horizontal, 16)
+        // As every status sits: the tile 7 pt in from the island's edge, the row a
+        // touch above the middle so the foot has room below it.
+        .padding(.leading, 7)
+        .padding(.trailing, 16)
+        .padding(.bottom, 4)
+        .frame(maxHeight: .infinity)
         .onAppear(perform: play)
     }
 
