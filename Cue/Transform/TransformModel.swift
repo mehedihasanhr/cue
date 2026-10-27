@@ -114,8 +114,11 @@ final class TransformModel {
     private static let folderKey = "transform.folder"
     private static let presetsKey = "transform.presets"
     private var estimateTask: Task<Void, Never>?
+    private let estimating: Bool
 
-    init(files: [URL]) {
+    /// `estimating`: works out the sizes as settings change (the window shows them).
+    init(files: [URL], estimating: Bool = true) {
+        self.estimating = estimating
         self.files = files
         saveTo = SaveTo(rawValue: UserDefaults.standard.string(forKey: Self.saveToKey) ?? "") ?? .shelf
         saved = (UserDefaults.standard.data(forKey: Self.presetsKey)).flatMap { try? JSONDecoder().decode([Preset].self, from: $0) } ?? []
@@ -201,6 +204,7 @@ final class TransformModel {
     private func estimateSoon() {
         estimateTask?.cancel()
         estimate = nil
+        guard estimating else { return }
         let settings = settings
         let inputs = Array((settings.action.imagesOnly ? images : files).prefix(12))
         guard [.compress, .convert, .resize, .rotate, .removeMetadata].contains(settings.action), !inputs.isEmpty else { return }
@@ -290,6 +294,23 @@ final class TransformModel {
                 }
             }
         }
+    }
+
+    /// `url` converted to `format` (nil: a one-page PDF) without the window, put where
+    /// Save to says, as the window would.
+    static func quickConvert(_ url: URL, to format: TransformEngine.Format?,
+                             produce: @escaping (_ done: String, _ from: [URL], _ each: Bool, _ work: @escaping @Sendable ([URL], URL) -> [URL]) -> Void) {
+        let model = TransformModel(files: [url], estimating: false)
+        if let format {
+            model.settings.action = .convert
+            model.settings.convertFormat = format
+            model.settings.convertQuality = 0.9
+        } else {
+            model.settings.action = .combine
+            model.outputName = url.deletingPathExtension().lastPathComponent
+        }
+        // Kept until the work is done.
+        model.run(produce: produce) { _ = model }
     }
 
     /// `file` moved into `folder`, numbered if its name is taken.

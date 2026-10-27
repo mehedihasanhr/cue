@@ -468,7 +468,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let files = ((try? FileManager.default.contentsOfDirectory(at: Bundle.main.resourceURL!, includingPropertiesForKeys: nil)) ?? []).prefix(mode == "empty" ? 0 : 3)
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
                 // `grid`: the four places a shake offers, Transform lit.
-                if mode == "grid" { self?.basket.debugShowGrid(hovered: .transform) } else { self?.basket.debugShow(Array(files)) }
+                if mode == "grid" {
+                    self?.basket.debugShowGrid(hovered: .transform)
+                } else if mode == "wheel", let image = ((try? FileManager.default.contentsOfDirectory(at: Bundle.main.resourceURL!, includingPropertiesForKeys: nil)) ?? []).first(where: { $0.pathExtension == "png" }) {
+                    self?.basket.debugShowWheel(file: image, hovered: .heic)
+                } else {
+                    self?.basket.debugShow(Array(files))
+                }
             }
         }
         // Diagnostics: `--env CUE_DEBUG_ISLAND_SHOT=captures` opens the island on that tab (`agents`:

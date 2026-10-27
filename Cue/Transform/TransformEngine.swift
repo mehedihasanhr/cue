@@ -11,7 +11,7 @@ import WebPKit
 nonisolated enum TransformEngine {
     /// The image formats Transform writes.
     enum Format: String, CaseIterable, Sendable, Codable {
-        case automatic, jpeg, heic, avif, webp, png
+        case automatic, jpeg, heic, avif, webp, png, tiff, bmp
 
         var title: String {
             switch self {
@@ -21,6 +21,8 @@ nonisolated enum TransformEngine {
             case .avif: "AVIF"
             case .webp: "WebP"
             case .png: "PNG"
+            case .tiff: "TIFF"
+            case .bmp: "BMP"
             }
         }
 
@@ -31,6 +33,8 @@ nonisolated enum TransformEngine {
             case .avif: "avif"
             case .webp: "webp"
             case .png, .automatic: "png"
+            case .tiff: "tiff"
+            case .bmp: "bmp"
             }
         }
 
@@ -41,6 +45,8 @@ nonisolated enum TransformEngine {
             case .avif: UTType("public.avif") ?? .heic
             case .webp: .webP
             case .png, .automatic: .png
+            case .tiff: .tiff
+            case .bmp: .bmp
             }
         }
 
@@ -50,7 +56,7 @@ nonisolated enum TransformEngine {
         /// through libwebp).
         static var available: [Format] {
             let types = Set((CGImageDestinationCopyTypeIdentifiers() as? [String]) ?? [])
-            return allCases.filter { $0 != .avif || types.contains("public.avif") }
+            return allCases.filter { $0 == .webp || $0 == .automatic || types.contains($0.type.identifier) }
         }
     }
 

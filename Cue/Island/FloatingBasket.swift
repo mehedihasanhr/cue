@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 import SwiftUI
 
 /// A small basket that floats over everything, for files on their way somewhere.
@@ -27,6 +28,9 @@ final class BasketController {
     private var gridPanel: NSPanel?
     private let grid = QuickDropModel()
     private var gridHideTask: Task<Void, Never>?
+    private var wheelPanel: NSPanel?
+    private let wheel = ConvertWheelModel()
+    private var wheelHideTask: Task<Void, Never>?
 
     /// Makes share links for files (set by the app, which has the sharing settings).
     var onShareLink: ([URL]) -> Void = { _ in }
@@ -60,6 +64,7 @@ final class BasketController {
         monitors = []
         close()
         hideGrid()
+        hideWheel()
     }
 
     /// Brings back the basket last closed with files in it, under the pointer.
@@ -104,16 +109,27 @@ final class BasketController {
             pressCount = NSPasteboard(name: .drag).changeCount
             shake.reset()
         case .leftMouseDragged:
-            guard preferences.basketEnabled, panel?.isVisible != true, gridPanel?.isVisible != true else { return }
+            guard preferences.basketEnabled, gridPanel?.isVisible != true, wheelPanel?.isVisible != true else { return }
             let drag = NSPasteboard(name: .drag)
             guard drag.changeCount != pressCount, drag.types?.contains(.fileURL) == true else { return }
+            // Shift held: the convert wheel, for a picture, whether or not the basket is out.
+            let shift = NSEvent.modifierFlags.contains(.shift)
+            guard shift || panel?.isVisible != true else { return }
             if shake.feed(x: NSEvent.mouseLocation.x, at: time) {
-                if preferences.basketQuickActions { showGrid(at: NSEvent.mouseLocation) } else { show(at: NSEvent.mouseLocation) }
+                let files = (drag.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
+                if shift, let image = files.first(where: TransformEngine.isImage) {
+                    showWheel(at: NSEvent.mouseLocation, file: image)
+                } else if preferences.basketQuickActions {
+                    showGrid(at: NSEvent.mouseLocation)
+                } else {
+                    show(at: NSEvent.mouseLocation)
+                }
             }
         case .leftMouseUp:
             shake.reset()
             hideIfEmpty()
             hideGridSoon()
+            hideWheelSoon()
         default:
             break
         }
@@ -164,6 +180,104 @@ final class BasketController {
             guard let self, !grid.shown else { return }
             self.gridPanel?.orderOut(nil)
         }
+    }
+
+    // MARK: - The convert wheel
+
+    private func showWheel(at point: CGPoint, file: URL) {
+        wheelHideTask?.cancel()
+        let panel = wheelPanel ?? makeWheelPanel()
+        wheelPanel = panel
+        wheel.file = file
+        wheel.thumbnail = Self.thumbnail(of: file)
+        wheel.hovered = nil
+        // Round the pointer, kept clear of the menu bar and the notch (the visible frame
+        // stops below them) and the screen's edges.
+        panel.setFrame(Self.frame(around: point, size: WheelGeometry.window), display: false)
+        panel.orderFrontRegardless()
+        wheel.shown = true
+    }
+
+    private func hideWheel() {
+        wheelHideTask?.cancel()
+        guard let wheelPanel, wheelPanel.isVisible else { return }
+        wheel.shown = false
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(220))
+            guard let self, !wheel.shown else { return }
+            self.wheelPanel?.orderOut(nil)
+        }
+    }
+
+    private func hideWheelSoon() {
+        guard wheelPanel?.isVisible == true else { return }
+        wheelHideTask?.cancel()
+        wheelHideTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
+            self?.hideWheel()
+        }
+    }
+
+    /// A copy of the file in the format it was dropped on; what's made for the shelf
+    /// lands in the basket.
+    private func convert(_ urls: [URL], to format: WheelFormat) {
+        let point = wheelPanel.map { CGPoint(x: $0.frame.midX, y: $0.frame.midY) } ?? NSEvent.mouseLocation
+        hideWheel()
+        for url in urls where TransformEngine.isImage(url) {
+            TransformModel.quickConvert(url, to: format.format) { [weak self] done, from, each, work in
+                guard let self else { return }
+                show(at: point)
+                store.produce(done, from: from, each: each, work)
+            }
+        }
+    }
+
+    private func makeWheelPanel() -> NSPanel {
+        let panel = NSPanel(contentRect: CGRect(origin: .zero, size: WheelGeometry.window), styleMask: [.borderless, .nonactivatingPanel],
+                            backing: .buffered, defer: false)
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.level = .floating
+        panel.hidesOnDeactivate = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        let content = ConvertWheelDropView(frame: CGRect(origin: .zero, size: WheelGeometry.window))
+        content.count = { [weak self] in self?.wheel.formats.count ?? 0 }
+        content.onHover = { [weak self] index in
+            guard let self else { return }
+            wheelHideTask?.cancel()
+            let format = index.map { self.wheel.formats[$0] }
+            if wheel.hovered != format { wheel.hovered = format }
+        }
+        content.onDrop = { [weak self] index, urls in
+            guard let self else { return }
+            convert(urls, to: wheel.formats[index])
+        }
+        let host = NSHostingView(rootView: ConvertWheelView(model: wheel))
+        host.sizingOptions = []
+        host.autoresizingMask = [.width, .height]
+        host.frame = content.bounds
+        content.addSubview(host)
+        panel.contentView = content
+        return panel
+    }
+
+    /// A picture of the file for the wheel's middle.
+    private static func thumbnail(of url: URL) -> NSImage {
+        let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 300,
+                                        kCGImageSourceCreateThumbnailWithTransform: true]
+        if let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+           let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {
+            return NSImage(cgImage: image, size: CGSize(width: image.width, height: image.height))
+        }
+        return NSWorkspace.shared.icon(forFile: url.path)
+    }
+
+    /// For diagnostics: the wheel round the pointer, for `file`, `format` lit.
+    func debugShowWheel(file: URL, hovered format: WheelFormat?) {
+        showWheel(at: NSEvent.mouseLocation, file: file)
+        wheel.hovered = format
     }
 
     /// The drag ended somewhere else (or was let go of nowhere): the grid goes.

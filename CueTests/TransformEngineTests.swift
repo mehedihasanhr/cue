@@ -98,6 +98,14 @@ final class TransformEngineTests: XCTestCase {
         XCTAssertEqual(CGImageSourceGetType(source) as String?, "public.avif")
     }
 
+    func testConvertToTIFFAndBMP() throws {
+        let url = picture()
+        for (format, type) in [(TransformEngine.Format.tiff, "public.tiff"), (.bmp, "com.microsoft.bmp")] {
+            let made = try XCTUnwrap(TransformEngine.convert(url, to: format, quality: 1, into: folder))
+            XCTAssertEqual(CGImageSourceGetType(try XCTUnwrap(CGImageSourceCreateWithURL(made as CFURL, nil))) as String?, type)
+        }
+    }
+
     func testRenameNumbersTheFiles() {
         let urls = [URL(fileURLWithPath: "/a/one.jpg"), URL(fileURLWithPath: "/a/two.png")]
         XCTAssertEqual(TransformEngine.newNames(for: urls, .init(base: "Trip", numbered: true, start: 1)), ["Trip 1.jpg", "Trip 2.png"])
