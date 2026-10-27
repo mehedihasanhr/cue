@@ -129,8 +129,8 @@ struct QuickDropGrid: View {
                 .frame(height: 26)
             VStack(spacing: 1) {
                 Text(target.title)
-                    .font(.system(size: 11.5, weight: .semibold))
-                    .foregroundStyle(dark ? Color(white: off ? 0.5 : 0.86) : Color(white: off ? 0.55 : 0.3))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(dark ? Color(white: off ? 0.5 : 0.86) : Color(light: off ? 0x8A8A8A : 0x222222, dark: 0xDBDBDB))
                     .multilineTextAlignment(.center)
                 if off {
                     Text("Set up in Settings")
@@ -142,8 +142,11 @@ struct QuickDropGrid: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // Soft grey, a shade darker than the glass round it; under the files, darker
         // still and lifted a touch.
+        // Sampled from Droppy: barely darker than the pane, a touch more at the top.
         .background {
-            shape.fill(dark ? Color.white.opacity(lit ? 0.16 : 0.07) : Color.black.opacity(lit ? 0.11 : 0.055))
+            shape.fill(dark ? AnyShapeStyle(Color.white.opacity(lit ? 0.16 : 0.07))
+                            : AnyShapeStyle(LinearGradient(colors: [.black.opacity(lit ? 0.08 : 0.03), .black.opacity(lit ? 0.055 : 0.008)],
+                                                           startPoint: .top, endPoint: .bottom)))
         }
         .scaleEffect(lit ? 1.03 : 1)
     }
@@ -168,12 +171,13 @@ struct QuickDropGrid: View {
             // A filled tray, shaded top to bottom like a little object.
             Image(systemName: "tray.and.arrow.down.fill")
                 .font(.system(size: 21, weight: .regular))
-                .foregroundStyle(LinearGradient(colors: dark ? [Color(white: 0.92), Color(white: 0.6)] : [Color(white: 0.62), Color(white: 0.36)],
+                .foregroundStyle(LinearGradient(colors: dark ? [Color(white: 0.92), Color(white: 0.6)]
+                                                             : [Color(light: 0x8C8A88, dark: 0x8C8A88), Color(light: 0x5E5C5B, dark: 0x5E5C5B)],
                                                 startPoint: .top, endPoint: .bottom))
         } else {
             Image(systemName: target.symbol)
-                .font(.system(size: 21, weight: .semibold))
-                .foregroundStyle(dark ? Color(white: 0.92) : Color(white: 0.16))
+                .font(.system(size: 21, weight: .regular))
+                .foregroundStyle(dark ? Color(white: 0.92) : Color(light: 0x212020, dark: 0x212020))
         }
     }
 }
@@ -186,9 +190,11 @@ private struct PaneGlass: ViewModifier {
 
     func body(content: Content) -> some View {
         if #available(macOS 26.0, *) {
+            // Droppy's pane is near-opaque (#F6F4F3): the glass shows only faintly.
             content
+                .background(shape.fill(dark ? Color(white: 0.12).opacity(0.86) : Color(light: 0xF8F6F5, dark: 0xF8F6F5).opacity(0.97)))
                 .glassEffect(.regular.tint(dark ? .black.opacity(0.25) : .white.opacity(0.5)), in: shape)
-                .overlay(shape.strokeBorder(.white.opacity(dark ? 0.12 : 0.75), lineWidth: 1))
+                .overlay(shape.strokeBorder(.white.opacity(dark ? 0.12 : 0.85), lineWidth: 1))
                 .shadow(color: .black.opacity(dark ? 0.35 : 0.14), radius: 14, y: 6)
         } else {
             content
