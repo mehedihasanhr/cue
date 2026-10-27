@@ -76,6 +76,8 @@ final class AppPreferences {
         static let timeEnabled = "clock.enabled"
         static let timeInterval = "clock.interval"
         static let timeSpoken = "clock.spoken"
+        static let timeVoice = "clock.voice"
+        static let timeVoiceVolume = "clock.voiceVolume"
         static let prayerEnabled = "prayer.enabled"
         static let prayerMethod = "prayer.method"
         static let prayerMadhab = "prayer.madhab"
@@ -292,6 +294,16 @@ final class AppPreferences {
     /// Say the time, and each prayer, aloud as the island shows them.
     var timeSpoken: Bool {
         didSet { defaults.set(timeSpoken, forKey: Key.timeSpoken) }
+    }
+
+    /// The voice it's said in (an identifier; empty: the sweetest one installed).
+    var timeVoice: String {
+        didSet { defaults.set(timeVoice, forKey: Key.timeVoice) }
+    }
+
+    /// How loud it's said, 0.1–1: soft by default.
+    var timeVoiceVolume: Double {
+        didSet { defaults.set(timeVoiceVolume, forKey: Key.timeVoiceVolume) }
     }
 
     var prayerTimesEnabled: Bool {
@@ -937,6 +949,8 @@ final class AppPreferences {
         timeEnabled = defaults.object(forKey: Key.timeEnabled) as? Bool ?? true
         timeStatusInterval = defaults.object(forKey: Key.timeInterval) as? Int ?? 60
         timeSpoken = defaults.bool(forKey: Key.timeSpoken)
+        timeVoice = defaults.string(forKey: Key.timeVoice) ?? ""
+        timeVoiceVolume = defaults.object(forKey: Key.timeVoiceVolume) as? Double ?? 0.6
         prayerTimesEnabled = defaults.bool(forKey: Key.prayerEnabled)
         prayerMethod = CalculationMethod(rawValue: defaults.string(forKey: Key.prayerMethod) ?? "") ?? .muslimWorldLeague
         prayerMadhab = Madhab(rawValue: defaults.string(forKey: Key.prayerMadhab) ?? "") ?? .standard

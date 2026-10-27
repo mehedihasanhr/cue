@@ -1319,6 +1319,31 @@ struct TimeSettingsView: View {
                 SettingsRow("Say it aloud", subtitle: "Speaks the time, and each prayer as it begins.") {
                     Toggle("Say it aloud", isOn: $preferences.timeSpoken).toggleStyle(.switch)
                 }
+                if preferences.timeSpoken {
+                    SettingsRow("Voice") {
+                        HStack(spacing: 8) {
+                            Picker("Voice", selection: $preferences.timeVoice) {
+                                Text("Automatic (\(PrayerClock.voice("")?.name ?? "system"))").tag("")
+                                Divider()
+                                ForEach(PrayerClock.voices(), id: \.identifier) { voice in
+                                    Text(Self.voiceTitle(voice)).tag(voice.identifier)
+                                }
+                            }
+                            .fixedSize()
+                            Button("Listen") { clock?.say("It's \(PrayerClock.clock(Date())).") }
+                        }
+                    }
+                    SettingsRow("Volume") {
+                        HStack(spacing: 8) {
+                            Image(systemName: "speaker.fill").foregroundStyle(.secondary)
+                            Slider(value: $preferences.timeVoiceVolume, in: 0.1...1) { editing in
+                                if !editing { clock?.say("It's \(PrayerClock.clock(Date())).") }
+                            }
+                            .frame(width: 160)
+                            Image(systemName: "speaker.wave.3.fill").foregroundStyle(.secondary)
+                        }
+                    }
+                }
                 SettingsRow("Preview") {
                     Button("Show on the Island") { clock?.preview() }
                 }
@@ -1420,6 +1445,15 @@ struct TimeSettingsView: View {
     private func applyManual() {
         guard let lat = Double(latitude), let lon = Double(longitude), (-90...90).contains(lat), (-180...180).contains(lon) else { return }
         preferences.prayerManualPlace = Coordinates(latitude: lat, longitude: lon)
+    }
+
+    /// "Ava (Premium)": a voice's name and how good it sounds.
+    private static func voiceTitle(_ voice: AVSpeechSynthesisVoice) -> String {
+        switch voice.quality {
+        case .premium: "\(voice.name) (Premium)"
+        case .enhanced: "\(voice.name) (Enhanced)"
+        default: voice.name
+        }
     }
 
     private static func intervalTitle(_ minutes: Int) -> String {

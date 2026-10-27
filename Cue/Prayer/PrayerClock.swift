@@ -235,11 +235,49 @@ final class PrayerClock: NSObject {
             }
             line = words
         }
+        // A prayer's line waits for its chime.
+        if case .prayer = event { say(line, after: 1) } else { say(line) }
+    }
+
+    /// Says a line in the chosen voice, softly and a little slower than usual.
+    func say(_ line: String, after delay: TimeInterval = 0) {
         speech.stopSpeaking(at: .word)
         let utterance = AVSpeechUtterance(string: line)
-        // After the prayer chime, not over it.
-        if case .prayer = event { utterance.preUtteranceDelay = 1 }
+        utterance.voice = Self.voice(preferences.timeVoice)
+        utterance.volume = Float(min(max(preferences.timeVoiceVolume, 0.1), 1))
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.92
+        utterance.pitchMultiplier = 1.05
+        utterance.preUtteranceDelay = delay
         speech.speak(utterance)
+    }
+
+    /// Gentle voices, sweetest first, for when several sound as good.
+    private static let sweet = ["Samantha", "Ava", "Zoe", "Allison", "Susan", "Karen", "Moira", "Tessa", "Serena", "Veena"]
+
+    /// Voices that suit it, in the Mac's language: no novelty voices (Bells, Bubbles…),
+    /// the best sounding first, then the gentlest. (A sandboxed app isn't offered
+    /// the downloaded premium voices; any enhanced one it is offered comes first.)
+    static func voices() -> [AVSpeechSynthesisVoice] {
+        let language = AVSpeechSynthesisVoice.currentLanguageCode()
+        let prefix = String(language.prefix(2))
+        return AVSpeechSynthesisVoice.speechVoices()
+            .filter { $0.language.hasPrefix(prefix) && !$0.voiceTraits.contains(.isNoveltyVoice) && !$0.identifier.contains(".siri.") }
+            .sorted { a, b in
+                if a.quality != b.quality { return a.quality.rawValue > b.quality.rawValue }
+                if (a.language == language) != (b.language == language) { return a.language == language }
+                let rank = { (voice: AVSpeechSynthesisVoice) in sweet.firstIndex(of: voice.name) ?? sweet.count }
+                if rank(a) != rank(b) { return rank(a) < rank(b) }
+                if (a.gender == .female) != (b.gender == .female) { return a.gender == .female }
+                // The fuller of two voices with one name ("compact" over "super-compact").
+                if a.name == b.name { return !a.identifier.contains("super-compact") }
+                return a.name < b.name
+            }
+    }
+
+    /// The chosen voice, or the sweetest one installed.
+    static func voice(_ identifier: String) -> AVSpeechSynthesisVoice? {
+        if !identifier.isEmpty, let chosen = AVSpeechSynthesisVoice(identifier: identifier) { return chosen }
+        return voices().first
     }
 
     /// Every event is drawn by `ClockRow`; the plain title/subtitle serve the HUD
