@@ -642,7 +642,7 @@ final class IslandController {
     private func agentAsked() {
         guard preferences.agentAutoOpen, model.geometry != nil, !hidden else { return }
         switch model.phase {
-        case .collapsed, .flash, .status, .expanded: showAgents()
+        case .collapsed, .flash, .status, .expanded, .hello: showAgents()
         case .agents, .prompt, .taskDetail, .clock, .media, .weather, .mirror: break
         }
     }
@@ -958,6 +958,24 @@ final class IslandController {
         outsideClickMonitors.removeAll()
     }
 
+    /// Cue's hello as it starts: the island comes out of the notch with a little
+    /// bounce, the critter looks about while "hello" is written, and it settles back
+    /// into the notch, only then answering the pointer.
+    func playHello() {
+        guard model.geometry != nil, !hidden, model.phase == .collapsed, preferences.islandAnimation != .none else { return }
+        flashTask?.cancel()
+        window.orderFrontRegardless()
+        let reduced = IslandView.reduceMotion
+        withAnimation(reduced ? IslandView.openAnimation : .spring(response: IslandMotion.response(0.55), dampingFraction: 0.66)) {
+            model.phase = .hello
+        }
+        flashTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(reduced ? 1.6 : IslandHello.duration))
+            guard !Task.isCancelled, let self, model.phase == .hello else { return }
+            collapse()
+        }
+    }
+
     /// Shows a confirmation on the island for a moment: the closed notch grows into
     /// it, the open panel shrinks to it. False when the island is not on screen.
     @discardableResult
@@ -1109,7 +1127,8 @@ final class IslandController {
         // The compact prompt / task detail stay as they are until ↩, ⎋ or a click
         // outside; the pointer does not reopen the panel.
         switch model.phase {
-        case .prompt, .taskDetail, .clock, .media, .weather, .mirror, .agents: return
+        // The hello plays out untouched; the pointer counts once it has gone.
+        case .prompt, .taskDetail, .clock, .media, .weather, .mirror, .agents, .hello: return
         case .status(let status) where status.clock != nil:
             // The clock ignores the pointer: it neither opens the panel nor stays;
             // a click opens the clock view, otherwise it closes on its own.

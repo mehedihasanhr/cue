@@ -15,6 +15,7 @@ final class AppPreferences {
         static let icon = "menuBar.icon"
         static let iconMarkMigrated = "menuBar.icon.markMigrated.2"
         static let welcomeTourSeen = "welcome.tourSeen"
+        static let islandHello = "island.hello"
         static let iconBookmark = "menuBar.customBookmark"
         static let appearance = "appearance"
         static let showInDock = "app.showInDock"
@@ -626,6 +627,11 @@ final class AppPreferences {
         didSet { defaults.set(welcomeTourSeen, forKey: Key.welcomeTourSeen) }
     }
 
+    /// The island says hello each time Cue starts.
+    var islandHello: Bool {
+        didSet { defaults.set(islandHello, forKey: Key.islandHello) }
+    }
+
     /// The island shows the notifications macOS shows, and keeps them in a tab.
     var islandNotifications: Bool {
         didSet { defaults.set(islandNotifications, forKey: Key.islandNotifications) }
@@ -907,6 +913,7 @@ final class AppPreferences {
         islandDownloads = defaults.object(forKey: Key.islandDownloads) as? Bool ?? true
         islandNotifications = defaults.object(forKey: Key.islandNotifications) as? Bool ?? false
         islandHidesBanners = defaults.object(forKey: Key.islandHidesBanners) as? Bool ?? true
+        islandHello = defaults.object(forKey: Key.islandHello) as? Bool ?? true
         islandCalendar = defaults.object(forKey: Key.islandCalendar) as? Bool ?? false
         islandWeather = defaults.object(forKey: Key.islandWeather) as? Bool ?? false
         islandLockScreen = defaults.object(forKey: Key.islandLockScreen) as? Bool ?? false

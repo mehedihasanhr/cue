@@ -510,6 +510,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     _ = self?.island?.showStatus(IslandStatus(symbol: "checkmark.circle.fill", title: "Copied", subtitle: "Image 148 × 116",
                                                               image: NSImage(named: "AppIcon"), duration: .seconds(6)))
                 case "drop": self?.island?.debugShowDropZone()
+                case "hello": self?.island?.playHello()
                 case "medialyrics":
                     UserDefaults.standard.set(true, forKey: "island.player.lyrics")
                     self?.island?.nowPlaying.debugFake()
@@ -945,6 +946,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 island?.onShareLink = { [weak self] urls in self?.shareFiles(urls) }
                 library.warmThumbnails()
                 FeedbackHUD.island = { [weak self] status in self?.island?.showStatus(status) ?? false }
+                // On the first launch the welcome says hello instead, and the island after it.
+                if preferences.welcomeTourSeen { sayHello() }
             }
         } else if let island {
             island.tearDown()
@@ -1739,6 +1742,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         onboardingWindows[kind]?.present()
     }
 
+    /// The island's hello, once it is up (Settings › Island › Say hello at launch).
+    private func sayHello() {
+        guard preferences.islandHello else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.island?.playHello() }
+    }
+
     /// The welcome and its tour: on the first launch, and again from Settings.
     private func showWelcome(at step: WelcomeView.Step = .hello) {
         if welcome == nil {
@@ -1750,6 +1759,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if !preferences.welcomeTourSeen {
                     preferences.welcomeTourSeen = true
                     AppUpdater.shared.start()
+                    sayHello()
                 }
             }
             welcome = controller

@@ -24,12 +24,14 @@ final class IslandModel {
         case mirror
         /// The running agent sessions, and what they are asking.
         case agents
+        /// Cue saying hello as it starts: out of the notch for a moment, then back.
+        case hello
         case expanded
 
         var geometryPhase: IslandGeometry.Phase {
             switch self {
             case .collapsed: .collapsed
-            case .flash: .flash
+            case .flash, .hello: .flash
             case .status(let status): status.clock == nil ? .flash : .prompt
             case .prompt(let prompt): prompt.isForm ? .form : .prompt
             case .taskDetail, .clock, .media, .weather, .mirror, .agents: .form
@@ -40,7 +42,7 @@ final class IslandModel {
         var isFlash: Bool {
             switch self {
             case .flash, .status: true
-            case .collapsed, .expanded, .prompt, .taskDetail, .clock, .media, .weather, .mirror, .agents: false
+            case .collapsed, .expanded, .prompt, .taskDetail, .clock, .media, .weather, .mirror, .agents, .hello: false
             }
         }
 
@@ -48,7 +50,7 @@ final class IslandModel {
         /// text fields and forms keep a fixed width.
         var fitsContent: Bool {
             switch self {
-            case .flash, .status: true
+            case .flash, .status, .hello: true
             case .prompt(let prompt): prompt.isConfirm
             case .collapsed, .expanded, .taskDetail, .clock, .media, .weather, .mirror, .agents: false
             }
@@ -527,6 +529,14 @@ struct IslandView: View {
                     .frame(height: strip)
                     .transition(.opacity.animation(Self.contentAnimation))
             }
+        case .hello:
+            VStack(spacing: 0) {
+                Color.clear.frame(height: strip)
+                IslandHello()
+                    .modifier(IdealWidth { model.contentWidth = $0 })
+                    .frame(height: IslandGeometry.flashContentHeight)
+            }
+            .transition(Self.contentTransition)
         case .flash(let item):
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
@@ -691,7 +701,7 @@ struct IslandView: View {
     static func hasBackdrop(_ phase: IslandModel.Phase) -> Bool {
         switch phase {
         case .expanded, .agents, .clock, .media, .weather, .mirror, .taskDetail, .prompt: true
-        case .collapsed, .flash, .status: false
+        case .collapsed, .flash, .status, .hello: false
         }
     }
 

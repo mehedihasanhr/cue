@@ -414,6 +414,9 @@ struct IslandSettingsView: View {
             .disabled(!preferences.dynamicIslandEnabled)
 
             SettingsGroup("Motion") {
+                SettingsRow("Say hello at launch", subtitle: "The island comes out of the notch for a moment each time Cue starts.") {
+                    Toggle("Say hello at launch", isOn: $preferences.islandHello).toggleStyle(.switch)
+                }
                 SettingsRow("Animation") {
                     Picker("Animation", selection: $preferences.islandAnimation) {
                         ForEach(AppPreferences.IslandAnimation.allCases, id: \.self) { Text($0.title).tag($0) }
