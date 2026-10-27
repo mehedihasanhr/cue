@@ -50,6 +50,16 @@ INSIDE="$(/usr/bin/defaults read "$MOUNT/Cue.app/Contents/Info.plist" CFBundleVe
 hdiutil detach "$MOUNT" -quiet
 [ "$INSIDE" = "$BUILD" ] || { echo "$DMG holds build $INSIDE, not $BUILD — run Scripts/make-dmg.sh again"; exit 1; }
 
+# Once notarization is set up, never publish an image without its ticket; until then,
+# say what people will see.
+if xcrun stapler validate -q "$DMG" >/dev/null 2>&1; then
+    echo "$DMG is notarized"
+elif [ -n "${CUE_NOTARY_PROFILE:-}" ]; then
+    echo "$DMG is not notarized — run Scripts/make-dmg.sh again with CUE_DEVELOPER_ID and CUE_NOTARY_PROFILE set"; exit 1
+else
+    echo "warning: $DMG is not notarized; macOS will ask people to allow Cue (README › Releasing › Notarization)"
+fi
+
 # `sign_update` prints the attributes the appcast's enclosure needs:
 #   sparkle:edSignature="…" length="…"
 SIGNATURE="$("$SIGN" --account cue "$DMG")"

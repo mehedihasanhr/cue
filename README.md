@@ -70,6 +70,36 @@ The private signing key lives in the publisher's login keychain (account `cue`),
 `generate_keys --account cue -f <file>` (from `build/release/SourcePackages/artifacts/sparkle/Sparkle/bin`).
 Without it, no installed copy will accept another update.
 
+### Notarization
+
+Signed with the self-signed "Cue Development" certificate, a downloaded Cue is stopped by
+Gatekeeper ("Apple could not verify…") until it's allowed in System Settings › Privacy &
+Security. A Developer ID signature and Apple's notarization remove that. Set up once:
+
+1. In the [Apple Developer Program](https://developer.apple.com/programs/), create a
+   **Developer ID Application** certificate (Xcode › Settings › Accounts › Manage
+   Certificates › + does it) so it sits in the login keychain:
+   `security find-identity -v -p codesigning` lists it.
+2. Make an [app-specific password](https://account.apple.com) for your Apple ID, then store
+   the notary credentials in the keychain:
+
+   ```sh
+   xcrun notarytool store-credentials cue-notary --apple-id you@example.com --team-id TEAMID
+   ```
+
+Then release with both set; `make-dmg.sh` re-signs the app for distribution, sends the DMG to
+Apple, waits, staples the ticket and checks it with Gatekeeper:
+
+```sh
+export CUE_DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)"
+export CUE_NOTARY_PROFILE=cue-notary
+Scripts/make-dmg.sh
+Scripts/publish-release.sh notes.md   # refuses a DMG without its ticket while CUE_NOTARY_PROFILE is set
+```
+
+Moving from "Cue Development" to a Developer ID changes the app's signature, so people may
+need to grant Screen Recording, Accessibility and the like again after that first update.
+
 ## First run
 
 1. Launch Cue. A camera icon appears in the menu bar (no Dock icon) and, because the
