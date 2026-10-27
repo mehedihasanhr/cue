@@ -130,7 +130,7 @@ struct QuickDropGrid: View {
             VStack(spacing: 1) {
                 Text(target.title)
                     .font(.system(size: 11.5, weight: .semibold))
-                    .foregroundStyle(dark ? Color(white: off ? 0.5 : 0.88) : Color(white: off ? 0.55 : 0.27))
+                    .foregroundStyle(dark ? Color(white: off ? 0.5 : 0.86) : Color(white: off ? 0.55 : 0.3))
                     .multilineTextAlignment(.center)
                 if off {
                     Text("Set up in Settings")
@@ -140,13 +140,12 @@ struct QuickDropGrid: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Soft grey, a shade darker than the glass round it; under the files, darker
+        // still and lifted a touch.
         .background {
-            shape.fill(dark ? Color.white.opacity(lit ? 0.2 : 0.08) : Color.white.opacity(lit ? 0.85 : 0.42))
+            shape.fill(dark ? Color.white.opacity(lit ? 0.16 : 0.07) : Color.black.opacity(lit ? 0.11 : 0.055))
         }
-        .overlay(shape.strokeBorder(LinearGradient(colors: [.white.opacity(dark ? 0.12 : 0.6), .white.opacity(dark ? 0.02 : 0.15)],
-                                                   startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
-        .scaleEffect(lit ? 1.04 : 1)
-        .shadow(color: .black.opacity(lit ? 0.12 : 0), radius: 6, y: 2)
+        .scaleEffect(lit ? 1.03 : 1)
     }
 
     @ViewBuilder
@@ -165,10 +164,16 @@ struct QuickDropGrid: View {
             .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
             .saturation(off ? 0 : 1)
             .opacity(off ? 0.5 : 1)
-        } else {
-            Icon(target.symbol, size: 22, weight: .medium)
-                .foregroundStyle(LinearGradient(colors: dark ? [Color(white: 0.95), Color(white: 0.72)] : [Color(white: 0.45), Color(white: 0.22)],
+        } else if target == .basket {
+            // A filled tray, shaded top to bottom like a little object.
+            Image(systemName: "tray.and.arrow.down.fill")
+                .font(.system(size: 21, weight: .regular))
+                .foregroundStyle(LinearGradient(colors: dark ? [Color(white: 0.92), Color(white: 0.6)] : [Color(white: 0.62), Color(white: 0.36)],
                                                 startPoint: .top, endPoint: .bottom))
+        } else {
+            Image(systemName: target.symbol)
+                .font(.system(size: 21, weight: .semibold))
+                .foregroundStyle(dark ? Color(white: 0.92) : Color(white: 0.16))
         }
     }
 }
@@ -182,8 +187,9 @@ private struct PaneGlass: ViewModifier {
     func body(content: Content) -> some View {
         if #available(macOS 26.0, *) {
             content
-                .glassEffect(.regular.tint(dark ? .black.opacity(0.2) : .white.opacity(0.18)), in: shape)
-                .shadow(color: .black.opacity(dark ? 0.35 : 0.18), radius: 12, y: 5)
+                .glassEffect(.regular.tint(dark ? .black.opacity(0.25) : .white.opacity(0.5)), in: shape)
+                .overlay(shape.strokeBorder(.white.opacity(dark ? 0.12 : 0.75), lineWidth: 1))
+                .shadow(color: .black.opacity(dark ? 0.35 : 0.14), radius: 14, y: 6)
         } else {
             content
                 .background(.regularMaterial, in: shape)
