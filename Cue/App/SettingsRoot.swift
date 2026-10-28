@@ -711,22 +711,17 @@ struct SettingsRow<Control: View>: View {
     }
 
     var body: some View {
-        SettingsCell(vertical: subtitle == nil ? 12 : 10) {
+        // The title alone: the explanation is a tooltip, so a pane reads as a list of
+        // settings rather than paragraphs.
+        SettingsCell(vertical: 12) {
             HStack(spacing: 14) {
                 if let symbol {
                     SymbolTile(symbol: symbol, tint: tint).dimmedWhenDisabled()
                 }
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                        .font(SettingsFont.item)
-                    if let subtitle {
-                        Text(subtitle)
-                            .font(SettingsFont.sub)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .dimmedWhenDisabled()
+                Text(title)
+                    .font(SettingsFont.item)
+                    .help(subtitle ?? "")
+                    .dimmedWhenDisabled()
                 Spacer(minLength: 16)
                 control
                     .labelsHidden()
