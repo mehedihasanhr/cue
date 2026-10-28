@@ -110,7 +110,8 @@ struct BackgroundPicker: View {
             if tab.wrappedValue != .transparent {
                 InspectorSlider(model: model, "Background blur",
                                 value: style.binding(\.style.backgroundBlur, "Background Blur"),
-                                range: 0...0.04)
+                                range: 0...0.04,
+                                defaultValue: style.factory(\.style.backgroundBlur))
             }
         }
         .inspectorSection("Background", systemImage: "photo") {
@@ -302,7 +303,7 @@ struct BackgroundPicker: View {
                 ImageThumbnail(url: model.packageURL.appendingPathComponent(path))
                     .help("Images fill the frame, so a tall picture behind a wide recording is cropped rather than letterboxed.")
                 HStack(spacing: 8) {
-                    Button("Replace…") { choose() }
+                    Button("Replace") { choose() }
                     Button("Remove") {
                         style.set(\.style.background, to: BackgroundPreset.indigo.background, "Background")
                     }
@@ -310,9 +311,28 @@ struct BackgroundPicker: View {
                 .buttonStyle(.studio(.secondary, size: .small))
             }
         } else {
-            Button("Choose Image…") { choose() }
-                .buttonStyle(.studio(.secondary, size: .small))
-                .help("The picture is copied into the recording, so the project still looks right on another Mac.")
+            HStack(spacing: 8) {
+                Button("Choose Image") { choose() }
+                    .help("The picture is copied into the recording, so the project still looks right on another Mac.")
+                Button("Use My Wallpaper") { useDesktopPicture() }
+                    .help("Your Mac's current desktop picture, copied into the recording")
+            }
+            .buttonStyle(.studio(.secondary, size: .small))
+        }
+    }
+
+    /// The desktop picture of the screen the editor is on, as the reference offers its
+    /// macOS wallpaper: copied in, like any chosen image, so the project keeps it after
+    /// the desktop changes.
+    private func useDesktopPicture() {
+        guard let screen = NSApp.keyWindow?.screen ?? NSScreen.main,
+              let url = NSWorkspace.shared.desktopImageURL(for: screen) else { return }
+        do {
+            let path = try BackgroundImport.copy(url, into: model.packageURL)
+            state.backgroundTabOverride = nil
+            style.set(\.style.background, to: .image(path: path), "Background")
+        } catch {
+            model.report(DesktopPictureError.unreadable)
         }
     }
 
@@ -356,4 +376,12 @@ struct ImageThumbnail: View {
 
 extension ColorValue {
     var color: Color { Color(.sRGB, red: r, green: g, blue: b, opacity: a) }
+}
+
+enum DesktopPictureError: LocalizedError {
+    case unreadable
+
+    var errorDescription: String? {
+        "Your desktop picture couldn't be read. Choose it with Choose Image instead, which lets Cue open it."
+    }
 }

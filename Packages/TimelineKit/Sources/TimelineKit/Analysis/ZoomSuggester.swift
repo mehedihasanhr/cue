@@ -83,15 +83,20 @@ public struct ZoomSuggester: Sendable {
         /// Fewer keys than this is a shortcut, not typing.
         public var minimumKeystrokes: Int
 
-        public init(clusterGap: Double = 1.5,
-                    leadIn: Double = 0.7,
-                    holdAfter: Double = 1.2,
+        // The click numbers are the reference's (docs/studio/10-motion-reference.md): a
+        // zoom from 0.3 s before a click to 2.5 s after it, clicks 2.5 s apart sharing one,
+        // at 2×. `longestMerge` still splits a long run of clicks into shots that glide
+        // from one to the next, which the reference does not, and which is what kept the
+        // 2.5 s gap from turning eleven clicks along a line into one shot.
+        public init(clusterGap: Double = 2.5,
+                    leadIn: Double = 0.3,
+                    holdAfter: Double = 2.5,
                     minimumDuration: Double = 1.5,
                     maximumDuration: Double = 12,
                     longestMerge: Double = 6,
 
                     transition: Double = ZoomRegion.defaultTransition.seconds,
-                    scale: Double = 1.8,
+                    scale: Double = 2,
                     spreadLimit: Double = 900,
                     followsFocus: Bool = true,
                     focusLeadIn: Double = 0.25,
@@ -234,9 +239,16 @@ public struct ZoomSuggester: Sendable {
 
     // MARK: - Clicks
 
+    /// Clicks this close to the end make no zoom: there is no time left to see it.
+    static let quietEnding = 1.0
+    /// A zoom made from clicks is out again this long before the end, so the last frames
+    /// are the whole picture.
+    static let endMargin = 0.8
+
     private func clickRegions(input: [InputSample], duration: CMTime) -> [ZoomRegion] {
         let clicks: [(t: Double, point: CGPoint)] = input.compactMap { sample in
             guard case .mouseDown(let t, _, let x, let y) = sample else { return nil }
+            guard duration.seconds <= Self.quietEnding || t <= duration.seconds - Self.quietEnding else { return nil }
             let point = picture.place(CGPoint(x: x, y: y), at: t, in: frameSize)
             // Only what happened inside the recording.
             //
@@ -270,9 +282,12 @@ public struct ZoomSuggester: Sendable {
             // measured against the ramp itself — the lead used to be nine tenths of it, so
             // the camera was still moving in as the click landed.
             let start = max(0, first.t - lead)
-            let end = min(duration.seconds, last.t + hold)
+            let end = min(max(start, duration.seconds - Self.endMargin), last.t + hold)
             let shortest = max(tuning.minimumDuration, tuning.transition * 2 + 0.8)
-            let length = min(max(end - start, shortest), tuning.maximumDuration)
+            // The shortest a shot may be gives way to the end margin: a zoom running into
+            // the last frames would end the video on a close-up.
+            let length = min(max(end - start, shortest), tuning.maximumDuration,
+                             max(end - start, duration.seconds - Self.endMargin - start))
             guard length > 0, start < duration.seconds else { return }
 
             let centre = centre(of: CGPoint(x: xs.reduce(0, +) / Double(xs.count),
@@ -311,7 +326,9 @@ public struct ZoomSuggester: Sendable {
         func belongs(_ click: (t: Double, point: CGPoint)) -> Bool {
             guard let first = cluster.first, let previous = cluster.last else { return true }
             guard click.t - previous.t <= tuning.clusterGap else { return false }
-            guard click.t - first.t + lead + hold <= tuning.maximumDuration else { return false }
+            // A shot of one moment is no longer than a merge may make one: with clicks up to
+            // 2.5 s apart sharing a zoom, a steady run would otherwise be one long shot.
+            guard click.t - first.t + lead + hold <= min(tuning.maximumDuration, tuning.longestMerge) else { return false }
             let xs = cluster.map(\.point.x) + [click.point.x]
             let ys = cluster.map(\.point.y) + [click.point.y]
             let shot = CGSize(width: recorded.width / max(1, tuning.scale) * Self.shotShare,

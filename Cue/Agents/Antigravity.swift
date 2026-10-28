@@ -17,6 +17,23 @@ nonisolated enum Antigravity {
     static let toolEvents: Set<String> = ["PreToolUse", "PostToolUse"]
     static let events = ["SessionStart", "PreInvocation", "PreToolUse", "PostToolUse", "Stop"]
 
+    // MARK: Questions
+
+    /// The tools Cue asks about on the island before Antigravity runs them: commands,
+    /// which is what Antigravity itself stops to ask about. Reading and editing files is
+    /// left to its own rules, or every step of every turn would be a question.
+    static let askedTools: Set<String> = ["Bash"]
+    /// How long Antigravity waits on the `PreToolUse` hook, in seconds: long enough for
+    /// somebody to look up and answer on the island.
+    static let askTimeout = 120
+    /// How long Cue holds a question before handing it back to Antigravity with "ask",
+    /// comfortably inside `askTimeout` so the hook always answers before it is stopped.
+    static let answerWithin: TimeInterval = 100
+    /// The hook's reply when Cue does not decide: Antigravity's own approval rules do,
+    /// and it asks in its own window if they say to. "allow" here would approve every
+    /// command without asking anybody.
+    static let undecided = #"{"decision":"ask"}"#
+
     // MARK: Tools
 
     /// A tool call as the Claude Code tool that does the same, so its step and its line
@@ -124,11 +141,22 @@ nonisolated enum Antigravity {
         var definition: [String: Any] = ["enabled": true]
         for event in events {
             // The script learns which event ran it from its arguments: the event itself doesn't say.
-            let handler: [String: Any] = ["type": "command", "command": "\(command) \(event)", "timeout": 10]
+            let timeout = event == "PreToolUse" ? askTimeout : 10
+            let handler: [String: Any] = ["type": "command", "command": "\(command) \(event)", "timeout": timeout]
             definition[event] = toolEvents.contains(event) ? [["matcher": "*", "hooks": [handler]]] : [handler]
         }
         settings[hookName] = definition
         return settings
+    }
+
+    /// Whether Cue's definition is this build's: its `PreToolUse` waits long enough for an
+    /// answer from the island. An older build's waited 10 seconds.
+    static func isCurrent(in settings: [String: Any]) -> Bool {
+        guard let definition = settings[hookName] as? [String: Any],
+              let entries = definition["PreToolUse"] as? [[String: Any]],
+              let hooks = entries.first?["hooks"] as? [[String: Any]],
+              let timeout = hooks.first?["timeout"] as? Int else { return false }
+        return timeout == askTimeout
     }
 
     /// `settings` without Cue's definition.

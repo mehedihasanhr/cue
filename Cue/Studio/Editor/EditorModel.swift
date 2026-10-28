@@ -820,14 +820,26 @@ final class EditorModel {
     /// its time re-filtering a track that had not changed. Cached against the setting it
     /// was made with, so moving the slider still takes effect immediately.
     private var smoothedCursor: CursorTrack {
-        let amount = timeline.cursor.smoothing
-        if let cache = cursorCache, cache.amount == amount { return cache.track }
-        let track = document.cursorTrack.smoothed(amount)
-        cursorCache = (amount, track)
+        let key = PointerPreparation(timeline.cursor)
+        if let cache = cursorCache, cache.key == key { return cache.track }
+        let track = document.cursorTrack.prepared(for: timeline.cursor)
+        cursorCache = (key, track)
         return track
     }
 
-    @ObservationIgnored private var cursorCache: (amount: Double, track: CursorTrack)?
+    /// The settings the prepared pointer depends on, and nothing else, so changing its
+    /// colour does not redo the smoothing.
+    private struct PointerPreparation: Equatable {
+        let smoothing: Double
+        let shakes: Double?
+
+        init(_ style: CursorStyle) {
+            smoothing = style.smoothing
+            shakes = style.removesShakes ? style.shakeThreshold : nil
+        }
+    }
+
+    @ObservationIgnored private var cursorCache: (key: PointerPreparation, track: CursorTrack)?
 
     /// What the preview is showing, which is not always the edit.
     ///
@@ -1281,13 +1293,13 @@ final class EditorModel {
         // a larger change than a paste.
         if let path = copied.audioPath,
            !FileManager.default.fileExists(atPath: packageURL.appendingPathComponent(path).path) {
-            errorMessage = "That sound belongs to another recording. Add it to this one with Add Sound…"
+            errorMessage = "That sound belongs to another recording. Add it to this one with Add Sound."
             return
         }
         // Pictures the same way, and for the same reason: pasted, it would be invisible.
         if let path = copied.picturePath,
            !FileManager.default.fileExists(atPath: packageURL.appendingPathComponent(path).path) {
-            errorMessage = "That picture belongs to another recording. Add it to this one with Picture… or Logo…"
+            errorMessage = "That picture belongs to another recording. Add it to this one with Picture or Logo."
             return
         }
         guard let placed = copied.placed(at: playhead, in: timeline) else { return }
@@ -1373,7 +1385,7 @@ final class EditorModel {
         // A clip of a movie brought into another project has no file here, and cannot be
         // left out the way a sound can without changing the length of everything after it.
         guard !copied.playsMissingMedia(where: isMissing) else {
-            errorMessage = "That footage plays a movie from another recording. Add the movie here with Add Video… first."
+            errorMessage = "That footage plays a movie from another recording. Add the movie here with Add Video first."
             return
         }
         let settled = copied.withoutSounds(where: isMissing).withoutPictures(where: isMissing)
@@ -1388,8 +1400,8 @@ final class EditorModel {
         }
         if dropped > 0 {
             errorMessage = dropped == 1
-                ? "One sound belonged to another recording and was left out. Add it with Add Sound…"
-                : "\(dropped) sounds belonged to another recording and were left out. Add them with Add Sound…"
+                ? "One sound belonged to another recording and was left out. Add it with Add Sound."
+                : "\(dropped) sounds belonged to another recording and were left out. Add them with Add Sound."
         }
     }
 

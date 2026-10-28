@@ -1,10 +1,13 @@
 import SwiftUI
 import TimelineKit
 
-/// A row of choices in one trough, the chosen one lifted out of it.
+/// A row of choices as separate pills, the chosen one filled and edged — the reference's
+/// Wallpaper · Gradient · Color · Image row.
 ///
-/// The highlight is one shape that slides from segment to segment rather than a fill that
-/// blinks off one and on the next, so the eye follows the change instead of hunting for it.
+/// No trough: the unchosen ones are just their words, so the one chosen is the only shape
+/// in the row. The highlight is one shape that slides from pill to pill rather than a fill
+/// that blinks off one and on the next, so the eye follows the change instead of hunting
+/// for it.
 ///
 /// Every segment is the width of the widest, so the row reads as one control rather than
 /// a run of words; and when that is wider than the column, it breaks onto two lines, then
@@ -43,20 +46,16 @@ struct StudioSegmented<Item: Hashable>: View {
     @FocusState private var isFocused: Bool
     @Environment(\.isEnabled) private var isEnabled
 
-    private static var inset: CGFloat { 2 }
-    private static var segmentHeight: CGFloat { StudioTheme.Height.control - inset * 2 }
+    private static var gap: CGFloat { 6 }
+    private static var segmentHeight: CGFloat { 32 }
 
     var body: some View {
-        let shape = StudioTheme.squircle(StudioTheme.Radius.inner + Self.inset)
-
-        EqualWidthRows(spacing: Self.inset) {
+        EqualWidthRows(spacing: Self.gap) {
             ForEach(items, id: \.self) { item in
                 segment(item)
             }
         }
-        .padding(Self.inset)
-        .background { shape.fill(StudioTheme.Palette.fill) }
-        .studioFocusRing(isFocused, radius: StudioTheme.Radius.inner + Self.inset)
+        .studioFocusRing(isFocused, radius: StudioTheme.Radius.regular)
         .opacity(isEnabled ? 1 : 0.45)
         .focusable(isEnabled, interactions: .activate)
         .focused($isFocused)
@@ -75,7 +74,7 @@ struct StudioSegmented<Item: Hashable>: View {
 
     private func segment(_ item: Item) -> some View {
         let isSelected = item == selection
-        let shape = StudioTheme.squircle(StudioTheme.Radius.inner)
+        let shape = StudioTheme.squircle(StudioTheme.Radius.regular)
 
         return Button { selection = item } label: {
             HStack(spacing: 5) {
@@ -85,7 +84,7 @@ struct StudioSegmented<Item: Hashable>: View {
                 }
                 if showsTitles {
                     Text(title(item))
-                        .font(.system(size: StudioTheme.FontSize.label, weight: isSelected ? .medium : .regular))
+                        .font(.system(size: StudioTheme.FontSize.label + 0.5, weight: isSelected ? .medium : .regular))
                 }
             }
             .lineLimit(1)
@@ -100,7 +99,7 @@ struct StudioSegmented<Item: Hashable>: View {
                 if isSelected {
                     shape
                         .fill(StudioTheme.Palette.raised)
-                        .overlay { shape.strokeBorder(StudioTheme.Palette.stroke) }
+                        .overlay { shape.strokeBorder(StudioTheme.Palette.strokeStrong) }
                         .matchedGeometryEffect(id: "highlight", in: highlight)
                 } else if hovered == item {
                     shape.fill(StudioTheme.Palette.ghostHover)

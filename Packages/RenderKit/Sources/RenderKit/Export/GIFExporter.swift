@@ -107,7 +107,7 @@ struct GIFExporter {
                                     packageURL: packageURL)
         defer { lentFrames.cancel() }
         // Smoothed once, not per frame, for the reason in `VideoExporter`.
-        let cursor = cursor?.smoothed(timeline.cursor.smoothing)
+        let cursor = cursor?.prepared(for: timeline.cursor)
         let started = Date.now
         var lastReport = Date.distantPast
 

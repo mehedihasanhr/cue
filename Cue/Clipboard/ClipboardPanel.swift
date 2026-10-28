@@ -339,7 +339,7 @@ struct ClipboardPanelView: View {
             transformMenu(item)
         }
         if item.kind == .image {
-            Button("Edit…") {
+            Button("Edit") {
                 close()
                 onEdit(item)
             }
@@ -373,7 +373,7 @@ struct ClipboardPanelView: View {
         selected = min(index, items.count - 2 >= 0 ? items.count - 2 : 0)
     }
 
-    /// "Paste as…" for a text row: the transforms that would change it. The panel
+    /// "Paste as" for a text row: the transforms that would change it. The panel
     /// closes first so the paste lands where the cursor was.
     private func transformMenu(_ item: ClipboardItem) -> some View {
         Menu("Paste as") {

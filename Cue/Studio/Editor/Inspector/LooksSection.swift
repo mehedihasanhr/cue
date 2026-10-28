@@ -211,8 +211,8 @@ private struct LookList: View {
 
             Divider().padding(.vertical, 6)
 
-            actionRow("Save Look…", help: "Keep how this recording is dressed, to use again") { act(.save) }
-            actionRow("Import…", help: "Bring in a .cuestyle file somebody sent you") { act(.importLooks) }
+            actionRow("Save Look", help: "Keep how this recording is dressed, to use again") { act(.save) }
+            actionRow("Import", help: "Bring in a .cuestyle file somebody sent you") { act(.importLooks) }
         }
         .padding(8)
         .frame(width: 260)
@@ -261,7 +261,7 @@ private struct LookList: View {
 
     @ViewBuilder
     private func savedMenu(_ saved: SavedLook) -> some View {
-        Button("Rename…") { act(.rename(saved)) }
+        Button("Rename") { act(.rename(saved)) }
         Button("Delete", role: .destructive) { act(.delete(saved)) }
         Divider()
         newRecordingsItem(saved.look)

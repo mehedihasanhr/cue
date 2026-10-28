@@ -1,4 +1,5 @@
 import AppKit
+import RecordKit
 import SwiftUI
 
 /// The window the recorder bar lives in.
@@ -39,9 +40,33 @@ final class RecorderBarPanel {
     private var moveObserver: (any NSObjectProtocol)?
     /// The screen-filling overlay that names the target. Owned here rather than by the
     /// bar, because it outlives any one view and starting a take has to take it down.
-    private lazy var targets = TargetOverlayController(model: model)
-    /// The bar minimized: the clock on a small island at the screen's edge.
-    private lazy var island: RecordingIsland = {
+    /// Made when first needed and let go when the bar is closed, like the bar itself.
+    private var targets: TargetOverlayController {
+        if let made = targetsStorage { return made }
+        let made = TargetOverlayController(model: model)
+        made.start = { [weak self] in
+            self?.model.record()
+            self?.targetsStorage?.hide()
+        }
+        made.barFrame = { [weak self] in
+            guard let panel = self?.panel, panel.isVisible else { return nil }
+            return panel.frame
+        }
+        targetsStorage = made
+        return made
+    }
+    private var targetsStorage: TargetOverlayController?
+    /// The bar minimized: the clock on a small island at the screen's edge. Made when it is
+    /// first needed and let go when the bar is closed.
+    private var island: RecordingIsland {
+        if let made = islandStorage { return made }
+        let made = makeIsland()
+        islandStorage = made
+        return made
+    }
+    private var islandStorage: RecordingIsland?
+
+    private func makeIsland() -> RecordingIsland {
         let island = RecordingIsland(studio: studio, settings: settings, model: model)
         island.expand = { [weak self] in self?.show() }
         // A mode chosen on the island, as the bar's own does: Window and Device show the
@@ -71,20 +96,12 @@ final class RecorderBarPanel {
             }
         }
         return island
-    }()
+    }
 
     init(settings: StudioSettings, studio: StudioService) {
         self.settings = settings
         self.studio = studio
         model = RecorderModel(settings: settings, studio: studio)
-        targets.start = { [weak self] in
-            self?.model.record()
-            self?.targets.hide()
-        }
-        targets.barFrame = { [weak self] in
-            guard let panel = self?.panel, panel.isVisible else { return nil }
-            return panel.frame
-        }
     }
 
     var isVisible: Bool { panel?.isVisible ?? false }
@@ -101,7 +118,7 @@ final class RecorderBarPanel {
         }
 
         model.isMinimized = false
-        island.hide()
+        islandStorage?.hide()
         model.presentations += 1
         if let panel {
             panel.orderFrontRegardless()
@@ -110,9 +127,9 @@ final class RecorderBarPanel {
         }
 
         let bar = RecorderBar(model: model,
-                              // Closing puts the bar away to the island rather than out of
-                              // reach: the island is how it comes back.
-                              close: { [weak self] in self?.minimize() },
+                              // During a take, closing puts the bar away to the island;
+                              // otherwise it closes the recorder outright. See `close()`.
+                              close: { [weak self] in self?.close() },
                               minimize: { [weak self] in self?.minimize() },
                               showLibrary: { [weak self] in self?.showLibrary() },
                               openSettings: { [weak self] in self?.openSettings() },
@@ -187,6 +204,38 @@ final class RecorderBarPanel {
         onVisibilityChange(false)
     }
 
+    /// The bar's close button. During a take it puts the bar away to the island, because
+    /// the take still needs its clock and its stop button. Otherwise the recorder is done
+    /// with: the bar, the island and the target overlay are taken down and let go, so a
+    /// Cue that is not recording carries none of them — no window, no SwiftUI tree, no
+    /// observers. Record Video, the menu bar or a shortcut brings them all back.
+    func close() {
+        guard !studio.session.state.isBusy else {
+            minimize()
+            return
+        }
+        hide()
+        tearDown()
+    }
+
+    /// Lets go of everything the recorder built for being on screen.
+    private func tearDown() {
+        tighten?.cancel()
+        tighten = nil
+        if let moveObserver { NotificationCenter.default.removeObserver(moveObserver) }
+        moveObserver = nil
+        model.isMinimized = false
+        islandStorage?.hide()
+        islandStorage = nil
+        targetsStorage?.hide()
+        targetsStorage = nil
+        if let panel {
+            panel.contentView = nil
+            panel.close()
+        }
+        panel = nil
+    }
+
     /// Puts the bar away for the rest of the take. The menu bar icon carries on with the
     /// clock, pause and stop, and offers the bar back.
     func minimize() {
@@ -199,7 +248,10 @@ final class RecorderBarPanel {
     /// The take is over: the island goes, and the bar is the app's to show or not.
     func leaveMinimized() {
         model.isMinimized = false
-        island.hide()
+        islandStorage?.hide()
+        // The take is over and the bar was put away: nothing of the recorder is on screen,
+        // so nothing of it is kept.
+        if panel?.isVisible != true { tearDown() }
     }
 
     /// The bar's window, for what sits beside it — the camera preview follows it about.
@@ -218,7 +270,7 @@ final class RecorderBarPanel {
     /// which screen it is.
     private func showTargets(for mode: RecorderModel.Mode) {
         guard mode.isAvailable, mode != .area else {
-            targets.hide()
+            targetsStorage?.hide()
             return
         }
         targets.show()
@@ -227,7 +279,7 @@ final class RecorderBarPanel {
     /// Record was pressed with nothing chosen: ask for it, the way the mode asks.
     private func askForTarget() {
         if model.mode == .area {
-            targets.hide()
+            targetsStorage?.hide()
             model.askForArea()
         } else {
             model.choose(model.mode)
@@ -237,12 +289,13 @@ final class RecorderBarPanel {
 
     /// Takes every overlay down, for a take started by a shortcut while one was up.
     func hideTargets() {
-        targets.hide()
+        // Hiding an overlay that was never made would make one just to hide it.
+        targetsStorage?.hide()
         model.closeAreaPicker()
     }
 
     func toggle() {
-        isVisible ? hide() : show()
+        isVisible ? close() : show()
     }
 
     /// Bottom centre of the screen with the pointer on it: near the Dock, out of the way

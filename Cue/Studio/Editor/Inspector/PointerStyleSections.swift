@@ -139,10 +139,12 @@ struct PointerSpotlightSection: View {
             Group {
                 InspectorSlider(model: model, "Size", systemImage: "circle",
                                 value: style.binding(\.cursor.spotlight.radius, "Spotlight Size"),
-                                range: PointerSpotlight.radiusRange)
+                                range: PointerSpotlight.radiusRange,
+                                defaultValue: style.factory(\.cursor.spotlight.radius))
                 InspectorSlider(model: model, "Darkness", systemImage: "circle.lefthalf.filled",
                                 value: style.binding(\.cursor.spotlight.dimming, "Spotlight Darkness"),
                                 range: PointerSpotlight.dimmingRange,
+                                defaultValue: style.factory(\.cursor.spotlight.dimming),
                                 format: { "\(Int(($0 * 100).rounded()))%" })
                 PointerEffectScopeField(model: model, scope: \.cursor.spotlight.scope, name: "Spotlight")
             }
@@ -176,10 +178,12 @@ struct PointerMagnifierSection: View {
                 InspectorSlider(model: model, "Zoom", systemImage: "plus.magnifyingglass",
                                 value: style.binding(\.cursor.magnifier.factor, "Magnifier Zoom"),
                                 range: PointerMagnifier.factorRange,
+                                defaultValue: style.factory(\.cursor.magnifier.factor),
                                 format: { String(format: "%.1f×", $0) })
                 InspectorSlider(model: model, "Size", systemImage: "circle",
                                 value: style.binding(\.cursor.magnifier.diameter, "Magnifier Size"),
-                                range: PointerMagnifier.diameterRange)
+                                range: PointerMagnifier.diameterRange,
+                                defaultValue: style.factory(\.cursor.magnifier.diameter))
                 PointerEffectScopeField(model: model, scope: \.cursor.magnifier.scope, name: "Magnifier")
             }
             .disabled(!magnifier.isEnabled)

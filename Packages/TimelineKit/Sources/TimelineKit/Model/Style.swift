@@ -386,6 +386,13 @@ public struct CursorStyle: Codable, Equatable, Sendable {
     public var loop: PointerLoop
     /// The arrow leaning into its travel.
     public var sway: PointerSway
+    /// Drop the single-reading jumps an accessibility tool or a twitchy mouse leaves in the
+    /// path: a reading this far from both of the two after it is a shake, not a movement.
+    /// See `CursorTrack.withoutShakes(threshold:)`.
+    public var removesShakes: Bool
+    /// How far, in points measured across plus down, a reading must jump to count.
+    public var shakeThreshold: Double
+    public static let shakeThresholdRange: ClosedRange<Double> = 100...2000
 
     /// A bright red, the colour of a laser pointer: it reads on a white page and on a dark
     /// editor alike, which is where screen recordings spend their time.
@@ -414,7 +421,9 @@ public struct CursorStyle: Codable, Equatable, Sendable {
                 spotlight: PointerSpotlight = PointerSpotlight(),
                 magnifier: PointerMagnifier = PointerMagnifier(),
                 loop: PointerLoop = PointerLoop(),
-                sway: PointerSway = PointerSway()) {
+                sway: PointerSway = PointerSway(),
+                removesShakes: Bool = false,
+                shakeThreshold: Double = 500) {
         self.isVisible = isVisible
         self.scale = scale
         self.smoothing = smoothing
@@ -439,6 +448,8 @@ public struct CursorStyle: Codable, Equatable, Sendable {
         self.magnifier = magnifier
         self.loop = loop
         self.sway = sway
+        self.removesShakes = removesShakes
+        self.shakeThreshold = min(max(shakeThreshold, Self.shakeThresholdRange.lowerBound), Self.shakeThresholdRange.upperBound)
     }
 
     /// Decoded field by field, for the reason `Timeline.init(from:)` gives — and here it
@@ -486,6 +497,11 @@ public struct CursorStyle: Codable, Equatable, Sendable {
         // setting: that project's film was approved without them.
         loop = value(.loop, default: PointerLoop())
         sway = value(.sway, default: PointerSway())
+        removesShakes = value(.removesShakes, default: false)
+        let threshold: Double = value(.shakeThreshold, default: 500)
+        shakeThreshold = threshold.isFinite
+            ? min(max(threshold, Self.shakeThresholdRange.lowerBound), Self.shakeThresholdRange.upperBound)
+            : 500
     }
 
     enum CodingKeys: String, CodingKey {
@@ -494,6 +510,7 @@ public struct CursorStyle: Codable, Equatable, Sendable {
         case hidesWhenIdle, idleDelay, alwaysArrow, steadiesShape, clickStyle
         case clickSound, clickSoundKind, clickSoundVolume
         case appearance, dotColor, spotlight, magnifier, loop, sway
+        case removesShakes, shakeThreshold
     }
 }
 

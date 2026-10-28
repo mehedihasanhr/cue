@@ -264,6 +264,8 @@ public extension Look {
         public var magnifier: PointerMagnifier?
         public var loop: PointerLoop?
         public var sway: PointerSway?
+        public var removesShakes: Bool?
+        public var shakeThreshold: Double?
 
         public init() {}
 
@@ -292,6 +294,8 @@ public extension Look {
             magnifier = style.magnifier
             loop = style.loop
             sway = style.sway
+            removesShakes = style.removesShakes
+            shakeThreshold = style.shakeThreshold
         }
 
         public init(from decoder: any Decoder) throws {
@@ -320,6 +324,8 @@ public extension Look {
             magnifier = field(c, .magnifier)
             loop = field(c, .loop)
             sway = field(c, .sway)
+            removesShakes = field(c, .removesShakes)
+            shakeThreshold = field(c, .shakeThreshold)
         }
 
         enum CodingKeys: String, CodingKey {
@@ -328,6 +334,7 @@ public extension Look {
             case hidesWhenIdle, idleDelay, alwaysArrow, steadiesShape, clickStyle
             case clickSound, clickSoundKind, clickSoundVolume
             case appearance, dotColor, spotlight, magnifier, loop, sway
+            case removesShakes, shakeThreshold
         }
 
         public var isEmpty: Bool {
@@ -338,7 +345,7 @@ public extension Look {
                 && steadiesShape == nil && clickStyle == nil
                 && clickSound == nil && clickSoundKind == nil && clickSoundVolume == nil
                 && appearance == nil && dotColor == nil && spotlight == nil && magnifier == nil
-                && loop == nil && sway == nil
+                && loop == nil && sway == nil && removesShakes == nil && shakeThreshold == nil
         }
 
         public func apply(to style: inout CursorStyle) {
@@ -373,6 +380,8 @@ public extension Look {
             set(&style.magnifier, magnifier)
             set(&style.loop, loop)
             set(&style.sway, sway)
+            set(&style.removesShakes, removesShakes)
+            set(&style.shakeThreshold, shakeThreshold)
         }
     }
 

@@ -627,7 +627,7 @@ struct TaskMoreMenu: View {
                 NSPasteboard.general.setString(task.text, forType: .string)
             }
             Divider()
-            Button("Delete…", role: .destructive) { model.pendingDeletion = .task(task) }
+            Button("Delete", role: .destructive) { model.pendingDeletion = .task(task) }
         } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: 14))
@@ -777,10 +777,10 @@ private struct TaskDashboardSidebar: View {
             return !moved.isEmpty
         }
         .contextMenu {
-            Button("New Sub-project…") { model.projectPrompt = .new(parent: project.id) }
-            Button("Rename…") { model.projectPrompt = .rename(project) }
+            Button("New Sub-project") { model.projectPrompt = .new(parent: project.id) }
+            Button("Rename") { model.projectPrompt = .rename(project) }
             Divider()
-            Button("Delete Project…", role: .destructive) { model.pendingDeletion = .project(project) }
+            Button("Delete Project", role: .destructive) { model.pendingDeletion = .project(project) }
         }
     }
 
@@ -1407,7 +1407,7 @@ enum TaskActionMenu {
             NSPasteboard.general.setString(task.text, forType: .string)
         })
         menu.addItem(.separator())
-        menu.addItem(ActionItem("Delete…", symbol: "trash") { model.pendingDeletion = .task(task) })
+        menu.addItem(ActionItem("Delete", symbol: "trash") { model.pendingDeletion = .task(task) })
         NSMenu.popUpContextMenu(menu, with: event, for: view)
     }
 
@@ -1464,7 +1464,7 @@ private struct TaskRowMenu: View {
             NSPasteboard.general.setString(task.text, forType: .string)
         }
         Divider()
-        Button("Delete…", role: .destructive) { model.pendingDeletion = .task(task) }
+        Button("Delete", role: .destructive) { model.pendingDeletion = .task(task) }
     }
 }
 

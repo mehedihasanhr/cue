@@ -28,10 +28,29 @@ struct CursorInspector: View {
                 Group {
                     InspectorSlider(model: model, "Size", systemImage: "arrow.up.left.and.arrow.down.right",
                                     value: style.binding(\.cursor.scale, "Pointer Size"), range: 0.5...3,
+                                    defaultValue: style.factory(\.cursor.scale),
                                     format: { String(format: "%.1f×", $0) })
+                    StudioSegmented(selection: Binding {
+                                        PointerAnimation.nearest(to: model.timeline.cursor.smoothing)
+                                    } set: { choice in
+                                        style.set(\.cursor.smoothing, to: choice.amount, "Pointer Animation")
+                                    },
+                                    items: PointerAnimation.allCases,
+                                    title: \.title,
+                                    help: \.help)
                     InspectorSlider(model: model, "Smoothing", systemImage: "scribble",
-                                    value: style.binding(\.cursor.smoothing, "Smoothing"), range: 0...1)
+                                    value: style.binding(\.cursor.smoothing, "Smoothing"), range: 0...1,
+                                    defaultValue: style.factory(\.cursor.smoothing))
                     InspectorSwitch("Motion blur", isOn: style.binding(\.cursor.motionBlur, "Motion Blur"))
+                    InspectorSwitch("Remove shakes", isOn: style.binding(\.cursor.removesShakes, "Remove Shakes"))
+                        .help("Drop the one-reading jumps a twitchy mouse or an accessibility tool leaves in the path")
+                    if model.timeline.cursor.removesShakes {
+                        InspectorSlider(model: model, "Shake size", systemImage: "waveform.path",
+                                        value: style.binding(\.cursor.shakeThreshold, "Shake Size"),
+                                        range: CursorStyle.shakeThresholdRange, step: 20,
+                                        defaultValue: style.factory(\.cursor.shakeThreshold),
+                                        format: { "\(Int($0)) pt" })
+                    }
                 }
                 .disabled(!model.timeline.cursor.isVisible)
             }
@@ -101,6 +120,7 @@ struct CursorInspector: View {
             InspectorSlider(model: model, "After", systemImage: "timer",
                             value: style.binding(\.cursor.idleDelay, "Idle Delay"),
                             range: CursorStyle.idleDelayRange,
+                            defaultValue: style.factory(\.cursor.idleDelay),
                             format: { String(format: "%.1fs", $0) })
                 .disabled(!model.timeline.cursor.hidesWhenIdle)
         }
@@ -130,7 +150,8 @@ struct CursorInspector: View {
                 .help(clickNote)
                 InspectorSlider(model: model, "Size", systemImage: "circle.dashed",
                                 value: style.binding(\.cursor.clickSize, "Click Size"),
-                                range: 0.03...0.16)
+                                range: 0.03...0.16,
+                                defaultValue: style.factory(\.cursor.clickSize))
                 InspectorRow("Colour") {
                     InspectorColorWell(title: "Click colour", selection: clickColour)
                 }
@@ -152,7 +173,8 @@ struct CursorInspector: View {
                 }
                 InspectorSlider(model: model, "Volume", systemImage: "speaker.wave.2",
                                 value: style.binding(\.cursor.clickSoundVolume, "Click Volume"),
-                                range: 0...1)
+                                range: 0...1,
+                                defaultValue: style.factory(\.cursor.clickSoundVolume))
             }
             .disabled(!sound)
         }
@@ -197,5 +219,43 @@ struct CursorInspector: View {
             }
             .inspectorSection("Pointer over Time", systemImage: "cursorarrow.slash")
         }
+    }
+}
+
+/// The reference's four pointer animations, as places on the smoothing slider: the slider
+/// runs from the raw pointer through Rapid and Medium to Smooth, so a preset is a point on
+/// it and anything between two presets is still there for whoever wants it.
+enum PointerAnimation: String, CaseIterable, Hashable {
+    case none, rapid, medium, smooth
+
+    var amount: Double {
+        switch self {
+        case .none: 0
+        case .rapid: 0.05
+        case .medium: 0.5
+        case .smooth: 1
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .none: "None"
+        case .rapid: "Rapid"
+        case .medium: "Medium"
+        case .smooth: "Smooth"
+        }
+    }
+
+    var help: String? {
+        switch self {
+        case .none: "The pointer exactly as the hand moved it"
+        case .rapid: "Quick and tight: follows the hand closely"
+        case .medium: "Eased, still keeping up"
+        case .smooth: "Slow and floating: glides between clicks"
+        }
+    }
+
+    static func nearest(to amount: Double) -> PointerAnimation {
+        allCases.min { abs($0.amount - amount) < abs($1.amount - amount) } ?? .medium
     }
 }

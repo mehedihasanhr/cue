@@ -45,7 +45,7 @@ enum StudioTheme {
 
         /// A control at rest: a field, a secondary button, the trough of a segmented row.
         static let fill = dynamic(light: .black.withAlphaComponent(0.05),
-                                  dark: NSColor(white: 0x23 / 255, alpha: 1))
+                                  dark: NSColor(white: 0x1A / 255, alpha: 1))
         /// The same control under the pointer.
         static let fillHover = dynamic(light: .black.withAlphaComponent(0.08),
                                        dark: NSColor(white: 0x2A / 255, alpha: 1))
@@ -59,7 +59,7 @@ enum StudioTheme {
         /// The chosen segment, lifted out of its trough: white on light, a lighter grey on
         /// dark — the way a system segmented control draws it, without the bevel.
         static let raised = dynamic(light: .white,
-                                    dark: NSColor(white: 0x3A / 255, alpha: 1))
+                                    dark: NSColor(white: 0x25 / 255, alpha: 1))
         /// A slider's trough and a switch that is off.
         static let track = dynamic(light: .black.withAlphaComponent(0.10),
                                    dark: .white.withAlphaComponent(0.13))
@@ -76,6 +76,9 @@ enum StudioTheme {
         /// A knob: always white, in both appearances, because it is a physical thing on
         /// a track rather than part of the panel.
         static let knob = Color.white
+        /// A slider's knob: the accent; `SliderKnob` lifts it a step lighter so it stands
+        /// off the filled track.
+        static let knobFill = Color.accentColor
         static let knobEdge = Color.black.opacity(0.14)
         static let knobShadow = Color.black.opacity(0.22)
 
@@ -129,15 +132,15 @@ enum StudioTheme {
         // the panels sit in, white panels, and soft grey fields on them.
 
         /// The seams: the gaps round the canvas and between the columns.
-        static let seam = pair(light: cool(0xEC), dark: 0x14)
+        static let seam = pair(light: cool(0xEC), dark: 0x08)
         /// The title bar: the seam in the dark, white like a panel in the light.
-        static let titleBar = pair(light: 0xFF, dark: 0x14)
+        static let titleBar = pair(light: 0xFF, dark: 0x08)
         /// The panels: the rail, the inspector, the transport and the timeline.
-        static let panel = pair(light: 0xFF, dark: 0x18)
+        static let panel = pair(light: 0xFF, dark: 0x13)
         /// A field on a panel: a row, a slider's trough, a button at rest.
-        static let field = pair(light: cool(0xF3), dark: 0x23)
+        static let field = pair(light: cool(0xF3), dark: 0x1A)
         /// The same field under the pointer.
-        static let fieldHover = pair(light: cool(0xEB), dark: 0x2A)
+        static let fieldHover = pair(light: cool(0xEB), dark: 0x22)
         /// A field pressed or lit: a step beyond the hover.
         static let fieldPressed = pair(light: cool(0xE2), dark: 0x33)
         /// A bar button at rest — a shade under a field, because it sits on the transport
@@ -154,13 +157,14 @@ enum StudioTheme {
         /// Behind the picture: the canvas the frame sits in. In the light the same grey as
         /// the seams, so the frame stands on the window's own ground rather than in a well
         /// inside it — one step fewer between the picture and the panels.
-        static let canvas = pair(light: cool(0xEC), dark: 0x11)
+        static let canvas = pair(light: cool(0xEC), dark: 0x08)
         /// A small floating bar over the canvas.
         static let floating = pair(light: 0xFF, dark: 0x1D)
         /// The playhead and the timeline scale's fill.
         static let playhead = Color(red: 0x0C / 255, green: 0x7C / 255, blue: 0xDD / 255)
-        /// The footage on the timeline.
-        static let clip = Color(red: 0x6F / 255, green: 0x38 / 255, blue: 0xE8 / 255)
+        /// The footage on the timeline: a warm amber, the reference's, so the recording is
+        /// the one warm thing in a window of cool greys and Cue blue.
+        static let clip = Color(red: 0xBC / 255, green: 0x84 / 255, blue: 0x30 / 255)
         /// The one strong button in the window: Export.
         static let primaryButton = pair(light: 0x1D, dark: 0xF3)
         /// The words on it.
@@ -181,6 +185,61 @@ enum StudioTheme {
                                           dark: .white.withAlphaComponent(0.06))
     }
 
+    // MARK: - The recorder
+
+    /// The recorder's colours and metrics: the bar, the target overlay and the island.
+    ///
+    /// Studio is its own target and cannot reach the host app's `Glass.swift`, so the
+    /// pieces the bar and the target overlay both need are spelled out here, with the
+    /// editor's, rather than inlined twice.
+    enum Recorder {
+        /// Cue blue (#0E4FEC), the fill of the app icon and the app's one accent.
+        static let brand = Color(red: 0x0E / 255, green: 0x4F / 255, blue: 0xEC / 255)
+
+        /// The bar's glass: #292929, translucent enough that the page behind shows through.
+        static let barGlass = Color(red: 0x29 / 255, green: 0x29 / 255, blue: 0x29 / 255).opacity(0.64)
+
+        static let barRadius: CGFloat = 18
+        static let barHeight: CGFloat = 64
+
+        /// Three weights of white: what is chosen, what is on offer, what cannot be had.
+        static let chosen = Color.white
+        static let offered = Color.white.opacity(0.58)
+        static let unavailable = Color.white.opacity(0.3)
+    }
+
+    // MARK: - The timeline
+
+    /// The timeline's own colours, for the lanes that are chips rather than waveforms.
+    ///
+    /// Picked rather than taken from the system palette: `.orange` and `.purple` are tuned
+    /// to be tints, and filled solid across a whole lane they read as a warning and as a
+    /// toy. An amber for the footage and Cue blue for zooms, as the reference pairs them,
+    /// are two ideas at a strength a chip can carry edge to edge, with white on top of it.
+    enum Lane {
+        static let clip = Surface.clip
+        /// Cue blue, as the reference colours its zooms in its own accent: a zoom is the
+        /// thing the editor adds, and it wears the editor's colour.
+        static let zoom = Recorder.brand
+        /// The pointer's lane: a quiet slate, for the same reason.
+        static let pointer = Color(red: 0.56, green: 0.6, blue: 0.68)
+    }
+
+    // MARK: - The editor's columns
+
+    /// How wide the editor's columns are.
+    ///
+    /// The tool tabs and the settings sit together at the right of the window, tabs on the
+    /// inside edge next to the picture, so choosing a tool and seeing what it opened happen
+    /// in one place rather than at opposite ends of the window.
+    enum Columns {
+        /// The column of tool tabs beside the settings.
+        static let tabs: CGFloat = SidebarMetrics.railWidth
+        /// The settings column: a slider's track and its name need about three hundred
+        /// points.
+        static let inspector: CGFloat = 340
+    }
+
     // MARK: - Shape
 
     enum Radius {
@@ -195,6 +254,8 @@ enum StudioTheme {
         static let tab: CGFloat = 9
         /// A popover's content and a large swatch.
         static let panel: CGFloat = 10
+        /// The settings column, a card floating on the window's ground.
+        static let card: CGFloat = 14
         /// A colour chip in a grid.
         static let swatch: CGFloat = 6
     }

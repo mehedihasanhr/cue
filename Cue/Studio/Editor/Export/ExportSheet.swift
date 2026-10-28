@@ -435,7 +435,7 @@ struct ExportSheet: View {
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                     .buttonStyle(.studio(.secondary))
-                Button("Export…") { model.begin(from: editor, into: jobs) }
+                Button("Export") { model.begin(from: editor, into: jobs) }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.studio(.primary))
             }

@@ -102,7 +102,7 @@ struct MotionBackgroundPicker: View {
         Group {
             if model.hasVideoBackground {
                 HStack(spacing: 8) {
-                    Button("Replace…") { model.chooseBackgroundVideo() }
+                    Button("Replace") { model.chooseBackgroundVideo() }
                     Button("Remove") {
                         showsVideo = false
                         model.setAnimatedBackground(AnimatedBackground())
@@ -110,7 +110,7 @@ struct MotionBackgroundPicker: View {
                 }
                 .buttonStyle(.studio(.secondary, size: .small))
             } else {
-                Button("Choose Video…") { model.chooseBackgroundVideo() }
+                Button("Choose Video") { model.chooseBackgroundVideo() }
                     .buttonStyle(.studio(.secondary, size: .small))
             }
         }

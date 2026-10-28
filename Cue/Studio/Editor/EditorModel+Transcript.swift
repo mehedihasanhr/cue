@@ -3,9 +3,10 @@ import Foundation
 import TimelineKit
 
 extension EditorModel {
-    /// How much of a long pause is kept when it is shortened: enough to breathe, not
-    /// enough to wait through.
-    static let keptPause = 0.4
+    /// How much of a long pause is kept when it is shortened: a tenth of a second either
+    /// side, the reference's natural breath — enough that the next word does not land on
+    /// the last, not enough to wait through.
+    static let keptPause = 0.2
 
     /// Whether any caption knows when its words were said, which is what every cut made
     /// from the transcript is measured by.

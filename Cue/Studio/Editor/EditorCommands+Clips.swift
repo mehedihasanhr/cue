@@ -27,6 +27,8 @@ extension EditorCommands {
         .disabled(clipEditor == nil)
         // ⌥⌘← and ⌥⌘→, the arrows the clip goes along. Plain ⌥ and the arrows are the
         // playhead's, to the previous and next cut.
+        Button("Apply Speed to All Clips") { clipEditor?.applySpeedToAll() }
+            .disabled(!(clipEditor?.canApplySpeedToAll ?? false))
         Button("Move Clip Earlier") { clipEditor?.moveSelectedClip(by: -1) }
             .editorShortcut(.moveClipEarlier, shortcuts)
             .disabled(clipEditor?.canMoveSelectedClip(by: -1) != true)

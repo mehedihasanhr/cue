@@ -19,14 +19,15 @@ struct TimelineStrip: View {
     private var viewport: TimelineViewport { model.viewport }
 
     private static let rulerHeight: CGFloat = 30
-    private static let clipHeight: CGFloat = 42
+    private static let clipHeight: CGFloat = 48
     /// Shorter than the clips and taller than a region lane: the sound is a thing you
     /// read rather than a chip you read the label off, and a waveform squeezed into 28
     /// points is a smear.
     private static let soundHeight: CGFloat = 30
-    /// Tall enough for a chip's two lines — what it is, and what it says.
-    private static let regionHeight: CGFloat = 24
-    private static let spacing: CGFloat = 6
+    /// Tall enough for a chip's two lines — what it is, and what it says — the way the
+    /// reference labels its blocks.
+    private static let regionHeight: CGFloat = 36
+    private static let spacing: CGFloat = 10
     private static let padding: CGFloat = 4
     /// The room either side of the lanes, so the first clip does not sit on the rail.
     private static let sideInset: CGFloat = 8
@@ -138,11 +139,11 @@ struct TimelineStrip: View {
         /// belonging to what is beside it rather than as a list of its own.
         func tint(in timeline: Timeline) -> Color {
             switch self {
-            case .clips: TimelinePalette.clip
+            case .clips: StudioTheme.Lane.clip
             case .recordedSound: .green
             case .source(let id): timeline.soundTrack(id)?.source == .systemAudio ? .blue : .green
-            case .zooms: TimelinePalette.zoom
-            case .pointer: TimelinePalette.pointer
+            case .zooms: StudioTheme.Lane.zoom
+            case .pointer: StudioTheme.Lane.pointer
             case .addedSound: .green
             case .blurs: .teal
             case .annotations: .pink
@@ -390,7 +391,7 @@ struct TimelineStrip: View {
     private var zoomRow: some View {
         TimelineRegionRow(model: model,
                           regions: model.timeline.zooms,
-                          tint: TimelinePalette.zoom,
+                          tint: StudioTheme.Lane.zoom,
                           title: "Zoom",
                           symbol: "plus.magnifyingglass",
                           height: Self.regionHeight,
@@ -401,7 +402,8 @@ struct TimelineStrip: View {
                           compact: { zoom in
                               AnyView(Text(Self.scale(zoom))
                                   .opacity(zoom.isEnabled ? 1 : 0.45))
-                          }) { zoom in
+                          },
+                          isSolid: true) { zoom in
             HStack(spacing: 6) {
                 // Which zooms are off, at a glance down the lane. A switched-off zoom keeps
                 // its place and its framing, so without a mark on it the lane shows a zoom
@@ -469,7 +471,7 @@ struct TimelineStrip: View {
     private var cursorRow: some View {
         TimelineRegionRow(model: model,
                           regions: model.timeline.cursorRegions,
-                          tint: TimelinePalette.pointer,
+                          tint: StudioTheme.Lane.pointer,
                           title: "Pointer",
                           symbol: "cursorarrow.slash",
                           height: Self.regionHeight,

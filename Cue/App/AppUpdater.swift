@@ -53,7 +53,7 @@ final class AppUpdater {
         #endif
     }
 
-    /// The menu's "Check for Updates…": shows Sparkle's window, even when up to date.
+    /// The menu's "Check for Updates": shows Sparkle's window, even when up to date.
     func checkForUpdates() {
         #if DEBUG
         controller.startUpdater()

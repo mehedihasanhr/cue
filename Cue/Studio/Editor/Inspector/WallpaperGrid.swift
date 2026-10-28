@@ -16,7 +16,7 @@ struct WallpaperGrid: View {
     @State private var catalog = WallpaperCatalog.shared
     @State private var recents: [(bookmark: Data, url: URL)] = []
 
-    private let columns = Array(repeating: GridItem(.flexible(minimum: 24), spacing: 6), count: 7)
+    private let columns = Array(repeating: GridItem(.flexible(minimum: 24), spacing: 6), count: 8)
     /// Two rows, then a "Show all". Twenty swatches is a wall; fourteen is a choice.
     private let collapsedCount = 14
 

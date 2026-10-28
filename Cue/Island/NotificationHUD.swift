@@ -52,9 +52,14 @@ final class NotificationFeed {
     func start() {
         attach()
         // Accessibility may be granted later, Notification Center relaunched: try again now and then.
-        retry = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+        // Every 30 s rather than 5: a launch of Notification Center is caught by the observer
+        // below, so this is only for a grant arriving, which is not worth waking for often.
+        let retry = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.attachIfNeeded() }
         }
+        retry.tolerance = 10
+        RunLoop.main.add(retry, forMode: .common)
+        self.retry = retry
         launchObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main) { [weak self] note in
             let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
             guard app?.bundleIdentifier == "com.apple.notificationcenterui" else { return }
@@ -166,7 +171,11 @@ final class NotificationFeed {
                 onBanner(item)
             }
         }
-        if !windows.isEmpty {
+        // Looked at again only while banners are up, to catch the next one in a stack.
+        // Notification Center keeps a window for the desktop widgets too, so "has a
+        // window" was true all day and this ran twice a second forever; the AX observer
+        // already says when a new banner arrives.
+        if isEnabled(), !found.isEmpty {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.queueScan() }
         }
     }

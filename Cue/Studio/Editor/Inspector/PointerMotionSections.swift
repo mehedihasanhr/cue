@@ -19,6 +19,7 @@ struct PointerSwaySection: View {
             InspectorSlider(model: model, "Strength", systemImage: "arrow.uturn.right",
                             value: style.binding(\.cursor.sway.strength, "Sway Strength"),
                             range: PointerSway.strengthRange,
+                            defaultValue: style.factory(\.cursor.sway.strength),
                             format: { "\(Int(($0 * PointerSway.maximumAngle).rounded()))° at most" })
                 .disabled(!sway.isEnabled)
             // Said in the panel, not only the tooltip: switched on with a dot, nothing
@@ -66,6 +67,7 @@ struct PointerLoopSection: View {
                 InspectorSlider(model: model, "Over", systemImage: "timer",
                                 value: style.binding(\.cursor.loop.duration, "Loop Length"),
                                 range: PointerLoop.durationRange,
+                                defaultValue: style.factory(\.cursor.loop.duration),
                                 format: { String(format: "last %.1fs", $0) })
                 InspectorSwitch("Bring the camera back too",
                                 isOn: style.binding(\.cursor.loop.bringsCameraBack, "Loop Camera"))

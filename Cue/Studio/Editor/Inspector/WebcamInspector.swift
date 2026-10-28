@@ -53,11 +53,14 @@ struct WebcamInspector: View {
                     corners
 
                     InspectorSlider(model: model, "Size", systemImage: "arrow.up.left.and.arrow.down.right",
-                                    value: style.binding(\.webcam.size, "Camera Size"), range: 0.08...0.5)
+                                    value: style.binding(\.webcam.size, "Camera Size"), range: 0.08...0.5,
+                                    defaultValue: style.factory(\.webcam.size))
                     InspectorSlider(model: model, "Roundness", systemImage: "circle",
-                                    value: style.binding(\.webcam.roundness, "Camera Roundness"), range: 0...1)
+                                    value: style.binding(\.webcam.roundness, "Camera Roundness"), range: 0...1,
+                                    defaultValue: style.factory(\.webcam.roundness))
                     InspectorSlider(model: model, "Shadow", systemImage: "shadow",
-                                    value: style.binding(\.webcam.shadowOpacity, "Camera Shadow"), range: 0...1)
+                                    value: style.binding(\.webcam.shadowOpacity, "Camera Shadow"), range: 0...1,
+                                    defaultValue: style.factory(\.webcam.shadowOpacity))
 
                     InspectorSwitch("Mirror", isOn: style.binding(\.webcam.isMirrored, "Mirror Camera"))
                     InspectorSwitch("Grow while zoomed", isOn: style.binding(\.webcam.reactsToZoom, "Grow While Zoomed"))
@@ -124,6 +127,7 @@ struct WebcamInspector: View {
             InspectorSlider(model: model, "Zoom", systemImage: "plus.magnifyingglass",
                             value: style.binding(\.webcam.crop.zoom, "Camera Zoom"),
                             range: WebcamCrop.zoomRange,
+                            defaultValue: style.factory(\.webcam.crop.zoom),
                             format: { String(format: "%.1f×", $0) })
             InspectorSlider(model: model, "Across", systemImage: "arrow.left.and.right",
                             value: offset(\.x, "Camera Framing"), range: -1...1,
@@ -163,7 +167,8 @@ struct WebcamInspector: View {
         return VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
             InspectorSlider(model: model, "Width", systemImage: "circle",
                             value: style.binding(\.webcam.borderWidth, "Camera Border"),
-                            range: WebcamSettings.borderWidthRange)
+                            range: WebcamSettings.borderWidthRange,
+                            defaultValue: style.factory(\.webcam.borderWidth))
             InspectorRow("Colour") {
                 InspectorColorWell(title: "Camera border colour", selection: borderColour, supportsOpacity: true)
             }
@@ -196,7 +201,8 @@ struct WebcamInspector: View {
             if webcam.background == .blur {
                 InspectorSlider(model: model, "Blur", systemImage: "drop",
                                 value: style.binding(\.webcam.backgroundBlur, "Camera Background Blur"),
-                                range: 0...1)
+                                range: 0...1,
+                                defaultValue: style.factory(\.webcam.backgroundBlur))
             }
         }
         .inspectorSection("Background", systemImage: "person.and.background.dotted")

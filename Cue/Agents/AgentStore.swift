@@ -65,9 +65,13 @@ final class AgentStore {
     @ObservationIgnored private var pruneTimer: Timer?
 
     init() {
-        pruneTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 15, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.prune() }
         }
+        // Housekeeping, not a clock: the system may fold it in with other wakeups.
+        timer.tolerance = 5
+        RunLoop.main.add(timer, forMode: .common)
+        pruneTimer = timer
     }
 
     // MARK: Events
@@ -108,6 +112,8 @@ final class AgentStore {
         switch event.name {
         case .permissionRequest:
             ask(event, from: connection)
+        case .preToolUse where event.wantsAnswer:
+            ask(event, from: connection)
         case .userPromptSubmit, .stop, .sessionEnd:
             // The turn moved on: anything still open was answered in the terminal.
             withdraw { $0.sessionKey == key }
@@ -137,7 +143,7 @@ final class AgentStore {
             connection.reply()
             return
         }
-        if request.agent == .codex, case .permission(let summary) = request.kind,
+        if request.agent == .codex || request.agent == .antigravity, case .permission(let summary) = request.kind,
            codexGrants[request.sessionKey]?.contains(summary.grantKey) == true {
             connection.reply(AgentReply.json(for: request, .allowOnce))
             book.resume(request.sessionID, agent: request.agent, stillWaiting: false)
@@ -153,6 +159,14 @@ final class AgentStore {
         if event.hookPID > 0 { hookPIDs[request.id] = event.hookPID }
         requests.append(request)
         Log.app.info("Agent sessions: \(request.agent.rawValue, privacy: .public) asks about \(request.toolName, privacy: .public)")
+        // Antigravity stops its hook after `askTimeout`: hand an unanswered question back
+        // first, so it asks in its own window rather than taking the timeout as a refusal.
+        if request.agent == .antigravity {
+            let id = request.id
+            DispatchQueue.main.asyncAfter(deadline: .now() + Antigravity.answerWithin) { [weak self] in
+                self?.withdraw { $0.id == id }
+            }
+        }
         watchHooks()
         onRequest(request)
     }
@@ -186,7 +200,8 @@ final class AgentStore {
     func answer(_ request: AgentRequest, _ decision: AgentDecision) {
         guard let connection = connections[request.id] else { return }
         connection.reply(AgentReply.json(for: request, decision))
-        if decision == .allowAlways, request.agent == .codex, case .permission(let summary) = request.kind {
+        if decision == .allowAlways, request.agent == .codex || request.agent == .antigravity,
+           case .permission(let summary) = request.kind {
             codexGrants[request.sessionKey, default: []].insert(summary.grantKey)
         }
         finish { $0.id == request.id }
@@ -196,7 +211,8 @@ final class AgentStore {
     func answerInTerminal(_ request: AgentRequest) {
         // Codex waits on the hook and shows nothing meanwhile: let it go, so the
         // agent asks in its own window. Claude Code's prompt is already showing.
-        if request.agent == .codex { withdraw { $0.id == request.id } }
+        // Antigravity likewise shows its own approval only once the hook has answered.
+        if request.agent == .codex || request.agent == .antigravity { withdraw { $0.id == request.id } }
         if let session = book.sessions.first(where: { $0.id == request.sessionKey }) { focus(session) }
     }
 
@@ -271,10 +287,17 @@ final class AgentStore {
                 codexGrants[key] = nil
             }
         }
-        forgetKeys(book.pruneFinished(at: .now))
-        let before = book.sessions.map(\.id)
-        book.pruneStale(at: .now)
-        if book.sessions.count != before.count {
+        // Worked out on a copy and written back only when something went: calling a
+        // mutating method on `book` tells every view reading it that it changed, even when
+        // nothing did, and the island redrew every fifteen seconds for nothing.
+        var pruned = book
+        let finished = pruned.pruneFinished(at: .now)
+        pruned.pruneStale(at: .now)
+        guard pruned.sessions.count != book.sessions.count else { return }
+        let stale = book.sessions.count - finished.count != pruned.sessions.count
+        book = pruned
+        forgetKeys(finished)
+        if stale {
             let kept = Set(book.sessions.map(\.id))
             withdraw { !kept.contains($0.sessionKey) }
         }

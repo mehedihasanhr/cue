@@ -44,6 +44,7 @@ extension StudioSettings {
         recordsFocus = fresh.recordsFocus
         burnsCursorIntoVideo = fresh.burnsCursorIntoVideo
         opensEditorAfterRecording = fresh.opensEditorAfterRecording
+        afterRecording = fresh.afterRecording
         suggestsZoomsOnOpen = fresh.suggestsZoomsOnOpen
         zoomsOnFocus = fresh.zoomsOnFocus
         zoomsOnWindowChange = fresh.zoomsOnWindowChange

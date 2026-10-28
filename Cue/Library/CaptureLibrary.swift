@@ -229,7 +229,12 @@ final class CaptureLibrary {
         Task(priority: .utility) { [weak self] in
             for item in missing {
                 guard let self else { return }
-                guard let image = await MainActor.run(body: { self.image(for: item)?.cgImage }) else { continue }
+                guard let image = await MainActor.run(body: { self.image(for: item)?.cgImage }) else {
+                    // Recorded as having no text, so a capture whose picture will not load is
+                    // not tried — and the text recogniser loaded for it — on every launch.
+                    await MainActor.run { self.recognizedText[item.id] = "" }
+                    continue
+                }
                 let recognized = try? await service.recognize(image)
                 await MainActor.run {
                     self.recognizedText[item.id] = recognized?.text ?? ""

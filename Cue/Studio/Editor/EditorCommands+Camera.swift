@@ -29,6 +29,10 @@ extension EditorCommands {
                 .disabled(!hasCamera)
             Button("Camera Bubble at Playhead") { cameraEditor?.addCameraLayout(.bubble) }
                 .disabled(!hasCamera)
+            // The reference's Hide during silence: hidden stretches put on the camera lane
+            // where nobody speaks for five seconds, which can then be moved or deleted.
+            Button("Hide Camera During Silence") { cameraEditor?.hideCameraDuringSilence() }
+                .disabled(!hasCamera)
             // The stretch selected, or the one under the playhead.
             Menu("Layout of This Stretch") {
                 ForEach(CameraLayout.allCases, id: \.self) { layout in

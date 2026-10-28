@@ -24,7 +24,12 @@ public enum TranscriptEditing {
     /// often as they are fillers, and taking them out takes meaning out with them.
     public static let fillers: Set<String> = [
         "um", "umm", "ummm", "uh", "uhh", "uhm", "erm", "er", "ah", "ahh", "hmm", "hm", "mm", "mmm",
+        "mhmm", "huh", "uh-huh",
     ]
+
+    /// The smallest cut worth making out of a pause: shortening one by less than this is
+    /// a jump in the picture nobody would notice the time saved by.
+    public static let smallestPauseCut = 0.2
 
     /// Every timed word in the captions, in the order it is heard.
     public static func spokenWords(in timeline: Timeline) -> [SpokenWord] {
@@ -76,6 +81,7 @@ public enum TranscriptEditing {
             guard gap.duration.seconds > limit else { continue }
             guard !busy.contains(where: { !$0.intersection(gap).isEmpty }) else { continue }
             let margin = CMTime(seconds: kept / 2, preferredTimescale: 60_000)
+            guard gap.duration.seconds - kept > smallestPauseCut else { continue }
             cuts.append(CMTimeRange(start: gap.start + margin, end: gap.end - margin))
         }
         return cuts

@@ -56,6 +56,41 @@ extension EditorModel {
         apply(Commands.SetCameraLayout(id: id, layout: layout))
     }
 
+    /// Hides the camera wherever nobody speaks for at least `minimum` seconds, as one
+    /// step Undo takes back.
+    ///
+    /// Read from the voice — the first microphone, or the recording's own sound when the
+    /// voice is in the video file — and only where the camera lane is empty: a stretch that
+    /// already has a layout was set by hand and is left alone.
+    func hideCameraDuringSilence(minimum: Double = SilenceFinder.defaultMinimum) {
+        let manifest = document.manifest
+        guard let voice = manifest.tracks(.microphone).first ?? manifest.audioTracks.first else {
+            report(CameraSilenceError.noVoice)
+            return
+        }
+        let url = document.package.url.appendingPathComponent(voice.path)
+        Task { @MainActor in
+            guard let peaks = try? await WaveformBuilder().peaks(of: url) else {
+                report(CameraSilenceError.unreadable)
+                return
+            }
+            let hidden = SilenceFinder.cameraHidden(in: SilenceFinder.silences(in: peaks, minimum: minimum))
+                .flatMap { timeline.timelineRanges(ofSource: $0) }
+                .filter { range in
+                    !timeline.cameraLayouts.contains { !CMTimeRange(start: $0.start, duration: $0.duration).intersection(range).isEmpty }
+                }
+            guard !hidden.isEmpty else {
+                report(CameraSilenceError.noneFound(minimum))
+                return
+            }
+            let regions = hidden.map { CameraLayoutRegion(start: $0.start, duration: $0.duration, layout: .hidden) }
+            apply(Commands.Restyle("Hide Camera During Silence") { timeline in
+                timeline.cameraLayouts.append(contentsOf: regions)
+                timeline.cameraLayouts.sort { $0.start < $1.start }
+            })
+        }
+    }
+
     /// Takes the whole lane away: the bubble everywhere again.
     func removeAllCameraLayouts() {
         guard !timeline.cameraLayouts.isEmpty else { return }
@@ -79,5 +114,19 @@ extension EditorModel {
     func resetCameraCrop() {
         guard timeline.webcam.crop != WebcamCrop() else { return }
         apply(Commands.Restyle("Reset Camera Framing") { $0.webcam.crop = WebcamCrop() })
+    }
+}
+
+enum CameraSilenceError: LocalizedError {
+    case noVoice
+    case unreadable
+    case noneFound(Double)
+
+    var errorDescription: String? {
+        switch self {
+        case .noVoice: "This recording has no voice to listen for silences in."
+        case .unreadable: "The voice in this recording couldn't be read."
+        case .noneFound(let minimum): "No silences of \(Int(minimum)) seconds or more where the camera lane is free."
+        }
     }
 }

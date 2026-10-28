@@ -39,6 +39,8 @@ final class TaskSync {
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
+        // A once-a-minute check, not a clock: the system may fold it in with others.
+        timer?.tolerance = 15
     }
 
     // MARK: - Sync

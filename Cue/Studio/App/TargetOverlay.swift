@@ -273,12 +273,12 @@ private struct TargetOverlayView: View {
             Color.black.opacity(isArmed ? 0.12 : 0.4)
             if isArmed {
                 Rectangle()
-                    .strokeBorder(StudioPalette.brand, lineWidth: 4)
+                    .strokeBorder(StudioTheme.Recorder.brand, lineWidth: 4)
             }
             HStack(spacing: 8) {
                 Image(systemName: isArmed ? "checkmark.circle.fill" : "display")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(isArmed ? StudioPalette.brand : .white.opacity(0.8))
+                    .foregroundStyle(isArmed ? StudioTheme.Recorder.brand : .white.opacity(0.8))
                     .symbolRenderingMode(.hierarchical)
                 Text(isArmed ? title : "Click to record \(title)")
                     .font(.system(size: 13, weight: .semibold))
@@ -498,7 +498,7 @@ private struct DeviceRow: View {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 17, weight: .semibold))
                         .symbolRenderingMode(.palette)
-                        .foregroundStyle(.white, StudioPalette.brand)
+                        .foregroundStyle(.white, StudioTheme.Recorder.brand)
                         .transition(.scale(scale: 0.5).combined(with: .opacity))
                 }
             }
@@ -767,7 +767,7 @@ extension WindowPickerPanel {
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
             if note.needsAccess {
-                Button("Allow in System Settings…") { model.requestAccessibility() }
+                Button("Allow in System Settings") { model.requestAccessibility() }
                     .controlSize(.small)
             }
         }
@@ -811,7 +811,7 @@ private struct ActionChip: View {
             .background(fill, in: shape)
             .overlay(shape.strokeBorder(isPrimary ? Color.white.opacity(isEnabled ? 0.2 : 0)
                                                   : Color.primary.opacity(0.14)))
-            .shadow(color: isPrimary && isEnabled ? StudioPalette.brand.opacity(isHovering ? 0.5 : 0.32) : .clear,
+            .shadow(color: isPrimary && isEnabled ? StudioTheme.Recorder.brand.opacity(isHovering ? 0.5 : 0.32) : .clear,
                     radius: isHovering ? 12 : 8, y: 3)
             .contentShape(shape)
         }
@@ -831,7 +831,7 @@ private struct ActionChip: View {
     private var fill: Color {
         if isPrimary {
             guard isEnabled else { return .primary.opacity(0.08) }
-            return isHovering ? Color(red: 0.2, green: 0.42, blue: 1) : StudioPalette.brand
+            return isHovering ? Color(red: 0.2, green: 0.42, blue: 1) : StudioTheme.Recorder.brand
         }
         return .primary.opacity(isHovering ? 0.1 : 0.06)
     }
@@ -929,14 +929,14 @@ private struct WindowTile: View {
                 .padding(.horizontal, 2)
             }
             .padding(10)
-            .background(isSelected ? AnyShapeStyle(StudioPalette.brand.opacity(colorScheme == .dark ? 0.2 : 0.09))
+            .background(isSelected ? AnyShapeStyle(StudioTheme.Recorder.brand.opacity(colorScheme == .dark ? 0.2 : 0.09))
                                    : AnyShapeStyle(.primary.opacity(highlight)),
                         in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             // The chosen window is outlined in the brand blue, not just washed: a grey
             // step behind one card of nine was easy to miss.
             .overlay {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(StudioPalette.brand, lineWidth: 2)
+                    .strokeBorder(StudioTheme.Recorder.brand, lineWidth: 2)
                     .opacity(isSelected ? 1 : 0)
             }
             .contentShape(Rectangle())
@@ -998,7 +998,7 @@ private struct WindowTile: View {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 17, weight: .semibold))
                             .symbolRenderingMode(.palette)
-                            .foregroundStyle(.white, StudioPalette.brand)
+                            .foregroundStyle(.white, StudioTheme.Recorder.brand)
                             .transition(.scale(scale: 0.5).combined(with: .opacity))
                     }
                 }

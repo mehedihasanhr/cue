@@ -31,6 +31,7 @@ struct WholeVideoZoomSection: View {
             InspectorSlider(model: model, "Level", systemImage: "plus.magnifyingglass",
                             value: style.binding(\.camera.wholeVideoZoom, "Whole Video Zoom"),
                             range: 1.1...CameraStyle.wholeVideoZoomRange.upperBound,
+                            defaultValue: style.factory(\.camera.wholeVideoZoom),
                             format: { String(format: "%.1f×", $0) })
                 .disabled(!isOn)
                 .help("The camera stays at \(String(format: "%.1f×", camera.sanitised.wholeVideoZoom)) from the first frame to the last and pans after the pointer. A zoom goes further in from there — a 2× zoom here is \(String(format: "%.1f×", camera.sanitised.wholeVideoZoom * 2)). Follow, Steadiness and Stray in a zoom's Camera Motion set how it pans.")

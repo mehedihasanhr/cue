@@ -2,7 +2,7 @@ import Foundation
 import RecordKit
 import TimelineKit
 
-/// `studiolab pace <recording.cuerec>` — what "Speed Up Waiting…" would offer for a
+/// `studiolab pace <recording.cuerec>` — what "Speed Up Waiting" would offer for a
 /// recording, and what each stretch was measured from: the same analysis the editor runs,
 /// printed rather than put in a sheet.
 @MainActor

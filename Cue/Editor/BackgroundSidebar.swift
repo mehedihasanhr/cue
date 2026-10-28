@@ -284,7 +284,7 @@ struct BackgroundSidebar: View {
             if case .image(let wallpaper) = fill, wallpaper.isCustom {
                 WallpaperPeek(wallpaper: wallpaper)
                 HStack(spacing: 6) {
-                    Button("Replace…") { chooseImage() }
+                    Button("Replace") { chooseImage() }
                     Button("Remove") { setFill(.gradient(.ocean)) }
                 }
                 .buttonStyle(SidebarButtonStyle())
@@ -292,7 +292,7 @@ struct BackgroundSidebar: View {
                 Button {
                     chooseImage()
                 } label: {
-                    Label("Choose Image…", systemImage: "photo.badge.plus")
+                    Label("Choose Image", systemImage: "photo.badge.plus")
                 }
                 .buttonStyle(SidebarButtonStyle())
                 .help("Use a picture from your Mac as the background")

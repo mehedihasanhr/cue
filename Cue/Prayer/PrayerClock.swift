@@ -39,11 +39,14 @@ final class PrayerClock: NSObject {
     @ObservationIgnored private var armed: [(date: Date, event: Event)] = []
     /// Keeps App Nap from stretching the timers while there is something to show.
     @ObservationIgnored private var activity: (any NSObjectProtocol)?
+    /// Fires shortly before the next event, to hold App Nap off for it.
+    @ObservationIgnored private var prepareTimer: Timer?
     @ObservationIgnored private var minuteTimer: Timer?
     @ObservationIgnored private var locationManager: CLLocationManager?
     @ObservationIgnored private var observers: [any NSObjectProtocol] = []
     /// Says the time and prayers aloud when that's on; kept so speech isn't cut off.
-    @ObservationIgnored private let speech = AVSpeechSynthesizer()
+    /// Made the first time something is said: most clocks never speak.
+    @ObservationIgnored private lazy var speech = AVSpeechSynthesizer()
 
     init(preferences: AppPreferences) {
         self.preferences = preferences
@@ -183,8 +186,21 @@ final class PrayerClock: NSObject {
         }
         // Everything that shares the next moment (a prayer and a window can coincide).
         armed = upcoming.filter { $0.date.timeIntervalSince(next.date) < 1 }
-        if activity == nil {
-            activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep], reason: "Island clock")
+        // App Nap is held off only for the last half minute before the moment, so the
+        // event lands on time. Held for as long as anything was pending — all day — it
+        // kept the whole app awake and stopped macOS from easing every other timer in it.
+        prepareTimer?.invalidate()
+        if next.date.timeIntervalSinceNow <= Self.holdOff {
+            holdAppNap()
+        } else {
+            if let activity { ProcessInfo.processInfo.endActivity(activity) }
+            activity = nil
+            let prepare = Timer(fire: next.date.addingTimeInterval(-Self.holdOff), interval: 0, repeats: false) { [weak self] _ in
+                MainActor.assumeIsolated { self?.holdAppNap() }
+            }
+            prepare.tolerance = 10
+            RunLoop.main.add(prepare, forMode: .common)
+            prepareTimer = prepare
         }
         let timer = Timer(fire: next.date, interval: 0, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated { self?.fire() }
@@ -193,6 +209,14 @@ final class PrayerClock: NSObject {
         RunLoop.main.add(timer, forMode: .common)
         eventTimer = timer
         Log.app.info("Island clock: next \(String(describing: next.event), privacy: .public) at \(next.date.formatted(date: .omitted, time: .standard), privacy: .public)")
+    }
+
+    /// How long before an event App Nap is held off.
+    private static let holdOff: TimeInterval = 30
+
+    private func holdAppNap() {
+        guard activity == nil else { return }
+        activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep], reason: "Island clock")
     }
 
     /// Shows what the timer was armed for, then waits for the next event. A firing

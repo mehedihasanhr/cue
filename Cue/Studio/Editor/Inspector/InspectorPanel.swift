@@ -4,9 +4,9 @@ import TimelineKit
 
 /// The settings column: whatever the current tool — or the current selection — is about.
 ///
-/// It sits at the right of the window, beside the picture, with the rail of tools that
-/// drives it down its left edge — between the picture and the controls — so choosing a tool
-/// and seeing what it opened happen side by side. It is the one surface in the editor that
+/// It sits at the right of the window, with the column of tool tabs that drives it down its
+/// left edge — between the picture and the controls — so choosing a tool and seeing what it
+/// opened happen side by side. It is the one surface in the editor that
 /// changes wholesale, so it says what it is showing. Without a heading, picking a tool
 /// swapped one unlabelled stack of sliders for another and the only evidence of what
 /// happened was a highlight moving along the rail — and while a timeline selection owns
@@ -14,17 +14,13 @@ import TimelineKit
 /// highlighted tool.
 struct InspectorPanel: View {
     let model: EditorModel
-    /// Opens the export sheet. The panel's head is where Export lives: it is the end of
-    /// everything the column below it sets up.
-    var export: () -> Void = {}
     @State private var state = InspectorState()
+
+    /// How far in the controls sit from the card's edges: the reference's roomy sidebar.
+    static let inset: CGFloat = 20
 
     var body: some View {
         VStack(spacing: 0) {
-            ExportHeadButton(action: export)
-                .padding(.horizontal, SidebarMetrics.contentInset)
-                .padding(.top, 10)
-                .padding(.bottom, 4)
             // Named only while a selection owns the panel, because that is when the panel
             // has stopped being about the chosen tool and needs a way back out. Otherwise
             // every section names itself.
@@ -36,7 +32,7 @@ struct InspectorPanel: View {
                 VStack(alignment: .leading, spacing: SidebarSpacing.betweenSections) {
                     content
                 }
-                .padding(.horizontal, SidebarMetrics.contentInset)
+                .padding(.horizontal, Self.inset)
                 .padding(.bottom, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -238,44 +234,4 @@ final class InspectorState {
     var backgroundTabOverride: BackgroundTab?
     var showsAllGradients = false
     var showsAllSystemWallpapers = false
-}
-
-/// Export, as the head of the inspector: the window's one filled button, in Cue blue,
-/// with its shortcut beside the word. Everything else in the window is a neutral; the
-/// one way out of it is the one thing in colour.
-struct ExportHeadButton: View {
-    let action: () -> Void
-    @Environment(StudioSettings.self) private var settings
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 11.5, weight: .semibold))
-                Text("Export")
-                    .font(.system(size: 12.5, weight: .semibold))
-                if let shortcut = settings.editorShortcuts[.export]?.displayString {
-                    Text(shortcut)
-                        .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.7))
-                }
-            }
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity)
-            .frame(height: 32)
-            .background(StudioPalette.brand.opacity(isHovering ? 0.9 : 1),
-                        in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(.white.opacity(0.12))
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        }
-        .buttonStyle(StudioPressStyle())
-        .onHover { isHovering = $0 }
-        .animation(StudioMotion.hover, value: isHovering)
-        .help("Export this as a video or a GIF")
-        .accessibilityLabel("Export")
-    }
 }
