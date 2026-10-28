@@ -467,7 +467,7 @@ struct IslandView: View {
             // While agents run, a thin line of light under the closed notch; the
             // notch itself stays plain black.
             .background(alignment: .top) {
-                if collapsed, geometry.screen.hasNotch, model.agents?.isBusy == true {
+                if collapsed, geometry.screen.hasNotch, preferences.agentNotchGlow, model.agents?.isBusy == true {
                     NotchGlow(shape: shape, size: CGSize(width: size.width + flare * 2, height: size.height), asking: asking)
                         .transition(.opacity.animation(.easeOut(duration: 0.4)))
                         .allowsHitTesting(false)

@@ -66,6 +66,7 @@ final class AppPreferences {
         static let islandOpensOn = "island.opensOn"
         static let agentSessions = "agents.enabled"
         static let agentAutoOpen = "agents.autoOpen"
+        static let agentNotchGlow = "agents.notchGlow"
         static let afterCapture = "capture.after"
         static let clipboardEnabled = "clipboard.enabled"
         static let clipboardLimit = "clipboard.limit"
@@ -728,6 +729,11 @@ final class AppPreferences {
         didSet { defaults.set(agentAutoOpen, forKey: Key.agentAutoOpen) }
     }
 
+    /// A line of light around the closed notch while an agent works. On by default.
+    var agentNotchGlow: Bool {
+        didSet { defaults.set(agentNotchGlow, forKey: Key.agentNotchGlow) }
+    }
+
     // MARK: Editor defaults
 
     var editorDefaults: EditorDefaults {
@@ -940,6 +946,7 @@ final class AppPreferences {
         islandOpensOn = IslandTab(rawValue: defaults.string(forKey: Key.islandOpensOn) ?? "")
         agentSessionsEnabled = defaults.object(forKey: Key.agentSessions) as? Bool ?? true
         agentAutoOpen = defaults.object(forKey: Key.agentAutoOpen) as? Bool ?? true
+        agentNotchGlow = defaults.object(forKey: Key.agentNotchGlow) as? Bool ?? true
         clipboardHistoryEnabled = defaults.object(forKey: Key.clipboardEnabled) as? Bool ?? true
         clipboardHistoryLimit = defaults.object(forKey: Key.clipboardLimit) as? Int ?? 200
         colorPickerEnabled = defaults.object(forKey: Key.colorPickerEnabled) as? Bool ?? true

@@ -238,6 +238,10 @@ struct AgentSettingsView: View {
                     Toggle("Open when asked", isOn: $preferences.agentAutoOpen).toggleStyle(.switch)
                 }
                 .disabled(!preferences.agentSessionsEnabled)
+                SettingsRow("Glow around the notch", subtitle: "A line of light around the notch while an agent works, and a pulse when one asks.") {
+                    Toggle("Notch glow", isOn: $preferences.agentNotchGlow).toggleStyle(.switch)
+                }
+                .disabled(!preferences.agentSessionsEnabled)
                 if let agents {
                     ForEach(AgentKind.allCases, id: \.self) { agent in
                         ForEach(agents.links(for: agent)) { link in
