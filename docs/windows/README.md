@@ -84,8 +84,6 @@ pnpm lint && pnpm test                       # type-check and UI tests
 
    It goes to `src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/`.
 
-CI (`.github/workflows/windows.yml`) runs the same checks on `windows-latest` and attaches the installer to the run.
-
 ## Releasing
 
 1. Bump `version` in `windows/src-tauri/tauri.conf.json` and `windows/package.json`.
