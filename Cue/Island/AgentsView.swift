@@ -347,24 +347,14 @@ struct NotchGlow: View {
             if IslandView.reduceMotion {
                 line(path, bottom, color: color, level: 0.7)
             } else {
-                TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
-                    let t = context.date.timeIntervalSinceReferenceDate
-                    if asking {
-                        // A slow pulse, never fully dark.
-                        let pulse = 0.5 - 0.5 * cos(t * 2 * .pi / 1.6)
-                        line(path, bottom, color: color, level: 0.4 + 0.6 * pulse)
-                    } else {
-                        let phase = t.truncatingRemainder(dividingBy: Self.sweep + Self.sweepRest) / Self.sweep
-                        let progress = min(1, phase)
-                        let eased = progress < 0.5 ? 2 * progress * progress : 1 - pow(-2 * progress + 2, 2) / 2
-                        ZStack {
-                            line(path, bottom, color: color, level: 0.5)
-                            line(path, bottom, color: color, level: 1)
-                                .mask(highlight(at: -0.15 + 1.3 * eased))
-                                .opacity(progress < 1 ? 1 : 0)
-                        }
-                    }
-                }
+                // Drawn once and animated by Core Animation, in the render server. As a
+                // SwiftUI `TimelineView` it rebuilt eight blurred strokes and a mask thirty
+                // times a second for as long as an agent worked — including the rest
+                // between sweeps — which was most of Cue's CPU while idle.
+                NotchGlowLayers(whole: path, bottom: bottom,
+                                size: CGSize(width: width, height: size.height + Self.below),
+                                color: NSColor(color), asking: asking,
+                                sweep: Self.sweep, rest: Self.sweepRest)
             }
         }
         // Strongest at the notch, gone by the ends of the wings: it melts into the edge.
@@ -414,6 +404,111 @@ struct NotchGlow: View {
             .init(color: .black.opacity(0.35), location: 1 - wing * 0.45),
             .init(color: .clear, location: 1),
         ], startPoint: .leading, endPoint: .trailing)
+    }
+}
+
+/// The notch light as Core Animation layers: the line at half strength, and the same line
+/// at full strength under a moving band — the sweep — or the whole of it pulsing while an
+/// agent asks. Built once per look; the animations run without the app.
+private struct NotchGlowLayers: NSViewRepresentable {
+    let whole: NotchLightPath
+    let bottom: NotchLightPath
+    let size: CGSize
+    let color: NSColor
+    let asking: Bool
+    let sweep: Double
+    let rest: Double
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: CGRect(origin: .zero, size: size))
+        view.wantsLayer = true
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        let key = "\(size.width)x\(size.height)-\(color)-\(asking)"
+        guard view.identifier?.rawValue != key, let root = view.layer else { return }
+        view.identifier = NSUserInterfaceItemIdentifier(key)
+        root.sublayers?.forEach { $0.removeFromSuperlayer() }
+
+        let rect = CGRect(origin: .zero, size: size)
+        let container = CALayer()
+        container.frame = rect
+        // SwiftUI's paths are drawn from the top; the layer's origin is at the bottom.
+        container.isGeometryFlipped = true
+        root.addSublayer(container)
+
+        if asking {
+            // A slow pulse, never fully dark.
+            let line = lineLayer(rect, level: 1)
+            container.addSublayer(line)
+            let pulse = CABasicAnimation(keyPath: "opacity")
+            pulse.fromValue = 0.4
+            pulse.toValue = 1
+            pulse.duration = 0.8
+            pulse.autoreverses = true
+            pulse.repeatCount = .infinity
+            pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            line.add(pulse, forKey: "pulse")
+        } else {
+            container.addSublayer(lineLayer(rect, level: 0.5))
+            let bright = lineLayer(rect, level: 1)
+            let band = CAGradientLayer()
+            band.frame = rect
+            band.startPoint = CGPoint(x: 0, y: 0.5)
+            band.endPoint = CGPoint(x: 1, y: 0.5)
+            band.colors = [NSColor.clear.cgColor, NSColor.black.cgColor, NSColor.clear.cgColor]
+            band.locations = Self.band(at: -0.3)
+            bright.mask = band
+            container.addSublayer(bright)
+
+            // Across in `sweep` seconds, eased in and out, then off the end for `rest`.
+            let total = sweep + rest
+            let move = CAKeyframeAnimation(keyPath: "locations")
+            move.values = [Self.band(at: -0.15), Self.band(at: 1.15), Self.band(at: 1.3), Self.band(at: 1.3)]
+            move.keyTimes = [0, NSNumber(value: sweep / total), NSNumber(value: sweep / total + 0.001), 1]
+            move.timingFunctions = [CAMediaTimingFunction(name: .easeInEaseOut),
+                                    CAMediaTimingFunction(name: .linear),
+                                    CAMediaTimingFunction(name: .linear)]
+            move.duration = total
+            move.repeatCount = .infinity
+            band.add(move, forKey: "sweep")
+        }
+    }
+
+    /// The band's three stops, centred at `position` along the line.
+    private static func band(at position: Double) -> [NSNumber] {
+        [NSNumber(value: position - 0.14), NSNumber(value: position), NSNumber(value: position + 0.14)]
+    }
+
+    /// The four strokes of the line at one strength: a soft glow and a core along the
+    /// whole path, a touch brighter along the bottom, where the eye looks.
+    private func lineLayer(_ rect: CGRect, level: Double) -> CALayer {
+        let group = CALayer()
+        group.frame = rect
+        let whole = whole.path(in: rect).cgPath
+        let bottom = bottom.path(in: rect).cgPath
+        for (path, width, opacity, glow) in [(whole, 8.0, 0.2, true), (whole, 4.0, 0.6, false),
+                                             (bottom, 10.0, 0.3, true), (bottom, 4.5, 0.35, false)] {
+            let stroke = CAShapeLayer()
+            stroke.frame = rect
+            stroke.path = path
+            stroke.fillColor = nil
+            stroke.strokeColor = color.cgColor
+            stroke.lineWidth = width
+            stroke.lineCap = .round
+            stroke.lineJoin = .round
+            stroke.opacity = Float(opacity * level)
+            if glow {
+                // A shadow in place of SwiftUI's blur: drawn once and cached.
+                stroke.shadowColor = color.cgColor
+                stroke.shadowRadius = 6
+                stroke.shadowOpacity = 1
+                stroke.shadowOffset = .zero
+            }
+            group.addSublayer(stroke)
+        }
+        return group
     }
 }
 
@@ -1767,7 +1862,7 @@ private struct QuestionsCard: View {
             .padding(.trailing, 6)
             .padding(.vertical, 5)
         } else {
-            OptionRow(label: "Other…", description: nil, multi: question.multiSelect,
+            OptionRow(label: "Other", description: nil, multi: question.multiSelect,
                       selected: chosen[question.question, default: []].contains { label in !question.options.contains { $0.label == label } }) {
                 typing = question.question
             }

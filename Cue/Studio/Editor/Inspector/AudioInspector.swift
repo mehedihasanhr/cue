@@ -54,6 +54,7 @@ struct AudioInspector: View {
             .help("Goes into the exported video. Turn it down to sit under music, or off to keep only a voiceover.")
             InspectorSlider(model: model, separate ? "Overall level" : "Level", systemImage: "speaker.wave.2",
                             value: style.binding(\.sound.gain, "Level"), range: 0...2,
+                            defaultValue: style.factory(\.sound.gain),
                             format: { "\(Int(($0 * 100).rounded()))%" })
                 .disabled(model.timeline.sound.isMuted)
             // Here only for a recording with its sound inside the video: with separate
@@ -104,7 +105,7 @@ struct AudioInspector: View {
             // recorded, and there is a button to start.
             switch model.voiceover?.state ?? .idle {
             case .idle:
-                StudioButton("Record Voiceover…", systemImage: "mic", size: .small) {
+                StudioButton("Record Voiceover", systemImage: "mic", size: .small) {
                     model.startVoiceover()
                 }
                 .help("Talk over the edit. The timeline plays from the playhead while you talk, and the take lands where it started. The editor's own sound is silenced so it doesn't end up in the recording.")
@@ -324,7 +325,7 @@ struct AudioInspector: View {
             }
         }
         .inspectorSection("Added Sound", systemImage: "music.note") {
-            SectionButton(title: "Add Sound…") { model.addSound() }
+            SectionButton(title: "Add Sound") { model.addSound() }
                 .help("Lay music, a voiceover or an effect over the recording, starting at the playhead")
         }
     }

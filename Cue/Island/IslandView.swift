@@ -239,11 +239,11 @@ private struct IslandFill: View {
     var style: AppPreferences.GlassStyle = .clear
     var darkness: Double = 0.45
     var tint: Color?
-    /// No notch to meet (a plain display, with lighter glass on): no black band at the top.
+    /// No notch to meet (a plain display, with lighter glass on): only a thin black band at the top.
     var light = false
 
     /// Where the black starts giving way to glass.
-    private var fadeFrom: Double { light ? 0.12 : 0.45 }
+    private var fadeFrom: Double { light ? 0.15 : 0.45 }
 
     @available(macOS 26, *)
     private var glassKind: Glass {
@@ -257,9 +257,10 @@ private struct IslandFill: View {
                 shape.fill(.clear)
                     .glassEffect(glassKind, in: shape)
                     .opacity(glass ? 1 : 0)
+                // Black to glass on every display; without a notch the fade only starts higher.
                 LinearGradient(stops: [
-                    .init(color: .black.opacity(light ? max(darkness, 0.55) : 1), location: 0),
-                    .init(color: .black.opacity(light ? max(darkness, 0.4) : 1), location: fadeFrom),
+                    .init(color: .black, location: 0),
+                    .init(color: .black, location: fadeFrom),
                     .init(color: .black.opacity(darkness), location: 1),
                 ], startPoint: .top, endPoint: .bottom)
                 // The tint, faint over the dark and stronger down where the glass shows.
@@ -1295,9 +1296,9 @@ struct TaskFormRow: View {
                 ("checklist", "Checklist", "⌘⇧T", { editor.removeToken(); editor.block(.todo) }),
                 ("text.quote", "Quote", "⌘⇧Q", { editor.removeToken(); editor.block(.quote) }),
                 ("curlybraces", "Code block", nil, { editor.removeToken(); editor.block(.code) }),
-                ("photo", "Image…", "⌘⇧I", { editor.removeToken(); chooseImage() }),
-                ("folder", "Project…", "#", { editor.replaceToken(with: "#") }),
-                ("flag", "Priority…", "!", { editor.replaceToken(with: "!") }),
+                ("photo", "Image", "⌘⇧I", { editor.removeToken(); chooseImage() }),
+                ("folder", "Project", "#", { editor.replaceToken(with: "#") }),
+                ("flag", "Priority", "!", { editor.replaceToken(with: "!") }),
             ]
             return commands.filter { matches($0.1) }.map { Suggestion(id: $0.1, symbol: $0.0, title: $0.1, detail: $0.2, pick: $0.3) }
         case "#":
@@ -1578,7 +1579,7 @@ struct TaskFormRow: View {
     private var footer: some View {
         HStack(spacing: 10) {
             Menu {
-                Button("Attach Image…", action: chooseImage).keyboardShortcut("i", modifiers: [.command, .shift])
+                Button("Attach Image", action: chooseImage).keyboardShortcut("i", modifiers: [.command, .shift])
                 Divider()
                 Button("Bold", action: { editor.bold() }).keyboardShortcut("b")
                 Button("Italic", action: { editor.italic() }).keyboardShortcut("i")
@@ -1656,8 +1657,8 @@ struct TaskFormRow: View {
                     textView.paste(nil)
                 }
             }
-            actionRow("Attach Image…", symbol: "photo", keys: "⇧⌘I") { showsActions = false; chooseImage() }
-            actionRow("New Project…", symbol: "folder.badge.plus") { showsActions = false; newProjectName = "" }
+            actionRow("Attach Image", symbol: "photo", keys: "⇧⌘I") { showsActions = false; chooseImage() }
+            actionRow("New Project", symbol: "folder.badge.plus") { showsActions = false; newProjectName = "" }
             actionSection("Project")
             actionRow("No project", symbol: "tray", checked: projectID == nil && pendingProject == nil) { projectID = nil; pendingProject = nil; showsActions = false }
             ForEach(store.projects.sorted { store.path(to: $0.id).map(\.name).joined(separator: "/") < store.path(to: $1.id).map(\.name).joined(separator: "/") }) { project in
@@ -1797,7 +1798,7 @@ struct TaskFormRow: View {
             formatButton("list.number", help: "Numbered list", shortcut: KeyboardShortcut("n", modifiers: [.command, .shift])) { editor.block(.numbered) }
             formatButton("checklist", help: "Checklist", shortcut: KeyboardShortcut("t", modifiers: [.command, .shift])) { editor.block(.todo) }
             formatButton("text.quote", help: "Quote", shortcut: KeyboardShortcut("q", modifiers: [.command, .shift])) { editor.block(.quote) }
-            formatButton("photo", help: "Insert image…", shortcut: KeyboardShortcut("i", modifiers: [.command, .shift])) { chooseImage() }
+            formatButton("photo", help: "Insert image", shortcut: KeyboardShortcut("i", modifiers: [.command, .shift])) { chooseImage() }
             Spacer(minLength: 0)
             Text("/ formats · #project · !priority · ⌘1–4 priority · ⌘B ⌘I")
                 .font(.system(size: 9.5))
@@ -1830,7 +1831,7 @@ struct TaskFormRow: View {
         editor.insertBlock(markdown)
     }
 
-    /// Every project by its path, "No project", and "New project…".
+    /// Every project by its path, "No project", and "New project".
     @ViewBuilder
     private var projectMenuItems: some View {
         Button("No project") { projectID = nil; pendingProject = nil }
@@ -1848,7 +1849,7 @@ struct TaskFormRow: View {
             }
         }
         Divider()
-        Button("New Project…") { newProjectName = "" }
+        Button("New Project") { newProjectName = "" }
     }
 
     private var projectMenu: some View {
@@ -1953,7 +1954,7 @@ private struct TaskDetailRow: View {
                 .contentShape(Rectangle())
                 .onTapGesture(perform: close) // the hint is a button too
                 Spacer(minLength: 0)
-                Button("Delete…", action: delete)
+                Button("Delete", action: delete)
                     .buttonStyle(.plain)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.red.opacity(0.9))

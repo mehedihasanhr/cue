@@ -222,9 +222,13 @@ struct StudioSlider: View {
 
 // MARK: - A labelled slider
 
-/// A slider with its name, as one scrub row: the name and value written inside a filled
-/// field whose set part is lighter. The whole width of the panel is the track, so nothing
-/// is lost to a name column beside it.
+/// A slider with its name: the name on its own line, the track under it the full width
+/// of the panel, and a Reset at the end of the track — the reference's slider row.
+///
+/// The value is written small at the end of the name's line, so a column of sliders has
+/// its numbers in one straight line. Reset is dimmed while the value is already the
+/// default, so the button says whether this slider has been touched without anybody
+/// having to read the number.
 struct StudioLabeledSlider: View {
     let title: String
     @Binding var value: Double
@@ -254,19 +258,69 @@ struct StudioLabeledSlider: View {
     }
 
     var body: some View {
-        // One filled row with the name and value written inside it, the set part a
-        // lighter grey: the row is the slider, so a column of them is a column of rows the
-        // same height as the switches and pop-ups around them.
-        StudioSlider(value: $value,
-                     in: range,
-                     step: step,
-                     defaultValue: defaultValue,
-                     valueText: format,
-                     scrub: .init(title: title, value: format(value))) { editing in
-            isEditing = editing
-            onEditingChanged(editing)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Text(title)
+                    .font(.system(size: StudioTheme.FontSize.label + 0.5))
+                    .foregroundStyle(StudioTheme.Surface.inkSoft)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Text(format(value))
+                    .font(.system(size: StudioTheme.FontSize.value).monospacedDigit())
+                    .foregroundStyle(isEditing ? StudioTheme.Surface.ink : StudioTheme.Surface.inkFaint)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            .opacity(isEnabled ? 1 : 0.5)
+
+            HStack(spacing: 10) {
+                StudioSlider(value: $value,
+                             in: range,
+                             step: step,
+                             defaultValue: defaultValue,
+                             valueText: format) { editing in
+                    isEditing = editing
+                    onEditingChanged(editing)
+                }
+                if let defaultValue {
+                    SliderResetButton(isAtDefault: abs(value - defaultValue) < 0.0001) {
+                        // Bracketed, so the reset is one undo entry named for this slider.
+                        onEditingChanged(true)
+                        value = SliderMath.snapped(defaultValue, in: range, step: step)
+                        onEditingChanged(false)
+                    }
+                }
+            }
         }
+        .padding(.vertical, 8)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(title)
+    }
+}
+
+/// The Reset at the end of a slider's track: a small dark field with the word in it,
+/// faint while there is nothing to reset.
+struct SliderResetButton: View {
+    let isAtDefault: Bool
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Text("Reset")
+                .font(.system(size: StudioTheme.FontSize.value, weight: .medium))
+                .foregroundStyle(isAtDefault ? StudioTheme.Surface.inkFaint : StudioTheme.Surface.ink)
+                .padding(.horizontal, 10)
+                .frame(height: 30)
+                .background(isHovering && !isAtDefault ? StudioTheme.Surface.fieldHover : StudioTheme.Surface.field,
+                            in: StudioTheme.squircle(StudioTheme.Radius.regular))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(StudioPressStyle())
+        .disabled(isAtDefault)
+        .onHover { isHovering = $0 }
+        .animation(StudioMotion.hover, value: isHovering)
+        .help(isAtDefault ? "Already at its default" : "Put this back to its default")
     }
 }
 
@@ -339,9 +393,9 @@ struct SliderMetrics {
     init(_ size: StudioTheme.ControlSize) {
         switch size {
         case .regular:
-            track = 4
-            knob = 14
-            height = 18
+            track = 3
+            knob = 18
+            height = 22
         case .small:
             track = 3
             knob = 12
@@ -373,16 +427,20 @@ struct SliderTrack: View {
     }
 }
 
-/// The knob: white in both appearances, with a hairline edge and the kit's one shadow.
+/// The knob: a disc of the accent, lit a little lighter than the run of track behind it so
+/// it reads as the thing to take hold of, with the kit's one shadow.
 struct SliderKnob: View {
     let metrics: SliderMetrics
     var isDragging = false
     var isFocused = false
 
+    @Environment(\.isEnabled) private var isEnabled
+
     var body: some View {
         Circle()
-            .fill(StudioTheme.Palette.knob)
-            .overlay { Circle().strokeBorder(StudioTheme.Palette.knobEdge, lineWidth: 0.5) }
+            .fill(isEnabled ? StudioTheme.Palette.knobFill : StudioTheme.Palette.textTertiary)
+            .overlay { Circle().fill(.white.opacity(0.25)) }
+            .overlay { Circle().strokeBorder(.white.opacity(0.22), lineWidth: 1) }
             .shadow(color: StudioTheme.Palette.knobShadow, radius: 1.5, y: 0.5)
             .overlay {
                 Circle()

@@ -82,7 +82,7 @@ struct SnippetCard: View {
                     clipboard.pressPaste()
                 }
             }
-            Button("Edit…", action: onEdit)
+            Button("Edit", action: onEdit)
             Divider()
             Button("Delete", role: .destructive) { store.delete(snippet) }
         }

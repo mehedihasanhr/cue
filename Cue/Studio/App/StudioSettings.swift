@@ -31,6 +31,7 @@ final class StudioSettings {
         static let cursorInVideo = "recording.cursorInVideo"
         static let libraryBookmark = "library.bookmark"
         static let opensEditor = "editor.openAfterRecording"
+        static let afterRecording = "recording.afterRecording"
         static let suggestsZooms = "editor.suggestZooms"
         static let zoomsOnFocus = "editor.zoomsOnFocus"
         static let zoomsOnWindows = "editor.zoomsOnWindows"
@@ -143,6 +144,9 @@ final class StudioSettings {
     // MARK: - After a recording
 
     var opensEditorAfterRecording: Bool { didSet { defaults.set(opensEditorAfterRecording, forKey: Key.opensEditor) } }
+    /// What happens when a take of this app's own stops: the reference's Record & Save,
+    /// Record & Copy, the quick share panel, or straight to the editor.
+    var afterRecording: AfterRecording { didSet { defaults.set(afterRecording.rawValue, forKey: Key.afterRecording) } }
     /// Propose zooms from the recorded clicks as soon as a project opens.
     var suggestsZoomsOnOpen: Bool { didSet { defaults.set(suggestsZoomsOnOpen, forKey: Key.suggestsZooms) } }
     /// Let focus events propose zooms as well as clicks.
@@ -246,13 +250,16 @@ final class StudioSettings {
         recordsFocus = defaults.object(forKey: Key.capturesFocus) as? Bool ?? true
         burnsCursorIntoVideo = defaults.bool(forKey: Key.cursorInVideo)
         opensEditorAfterRecording = defaults.object(forKey: Key.opensEditor) as? Bool ?? true
+        // Quick share unless somebody chose otherwise: most takes are sent, not edited.
+        afterRecording = defaults.string(forKey: Key.afterRecording).flatMap(AfterRecording.init)
+            ?? .quickShare
         // On unless someone turns it off. The recorder writes clicks as data for
         // exactly this, and a project that opens with the zooms already proposed is the
         // difference between a feature and a menu item nobody finds.
         suggestsZoomsOnOpen = defaults.object(forKey: Key.suggestsZooms) as? Bool ?? true
         zoomsOnFocus = defaults.object(forKey: Key.zoomsOnFocus) as? Bool ?? true
         zoomsOnWindowChange = defaults.bool(forKey: Key.zoomsOnWindows)
-        zoomScale = defaults.object(forKey: Key.zoomScale) as? Double ?? 1.8
+        zoomScale = defaults.object(forKey: Key.zoomScale) as? Double ?? ZoomSuggester.Tuning().scale
         zoomHoldSeconds = (defaults.object(forKey: Key.zoomHold) as? Double)
             .map { min(max($0, Self.zoomHoldRange.lowerBound), Self.zoomHoldRange.upperBound) }
             ?? ZoomSuggester.Tuning().holdAfter
@@ -428,6 +435,29 @@ enum BackgroundPreset: String, CaseIterable, Identifiable, Sendable {
             .color(ColorValue(r: 0.94, g: 0.93, b: 0.9))
         case .black:
             .color(ColorValue(r: 0.04, g: 0.04, b: 0.05))
+        }
+    }
+}
+
+/// What happens when a take stops.
+enum AfterRecording: String, CaseIterable, Identifiable, Sendable {
+    /// The quick share panel: Edit, Save, Copy, Share.
+    case quickShare
+    /// Exported with the last settings and copied, ready to paste.
+    case copy
+    /// Exported with the last settings into Downloads.
+    case save
+    /// Straight into the editor.
+    case editor
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .quickShare: "Show Quick Share"
+        case .copy: "Record & Copy"
+        case .save: "Record & Save"
+        case .editor: "Open in Editor"
         }
     }
 }

@@ -44,7 +44,7 @@ struct ColorGradeSection: View {
             VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
                 InspectorRow(title: "LUT", value: table.name)
                 HStack(spacing: 8) {
-                    Button("Replace…") { model.loadLUT() }
+                    Button("Replace") { model.loadLUT() }
                     Button("Remove") { model.removeLUT() }
                 }
                 .buttonStyle(.studio(.secondary, size: .small))
@@ -52,7 +52,7 @@ struct ColorGradeSection: View {
             }
         } else {
             InspectorRow("LUT") {
-                Button("Load…") { model.loadLUT() }
+                Button("Load") { model.loadLUT() }
                     .buttonStyle(.studio(.secondary, size: .small))
                     .help("A 3D .cube file. It is copied into the recording.")
             }

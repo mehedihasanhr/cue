@@ -3,12 +3,14 @@ import RecordKit
 import SwiftUI
 import TimelineKit
 
-/// The bar between the picture and the timeline: playing it, where you are in it, acting
-/// at the playhead, and — at the far end — undo, and how much of the edit is on screen.
+/// The bar between the picture and the timeline, in three parts: acting at the playhead on
+/// the left, playing it in the middle, and how much of the edit is on screen on the right.
 ///
 /// Every control here acts on the strip directly beneath it, so it takes the middle
-/// column's width with the timeline. The ones that do something sit on small fields of
-/// their own; undo and redo are bare glyphs, because they are about the edit as a whole.
+/// column's width with the timeline. Play sits in the middle of the column between where
+/// you are and how long the edit is, the way a player lays it out, so the one control
+/// pressed most is always in the same place whatever the column's width. Undo and redo are
+/// about the edit as a whole, not the strip, and live in the title bar.
 struct TransportBar: View {
     let model: EditorModel
     /// Plays the edit with the screen to itself. See `FullScreenPreview`.
@@ -18,23 +20,10 @@ struct TransportBar: View {
     static let height: CGFloat = 46
 
     var body: some View {
-        HStack(spacing: 6) {
-            playButton
-            timecode
-            if let rate = model.playbackRateLabel {
-                rateBadge(rate)
-            }
-            barIcon("scissors", help: tip("Split at the playhead", .splitAtPlayhead), name: "Split") {
-                model.splitAtPlayhead()
-            }
-            .padding(.leading, 2)
-            addZoom
-            barIcon("wand.and.stars", help: "Add zooms where the recording was clicked", name: "Auto-zoom") {
-                model.suggestZooms()
-            }
-
-            Spacer(minLength: 16)
-
+        HStack(spacing: 12) {
+            leading
+                .frame(maxWidth: .infinity, alignment: .leading)
+            player
             // The right end gives way when the column is narrow, sliders first — rather
             // than the bar refusing to shrink. It did refuse: at the window's narrowest,
             // or back from the full-screen preview in a window that size, the bar was
@@ -45,31 +34,70 @@ struct TransportBar: View {
                 trailing(volumeSlider: false, scaleSlider: true)
                 trailing(volumeSlider: false, scaleSlider: false)
             }
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .padding(.horizontal, 12)
         .frame(height: Self.height)
         .frame(maxWidth: .infinity)
-        .background(StudioTheme.Surface.panel)
+        // On the window's ground, like the reference's: the strip of controls belongs to
+        // the timeline under it, not to a panel of its own.
+        .background(StudioTheme.Surface.seam)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Transport")
     }
 
-    /// Sound, undo and redo, the timeline's scale and the full-screen preview — with or
-    /// without their sliders.
+    /// What acts at the playhead: split, a zoom, zooms where it was clicked.
+    private var leading: some View {
+        HStack(spacing: 6) {
+            barIcon("scissors", help: tip("Split at the playhead", .splitAtPlayhead), name: "Split") {
+                model.splitAtPlayhead()
+            }
+            addZoom
+            barIcon("wand.and.stars", help: "Add zooms where the recording was clicked", name: "Auto-zoom") {
+                model.suggestZooms()
+            }
+        }
+    }
+
+    /// Where you are, back a cut, play, on a cut, how long it is.
+    private var player: some View {
+        HStack(spacing: 4) {
+            Text(Timecode.precise(model.playhead))
+                .foregroundStyle(StudioTheme.Surface.ink)
+                .frame(minWidth: 64, alignment: .trailing)
+                .accessibilityLabel("Playhead")
+            ghost("backward.end.fill", help: tip("Back to the previous cut", .previousCut), name: "Previous cut", isEnabled: true) {
+                model.stepToBoundary(forward: false)
+            }
+            .padding(.leading, 6)
+            playButton
+            ghost("forward.end.fill", help: tip("On to the next cut", .nextCut), name: "Next cut", isEnabled: true) {
+                model.stepToBoundary(forward: true)
+            }
+            .padding(.trailing, 6)
+            Text(Timecode.precise(model.duration))
+                .foregroundStyle(StudioTheme.Surface.label.opacity(0.8))
+                .frame(minWidth: 64, alignment: .leading)
+                .accessibilityLabel("Length")
+            if let rate = model.playbackRateLabel {
+                rateBadge(rate)
+            }
+        }
+        .font(.system(size: 12, weight: .medium))
+        .monospacedDigit()
+        .lineLimit(1)
+        .fixedSize()
+    }
+
+    /// Sound, the timeline's scale and the full-screen preview — with or without their
+    /// sliders.
     private func trailing(volumeSlider: Bool, scaleSlider: Bool) -> some View {
         HStack(spacing: 6) {
             if let audio = model.audio, audio.hasSound {
                 level(audio, slider: volumeSlider)
                     .padding(.trailing, 6)
             }
-            ghost("arrow.uturn.backward",
-                  help: model.document.undoName.map { "Undo \($0)" } ?? "Undo",
-                  name: "Undo",
-                  isEnabled: model.document.canUndo) { model.undo() }
-            ghost("arrow.uturn.forward", help: "Redo", name: "Redo",
-                  isEnabled: model.document.canRedo) { model.redo() }
             zoom(slider: scaleSlider)
-                .padding(.leading, 6)
             // At the far end, after the timeline's scale: about the whole window, not
             // the picture, so it sits with the bar rather than on the canvas.
             barIcon("arrow.up.left.and.arrow.down.right",
@@ -84,12 +112,12 @@ struct TransportBar: View {
 
     private var playButton: some View {
         Button { model.togglePlayback() } label: {
-            Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
-                .font(.system(size: 13, weight: .semibold))
+            // An outlined disc, the reference's player: the one control here that is
+            // pressed more than any other is the biggest, without a field round it.
+            Image(systemName: model.isPlaying ? "pause.circle" : "play.circle")
+                .font(.system(size: 22, weight: .regular))
                 .foregroundStyle(StudioTheme.Surface.ink)
-                .frame(width: 30, height: 30)
-                .background(StudioTheme.Surface.fieldHover,
-                            in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .frame(width: 32, height: 32)
                 .contentShape(Rectangle())
         }
         .buttonStyle(StudioPressStyle())
@@ -113,28 +141,6 @@ struct TransportBar: View {
             .accessibilityLabel(model.playbackRateDescription ?? rate)
     }
 
-    /// Where the playhead is, out of how long the edit is: a small field, the length in
-    /// the quieter ink. Hundredths, so a frame step always changes it.
-    private var timecode: some View {
-        HStack(spacing: 8) {
-            Text(Timecode.precise(model.playhead))
-                .foregroundStyle(StudioTheme.Surface.ink)
-            Text(Timecode.precise(model.duration))
-                .foregroundStyle(StudioTheme.Surface.label.opacity(0.8))
-        }
-        .font(.system(size: 12, weight: .medium))
-        .monospacedDigit()
-        .lineLimit(1)
-        .fixedSize()
-        .padding(.horizontal, 10)
-        .frame(height: 30)
-        .background(StudioTheme.Surface.control,
-                    in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Playhead")
-        .accessibilityValue("\(Timecode.precise(model.playhead)) of \(Timecode.precise(model.duration))")
-    }
-
     // MARK: - Acting at the playhead
 
     private var addZoom: some View {
@@ -148,8 +154,8 @@ struct TransportBar: View {
             .foregroundStyle(StudioTheme.Surface.ink)
             .padding(.horizontal, 11)
             .frame(height: 30)
-            .background(StudioTheme.Surface.control,
-                        in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .background(StudioTheme.Surface.field,
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(StudioPressStyle())
@@ -157,26 +163,19 @@ struct TransportBar: View {
         .accessibilityLabel("Add zoom")
     }
 
-    /// A square control on a field of its own, like the reference's bar.
+    /// A bare glyph, the reference's bar: no field until the pointer is over it.
     private func barIcon(_ symbol: String,
                          help: String,
                          name: String,
                          action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 12.5, weight: .medium))
-                .foregroundStyle(StudioTheme.Surface.inkSoft)
-                .frame(width: 30, height: 30)
-                .background(StudioTheme.Surface.control,
-                            in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(StudioPressStyle())
-        .help(help)
-        .accessibilityLabel(name)
+        StudioIconButton(systemImage: symbol,
+                         help: help,
+                         accessibilityName: name,
+                         iconSize: 14,
+                         action: action)
     }
 
-    /// A glyph with nothing round it: undo, redo.
+    /// A glyph with nothing round it: previous and next cut.
     private func ghost(_ symbol: String,
                        help: String,
                        name: String,
@@ -260,7 +259,6 @@ struct TransportBar: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 30)
-        .background(StudioTheme.Surface.control, in: Capsule())
     }
 
     /// Both sliders one length, so the right end of the bar is two matching controls

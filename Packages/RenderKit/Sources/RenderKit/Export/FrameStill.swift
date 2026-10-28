@@ -66,7 +66,7 @@ public enum FrameStill {
         // project's frame is the recording's shape, and an imported picture is fitted into it.
         let recorded = try await frame(of: videoURL, at: timeline.sourceTime(at: time) ?? .zero)
         let builder = recorded.size == .zero ? builder : builder.resized(to: recorded.size)
-        let scene = builder.descriptor(for: timeline, at: time, cursor: cursor?.smoothed(timeline.cursor.smoothing))
+        let scene = builder.descriptor(for: timeline, at: time, cursor: cursor?.prepared(for: timeline.cursor))
         let source = scene.sourceMedia == nil
             ? recorded.image
             : try await frame(of: try file(scene), at: scene.sourceTime).image

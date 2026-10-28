@@ -14,14 +14,14 @@ extension EditorCommands {
     @ViewBuilder
     var frameAndMasks: some View {
         Menu("Frame") {
-            Button("Save Look…") {
+            Button("Save Look") {
                 // The name is asked for on the Frame panel, in the row the tiles are
                 // in, so the panel comes forward with it.
                 front?.choose(.frame)
                 library.request = .save
             }
             .disabled(front == nil)
-            Button("Import Look…") {
+            Button("Import Look") {
                 guard let front else { return }
                 do {
                     try library.importLooks()
@@ -66,7 +66,7 @@ extension EditorCommands {
                 } else {
                     ForEach(library.saved) { saved in
                         Menu(saved.name) {
-                            Button("Rename…") {
+                            Button("Rename") {
                                 front?.choose(.frame)
                                 library.request = .rename(saved)
                             }
@@ -128,7 +128,7 @@ extension EditorCommands {
                     ))
                 }
                 Divider()
-                Button("Load LUT…") { front?.loadLUT() }
+                Button("Load LUT") { front?.loadLUT() }
                 Button("Remove LUT") { front?.removeLUT() }
                     .disabled(front?.colorGrade.lut == nil)
             }
@@ -146,7 +146,7 @@ extension EditorCommands {
                     ))
                 }
                 Divider()
-                Button("Background Video…") { front?.chooseBackgroundVideo() }
+                Button("Background Video") { front?.chooseBackgroundVideo() }
             }
             .disabled(front == nil)
             // Unticking it puts back the default background rather than whatever was there
@@ -196,7 +196,7 @@ extension EditorCommands {
             Divider()
             // Reads the whole recording's text and offers what it finds in a sheet. See
             // `SensitiveSheet`.
-            Button("Find Sensitive Information…") { front?.findSensitiveInformation() }
+            Button("Find Sensitive Information") { front?.findSensitiveInformation() }
                 .disabled(front?.canFindSensitiveInformation != true)
         }
     }

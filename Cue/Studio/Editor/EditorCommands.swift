@@ -58,6 +58,9 @@ struct EditorCommands: SwiftUI.Commands {
 
     @CommandsBuilder
     private var file: some SwiftUI.Commands {
+        CommandGroup(before: .saveItem) {
+            Button("New Project from Video") { StudioController.newProjectFromVideo() }
+        }
         CommandGroup(replacing: .saveItem) {
             // Replacing the group takes the system's Close with it; every window still
             // needs ⌘W — the editor's, Recordings, Settings, the screenshot editor.
@@ -74,13 +77,13 @@ struct EditorCommands: SwiftUI.Commands {
             .editorShortcut(.save, shortcuts)
             .disabled(editor.map { !$0.isDirty && !$0.isUnsaved } ?? !windows.yieldsToCueWindow)
             // The screenshot editor's ⇧⌘S is its Export, so the item says so while it is in front.
-            Button(windows.yieldsToCueWindow ? "Export Image…" : "Save As…") {
+            Button(windows.yieldsToCueWindow ? "Export Image" : "Save As") {
                 if editor != nil { windows.saveAs() } else { Self.send(#selector(EditorWindowController.saveDocumentAs(_:))) }
             }
             .keyboardShortcut("s", modifiers: [.command, .shift])
             .disabled(editor == nil && !windows.yieldsToCueWindow)
             Divider()
-            Button("Export…") {
+            Button("Export") {
                 windows.menuTarget?.exportsSelection = false
                 windows.menuTarget?.isExporting = true
             }
@@ -89,7 +92,7 @@ struct EditorCommands: SwiftUI.Commands {
             // The same sheet, opened on the selected stretch. Only when there is one:
             // exporting "the selection" of an edit with nothing selected has no meaning
             // the sheet could offer.
-            Button("Export Selection…") {
+            Button("Export Selection") {
                 windows.menuTarget?.exportsSelection = true
                 windows.menuTarget?.isExporting = true
             }
@@ -99,7 +102,7 @@ struct EditorCommands: SwiftUI.Commands {
                   ? "Mark a stretch of the timeline first — I and O set its start and end at the playhead."
                   : "Export only the selected stretch of the timeline.")
             Divider()
-            Button("Save Frame As…") { editor?.saveFrameAs() }
+            Button("Save Frame As") { editor?.saveFrameAs() }
                 .editorShortcut(.saveFrame, shortcuts)
                 .disabled(editor == nil)
             Divider()
@@ -201,7 +204,7 @@ struct EditorCommands: SwiftUI.Commands {
                 .disabled(editor == nil)
             // The waiting in a recording — still stretches and typing — offered for
             // speeding up, one line at a time, in a sheet. See `PacingSheet`.
-            Button("Speed Up Waiting…") { editor?.reviewPacing() }
+            Button("Speed Up Waiting") { editor?.reviewPacing() }
                 .editorShortcut(.speedUpWaiting, shortcuts)
                 .disabled(editor?.canReviewPacing != true)
             Divider()
@@ -212,8 +215,8 @@ struct EditorCommands: SwiftUI.Commands {
                     Button(kind.menuTitle) { editor?.addAnnotation(kind) }
                 }
                 Divider()
-                Button("Picture…") { editor?.addPicture(asLogo: false) }
-                Button("Logo…") { editor?.addPicture(asLogo: true) }
+                Button("Picture") { editor?.addPicture(asLogo: false) }
+                Button("Logo") { editor?.addPicture(asLogo: true) }
             }
             .disabled(editor == nil)
         }
@@ -288,6 +291,8 @@ struct EditorCommands: SwiftUI.Commands {
             Button("Reset Zoom") { editor?.resetZoom() }
                 .editorShortcut(.resetZoom, shortcuts)
                 .disabled(editor?.activeZoom == nil)
+            Button("Apply Zoom Level to All Zooms") { editor?.applyZoomLevelToAll() }
+                .disabled(!(editor?.canApplyZoomLevelToAll ?? false))
             Divider()
             // For the whole project, so a ticked item rather than one that flips its name.
             Toggle("Glide Between Zooms That Are Close Together", isOn: Binding(
@@ -308,14 +313,14 @@ struct EditorCommands: SwiftUI.Commands {
     @ViewBuilder
     private var audio: some View {
         Menu("Audio") {
-            Button("Add Sound…") { editor?.addSound() }
+            Button("Add Sound") { editor?.addSound() }
                 .editorShortcut(.addSound, shortcuts)
                 .disabled(editor == nil)
             // ⇧⌘V, beside Add Sound…: the two are the same idea — sound laid over the
             // recording — and one of them is a file you already have while the other is
             // one you are about to make.
             Button(editor?.isRecordingVoiceover == true
-                   ? "Stop Recording Voiceover" : "Record Voiceover…") { editor?.toggleVoiceover() }
+                   ? "Stop Recording Voiceover" : "Record Voiceover") { editor?.toggleVoiceover() }
                 .editorShortcut(.voiceover, shortcuts)
                 .disabled(editor == nil)
             Divider()
@@ -386,12 +391,12 @@ struct EditorCommands: SwiftUI.Commands {
             }
             .editorShortcut(.toggleCaptions, shortcuts)
             .disabled(editor?.timeline.captions.isEmpty != false)
-            Button("Translate Captions…") { editor?.isTranslatingCaptions = true }
+            Button("Translate Captions") { editor?.isTranslatingCaptions = true }
                 .disabled(editor?.timeline.captions.isEmpty != false)
             Divider()
             subtitleImportItem
             ForEach(CaptionExport.Format.allCases, id: \.self) { format in
-                Button("Export as \(format.title)…") { editor?.exportCaptions(as: format) }
+                Button("Export as \(format.title)") { editor?.exportCaptions(as: format) }
                     .disabled(editor?.timeline.captions.isEmpty != false)
             }
             Divider()

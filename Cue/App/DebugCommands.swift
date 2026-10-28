@@ -125,7 +125,7 @@ enum DebugCommands {
                 NSApp.sendEvent(event)
             }
         case "/seed-task":
-            // What "Create Task" in the editor (or "Create as Task…" on a card) does, with a test picture.
+            // What "Create Task" in the editor (or "Create as Task" on a card) does, with a test picture.
             let image = NSImage(size: NSSize(width: 360, height: 180), flipped: false) { rect in
                 NSColor.systemIndigo.setFill(); rect.fill()
                 NSString("EDITED CAPTURE").draw(at: NSPoint(x: 70, y: 80), withAttributes: [.font: NSFont.boldSystemFont(ofSize: 26), .foregroundColor: NSColor.white])

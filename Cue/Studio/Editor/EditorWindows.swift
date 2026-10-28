@@ -217,11 +217,18 @@ final class VideoEditorWindowController: NSWindowController, NSWindowDelegate {
         // ours from the moment it is made.
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
+        // An empty unified toolbar makes the title bar the reference's height and centres
+        // the traffic lights in it, so they sit on the same line as the bar's own controls
+        // rather than hugging the top of a taller strip.
+        let toolbar = NSToolbar(identifier: "StudioEditor")
+        toolbar.showsBaselineSeparator = false
+        window.toolbar = toolbar
+        window.toolbarStyle = .unified
         // The editor follows the theme chosen in Settings (the app's appearance), like
         // every other window; its surfaces come in a pair for each.
         window.backgroundColor = NSColor(name: nil) { appearance in
             appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-                ? NSColor(white: 0x14 / 255, alpha: 1)
+                ? NSColor(srgbRed: 0x08 / 255, green: 0x09 / 255, blue: 0x0C / 255, alpha: 1)
                 : NSColor(srgbRed: 0xE9 / 255, green: 0xEB / 255, blue: 0xEE / 255, alpha: 1)
         }
         // Still set: it is the name the Window menu and Mission Control read.

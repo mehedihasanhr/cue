@@ -35,7 +35,7 @@ struct NoteCard: View {
             CardAction(symbol: "pencil", help: "Edit", perform: onEdit)
             CardAction(symbol: "trash", help: "Delete", tint: .red) { store.delete(note) }
         } menu: {
-            Button("Edit…", action: onEdit)
+            Button("Edit", action: onEdit)
             Button("Copy as Markdown", action: copy)
             if let clipboard, clipboard.canPaste {
                 Button("Paste") {

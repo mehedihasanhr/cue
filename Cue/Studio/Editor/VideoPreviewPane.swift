@@ -357,8 +357,8 @@ struct CanvasToolBar: View {
                 (kind.menuTitle, kind.symbol, { model.armAnnotation(kind) })
             },
             [
-                ("Picture…", "photo", { model.addPicture(asLogo: false) }),
-                ("Logo…", "seal", { model.addPicture(asLogo: true) }),
+                ("Picture", "photo", { model.addPicture(asLogo: false) }),
+                ("Logo", "seal", { model.addPicture(asLogo: true) }),
             ],
         ]
     }

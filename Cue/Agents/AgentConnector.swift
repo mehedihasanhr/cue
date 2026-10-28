@@ -259,6 +259,11 @@ final class AgentConnector {
         if !installed, link.agent == .claude, AgentHooks.hasAny(in: settings), (try? install(link.agent, in: link.folder)) != nil {
             installed = true
         }
+        // An older build's Antigravity entries waited 10 s for a decision, too short to
+        // answer on the island: rewrite them with this build's timeout.
+        if installed, link.agent == .antigravity, !Antigravity.isCurrent(in: settings) {
+            try? install(link.agent, in: link.folder)
+        }
         update(id) {
             $0.installed = installed
             if !installed, $0.problem == nil { $0.problem = "Cue’s hooks are missing from \(file.lastPathComponent). Disconnect and connect again to add them." }

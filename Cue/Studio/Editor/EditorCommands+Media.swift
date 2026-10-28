@@ -9,10 +9,10 @@ extension EditorCommands {
     /// Beside Save Frame As…, in File: things that come into the project from a file.
     @ViewBuilder
     var mediaItems: some View {
-        Button("Add Video…") { mediaEditor?.addVideo() }
+        Button("Add Video") { mediaEditor?.addVideo() }
             .disabled(mediaEditor == nil)
             .help("Copy a movie into the project and play it at the start, the playhead or the end.")
-        Button("Add Recording…") { mediaEditor?.addRecording() }
+        Button("Add Recording") { mediaEditor?.addRecording() }
             .disabled(mediaEditor == nil)
             .help("Copy another take's screen and sound into the project. Its pointer and clicks stay behind.")
     }
@@ -25,7 +25,7 @@ extension EditorCommands {
             .disabled(mediaEditor == nil || problem != nil)
             .help(problem?.reason
                   ?? "Put “0:00 Intro” and a line for every marker and title slide on the pasteboard, for the video's description.")
-        Button("Export Chapters…") { mediaEditor?.exportChapters() }
+        Button("Export Chapters") { mediaEditor?.exportChapters() }
             .disabled(mediaEditor?.hasChapters != true)
             .help(mediaEditor?.hasChapters == true
                   ? "Write the chapters to a text file, one “0:00 Title” to a line."
@@ -35,7 +35,7 @@ extension EditorCommands {
     /// In Captions, beside the exports it is the other half of.
     @ViewBuilder
     var subtitleImportItem: some View {
-        Button("Import Subtitles…") { mediaEditor?.importSubtitles() }
+        Button("Import Subtitles") { mediaEditor?.importSubtitles() }
             .disabled(mediaEditor == nil)
             .help("Read a SubRip (.srt) or WebVTT (.vtt) file into the captions, in place of the ones there.")
     }

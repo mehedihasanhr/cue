@@ -237,9 +237,9 @@ struct AnalysisTests {
         #expect(CursorTrack(samples: []).position(at: 1) == nil)
     }
 
-    /// Smoothing has to take the jitter out without leaving the pointer trailing behind
-    /// where it really was — which is what a one-pass filter does.
-    @Test func smoothingRemovesJitterWithoutLag() {
+    /// Smoothing takes the jitter out and trails the hand only a little: the pointer is a
+    /// weight on a spring, as the reference's is, and a click is where it catches up.
+    @Test func smoothingRemovesJitterWithLittleLag() {
         var samples: [CursorSample] = []
         for index in 0..<100 {
             let t = Double(index) / 100
@@ -255,9 +255,10 @@ struct AnalysisTests {
         }
         #expect(wobble(smooth) < wobble(raw) / 2)
 
-        let rawMid = try! #require(raw.position(at: 0.5))
+        // Against the path under the jitter — x = 50 at half a second. At 100 points a
+        // second the Smooth spring trails it by about 15 points.
         let smoothMid = try! #require(smooth.position(at: 0.5))
-        #expect(abs(smoothMid.x - rawMid.x) < 8, "smoothed, not delayed")
+        #expect(abs(smoothMid.x - 50) < 20, "smoothed, not left behind: \(smoothMid.x)")
     }
 
     @Test func smoothingByZeroChangesNothing() {

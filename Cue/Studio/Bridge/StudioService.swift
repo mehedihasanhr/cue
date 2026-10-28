@@ -36,6 +36,9 @@ final class StudioService {
     /// recording double-clicked in the Finder — frequently opened nothing at all. The app
     /// delegate owns the editor windows and sets this.
     @ObservationIgnored var openEditor: ((URL) -> Void)?
+    /// Called instead of `openEditor` when a take of this app's own stops and quick share is
+    /// on: the take is offered for sharing first, and the editor is one button away.
+    @ObservationIgnored var showQuickShare: ((URL, AfterRecording) -> Void)?
     /// Said out loud when Cue asked for a folder this app cannot write to.
     private(set) var destinationNote: String?
 
@@ -160,7 +163,12 @@ final class StudioService {
             switch await session.stop() {
             case .success(let url):
                 if let request { finish(request, outcome: .finished, project: url) }
-                if request?.opensEditorWhenFinished ?? settings.opensEditorAfterRecording {
+                let isOwn = request.map { ownRequests.contains($0.correlationID) } ?? true
+                if isOwn, settings.afterRecording != .editor, let showQuickShare {
+                    // Kept, not a draft: a take that is shared and never opened in the
+                    // editor is still a take somebody wanted.
+                    showQuickShare(url, settings.afterRecording)
+                } else if request?.opensEditorWhenFinished ?? (settings.afterRecording == .editor || settings.opensEditorAfterRecording) {
                     // This app's own take is a draft until it is kept — see
                     // `RecordingKeep`. One Cue asked for is Cue's, and already reported.
                     if request.map({ ownRequests.contains($0.correlationID) }) ?? true {

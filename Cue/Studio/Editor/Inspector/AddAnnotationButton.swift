@@ -21,8 +21,8 @@ struct AddAnnotationButton: View {
                     .init(kind.menuTitle, systemImage: kind.symbol) { model.addAnnotation(kind) }
                 },
                 [
-                    .init("Picture…", systemImage: "photo") { model.addPicture(asLogo: false) },
-                    .init("Logo…", systemImage: "seal") { model.addPicture(asLogo: true) }
+                    .init("Picture", systemImage: "photo") { model.addPicture(asLogo: false) },
+                    .init("Logo", systemImage: "seal") { model.addPicture(asLogo: true) }
                 ]
             ], style: .studio(.ghost, size: .small, isIconOnly: true)) {
                 Image(systemName: "plus")
@@ -61,11 +61,11 @@ struct AddAnnotationButton: View {
                 }
                 HStack(spacing: 8) {
                     Button { model.addPicture(asLogo: false) } label: {
-                        Label("Picture…", systemImage: "photo").frame(maxWidth: .infinity)
+                        Label("Picture", systemImage: "photo").frame(maxWidth: .infinity)
                     }
                     .help("Lay a picture over the video, at the playhead")
                     Button { model.addPicture(asLogo: true) } label: {
-                        Label("Logo…", systemImage: "seal").frame(maxWidth: .infinity)
+                        Label("Logo", systemImage: "seal").frame(maxWidth: .infinity)
                     }
                     .help("Put a logo in the corner for the whole video")
                 }

@@ -33,7 +33,7 @@ struct KeyboardInspector: View {
 
             if model.keyCapture == nil {
                 SettingsLink {
-                    Text("Open Settings…")
+                    Text("Open Settings")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.studio(.secondary, size: .small))
@@ -115,7 +115,8 @@ struct KeyboardInspector: View {
                 }
                 InspectorSlider(model: model, "Size", systemImage: "textformat.size",
                                 value: style.binding(\.keyStyle.size, "Key Size"),
-                                range: KeyStyle.sizeRange)
+                                range: KeyStyle.sizeRange,
+                                defaultValue: style.factory(\.keyStyle.size))
                 InspectorSwitch("Show lone Return, arrows and the like",
                                 isOn: style.binding(\.keyStyle.showsNamedKeysAlone, "Lone Keys"))
                     .help("Show Return, arrows and the like pressed alone. Off, every line break and every step through a list would put a key on screen. Shortcuts with ⌘, ⌃ or ⌥ are always shown.")

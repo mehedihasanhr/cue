@@ -152,7 +152,7 @@ struct IslandPanel: View {
                     }
                     .modifier(GroupDrop(kind: group.kind) { move($0, to: .group(group.id)) })
                     .contextMenu {
-                        Button("Rename…") { onPrompt(IslandPrompt(kind: .group(group.kind, assign: nil, editing: group), initial: group.name)) }
+                        Button("Rename") { onPrompt(IslandPrompt(kind: .group(group.kind, assign: nil, editing: group), initial: group.name)) }
                         Divider()
                         Button("Delete Group", role: .destructive) {
                             if allFilter == .group(group.id) { allFilter = .recent }
@@ -266,7 +266,7 @@ struct IslandPanel: View {
                     }
                     .modifier(GroupDrop(kind: kind) { move($0, to: .group(group.id)) })
                     .contextMenu {
-                        Button("Rename…") { onPrompt(IslandPrompt(kind: .group(kind, assign: nil, editing: group), initial: group.name)) }
+                        Button("Rename") { onPrompt(IslandPrompt(kind: .group(kind, assign: nil, editing: group), initial: group.name)) }
                         Divider()
                         Button("Delete Group", role: .destructive) {
                             if current == .group(group.id) { stripFilter[kind] = .recent }
@@ -1572,7 +1572,7 @@ struct TabPill: View {
     }
 }
 
-/// "Paste as…" / "Copy as…" for a text entry: plain, trimmed, another case,
+/// "Paste as" / "Copy as" for a text entry: plain, trimmed, another case,
 /// pretty JSON, URL-encoded… only the transforms that would change it.
 struct TransformMenus: View {
     let text: String
@@ -1738,7 +1738,7 @@ struct CaptureCard: View {
             Button("Reveal in Finder") { library.reveal(item) }
             Button("Pin to Screen") { actions.pinToScreen(item) }
             Button("Copy Share Link") { actions.shareLink(item) }
-            Button("Create as Task…") { actions.makeTask(item) }
+            Button("Create as Task") { actions.makeTask(item) }
             Menu("Palette") {
                 Button("Keep Colors in the Colors Tab") { keepPalette() }
                 Divider()
@@ -1753,7 +1753,7 @@ struct CaptureCard: View {
             if let onToggleCompare {
                 Button(compareIndex == nil ? "Add to Comparison" : "Remove from Comparison", action: onToggleCompare)
             }
-            Button("Rename…", action: onRename)
+            Button("Rename", action: onRename)
             Divider()
             Button("Delete", role: .destructive) { actions.delete(item) }
         }
@@ -1887,7 +1887,7 @@ struct ClipboardCard: View {
             if clipboard.canPaste { Button("Paste") { paste() } }
             Button("Preview", action: onPreview)
             if item.kind == .image {
-                Button("Edit…", action: onEdit)
+                Button("Edit", action: onEdit)
             }
             if item.kind == .color, let color = PickedColor(hex: item.text) {
                 Menu("Copy as") {
@@ -1921,12 +1921,12 @@ struct ClipboardCard: View {
             if let groups {
                 GroupMenu(groups: groups, kind: .clipboard, current: item.groupID, assign: { clipboard.setGroup(item, $0) }, newGroup: onNewGroup)
             }
-            Button(item.name == nil ? "Name…" : "Rename…", action: onRename)
+            Button(item.name == nil ? "Name" : "Rename", action: onRename)
             if item.kind == .text || item.kind == .link || item.kind == .color {
-                Button("Make Snippet…") { onSnippet(item.text) }
+                Button("Make Snippet") { onSnippet(item.text) }
             }
             if let seed = taskSeed {
-                Button("Create as Task…") { createTask(seed) }
+                Button("Create as Task") { createTask(seed) }
             }
             Divider()
             Button("Delete", role: .destructive) { clipboard.delete(item) }
@@ -2095,9 +2095,9 @@ struct AssetCard: View {
             if let groups {
                 GroupMenu(groups: groups, kind: .assets, current: item.groupID, assign: { assets.setGroup(item, $0) }, newGroup: onNewGroup)
             }
-            Button("Rename…", action: onRename)
-            Button("Make Snippet…", action: onSnippet)
-            Button("Create as Task…") { createTask(.file(assets.fileURL(for: item))) }
+            Button("Rename", action: onRename)
+            Button("Make Snippet", action: onSnippet)
+            Button("Create as Task") { createTask(.file(assets.fileURL(for: item))) }
             Divider()
             Button("Delete", role: .destructive) { assets.delete(item) }
         }
@@ -2188,7 +2188,7 @@ struct ColorCard: View {
             if let groups {
                 GroupMenu(groups: groups, kind: .colors, current: entry.groupID, assign: { colors.setGroup(entry, $0) }, newGroup: onNewGroup)
             }
-            Button(entry.name == nil ? "Name…" : "Rename…", action: onRename)
+            Button(entry.name == nil ? "Name" : "Rename", action: onRename)
             Divider()
             Button("Delete", role: .destructive) { colors.delete(entry) }
         }
@@ -2282,7 +2282,7 @@ private struct TaskCard: View {
                 }
             }
             Divider()
-            Button("Delete…", role: .destructive, action: onDelete)
+            Button("Delete", role: .destructive, action: onDelete)
         }
     }
 }
@@ -2476,7 +2476,7 @@ struct GroupMenu: View {
                 }
             }
             Divider()
-            Button("New Group…", action: newGroup)
+            Button("New Group", action: newGroup)
         }
     }
 }

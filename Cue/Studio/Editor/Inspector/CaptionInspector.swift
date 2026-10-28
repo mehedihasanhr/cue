@@ -138,13 +138,16 @@ struct CaptionInspector: View {
                 }
                 InspectorSlider(model: model, "Size", systemImage: "textformat.size",
                                 value: style.binding(\.captionStyle.fontSize, "Caption Size"),
-                                range: 0.02...0.12)
+                                range: 0.02...0.12,
+                                defaultValue: style.factory(\.captionStyle.fontSize))
                 InspectorSlider(model: model, "Backdrop", systemImage: "rectangle.fill",
                                 value: style.binding(\.captionStyle.backgroundOpacity, "Caption Backdrop"),
-                                range: 0...1)
+                                range: 0...1,
+                                defaultValue: style.factory(\.captionStyle.backgroundOpacity))
                 InspectorSlider(model: model, "Margin", systemImage: "arrow.up.and.down",
                                 value: style.binding(\.captionStyle.margin, "Caption Margin"),
-                                range: 0.01...0.25)
+                                range: 0.01...0.25,
+                                defaultValue: style.factory(\.captionStyle.margin))
                 InspectorRow("Colour") {
                     InspectorColorWell(title: "Caption colour", selection: colour(\.captionStyle.color, "Caption Colour"))
                 }
@@ -338,7 +341,7 @@ struct CaptionInspector: View {
             Button {
                 model.isTranslatingCaptions = true
             } label: {
-                Label("Translate Captions…", systemImage: "character.bubble")
+                Label("Translate Captions", systemImage: "character.bubble")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.studio(.secondary, size: .small))
@@ -351,8 +354,8 @@ struct CaptionInspector: View {
 private extension CaptionExport.Format {
     var buttonTitle: String {
         switch self {
-        case .srt: "Export SRT…"
-        case .vtt: "Export VTT…"
+        case .srt: "Export SRT"
+        case .vtt: "Export VTT"
         }
     }
 

@@ -119,7 +119,7 @@ final class NowPlaying {
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
                 self?.pollBrowsers()
-                try? await Task.sleep(for: .seconds(2))
+                try? await Task.sleep(for: .seconds(self?.pollInterval ?? 30))
             }
         }
     }
@@ -280,6 +280,16 @@ final class NowPlaying {
     var id=new URL(location.href).searchParams.get('v')||'';\
     return JSON.stringify({t:t,a:a?a.textContent.trim():'',d:isFinite(v.duration)?v.duration:0,p:v.currentTime||0,s:!v.paused,id:id});})()
     """
+
+    /// How long until browsers are looked at again: every 2 s while a browser's video is
+    /// the one shown, so its position keeps up; every 6 s while a browser is open but
+    /// nothing in it is shown; every 30 s with Now Playing off or no browser running.
+    /// Each look runs AppleScript against every permitted browser, which is not free.
+    private var pollInterval: Double {
+        guard isEnabled() else { return 30 }
+        if player?.isBrowser == true { return 2 }
+        return Player.browsers.contains(where: \.isRunning) ? 6 : 30
+    }
 
     private func pollBrowsers() {
         guard isEnabled() else { return }
@@ -774,7 +784,7 @@ struct NowPlayingDetail: View {
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
             .fixedSize()
-            .help("Play sound on…")
+            .help("Play sound on")
             Button { withAnimation(.easeOut(duration: 0.2)) { showsLyrics.toggle() } } label: {
                 Icon("quote.bubble.fill", size: 12)
                     .foregroundStyle(showsLyrics ? IslandStyle.accent : .white.opacity(0.6))

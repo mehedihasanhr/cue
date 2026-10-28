@@ -278,7 +278,12 @@ nonisolated struct AgentEvent: Sendable, Equatable {
     }
 
     /// Only a permission request waits for an answer; everything else is news.
-    var wantsAnswer: Bool { name == .permissionRequest }
+    var wantsAnswer: Bool {
+        // Antigravity has no permission request of its own: it asks its hook before a
+        // tool runs, and waits for the decision.
+        name == .permissionRequest
+            || (agent == .antigravity && name == .preToolUse && Antigravity.askedTools.contains(toolName ?? ""))
+    }
 }
 
 // MARK: - Sessions
@@ -488,6 +493,8 @@ nonisolated struct AgentSessionBook: Equatable, Sendable {
                 // A plan to approve or a question to answer waits on the user even when
                 // no permission request comes with it (bypass mode skips that hook).
                 if event.name == .preToolUse, tool == "ExitPlanMode" || tool == "AskUserQuestion" { session.state = .waiting }
+                // Antigravity's question is its tool check: the session waits on it.
+                if event.wantsAnswer { session.state = .waiting }
             }
         case .permissionRequest:
             session.state = .waiting
@@ -744,7 +751,7 @@ nonisolated struct AgentRequest: Identifiable, Equatable, Sendable {
     }
 
     init?(_ event: AgentEvent, id: UUID = UUID(), at now: Date) {
-        guard event.name == .permissionRequest, let toolName = event.toolName else { return nil }
+        guard event.wantsAnswer, let toolName = event.toolName else { return nil }
         let input = event.toolInput ?? .object([:])
         self.id = id
         agent = event.agent
@@ -792,6 +799,13 @@ nonisolated enum AgentDecision: Equatable, Sendable {
 nonisolated enum AgentReply {
     /// The hook's stdout for `decision`: the agent reads it as the user's answer.
     static func json(for request: AgentRequest, _ decision: AgentDecision) -> Data {
+        if request.agent == .antigravity {
+            // Antigravity's hook answer: a decision, and why when it is a refusal.
+            let output: [String: String] = decision == .deny
+                ? ["decision": "deny", "reason": "The user denied this from Cue."]
+                : ["decision": "allow"]
+            return (try? JSONEncoder().encode(output)) ?? Data(Antigravity.undecided.utf8)
+        }
         if case .approvePlan(let reviewEdits) = decision {
             // Not JSON: the script reads this as keys to press in the agent's pane, and
             // gives the agent no answer, so its dialog stays up to take them.

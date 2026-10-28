@@ -263,7 +263,7 @@ struct EditorToolbar: View {
             }
             ToolbarPillButton(title: "Create Task", prominent: false, action: onCreateTask)
                 .help("A new task with this capture — write what to do above it")
-            ToolbarPillButton(title: "Export…", prominent: false, action: onExport)
+            ToolbarPillButton(title: "Export", prominent: false, action: onExport)
                 .help("Export a copy (⇧⌘S)")
             ToolbarPillButton(title: "Done", prominent: true, action: onDone)
                 .help("Save and close")
@@ -282,9 +282,9 @@ struct EditorToolbar: View {
                     Button("Undo") { model.undo() }.disabled(!model.canUndo)
                     Button("Redo") { model.redo() }.disabled(!model.canRedo)
                     Divider()
-                    Button("Compare with Other Images…", action: onAddImages)
-                    Button("Create Task…", action: onCreateTask)
-                    Button("Export…", action: onExport)
+                    Button("Compare with Other Images", action: onAddImages)
+                    Button("Create Task", action: onCreateTask)
+                    Button("Export", action: onExport)
                     Divider()
                     Button("Delete Capture", role: .destructive, action: onDelete)
                 } label: {

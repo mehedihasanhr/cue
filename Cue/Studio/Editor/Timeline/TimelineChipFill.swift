@@ -1,22 +1,6 @@
 import SwiftUI
 import TimelineKit
 
-/// The timeline's own colours, for the lanes that are chips rather than waveforms.
-///
-/// Picked rather than taken from the system palette: `.orange` and `.purple` are tuned to
-/// be tints, and filled solid across a whole lane they read as a warning and as a toy.
-/// A violet for the footage and a steel blue for zooms are two ideas at a strength a chip
-/// can carry edge to edge, with white on top of it. No orange or yellow: those read as
-/// warnings, and nothing on the timeline is one.
-enum TimelinePalette {
-    static let clip = StudioTheme.Surface.clip
-    /// A muted steel blue: apart from the footage's violet, calmer than the playhead's
-    /// blue, and nothing like the orange that means a warning.
-    static let zoom = Color(red: 0.36, green: 0.52, blue: 0.78)
-    /// The pointer's lane: a quiet slate, for the same reason.
-    static let pointer = Color(red: 0.56, green: 0.6, blue: 0.68)
-}
-
 /// What a chip on the timeline is drawn as: a solid, faintly top-lit fill with a light
 /// edge, and a white outline when it is selected.
 ///
@@ -37,7 +21,7 @@ struct TimelineChipBackground: View {
 
     /// One radius for every chip, run and lane well, so the strip reads as one family of
     /// shapes rather than one per lane.
-    static let radius: CGFloat = 6
+    static let radius: CGFloat = 8
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -55,10 +39,10 @@ struct TimelineChipBackground: View {
             if isPrimary {
                 shape
                     .fill(tint)
-                    // A faint light along the top edge, so the main track has a little
-                    // body the quieter lanes do not.
-                    .overlay(shape.fill(LinearGradient(colors: [.white.opacity(0.12), .clear],
-                                                       startPoint: .top, endPoint: .center)))
+                    // Lit from above and shaded below, top to bottom, as the reference's
+                    // blocks are: the solid lanes have body the quieter ones do not.
+                    .overlay(shape.fill(LinearGradient(colors: [.white.opacity(0.16), .clear, .black.opacity(0.18)],
+                                                       startPoint: .top, endPoint: .bottom)))
                     .overlay(shape.fill(.white.opacity(isSelected ? 0.1 : (isHovered ? 0.06 : 0))))
                     .overlay(shape.strokeBorder(isSelected ? Self.ring(in: colorScheme) : .white.opacity(0.14),
                                                 lineWidth: isSelected ? 2 : 1))

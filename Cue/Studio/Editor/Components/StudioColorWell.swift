@@ -9,7 +9,7 @@ import TimelineKit
 /// over the work after the choice is made. Here the swatch opens a popover with what is
 /// actually asked for nearly every time: a grid of good colours, an opacity slider when the
 /// setting has one, and a hex field for the colour somebody copied out of a brand guide.
-/// "More Colours…" still opens the system panel, for the rare colour none of those reach —
+/// "More Colours" still opens the system panel, for the rare colour none of those reach —
 /// the one place the kit hands over to a system control, because a full colour picker is
 /// not worth rebuilding.
 ///
@@ -143,7 +143,7 @@ struct StudioColorPopover: View {
 
                 Spacer(minLength: 0)
 
-                Button("More Colours…") { openColorPanel() }
+                Button("More Colours") { openColorPanel() }
                     .buttonStyle(.studio(.text, size: .small))
                     .help("Open the system colour panel")
             }
@@ -245,7 +245,7 @@ struct StudioColorPopover: View {
 ///
 /// The panel is a single window shared by the whole app and reports through
 /// target–action, which a SwiftUI binding cannot be. This is the target. Whichever well
-/// last asked for "More Colours…" is the one the panel writes to, until another asks.
+/// last asked for "More Colours" is the one the panel writes to, until another asks.
 @MainActor
 final class ColorPanelBridge: NSObject {
     static let shared = ColorPanelBridge()

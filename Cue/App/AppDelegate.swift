@@ -859,18 +859,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             menu.addItem(makeItem("Record Video", #selector(recordVideo(_:))))
         }
-        menu.addItem(makeItem("Recordings…", #selector(openStudio(_:))))
+        menu.addItem(makeItem("Recordings", #selector(openStudio(_:))))
         menu.addItem(.separator())
         let panels: [(String, Selector, HotkeyID)] = [
-            ("Quick Task…", #selector(quickTask(_:)), .quickTask),
-            ("Quick Note…", #selector(quickNote(_:)), .quickNote),
+            ("Quick Task", #selector(quickTask(_:)), .quickTask),
+            ("Quick Note", #selector(quickNote(_:)), .quickNote),
         ]
         for (title, selector, id) in panels { menu.addItem(shortcutItem(title, selector, id)) }
-        menu.addItem(makeItem("Tasks…", #selector(showTaskDashboard(_:))))
+        menu.addItem(makeItem("Tasks", #selector(showTaskDashboard(_:))))
         if basket.canReopen { menu.addItem(makeItem("Reopen Last Basket", #selector(reopenBasket(_:)))) }
         menu.addItem(.separator())
-        menu.addItem(makeItem("Settings…", #selector(showSettings(_:)), keyEquivalent: ",", modifiers: .command))
-        menu.addItem(makeItem("Check for Updates…", #selector(checkForUpdates(_:))))
+        menu.addItem(makeItem("Settings", #selector(showSettings(_:)), keyEquivalent: ",", modifiers: .command))
+        menu.addItem(makeItem("Check for Updates", #selector(checkForUpdates(_:))))
         menu.addItem(.separator())
         menu.addItem(makeItem("Quit Cue", #selector(NSApplication.terminate(_:)), keyEquivalent: "q", modifiers: .command))
     }

@@ -40,6 +40,9 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
     /// The least a chip can say when it is too narrow for its badge — a zoom's scale
     /// without its glyphs. `nil` for a lane whose badge has no shorter form.
     var compact: ((Region) -> AnyView)?
+    /// Drawn solid and lit like the footage rather than as a wash: the zoom lane, which the
+    /// reference draws as bright blocks the same weight as the clips above it.
+    var isSolid = false
     @ViewBuilder let badge: (Region) -> Badge
 
     /// Which grip the pointer is over, as "<region id>-<side>".
@@ -131,7 +134,8 @@ struct TimelineRegionRow<Region: TimelineRegion, Badge: View>: View {
         let width = max(6, live.duration.seconds * viewport.pointsPerSecond)
 
         return TimelineChipBackground(tint: tint, isSelected: isSelected(region),
-                                      isHovered: hoveredChip == region.id)
+                                      isHovered: hoveredChip == region.id,
+                                      isPrimary: isSolid)
             .overlay { shape(of: region, width: width, left: left) }
             .overlay { slopes(of: region, width: width) }
             .frame(width: width, height: height)

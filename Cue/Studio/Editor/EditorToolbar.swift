@@ -1,4 +1,5 @@
 import AppKit
+import RecordKit
 import SwiftUI
 import TimelineKit
 
@@ -24,17 +25,14 @@ struct VideoEditorToolbar: View {
     let export: () -> Void
 
     /// The width of the three system buttons plus the breathing room either side of them.
-    ///
-    /// Nothing of ours is drawn inside it. The traffic lights are the system's, and a
-    /// control of ours squeezed in beside them lines up with nothing below it — so the
-    /// left end of the bar is left to them alone and every control this bar owns is in one
-    /// cluster at the other end, over the inspector it mostly concerns.
-    private static let trafficLightInset: CGFloat = 78
+    /// The project's own glyphs — show it in the Finder, the command menu, settings — start
+    /// just past it, where the reference keeps its folder and bin.
+    private static let trafficLightInset: CGFloat = 86
     /// As tall as it has to be for the traffic lights and a row of 28-point controls,
     /// and no taller: this bar is the frame around the work, not part of it. The same
     /// height as the transport bar, so the two strips of chrome either side of the picture
     /// are one size.
-    static let height: CGFloat = 34
+    static let height: CGFloat = 52
 
     /// The gap between two controls in a cluster, and the room either side of the short
     /// rule between two clusters. Two numbers, used everywhere in the bar, so the spacing
@@ -48,6 +46,7 @@ struct VideoEditorToolbar: View {
             // middle of the *window* however wide the controls on either side grow.
             title
             HStack(spacing: Self.gap) {
+                leading
                 Spacer(minLength: 40)
                 trailing
             }
@@ -86,10 +85,41 @@ struct VideoEditorToolbar: View {
         .allowsHitTesting(false)
     }
 
+    // MARK: - Leading
+
+    /// About the project and the app rather than the edit: the window's files, every
+    /// command by name, and settings. They lived at the foot of the tool rail; up here
+    /// beside the traffic lights they sit with the other things about the window.
+    @ViewBuilder
+    private var leading: some View {
+        GlyphButton(symbol: "folder", help: "Show this recording in the Finder") {
+            NSWorkspace.shared.activateFileViewerSelecting([model.packageURL])
+        }
+        GlyphButton(symbol: "command", help: "Command Menu", accessibilityName: "Command menu") {
+            CommandMenuController.shared.toggle()
+        }
+        GlyphButton(symbol: "gearshape", help: "Settings") {
+            StudioController.openSettings()
+        }
+    }
+
     // MARK: - Trailing
 
     @ViewBuilder
     private var trailing: some View {
+        // Undo and redo, as bare glyphs: about the edit as a whole, so they sit with the
+        // document's name rather than on the strip under the picture.
+        GlyphButton(symbol: "arrow.uturn.backward",
+                    help: model.document.undoName.map { "Undo \($0)" } ?? "Undo",
+                    accessibilityName: "Undo",
+                    isEnabled: model.document.canUndo) { model.undo() }
+        GlyphButton(symbol: "arrow.uturn.forward",
+                    help: model.document.redoName.map { "Redo \($0)" } ?? "Redo",
+                    accessibilityName: "Redo",
+                    isEnabled: model.document.canRedo) { model.redo() }
+
+        clusterRule
+
         // Spelled out rather than left as a glyph. The edits live in the recording and
         // come back when it is opened again, which is worth a word: a downward arrow in
         // a row of grey icons reads as "download" to most people, and the one control
@@ -118,15 +148,17 @@ struct VideoEditorToolbar: View {
         // all when nothing is exporting.
         ExportStatusPill(jobs: exports)
 
-        clusterRule
+        // The one filled control in the window, at the end of the bar: exporting is the
+        // reason the window is open.
+        ExportHeadButton(action: export)
+            .frame(width: 118)
 
         // The inspector's switch, at the end of the bar directly over the column it shows
-        // and hides — where Xcode and Keynote keep theirs. It is the one way back to the
-        // tool tabs with the column put away, other than the View menu and a tool's
-        // shortcut, so it is never hidden itself.
+        // and hides — where Xcode and Keynote keep theirs. The tool tabs stay when the
+        // settings go, so a tab is always one click from bringing them back.
         GlyphButton(symbol: "sidebar.right",
-                    help: showsInspector ? "Hide the inspector (⌥⌘I)" : "Show the inspector (⌥⌘I)",
-                    accessibilityName: showsInspector ? "Hide inspector" : "Show inspector",
+                    help: showsInspector ? "Hide the settings (⌥⌘I)" : "Show the settings (⌥⌘I)",
+                    accessibilityName: showsInspector ? "Hide settings" : "Show settings",
                     isOn: showsInspector) {
             showsInspector.toggle()
         }
@@ -181,6 +213,46 @@ struct VideoEditorToolbar: View {
         case .failed(let reason):
             reason
         }
+    }
+}
+
+/// Export, at the end of the title bar: the window's one filled button, in Cue blue, with
+/// its shortcut beside the word. Everything else in the window is a neutral; the
+/// one way out of it is the one thing in colour.
+struct ExportHeadButton: View {
+    let action: () -> Void
+    @Environment(StudioSettings.self) private var settings
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 11.5, weight: .semibold))
+                Text("Export")
+                    .font(.system(size: 12.5, weight: .semibold))
+                if let shortcut = settings.editorShortcuts[.export]?.displayString {
+                    Text(shortcut)
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.7))
+                }
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: 32)
+            .background(StudioTheme.Recorder.brand.opacity(isHovering ? 0.9 : 1),
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(.white.opacity(0.12))
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(StudioPressStyle())
+        .onHover { isHovering = $0 }
+        .animation(StudioMotion.hover, value: isHovering)
+        .help("Export this as a video or a GIF")
+        .accessibilityLabel("Export")
     }
 }
 

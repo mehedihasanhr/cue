@@ -24,11 +24,11 @@ struct TimelineRuler: View {
                 let band = CGRect(x: from, y: 0, width: max(1, to - from), height: size.height)
                     .intersection(CGRect(origin: .zero, size: size))
                 if !band.isNull {
-                    context.fill(Path(band), with: .color(StudioPalette.brand.opacity(0.22)))
+                    context.fill(Path(band), with: .color(StudioTheme.Recorder.brand.opacity(0.22)))
                     context.fill(Path(CGRect(x: band.minX, y: 0, width: 1, height: size.height)),
-                                 with: .color(StudioPalette.brand.opacity(0.8)))
+                                 with: .color(StudioTheme.Recorder.brand.opacity(0.8)))
                     context.fill(Path(CGRect(x: band.maxX - 1, y: 0, width: 1, height: size.height)),
-                                 with: .color(StudioPalette.brand.opacity(0.8)))
+                                 with: .color(StudioTheme.Recorder.brand.opacity(0.8)))
                 }
             }
 

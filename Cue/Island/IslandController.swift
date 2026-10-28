@@ -120,11 +120,16 @@ final class IslandController {
         calendar.onAlert = { [weak self] meeting in self?.showMeeting(meeting) }
         applyCalendarPreference()
         applyWeatherPreference()
+        #if DEBUG
+        // Diagnostics: `--env CUE_DEBUG_TILES=clock,battery` shows those two, whatever the settings say.
+        // Read once: the closure below runs on every pointer move, and reading the
+        // environment copies all of it each time.
+        let debugTiles = ProcessInfo.processInfo.environment["CUE_DEBUG_TILES"]?.split(separator: ",")
+        #endif
         model.compactTiles = { [weak self, weak preferences, weak focus] in
             guard let self, let preferences, preferences.islandCompactTiles else { return CompactTiles() }
             #if DEBUG
-            // Diagnostics: `--env CUE_DEBUG_TILES=clock,battery` shows those two, whatever the settings say.
-            if let debug = ProcessInfo.processInfo.environment["CUE_DEBUG_TILES"]?.split(separator: ","), debug.count == 2 {
+            if let debug = debugTiles, debug.count == 2 {
                 return CompactTiles(left: CompactTile(rawValue: String(debug[0])) ?? .none, right: CompactTile(rawValue: String(debug[1])) ?? .none)
             }
             #endif

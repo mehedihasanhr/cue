@@ -1,3 +1,4 @@
+import CoreMedia
 import SwiftUI
 import TimelineKit
 
@@ -34,7 +35,7 @@ enum SidebarSpacing {
     /// Above and below the rule that closes a section off. The same number on both
     /// sides, so the rule sits in the middle of the space rather than under the block
     /// above it.
-    static let sectionPadding: CGFloat = 18
+    static let sectionPadding: CGFloat = 20
     /// Sections are separated by their own rule and its padding, so the stack that holds
     /// them adds nothing of its own.
     static let betweenSections: CGFloat = 0
@@ -136,6 +137,13 @@ struct StyleBinding {
             model.apply(Commands.Restyle(name) { $0[keyPath: path] = value })
         }
     }
+
+    /// What a new recording starts with at `path`: where a slider's Reset puts it back to.
+    func factory<Value>(_ path: KeyPath<Timeline, Value>) -> Value {
+        Self.fresh[keyPath: path]
+    }
+
+    private static let fresh = Timeline(sourceDuration: .zero)
 }
 
 // MARK: - The row system
@@ -239,13 +247,9 @@ struct InspectorSection<Content: View, Trailing: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: InspectorMetrics.rowGap) {
+                // No glyph beside the heading: the reference heads a section with its
+                // name alone, and the name already says what it is.
                 HStack(alignment: .center, spacing: 8) {
-                    if let systemImage {
-                        Image(systemName: systemImage)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(StudioTheme.Surface.value)
-                            .frame(width: 14)
-                    }
                     InspectorHeading(title)
                     Spacer(minLength: 8)
                     // Bare words on a heading, like a pop-up in a row: the heading is not a
@@ -260,12 +264,6 @@ struct InspectorSection<Content: View, Trailing: View>: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, SidebarSpacing.sectionPadding)
-            // One hairline under every section, edge to edge: enough to say where a
-            // section ends, quiet enough that the column reads as one surface.
-            Rectangle()
-                .fill(StudioTheme.Surface.hairline)
-                .frame(height: 1)
-                .padding(.horizontal, -SidebarMetrics.contentInset)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(title)

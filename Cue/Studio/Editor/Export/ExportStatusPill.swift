@@ -99,7 +99,7 @@ struct ExportStatusPill: View {
                     row("Copy File", "doc.on.doc") { job.copyFile() },
                     // The system's share picker and nothing else: Cue Studio sends this
                     // file nowhere the user has not chosen to send it.
-                    row("Share…", "square.and.arrow.up") { anchor.share(url) },
+                    row("Share", "square.and.arrow.up") { anchor.share(url) },
                 ]),
                 .init(title: nil, rows: [dismiss]),
             ]

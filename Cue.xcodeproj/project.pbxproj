@@ -522,7 +522,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Config/Cue.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 28;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -533,6 +533,7 @@
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Cue shows your next meeting beside the notch and reminds you, with Join, just before it starts.";
 				INFOPLIST_KEY_NSFocusStatusUsageDescription = "Cue shows in the Dynamic Island when a Focus turns on or off.";
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Cue sends notes to Apple Notes when you ask it to, and shows and controls what Music, Spotify or a YouTube tab is playing.";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Cue shows the battery of your AirPods and other Bluetooth headphones when they connect.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Cue shows your camera as a mirror in the Dynamic Island when you open it, records your camera when you add a webcam overlay, and the screen of an iPhone or iPad connected by cable when you choose to record one.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Cue records your microphone when you narrate a recording.";
@@ -542,7 +543,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.13.0;
+				MARKETING_VERSION = 0.14.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.stackrover.cue;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -557,7 +558,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Config/Cue.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 28;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -568,6 +569,7 @@
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Cue shows your next meeting beside the notch and reminds you, with Join, just before it starts.";
 				INFOPLIST_KEY_NSFocusStatusUsageDescription = "Cue shows in the Dynamic Island when a Focus turns on or off.";
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Cue sends notes to Apple Notes when you ask it to, and shows and controls what Music, Spotify or a YouTube tab is playing.";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Cue shows the battery of your AirPods and other Bluetooth headphones when they connect.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Cue shows your camera as a mirror in the Dynamic Island when you open it, records your camera when you add a webcam overlay, and the screen of an iPhone or iPad connected by cable when you choose to record one.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Cue records your microphone when you narrate a recording.";
@@ -577,7 +579,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.13.0;
+				MARKETING_VERSION = 0.14.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.stackrover.cue;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -589,9 +591,9 @@
 			baseConfigurationReference = 4B4C494B000000000000A004 /* Vendor.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = "";
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 28;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 0.13.0;
+				MARKETING_VERSION = 0.14.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.stackrover.cue.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
@@ -603,9 +605,9 @@
 			baseConfigurationReference = 4B4C494B000000000000A004 /* Vendor.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = "";
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 28;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 0.13.0;
+				MARKETING_VERSION = 0.14.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.stackrover.cue.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;

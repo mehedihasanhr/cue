@@ -36,6 +36,15 @@ struct CursorSmoothingTests {
         #expect(x(smoothed, at: 1.0) < 600, "the corner is cut, which is what smoothing is")
     }
 
+    /// The spring is clamped: it eases into a stop and never sails past it, at any amount.
+    @Test func theSpringNeverOvershootsAStop() {
+        for amount in [0.1, 0.5, 1.0] {
+            let smoothed = arrival().smoothed(amount)
+            #expect(smoothed.samples.allSatisfy { $0.x <= 600.001 }, "overshot at \(amount)")
+            #expect(abs(x(smoothed, at: 2) - 600) < 1, "settled by the end at \(amount)")
+        }
+    }
+
     /// And with a click there, it is not cut.
     @Test func aClickPutsThePointerExactlyWhereItWas() {
         let smoothed = arrival(clickAt: 1.0).smoothed(0.6)
@@ -49,11 +58,12 @@ struct CursorSmoothingTests {
     }
 
     /// Away from the click the path is smoothed as before, so this buys accuracy where it
-    /// matters without buying jitter everywhere else.
+    /// matters without buying jitter everywhere else. "Away" starts where the spring begins
+    /// to chase the click, half a second ahead of it.
     @Test func thePathAwayFromAClickIsStillSmoothed() {
         let plain = arrival().smoothed(0.6)
         let anchored = arrival(clickAt: 1.0).smoothed(0.6)
-        let away = 1.0 - CursorTrack.clickAnchorWindow - 0.05
+        let away = 1.0 - PointerSpring.clickLookahead - 0.05
         #expect(abs(x(plain, at: away) - x(anchored, at: away)) < 0.001)
     }
 
@@ -297,5 +307,41 @@ struct CursorStyleCompatibilityTests {
         let json = #"{"idleDelay":\#(delay.isFinite ? String(delay) : "1e999")}"#
         let style = (try? JSONDecoder().decode(CursorStyle.self, from: Data(json.utf8))) ?? CursorStyle(idleDelay: delay.isFinite ? delay : 2)
         #expect(CursorStyle.idleDelayRange.contains(style.idleDelay))
+    }
+
+    // MARK: - Shakes
+
+    /// A reading that jumps far away and straight back is dropped; ordinary movement,
+    /// however fast, is kept, and so is a click.
+    @Test func aShakeIsDroppedAndMovementKept() {
+        var samples: [CursorSample] = []
+        for step in 0..<20 {
+            samples.append(CursorSample(t: Double(step) / 60, x: 100 + Double(step) * 10, y: 100, shape: .arrow))
+        }
+        samples[8].x = 1_400                                  // a one-reading jump
+        let shaken = CursorTrack(samples: samples)
+        let steady = shaken.withoutShakes(threshold: 500)
+        #expect(steady.samples.count == 19)
+        #expect(!steady.samples.contains { $0.x == 1_400 })
+
+        let clicked = CursorTrack(samples: samples,
+                                  input: [.mouseDown(t: samples[8].t, button: 0, x: 1_400, y: 100)])
+        #expect(clicked.withoutShakes(threshold: 500).samples.contains { $0.x == 1_400 }, "a click stays")
+    }
+
+    @Test func aStyleWithoutShakeRemovalLeavesThePathAlone() {
+        let track = CursorTrack(samples: (0..<60).map {
+            CursorSample(t: Double($0) / 60, x: 100 + Double($0) * 5, y: 300, shape: .arrow)
+        })
+        var style = CursorStyle(smoothing: 0)
+        #expect(track.prepared(for: style).samples == track.samples)
+        style.removesShakes = true
+        #expect(track.prepared(for: style).samples == track.samples, "nothing in it is a shake")
+    }
+
+    @Test func anOldProjectHasShakesLeftIn() throws {
+        let style = try JSONDecoder().decode(CursorStyle.self, from: Data(#"{"scale":2}"#.utf8))
+        #expect(style.removesShakes == false)
+        #expect(style.shakeThreshold == 500)
     }
 }

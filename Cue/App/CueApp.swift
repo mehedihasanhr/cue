@@ -43,7 +43,7 @@ struct CueApp: App {
             // Cue's own Settings window, which SwiftUI's scene cannot be. Recording and the
             // video editor have their pages in it.
             CommandGroup(replacing: .appSettings) {
-                Button("Settings…") { delegate.showSettings(nil) }
+                Button("Settings") { delegate.showSettings(nil) }
                     .keyboardShortcut(",")
             }
             CommandGroup(replacing: .newItem) {}
@@ -54,7 +54,7 @@ struct CueApp: App {
                     .keyboardShortcut("l")
                 Divider()
                 // Every command in the menu bar, by name. See `CommandMenuController`.
-                Button("Command Menu…") { CommandMenuController.shared.toggle() }
+                Button("Command Menu") { CommandMenuController.shared.toggle() }
                     .keyboardShortcut("p", modifiers: [.command, .shift])
             }
         }

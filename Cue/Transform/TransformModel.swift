@@ -64,7 +64,7 @@ final class TransformModel {
             case .shelf: "On the shelf"
             case .pictures: "Pictures"
             case .downloads: "Downloads"
-            case .folder: "Choose folder…"
+            case .folder: "Choose folder"
             }
         }
     }
@@ -199,7 +199,7 @@ final class TransformModel {
         saveTo = .folder
     }
 
-    var folderTitle: String { folder?.lastPathComponent ?? "Choose folder…" }
+    var folderTitle: String { folder?.lastPathComponent ?? "Choose folder" }
 
     // MARK: - Estimate
 

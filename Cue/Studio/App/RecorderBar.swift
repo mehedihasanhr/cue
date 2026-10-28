@@ -85,13 +85,13 @@ struct RecorderBar: View {
             layer(.failure) { failureControls(studio.session.state.failure ?? .targetDisappeared) }
             layer(.confirmRestart) { confirmRestartControls }
         }
-        .frame(width: barWidth, height: StudioPalette.barHeight)
+        .frame(width: barWidth, height: StudioTheme.Recorder.barHeight)
         // Behind everything and hit-testable, so a drag anywhere the controls do not claim
         // moves the panel.
         .background { WindowDragBackground() }
         // The same plain glass before, during and after a take.
-        .studioGlass(cornerRadius: StudioPalette.barRadius)
-        .clipShape(RoundedRectangle(cornerRadius: StudioPalette.barRadius, style: .continuous))
+        .studioGlass(cornerRadius: StudioTheme.Recorder.barRadius)
+        .clipShape(RoundedRectangle(cornerRadius: StudioTheme.Recorder.barRadius, style: .continuous))
         // One soft shadow, small enough to end inside the window. A wide one was cut off
         // flat at the window's edges, and a coloured one spread a smudge over a white page.
         .shadow(color: .black.opacity(0.22), radius: 8, y: 4)
@@ -355,7 +355,7 @@ struct RecorderBar: View {
         Toggle("Record camera", isOn: Binding { settings.recordsCamera } set: { model.setCamera($0) })
         if model.cameraDenied {
             Divider()
-            Button("Allow Camera in Settings…") { model.openCameraSettings() }
+            Button("Allow Camera in Settings") { model.openCameraSettings() }
         }
         if !model.cameras.isEmpty {
             Divider()
@@ -439,13 +439,19 @@ struct RecorderBar: View {
 
     private var settingsMenu: some View {
         Menu {
-            Button("Recordings…") { showLibrary() }
-            Button("Settings…") { openSettings() }
+            Button("Recordings") { showLibrary() }
+            Button("Settings") { openSettings() }
             Divider()
             Toggle("Speaker Notes", isOn: Binding { settings.recorder.showsSpeakerNotes }
                    set: { settings.recorder.showsSpeakerNotes = $0 })
             Toggle("Hide Desktop Icons", isOn: Binding { settings.recorder.hidesDesktopIcons }
                    set: { settings.recorder.hidesDesktopIcons = $0 })
+            Divider()
+            Picker("When Recording Stops", selection: Binding { settings.afterRecording }
+                   set: { settings.afterRecording = $0 }) {
+                ForEach(AfterRecording.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.inline)
             Divider()
             Picker("Countdown", selection: countdown) {
                 Text("No countdown").tag(0)
@@ -655,7 +661,7 @@ struct RecorderBar: View {
                 Text("PAUSED")
                     .font(.system(size: 9.5, weight: .semibold))
                     .tracking(0.6)
-                    .foregroundStyle(StudioPalette.offered)
+                    .foregroundStyle(StudioTheme.Recorder.offered)
                     .transition(.opacity)
             }
         }
@@ -685,7 +691,7 @@ extension RecorderBar {
                     .foregroundStyle(.white)
                 Text(startingDetail)
                     .font(.system(size: 11.5))
-                    .foregroundStyle(StudioPalette.offered)
+                    .foregroundStyle(StudioTheme.Recorder.offered)
             }
             .lineLimit(1)
             // A slot, not a fit: "Starts in 3 seconds" and "Starts in 1 second" are
@@ -782,7 +788,7 @@ extension RecorderBar {
                     .lineLimit(1)
                 Text(error.recoverySuggestion ?? Self.fallbackSuggestion)
                     .font(.system(size: 11))
-                    .foregroundStyle(StudioPalette.offered)
+                    .foregroundStyle(StudioTheme.Recorder.offered)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -898,7 +904,7 @@ extension RecorderBar {
                     .foregroundStyle(.white)
                 Text("The \(RecorderModel.length(studio.session.state.recordedSeconds(at: .now))) recorded so far will be thrown away.")
                     .font(.system(size: 11))
-                    .foregroundStyle(StudioPalette.offered)
+                    .foregroundStyle(StudioTheme.Recorder.offered)
             }
             .lineLimit(1)
             .frame(width: 250, alignment: .leading)
@@ -943,8 +949,8 @@ private struct ModeButton: View {
             // bar of icons sits more quietly over somebody's work than one of words.
             Image(systemName: mode.symbol)
                 .font(BarIcon.font)
-            .foregroundStyle(isAvailable ? (isSelected ? Color.white.opacity(0.95) : StudioPalette.offered)
-                                         : StudioPalette.unavailable)
+            .foregroundStyle(isAvailable ? (isSelected ? Color.white.opacity(0.95) : StudioTheme.Recorder.offered)
+                                         : StudioTheme.Recorder.unavailable)
             .frame(width: BarIcon.tile, height: BarIcon.tile)
             .background {
                 let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -1018,8 +1024,8 @@ private struct InputChipLabel: View {
         // same dimmed white the unchosen modes are. What will be recorded still reads
         // across the room — by brightness and by the glyph losing its slash — without three
         // coloured boxes competing with the one thing the bar is for.
-        .foregroundStyle(isAvailable ? (isOn ? Color.white : StudioPalette.offered)
-                                     : StudioPalette.unavailable)
+        .foregroundStyle(isAvailable ? (isOn ? Color.white : StudioTheme.Recorder.offered)
+                                     : StudioTheme.Recorder.unavailable)
         .frame(width: BarIcon.tile, height: BarIcon.tile)
         .contentShape(Rectangle())
         .animation(StudioMotion.state, value: isOn)
@@ -1045,7 +1051,7 @@ private struct BarTileIcon: View {
                     .contentTransition(.numericText())
             }
         }
-        .foregroundStyle(isEnabled ? Color.white.opacity(0.9) : StudioPalette.unavailable)
+        .foregroundStyle(isEnabled ? Color.white.opacity(0.9) : StudioTheme.Recorder.unavailable)
         .padding(.horizontal, count > 0 ? 10 : 0)
         .frame(minWidth: BarIcon.tile, minHeight: BarIcon.tile)
         .contentShape(Rectangle())

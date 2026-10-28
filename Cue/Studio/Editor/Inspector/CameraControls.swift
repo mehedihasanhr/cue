@@ -32,13 +32,16 @@ struct CameraControls: View {
 
             Group {
                 InspectorSlider(model: model, "Steadiness", systemImage: "hand.raised",
-                                value: style.binding(\.camera.steadiness, "Steadiness"), range: 0...2)
+                                value: style.binding(\.camera.steadiness, "Steadiness"), range: 0...2,
+                                defaultValue: style.factory(\.camera.steadiness))
                     .help("Steadiness smooths the pointer before the camera follows it.")
                 InspectorSlider(model: model, "Follow", systemImage: "scope",
-                                value: style.binding(\.camera.follow, "Follow Strength"), range: 0...1)
+                                value: style.binding(\.camera.follow, "Follow Strength"), range: 0...1,
+                                defaultValue: style.factory(\.camera.follow))
                     .help("How closely the camera keeps up with the pointer.")
                 InspectorSlider(model: model, "Stray", systemImage: "arrow.left.and.right",
-                                value: style.binding(\.camera.safeArea, "Safe Area"), range: 0.05...1)
+                                value: style.binding(\.camera.safeArea, "Safe Area"), range: 0.05...1,
+                                defaultValue: style.factory(\.camera.safeArea))
                     .help("Stray is how far the pointer may wander from the middle before the frame has to move — the pointer never leaves the frame.")
             }
             // Dimmed rather than disabled, as before: the values are still the project's

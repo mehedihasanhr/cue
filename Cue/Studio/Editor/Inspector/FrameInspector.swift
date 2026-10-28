@@ -57,11 +57,14 @@ struct FrameInspector: View {
             }
             VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
                 InspectorSlider(model: model, "Padding", systemImage: "square.dashed.inset.filled",
-                                value: style.binding(\.style.padding, "Padding"), range: 0...0.2)
+                                value: style.binding(\.style.padding, "Padding"), range: 0...0.2,
+                                defaultValue: style.factory(\.style.padding))
                 InspectorSlider(model: model, "Corners", systemImage: "rectangle.roundedtop",
-                                value: style.binding(\.style.cornerRadius, "Corners"), range: 0...0.08)
+                                value: style.binding(\.style.cornerRadius, "Corners"), range: 0...0.08,
+                                defaultValue: style.factory(\.style.cornerRadius))
                 InspectorSlider(model: model, "Shadow", systemImage: "shadow",
-                                value: style.binding(\.style.shadowOpacity, "Shadow"), range: 0...1)
+                                value: style.binding(\.style.shadowOpacity, "Shadow"), range: 0...1,
+                                defaultValue: style.factory(\.style.shadowOpacity))
             }
         }
         .inspectorSection("Shape", systemImage: "square.on.square") {
@@ -134,7 +137,8 @@ struct FrameInspector: View {
     private var finish: some View {
         VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
             InspectorSlider(model: model, "Shadow softness", systemImage: "aqi.medium",
-                            value: style.binding(\.style.shadowRadius, "Shadow Softness"), range: 0...0.08)
+                            value: style.binding(\.style.shadowRadius, "Shadow Softness"), range: 0...0.08,
+                            defaultValue: style.factory(\.style.shadowRadius))
             border
         }
         .inspectorSection("Border", systemImage: "square.dashed")
@@ -146,7 +150,8 @@ struct FrameInspector: View {
         return VStack(alignment: .leading, spacing: SidebarSpacing.betweenControls) {
             InspectorSlider(model: model, "Border", systemImage: "square",
                             value: style.binding(\.style.borderWidth, "Border"),
-                            range: FrameStyle.borderWidthRange)
+                            range: FrameStyle.borderWidthRange,
+                            defaultValue: style.factory(\.style.borderWidth))
             // "Colour" alone, directly under the Border slider: the label column is
             // narrow, and "Border colour" would be cut short in it.
             InspectorRow("Border colour") {
@@ -179,7 +184,7 @@ struct FrameInspector: View {
                          value: "\(Int(model.croppedVideoSize.width)) × \(Int(model.croppedVideoSize.height))")
             InspectorRow(title: "Exported",
                          value: "\(Int(model.outputSize.width)) × \(Int(model.outputSize.height))")
-            Button(model.tool == .crop ? "Done" : "Adjust Crop…") {
+            Button(model.tool == .crop ? "Done" : "Adjust Crop") {
                 model.tool = model.tool == .crop ? .frame : .crop
             }
             .buttonStyle(.studio(.secondary, size: .small))

@@ -35,7 +35,7 @@ nonisolated enum AgentHooks {
         switch agent {
         case .claude: 86_400
         case .codex: 600
-        case .antigravity: 10
+        case .antigravity: Antigravity.askTimeout
         }
     }
 
@@ -230,11 +230,12 @@ nonisolated enum AgentHooks {
     [ -z "$pane" ] && [ -n "$TMUX_PANE" ] && pane="tmux:$(printf %s "$TMUX_PANE" | tr -cd '%0-9')"
     event=$(tr -d '\\r\\n')
     # Antigravity names the event only in the hook's arguments, and wants an answer
-    # whatever happens: "allow" (its default policy decides) before a tool, nothing after.
+    # whatever happens: "ask" before a tool when Cue does not decide — its own approval
+    # rules then do; "allow" would approve every command unasked — and nothing after.
     if [ "$agent" = antigravity ]; then
         name=$(printf %s "${2:-}" | tr -cd 'A-Za-z')
         none='{}'
-        [ "$name" = PreToolUse ] && none='{"decision":"allow"}'
+        [ "$name" = PreToolUse ] && none='\(Antigravity.undecided)'
         [ -n "$event" ] || { printf %s "$none"; exit 0; }
         event=$(printf %s "$event" | sed 's/^[[:space:]]*{/{"hook_event_name":"'"$name"'",/')
     fi

@@ -1,6 +1,7 @@
 import AppKit
 import RecordKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Screen recording and the video editor, inside Cue: the recorder bar, Recordings, the
 /// editor windows and their settings. Cue's `AppDelegate` owns one and hands it the
@@ -55,6 +56,31 @@ final class StudioController {
         // Set before anything is drained below, so a recording that launched the app has
         // somewhere to go the moment it is read.
         studio.openEditor = { [weak self] url in self?.editors.open(url) }
+        let quickShare = QuickShareController(settings: settings, exports: editors.exports) { [weak self] url in
+            self?.editors.open(url)
+        }
+        studio.showQuickShare = { url, after in
+            quickShare.show(url)
+            switch after {
+            case .copy: quickShare.perform(.copy)
+            case .save: quickShare.perform(.save)
+            case .quickShare, .editor: break
+            }
+        }
+        self.quickShare = quickShare
+        #if DEBUG
+        // `CUE_DEBUG_QUICKSHARE=<recording>` offers that take as if it had just stopped, so
+        // the panel can be checked without recording one.
+        if let path = ProcessInfo.processInfo.environment["CUE_DEBUG_QUICKSHARE"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                quickShare.show(URL(filePath: path))
+                // `CUE_DEBUG_QUICKSHARE_SAVE=1` presses Save too, to check the export end to end.
+                if ProcessInfo.processInfo.environment["CUE_DEBUG_QUICKSHARE_SAVE"] != nil {
+                    quickShare.perform(.save)
+                }
+            }
+        }
+        #endif
 
         let panel = RecorderBarPanel(settings: settings, studio: studio)
         panel.showLibrary = { [weak self] in self?.showLibrary() }
@@ -191,6 +217,9 @@ final class StudioController {
         shared?.bar?.begin(mode)
     }
 
+    /// The panel offered when a take stops; see `QuickShareController`.
+    private var quickShare: QuickShareController?
+
     /// Recordings, made the first time somebody asks for it and kept so it remembers where
     /// it was.
     private var library: LibraryWindowController?
@@ -210,6 +239,34 @@ final class StudioController {
     /// Static for the same reason `showBar()` is.
     static func openEditor(_ url: URL) {
         shared?.editors.open(url)
+    }
+
+    /// Makes a new project from a movie that was not recorded here, and opens it.
+    ///
+    /// The movie is copied into a new recording in the library: it gets zooms, a
+    /// background, captions and everything else that works on a picture, but no pointer
+    /// effects, because nothing recorded where the pointer was.
+    static func newProjectFromVideo() {
+        guard let controller = shared, let settings = controller.settings else { return }
+        let panel = NSOpenPanel()
+        panel.title = "New Project from Video"
+        panel.message = "The movie is copied into a new project in Recordings."
+        panel.prompt = "Create Project"
+        panel.allowedContentTypes = [.movie, .video, .mpeg4Movie, .quickTimeMovie]
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let movie = panel.url else { return }
+        let library = settings.library
+        Task { @MainActor in
+            do {
+                let package = try await MovieProject.create(from: movie, in: library)
+                controller.editors.open(package.url)
+            } catch {
+                let alert = NSAlert()
+                alert.messageText = "Couldn't make a project from that video"
+                alert.informativeText = error.localizedDescription
+                alert.runModal()
+            }
+        }
     }
 
     // MARK: - Settings

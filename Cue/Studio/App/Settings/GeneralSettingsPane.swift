@@ -25,9 +25,14 @@ struct GeneralSettingsPane: View {
                         Button("Use Default Folder") { settings.resetLibrary() }
                     }
                 }
-                SettingsToggleRow("Open in the editor when a recording stops",
-                                  subtitle: "Off, a finished take waits in Recordings.",
-                                  isOn: $settings.opensEditorAfterRecording)
+                StudioSettingsRow("When a recording stops",
+                                  subtitle: "Copy and Save export with the last export settings; Quick share offers Edit, Save, Copy and Share.") {
+                    Picker("", selection: $settings.afterRecording) {
+                        ForEach(AfterRecording.allCases) { Text($0.title).tag($0) }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                }
             }
         }
     }

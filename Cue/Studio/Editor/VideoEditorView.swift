@@ -22,9 +22,8 @@ struct VideoEditorView: View {
     /// It could be dragged wider, and was remembered at whatever width it was left — so it
     /// opened stretched in one window and narrow in the next, every slider and row a
     /// different length from one day to another, and a column of controls that is laid out
-    /// for one width looked loose at the other. A slider's track and its name need about
-    /// three hundred points, plus the tool rail down the column's left edge.
-    static let inspectorWidth: CGFloat = 300
+    /// for one width looked loose at the other.
+    static let inspectorWidth: CGFloat = StudioTheme.Columns.inspector
 
     /// The dark gap between two panels, and round the canvas.
     static let seam: CGFloat = 6
@@ -55,34 +54,32 @@ struct VideoEditorView: View {
         }
     }
 
-    /// The tools down the left, the picture and its time in the middle, the settings on
-    /// the right.
+    /// The picture and its time on the left, the tools and their settings on the right.
     ///
-    /// Under a slim title strip, three columns. The rail of tools runs the full height of
-    /// the window at its left edge. The middle column is the canvas — the picture in a
+    /// Under a slim title strip, two parts. The wide one is the canvas — the picture in a
     /// dark well, with its own floating controls — and under it the transport and the
-    /// timeline, which take the middle column's width rather than the window's. The
-    /// inspector runs the full height at the right, Export at its head, because Export is
-    /// the end of everything the column sets up.
+    /// timeline, which take that column's width rather than the window's. At the right,
+    /// the full height of the window, are the tool tabs and beside them the settings the
+    /// chosen tab opens, the tabs on the inside edge so a tab and what it opened are next
+    /// to each other. Hiding the settings leaves the tabs, and choosing one brings them
+    /// back.
     ///
     /// Seams rather than lines: each column is a flat panel and the window's darker
     /// background shows between them, so the layout is drawn by the gaps.
     private func loaded(_ model: EditorModel) -> some View {
         VStack(spacing: 0) {
             // The window's own title bar is transparent and empty — `VideoEditorWindowController`
-            // makes it so — and this is the top of the window: the traffic lights and the
-            // name.
+            // makes it so — and this is the top of the window: the traffic lights, the
+            // name, and Export.
             VideoEditorToolbar(model: model,
                           exports: exports,
                           showsInspector: $session.showsInspector) { session.isExporting = true }
 
             HStack(spacing: Self.seam) {
-                EditorRail(model: model)
-
                 VStack(spacing: 0) {
                     PreviewPane(model: model)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .padding([.top, .trailing, .bottom], Self.seam)
+                        .padding([.top, .leading, .bottom], Self.seam)
                         .background(StudioTheme.Surface.seam)
 
                     TransportBar(model: model) { session.present(true) }
@@ -92,21 +89,30 @@ struct VideoEditorView: View {
                                                             hasSound: model.waveform.state != .unavailable))
                 }
                 // Allowed to be narrower than anything in it would like, and clipped to what
-                // it gets: the inspector beside it has a fixed width, and a middle column
-                // that would not shrink pushed it out past the window's edge.
+                // it gets: the column beside it has a fixed width, and a middle column that
+                // would not shrink pushed it out past the window's edge.
                 .frame(minWidth: 0, maxWidth: .infinity)
                 .clipped()
 
-                if session.showsInspector {
-                    InspectorPanel(model: model) { session.isExporting = true }
-                        .frame(width: Self.inspectorWidth, alignment: .leading)
-                        // A fixed width is a proposal, not a promise: a control that will
-                        // not shrink below it draws straight out over the picture, and —
-                        // centred in the frame — slides sideways every time a number in
-                        // the panel grows a digit. Pinned to the leading edge and clipped,
-                        // the column is a column whatever it is given.
-                        .clipped()
-                        .transition(.move(edge: .trailing))
+                HStack(spacing: 0) {
+                    EditorRail(model: model)
+
+                    if session.showsInspector {
+                        InspectorPanel(model: model)
+                            .frame(width: Self.inspectorWidth, alignment: .leading)
+                            // A fixed width is a proposal, not a promise: a control that will
+                            // not shrink below it draws straight out over the picture, and —
+                            // centred in the frame — slides sideways every time a number in
+                            // the panel grows a digit. Pinned to the leading edge and clipped
+                            // to its card, the column is a column whatever it is given.
+                            .clipShape(StudioTheme.squircle(StudioTheme.Radius.card))
+                            .overlay {
+                                StudioTheme.squircle(StudioTheme.Radius.card)
+                                    .strokeBorder(StudioTheme.Surface.hairline)
+                            }
+                            .padding([.top, .trailing, .bottom], Self.seam + 2)
+                            .transition(.move(edge: .trailing))
+                    }
                 }
             }
             // The picture is the thing that moves when the column comes or goes, so the
@@ -116,7 +122,7 @@ struct VideoEditorView: View {
         }
         .background(StudioTheme.Surface.seam)
         // Asking for a tool is asking to see its settings. However it was asked for — a
-        // rail tab, the View menu, its shortcut, a Frame menu item that needs its panel — a
+        // tab, the View menu, its shortcut, a Frame menu item that needs its panel — a
         // hidden inspector comes back for it, rather than the request landing in a column
         // nobody can see.
         .onChange(of: model.toolRequests) {

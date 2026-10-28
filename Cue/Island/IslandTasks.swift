@@ -249,8 +249,8 @@ struct IslandTasksView: View {
                         withAnimation(.easeOut(duration: 0.15)) { selection = .project(entry.project.id) }
                     }
                     .contextMenu {
-                        Button("New Sub-project…") { onPrompt(IslandPrompt(kind: .project(parent: entry.project.id), context: entry.project.name)) }
-                        Button("Delete Project…", role: .destructive) { onPrompt(IslandPrompt(kind: .delete(.project(entry.project)))) }
+                        Button("New Sub-project") { onPrompt(IslandPrompt(kind: .project(parent: entry.project.id), context: entry.project.name)) }
+                        Button("Delete Project", role: .destructive) { onPrompt(IslandPrompt(kind: .delete(.project(entry.project)))) }
                     }
                 }
                 if store.projects.isEmpty {
@@ -313,7 +313,7 @@ struct IslandTasksView: View {
             withAnimation(.easeOut(duration: 0.15)) { selection = .project(project.id) }
         }
         .contextMenu {
-            Button("Delete Project…", role: .destructive) { onPrompt(IslandPrompt(kind: .delete(.project(project)))) }
+            Button("Delete Project", role: .destructive) { onPrompt(IslandPrompt(kind: .delete(.project(project)))) }
         }
     }
 
@@ -371,7 +371,7 @@ struct IslandTasksView: View {
                             pill(project.name, symbol: "folder", prominent: false) {
                                 withAnimation(.easeOut(duration: 0.15)) { selection = .project(project.id) }
                             }
-                            .contextMenu { Button("Delete Project…", role: .destructive) { onPrompt(IslandPrompt(kind: .delete(.project(project)))) } }
+                            .contextMenu { Button("Delete Project", role: .destructive) { onPrompt(IslandPrompt(kind: .delete(.project(project)))) } }
                         }
                     }
                     .padding(.bottom, 4)
@@ -563,8 +563,8 @@ struct IslandTasksView: View {
                 }
                 Divider()
                 Button("Open") { open() }
-                Button("Edit…") { edit() }
-                Button("Rename…") { renaming = true }
+                Button("Edit") { edit() }
+                Button("Rename") { renaming = true }
                 Menu("Move to") {
                     Button("No project") { store.move(task, to: nil) }
                     ForEach(store.projects) { project in
@@ -572,7 +572,7 @@ struct IslandTasksView: View {
                     }
                 }
                 Divider()
-                Button("Delete…", role: .destructive, action: delete)
+                Button("Delete", role: .destructive, action: delete)
             }
         }
     }

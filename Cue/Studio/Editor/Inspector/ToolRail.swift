@@ -2,12 +2,12 @@ import AppKit
 import RecordKit
 import SwiftUI
 
-/// The column down the window's left edge: the app's mark, the tools, and the few things
-/// that are about the app rather than the edit.
+/// The column of tool tabs, on the inside edge of the settings at the right of the window.
 ///
-/// The full height of the window, beside the canvas and the timeline both, so it reads as
-/// the spine of the editor rather than as part of the settings. A tool chosen here opens
-/// its settings in the inspector at the other side; the rail itself only says which.
+/// Beside the settings rather than at the other end of the window, so a tab and what it
+/// opened are side by side. It stays when the settings are hidden: a tab is then the way
+/// to bring them back. The things about the app rather than the edit — the Finder, the
+/// command menu, settings — are in the title bar.
 ///
 /// The selection still lives on `EditorModel` rather than here, because entering crop mode
 /// changes the rendered frame: that is behaviour, not chrome.
@@ -30,12 +30,6 @@ struct EditorRail: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            mark
-                .padding(.top, 10)
-                .padding(.bottom, 12)
-
-            rule
-
             // Scrolls only if it must. Nine tabs are taller than the rail at the window's
             // smallest, and a rail whose last tool is clipped off is a tool that does not
             // exist.
@@ -67,52 +61,21 @@ struct EditorRail: View {
             .scrollBounceBehavior(.basedOnSize)
 
             Spacer(minLength: 0)
-
-            rule
-                .padding(.bottom, 10)
-            VStack(spacing: 2) {
-                utility("folder", "Show this recording in the Finder") {
-                    NSWorkspace.shared.activateFileViewerSelecting([model.packageURL])
-                }
-                utility("command", "Command Menu") {
-                    CommandMenuController.shared.toggle()
-                }
-                utility("gearshape", "Settings") {
-                    StudioController.openSettings()
-                }
-            }
-            .padding(.bottom, 12)
         }
         .frame(width: Self.width)
         .frame(maxHeight: .infinity)
-        .background(StudioTheme.Surface.panel)
+        // On the window's ground rather than a panel of its own: the tabs are the edge of
+        // the settings card beside them, not a third column.
+        .background(StudioTheme.Surface.seam)
         .animation(StudioMotion.selection, value: model.tool)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Editor tools")
     }
 
-    /// The app's own mark, at the head of the rail.
-    private var mark: some View {
-        Image(nsImage: NSApp.applicationIconImage)
-            .resizable()
-            .interpolation(.high)
-            .frame(width: 32, height: 32)
-            .accessibilityHidden(true)
-    }
-
     private var rule: some View {
         Rectangle()
-            .fill(Color.white.opacity(0.07))
+            .fill(StudioTheme.Surface.hairline)
             .frame(width: 18, height: 1)
-    }
-
-    private func utility(_ symbol: String, _ title: String, action: @escaping () -> Void) -> some View {
-        StudioIconTab(systemImage: symbol,
-                      title: title,
-                      help: title,
-                      isSelected: false,
-                      namespace: highlight,
-                      action: action)
     }
 
     /// The shortcut is on the tip because the rail is where somebody looks for it: the menu

@@ -45,27 +45,6 @@ extension View {
     }
 }
 
-/// The recorder's colours and metrics, named once.
-///
-/// Studio is its own target and cannot reach the host app's `Glass.swift`, so the pieces
-/// the bar and the target overlay both need are spelled out here beside the rest of the
-/// chrome rather than inlined twice.
-enum StudioPalette {
-    /// Cue blue (#0E4FEC), the fill of the app icon and the app's one accent.
-    static let brand = Color(red: 0x0E / 255, green: 0x4F / 255, blue: 0xEC / 255)
-
-    /// The bar's glass: #292929, translucent enough that the page behind shows through.
-    static let barGlass = Color(red: 0x29 / 255, green: 0x29 / 255, blue: 0x29 / 255).opacity(0.64)
-
-    static let barRadius: CGFloat = 18
-    static let barHeight: CGFloat = 64
-
-    /// Three weights of white: what is chosen, what is on offer, what cannot be had.
-    static let chosen = Color.white
-    static let offered = Color.white.opacity(0.58)
-    static let unavailable = Color.white.opacity(0.3)
-}
-
 extension View {
     /// The floating bar's surface: frosted, not filled.
     ///
@@ -88,7 +67,7 @@ extension View {
                 // #555 over a white page and #222 over a black one, so the bar takes on the
                 // light of whatever is behind it while the white icons keep their contrast.
                 Rectangle().fill(.ultraThinMaterial)
-                StudioPalette.barGlass
+                StudioTheme.Recorder.barGlass
             }
             .clipShape(shape)
         }

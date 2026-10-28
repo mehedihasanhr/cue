@@ -142,29 +142,76 @@ public struct CursorTrack: Sendable {
         return samples[low].shape
     }
 
-    /// A smoothed copy of the track.
+    /// The track as a style asks for it: shakes taken out if it says so, then smoothed.
     ///
-    /// An exponential filter, applied forwards and then backwards: one pass alone lags
-    /// behind the real pointer, which reads as the cursor trailing the click it is about
-    /// to make. Two passes in opposite directions cancel the lag out.
+    /// The one place the renderer's pointer is prepared, so the preview, a still and an
+    /// export cannot disagree about which readings were dropped.
+    public func prepared(for style: CursorStyle) -> CursorTrack {
+        (style.removesShakes ? withoutShakes(threshold: style.shakeThreshold) : self).smoothed(style.smoothing)
+    }
+
+    /// The track with its shakes taken out, the reference's way: a reading further than
+    /// `threshold` — across plus down — from *both* of the next two readings is a jump
+    /// there and back, not a movement, and is dropped. A click is never dropped: it is
+    /// where somebody pressed, whatever the readings around it say.
+    public func withoutShakes(threshold: Double) -> CursorTrack {
+        guard samples.count > 3 else { return self }
+        let pressed = Set(clicks.map(\.t))
+        func far(_ a: CursorSample, _ b: CursorSample) -> Bool {
+            abs(a.x - b.x) + abs(a.y - b.y) > threshold
+        }
+        var kept: [CursorSample] = []
+        kept.reserveCapacity(samples.count)
+        for index in samples.indices {
+            let sample = samples[index]
+            if index + 2 < samples.count, !pressed.contains(sample.t),
+               far(sample, samples[index + 1]), far(sample, samples[index + 2]) {
+                continue
+            }
+            kept.append(sample)
+        }
+        guard kept.count != samples.count else { return self }
+        return CursorTrack(samples: kept, clicks: clicks, activity: activity, steadyShapes: steadyShapes)
+    }
+
+    /// A smoothed copy of the track: the drawn pointer is a weight on a spring that chases
+    /// the recorded one.
+    ///
+    /// The reference's model (docs/studio/10-motion-reference.md): a clamped spring stepped
+    /// every millisecond, so the pointer eases into a stop without overshooting it. Within
+    /// half a second of a click it chases the click instead of the hand, so it arrives where
+    /// the click lands rather than wherever the hand wobbled on the way; in the last 175 ms
+    /// it switches to the stiff Rapid spring, so it is there on time. `amount` picks the
+    /// spring: 0 is the raw pointer, the middle is Medium, 1 is Smooth.
     public func smoothed(_ amount: Double) -> CursorTrack {
         let amount = min(1, max(0, amount))
         guard amount > 0, samples.count > 2 else { return self }
 
-        // 0 → no smoothing, 1 → very heavy. Mapped so the middle of the slider is a
-        // noticeable but still-responsive amount.
-        let alpha = 1 - pow(amount, 0.35) * 0.92
-        var forward = samples
-        for index in 1..<forward.count {
-            forward[index].x = forward[index].x * alpha + forward[index - 1].x * (1 - alpha)
-            forward[index].y = forward[index].y * alpha + forward[index - 1].y * (1 - alpha)
+        var result = samples
+        var spring = PointerSpring(chosen: .blended(amount), start: samples[0].point)
+        var nextClick = 0
+        var t = samples[0].t
+        for index in 1..<samples.count {
+            let a = samples[index - 1]
+            let b = samples[index]
+            let span = b.t - a.t
+            while t < b.t {
+                let step = min(PointerSpring.step, b.t - t)
+                t += step
+                while nextClick < clicks.count, clicks[nextClick].t < t { nextClick += 1 }
+                let click = nextClick < clicks.count ? clicks[nextClick] : nil
+                let untilClick = click.map { $0.t - t } ?? .infinity
+                let progress = span > 0 ? (t - a.t) / span : 1
+                let hand = CGPoint(x: a.x + (b.x - a.x) * progress, y: a.y + (b.y - a.y) * progress)
+                let target = untilClick <= PointerSpring.clickLookahead ? click!.point : hand
+                spring.advance(toward: target, by: step,
+                               using: untilClick <= PointerSpring.rapidLookahead ? .rapid : spring.chosen)
+            }
+            result[index].x = spring.position.x
+            result[index].y = spring.position.y
         }
-        for index in stride(from: forward.count - 2, through: 0, by: -1) {
-            forward[index].x = forward[index].x * alpha + forward[index + 1].x * (1 - alpha)
-            forward[index].y = forward[index].y * alpha + forward[index + 1].y * (1 - alpha)
-        }
-        anchorToClicks(&forward)
-        return CursorTrack(samples: forward, clicks: clicks, activity: activity, steadyShapes: steadyShapes)
+        anchorToClicks(&result)
+        return CursorTrack(samples: result, clicks: clicks, activity: activity, steadyShapes: steadyShapes)
     }
 
     /// How long either side of a click the pointer is held to where it really was.
@@ -416,5 +463,69 @@ public struct CursorTrack: Sendable {
     public func speed(at time: Double, window: Double = 1 / 30) -> Double {
         let v = velocity(at: time, window: window)
         return hypot(v.dx, v.dy)
+    }
+}
+
+/// A clamped spring in two dimensions, stepped a millisecond at a time — the pointer's
+/// motion, after the reference's.
+struct PointerSpring {
+    /// Stiffness, damping and mass, in seconds.
+    struct Constants: Equatable {
+        var stiffness: Double
+        var damping: Double
+        var mass: Double
+
+        static let rapid = Constants(stiffness: 530, damping: 40, mass: 1)
+        static let medium = Constants(stiffness: 340, damping: 60, mass: 3)
+        static let smooth = Constants(stiffness: 470, damping: 70, mass: 3)
+
+        /// Rapid at the low end of the slider, Medium in the middle, Smooth at the top.
+        static func blended(_ amount: Double) -> Constants {
+            let amount = min(1, max(0, amount))
+            if amount <= 0.5 { return mix(.rapid, .medium, amount / 0.5) }
+            return mix(.medium, .smooth, (amount - 0.5) / 0.5)
+        }
+
+        private static func mix(_ a: Constants, _ b: Constants, _ f: Double) -> Constants {
+            Constants(stiffness: a.stiffness + (b.stiffness - a.stiffness) * f,
+                      damping: a.damping + (b.damping - a.damping) * f,
+                      mass: a.mass + (b.mass - a.mass) * f)
+        }
+    }
+
+    static let step = 0.001
+    /// How far ahead a click becomes what the pointer chases.
+    static let clickLookahead = 0.5
+    /// How far ahead of a click the stiff spring takes over, so the pointer is on time.
+    static let rapidLookahead = 0.175
+
+    let chosen: Constants
+    private(set) var position: CGPoint
+    private var velocity = CGVector.zero
+
+    init(chosen: Constants, start: CGPoint) {
+        self.chosen = chosen
+        position = start
+    }
+
+    /// One step. Clamped: while it is closing on the target faster than it could stop in
+    /// the distance left, it is damped critically, so it eases in rather than overshoots.
+    mutating func advance(toward target: CGPoint, by dt: Double, using constants: Constants) {
+        let dx = position.x - target.x
+        let dy = position.y - target.y
+        let distance = hypot(dx, dy)
+        var damping = constants.damping
+        if distance > 0 {
+            let closing = -(velocity.dx * dx + velocity.dy * dy) / distance
+            if closing > distance * (constants.stiffness / constants.mass).squareRoot() {
+                damping = max(damping, 2 * (constants.mass * constants.stiffness).squareRoot())
+            }
+        }
+        let ax = (-constants.stiffness * dx - damping * velocity.dx) / constants.mass
+        let ay = (-constants.stiffness * dy - damping * velocity.dy) / constants.mass
+        velocity.dx += ax * dt
+        velocity.dy += ay * dt
+        position.x += velocity.dx * dt
+        position.y += velocity.dy * dt
     }
 }

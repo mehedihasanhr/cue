@@ -70,7 +70,7 @@ struct AnnotationInspector: View {
     /// logo away. What it has instead is a way to swap the picture for another.
     private func picture(_: String) -> some View {
         InspectorRow("Picture") {
-            StudioButton("Replace…", size: .small) { model.replacePicture(ofAnnotation: id) }
+            StudioButton("Replace", size: .small) { model.replacePicture(ofAnnotation: id) }
                 .help("Choose another picture for this place")
         }
     }

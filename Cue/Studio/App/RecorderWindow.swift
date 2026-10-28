@@ -109,6 +109,11 @@ struct LibraryWindow: View {
                 title
                 Spacer(minLength: 12)
                 if let catalog { LibraryTools(catalog: catalog, layout: $layout) }
+                StudioIconButton(systemImage: "film.stack",
+                                 help: "New project from a video file",
+                                 accessibilityName: "New Project from Video") {
+                    StudioController.newProjectFromVideo()
+                }
                 // The name when there is room for it; the glyph alone when the window is
                 // narrow, rather than a second row of chrome.
                 ViewThatFits(in: .horizontal) {

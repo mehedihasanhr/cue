@@ -52,7 +52,7 @@ struct NoteFormRow: View {
             ("checklist", "Checklist", "⌘⇧T", { editor.removeToken(); editor.block(.todo) }),
             ("text.quote", "Quote", "⌘⇧Q", { editor.removeToken(); editor.block(.quote) }),
             ("curlybraces", "Code block", nil, { editor.removeToken(); editor.block(.code) }),
-            ("photo", "Image…", "⌘⇧I", { editor.removeToken(); chooseImage() }),
+            ("photo", "Image", "⌘⇧I", { editor.removeToken(); chooseImage() }),
         ]
         return commands.filter { query.isEmpty || $0.1.lowercased().contains(query) }.map { ($0.1, $0.0, $0.1, $0.2, $0.3) }
     }
@@ -306,7 +306,7 @@ struct NoteFormRow: View {
                     textView.paste(nil)
                 }
             }
-            actionRow("Attach Image…", symbol: "photo", keys: "⇧⌘I") { showsActions = false; chooseImage() }
+            actionRow("Attach Image", symbol: "photo", keys: "⇧⌘I") { showsActions = false; chooseImage() }
             if let chrome {
                 actionRow(chrome.pinned ? "Unpin" : "Pin Above Other Apps", symbol: chrome.pinned ? "pin.slash" : "pin") {
                     chrome.pinned.toggle()
@@ -321,7 +321,7 @@ struct NoteFormRow: View {
                         if sendTo.contains(destination) { sendTo.remove(destination) } else { sendTo.insert(destination) }
                     }
                 }
-                actionRow("Defaults in Settings…", symbol: "gearshape") {
+                actionRow("Defaults in Settings", symbol: "gearshape") {
                     showsActions = false
                     NSApp.sendAction(#selector(AppDelegate.showNotesSettings(_:)), to: nil, from: nil)
                 }
@@ -435,7 +435,7 @@ struct NoteFormRow: View {
             formatButton("list.number", help: "Numbered list", shortcut: KeyboardShortcut("n", modifiers: [.command, .shift])) { editor.block(.numbered) }
             formatButton("checklist", help: "Checklist", shortcut: KeyboardShortcut("t", modifiers: [.command, .shift])) { editor.block(.todo) }
             formatButton("text.quote", help: "Quote", shortcut: KeyboardShortcut("q", modifiers: [.command, .shift])) { editor.block(.quote) }
-            formatButton("photo", help: "Insert image…", shortcut: KeyboardShortcut("i", modifiers: [.command, .shift])) { chooseImage() }
+            formatButton("photo", help: "Insert image", shortcut: KeyboardShortcut("i", modifiers: [.command, .shift])) { chooseImage() }
             Spacer(minLength: 0)
             Text("/ formats · ⌘B ⌘I")
                 .font(.system(size: 9.5))
@@ -504,7 +504,7 @@ struct NoteFormRow: View {
             }
         }
         Divider()
-        Button("Defaults in Settings…") { NSApp.sendAction(#selector(AppDelegate.showNotesSettings(_:)), to: nil, from: nil) }
+        Button("Defaults in Settings") { NSApp.sendAction(#selector(AppDelegate.showNotesSettings(_:)), to: nil, from: nil) }
     }
 
     private func chooseImage() {

@@ -37,6 +37,23 @@ struct ZoomSuggesterCoverageTests {
     // MARK: - Nothing is dropped
 
     /// The bug, as a test: two clicks at opposite ends of the screen, close in time.
+    /// The reference's numbers: from 0.3 s before a click to 2.5 s after it, at 2×.
+    @Test func aClickZoomsInJustBeforeAndHoldsAfter() throws {
+        let zoom = try #require(zooms([click(10, 720, 450)]).first)
+        #expect(zoom.scale == 2)
+        #expect(zoom.start.seconds <= 10 - 0.3 + 0.001)
+        #expect(zoom.end.seconds >= 12.5 - 0.001)
+    }
+
+    /// A click in the last second is too late to see, and a zoom near the end is out
+    /// again 0.8 s before it.
+    @Test func theEndOfARecordingIsTheWholePicture() {
+        #expect(zooms([click(59.5, 720, 450)]).isEmpty)
+        let late = zooms([click(58.5, 720, 450)])
+        #expect(late.count == 1)
+        #expect(late.allSatisfy { $0.end.seconds <= 60 - 0.8 + 0.001 })
+    }
+
     @Test func twoClicksFarApartAreTwoMomentsRatherThanNone() {
         let zooms = zooms([click(5, 120, 450), click(7, 1_320, 450)])
 
@@ -91,12 +108,13 @@ struct ZoomSuggesterCoverageTests {
         }
     }
 
-    /// Every gap auto-zoom leaves between two zooms is one the camera is zoomed out in, and
-    /// a pause in the work is such a gap.
+    /// Every gap auto-zoom leaves between two zooms is one the camera is zoomed out in.
     ///
     /// From a real take: thirteen zooms in a minute, nearly all closer together than the
     /// camera would go out and back in for, so it glided from one to the next and the
-    /// picture was zoomed in where the timeline showed a gap between zooms.
+    /// picture was zoomed in where the timeline showed a gap between zooms. Pauses of 3.5 s
+    /// no longer count on being gaps: clicks 2.5 s apart share a zoom, as the reference's
+    /// do, and a zoom holds 2.5 s past its last click, so a short pause is stayed in.
     @Test func autoZoomLeavesNoGapTheCameraStaysZoomedThrough() {
         var clicks: [InputSample] = []
         var t = 2.0
@@ -110,14 +128,11 @@ struct ZoomSuggesterCoverageTests {
         }
         let zooms = suggester().smartSuggestions(cursor: [], input: clicks, focus: [],
                                                  duration: CMTime(seconds: 60, preferredTimescale: 600))
-        var outside = 0.0
         for (a, b) in zip(zooms, zooms.dropFirst()) {
             let gap = (b.start - a.end).seconds
             #expect(gap == 0 || gap >= ZoomGlide.longestGlidedGap,
                     "a \(gap) s gap at \(a.end.seconds) s, which the camera would stay zoomed through")
-            outside += gap
         }
-        #expect(outside > 10, "zoomed out for only \(outside) s of 60")
         for click in clicks {
             guard case .mouseDown(let t, _, _, _) = click else { continue }
             #expect(covered(zooms, at: t), "the click at \(t) s is in shot")
