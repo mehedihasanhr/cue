@@ -388,7 +388,7 @@ struct IslandSettingsView: View {
                             }
                             .fixedSize()
                         }
-                        SettingsRow("Lighter on displays without a notch", subtitle: "With no notch to blend into, the glass needn't start black at the top.") {
+                        SettingsRow("Lighter on displays without a notch", subtitle: "With no notch to blend into, the black at the top is only a thin band before the glass.") {
                             Toggle("Lighter without a notch", isOn: $preferences.islandGlassLightNotchless).toggleStyle(.switch)
                         }
                     }

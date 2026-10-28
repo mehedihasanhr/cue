@@ -239,11 +239,11 @@ private struct IslandFill: View {
     var style: AppPreferences.GlassStyle = .clear
     var darkness: Double = 0.45
     var tint: Color?
-    /// No notch to meet (a plain display, with lighter glass on): no black band at the top.
+    /// No notch to meet (a plain display, with lighter glass on): only a thin black band at the top.
     var light = false
 
     /// Where the black starts giving way to glass.
-    private var fadeFrom: Double { light ? 0.12 : 0.45 }
+    private var fadeFrom: Double { light ? 0.15 : 0.45 }
 
     @available(macOS 26, *)
     private var glassKind: Glass {
@@ -257,9 +257,10 @@ private struct IslandFill: View {
                 shape.fill(.clear)
                     .glassEffect(glassKind, in: shape)
                     .opacity(glass ? 1 : 0)
+                // Black to glass on every display; without a notch the fade only starts higher.
                 LinearGradient(stops: [
-                    .init(color: .black.opacity(light ? max(darkness, 0.55) : 1), location: 0),
-                    .init(color: .black.opacity(light ? max(darkness, 0.4) : 1), location: fadeFrom),
+                    .init(color: .black, location: 0),
+                    .init(color: .black, location: fadeFrom),
                     .init(color: .black.opacity(darkness), location: 1),
                 ], startPoint: .top, endPoint: .bottom)
                 // The tint, faint over the dark and stronger down where the glass shows.
