@@ -41,7 +41,7 @@ final class WakeWordListener {
         // current; the request is swapped on the main thread between sessions.
         let feed = WakeFeed()
         self.feed = feed
-        input.installTap(onBus: 0, bufferSize: 2048, format: format) { buffer, _ in feed.append(buffer) }
+        input.installTap(onBus: 0, bufferSize: 2048, format: format, block: Self.tap(feeding: feed))
         engine.prepare()
         do { try engine.start() } catch {
             input.removeTap(onBus: 0)
@@ -80,11 +80,9 @@ final class WakeWordListener {
         request.contextualStrings = ["Hey Cue"]
         self.request = request
         feed?.request = request
-        task = recogniser.recognitionTask(with: request) { [weak self] result, error in
-            let heard = result?.bestTranscription.formattedString.lowercased() ?? ""
-            let ended = error != nil || result?.isFinal == true
-            Task { @MainActor in self?.handle(heard: heard, ended: ended) }
-        }
+        task = recogniser.recognitionTask(with: request, resultHandler: Self.results { [weak self] heard, ended in
+            self?.handle(heard: heard, ended: ended)
+        })
     }
 
     private func endSession() {
@@ -107,6 +105,22 @@ final class WakeWordListener {
         if ended { beginSession() }
     }
 
+    // The two callbacks below run on the audio and recognition threads, not the main one.
+    // Made here, outside the main actor, so Swift does not take them for main-actor code
+    // (and stop the app when they are called from elsewhere).
+
+    private nonisolated static func tap(feeding feed: WakeFeed) -> AVAudioNodeTapBlock {
+        { buffer, _ in feed.append(buffer) }
+    }
+
+    private nonisolated static func results(_ handle: @escaping @MainActor (String, Bool) -> Void) -> (SFSpeechRecognitionResult?, (any Error)?) -> Void {
+        { result, error in
+            let heard = result?.bestTranscription.formattedString.lowercased() ?? ""
+            let ended = error != nil || result?.isFinal == true
+            Task { @MainActor in handle(heard, ended) }
+        }
+    }
+
     private static func speechAllowed() async -> Bool {
         switch SFSpeechRecognizer.authorizationStatus() {
         case .authorized: return true
@@ -121,7 +135,7 @@ final class WakeWordListener {
 }
 
 /// The hand-over between the audio thread and the current recognition request.
-private final class WakeFeed: @unchecked Sendable {
+private nonisolated final class WakeFeed: @unchecked Sendable {
     private let lock = NSLock()
     private var _request: SFSpeechAudioBufferRecognitionRequest?
 
