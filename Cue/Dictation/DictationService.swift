@@ -105,6 +105,7 @@ final class DictationService {
             owner = id
             state = .listening
             self.onPause = onPause
+            if preferences?.dictationAutoFormat ?? true, preferences?.dictationSmartFormat ?? true { VoiceFormatter.prewarm() }
             heardSpeech = false
             quietSince = nil
             startedAt = .now
