@@ -25,5 +25,7 @@ final class VoiceCommandTests: XCTestCase {
         XCTAssertEqual(WakeWordListener.after("so hey queue write this"), "write this")
         XCTAssertEqual(WakeWordListener.after("Hey Q."), "")
         XCTAssertNil(WakeWordListener.after("a queue of people"))
+        XCTAssertEqual(WakeWordListener.after("Hey, cute. Write this down"), "Write this down")
+        XCTAssertEqual(WakeWordListener.after("hey kew note this"), "note this")
     }
 }

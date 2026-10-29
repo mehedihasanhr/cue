@@ -31,10 +31,20 @@ final class WakeWordListener {
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
     private var refresh: Timer?
+    private var watchdog: Timer?
+    private var configurationObserver: NSObjectProtocol?
     private var feed: WakeFeed?
+    private var sessionStart = Date.now
+    /// The current session's words so far (for the debug log of what was missed).
+    private var lastHeard = ""
 
     private static let sessionLength: TimeInterval = 50
-    private static let phrase = #"(?i)\b(?:hey|hi|hay)[ ,]+(?:cue|q|queue|kyu|kew|cu|coo)\b[.,!?]?"#
+    /// "Hey Cue" as the recogniser writes it, which is rarely "Cue": it has never heard of
+    /// it, so it reaches for the nearest word it knows.
+    private static let phrase = #"(?i)\b(?:hey|hi|hay|heh)[ ,]+(?:cue|cues|q|queue|kyu|kew|cu|coo|cute|kiu|que|qu)\b[.,!?]?|\b(?:hey|hay)(?:cue|q|kew)\b[.,!?]?"#
+    /// How long the voice has to have been quiet before a session may be replaced, so the
+    /// replacing never cuts through someone saying "Hey Cue".
+    private static let quietBeforeRefresh: TimeInterval = 1.5
 
     /// How loud the microphone is, 0…1.
     var level: Double { feed?.level ?? 0 }
@@ -49,31 +59,64 @@ final class WakeWordListener {
             return false
         }
         self.recogniser = recogniser
-        let input = engine.inputNode
-        let format = input.outputFormat(forBus: 0)
-        guard format.sampleRate > 0 else { return false }
         // The tap runs on the audio thread and only hands buffers to whichever request is
         // current; the request is swapped on the main thread between sessions.
-        let feed = WakeFeed()
-        self.feed = feed
+        self.feed = WakeFeed()
+        guard startEngine() else { return false }
+        isListening = true
+        beginSession()
+        // A fresh session now and then, but only between words.
+        refresh = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, !self.isCapturing,
+                      Date.now.timeIntervalSince(self.sessionStart) >= Self.sessionLength,
+                      Date.now.timeIntervalSince(self.feed?.lastVoice ?? .distantPast) >= Self.quietBeforeRefresh else { return }
+                self.beginSession()
+            }
+        }
+        refresh?.tolerance = 0.5
+        // The microphone changed (headphones in or out, another input chosen, the Mac woke):
+        // the engine stops by itself, and Hey Cue would go deaf until Cue was restarted.
+        configurationObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.restartEngine(because: "the microphone changed") }
+        }
+        // And in case it stopped some other way.
+        watchdog = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.isListening, !self.engine.isRunning else { return }
+                self.restartEngine(because: "it had stopped")
+            }
+        }
+        watchdog?.tolerance = 2
+        return true
+    }
+
+    /// The tap on the microphone, and the engine running it. False when it cannot start.
+    private func startEngine() -> Bool {
+        let input = engine.inputNode
+        let format = input.outputFormat(forBus: 0)
+        guard format.sampleRate > 0, let feed else { return false }
+        input.removeTap(onBus: 0)
         input.installTap(onBus: 0, bufferSize: 2048, format: format, block: Self.tap(feeding: feed))
         engine.prepare()
-        do { try engine.start() } catch {
+        do {
+            try engine.start()
+            return true
+        } catch {
             input.removeTap(onBus: 0)
             AppleDictation.log.error("Hey Cue couldn't open the microphone: \(error.localizedDescription, privacy: .public)")
             return false
         }
-        isListening = true
-        beginSession()
-        refresh = Timer.scheduledTimer(withTimeInterval: Self.sessionLength, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                // Never in the middle of someone talking.
-                guard let self, !self.isCapturing else { return }
-                self.beginSession()
-            }
+    }
+
+    private func restartEngine(because reason: String) {
+        guard isListening else { return }
+        AppleDictation.log.notice("Hey Cue restarting the microphone: \(reason, privacy: .public)")
+        engine.stop()
+        if startEngine() {
+            // What was being said before the change is gone; a new session hears what follows.
+            if !isCapturing { beginSession() }
         }
-        refresh?.tolerance = 5
-        return true
     }
 
     func stop() {
@@ -82,6 +125,10 @@ final class WakeWordListener {
         isCapturing = false
         refresh?.invalidate()
         refresh = nil
+        watchdog?.invalidate()
+        watchdog = nil
+        if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
+        configurationObserver = nil
         endSession()
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
@@ -96,6 +143,13 @@ final class WakeWordListener {
 
     private func beginSession() {
         guard isListening, let recogniser else { return }
+        #if DEBUG
+        // What the session being replaced heard, for telling why "Hey Cue" was missed.
+        if !lastHeard.isEmpty {
+            AppleDictation.log.debug("Hey Cue session heard: \(self.lastHeard.suffix(80), privacy: .public)")
+        }
+        #endif
+        lastHeard = ""
         endSession()
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.requiresOnDeviceRecognition = true
@@ -105,6 +159,7 @@ final class WakeWordListener {
         request.contextualStrings = ["Hey Cue"]
         self.request = request
         feed?.request = request
+        sessionStart = .now
         task = recogniser.recognitionTask(with: request, resultHandler: Self.results { [weak self] heard, ended in
             self?.handle(heard: heard, ended: ended)
         })
@@ -131,6 +186,7 @@ final class WakeWordListener {
             if ended { onSpeech(after, true) }
             return
         }
+        lastHeard = heard
         // A session the recogniser ended (silence, an error): carry on with a new one.
         if ended { beginSession() }
     }
@@ -176,6 +232,7 @@ private nonisolated final class WakeFeed: @unchecked Sendable {
     private let lock = NSLock()
     private var _request: SFSpeechAudioBufferRecognitionRequest?
     private var _level: Double = 0
+    private var _lastVoice = Date.distantPast
 
     var request: SFSpeechAudioBufferRecognitionRequest? {
         get { lock.withLock { _request } }
@@ -183,6 +240,8 @@ private nonisolated final class WakeFeed: @unchecked Sendable {
     }
 
     var level: Double { lock.withLock { _level } }
+    /// When the microphone last heard something louder than a quiet room.
+    var lastVoice: Date { lock.withLock { _lastVoice } }
 
     func append(_ buffer: AVAudioPCMBuffer) {
         request?.append(buffer)
@@ -193,6 +252,9 @@ private nonisolated final class WakeFeed: @unchecked Sendable {
         // -50 dB and below is silence; 0 dB is as loud as it goes (as the dictation meter).
         let decibels = 20 * log10(max(Double(rms), 1e-6))
         let level = max(0, min(1, (decibels + 50) / 50))
-        lock.withLock { _level = level }
+        lock.withLock {
+            _level = level
+            if level > 0.3 { _lastVoice = .now }
+        }
     }
 }
