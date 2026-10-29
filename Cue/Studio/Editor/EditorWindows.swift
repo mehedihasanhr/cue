@@ -224,8 +224,10 @@ final class VideoEditorWindowController: NSWindowController, NSWindowDelegate {
         toolbar.showsBaselineSeparator = false
         window.toolbar = toolbar
         window.toolbarStyle = .unified
-        // The editor follows the theme chosen in Settings (the app's appearance), like
-        // every other window; its surfaces come in a pair for each.
+        // Always dark, as the reference's editor is and as the recorder bar already is:
+        // a recording is judged against dark chrome, whatever the rest of the Mac uses.
+        // Its surfaces still come in a pair, should that ever change.
+        window.appearance = NSAppearance(named: .darkAqua)
         window.backgroundColor = NSColor(name: nil) { appearance in
             appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
                 ? NSColor(srgbRed: 0x08 / 255, green: 0x09 / 255, blue: 0x0C / 255, alpha: 1)

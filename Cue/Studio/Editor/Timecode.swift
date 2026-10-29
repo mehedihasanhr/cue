@@ -32,20 +32,18 @@ enum Timecode {
         return seconds == 0 ? "\(minutes)m" : "\(minutes)m \(seconds)s"
     }
 
-    /// `3s` up close, `1:30` once minutes are in play. The timeline ruler.
+    /// `0:03`, `1:30`: minutes and seconds from the start, as the reference's ruler reads.
+    /// The timeline ruler.
     ///
     /// The step decides the precision: ticks half a second apart printed as whole
-    /// seconds read "0s 0s 1s 1s", which looks like a rendering fault rather than like
-    /// a finer ruler.
+    /// seconds read "0:00 0:00 0:01 0:01", which looks like a rendering fault rather than
+    /// like a finer ruler, so they get a tenth: "0:00.5".
     static func ruler(_ seconds: Double, step: Double = 1) -> String {
-        if seconds >= 60 {
-            let minutes = Int(seconds) / 60
-            let remainder = seconds - Double(minutes) * 60
-            return step < 1
-                ? String(format: "%d:%04.1f", minutes, remainder)
-                : String(format: "%d:%02d", minutes, Int(remainder.rounded()))
-        }
-        return step < 1 ? String(format: "%.1fs", seconds) : "\(Int(seconds.rounded()))s"
+        let minutes = Int(seconds) / 60
+        let remainder = seconds - Double(minutes) * 60
+        return step < 1
+            ? String(format: "%d:%04.1f", minutes, remainder)
+            : String(format: "%d:%02d", minutes, Int(remainder.rounded()))
     }
 
     /// A time somebody typed: `3.24`, `0:03.24`, `1:02`, `3.2s`. Seconds when there is no

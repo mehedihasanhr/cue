@@ -70,10 +70,19 @@ struct TimelineClipRow: View {
         let isDragged = reorder?.id == clip.id
         return TimelineChipBackground(tint: StudioTheme.Surface.clip, isSelected: isSelected(clip), isPrimary: true)
             .overlay {
-                // A solid bar, the way the footage reads at a glance; a title card says
-                // what it says.
+                // Footage says what it is, how long and how fast, as the reference's
+                // does ("Clip" over "15s ⊘ 1×"); a title card says what it says.
                 if let card = clip.title {
                     titleFace(card, width: width)
+                } else {
+                    TimelineChipLabel(title: clip.isFootage ? "Clip" : "Freeze", height: height, width: width) {
+                        Text(Self.length(clip.duration.seconds))
+                        Image(systemName: "gauge.with.dots.needle.33percent").font(.system(size: 9.5, weight: .semibold))
+                        Text(Self.speedLabel(clip.speed))
+                    } compact: {
+                        Text(Self.length(clip.duration.seconds))
+                    }
+                    .allowsHitTesting(false)
                 }
             }
             // A short white bar inside each end, always: the ends are where a clip is
@@ -166,6 +175,15 @@ struct TimelineClipRow: View {
             model.deleteSelection()
         }
         .disabled(model.timeline.clips.count < 2)
+    }
+
+    /// A clip's length as the chip says it: "15s", "1.5s", "1:05".
+    static func length(_ seconds: Double) -> String {
+        if seconds >= 60 {
+            let total = Int(seconds.rounded())
+            return String(format: "%d:%02d", total / 60, total % 60)
+        }
+        return seconds < 10 && seconds != seconds.rounded() ? "\(seconds.formatted(.number.precision(.fractionLength(1))))s" : "\(Int(seconds.rounded()))s"
     }
 
     static func speedLabel(_ speed: Double) -> String {
