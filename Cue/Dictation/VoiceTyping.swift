@@ -9,6 +9,9 @@ import SwiftUI
 ///
 /// - Hold the key: listens while it is held; letting go, or a pause, ends it.
 /// - Tap the key: listens hands-free until a pause; a second tap ends it sooner.
+/// - "Hey Cue, …": listens hands-free, showing the words as they come; "done" (or "that's
+///   all", "stop listening") types them, "cancel" (or "never mind") drops them, and two
+///   seconds of quiet types them too. No key is touched at all.
 /// - Esc: stops and throws it away.
 ///
 /// The key is watched with event monitors, which cost nothing while no key changes; the
@@ -31,6 +34,20 @@ final class VoiceTyping {
     private let model = VoiceTypingModel()
     private var wake: WakeWordListener?
     private var hotkey: TalkHotkey?
+
+    // After "Hey Cue": what has been said, and when it last changed.
+    private var capturing = false
+    private var captured = ""
+    private var captureStart = Date.now
+    private var lastChange = Date.now
+    private var captureTimer: Timer?
+
+    /// Quiet after speaking that ends a "Hey Cue" dictation and types it.
+    private static let wakePause: TimeInterval = 2
+    /// How long "Hey Cue" waits for the first word before closing.
+    private static let wakeWaitForSpeech: TimeInterval = 7
+    /// The longest one "Hey Cue" dictation runs.
+    private static let wakeLongest: TimeInterval = 180
 
     /// How long the key is held before Cue starts listening; a shorter press is a tap.
     private static let holdDelay: Duration = .milliseconds(280)
@@ -116,6 +133,7 @@ final class VoiceTyping {
     private func keyDown(_ event: NSEvent) {
         if keyIsDown { interrupt() }
         if Int(event.keyCode) == kVK_Escape, service.isListening(id) { cancel() }
+        if Int(event.keyCode) == kVK_Escape, capturing { cancelWake() }
     }
 
     /// The talk key was part of a shortcut: whatever it started is not talking.
@@ -138,11 +156,13 @@ final class VoiceTyping {
     }
 
     private func startListening() async {
-        guard service.state == .idle else { return }
+        guard service.state == .idle, !capturing else { return }
         // Where the words go: the app in front and its focused field, before anything changes.
         field = FrontField.capture()
         stopWake()
         model.phase = .listening
+        model.preview = ""
+        model.level = nil
         showPanel()
         let started = await service.start(for: id) { [weak self] in
             Task { await self?.finishAndPaste() }
@@ -202,10 +222,8 @@ final class VoiceTyping {
     private func startWake() {
         if wake == nil {
             let listener = WakeWordListener()
-            listener.onWake = { [weak self] in
-                guard let self, service.state == .idle else { return }
-                Task { await self.startListening() }
-            }
+            listener.onWake = { [weak self] said in self?.wakeHeard(said) }
+            listener.onSpeech = { [weak self] said, ended in self?.heardAfterWake(said, ended: ended) }
             wake = listener
         }
         guard let wake, !wake.isListening else { return }
@@ -218,7 +236,87 @@ final class VoiceTyping {
     }
 
     private func stopWake() {
+        if capturing { stopCapture() }
         wake?.stop()
+    }
+
+    // MARK: After "Hey Cue"
+
+    private func wakeHeard(_ said: String) {
+        // Already talking with the key: that dictation has the microphone's words.
+        guard service.state == .idle else { wake?.endCapture(); return }
+        capturing = true
+        captured = ""
+        captureStart = .now
+        lastChange = .now
+        field = FrontField.capture()
+        if preferences?.dictationAutoFormat ?? true, preferences?.dictationSmartFormat ?? true { VoiceFormatter.prewarm() }
+        model.phase = .listening
+        model.preview = ""
+        model.level = 0
+        showPanel()
+        captureTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.captureTick() }
+        }
+        heardAfterWake(said, ended: false)
+    }
+
+    private func heardAfterWake(_ said: String, ended: Bool) {
+        guard capturing else { return }
+        if said != captured {
+            captured = said
+            lastChange = .now
+            model.preview = said
+        }
+        switch VoiceCommand(said) {
+        case .done(let words): finishWake(words)
+        case .cancel: cancelWake()
+        case nil: if ended { finishWake(said) }
+        }
+    }
+
+    private func captureTick() {
+        guard capturing else { return }
+        model.level = wake?.level ?? 0
+        let now = Date.now
+        let hasWords = !captured.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if hasWords, now.timeIntervalSince(lastChange) >= Self.wakePause {
+            finishWake(captured)
+        } else if !hasWords, now.timeIntervalSince(captureStart) >= Self.wakeWaitForSpeech {
+            cancelWake()
+        } else if now.timeIntervalSince(captureStart) >= Self.wakeLongest {
+            finishWake(captured)
+        }
+    }
+
+    /// Types what was said after "Hey Cue", tidied, and goes back to waiting for it.
+    private func finishWake(_ said: String) {
+        guard capturing else { return }
+        stopCapture()
+        let words = said.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !words.isEmpty else { hidePanel(); return }
+        model.phase = .writing
+        Task {
+            var text = words
+            if preferences?.dictationAutoFormat ?? true {
+                text = await VoiceFormatter.format(text, smart: preferences?.dictationSmartFormat ?? true)
+            }
+            hidePanel()
+            paste(text)
+        }
+    }
+
+    private func cancelWake() {
+        guard capturing else { return }
+        stopCapture()
+        hidePanel()
+    }
+
+    private func stopCapture() {
+        capturing = false
+        captureTimer?.invalidate()
+        captureTimer = nil
+        wake?.endCapture()
     }
 
     private func resumeWake() {
@@ -354,12 +452,16 @@ private final class TalkHotkey {
 final class VoiceTypingModel {
     enum Phase { case listening, writing }
     var phase: Phase = .listening
+    /// What has been heard so far, shown as it comes (after "Hey Cue").
+    var preview = ""
+    /// The voice level from "Hey Cue"'s stream; nil while the dictation recorder has it.
+    var level: Double?
 }
 
 /// The pill at the bottom of the screen: the critter playing while Cue listens, a meter
 /// that moves with the voice, then "Writing" while the words are worked out.
 private struct VoiceTypingPill: View {
-    static let windowSize = CGSize(width: 240, height: 72)
+    static let windowSize = CGSize(width: 560, height: 72)
 
     let model: VoiceTypingModel
     private var service: DictationService { .shared }
@@ -369,13 +471,18 @@ private struct VoiceTypingPill: View {
         HStack(spacing: 10) {
             CueCritter(side: 26, mood: listening ? .guitar : .lookAround)
             if listening {
-                LevelBars(level: service.level)
+                LevelBars(level: model.level ?? service.level)
             } else {
                 ProgressView().controlSize(.small)
             }
-            Text(listening ? "Listening" : "Writing")
+            Text(listening ? (model.preview.isEmpty ? "Listening" : model.preview) : "Writing")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.white.opacity(0.9))
+                .lineLimit(1)
+                // The latest words, as they come; the start gives way.
+                .truncationMode(.head)
+                .frame(maxWidth: 400, alignment: .leading)
+                .fixedSize(horizontal: model.preview.count < 50, vertical: false)
         }
         .padding(.leading, 12)
         .padding(.trailing, 16)
