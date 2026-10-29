@@ -163,6 +163,7 @@ final class IslandController {
             self?.onOpenSettings()
         }
         model.onLauncherTab = { [weak self] tab in self?.expand(on: tab) }
+        model.dockEnabled = { [weak preferences] in preferences?.islandHoverButtons ?? true }
         model.onLauncherRecord = { [weak self] in
             self?.collapse()
             self?.onRecord()
@@ -472,6 +473,7 @@ final class IslandController {
     private func contains(_ location: CGPoint) -> Bool {
         let shape = model.shapeRect(for: model.phase)
         if location.x >= shape.minX, location.x <= shape.maxX, location.y >= shape.minY, location.y <= shape.maxY { return true }
+        if let dock = model.dockRect, dock.contains(location) { return true }
         guard let pane = previewPane, pane.isVisible, model.phase == .expanded else { return false }
         var frame = pane.frame
         frame.size.height += PreviewPaneWindow.gap

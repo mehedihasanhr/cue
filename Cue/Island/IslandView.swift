@@ -26,14 +26,14 @@ final class IslandModel {
         case agents
         /// Cue saying hello as it starts: out of the notch for a moment, then back.
         case hello
-        /// Hovered: a row of buttons under the notch, one per section and Record.
+        /// Hovered: the closed shape, with the floating buttons under it.
         case launcher
         case expanded
 
         var geometryPhase: IslandGeometry.Phase {
             switch self {
-            case .collapsed: .collapsed
-            case .flash, .hello, .launcher: .flash
+            case .collapsed, .launcher: .collapsed
+            case .flash, .hello: .flash
             case .status(let status): status.clock == nil ? .flash : .prompt
             case .prompt(let prompt): prompt.isForm ? .form : .prompt
             case .taskDetail, .clock, .media, .weather, .mirror, .agents: .form
@@ -52,9 +52,9 @@ final class IslandModel {
         /// text fields and forms keep a fixed width.
         var fitsContent: Bool {
             switch self {
-            case .flash, .status, .hello, .launcher: true
+            case .flash, .status, .hello: true
             case .prompt(let prompt): prompt.isConfirm
-            case .collapsed, .expanded, .taskDetail, .clock, .media, .weather, .mirror, .agents: false
+            case .collapsed, .expanded, .taskDetail, .clock, .media, .weather, .mirror, .agents, .launcher: false
             }
         }
     }
@@ -88,6 +88,26 @@ final class IslandModel {
     var onLauncherTab: (IslandTab) -> Void = { _ in }
     /// Brings up the recorder, from the hover buttons; set by the controller.
     var onLauncherRecord: () -> Void = {}
+    /// Settings › Island › Floating buttons; set by the controller.
+    var dockEnabled: () -> Bool = { true }
+    /// The floating buttons' width, reported by the row.
+    var dockWidth: CGFloat = 0
+
+    /// The floating buttons show under the hovered island and under the open panel
+    /// (not while files are dragged over it).
+    var showsDock: Bool {
+        guard dockEnabled() else { return false }
+        return phase == .launcher || (phase == .expanded && !showsDropZone)
+    }
+
+    /// The floating buttons and the gap above them, in screen coordinates: the
+    /// pointer may rest there, and a click there is not a click outside.
+    var dockRect: CGRect? {
+        guard showsDock, dockWidth > 0 else { return nil }
+        let shape = shapeRect(for: phase)
+        let height = IslandDock.gap + IslandDock.height
+        return CGRect(x: shape.midX - dockWidth / 2, y: shape.minY - height, width: dockWidth, height: height)
+    }
     /// Pops the player out into the mini player; set by the controller.
     var onDetachPlayer: () -> Void = {}
     /// Opens a link (a meeting's call) and closes; set by the controller.
@@ -141,7 +161,7 @@ final class IslandModel {
     /// The drawn shape in `phase`: the fixed rect, or the content-fitted one.
     func shapeRect(for phase: Phase) -> CGRect {
         guard let geometry else { return .zero }
-        if phase == .collapsed, !compactTiles().isEmpty { return geometry.collapsed.insetBy(dx: -CompactTiles.sideWidth, dy: 0) }
+        if phase == .collapsed || phase == .launcher, !compactTiles().isEmpty { return geometry.collapsed.insetBy(dx: -CompactTiles.sideWidth, dy: 0) }
         if phase == .expanded, showsDropZone { return geometry.dropZone(contentSize: IslandDropZone.size) }
         let width: CGFloat? = switch phase {
         case .expanded: panelWidth
@@ -510,6 +530,15 @@ struct IslandView: View {
                 withAnimation(.easeOut(duration: 0.3)) { faded = true }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            // The floating buttons, outside the shape, just under it.
+            .overlay(alignment: .top) {
+                if model.showsDock {
+                    IslandDock(model: model)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { model.dockWidth = $0 }
+                        .padding(.top, size.height + IslandDock.gap)
+                        .transition(.opacity.combined(with: .offset(y: -6)).animation(.easeOut(duration: 0.2)))
+                }
+            }
             // While files are dragged over, the drop zone is smaller than the island's
             // span, where the drag is held under the menu bar. A drag beside it must still
             // land on the island (a fully clear pixel lets it through to whatever is
@@ -529,7 +558,7 @@ struct IslandView: View {
     @ViewBuilder
     private func content(for phase: IslandModel.Phase, strip: CGFloat) -> some View {
         switch phase {
-        case .collapsed:
+        case .collapsed, .launcher:
             let tiles = model.compactTiles()
             if !tiles.isEmpty, let geometry = model.geometry {
                 // A tile either side of the notch, the notch itself left clear.
@@ -545,14 +574,6 @@ struct IslandView: View {
                     .frame(height: strip)
                     .transition(.opacity.animation(Self.contentAnimation))
             }
-        case .launcher:
-            VStack(spacing: 0) {
-                Color.clear.frame(height: strip)
-                IslandLauncher(model: model)
-                    .modifier(IdealWidth { model.contentWidth = $0 })
-                    .frame(height: IslandGeometry.flashContentHeight)
-            }
-            .transition(Self.contentTransition)
         case .hello:
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
@@ -732,8 +753,8 @@ struct IslandView: View {
     /// The panels that stay open to be used: they get the rim.
     static func hasBackdrop(_ phase: IslandModel.Phase) -> Bool {
         switch phase {
-        case .expanded, .agents, .clock, .media, .weather, .mirror, .taskDetail, .prompt, .launcher: true
-        case .collapsed, .flash, .status, .hello: false
+        case .expanded, .agents, .clock, .media, .weather, .mirror, .taskDetail, .prompt: true
+        case .collapsed, .flash, .status, .hello, .launcher: false
         }
     }
 
@@ -784,25 +805,29 @@ struct IdealWidth: ViewModifier {
     }
 }
 
-/// The hovered island: a floating button for each section of the panel, then Record
-/// and Settings. A section's button opens the panel on it.
-private struct IslandLauncher: View {
+/// The floating buttons under the island: one for each section of the panel, Tasks,
+/// then Record and Settings. A section's button opens the panel on it (or switches to
+/// it when the panel is open).
+struct IslandDock: View {
+    static let gap: CGFloat = 10
+    static let height: CGFloat = 44
+
     let model: IslandModel
     @Environment(AppPreferences.self) private var preferences
+    @AppStorage(IslandTab.storageKey) private var current: IslandTab = .all
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             ForEach(preferences.islandTabs, id: \.self) { tab in
-                LauncherButton(symbol: tab.symbol, help: tab.title) { model.onLauncherTab(tab) }
+                LauncherButton(symbol: tab.symbol, help: tab.title, selected: model.phase == .expanded && current == tab) { model.onLauncherTab(tab) }
             }
             // Tasks have a dashboard of their own, not a tab.
             LauncherButton(symbol: IslandTab.tasks.symbol, help: "Tasks") { model.onOpenTaskDashboard() }
-            Divider().frame(height: 18).opacity(0.5)
             LauncherButton(symbol: "record.circle", help: "Record", tint: .red) { model.onLauncherRecord() }
             LauncherButton(symbol: "gearshape", help: "Settings") { model.onOpenSettings() }
         }
-        .padding(.horizontal, 12)
-        .padding(.bottom, 6)
+        .frame(height: Self.height)
+        .environment(\.colorScheme, .dark)
     }
 }
 
@@ -811,16 +836,17 @@ private struct LauncherButton: View {
     let symbol: String
     let help: String
     var tint: Color?
+    var selected = false
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            Icon(symbol, size: 16, weight: .medium)
-                .foregroundStyle(tint ?? .white.opacity(hovering ? 1 : 0.85))
-                .frame(width: 34, height: 34)
-                .background(.white.opacity(hovering ? 0.2 : 0.1), in: Circle())
-                .overlay(Circle().strokeBorder(.white.opacity(0.12)))
+            Icon(symbol, size: 17, weight: .medium)
+                .foregroundStyle(tint ?? .white.opacity(hovering || selected ? 1 : 0.85))
+                .frame(width: 42, height: 42)
+                .background { LauncherGlass(lit: hovering || selected) }
+                .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
                 .scaleEffect(hovering ? 1.08 : 1)
                 .contentShape(Circle())
         }
@@ -829,6 +855,22 @@ private struct LauncherButton: View {
         .animation(.easeOut(duration: 0.15), value: hovering)
         .help(help)
         .accessibilityLabel(help)
+    }
+}
+
+/// A floating button's round glass: Liquid Glass where there is one, else dark and blurred.
+private struct LauncherGlass: View {
+    let lit: Bool
+
+    var body: some View {
+        if #available(macOS 26, *) {
+            Circle().fill(.clear)
+                .glassEffect(.regular.tint(.black.opacity(lit ? 0.1 : 0.4)).interactive(), in: Circle())
+        } else {
+            Circle().fill(.black.opacity(lit ? 0.55 : 0.75))
+                .background(.ultraThinMaterial, in: Circle())
+                .overlay(Circle().strokeBorder(.white.opacity(0.14)))
+        }
     }
 }
 

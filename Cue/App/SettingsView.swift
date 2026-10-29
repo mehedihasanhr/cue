@@ -407,10 +407,10 @@ struct IslandSettingsView: View {
                     .pickerStyle(.segmented)
                     .fixedSize()
                 }
+                SettingsRow("Floating buttons", subtitle: "Round buttons under the island for each section, Tasks, Record and Settings: hovering shows them, and they stay under the open panel. Off, hovering opens the whole panel.") {
+                    Toggle("Floating buttons", isOn: $preferences.islandHoverButtons).toggleStyle(.switch)
+                }
                 if preferences.islandOpenMode == .hover {
-                    SettingsRow("Buttons on hover", subtitle: "Hovering shows a row of buttons for each section, Record and Settings. Off, hovering opens the whole panel.") {
-                        Toggle("Buttons on hover", isOn: $preferences.islandHoverButtons).toggleStyle(.switch)
-                    }
                     SettingsRow("Hover delay") {
                         SecondsSlider(value: $preferences.islandHoverDelay, range: 0...1.5, step: 0.05, zero: "At once")
                     }

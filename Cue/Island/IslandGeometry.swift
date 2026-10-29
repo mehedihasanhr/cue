@@ -61,6 +61,8 @@ nonisolated struct IslandGeometry: Equatable {
     static let pillWidth: CGFloat = 140
     /// Room around the flash / expanded shape for its shadow.
     static let shadowMargin: CGFloat = 44
+    /// Room under the open shape for the floating buttons (see `IslandDock`).
+    static let dockRoom: CGFloat = 64
     /// Fallback width of the compact box, before its content has been measured.
     static let flashWidth: CGFloat = 340
     /// The compact box is always at least this much wider than the closed shape (just
@@ -189,8 +191,8 @@ nonisolated struct IslandGeometry: Equatable {
         let shape = rect(for: phase, contentWidth: contentWidth)
         guard phase != .collapsed else { return shape }
         var rect = shape.insetBy(dx: -Self.shadowMargin, dy: 0)
-        rect.origin.y -= Self.shadowMargin
-        rect.size.height += Self.shadowMargin
+        rect.origin.y -= Self.shadowMargin + Self.dockRoom
+        rect.size.height += Self.shadowMargin + Self.dockRoom
         let bounds = screen.frame
         if rect.width <= bounds.width {
             rect.origin.x = min(max(rect.minX, bounds.minX), bounds.maxX - rect.width)
