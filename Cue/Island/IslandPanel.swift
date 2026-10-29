@@ -88,6 +88,8 @@ struct IslandPanel: View {
     /// Opens the task dashboard window (the Tasks tab's expand button).
     var onOpenTaskDashboard: () -> Void = {}
     var onOpenSettings: () -> Void = {}
+    /// Brings up Cue Studio's recorder.
+    var onRecord: () -> Void = {}
     /// Opens the clock in the compact island (the prayer pill).
     var onShowClock: () -> Void = {}
     var onShowMedia: () -> Void = {}
@@ -465,6 +467,7 @@ struct IslandPanel: View {
                     }
                 }
                 // Tasks, last in the bar: the dashboard, in its own window.
+                HoverButton(symbol: "record.circle", help: "Record", size: 30, quiet: true, action: onRecord)
                 HoverButton(symbol: "checklist", help: "Tasks", size: 30, quiet: true, action: onOpenTaskDashboard)
                 HoverButton(symbol: "gearshape", help: "Settings", size: 30, quiet: true, action: onOpenSettings)
             }

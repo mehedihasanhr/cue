@@ -731,7 +731,7 @@ struct IslandView: View {
                 Color.clear.frame(height: strip)
                 IslandPanel(library: library, clipboard: clipboard, assets: assets, colors: colors, tasksStore: tasks, snippets: snippets, actions: actions,
                             width: model.panelWidth, onIdealWidth: { model.setPanelWidth($0) }, onIdealHeight: { model.setPanelHeight($0) },
-                            onPrompt: { model.onPrompt($0) }, onShowTask: { model.onShowTask($0) }, onOpenTaskDashboard: { model.onOpenTaskDashboard() }, onOpenSettings: { model.onOpenSettings() },
+                            onPrompt: { model.onPrompt($0) }, onShowTask: { model.onShowTask($0) }, onOpenTaskDashboard: { model.onOpenTaskDashboard() }, onOpenSettings: { model.onOpenSettings() }, onRecord: { model.onLauncherRecord() },
                             onShowClock: { model.onShowClock() }, onShowMedia: { model.onShowMedia() }, onShowWeather: { model.onShowWeather() }, onShowMirror: { model.onShowMirror() }, onPreviewPane: { model.onPreviewPane($0, $1) }, isPreviewOpen: { model.previewOpen },
                             onHidePreview: { model.onHidePreview() }, isPointerInPreview: { model.isPointerInPreview() }, previewLeaveTick: model.previewLeaveTick, arrowPress: model.arrowPress)
                     .padding(.horizontal, IslandGeometry.panelHorizontalPadding)
