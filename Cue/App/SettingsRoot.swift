@@ -6,7 +6,7 @@ import SwiftUI
 /// The pages of the Settings window, in sidebar order.
 enum SettingsSection: String, CaseIterable, Identifiable {
     case general, appearance, shortcuts, sharing, permissions, about
-    case island, agents, capture, editor, clipboard, tasks, mcp, snippets, notes, colors, time
+    case island, agents, capture, editor, clipboard, tasks, mcp, snippets, notes, dictation, colors, time
     case recording, captionsAudio, export
 
     var id: String { rawValue }
@@ -14,7 +14,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     /// The sidebar shows the app-wide pages first, then a group per feature.
     static let groups: [[SettingsSection]] = [
         [.general, .appearance, .shortcuts, .sharing, .permissions, .about],
-        [.island, .agents, .capture, .editor, .clipboard, .tasks, .mcp, .snippets, .notes, .colors, .time],
+        [.island, .agents, .capture, .editor, .clipboard, .tasks, .mcp, .snippets, .notes, .dictation, .colors, .time],
         [.recording, .captionsAudio, .export],
     ]
 
@@ -51,6 +51,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .mcp: "MCP"
         case .snippets: "Snippets"
         case .notes: "Notes"
+        case .dictation: "Dictation"
         case .colors: "Colors"
         case .time: "Time"
         }
@@ -74,6 +75,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .mcp: "Let AI agents like Claude Code and Codex read and update your tasks"
         case .snippets: "Text that expands as you type"
         case .notes: "Quick notes, where they live, and where they can be sent"
+        case .dictation: "Speaking into tasks and notes, with macOS or a downloaded Whisper model"
         case .colors: "The color picker and its formats"
         case .time: "The time on the island and prayer times"
         case .recording: "Where recordings go, what a take records, and Google Drive backup"
@@ -99,6 +101,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .mcp: "point.3.filled.connected.trianglepath.dotted"
         case .snippets: "text.badge.checkmark"
         case .notes: "note.text"
+        case .dictation: "mic"
         case .colors: "eyedropper.halffull"
         case .time: "clock.fill"
         case .recording: "record.circle.fill"
@@ -124,6 +127,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .mcp: .purple
         case .snippets: .mint
         case .notes: .yellow
+        case .dictation: .red
         case .colors: .red
         case .time: .cyan
         case .recording: .red
@@ -147,6 +151,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .mcp: ["mcp", "model context protocol", "ai", "agent", "claude", "claude code", "claude desktop", "codex", "cursor", "llm", "connect", "setup", "tasks", "tools"]
         case .snippets: ["snippet", "expand", "keyword", "trigger", "text", "type", "accessibility"]
         case .notes: ["note", "quick note", "markdown", "folder", "icloud", "obsidian", "vault", "apple notes", "notion", "sync"]
+        case .dictation: ["dictation", "dictate", "voice", "speech", "speak", "talk", "microphone", "mic", "whisper", "voiceink", "transcribe", "model", "download"]
         case .colors: ["color", "picker", "format", "hex", "rgb", "hsl", "swift", "css"]
         case .capture: ["cursor", "pointer", "mouse", "sound", "shutter", "audio", "full screen", "ocr", "text", "recognise", "recognize", "language", "bangla", "bengali", "hindi", "devanagari", "arabic", "script", "tesseract", "vision", "pack", "download", "cloud"]
         case .editor: ["annotation", "color", "stroke", "width", "shape", "arrow", "fill", "text", "font", "marker", "highlighter", "blur", "pixelate", "counter", "defaults", "video"] + StudioSettingsSection.editor.keywords
@@ -278,6 +283,7 @@ struct SettingsRootView: View {
         case .mcp: MCPSettingsView()
         case .snippets: SnippetSettingsView()
         case .notes: NotesSettingsView()
+        case .dictation: DictationSettingsView()
         case .colors: ColorSettingsView()
         case .time: TimeSettingsView()
         }

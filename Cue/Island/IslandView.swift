@@ -1707,6 +1707,9 @@ struct TaskFormRow: View {
             .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
             .help("Formatting and attachments — or type / in the text")
 
+            DictationButton(insert: { editor.insertSpoken($0) }, size: 11)
+                .floatingButton(Circle())
+
             accessories
 
             Spacer(minLength: 0)
@@ -1904,6 +1907,7 @@ struct TaskFormRow: View {
             formatButton("checklist", help: "Checklist", shortcut: KeyboardShortcut("t", modifiers: [.command, .shift])) { editor.block(.todo) }
             formatButton("text.quote", help: "Quote", shortcut: KeyboardShortcut("q", modifiers: [.command, .shift])) { editor.block(.quote) }
             formatButton("photo", help: "Insert image", shortcut: KeyboardShortcut("i", modifiers: [.command, .shift])) { chooseImage() }
+            DictationButton(insert: { editor.insertSpoken($0) }, size: 11)
             Spacer(minLength: 0)
             Text("/ formats · #project · !priority · ⌘1–4 priority · ⌘B ⌘I")
                 .font(.system(size: 9.5))

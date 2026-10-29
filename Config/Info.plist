@@ -70,6 +70,6 @@
 	<key>SUEnableInstallerLauncherService</key>
 	<true/>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Cue writes captions by recognising the speech in your recording. This happens on your Mac — the audio is never sent anywhere.</string>
+	<string>Cue turns speech into text for captions and dictation. This happens on your Mac — the audio is never sent anywhere.</string>
 </dict>
 </plist>

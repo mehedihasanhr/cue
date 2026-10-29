@@ -15,6 +15,7 @@
 		4B4C494B000000000000A039 /* BackgroundKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B4C494B000000000000A03B /* BackgroundKit */; };
 		4B4C494B000000000000A063 /* WebPKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B4C494B000000000000A065 /* WebPKit */; };
 		4B4C494B000000000000A064 /* WebPKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B4C494B000000000000A066 /* WebPKit */; };
+		4B4C494B000000000000A068 /* DictationKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4B4C494B000000000000A069 /* DictationKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -40,6 +41,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Capture/Scrolling/FrameStitcher.swift,
+				Dictation/AppleDictation.swift,
 				Editor/Rendering/CompareComposer.swift,
 				Editor/ShapeRecognizer.swift,
 				Clipboard/ClipboardItem.swift,
@@ -118,6 +120,7 @@
 				4B4C494B000000000000A057 /* TimelineKit in Frameworks */,
 				4B4C494B000000000000A060 /* Sparkle in Frameworks */,
 				4B4C494B000000000000A063 /* WebPKit in Frameworks */,
+				4B4C494B000000000000A068 /* DictationKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -188,6 +191,7 @@
 				4B4C494B000000000000A058 /* TimelineKit */,
 				4B4C494B000000000000A062 /* Sparkle */,
 				4B4C494B000000000000A065 /* WebPKit */,
+				4B4C494B000000000000A069 /* DictationKit */,
 			);
 			productName = Cue;
 			productReference = 4B4C494B000000000000A001 /* Cue.app */;
@@ -258,6 +262,7 @@
 				4B4C494B000000000000A053 /* XCLocalSwiftPackageReference "Packages/RenderKit" */,
 				4B4C494B000000000000A056 /* XCLocalSwiftPackageReference "Packages/TimelineKit" */,
 				4B4C494B000000000000A067 /* XCLocalSwiftPackageReference "Packages/WebPKit" */,
+				4B4C494B000000000000A06A /* XCLocalSwiftPackageReference "Packages/DictationKit" */,
 				4B4C494B000000000000A061 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -326,6 +331,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/WebPKit;
 		};
+		4B4C494B000000000000A06A /* XCLocalSwiftPackageReference "Packages/DictationKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/DictationKit;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -372,6 +381,10 @@
 		4B4C494B000000000000A066 /* WebPKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = WebPKit;
+		};
+		4B4C494B000000000000A069 /* DictationKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = DictationKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 
@@ -536,7 +549,7 @@
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Cue shows the battery of your AirPods and other Bluetooth headphones when they connect.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Cue shows your camera as a mirror in the Dynamic Island when you open it, records your camera when you add a webcam overlay, and the screen of an iPhone or iPad connected by cable when you choose to record one.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Cue records your microphone when you narrate a recording.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Cue records your microphone when you narrate a recording or dictate text.";
 				INFOPLIST_KEY_NSLocationUsageDescription = "Cue uses your location to compute prayer times on this Mac. It never leaves the device.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Cue uses your location to compute prayer times on this Mac. It never leaves the device.";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -572,7 +585,7 @@
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Cue shows the battery of your AirPods and other Bluetooth headphones when they connect.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Cue shows your camera as a mirror in the Dynamic Island when you open it, records your camera when you add a webcam overlay, and the screen of an iPhone or iPad connected by cable when you choose to record one.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Cue records your microphone when you narrate a recording.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Cue records your microphone when you narrate a recording or dictate text.";
 				INFOPLIST_KEY_NSLocationUsageDescription = "Cue uses your location to compute prayer times on this Mac. It never leaves the device.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Cue uses your location to compute prayer times on this Mac. It never leaves the device.";
 				LD_RUNPATH_SEARCH_PATHS = (

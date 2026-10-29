@@ -100,6 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         preferences.applyAppearance()
+        DictationService.preferences = preferences
         #if DEBUG
         // Diagnostics: `--env CUE_DEBUG_APPEARANCE=dark|light` draws Cue so, whatever the settings say.
         if let name = ProcessInfo.processInfo.environment["CUE_DEBUG_APPEARANCE"] {

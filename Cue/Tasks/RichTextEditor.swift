@@ -896,6 +896,16 @@ struct MarkdownEditor: NSViewRepresentable {
         func insertBlock(_ markdown: String) { textView?.insertBlock(markdown: markdown) }
         /// Plain text at the caret.
         func insert(_ string: String) { textView?.insertPlain(string) }
+        /// Dictated words at the caret, with a space before them when they would otherwise
+        /// run into the word already there.
+        func insertSpoken(_ string: String) {
+            guard let textView else { return }
+            let text = textView.string as NSString
+            let caret = textView.selectedRange().location
+            let before = caret > 0 && caret <= text.length ? UnicodeScalar(text.character(at: caret - 1)) : nil
+            let touches = before.map { !CharacterSet.whitespacesAndNewlines.contains($0) } ?? false
+            textView.insertPlain(touches ? " " + string : string)
+        }
         /// Puts the caret at the very start (a form seeded with an attachment wants the title typed above it).
         func moveToStart() { textView?.setSelectedRange(NSRange(location: 0, length: 0)) }
 

@@ -106,6 +106,9 @@ final class AppPreferences {
         static let tasksWebhookEvents = "tasks.webhook.events"
         static let tasksMCPEnabled = "tasks.mcp.enabled"
         static let snippetsEnabled = "snippets.enabled"
+        static let dictationEngine = "dictation.engine"
+        static let dictationWhisperModel = "dictation.whisperModel"
+        static let dictationLanguage = "dictation.language"
         static let snippetPrefix = "snippets.prefix"
         static let ocrLanguages = "ocr.languages"
         static let ocrCloudEnabled = "ocr.cloud.enabled"
@@ -217,6 +220,34 @@ final class AppPreferences {
     /// Expand snippet keywords as they are typed in any app (needs Accessibility).
     var snippetsEnabled: Bool {
         didSet { defaults.set(snippetsEnabled, forKey: Key.snippetsEnabled) }
+    }
+
+    /// What turns speech into text for the microphone buttons: macOS's own recogniser, or a
+    /// Whisper model the person downloaded (Settings › Dictation).
+    enum DictationEngine: String, CaseIterable {
+        case apple, whisper
+
+        var title: String {
+            switch self {
+            case .apple: "macOS"
+            case .whisper: "Whisper"
+            }
+        }
+    }
+
+    var dictationEngine: DictationEngine {
+        didSet { defaults.set(dictationEngine.rawValue, forKey: Key.dictationEngine) }
+    }
+
+    /// The downloaded Whisper model dictation uses (a `WhisperModel` id); nil for none chosen.
+    var dictationWhisperModel: String? {
+        didSet { defaults.set(dictationWhisperModel ?? "", forKey: Key.dictationWhisperModel) }
+    }
+
+    /// The language spoken, as a code ("en", "bn"); empty for automatic: macOS's language
+    /// for the macOS recogniser, whatever Whisper hears for Whisper.
+    var dictationLanguage: String {
+        didSet { defaults.set(dictationLanguage, forKey: Key.dictationLanguage) }
     }
 
     /// What every keyword starts with (";" by default) so plain words never expand;
@@ -999,6 +1030,9 @@ final class AppPreferences {
         tasksMCPEnabled = defaults.object(forKey: Key.tasksMCPEnabled) as? Bool ?? true
         tasksWebhookEvents = Set(defaults.stringArray(forKey: Key.tasksWebhookEvents) ?? ["created", "updated", "status", "deleted"])
         snippetsEnabled = defaults.object(forKey: Key.snippetsEnabled) as? Bool ?? true
+        dictationEngine = DictationEngine(rawValue: defaults.string(forKey: Key.dictationEngine) ?? "") ?? .apple
+        dictationWhisperModel = defaults.string(forKey: Key.dictationWhisperModel).flatMap { $0.isEmpty ? nil : $0 }
+        dictationLanguage = defaults.string(forKey: Key.dictationLanguage) ?? ""
         snippetPrefix = defaults.string(forKey: Key.snippetPrefix) ?? ";"
         ocrLanguages = defaults.stringArray(forKey: Key.ocrLanguages) ?? []
         ocrChecksScript = defaults.object(forKey: Key.ocrChecksScript) as? Bool ?? true

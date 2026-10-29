@@ -229,7 +229,9 @@ struct NoteFormRow: View {
             .help("Formatting — or type / in the text")
             Button(action: chooseImage) { smallGlyph("photo") }
                 .buttonStyle(.plain)
-                .help("Attach an image… (⌘⇧I)")
+                .help("Attach an image (⌘⇧I)")
+            DictationButton(insert: { editor.insertSpoken($0) }, size: 11)
+                .floatingButton(Circle())
             if let chrome {
                 Button { chrome.pinned.toggle() } label: {
                     Image(systemName: chrome.pinned ? "pin.fill" : "pin")
