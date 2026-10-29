@@ -1144,6 +1144,8 @@ final class IslandController {
         // Something dragged over the island that isn't files (a window being moved to
         // another Space) passes under it without opening it; files open it to drop.
         guard !pressWithoutDrop else { return }
+        // ⌘ held: the pointer passes over the island without opening it.
+        guard !NSEvent.modifierFlags.contains(.command) else { return }
         // A flash opens at once when hovered; the closed island waits for the delay
         // — or, in click mode, for a click.
         if case .status(let status) = model.phase, status.level != nil || status.notice?.isClickable == true || status.meeting?.joinURL != nil || status.banner != nil {
@@ -1157,7 +1159,8 @@ final class IslandController {
             hoverTask?.cancel()
             hoverTask = Task { [weak self] in
                 try? await Task.sleep(for: .milliseconds(Int(delay * 1000)))
-                guard !Task.isCancelled, let self, pointerInside, !pressWithoutDrop else { return }
+                guard !Task.isCancelled, let self, pointerInside, !pressWithoutDrop,
+                      !NSEvent.modifierFlags.contains(.command) else { return }
                 open()
             }
         }
