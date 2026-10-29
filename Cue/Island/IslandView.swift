@@ -59,7 +59,9 @@ final class IslandModel {
         }
     }
 
-    var phase: Phase = .collapsed
+    var phase: Phase = .collapsed {
+        didSet { IslandFrames.open = phase != .collapsed }
+    }
     var geometry: IslandGeometry?
     /// The compact box's row width, reported by the row itself (see `fitsContent`).
     var contentWidth: CGFloat?

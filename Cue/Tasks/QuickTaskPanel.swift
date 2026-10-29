@@ -105,7 +105,7 @@ final class QuickTaskPanel: NSPanel {
                 .background {
                     ZStack {
                         Self.ink.opacity(0.55 + 0.37 * solid)
-                        SmokeField(palette: Smoke.calm, intensity: 0.75 * solid, fadeTop: 0)
+                        SmokeField(palette: Smoke.calm, intensity: 0.75 * solid, fadeTop: 0, inIsland: false)
                         LinearGradient(colors: [.white.opacity(0.07 * solid + 0.02), .clear], startPoint: .top, endPoint: .init(x: 0.5, y: 0.35))
                     }
                     .background(.ultraThinMaterial)

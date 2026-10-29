@@ -500,7 +500,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
                 if let tab = IslandTab(rawValue: tabName) { UserDefaults.standard.set(tab.rawValue, forKey: IslandTab.storageKey) }
                 switch tabName {
-                case "agents": self?.island?.showAgents()
+                case "agents":
+                    self?.island?.showAgents()
+                    #if DEBUG
+                    // `CUE_DEBUG_ISLAND_CLOSE=<seconds>` closes it again, to check nothing of it keeps running.
+                    if let after = ProcessInfo.processInfo.environment["CUE_DEBUG_ISLAND_CLOSE"].flatMap(Double.init) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + after) { self?.island?.collapse() }
+                    }
+                    #endif
                 case "launcher": self?.island?.debugShowLauncher()
                 #if DEBUG
                 case "probe": SandboxProbe.run()

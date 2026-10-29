@@ -78,6 +78,8 @@ private struct AgentTile: View {
     let agent: AgentKind
     let state: AgentSession.State
     var side: CGFloat = 30
+    /// See `ClaudeCritter.ambient`.
+    var ambient = false
 
     private var working: Bool { state == .running }
 
@@ -88,7 +90,7 @@ private struct AgentTile: View {
 
     var body: some View {
         if agent == .claude {
-            ClaudeCritter(side: side, mood: ClaudeCritter.Mood(state))
+            ClaudeCritter(ambient: ambient, side: side, mood: ClaudeCritter.Mood(state))
         } else {
             tile
         }
@@ -116,7 +118,7 @@ private struct AgentTile: View {
             }
         }
         .overlay {
-            if working { WorkingRing(radius: side * 0.22) }
+            if working { WorkingRing(radius: side * 0.22, ambient: ambient) }
         }
     }
 }
@@ -127,6 +129,10 @@ private struct AgentTile: View {
 /// with each tap; asking, it waves an arm under a bobbing question mark; done, it
 /// smiles beside its closed laptop while a sparkle twinkles. Now and then it blinks.
 private struct ClaudeCritter: View {
+    /// On the closed island (the pill on a display without a notch), where it keeps
+    /// moving; in the open island it stops once the island closes.
+    var ambient = false
+
     enum Mood {
         case working, asking, done
 
@@ -237,7 +243,7 @@ private struct ClaudeCritter: View {
 
     var body: some View {
         let width = Self.width(side: side)
-        TimelineView(.animation(minimumInterval: Self.beat, paused: IslandView.reduceMotion)) { context in
+        TimelineView(IslandFrames(interval: Self.beat, paused: IslandView.reduceMotion, whileClosed: ambient)) { context in
             let tick = IslandView.reduceMotion ? 0 : Int(context.date.timeIntervalSinceReferenceDate / Self.beat)
             let blinking = mood != .done && tick % 31 == 0
             let grid = grid(tick)
@@ -280,10 +286,11 @@ private struct ClaudeCritter: View {
 /// A short arc of light travelling round the tile's edge: working, quietly.
 private struct WorkingRing: View {
     let radius: CGFloat
+    var ambient = false
 
     var body: some View {
         // Driven frame by frame: a gradient's angle does not animate by itself.
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: IslandView.reduceMotion)) { context in
+        TimelineView(IslandFrames(interval: 1.0 / 30, paused: IslandView.reduceMotion, whileClosed: ambient)) { context in
             let angle = (context.date.timeIntervalSinceReferenceDate * 160).truncatingRemainder(dividingBy: 360)
             RoundedRectangle(cornerRadius: radius, style: .continuous)
                 .inset(by: -2)
@@ -714,7 +721,7 @@ struct AgentAmbientRow: View {
         HStack(spacing: 0) {
             Group {
                 if let lead {
-                    AgentTile(agent: lead.agent, state: lead.state, side: 16)
+                    AgentTile(agent: lead.agent, state: lead.state, side: 16, ambient: true)
                         .opacity(lead.state == .idle ? 0.55 : 1)
                 }
             }
@@ -753,6 +760,9 @@ struct SmokeField: View {
     /// How far down it stays clear (where the island meets the notch) before it
     /// fades in over 40 points.
     var fadeTop: CGFloat = 56
+    /// In the island, where it stops once the island closes; elsewhere (the quick
+    /// task panel) it runs while it is shown.
+    var inIsland = true
     @State private var start = Date()
     @State private var loaded = 0
 
@@ -767,7 +777,7 @@ struct SmokeField: View {
     var body: some View {
         let _ = loaded
         if let tile = SmokeTexture.image(for: palette, ready: { loaded += 1 }) {
-            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: IslandView.reduceMotion)) { context in
+            TimelineView(IslandFrames(interval: 1.0 / 30, paused: IslandView.reduceMotion, whileClosed: !inIsland)) { context in
                 let time = IslandView.reduceMotion ? 20 : context.date.timeIntervalSince(start) + 20
                 GeometryReader { proxy in
                     ZStack(alignment: .topLeading) {
@@ -1410,7 +1420,7 @@ private struct AgentSessionCard: View {
     private var stateLabel: some View {
         switch session.state {
         case .running:
-            TimelineView(.periodic(from: .now, by: 1)) { context in
+            TimelineView(IslandFrames(interval: 1)) { context in
                 StatusLabel(text: "\(session.usedTool ? "Working" : "Thinking") \(Self.elapsed(since: session.turnStartedAt ?? session.startedAt, now: context.date))",
                             tone: SessionTone.working)
             }
@@ -1470,7 +1480,7 @@ private struct RippleDot: View {
             .frame(width: size, height: size)
             .background {
                 if !IslandView.reduceMotion {
-                    TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
+                    TimelineView(IslandFrames(interval: 1.0 / 30)) { context in
                         let elapsed = context.date.timeIntervalSinceReferenceDate
                             .truncatingRemainder(dividingBy: Self.ripple + Self.rest)
                         let progress = min(1, elapsed / Self.ripple)

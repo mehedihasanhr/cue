@@ -72,7 +72,7 @@ struct DictationSettingsView: View {
                     }
                 }
                 .disabled(!preferences.voiceTypingEnabled)
-                SettingsRow("Hey Cue", subtitle: "Say \"Hey Cue\" to start talking, no key needed. Keeps the microphone on while Cue runs (macOS shows its orange dot) and uses a little battery. Heard on this Mac only.") {
+                SettingsRow("Hey Cue", subtitle: "Say \"Hey Cue\" to start talking, no key needed. Keeps the microphone on while Cue runs (macOS shows its orange dot), but the recogniser only wakes when someone talks, and the microphone closes while the Mac is locked or asleep. Heard on this Mac only.") {
                     Toggle("Hey Cue", isOn: $preferences.voiceTypingWakeWord).toggleStyle(.switch)
                 }
                 .disabled(!preferences.voiceTypingEnabled)
