@@ -127,6 +127,16 @@ final class VoiceTyping {
 
     // MARK: Listening
 
+    /// "Hey Siri, talk to Cue" (`TalkToCueIntent`). A beat first, for Siri's panel to go and
+    /// for Siri to let go of the microphone, so the words go to the app that was in front.
+    func startFromSiri() {
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(800))
+            guard let self, service.state == .idle else { return }
+            await startListening()
+        }
+    }
+
     private func startListening() async {
         guard service.state == .idle else { return }
         // Where the words go: the app in front and its focused field, before anything changes.

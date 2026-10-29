@@ -76,6 +76,10 @@ struct DictationSettingsView: View {
                     Toggle("Hey Cue", isOn: $preferences.voiceTypingWakeWord).toggleStyle(.switch)
                 }
                 .disabled(!preferences.voiceTypingEnabled)
+                SettingsRow("Or say “Hey Siri, talk to Cue”", subtitle: "Siri listens for its own wake word without Cue opening the microphone, so the orange dot shows only while Cue is listening to you. Also in the Shortcuts app as Talk to Cue.",
+                            symbol: "waveform.circle", tint: .purple) {
+                    EmptyView()
+                }
                 SettingsRow("Auto-format", subtitle: "Takes out \"um\" and \"uh\", adds punctuation and capitals, and turns \"new line\" and \"new paragraph\" into breaks.") {
                     Toggle("Auto-format", isOn: $preferences.dictationAutoFormat).toggleStyle(.switch)
                 }
