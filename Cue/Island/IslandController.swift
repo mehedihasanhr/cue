@@ -66,6 +66,8 @@ final class IslandController {
     /// The Tasks tab asked for the dashboard window; set by the app.
     var onOpenTaskDashboard: () -> Void = {}
     var onOpenSettings: () -> Void = {}
+    /// Brings up Cue Studio's recorder, from the hover buttons.
+    var onRecord: () -> Void = {}
     /// Makes share links for dropped files (set by the app, which has the sharing settings).
     var onShareLink: ([URL]) -> Void = { _ in }
     /// Whether share links can be made.
@@ -159,6 +161,11 @@ final class IslandController {
         model.onOpenSettings = { [weak self] in
             self?.collapse()
             self?.onOpenSettings()
+        }
+        model.onLauncherTab = { [weak self] tab in self?.expand(on: tab) }
+        model.onLauncherRecord = { [weak self] in
+            self?.collapse()
+            self?.onRecord()
         }
         model.onPanelWidthChanged = { [weak self] in
             // Reported from inside a layout pass; the window resizes after it.
@@ -445,6 +452,8 @@ final class IslandController {
     var windowNumber: Int { window.windowNumber }
     /// For diagnostics: the keyboard goes to the island, as after a click in it.
     func debugMakeKey() { window.makeKey() }
+    /// For diagnostics: the hovered island's row of buttons.
+    func debugShowLauncher() { showLauncher() }
     /// For diagnostics: the island as while a file is dragged over it.
     func debugShowDropZone() { dragEntered() }
     /// For diagnostics: the drop zone saying one file was saved, held until the next drag.
@@ -647,7 +656,7 @@ final class IslandController {
     private func agentAsked() {
         guard preferences.agentAutoOpen, model.geometry != nil, !hidden else { return }
         switch model.phase {
-        case .collapsed, .flash, .status, .expanded, .hello: showAgents()
+        case .collapsed, .flash, .status, .expanded, .hello, .launcher: showAgents()
         case .agents, .prompt, .taskDetail, .clock, .media, .weather, .mirror: break
         }
     }
@@ -686,6 +695,27 @@ final class IslandController {
         if !preferences.islandCloseOnLeave || preferences.islandOpenMode == .click {
             installOutsideClickMonitor(forExpanded: true)
         }
+    }
+
+    /// Opens the panel on `tab`, whatever Settings › Island › Opens on says.
+    func expand(on tab: IslandTab) {
+        expand()
+        UserDefaults.standard.set(tab.rawValue, forKey: IslandTab.storageKey)
+    }
+
+    /// The hovered island: its row of buttons, in place of the whole panel.
+    private func showLauncher() {
+        guard model.geometry != nil, !hidden, model.phase == .collapsed else { return }
+        closeTask?.cancel()
+        hoverTask?.cancel()
+        window.orderFrontRegardless()
+        setPhase(.launcher, animated: true)
+    }
+
+    /// What hovering opens: the buttons when Settings asks for them, otherwise the
+    /// panel. Agents at work (or asking) always open their list.
+    private func hoverOpen() {
+        if preferences.islandHoverButtons, !model.showsAmbient { showLauncher() } else { open() }
     }
 
     func collapse(animated: Bool = true) {
@@ -1133,7 +1163,7 @@ final class IslandController {
         // outside; the pointer does not reopen the panel.
         switch model.phase {
         // The hello plays out untouched; the pointer counts once it has gone.
-        case .prompt, .taskDetail, .clock, .media, .weather, .mirror, .agents, .hello: return
+        case .prompt, .taskDetail, .clock, .media, .weather, .mirror, .agents, .hello, .launcher: return
         case .status(let status) where status.clock != nil:
             // The clock ignores the pointer: it neither opens the panel nor stays;
             // a click opens the clock view, otherwise it closes on its own.
@@ -1155,13 +1185,13 @@ final class IslandController {
             expand()
         } else if preferences.islandOpenMode == .hover {
             let delay = preferences.islandHoverDelay
-            guard delay > 0 else { open(); return }
+            guard delay > 0 else { hoverOpen(); return }
             hoverTask?.cancel()
             hoverTask = Task { [weak self] in
                 try? await Task.sleep(for: .milliseconds(Int(delay * 1000)))
                 guard !Task.isCancelled, let self, pointerInside, !pressWithoutDrop,
                       !NSEvent.modifierFlags.contains(.command) else { return }
-                open()
+                hoverOpen()
             }
         }
     }
@@ -1170,6 +1200,11 @@ final class IslandController {
         hoverTask?.cancel()
         // The sessions list stays while an agent waits on it, until answered or ⎋.
         let agentsCanClose = model.phase == .agents && model.agents?.requests.isEmpty != false
+        // The hover buttons go as soon as the pointer does, whatever the close setting.
+        if model.phase == .launcher {
+            collapse()
+            return
+        }
         guard model.phase == .expanded || agentsCanClose, preferences.islandCloseOnLeave else { return }
         closeTask?.cancel()
         let delay = preferences.islandCloseDelay

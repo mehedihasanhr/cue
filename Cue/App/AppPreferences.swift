@@ -22,6 +22,7 @@ final class AppPreferences {
         static let islandEnabled = "island.enabled"
         static let islandPlainDisplays = "island.plainDisplays"
         static let islandOpenMode = "island.openMode"
+        static let islandHoverButtons = "island.hoverButtons"
         static let islandHoverDelay = "island.hoverDelay"
         static let islandCloseDelay = "island.closeDelay"
         static let islandCloseOnLeave = "island.closeOnLeave"
@@ -425,6 +426,12 @@ final class AppPreferences {
 
     var islandOpenMode: IslandOpenMode {
         didSet { defaults.set(islandOpenMode.rawValue, forKey: Key.islandOpenMode) }
+    }
+
+    /// Hovering shows a row of buttons (each section, Record, Settings) rather than
+    /// the whole panel. On by default.
+    var islandHoverButtons: Bool {
+        didSet { defaults.set(islandHoverButtons, forKey: Key.islandHoverButtons) }
     }
 
     /// How long the pointer rests on the closed island before it opens (hover mode).
@@ -901,6 +908,7 @@ final class AppPreferences {
         dynamicIslandEnabled = defaults.object(forKey: Key.islandEnabled) as? Bool ?? true
         dynamicIslandOnPlainDisplays = defaults.object(forKey: Key.islandPlainDisplays) as? Bool ?? true
         islandOpenMode = IslandOpenMode(rawValue: defaults.string(forKey: Key.islandOpenMode) ?? "") ?? .hover
+        islandHoverButtons = defaults.object(forKey: Key.islandHoverButtons) as? Bool ?? true
         islandHoverDelay = defaults.object(forKey: Key.islandHoverDelay) as? Double ?? 0
         afterCapture = AfterCapture(rawValue: defaults.string(forKey: Key.afterCapture) ?? "") ?? .edit
         islandCloseDelay = defaults.object(forKey: Key.islandCloseDelay) as? Double ?? 0.25

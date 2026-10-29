@@ -26,12 +26,14 @@ final class IslandModel {
         case agents
         /// Cue saying hello as it starts: out of the notch for a moment, then back.
         case hello
+        /// Hovered: a row of buttons under the notch, one per section and Record.
+        case launcher
         case expanded
 
         var geometryPhase: IslandGeometry.Phase {
             switch self {
             case .collapsed: .collapsed
-            case .flash, .hello: .flash
+            case .flash, .hello, .launcher: .flash
             case .status(let status): status.clock == nil ? .flash : .prompt
             case .prompt(let prompt): prompt.isForm ? .form : .prompt
             case .taskDetail, .clock, .media, .weather, .mirror, .agents: .form
@@ -42,7 +44,7 @@ final class IslandModel {
         var isFlash: Bool {
             switch self {
             case .flash, .status: true
-            case .collapsed, .expanded, .prompt, .taskDetail, .clock, .media, .weather, .mirror, .agents, .hello: false
+            case .collapsed, .expanded, .prompt, .taskDetail, .clock, .media, .weather, .mirror, .agents, .hello, .launcher: false
             }
         }
 
@@ -50,7 +52,7 @@ final class IslandModel {
         /// text fields and forms keep a fixed width.
         var fitsContent: Bool {
             switch self {
-            case .flash, .status, .hello: true
+            case .flash, .status, .hello, .launcher: true
             case .prompt(let prompt): prompt.isConfirm
             case .collapsed, .expanded, .taskDetail, .clock, .media, .weather, .mirror, .agents: false
             }
@@ -82,6 +84,10 @@ final class IslandModel {
     var onShowWeather: () -> Void = {}
     /// Opens the camera mirror; set by the controller.
     var onShowMirror: () -> Void = {}
+    /// Opens the panel on a section, from the hover buttons; set by the controller.
+    var onLauncherTab: (IslandTab) -> Void = { _ in }
+    /// Brings up the recorder, from the hover buttons; set by the controller.
+    var onLauncherRecord: () -> Void = {}
     /// Pops the player out into the mini player; set by the controller.
     var onDetachPlayer: () -> Void = {}
     /// Opens a link (a meeting's call) and closes; set by the controller.
@@ -539,6 +545,14 @@ struct IslandView: View {
                     .frame(height: strip)
                     .transition(.opacity.animation(Self.contentAnimation))
             }
+        case .launcher:
+            VStack(spacing: 0) {
+                Color.clear.frame(height: strip)
+                IslandLauncher(model: model)
+                    .modifier(IdealWidth { model.contentWidth = $0 })
+                    .frame(height: IslandGeometry.flashContentHeight)
+            }
+            .transition(Self.contentTransition)
         case .hello:
             VStack(spacing: 0) {
                 Color.clear.frame(height: strip)
@@ -718,7 +732,7 @@ struct IslandView: View {
     /// The panels that stay open to be used: they get the rim.
     static func hasBackdrop(_ phase: IslandModel.Phase) -> Bool {
         switch phase {
-        case .expanded, .agents, .clock, .media, .weather, .mirror, .taskDetail, .prompt: true
+        case .expanded, .agents, .clock, .media, .weather, .mirror, .taskDetail, .prompt, .launcher: true
         case .collapsed, .flash, .status, .hello: false
         }
     }
@@ -767,6 +781,54 @@ struct IdealWidth: ViewModifier {
                 .accessibilityHidden(true)
                 .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { report($0) }
         }
+    }
+}
+
+/// The hovered island: a floating button for each section of the panel, then Record
+/// and Settings. A section's button opens the panel on it.
+private struct IslandLauncher: View {
+    let model: IslandModel
+    @Environment(AppPreferences.self) private var preferences
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(preferences.islandTabs, id: \.self) { tab in
+                LauncherButton(symbol: tab.symbol, help: tab.title) { model.onLauncherTab(tab) }
+            }
+            // Tasks have a dashboard of their own, not a tab.
+            LauncherButton(symbol: IslandTab.tasks.symbol, help: "Tasks") { model.onOpenTaskDashboard() }
+            Divider().frame(height: 18).opacity(0.5)
+            LauncherButton(symbol: "record.circle", help: "Record", tint: .red) { model.onLauncherRecord() }
+            LauncherButton(symbol: "gearshape", help: "Settings") { model.onOpenSettings() }
+        }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 6)
+    }
+}
+
+/// One of the hovered island's buttons: a round glass button that lights up under the pointer.
+private struct LauncherButton: View {
+    let symbol: String
+    let help: String
+    var tint: Color?
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Icon(symbol, size: 16, weight: .medium)
+                .foregroundStyle(tint ?? .white.opacity(hovering ? 1 : 0.85))
+                .frame(width: 34, height: 34)
+                .background(.white.opacity(hovering ? 0.2 : 0.1), in: Circle())
+                .overlay(Circle().strokeBorder(.white.opacity(0.12)))
+                .scaleEffect(hovering ? 1.08 : 1)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.15), value: hovering)
+        .help(help)
+        .accessibilityLabel(help)
     }
 }
 

@@ -484,7 +484,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
-        // Diagnostics: `--env CUE_DEBUG_ISLAND_SHOT=captures` opens the island on that tab (`agents`:
+        // Diagnostics: `--env CUE_DEBUG_ISLAND_SHOT=captures` opens the island on that tab (`launcher`: the hover buttons; `agents`:
         // the agent sessions; `drop`: as with a file dragged over it;
         // `dropsaved`: then as just dropped; `status`: a sample "Copied") and
         // writes a picture of it to Pictures/Cue/_island.png.
@@ -493,6 +493,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if let tab = IslandTab(rawValue: tabName) { UserDefaults.standard.set(tab.rawValue, forKey: IslandTab.storageKey) }
                 switch tabName {
                 case "agents": self?.island?.showAgents()
+                case "launcher": self?.island?.debugShowLauncher()
                 #if DEBUG
                 case "probe": SandboxProbe.run()
                 case "brightnesskeys": SandboxProbe.pressBrightness()
@@ -986,6 +987,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 island?.onSnippetFilled = { [weak self] snippet, values in self?.snippetFilled(snippet, values: values) }
                 island?.onOpenTaskDashboard = { [weak self] in self?.showTaskDashboard(nil) }
                 island?.onOpenSettings = { [weak self] in self?.showSettings(nil) }
+                island?.onRecord = { [weak self] in self?.studio.showRecorder() }
                 island?.canShare = { [weak self] in self?.share.isConfigured ?? false }
                 island?.onShareLink = { [weak self] urls in self?.shareFiles(urls) }
                 library.warmThumbnails()
