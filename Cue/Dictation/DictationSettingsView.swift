@@ -1,4 +1,5 @@
 import DictationKit
+import FoundationModels
 import SwiftUI
 
 /// Settings › Dictation: which recogniser the microphone buttons use, the language, and
@@ -14,6 +15,17 @@ struct DictationSettingsView: View {
         ("ar", "Arabic"), ("es", "Spanish"), ("fr", "French"), ("de", "German"), ("pt", "Portuguese"),
         ("it", "Italian"), ("tr", "Turkish"), ("ru", "Russian"), ("zh", "Chinese"), ("ja", "Japanese"), ("ko", "Korean"),
     ]
+
+    private var voiceTypingFooter: String {
+        preferences.voiceTypingKey == .fn
+            ? "If tapping Fn opens the emoji picker or macOS Dictation, set System Settings › Keyboard › Press 🌐 key to Do Nothing."
+            : "Hold the key on its own; with another key it is the usual shortcut and Cue stays out of it."
+    }
+
+    private static var hasAppleIntelligence: Bool {
+        if #available(macOS 26, *) { return SystemLanguageModel.default.availability != .unavailable(.deviceNotEligible) }
+        return false
+    }
 
     var body: some View {
         @Bindable var preferences = preferences
@@ -38,6 +50,55 @@ struct DictationSettingsView: View {
                     }
                 }
             }
+
+            SettingsGroup("Voice typing", footer: voiceTypingFooter) {
+                SettingsRow("Talk into any app", subtitle: "Hold the key, speak, and let go: what you said is typed where the caret is. Tap the key to talk hands-free until you pause. Esc stops.") {
+                    Toggle("Talk into any app", isOn: $preferences.voiceTypingEnabled).toggleStyle(.switch)
+                }
+                SettingsRow("Hold to talk", subtitle: "A key on its own, or a shortcut you record: Shortcut, then press the keys.") {
+                    HStack(spacing: 10) {
+                        Picker("Hold to talk", selection: $preferences.voiceTypingKey) {
+                            ForEach(AppPreferences.VoiceTypingKey.allCases, id: \.self) { key in
+                                if key == .shortcut { Divider() }
+                                Text(key.title).tag(key)
+                            }
+                        }
+                        .fixedSize()
+                        if preferences.voiceTypingKey == .shortcut {
+                            ShortcutRecorderView(hotkey: preferences.voiceTypingShortcut,
+                                                 onChange: { preferences.voiceTypingShortcut = $0 },
+                                                 onRecordingChanged: { _ in })
+                        }
+                    }
+                }
+                .disabled(!preferences.voiceTypingEnabled)
+                SettingsRow("Hey Cue", subtitle: "Say \"Hey Cue\" to start talking, no key needed. Keeps the microphone on while Cue runs (macOS shows its orange dot) and uses a little battery. Heard on this Mac only.") {
+                    Toggle("Hey Cue", isOn: $preferences.voiceTypingWakeWord).toggleStyle(.switch)
+                }
+                .disabled(!preferences.voiceTypingEnabled)
+                SettingsRow("Auto-format", subtitle: "Takes out \"um\" and \"uh\", adds punctuation and capitals, and turns \"new line\" and \"new paragraph\" into breaks.") {
+                    Toggle("Auto-format", isOn: $preferences.dictationAutoFormat).toggleStyle(.switch)
+                }
+                if Self.hasAppleIntelligence {
+                    SettingsRow("Tidy with Apple Intelligence", subtitle: "Also fixes false starts and turns lists you say into bullet points, on this Mac. Falls back to the simple tidy when it can't.") {
+                        Toggle("Tidy with Apple Intelligence", isOn: $preferences.dictationSmartFormat).toggleStyle(.switch)
+                    }
+                    .disabled(!preferences.dictationAutoFormat)
+                }
+                if preferences.voiceTypingEnabled, !PermissionManager.hasAccessibilityAccess {
+                    SettingsRow("Allow Accessibility", subtitle: "Cue needs it to notice the key in other apps and to paste for you. Add Cue in System Settings › Privacy & Security › Accessibility.",
+                                symbol: "exclamationmark.triangle", tint: .orange) {
+                        Button("Open Settings") {
+                            PermissionManager.requestAccessibilityAccess()
+                            PermissionManager.revealAppInFinder()
+                        }
+                    }
+                }
+            }
+            .onChange(of: preferences.voiceTypingEnabled) { VoiceTyping.shared.update() }
+            .onChange(of: preferences.voiceTypingKey) { VoiceTyping.shared.update() }
+            .onChange(of: preferences.voiceTypingShortcut) { VoiceTyping.shared.update() }
+            .onChange(of: preferences.voiceTypingWakeWord) { VoiceTyping.shared.update() }
 
             SettingsGroup("Whisper models", footer: "Downloaded from Hugging Face and run on this Mac; nothing you say leaves it. Remove deletes a model and everything of it. Update downloads the new version beside the old one, and deletes the old one once the new one works.") {
                 ForEach(WhisperModel.all) { model in

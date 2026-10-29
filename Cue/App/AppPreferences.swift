@@ -109,6 +109,12 @@ final class AppPreferences {
         static let dictationEngine = "dictation.engine"
         static let dictationWhisperModel = "dictation.whisperModel"
         static let dictationLanguage = "dictation.language"
+        static let voiceTypingEnabled = "dictation.voiceTyping"
+        static let voiceTypingKey = "dictation.voiceTypingKey"
+        static let voiceTypingShortcut = "dictation.voiceTypingShortcut"
+        static let voiceTypingWakeWord = "dictation.heyCue"
+        static let dictationAutoFormat = "dictation.autoFormat"
+        static let dictationSmartFormat = "dictation.smartFormat"
         static let snippetPrefix = "snippets.prefix"
         static let ocrLanguages = "ocr.languages"
         static let ocrCloudEnabled = "ocr.cloud.enabled"
@@ -248,6 +254,57 @@ final class AppPreferences {
     /// for the macOS recogniser, whatever Whisper hears for Whisper.
     var dictationLanguage: String {
         didSet { defaults.set(dictationLanguage, forKey: Key.dictationLanguage) }
+    }
+
+    /// Talking into any app's text field: hold a key (or say "Hey Cue"), speak, and the
+    /// words are pasted where the caret is.
+    var voiceTypingEnabled: Bool {
+        didSet { defaults.set(voiceTypingEnabled, forKey: Key.voiceTypingEnabled) }
+    }
+
+    /// The key held to talk: a modifier key on its own (holding one types nothing), or a
+    /// shortcut the person records (`voiceTypingShortcut`).
+    enum VoiceTypingKey: String, CaseIterable {
+        case fn, rightOption, rightCommand, rightControl, rightShift, leftOption, leftControl, shortcut
+
+        var title: String {
+            switch self {
+            case .fn: "Fn"
+            case .rightOption: "Right ⌥ Option"
+            case .rightCommand: "Right ⌘ Command"
+            case .rightControl: "Right ⌃ Control"
+            case .rightShift: "Right ⇧ Shift"
+            case .leftOption: "Left ⌥ Option"
+            case .leftControl: "Left ⌃ Control"
+            case .shortcut: "Shortcut"
+            }
+        }
+    }
+
+    var voiceTypingKey: VoiceTypingKey {
+        didSet { defaults.set(voiceTypingKey.rawValue, forKey: Key.voiceTypingKey) }
+    }
+
+    /// The shortcut held to talk, when `voiceTypingKey` is `.shortcut`.
+    var voiceTypingShortcut: Hotkey? {
+        didSet { defaults.set(voiceTypingShortcut.flatMap { try? JSONEncoder().encode($0) }, forKey: Key.voiceTypingShortcut) }
+    }
+
+    /// Listening for "Hey Cue" all the time. Off by default: the microphone stays on.
+    var voiceTypingWakeWord: Bool {
+        didSet { defaults.set(voiceTypingWakeWord, forKey: Key.voiceTypingWakeWord) }
+    }
+
+    /// Dictated text tidied before it is typed: fillers out, punctuation and capitals in,
+    /// "new line" as a line break.
+    var dictationAutoFormat: Bool {
+        didSet { defaults.set(dictationAutoFormat, forKey: Key.dictationAutoFormat) }
+    }
+
+    /// With auto-format, Apple Intelligence (on this Mac) tidies further where it is
+    /// available: false starts, lists said out loud.
+    var dictationSmartFormat: Bool {
+        didSet { defaults.set(dictationSmartFormat, forKey: Key.dictationSmartFormat) }
     }
 
     /// What every keyword starts with (";" by default) so plain words never expand;
@@ -1033,6 +1090,12 @@ final class AppPreferences {
         dictationEngine = DictationEngine(rawValue: defaults.string(forKey: Key.dictationEngine) ?? "") ?? .apple
         dictationWhisperModel = defaults.string(forKey: Key.dictationWhisperModel).flatMap { $0.isEmpty ? nil : $0 }
         dictationLanguage = defaults.string(forKey: Key.dictationLanguage) ?? ""
+        voiceTypingEnabled = defaults.object(forKey: Key.voiceTypingEnabled) as? Bool ?? true
+        voiceTypingKey = VoiceTypingKey(rawValue: defaults.string(forKey: Key.voiceTypingKey) ?? "") ?? .fn
+        voiceTypingShortcut = defaults.data(forKey: Key.voiceTypingShortcut).flatMap { try? JSONDecoder().decode(Hotkey.self, from: $0) }
+        voiceTypingWakeWord = defaults.object(forKey: Key.voiceTypingWakeWord) as? Bool ?? false
+        dictationAutoFormat = defaults.object(forKey: Key.dictationAutoFormat) as? Bool ?? true
+        dictationSmartFormat = defaults.object(forKey: Key.dictationSmartFormat) as? Bool ?? true
         snippetPrefix = defaults.string(forKey: Key.snippetPrefix) ?? ";"
         ocrLanguages = defaults.stringArray(forKey: Key.ocrLanguages) ?? []
         ocrChecksScript = defaults.object(forKey: Key.ocrChecksScript) as? Bool ?? true

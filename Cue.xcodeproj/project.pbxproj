@@ -42,6 +42,7 @@
 			membershipExceptions = (
 				Capture/Scrolling/FrameStitcher.swift,
 				Dictation/AppleDictation.swift,
+				Dictation/VoiceFormatter.swift,
 				Editor/Rendering/CompareComposer.swift,
 				Editor/ShapeRecognizer.swift,
 				Clipboard/ClipboardItem.swift,

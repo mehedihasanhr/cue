@@ -49,6 +49,17 @@ final class DictationService {
     @ObservationIgnored private var clip: URL?
     @ObservationIgnored private var meter: Timer?
     @ObservationIgnored private var installs: [String: Task<Void, Never>] = [:]
+    /// Called once when the speaker stops talking (or never starts), for a dictation that
+    /// ends on a pause rather than on a button.
+    @ObservationIgnored private var onPause: (() -> Void)?
+    @ObservationIgnored private var heardSpeech = false
+    @ObservationIgnored private var quietSince: Date?
+    @ObservationIgnored private var startedAt = Date.now
+
+    /// How long a pause after speaking ends a dictation that ends on one.
+    static let pauseLength: TimeInterval = 1.5
+    /// How long such a dictation waits for the first word before giving up.
+    static let waitForSpeech: TimeInterval = 8
 
     /// The longest one dictation records, so a button left on does not fill the disk.
     private static let longest: TimeInterval = 10 * 60
@@ -68,8 +79,10 @@ final class DictationService {
 
     /// Starts recording for the button `id`. False when it cannot (the microphone is not
     /// allowed, or another dictation is going); the reason has been shown.
+    /// With `onPause`, it is called once the speaker pauses after talking (or has said
+    /// nothing for a while); the caller then finishes the dictation.
     @discardableResult
-    func start(for id: UUID) async -> Bool {
+    func start(for id: UUID, onPause: (() -> Void)? = nil) async -> Bool {
         guard state == .idle else { return false }
         guard await microphoneAllowed() else {
             FeedbackHUD.show("Microphone not allowed", symbol: "mic.slash",
@@ -91,6 +104,10 @@ final class DictationService {
             clip = url
             owner = id
             state = .listening
+            self.onPause = onPause
+            heardSpeech = false
+            quietSince = nil
+            startedAt = .now
             startMeter()
             return true
         } catch {
@@ -107,6 +124,7 @@ final class DictationService {
         guard owner == id, state == .listening, let recorder, let clip else { return nil }
         recorder.stop()
         self.recorder = nil
+        onPause = nil
         stopMeter()
         state = .transcribing
         defer {
@@ -116,7 +134,10 @@ final class DictationService {
             state = .idle
         }
         do {
-            let text = try await transcribe(clip)
+            var text = try await transcribe(clip)
+            if !text.isEmpty, preferences?.dictationAutoFormat ?? true {
+                text = await VoiceFormatter.format(text, smart: preferences?.dictationSmartFormat ?? true)
+            }
             if text.isEmpty { FeedbackHUD.show("Nothing heard", symbol: "mic") }
             return text.isEmpty ? nil : text
         } catch {
@@ -128,6 +149,7 @@ final class DictationService {
 
     /// Stops recording and throws the clip away.
     func cancel() {
+        onPause = nil
         recorder?.stop()
         recorder = nil
         stopMeter()
@@ -172,8 +194,26 @@ final class DictationService {
                 recorder.updateMeters()
                 // -50 dB and below is silence; 0 dB is as loud as it goes.
                 self.level = max(0, min(1, (Double(recorder.averagePower(forChannel: 0)) + 50) / 50))
+                self.watchForPause()
             }
         }
+    }
+
+    /// Fires `onPause` once the voice has gone quiet after speaking, or never came.
+    private func watchForPause() {
+        guard let onPause else { return }
+        let now = Date.now
+        if level > 0.35 {
+            heardSpeech = true
+            quietSince = nil
+        } else if level < 0.2 {
+            quietSince = quietSince ?? now
+        }
+        let paused = heardSpeech && quietSince.map { now.timeIntervalSince($0) >= Self.pauseLength } == true
+        let silent = !heardSpeech && now.timeIntervalSince(startedAt) >= Self.waitForSpeech
+        guard paused || silent else { return }
+        self.onPause = nil
+        onPause()
     }
 
     private func stopMeter() {

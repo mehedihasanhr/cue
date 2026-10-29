@@ -101,6 +101,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         preferences.applyAppearance()
         DictationService.preferences = preferences
+        VoiceTyping.shared.configure(preferences)
+        #if DEBUG
+        // Diagnostics: `--env CUE_DEBUG_VOICE_PILL=1` shows voice typing's pill for a few seconds.
+        if ProcessInfo.processInfo.environment["CUE_DEBUG_VOICE_PILL"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { VoiceTyping.shared.debugShowPill() }
+        }
+        #endif
         #if DEBUG
         // Diagnostics: `--env CUE_DEBUG_APPEARANCE=dark|light` draws Cue so, whatever the settings say.
         if let name = ProcessInfo.processInfo.environment["CUE_DEBUG_APPEARANCE"] {
