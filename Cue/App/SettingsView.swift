@@ -407,7 +407,7 @@ struct IslandSettingsView: View {
                     .pickerStyle(.segmented)
                     .fixedSize()
                 }
-                SettingsRow("Floating buttons", subtitle: "Round buttons under the island for each section, Tasks, Record and Settings: hovering shows them, and they stay under the open panel. Off, hovering opens the whole panel.") {
+                SettingsRow("Floating buttons", subtitle: "Round buttons under the open panel for each section, Tasks, Record and Settings.") {
                     Toggle("Floating buttons", isOn: $preferences.islandHoverButtons).toggleStyle(.switch)
                 }
                 if preferences.islandOpenMode == .hover {

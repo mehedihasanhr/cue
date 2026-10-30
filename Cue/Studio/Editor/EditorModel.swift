@@ -194,7 +194,7 @@ final class EditorModel {
             // background, padding, pointer. Applied only to an untouched document, so
             // changing a default never rewrites an edit someone already made.
             if !document.hasBeenEdited {
-                document.adopt(settings.styled(document.timeline))
+                document.adopt(settings.styled(document.timeline, package: package.url))
             }
             // Only for a recording nobody has edited. A project that was saved with no
             // zooms in it is one whose zooms were taken out on purpose, and putting them

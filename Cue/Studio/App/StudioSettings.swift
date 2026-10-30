@@ -372,9 +372,22 @@ final class StudioSettings {
         return configuration
     }
 
+    /// Where the camera preview was left during a take, by the take's package — read once,
+    /// by `styled(_:package:)`, when the take first opens.
+    @ObservationIgnored private var cameraPlacements: [URL: CGPoint] = [:]
+
+    func placeCamera(at position: CGPoint, in package: URL) {
+        cameraPlacements[package.standardizedFileURL] = position
+    }
+
     /// How a brand-new project looks before anyone touches it.
-    func styled(_ timeline: Timeline) -> Timeline {
+    func styled(_ timeline: Timeline, package: URL? = nil) -> Timeline {
         var timeline = timeline
+        // The camera where its preview was dragged to while recording.
+        if let package, let position = cameraPlacements.removeValue(forKey: package.standardizedFileURL) {
+            timeline.webcam.corner = .custom
+            timeline.webcam.position = position
+        }
         timeline.style.background = backgroundPreset.background
         timeline.style.padding = padding
         timeline.style.cornerRadius = cornerRadius

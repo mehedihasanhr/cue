@@ -48,6 +48,9 @@ final class RecorderCenter {
         Self.shared = self
 
         hotkeys.perform = { [weak self] in self?.perform($0) }
+        studio.cameraPlacement = { [weak self] target in
+            CameraPreviewPanel.screenArea(of: target).flatMap { self?.cameraPreview.placement(in: $0) }
+        }
         bar.onVisibilityChange = { [weak self] visible in
             self?.isBarVisible = visible
             self?.sync()

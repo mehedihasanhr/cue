@@ -714,10 +714,10 @@ final class IslandController {
         setPhase(.launcher, animated: true)
     }
 
-    /// What hovering opens: the buttons when Settings asks for them, otherwise the
-    /// panel. Agents at work (or asking) always open their list.
+    /// What hovering opens: the panel, with the floating buttons under it when Settings
+    /// asks for them. Agents at work (or asking) open their list.
     private func hoverOpen() {
-        if preferences.islandHoverButtons, !model.showsAmbient { showLauncher() } else { open() }
+        open()
     }
 
     func collapse(animated: Bool = true) {

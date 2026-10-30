@@ -59,7 +59,8 @@ final class RecorderPreferences {
         notesFontSize = defaults.object(forKey: Key.notesFontSize) as? Double ?? 20
         hidesDesktopIcons = defaults.bool(forKey: Key.hidesDesktopIcons)
         showsCameraPreview = defaults.object(forKey: Key.cameraPreview) as? Bool ?? true
-        keepsCameraPreviewWhileRecording = defaults.bool(forKey: Key.cameraPreviewWhileRecording)
+        // On unless turned off: the preview is how the camera is placed during a take.
+        keepsCameraPreviewWhileRecording = defaults.object(forKey: Key.cameraPreviewWhileRecording) as? Bool ?? true
     }
 
     /// The shortcut for an action, as a menu or a tooltip writes it: "⌃⌥⌘R". Empty when

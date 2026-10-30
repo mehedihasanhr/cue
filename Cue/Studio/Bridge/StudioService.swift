@@ -39,6 +39,9 @@ final class StudioService {
     /// Called instead of `openEditor` when a take of this app's own stops and quick share is
     /// on: the take is offered for sharing first, and the editor is one button away.
     @ObservationIgnored var showQuickShare: ((URL, AfterRecording) -> Void)?
+    /// Where the camera preview was dragged to over what a take records, as
+    /// `WebcamSettings.position` reads it; `nil` when it was left beside the bar.
+    @ObservationIgnored var cameraPlacement: ((CaptureTarget) -> CGPoint?)?
     /// Said out loud when Cue asked for a folder this app cannot write to.
     private(set) var destinationNote: String?
 
@@ -159,9 +162,12 @@ final class StudioService {
         guard session.state.isTaking else { return }
         clearRestart()
         let request = lastRequest
+        // Read now, while the preview is still where it was during the take.
+        let placement = lastTarget.flatMap { cameraPlacement?($0) }
         Task {
             switch await session.stop() {
             case .success(let url):
+                if let placement { settings.placeCamera(at: placement, in: url) }
                 if let request { finish(request, outcome: .finished, project: url) }
                 let isOwn = request.map { ownRequests.contains($0.correlationID) } ?? true
                 if isOwn, settings.afterRecording != .editor, let showQuickShare {
