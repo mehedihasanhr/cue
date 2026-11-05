@@ -62,7 +62,10 @@ final class CaptureCoordinator {
     func captureWindow(fromMenu: Bool) {
         start(fromMenu: fromMenu) { [self] in
             guard let selection = try await CaptureSession(shortcuts: shortcuts).run(mode: .window, using: service) else { return }
-            if let window = selection.window {
+            // One piece of an app's window (a full-screen browser's tab strip, toolbar and page
+            // are separate windows) is cropped from the frozen frame below: that is exactly
+            // what the highlight showed, where asking for the window alone can return the whole app.
+            if let window = selection.window, !WindowDetector.isPiece(window.id, of: WindowDetector.onScreenWindows()) {
                 let content = try await service.shareableContent()
                 if let image = try await service.captureWindow(id: window.id, in: content, fallbackScale: selection.frozen.scale) {
                     onCaptured?(image)

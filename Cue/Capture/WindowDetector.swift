@@ -56,6 +56,24 @@ enum WindowDetector {
         windows.first { $0.frame.contains(point) }
     }
 
+    /// Whether window `id` is only a piece of what its app shows as one window: it lies
+    /// inside a bigger window of the same app, or sits edge to edge against one. Two
+    /// ordinary windows of an app overlap or stand apart, so they do not count.
+    static func isPiece(_ id: CGWindowID, of windows: [WindowInfo]) -> Bool {
+        guard let window = windows.first(where: { $0.id == id }) else { return false }
+        let frame = window.frame
+        return windows.contains { other in
+            guard other.id != id, other.ownerName == window.ownerName else { return false }
+            let bigger = other.frame.width * other.frame.height > frame.width * frame.height
+            if bigger, other.frame.insetBy(dx: -1, dy: -1).contains(frame) { return true }
+            let stacked = (abs(frame.minY - other.frame.maxY) <= 1 || abs(frame.maxY - other.frame.minY) <= 1)
+                && min(frame.maxX, other.frame.maxX) - max(frame.minX, other.frame.minX) > 0
+            let sideBySide = (abs(frame.minX - other.frame.maxX) <= 1 || abs(frame.maxX - other.frame.minX) <= 1)
+                && min(frame.maxY, other.frame.maxY) - max(frame.minY, other.frame.minY) > 0
+            return stacked || sideBySide
+        }
+    }
+
     /// Snaps `point` to any window edge within `tolerance` points, per axis.
     static func snap(_ point: CGPoint, to windows: [WindowInfo], tolerance: CGFloat) -> CGPoint {
         var snapped = point
