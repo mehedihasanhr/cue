@@ -88,7 +88,7 @@ final class QuickShareController {
         // Dark whatever the system is set to, like the recorder bar it follows.
         panel.appearance = NSAppearance(named: .darkAqua)
         // Never in a recording of the screen it sits on.
-        panel.sharingType = .none
+        panel.sharingType = .recordingWindow
         return panel
     }
 }

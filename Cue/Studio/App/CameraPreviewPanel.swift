@@ -110,7 +110,7 @@ final class CameraPreviewPanel {
         panel.hasShadow = true
         panel.isMovable = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        panel.sharingType = .none
+        panel.sharingType = .recordingWindow
         panel.isExcludedFromWindowsMenu = true
         panel.hidesOnDeactivate = false
         if let session {

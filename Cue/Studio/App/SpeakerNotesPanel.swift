@@ -43,7 +43,7 @@ final class SpeakerNotesPanel: NSObject, NSWindowDelegate {
         panel.hidesOnDeactivate = false
         // Readable over a full-screen app and on every Space, like the bar.
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.sharingType = .none
+        panel.sharingType = .recordingWindow
         panel.isReleasedWhenClosed = false
         panel.isExcludedFromWindowsMenu = true
         panel.minSize = NSSize(width: 240, height: 140)
