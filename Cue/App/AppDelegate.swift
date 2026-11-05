@@ -590,7 +590,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 case "dropsaved":
                     self?.island?.debugShowDropZone()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self?.island?.debugShowDropSaved() }
-                default: self?.island?.expand()
+                default:
+                    self?.island?.expand()
+                    #if DEBUG
+                    if let after = ProcessInfo.processInfo.environment["CUE_DEBUG_ISLAND_CLOSE"].flatMap(Double.init) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + after) { self?.island?.collapse() }
+                    }
+                    #endif
                 }
                 // CUE_DEBUG_ISLAND_PREVIEW=capture|clipboard|color|asset opens the tab's first
                 // such item in the pane under the island; the shot then takes the screen around both.

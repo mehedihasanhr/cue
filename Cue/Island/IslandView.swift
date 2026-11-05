@@ -95,11 +95,11 @@ final class IslandModel {
     /// The floating buttons' width, reported by the row.
     var dockWidth: CGFloat = 0
 
-    /// The floating buttons show under the open panel
-    /// (not while files are dragged over it).
+    /// The floating buttons show under the open panel (not while files are dragged
+    /// over it, nor while the preview pane has that place).
     var showsDock: Bool {
         guard dockEnabled() else { return false }
-        return phase == .expanded && !showsDropZone
+        return phase == .expanded && !showsDropZone && !previewOpen
     }
 
     /// The floating buttons and the gap above them, in screen coordinates: the
@@ -434,6 +434,8 @@ struct IslandView: View {
     /// Collapsed and settled: the shape is drawn clear so nothing shows beside the
     /// notch. Closing shrinks into the notch first (black all the way), then fades.
     @State private var faded = true
+    /// The floating buttons are still there, drawing back into the closing panel.
+    @State private var dockMounted = false
 
     /// Diagnostics: `--env CUE_DEBUG_GLASS=frosted,purple,0.3` shows that glass, whatever the settings say.
     private static let debugGlass: (style: AppPreferences.GlassStyle, tint: AppPreferences.GlassTint, darkness: Double)? = {
@@ -534,11 +536,27 @@ struct IslandView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             // The floating buttons, outside the shape, just under it.
             .overlay(alignment: .top) {
-                if model.showsDock {
+                // In, the buttons drip out of the panel's bottom edge (see `IslandDock`). Out,
+                // they stay a moment longer, riding the closing edge while they are drawn
+                // back up into it: a view being removed is frozen where it was, and would
+                // be left hanging in the air as the panel shrank away from it.
+                if model.showsDock || dockMounted {
                     IslandDock(model: model)
+                        .modifier(IslandDockCollapse(progress: model.showsDock ? 1 : 0))
+                        .animation(.easeOut(duration: IslandMotion.response(Self.reduceMotion ? 0.15 : 0.2)), value: model.showsDock)
+                        .allowsHitTesting(model.showsDock)
                         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { model.dockWidth = $0 }
                         .padding(.top, size.height + IslandDock.gap)
-                        .transition(.opacity.combined(with: .offset(y: -6)).animation(.easeOut(duration: 0.2)))
+                        // Following the panel's edge on the panel's own spring.
+                        .animation(collapsed ? Self.closeAnimation : Self.openAnimation, value: phase)
+                        .transition(.identity)
+                }
+            }
+            .onChange(of: model.showsDock) { _, shown in
+                guard !shown else { dockMounted = true; return }
+                Task {
+                    try? await Task.sleep(for: .seconds(IslandMotion.response(0.4)))
+                    if !model.showsDock { dockMounted = false }
                 }
             }
             // While files are dragged over, the drop zone is smaller than the island's
@@ -810,26 +828,164 @@ struct IdealWidth: ViewModifier {
 /// The floating buttons under the island: one for each section of the panel, Tasks,
 /// then Record and Settings. A section's button opens the panel on it (or switches to
 /// it when the panel is open).
+///
+/// Once the panel has opened they come out of it as liquid: each button its own drop,
+/// swelling out of the panel's bottom edge right above where it will sit, hanging by a
+/// neck that thins and snaps, the middle ones a moment before the outer ones. The
+/// liquid is `IslandDockGoo`, in the panel's colour; the glass buttons fade in as the
+/// drops come free and the liquid fades out.
 struct IslandDock: View {
     static let gap: CGFloat = 10
     static let height: CGFloat = 44
+    static let button: CGFloat = 42
+    static let spacing: CGFloat = 8
 
     let model: IslandModel
     @Environment(AppPreferences.self) private var preferences
     @AppStorage(IslandTab.storageKey) private var current: IslandTab = .all
+    @State private var appeared: Double = IslandView.reduceMotion ? 1 : 0
+    /// Below 1 while the island closes: the drops going back in.
+    @Environment(\.islandDockOut) private var out
 
     var body: some View {
-        HStack(spacing: 8) {
-            ForEach(preferences.islandTabs, id: \.self) { tab in
-                LauncherButton(symbol: tab.symbol, help: tab.title, selected: model.phase == .expanded && current == tab) { model.onLauncherTab(tab) }
+        let count = preferences.islandTabs.count + 3
+        let progress = min(appeared, out)
+        ZStack(alignment: .top) {
+            IslandDockGoo(progress: progress, count: count, color: .black)
+            HStack(spacing: Self.spacing) {
+                ForEach(Array(preferences.islandTabs.enumerated()), id: \.element) { index, tab in
+                    LauncherButton(symbol: tab.symbol, help: tab.title, selected: model.phase == .expanded && current == tab) { model.onLauncherTab(tab) }
+                        .modifier(IslandDockReveal(progress: progress, index: index, count: count))
+                }
+                // Tasks have a dashboard of their own, not a tab.
+                LauncherButton(symbol: IslandTab.tasks.symbol, help: "Tasks") { model.onOpenTaskDashboard() }
+                    .modifier(IslandDockReveal(progress: progress, index: count - 3, count: count))
+                LauncherButton(symbol: "record.circle", help: "Record", tint: .red) { model.onLauncherRecord() }
+                    .modifier(IslandDockReveal(progress: progress, index: count - 2, count: count))
+                LauncherButton(symbol: "gearshape", help: "Settings") { model.onOpenSettings() }
+                    .modifier(IslandDockReveal(progress: progress, index: count - 1, count: count))
             }
-            // Tasks have a dashboard of their own, not a tab.
-            LauncherButton(symbol: IslandTab.tasks.symbol, help: "Tasks") { model.onOpenTaskDashboard() }
-            LauncherButton(symbol: "record.circle", help: "Record", tint: .red) { model.onLauncherRecord() }
-            LauncherButton(symbol: "gearshape", help: "Settings") { model.onOpenSettings() }
+            .frame(height: Self.height)
         }
-        .frame(height: Self.height)
+        // Going back in, it fades as it goes, gone before the panel has closed.
+        .opacity(out < 1 ? Self.smooth(out) : 1)
+        // Nothing above the panel's edge: the liquid comes out of it.
+        .mask(alignment: .top) {
+            Rectangle().padding(.top, -Self.gap).padding(.horizontal, -40).padding(.bottom, -30)
+        }
         .environment(\.colorScheme, .dark)
+        .task {
+            guard appeared < 1 else { return }
+            // After the panel's own spring has mostly settled, so the two never fight.
+            try? await Task.sleep(for: .seconds(IslandMotion.response(0.22)))
+            withAnimation(.easeInOut(duration: IslandMotion.response(0.45))) { appeared = 1 }
+        }
+    }
+
+    /// How far behind the middle button the outermost one starts, as a share of the run.
+    private static let stagger = 0.3
+
+    /// Button `index`'s own progress: 0 inside the panel, 1 free and in place.
+    static func drop(of index: Int, among count: Int, at progress: Double) -> Double {
+        let middle = Double(count - 1) / 2
+        let delay = middle > 0 ? stagger * abs(Double(index) - middle) / middle : 0
+        return smooth((progress - delay) / (1 - stagger))
+    }
+
+    /// 0 to 1 with no jolt at either end.
+    static func smooth(_ value: Double) -> Double {
+        let x = min(1, max(0, value))
+        return x * x * (3 - 2 * x)
+    }
+
+    /// The centre of button `index` of `count` at `progress`, in the row's coordinates.
+    static func centre(of index: Int, among count: Int, at progress: Double) -> CGPoint {
+        let x = button / 2 + CGFloat(index) * (button + spacing)
+        // From inside the panel, just above its edge (`gap` above the row), straight down.
+        let start = -gap - button / 2 + 4
+        let home = height / 2
+        return CGPoint(x: x, y: start + (home - start) * drop(of: index, among: count, at: progress))
+    }
+}
+
+/// The dock's way out: hands its progress, frame by frame, to the dock below.
+struct IslandDockCollapse: ViewModifier, Animatable {
+    var progress: Double
+    var animatableData: Double {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        content.environment(\.islandDockOut, progress)
+    }
+}
+
+extension EnvironmentValues {
+    /// See `IslandDockCollapse`.
+    @Entry var islandDockOut: Double = 1
+}
+
+/// Moves a button with its drop of the liquid, and fades it in as the liquid parts.
+private struct IslandDockReveal: ViewModifier, Animatable {
+    var progress: Double
+    let index: Int
+    let count: Int
+    var animatableData: Double {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        let home = IslandDock.centre(of: index, among: count, at: 1)
+        let now = IslandDock.centre(of: index, among: count, at: progress)
+        content
+            .opacity(IslandDock.smooth((IslandDock.drop(of: index, among: count, at: progress) - 0.65) / 0.35))
+            .offset(x: now.x - home.x, y: now.y - home.y)
+    }
+}
+
+/// The liquid: a lip along the panel's bottom edge and a drop for each button, blurred
+/// together and cut at half strength, so drops that are close join into one body and
+/// pull necks between them as they part — the metaball trick.
+private struct IslandDockGoo: View, Animatable {
+    var progress: Double
+    let count: Int
+    let color: Color
+
+    var animatableData: Double {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    private static let margin: CGFloat = 30
+
+    var body: some View {
+        let width = CGFloat(count) * IslandDock.button + CGFloat(count - 1) * IslandDock.spacing
+        let margin = Self.margin
+        let top = margin + IslandDock.gap // the row's top, in the canvas
+        Canvas { context, size in
+            context.addFilter(.alphaThreshold(min: 0.5, color: color))
+            context.addFilter(.blur(radius: 6))
+            context.drawLayer { layer in
+                // The lip, just inside the panel's edge, to hang from.
+                layer.fill(Path(CGRect(x: margin, y: margin - 14, width: width, height: 14)), with: .color(.black))
+                // A little under a button's size, so neighbours never run together.
+                let radius = IslandDock.button / 2 - 4
+                for index in 0..<count {
+                    let centre = IslandDock.centre(of: index, among: count, at: progress)
+                    let rect = CGRect(x: margin + centre.x - radius, y: top + centre.y - radius, width: radius * 2, height: radius * 2)
+                    layer.fill(Path(ellipseIn: rect), with: .color(.black))
+                }
+            }
+        }
+        .frame(width: width + margin * 2, height: IslandDock.gap + IslandDock.height + margin * 2)
+        .padding(.top, -margin - IslandDock.gap)
+        .padding(.horizontal, -margin)
+        // Gone as the glass buttons come in.
+        .opacity(progress >= 1 ? 0 : 1 - IslandDock.smooth((progress - 0.8) / 0.2))
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 
