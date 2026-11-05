@@ -394,6 +394,8 @@ final class VideoEditorWindowController: NSWindowController, NSWindowDelegate {
         guard let window else { return }
         let isFullScreen = window.styleMask.contains(.fullScreen)
         session.presentationChanged(on)
+        // Its empty toolbar would stay over the top of the picture.
+        window.toolbar?.isVisible = !on
         if on {
             watchForEscape()
             // Quiet automation must not carry the user off to a new Space: there the
@@ -413,6 +415,7 @@ final class VideoEditorWindowController: NSWindowController, NSWindowDelegate {
     /// the preview too, so the window never comes back as a bare picture with no editor.
     func windowDidExitFullScreen(_ notification: Notification) {
         enteredFullScreenToPresent = false
+        window?.toolbar?.isVisible = true
         guard session.isPresenting else { return }
         stopWatchingForEscape()
         session.presentationChanged(false)

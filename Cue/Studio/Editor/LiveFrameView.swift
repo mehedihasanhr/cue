@@ -13,7 +13,11 @@ import SwiftUI
 /// into a buffer the window server can show as it is, and handed to a layer directly.
 @MainActor
 final class LiveFrameSink {
-    fileprivate weak var layer: CALayer?
+    /// Every layer showing the frames, held weakly. More than one, for a moment: going in and
+    /// out of the full-screen preview makes the new view before the old one has gone, and
+    /// with a single layer whichever view spoke last won. The old one could, and when it
+    /// was freed the frames were drawn into nothing: the preview played black.
+    private let layers = NSHashTable<CALayer>.weakObjects()
     private var pool: CVPixelBufferPool?
     private var poolSize: CGSize = .zero
     /// The frames lately handed over, kept alive while the screen may still be showing
@@ -51,7 +55,7 @@ final class LiveFrameSink {
         guard let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue() else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        layer?.contents = surface
+        for layer in layers.allObjects { layer.contents = surface }
         CATransaction.commit()
         recent.append(buffer)
         if recent.count > 3 { recent.removeFirst() }
@@ -59,8 +63,12 @@ final class LiveFrameSink {
 
     /// Lets go of the buffers once playback is over.
     func clear() {
-        layer?.contents = nil
+        for layer in layers.allObjects { layer.contents = nil }
         recent.removeAll()
+    }
+
+    fileprivate func attach(_ layer: CALayer) {
+        layers.add(layer)
     }
 }
 
@@ -76,12 +84,12 @@ struct LiveFrameView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> HostingView {
         let view = HostingView()
-        sink.layer = view.hosted
+        sink.attach(view.hosted)
         return view
     }
 
     func updateNSView(_ view: HostingView, context: Context) {
-        sink.layer = view.hosted
+        sink.attach(view.hosted)
     }
 
     /// A view that hosts its layer rather than being backed by one.
