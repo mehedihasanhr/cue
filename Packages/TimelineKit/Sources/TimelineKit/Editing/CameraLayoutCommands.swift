@@ -64,6 +64,72 @@ public extension Commands {
         }
     }
 
+    /// Sends the bubble somewhere new, arriving at a moment.
+    ///
+    /// The glide happens just before `time`, so the frame somebody is looking at while they
+    /// drag is the frame that shows the bubble where they put it. It stays there until the
+    /// next move, or until the end of the stretch it was made inside. Made so close to the
+    /// start of a move that there is no room for another, it changes that move instead.
+    struct PlaceCamera: TimelineCommand {
+        public let id: UUID
+        public let time: CMTime
+        public let placement: CameraPlacement
+        public var name: String { "Move Camera" }
+
+        public init(id: UUID = UUID(), at time: CMTime, placement: CameraPlacement) {
+            self.id = id
+            self.time = time
+            self.placement = placement
+        }
+
+        public func apply(to timeline: inout Timeline) -> Bool {
+            let length = timeline.duration
+            guard length > .zero else { return false }
+            let time = min(max(time, .zero), length)
+            let glide = CMTime(seconds: Timeline.cameraMoveTransition, preferredTimescale: 600)
+            let start = max(.zero, time - glide)
+            let placed = timeline.cameraLayouts.filter { $0.placement != nil }
+            var end = placed.filter { $0.start > time }.map(\.start).min() ?? length
+
+            if let current = CameraLayoutSegment.winner(in: placed, at: time.seconds),
+               let index = timeline.cameraLayouts.firstIndex(where: { $0.id == current.id }) {
+                // Still gliding there: cutting it short would stop it part way.
+                if start - current.start < glide {
+                    timeline.cameraLayouts[index].placement = placement
+                    timeline.webcam.isEnabled = true
+                    return true
+                }
+                end = min(end, current.end)
+                timeline.cameraLayouts[index].duration = start - current.start
+            }
+            guard end - start >= Clip.minimumDuration else { return false }
+            timeline.cameraLayouts.append(CameraLayoutRegion(id: id, start: start, duration: end - start,
+                                                             layout: .bubble, placement: placement))
+            timeline.cameraLayouts.sort { $0.start < $1.start }
+            timeline.webcam.isEnabled = true
+            return true
+        }
+    }
+
+    /// Changes where one stretch puts the bubble; `nil` hands it back to the Webcam panel.
+    struct SetCameraPlacement: TimelineCommand {
+        public let id: UUID
+        public let placement: CameraPlacement?
+        public var name: String { "Move Camera" }
+
+        public init(id: UUID, placement: CameraPlacement?) {
+            self.id = id
+            self.placement = placement
+        }
+
+        public func apply(to timeline: inout Timeline) -> Bool {
+            guard let index = timeline.cameraLayouts.firstIndex(where: { $0.id == id }),
+                  timeline.cameraLayouts[index].placement != placement else { return false }
+            timeline.cameraLayouts[index].placement = placement
+            return true
+        }
+    }
+
     /// Takes every layout region off the lane: the bubble everywhere again.
     struct RemoveCameraLayouts: TimelineCommand {
         public var name: String { "Remove Camera Layouts" }

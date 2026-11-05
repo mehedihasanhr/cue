@@ -44,22 +44,61 @@ public enum CameraLayout: String, Codable, Sendable, CaseIterable, Identifiable 
     public var showsScreen: Bool { self != .cameraOnly }
 }
 
+/// Where the camera bubble sits and how big it is, for a stretch of the video.
+public struct CameraPlacement: Codable, Equatable, Sendable {
+    /// The bubble's centre, normalised to the output frame with a top-left origin:
+    /// `WebcamSettings.position`'s reading.
+    public var centre: CGPoint
+    /// Fraction of the shorter output side: `WebcamSettings.size`'s reading.
+    public var size: Double
+
+    public init(centre: CGPoint, size: Double) {
+        self.centre = centre
+        self.size = size
+    }
+}
+
+/// Where the bubble is at one moment: settled, or gliding from one place to another. `nil`
+/// at either end is where the Webcam panel's settings put it.
+public struct CameraPlacementState: Equatable, Sendable {
+    public var from: CameraPlacement?
+    public var to: CameraPlacement?
+    /// How far from `from` to `to`, 0…1, already eased.
+    public var progress: Double
+
+    public init(from: CameraPlacement?, to: CameraPlacement?, progress: Double) {
+        self.from = from
+        self.to = to
+        self.progress = min(1, max(0, progress))
+    }
+
+    public static func steady(_ placement: CameraPlacement?) -> CameraPlacementState {
+        CameraPlacementState(from: placement, to: placement, progress: 1)
+    }
+
+    public var isSteady: Bool { from == to || progress >= 1 }
+}
+
 /// A stretch of the timeline with its own camera layout.
 public struct CameraLayoutRegion: TimelineRegion {
     public let id: UUID
     public var start: CMTime
     public var duration: CMTime
     public var layout: CameraLayout
+    /// Where the bubble goes for this stretch, or `nil` for where the Webcam panel puts it.
+    public var placement: CameraPlacement?
 
     /// Five seconds: long enough to be a stretch you can see and grab on the lane, short
     /// enough that adding one does not quietly take over the rest of the video.
     public static let defaultDuration = CMTime(value: 5, timescale: 1)
 
-    public init(id: UUID = UUID(), start: CMTime, duration: CMTime, layout: CameraLayout) {
+    public init(id: UUID = UUID(), start: CMTime, duration: CMTime, layout: CameraLayout,
+                placement: CameraPlacement? = nil) {
         self.id = id
         self.start = start
         self.duration = duration
         self.layout = layout
+        self.placement = placement
     }
 
     /// Field by field, for the reason `Timeline.init(from:)` gives. A layout this build
@@ -74,10 +113,11 @@ public struct CameraLayoutRegion: TimelineRegion {
         start = value(.start, default: .zero)
         duration = value(.duration, default: .zero)
         layout = value(.layout, default: .bubble)
+        placement = (try? container.decodeIfPresent(CameraPlacement.self, forKey: .placement)) ?? nil
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, start, duration, layout
+        case id, start, duration, layout, placement
     }
 }
 
@@ -169,6 +209,69 @@ public extension Timeline {
             }
         }
         return .steady(segment.layout)
+    }
+
+    /// How long the bubble takes to glide to a new place, in seconds. Longer than a change
+    /// of layout: this is one thing travelling across the picture, and the eye follows it.
+    static let cameraMoveTransition = 0.6
+
+    /// Where the bubble is at a moment.
+    ///
+    /// Stateless, like `cameraLayout(at:)`, so scrubbing and playing agree. Only regions with
+    /// a placement count: hiding the camera over a stretch does not move it. A move glides
+    /// inside its own region's first `cameraMoveTransition`, and a region ending before the
+    /// video does glides back over its last. One that runs to the end of the video stays.
+    func cameraPlacement(at time: CMTime) -> CameraPlacementState {
+        let t = time.seconds
+        let placed = cameraLayouts.filter { $0.placement != nil }
+        guard t.isFinite, !placed.isEmpty else { return .steady(nil) }
+
+        let edges = Set(placed.flatMap { [$0.start.seconds, $0.end.seconds] }.filter(\.isFinite)).sorted()
+        let bounds = [-Double.infinity] + edges + [Double.infinity]
+        var pieces: [(start: Double, end: Double, placement: CameraPlacement?)] = []
+        for (start, end) in zip(bounds, bounds.dropFirst()) where end > start {
+            let probe = start.isFinite ? (end.isFinite ? (start + end) / 2 : start + 1) : end - 1
+            let here = CameraLayoutSegment.winner(in: placed, at: probe)?.placement
+            if let last = pieces.last, last.placement == here {
+                pieces[pieces.count - 1].end = end
+            } else {
+                pieces.append((start, end, here))
+            }
+        }
+        guard let index = pieces.lastIndex(where: { $0.start <= t }) else { return .steady(nil) }
+        let piece = pieces[index]
+        guard piece.placement != nil else { return .steady(nil) }
+        let ramp = min(Self.cameraMoveTransition, (piece.end - piece.start) / 2)
+        guard ramp > 0 else { return .steady(piece.placement) }
+
+        if index > 0, !(piece.start <= 0 && pieces[index - 1].placement == nil) {
+            let into = t - piece.start
+            // A hair's allowance: the frame a move was made on is the end of its glide, and
+            // seconds worked out from `CMTime` can land just short of it.
+            if into < ramp - 1e-6 {
+                return CameraPlacementState(from: pieces[index - 1].placement, to: piece.placement,
+                                            progress: Easing.smooth.apply(into / ramp))
+            }
+        }
+        if index + 1 < pieces.count, pieces[index + 1].placement == nil,
+           piece.end < duration.seconds - 0.001 {
+            let left = piece.end - t
+            if left < ramp - 1e-6 {
+                return CameraPlacementState(from: piece.placement, to: nil,
+                                            progress: Easing.smooth.apply(1 - left / ramp))
+            }
+        }
+        return .steady(piece.placement)
+    }
+
+    /// The bubble's size at a moment, before any reaction to a zoom. What a drag on the
+    /// picture starts from.
+    func webcamSize(at time: CMTime) -> Double {
+        let state = cameraPlacement(at: time)
+        let to = state.to?.size ?? webcam.size
+        guard !state.isSteady else { return to }
+        let from = state.from?.size ?? webcam.size
+        return from + (to - from) * state.progress
     }
 
     /// The region the camera lane has in force at a moment, if any — the later-starting one

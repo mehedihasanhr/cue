@@ -329,7 +329,7 @@ public struct CopiedFootage: Equatable, Sendable {
                        key: $0.key, count: $0.count, isHidden: $0.isHidden)
             },
             cameraLayouts: cameraLayouts.map {
-                CameraLayoutRegion(start: $0.start, duration: $0.duration, layout: $0.layout)
+                CameraLayoutRegion(start: $0.start, duration: $0.duration, layout: $0.layout, placement: $0.placement)
             },
             soundRuns: soundRuns.map {
                 SoundRun(start: $0.start, duration: $0.duration,

@@ -17,9 +17,25 @@ struct CameraLayoutInspector: View {
         if let region {
             VStack(alignment: .leading, spacing: SidebarSpacing.betweenSections) {
                 layout(region)
+                if let placement = region.placement, region.layout == .bubble {
+                    move(region, placement)
+                }
                 timing(region)
             }
         }
+    }
+
+    // MARK: - Where it goes
+
+    /// How big the bubble is for this move. Where it goes is a drag on the picture.
+    private func move(_ region: CameraLayoutRegion, _ placement: CameraPlacement) -> some View {
+        InspectorSlider(model: model, "Size", systemImage: "arrow.up.left.and.arrow.down.right",
+                        value: Binding(get: { placement.size },
+                                       set: { model.placeCamera(.move(id), size: $0) }),
+                        range: 0.08...0.6)
+            .inspectorSection("Move", systemImage: "arrow.up.and.down.and.arrow.left.and.right") {
+                SectionButton(title: "Use Panel's Position") { model.clearCameraPlacement(id) }
+            }
     }
 
     // MARK: - What it shows

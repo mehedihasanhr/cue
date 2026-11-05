@@ -19,18 +19,28 @@ import TimelineKit
 ///
 /// A drag lands as one undo entry. Without the interaction bracket, nudging the bubble
 /// across the window would fill the undo stack with fifty steps that all look alike.
+///
+/// Each drag at a new moment is a move on the camera lane: see
+/// `EditorModel.beginPlacingCamera()`.
 struct WebcamBubbleOverlay: View {
     let model: EditorModel
     /// Where the picture is, in this view's coordinates.
     let stage: CGRect
 
     @State private var isDragging = false
+    /// What the drag under way changes.
+    @State private var target: EditorModel.CameraPlacementTarget?
     /// Where the bubble's centre was when the drag began, in view coordinates.
     ///
     /// Kept so the bubble moves *with* the pointer rather than jumping its centre onto it:
     /// grabbing a large bubble near its edge and having it snap so the grab point is the
     /// middle is the small wrongness that makes a drag feel broken.
     @State private var grabbedCentre: CGPoint?
+    /// The bubble's size and on-screen width when a resize began.
+    @State private var grabbedSize: (size: Double, width: CGFloat)?
+
+    /// The handles' size, big enough to catch without covering a small bubble.
+    private static let handle: CGFloat = 12
 
     private var geometry: CanvasGeometry {
         CanvasGeometry(stage: stage, scene: model.scene)
@@ -58,6 +68,7 @@ struct WebcamBubbleOverlay: View {
                     .gesture(drag)
 
                 outline(bubble)
+                handles(bubble)
             }
             hint
         }
@@ -80,10 +91,32 @@ struct WebcamBubbleOverlay: View {
             .animation(isDragging ? nil : .easeOut(duration: 0.15), value: rect)
     }
 
+    /// One handle on each corner of the outline: dragging outwards makes the bubble bigger.
+    @ViewBuilder
+    private func handles(_ rect: CGRect) -> some View {
+        handle(rect, x: -1, y: -1)
+        handle(rect, x: 1, y: -1)
+        handle(rect, x: -1, y: 1)
+        handle(rect, x: 1, y: 1)
+    }
+
+    private func handle(_ rect: CGRect, x: CGFloat, y: CGFloat) -> some View {
+        Circle()
+            .fill(.white)
+            .overlay(Circle().strokeBorder(Color.accentColor, lineWidth: 2))
+            .shadow(color: .black.opacity(0.45), radius: 2)
+            .frame(width: Self.handle, height: Self.handle)
+            .contentShape(Rectangle().inset(by: -5))
+            .offset(x: rect.midX + x * (rect.width / 2 + 3) - Self.handle / 2,
+                    y: rect.midY + y * (rect.height / 2 + 3) - Self.handle / 2)
+            .gesture(resize(x: x, y: y))
+            .accessibilityLabel("Resize the camera")
+    }
+
     @ViewBuilder
     private var hint: some View {
         Text(model.timeline.webcam.isEnabled
-             ? "Drag the bubble to move it. Pick a corner in the panel to park it again."
+             ? "Drag to move, or drag a corner to resize. The camera glides there and stays until the next move."
              : "The camera is off. Turn it on in the panel to place the bubble.")
             .font(.system(size: 11, weight: .medium))
             .foregroundStyle(.white.opacity(0.9))
@@ -92,7 +125,8 @@ struct WebcamBubbleOverlay: View {
             .background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .padding(10)
             .allowsHitTesting(false)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            // At the top: the picture's floating toolbar has the bottom.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private var drag: some Gesture {
@@ -101,23 +135,56 @@ struct WebcamBubbleOverlay: View {
         DragGesture(minimumDistance: 2, coordinateSpace: .global)
             .onChanged { value in
                 if !isDragging {
-                    isDragging = true
-                    grabbedCentre = bubble.map { CGPoint(x: $0.midX, y: $0.midY) }
-                    model.document.beginInteraction("Move Camera")
+                    guard begin("Move Camera"), let target, let start = model.cameraPlacement(of: target) else { return }
+                    grabbedCentre = geometry.view(annotation: CGRect(origin: start.centre, size: .zero)).origin
                 }
                 // The translation from where it started, applied to where the bubble started
                 // — not the pointer's absolute position. Measured against the remembered
                 // centre rather than the live one, so the arithmetic cannot compound as the
                 // preview re-renders under the drag.
-                guard let start = grabbedCentre else { return }
+                guard let start = grabbedCentre, let target else { return }
                 let centre = CGPoint(x: start.x + value.translation.width,
                                      y: start.y + value.translation.height)
-                model.moveWebcam(to: geometry.annotation(view: CGRect(origin: centre, size: .zero)).origin)
+                model.placeCamera(target, centre: geometry.annotation(view: CGRect(origin: centre, size: .zero)).origin)
             }
-            .onEnded { _ in
-                isDragging = false
-                grabbedCentre = nil
-                model.finishInteraction()
+            .onEnded { _ in finish() }
+    }
+
+    /// The bubble keeps its centre and grows or shrinks by how far the corner is pulled out
+    /// or in, on both sides at once: hence the distance counts in full, for half on each.
+    private func resize(x: CGFloat, y: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 1, coordinateSpace: .global)
+            .onChanged { value in
+                if !isDragging {
+                    guard let width = bubble?.width, begin("Resize Camera"), let target,
+                          let start = model.cameraPlacement(of: target) else { return }
+                    grabbedSize = (start.size, width)
+                }
+                guard let start = grabbedSize, let target, start.width > 0 else { return }
+                let outwards = value.translation.width * x + value.translation.height * y
+                model.placeCamera(target, size: start.size * Double(max(1, start.width + outwards) / start.width))
             }
+            .onEnded { _ in finish() }
+    }
+
+    /// One undo entry for the whole drag, the move it may have made included.
+    private func begin(_ name: String) -> Bool {
+        model.document.beginInteraction(name)
+        guard let chosen = model.beginPlacingCamera() else {
+            model.finishInteraction()
+            return false
+        }
+        target = chosen
+        isDragging = true
+        return true
+    }
+
+    private func finish() {
+        guard isDragging else { return }
+        isDragging = false
+        target = nil
+        grabbedCentre = nil
+        grabbedSize = nil
+        model.finishInteraction()
     }
 }

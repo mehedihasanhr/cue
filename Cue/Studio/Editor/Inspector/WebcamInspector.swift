@@ -55,6 +55,11 @@ struct WebcamInspector: View {
                     InspectorSlider(model: model, "Size", systemImage: "arrow.up.left.and.arrow.down.right",
                                     value: style.binding(\.webcam.size, "Camera Size"), range: 0.08...0.5,
                                     defaultValue: style.factory(\.webcam.size))
+                    // These two are where the video begins. Past the first move on the camera
+                    // lane, that move has its own, and these would seem to do nothing.
+                    if model.timeline.cameraLayouts.contains(where: { $0.placement != nil }) {
+                        InspectorNote("Moves on the camera lane set their own position and size.")
+                    }
                     InspectorSlider(model: model, "Roundness", systemImage: "circle",
                                     value: style.binding(\.webcam.roundness, "Camera Roundness"), range: 0...1,
                                     defaultValue: style.factory(\.webcam.roundness))

@@ -61,7 +61,7 @@ extension SceneBuilder {
     func cameraStage(_ timeline: Timeline, at time: CMTime, output: CGSize, inset: Double,
                      source: CGSize, picture: CGRect,
                      zoom: Double) -> (videoFrame: CGRect, videoOpacity: Double, webcam: WebcamLayer?) {
-        guard let bubble = webcamLayer(timeline, output: output, zoom: zoom) else {
+        guard let bubble = webcamLayer(timeline, at: time, output: output, zoom: zoom) else {
             return (picture, 1, nil)
         }
         let state = timeline.cameraLayout(at: time)

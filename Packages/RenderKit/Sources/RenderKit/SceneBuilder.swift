@@ -967,7 +967,7 @@ public struct SceneBuilder: Sendable {
     /// file, and a file can ask for a bubble of size 40, a roundness of −3 or a position
     /// off the side of the frame; none of those should be able to produce a render nobody
     /// can explain.
-    func webcamLayer(_ timeline: Timeline, output: CGSize, zoom: Double) -> WebcamLayer? {
+    func webcamLayer(_ timeline: Timeline, at time: CMTime, output: CGSize, zoom: Double) -> WebcamLayer? {
         let webcam = timeline.webcam
         guard webcam.isEnabled, output.width > 0, output.height > 0 else { return nil }
 
@@ -977,34 +977,53 @@ public struct SceneBuilder: Sendable {
         // them. Gently, and capped: the bubble tracking a 4× zoom one-for-one would end up
         // most of the picture, which is the opposite of the intent.
         let reaction = webcam.reactsToZoom ? 1 + min(0.3, max(0, zoom - 1) * 0.12) : 1
-        let side = shorter * min(max(webcam.size, 0.05), 0.6) * reaction
         let margin = shorter * Self.webcamMargin
 
-        // Normalised to the output, so the rect can be clamped and reasoned about in the
-        // same space the layer stores it in.
-        let width = side / output.width
-        let height = side / output.height
-        let insetX = margin / output.width
-        let insetY = margin / output.height
+        // One placement's rect and side: a move's own, or (`nil`) the settings'.
+        func placed(_ placement: CameraPlacement?) -> (rect: CGRect, side: Double) {
+            let side = shorter * min(max(placement?.size ?? webcam.size, 0.05), 0.6) * reaction
 
-        let origin: CGPoint = switch webcam.corner {
-        case .topLeft: CGPoint(x: insetX, y: insetY)
-        case .topRight: CGPoint(x: 1 - insetX - width, y: insetY)
-        case .bottomLeft: CGPoint(x: insetX, y: 1 - insetY - height)
-        case .bottomRight: CGPoint(x: 1 - insetX - width, y: 1 - insetY - height)
-        case .custom:
-            // `position` is the bubble's *centre*, which is what a drag on the preview
-            // hands over and the only reading under which the default (0.85, 0.85) means
-            // what the default corner — bottom right — means.
-            CGPoint(x: webcam.position.x - width / 2, y: webcam.position.y - height / 2)
+            // Normalised to the output, so the rect can be clamped and reasoned about in the
+            // same space the layer stores it in.
+            let width = side / output.width
+            let height = side / output.height
+            let insetX = margin / output.width
+            let insetY = margin / output.height
+
+            let origin: CGPoint = switch placement == nil ? webcam.corner : .custom {
+            case .topLeft: CGPoint(x: insetX, y: insetY)
+            case .topRight: CGPoint(x: 1 - insetX - width, y: insetY)
+            case .bottomLeft: CGPoint(x: insetX, y: 1 - insetY - height)
+            case .bottomRight: CGPoint(x: 1 - insetX - width, y: 1 - insetY - height)
+            case .custom:
+                // `position` is the bubble's *centre*, which is what a drag on the preview
+                // hands over and the only reading under which the default (0.85, 0.85) means
+                // what the default corner — bottom right — means.
+                {
+                    let centre = placement?.centre ?? webcam.position
+                    return CGPoint(x: centre.x - width / 2, y: centre.y - height / 2)
+                }()
+            }
+
+            // Kept inside the frame whatever was asked for. A bubble half off the edge is not a
+            // composition choice, it is a corrupt file or a drag that ran past the window.
+            return (CGRect(x: min(max(origin.x, 0), max(0, 1 - width)),
+                           y: min(max(origin.y, 0), max(0, 1 - height)),
+                           width: min(width, 1),
+                           height: min(height, 1)), side)
         }
 
-        // Kept inside the frame whatever was asked for. A bubble half off the edge is not a
-        // composition choice, it is a corrupt file or a drag that ran past the window.
-        let rect = CGRect(x: min(max(origin.x, 0), max(0, 1 - width)),
-                          y: min(max(origin.y, 0), max(0, 1 - height)),
-                          width: min(width, 1),
-                          height: min(height, 1))
+        // Settled, it is the placement's own numbers to the last bit; on the way, the
+        // bubble travels and grows on one curve.
+        let state = timeline.cameraPlacement(at: time)
+        var (rect, side) = placed(state.to)
+        if !state.isSteady {
+            let from = placed(state.from)
+            func mix(_ a: Double, _ b: Double) -> Double { a + (b - a) * state.progress }
+            rect = CGRect(x: mix(from.rect.minX, rect.minX), y: mix(from.rect.minY, rect.minY),
+                          width: mix(from.rect.width, rect.width), height: mix(from.rect.height, rect.height))
+            side = mix(from.side, side)
+        }
 
         return WebcamLayer(rect: rect,
                            // Half the side is a circle, and `roundness` is the fraction of

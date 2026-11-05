@@ -338,8 +338,10 @@ struct TimelineStrip: View {
                           height: Self.regionHeight,
                           selection: Selection.cameraLayout) { region in
             HStack(spacing: 5) {
-                Image(systemName: region.layout.symbol).font(.system(size: 9, weight: .semibold))
-                Text(region.layout.title)
+                let isMove = region.placement != nil && region.layout == .bubble
+                Image(systemName: isMove ? "arrow.up.and.down.and.arrow.left.and.right" : region.layout.symbol)
+                    .font(.system(size: 9, weight: .semibold))
+                Text(isMove ? "Move" : region.layout.title)
                     .font(.system(size: 11, weight: .semibold))
             }
             .opacity(model.timeline.webcam.isEnabled ? 1 : 0.45)

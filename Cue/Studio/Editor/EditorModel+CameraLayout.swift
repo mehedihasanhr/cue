@@ -51,6 +51,82 @@ extension EditorModel {
         return region.id
     }
 
+    /// What a drag on the bubble changes.
+    enum CameraPlacementTarget: Equatable {
+        /// The panel's settings: the whole video, before any move has been made.
+        case panel
+        /// One move on the camera lane.
+        case move(UUID)
+    }
+
+    /// Where the bubble is at the playhead, in the terms a drag works in.
+    var cameraPlacementAtPlayhead: CameraPlacement? {
+        guard let rect = webcamRect else { return nil }
+        return CameraPlacement(centre: CGPoint(x: rect.midX, y: rect.midY),
+                               size: timeline.webcamSize(at: playhead))
+    }
+
+    /// Starts moving or resizing the bubble at the playhead, and says what the drag changes.
+    ///
+    /// A drag at a new moment is a new move, which is how the camera comes to move many
+    /// times over a video. At the very start, with nothing there yet, it is the panel's own
+    /// place, which is where the whole video begins. Right at an existing move it adjusts
+    /// that one (`Commands.PlaceCamera` decides), and the playhead steps onto the frame where
+    /// the glide has finished, so what is being dragged is where the bubble ends up.
+    func beginPlacingCamera() -> CameraPlacementTarget? {
+        guard let current = cameraPlacementAtPlayhead else { return nil }
+        if isPlaying { togglePlayback() }
+        if playhead.seconds < 0.05, cameraLayoutAtPlayhead == nil { return .panel }
+        let id = UUID()
+        apply(Commands.PlaceCamera(id: id, at: playhead, placement: current))
+        guard let move = timeline.cameraLayouts.last(where: {
+            $0.placement != nil && $0.start <= playhead && playhead < $0.end
+        }) ?? timeline.cameraLayouts.first(where: { $0.id == id }) else { return nil }
+        select(.cameraLayout(move.id))
+        if !timeline.cameraPlacement(at: playhead).isSteady {
+            let glide = CMTime(seconds: min(Timeline.cameraMoveTransition, move.duration.seconds / 2),
+                               preferredTimescale: 600)
+            let inFirstHalf = playhead - move.start < CMTimeMultiplyByFloat64(move.duration, multiplier: 0.5)
+            scrub(to: inFirstHalf ? move.start + glide : move.end - glide)
+        }
+        return .move(move.id)
+    }
+
+    /// Where a drag began from: the place it changes, read from the model rather than from
+    /// the frame on screen, which may not have caught up with a move just made.
+    func cameraPlacement(of target: CameraPlacementTarget) -> CameraPlacement? {
+        switch target {
+        case .panel: cameraPlacementAtPlayhead
+        case .move(let id): timeline.cameraLayouts.first { $0.id == id }?.placement
+        }
+    }
+
+    /// Puts the bubble where a drag has got to.
+    func placeCamera(_ target: CameraPlacementTarget, centre: CGPoint? = nil, size: Double? = nil) {
+        let centre = centre.map { CGPoint(x: min(1, max(0, $0.x)), y: min(1, max(0, $0.y))) }
+        let size = size.map { min(0.6, max(0.05, $0)) }
+        switch target {
+        case .panel:
+            apply(Commands.Restyle("Move Camera") {
+                if let centre {
+                    $0.webcam.corner = .custom
+                    $0.webcam.position = centre
+                }
+                if let size { $0.webcam.size = size }
+            })
+        case .move(let id):
+            guard var placement = timeline.cameraLayouts.first(where: { $0.id == id })?.placement else { return }
+            if let centre { placement.centre = centre }
+            if let size { placement.size = size }
+            apply(Commands.SetCameraPlacement(id: id, placement: placement))
+        }
+    }
+
+    /// Hands a stretch's bubble back to the Webcam panel.
+    func clearCameraPlacement(_ id: UUID) {
+        apply(Commands.SetCameraPlacement(id: id, placement: nil))
+    }
+
     /// Changes what one stretch does.
     func setCameraLayout(_ id: UUID, to layout: CameraLayout) {
         apply(Commands.SetCameraLayout(id: id, layout: layout))

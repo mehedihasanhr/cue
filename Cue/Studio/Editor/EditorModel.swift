@@ -2677,21 +2677,6 @@ final class EditorModel {
         }
     }
 
-    /// Puts the bubble where it was dragged to, as one undoable edit.
-    ///
-    /// `point` is the bubble's centre, normalised to the *output* frame — the same reading
-    /// `SceneBuilder` gives `WebcamSettings.position`, so what the overlay measures and what
-    /// the renderer draws cannot disagree. Setting the corner to `.custom` is part of the
-    /// same change rather than a second one: a position that the corner overrides would be a
-    /// drag that visibly does nothing.
-    func moveWebcam(to point: CGPoint) {
-        let clamped = CGPoint(x: min(1, max(0, point.x)), y: min(1, max(0, point.y)))
-        apply(Commands.Restyle("Move Camera") {
-            $0.webcam.corner = .custom
-            $0.webcam.position = clamped
-        })
-    }
-
     /// Where the bubble is now, normalised to the output frame with a top-left origin.
     ///
     /// Read off the descriptor the preview was actually drawn from rather than recomputed

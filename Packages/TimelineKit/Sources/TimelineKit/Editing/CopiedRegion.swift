@@ -244,7 +244,7 @@ public enum CopiedRegion: Equatable, Sendable {
             return .key(KeyCue(start: start, duration: duration, modifiers: r.modifiers,
                                key: r.key, count: r.count, isHidden: r.isHidden))
         case .cameraLayout(let r):
-            return .cameraLayout(CameraLayoutRegion(start: start, duration: duration, layout: r.layout))
+            return .cameraLayout(CameraLayoutRegion(start: start, duration: duration, layout: r.layout, placement: r.placement))
         }
     }
 
