@@ -867,9 +867,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         _ = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { _ in
             let timer = Timer(timeInterval: 0, repeats: false) { _ in
                 MainActor.assumeIsolated {
-                    for window in NSApp.windows where window.level == .popUpMenu {
-                        window.collectionBehavior.formUnion([.canJoinAllSpaces, .fullScreenAuxiliary])
-                        if !window.isOnActiveSpace { window.orderFrontRegardless() }
+                    // By its kind, not its level: AppKit lifts a menu above the window it
+                    // opens from, so the recorder bar's are nowhere near `.popUpMenu`.
+                    for menu in NSApp.windows where String(describing: type(of: menu)).contains("PopupMenuWindow") {
+                        for window in [menu] + (menu.childWindows ?? []) {
+                            window.collectionBehavior.formUnion([.canJoinAllSpaces, .fullScreenAuxiliary])
+                            if !window.isOnActiveSpace { window.orderFrontRegardless() }
+                        }
                     }
                 }
             }
