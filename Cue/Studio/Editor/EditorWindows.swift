@@ -241,18 +241,21 @@ final class VideoEditorWindowController: NSWindowController, NSWindowDelegate {
         // `WindowGroup`'s worst habit and it is not worth inheriting in AppKit.
         window.isRestorable = false
 
-        let hosting = NSHostingController(rootView: VideoEditorView(session: session)
+        let hosting = NSHostingView(rootView: VideoEditorView(session: session)
             .environment(settings)
             .environment(exports))
         // The window decides its own size, not the view.
         //
-        // A hosting controller reports its SwiftUI content's ideal size as a preferred
-        // content size, and AppKit resizes the window to match. While a recording is still
-        // loading that content is a progress spinner, so the editor opened as a 926 × 444
-        // window and then stayed that size. Nothing here wants that: an editor opens at a
-        // size worth editing in.
+        // SwiftUI fits a window to the view that is its content, and while a recording is
+        // still loading that view is only a progress spinner: the editor opened at 400 × 260
+        // and stayed that size, under its own minimum. `sizingOptions = []` alone does not
+        // stop it, so the view sits in a plain one that the window sizes.
         hosting.sizingOptions = []
-        window.contentViewController = hosting
+        hosting.autoresizingMask = [.width, .height]
+        let content = NSView(frame: NSRect(x: 0, y: 0, width: 1_280, height: 860))
+        hosting.frame = content.bounds
+        content.addSubview(hosting)
+        window.contentView = content
         window.setContentSize(CGSize(width: 1_280, height: 860))
         // Wide enough for the tool rail, the inspector, and the transport bar at its most
         // compact between them — see `TransportBar`. At 960 the bar did not fit, and the
