@@ -16,7 +16,7 @@ final class MarkBlinker {
     /// How open the eyes are at each step of a blink: down quickly, up a little slower.
     private static let steps: [CGFloat] = [0.55, 0.15, 0, 0.15, 0.45, 0.8, 1]
     private static let stepInterval: TimeInterval = 1.0 / 28
-    private static let restRange: ClosedRange<TimeInterval> = 4...8
+    private static let restRange: ClosedRange<TimeInterval> = 15...30
 
     init(button: NSStatusBarButton, height: CGFloat) {
         self.button = button

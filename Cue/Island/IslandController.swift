@@ -311,6 +311,7 @@ final class IslandController {
         battery = BatteryMonitor { [weak self] hud in self?.showBattery(hud) }
         audioDevices = AudioDeviceMonitor { [weak self] hud in self?.showAudioDevice(hud) }
         toggles = ToggleMonitor { [weak self] hud in self?.showToggle(hud) }
+        toggles?.isFocusShown = { [weak preferences] in preferences?.islandFocus ?? false }
         notices = NoticeMonitor { [weak self] notice in self?.showNotice(notice) }
         notifications.isEnabled = { [weak preferences] in preferences?.islandNotifications ?? false }
         notifications.hidesBanners = { [weak preferences] in preferences?.islandHidesBanners ?? false }

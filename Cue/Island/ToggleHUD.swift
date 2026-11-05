@@ -46,6 +46,8 @@ final class ToggleMonitor {
     private var capsLock = NSEvent.modifierFlags.contains(.capsLock)
     private var focused: Bool?
     private var focusTask: Task<Void, Never>?
+    /// Whether the island shows Focus changes; set by the controller.
+    var isFocusShown: () -> Bool = { true }
 
     init(onChange: @escaping (ToggleHUD) -> Void) {
         self.onChange = onChange
@@ -74,8 +76,9 @@ final class ToggleMonitor {
         onChange(ToggleHUD(kind: .capsLock, on: on))
     }
 
-    /// The Focus state has no notification Cue can have; it is looked at every two
-    /// seconds once sharing it is allowed.
+    /// The Focus state has no notification Cue can have; it is looked at every five
+    /// seconds once sharing it is allowed, and only while the island shows it. Off the
+    /// main thread: the look is a blocking call to another process.
     private func startFocus() {
         let center = INFocusStatusCenter.default
         focusTask = Task { [weak self] in
@@ -88,10 +91,14 @@ final class ToggleMonitor {
             guard center.authorizationStatus == .authorized else { return }
             while !Task.isCancelled {
                 guard let self else { return }
-                let now = center.focusStatus.isFocused
-                if let now, let focused, now != focused { onChange(ToggleHUD(kind: .focus, on: now)) }
-                if let now { focused = now }
-                try? await Task.sleep(for: .seconds(2))
+                if isFocusShown() {
+                    let now = await Task.detached(priority: .utility) { INFocusStatusCenter.default.focusStatus.isFocused }.value
+                    if let now, let focused, now != focused { onChange(ToggleHUD(kind: .focus, on: now)) }
+                    if let now { focused = now }
+                } else {
+                    focused = nil
+                }
+                try? await Task.sleep(for: .seconds(5))
             }
         }
     }

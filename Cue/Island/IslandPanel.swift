@@ -1855,6 +1855,14 @@ struct ClipboardCard: View {
     @Environment(GroupStore.self) private var groups: GroupStore?
     @State private var hovering = false
 
+    private var hasTaskSeed: Bool {
+        switch item.kind {
+        case .image: true
+        case .files: !item.filePaths.isEmpty
+        default: !item.text.isEmpty
+        }
+    }
+
     /// What a task made from this entry holds: the picture, the text, or the first file.
     private var taskSeed: TaskSeed? {
         switch item.kind {
@@ -1928,8 +1936,12 @@ struct ClipboardCard: View {
             if item.kind == .text || item.kind == .link || item.kind == .color {
                 Button("Make Snippet") { onSnippet(item.text) }
             }
-            if let seed = taskSeed {
-                Button("Create as Task") { createTask(seed) }
+            // The seed is read when pressed: for a picture it is the whole image out of the
+            // database, and this menu is built every time the card draws.
+            if hasTaskSeed {
+                Button("Create as Task") {
+                    if let seed = taskSeed { createTask(seed) }
+                }
             }
             Divider()
             Button("Delete", role: .destructive) { clipboard.delete(item) }
