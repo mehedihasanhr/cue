@@ -848,10 +848,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         let menu = NSMenu()
         menu.delegate = self
-        item.menu = menu
+        // Opened by hand rather than through `item.menu`, whose window the system places
+        // and which then may not appear on the current Space.
+        item.button?.target = self
+        item.button?.action = #selector(openStatusMenu(_:))
+        item.button?.sendAction(on: [.leftMouseDown, .rightMouseDown])
         statusItem = item
         statusMenu = menu
+        bringMenusToCurrentSpace()
         applyMenuBarIcon()
+    }
+
+    /// The island shows over another app's full-screen Space, but a menu's window can't
+    /// join one by itself: it opens on another Space and nothing appears. So every menu
+    /// is brought to the current Space as it opens. Menus track from a nested run loop,
+    /// where a timer in the common modes still fires, once their windows exist.
+    private func bringMenusToCurrentSpace() {
+        _ = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { _ in
+            let timer = Timer(timeInterval: 0, repeats: false) { _ in
+                MainActor.assumeIsolated {
+                    for window in NSApp.windows where window.level == .popUpMenu {
+                        window.collectionBehavior.formUnion([.canJoinAllSpaces, .fullScreenAuxiliary])
+                        if !window.isOnActiveSpace { window.orderFrontRegardless() }
+                    }
+                }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+        }
+    }
+
+    @objc private func openStatusMenu(_ sender: NSStatusBarButton) {
+        guard let statusMenu else { return }
+        sender.highlight(true)
+        defer { sender.highlight(false) }
+        // From a window of ours that is on every Space, as the island is: a menu takes its
+        // Space from the window it opens from, and the status bar's doesn't put it on this one.
+        let frame = sender.window?.frame ?? .zero
+        let anchor = NSPanel(contentRect: NSRect(x: frame.minX, y: frame.minY - 6, width: 1, height: 1),
+                             styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        anchor.isOpaque = false
+        anchor.backgroundColor = .clear
+        anchor.ignoresMouseEvents = true
+        anchor.level = .statusBar
+        anchor.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        anchor.isReleasedWhenClosed = false
+        anchor.orderFrontRegardless()
+        defer { anchor.orderOut(nil) }
+        statusMenu.popUp(positioning: nil, at: .zero, in: anchor.contentView)
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
