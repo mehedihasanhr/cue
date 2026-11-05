@@ -95,11 +95,11 @@ final class IslandModel {
     /// The floating buttons' width, reported by the row.
     var dockWidth: CGFloat = 0
 
-    /// The floating buttons show under the open panel (not while files are dragged
+    /// The floating buttons show under the open panel and the agents list (not while files are dragged
     /// over it, nor while the preview pane has that place).
     var showsDock: Bool {
         guard dockEnabled() else { return false }
-        return phase == .expanded && !showsDropZone && !previewOpen
+        return (phase == .expanded || phase == .agents) && !showsDropZone && !previewOpen
     }
 
     /// The floating buttons and the gap above them, in screen coordinates: the
