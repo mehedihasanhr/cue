@@ -1161,7 +1161,7 @@ private struct RecordingDot: View {
 /// mouse-down before AppKit can treat it as a window drag. A plain `NSView` that says its
 /// area can move the window — and hands any drag straight to the panel — restores the
 /// behaviour anyone expects from a floating strip.
-private struct WindowDragBackground: NSViewRepresentable {
+struct WindowDragBackground: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView { DragView() }
     func updateNSView(_ view: NSView, context: Context) {}
 

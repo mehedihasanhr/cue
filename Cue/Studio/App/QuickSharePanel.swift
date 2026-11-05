@@ -36,11 +36,20 @@ final class QuickShareController {
         self.model = model
 
         let hosting = NSHostingView(rootView: QuickShareView(model: model).padding(14))
-        hosting.sizingOptions = [.preferredContentSize]
+        // Measured before it is placed, and in a plain view the panel sizes: as the panel's
+        // own content, SwiftUI grows the window downwards after it has been placed, and
+        // with no sizing options it measures 0 × 0, so it ended up off the bottom of the screen.
+        hosting.sizingOptions = [.intrinsicContentSize]
+        let size = hosting.fittingSize
+        hosting.sizingOptions = []
+        hosting.frame = NSRect(origin: .zero, size: size)
+        hosting.autoresizingMask = [.width, .height]
+        let content = NSView(frame: hosting.frame)
+        content.addSubview(hosting)
         let panel = self.panel ?? Self.makePanel()
-        panel.contentView = hosting
+        panel.contentView = content
         model.anchor = { [weak hosting] in hosting }
-        panel.setContentSize(hosting.fittingSize)
+        panel.setContentSize(size)
         if let screen = NSScreen.main {
             let frame = screen.visibleFrame
             panel.setFrameOrigin(NSPoint(x: frame.midX - panel.frame.width / 2, y: frame.minY + 24))
@@ -250,6 +259,8 @@ struct QuickShareView: View {
             }
         }
         .padding(12)
+        // Anywhere that isn't a button moves the panel.
+        .background(WindowDragBackground())
         .studioGlass(cornerRadius: StudioTheme.Recorder.barRadius)
         .shadow(color: .black.opacity(0.35), radius: 14, y: 6)
         .environment(\.colorScheme, .dark)
@@ -268,6 +279,7 @@ struct QuickShareView: View {
         .frame(width: 96, height: 54)
         .clipShape(StudioTheme.squircle(8))
         .overlay(StudioTheme.squircle(8).strokeBorder(.white.opacity(0.12)))
+        .allowsHitTesting(false) // the panel is dragged by it too
     }
 
     @ViewBuilder
