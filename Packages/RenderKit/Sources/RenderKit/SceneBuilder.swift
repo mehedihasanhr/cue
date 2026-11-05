@@ -730,8 +730,12 @@ public struct SceneBuilder: Sendable {
         return result
     }
 
-    /// How far either side of now the camera looks at the pointer, in seconds.
-    static func followWindow(steadiness: Double) -> Double { 0.1 + 0.25 * min(1, max(0, steadiness)) }
+    /// How far either side of now the camera looks at the pointer, in seconds. It sees up to
+    /// twice this far ahead, so this is also how early it sets off. At twice this length, on a
+    /// real take, the page slid 33 pt under a pointer still holding the start of a text
+    /// selection and the pointer swung back on screen; at this length, 4 pt and no swing, with
+    /// the worst frame-to-frame jolt 2.6 pt.
+    static func followWindow(steadiness: Double) -> Double { 0.05 + 0.125 * min(1, max(0, steadiness)) }
     /// How many readings of the pointer either side of now: one every few milliseconds.
     static let followSteps = 12
     /// How far either side of now the rule that keeps the pointer in shot looks, in

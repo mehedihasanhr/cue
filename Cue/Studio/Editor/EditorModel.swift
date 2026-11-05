@@ -416,6 +416,7 @@ final class EditorModel {
         // it. See `ZoomPreview`.
         if case .zoom = selection { zoomPreview = .result }
         isPlaying = true
+        pacer = PlaybackPacer()
         anchor = (CACurrentMediaTime(), playhead)
         viewport.followsPlayhead = true
         // Sound only at normal speed, forwards — see `EditorModel+Shuttle` for why.
@@ -627,32 +628,40 @@ final class EditorModel {
             hasPendingRender = true
             return
         }
-        // Playing, the frame is drawn for the moment it will be on screen, not the moment it
-        // was asked for. Drawing takes time — a zoomed frame of a Retina recording, decoded
-        // and composited, tens of milliseconds and never the same twice — and a frame drawn
-        // for the playhead as it set off arrived showing a moment already gone, by a
-        // different amount each time: the picture lagged behind the sound, and a smooth
-        // camera move came out lurching, fast and slow by turns. So it is aimed at now plus
-        // how long frames have been taking, and if it is ready early it waits for its moment.
-        if isPlaying, playbackRate != 0 {
-            let lead = min(Self.longestLead, max(1.0 / 120, renderCost))
-            let due = CACurrentMediaTime() + lead
-            let ahead = min(duration, max(.zero, playhead + CMTime(seconds: lead * playbackRate, preferredTimescale: 60_000)))
-            startRender(of: builder.descriptor(for: renderedTimeline, at: ahead, cursor: smoothedCursor), due: due)
-        } else {
+        guard isPlaying, playbackRate != 0 else {
             startRender(of: scene, due: nil)
+            return
+        }
+        // Playing, the frame is drawn for the moment it will be on screen, not the moment it
+        // was asked for. Zoomed in, where the whole picture moves with the camera, it also
+        // goes on an even beat, or the camera's move is seen to shake: see `PlaybackPacer`.
+        // Pulled back the picture is still, and a beat would only cost frames: measured, 63
+        // frames a second without one and 30 with.
+        let now = CACurrentMediaTime()
+        if scene.zoom > 1.001 {
+            guard let slot = pacer.next(now: now, drawCost: renderCost, slowest: slowestRender,
+                                        playhead: playhead.seconds, rate: playbackRate) else { return }
+            let ahead = min(duration, max(.zero, CMTime(seconds: slot.moment, preferredTimescale: 60_000)))
+            startRender(of: builder.descriptor(for: renderedTimeline, at: ahead, cursor: smoothedCursor), due: slot.due)
+        } else {
+            pacer = PlaybackPacer()
+            let lead = min(PlaybackPacer.longestLead, max(1.0 / 120, renderCost))
+            let ahead = min(duration, max(.zero, playhead + CMTime(seconds: lead * playbackRate, preferredTimescale: 60_000)))
+            startRender(of: builder.descriptor(for: renderedTimeline, at: ahead, cursor: smoothedCursor), due: now + lead)
         }
     }
 
     /// How long a frame has lately taken from being asked for to being ready, in seconds —
     /// what a frame during playback is drawn that far ahead of the playhead for.
     @ObservationIgnored private var renderCost = 1.0 / 30
-    /// The furthest ahead a frame is ever aimed: a stall must not have every later frame
-    /// drawn for a moment far in the future.
-    private static let longestLead = 0.15
+    /// The slowest frame lately, forgetting slowly: what a frame is started early enough
+    /// for, so that all but the rare one are on time.
+    @ObservationIgnored private var slowestRender = 1.0 / 30
+    /// What keeps a playing picture even. Starts afresh with each play.
+    @ObservationIgnored private var pacer = PlaybackPacer()
 
     /// The newest moment a playing frame has been sent to the screen for: a frame that
-    /// finishes after a later one has been sent is dropped rather than shown out of order.
+    /// gets its turn after a later one has been sent is dropped rather than shown out of order.
     @ObservationIgnored private var presented: CFTimeInterval = 0
 
     private func logShown(_ scene: SceneDescriptor) {
@@ -743,18 +752,22 @@ final class EditorModel {
                 guard !Task.isCancelled else { return }
                 // How long that took, remembered as a running average so one slow frame
                 // does not throw the next one far ahead.
-                renderCost = renderCost * 0.8 + (CACurrentMediaTime() - asked) * 0.2
+                let took = CACurrentMediaTime() - asked
+                renderCost = renderCost * 0.8 + took * 0.2
+                slowestRender = max(took, slowestRender * 0.97)
                 // Shown at its moment by a timer of its own, so the next frame can start
-                // being drawn now rather than after this one has waited.
-                presented = due
+                // being drawn now rather than after this one has waited. Frames can finish
+                // before the one ahead of them has had its turn, and that one still gets it.
                 let early = due - CACurrentMediaTime()
                 if early > 0.001 {
                     Task { [weak self] in
                         try? await Task.sleep(for: .seconds(early))
-                        guard let self, self.isPlaying, self.presented == due else { return }
+                        guard let self, self.isPlaying, due > self.presented else { return }
+                        self.presented = due
                         self.showLive(target, scene: scene)
                     }
-                } else {
+                } else if due > presented {
+                    presented = due
                     showLive(target, scene: scene)
                 }
                 return

@@ -422,8 +422,8 @@ struct SceneTests {
             // result. That is the intended order — showing empty canvas would be worse —
             // so the setting is judged only where the camera was free to obey it.
             let pinned = min(abs(scene.zoomCenter.x - half), abs(scene.zoomCenter.x - (1 - half))) < 0.001
-            // Settled: the flick is over and the camera's window has moved past it.
-            let settled = at >= 2.3 + SceneBuilder.followWindow(steadiness: timeline.camera.steadiness)
+            // Settled: the flick is over and the camera's reach, twice its window, has moved past it.
+            let settled = at >= 2.3 + 2 * SceneBuilder.followWindow(steadiness: timeline.camera.steadiness)
             if !pinned { worstFree = max(worstFree, reach) }
             if !pinned, settled { worst = max(worst, reach) }
         }
