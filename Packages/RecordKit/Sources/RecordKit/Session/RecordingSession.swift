@@ -773,6 +773,12 @@ public final class RecordingSession {
     /// believing it in the case that matters.
     public var isRecordingCamera: Bool { webcam != nil }
 
+    /// The pointer has gone onto (or off) the camera bubble, which is not in the picture, so
+    /// the trip should not be either. Nothing happens outside a take.
+    public func setPointerAside(_ isAside: Bool) {
+        cursor?.setPointerAside(isAside)
+    }
+
     /// The package this take is being written into, while there is one — so the library
     /// can leave the take being recorded out of its interrupted ones.
     public var packageURL: URL? { package?.url }

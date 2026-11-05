@@ -51,6 +51,7 @@ final class RecorderCenter {
         studio.cameraPlacement = { [weak self] target in
             CameraPreviewPanel.screenArea(of: target).flatMap { self?.cameraPreview.placement(in: $0) }
         }
+        cameraPreview.onPointerOver = { [weak studio] in studio?.session.setPointerAside($0) }
         bar.onVisibilityChange = { [weak self] visible in
             self?.isBarVisible = visible
             self?.sync()
@@ -185,6 +186,11 @@ final class RecorderCenter {
                                                             keepsWhileRecording: inputs.keepsCameraPreview,
                                                             hasCamera: inputs.cameraID != nil,
                                                             isBarVisible: isBarVisible,
+                                                            // The live flag, for the reason above:
+                                                            // minimizing hides the bar, which calls
+                                                            // back into here, and a stale answer would
+                                                            // switch the camera off and on again.
+                                                            isBarMinimized: bar.model.isMinimized,
                                                             state: state)
         cameraPreview.show(deviceID: preview ? inputs.cameraID : nil, near: bar.window)
     }

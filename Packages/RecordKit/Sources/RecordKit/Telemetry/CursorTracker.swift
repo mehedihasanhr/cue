@@ -220,6 +220,8 @@ public final class CursorTracker: @unchecked Sendable {
     /// the real artwork.
     private let artwork: CursorArtworkWriter?
 
+    /// Read and changed only on `queue`.
+    private var aside = PointerAside()
     private var positionTimer: DispatchSourceTimer?
     private var shapeTimer: Timer?
     private var clickMonitor: Any?
@@ -269,16 +271,27 @@ public final class CursorTracker: @unchecked Sendable {
         positionTimer?.cancel()
         positionTimer = nil
         MainActor.assumeIsolated { stopMainThreadWatchers() }
+        // Ahead of the writer closing, which is also done on this queue and comes later.
+        queue.async { [self] in
+            for sample in aside.flush() { cursorWriter.append(sample) }
+        }
+    }
+
+    /// The pointer has gone onto (or off) something of Cue's that is not in the picture.
+    /// See `PointerAside`.
+    public func setPointerAside(_ isAside: Bool) {
+        queue.async { [self] in aside.setAside(isAside) }
     }
 
     /// One position sample. Runs on the capture queue.
     private func sample() {
         guard let location = CGEvent(source: nil)?.location else { return }
         let point = mapper.map(location)
-        cursorWriter.append(CursorSample(t: clock.elapsed(at: RecordingClock.now + latency),
-                                         x: Double(point.x),
-                                         y: Double(point.y),
-                                         shape: shape.withLock { $0 }))
+        let written = aside.add(CursorSample(t: clock.elapsed(at: RecordingClock.now + latency),
+                                             x: Double(point.x),
+                                             y: Double(point.y),
+                                             shape: shape.withLock { $0 }))
+        for sample in written { cursorWriter.append(sample) }
     }
 
     // MARK: - Main thread
@@ -363,6 +376,7 @@ public final class CursorTracker: @unchecked Sendable {
         let sample: InputSample?
         switch event.type {
         case .leftMouseDown, .rightMouseDown, .otherMouseDown:
+            queue.async { [self] in aside.clicked() }
             guard counts else { return }
             keptPresses.withLock { _ = $0.insert(button) }
             sample = .mouseDown(t: t, button: button, x: Double(location.x), y: Double(location.y))

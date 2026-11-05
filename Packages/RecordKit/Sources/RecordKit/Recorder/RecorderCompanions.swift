@@ -35,13 +35,15 @@ public enum RecorderCompanions {
     /// Whether the camera preview is up.
     ///
     /// Before a take only, unless asked to stay: once Record is pressed, the countdown is
-    /// for getting out of the way rather than for framing.
+    /// for getting out of the way rather than for framing. Minimizing the bar puts the bar
+    /// away and nothing else: the preview stays, as it does with the bar up.
     public static func showsCameraPreview(isEnabled: Bool,
                                           keepsWhileRecording: Bool,
                                           hasCamera: Bool,
                                           isBarVisible: Bool,
+                                          isBarMinimized: Bool = false,
                                           state: RecordingSession.State) -> Bool {
-        guard isEnabled, hasCamera, isBarVisible else { return false }
+        guard isEnabled, hasCamera, isBarVisible || isBarMinimized else { return false }
         switch state {
         case .idle, .finished, .failed: return true
         case .preparing, .countdown, .recording, .paused: return keepsWhileRecording

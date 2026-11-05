@@ -32,6 +32,8 @@ final class CameraPreviewPanel {
     private var placing = false
 
     var isShowing: Bool { panel?.isVisible ?? false }
+    /// The pointer has gone onto (`true`) or off the bubble.
+    var onPointerOver: (Bool) -> Void = { _ in }
 
     /// Shows the camera near `bar`, or hides it when `deviceID` is `nil`.
     func show(deviceID: String?, near bar: NSWindow?) {
@@ -51,6 +53,8 @@ final class CameraPreviewPanel {
     }
 
     func hide() {
+        // A window going away under the pointer tells it nothing.
+        onPointerOver(false)
         panel?.orderOut(nil)
         stopSession()
         follow(nil)
@@ -97,6 +101,7 @@ final class CameraPreviewPanel {
                             defer: false)
         let view = PreviewView(frame: NSRect(origin: .zero, size: size))
         view.onReset = { [weak self] in self?.sendBack() }
+        view.onPointerOver = { [weak self] in self?.onPointerOver($0) }
         panel.contentView = view
         // The bar's level, so it sits over the target overlay as the bar does.
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
@@ -213,6 +218,18 @@ extension CameraPreviewPanel {
 private final class PreviewView: NSView {
     let previewLayer = AVCaptureVideoPreviewLayer()
     var onReset: () -> Void = {}
+    var onPointerOver: (Bool) -> Void = { _ in }
+
+    // `.activeAlways`: this panel never becomes key, and it is used over another app.
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas { removeTrackingArea(area) }
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                       owner: self))
+    }
+
+    override func mouseEntered(with event: NSEvent) { onPointerOver(true) }
+    override func mouseExited(with event: NSEvent) { onPointerOver(false) }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 

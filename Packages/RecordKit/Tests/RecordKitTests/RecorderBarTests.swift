@@ -109,6 +109,18 @@ struct RecorderBarTests {
         #expect(!shows(.idle, enabled: false))
     }
 
+    @Test func `minimizing the bar leaves the camera preview up`() {
+        func shows(_ state: RecordingSession.State, keeps: Bool = true, camera: Bool = true) -> Bool {
+            Companions.showsCameraPreview(isEnabled: true, keepsWhileRecording: keeps, hasCamera: camera,
+                                          isBarVisible: false, isBarMinimized: true, state: state)
+        }
+        #expect(shows(.recording(startedAt: started)))
+        #expect(shows(.paused(startedAt: started, at: started)))
+        #expect(!shows(.recording(startedAt: started), keeps: false), "not if it was not kept for the take")
+        #expect(!shows(.finishing), "and the camera is let go of as the take ends")
+        #expect(!shows(.recording(startedAt: started), camera: false))
+    }
+
     // MARK: - Menu bar icon
 
     private let started = Date(timeIntervalSinceReferenceDate: 1_000)
