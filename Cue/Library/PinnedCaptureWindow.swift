@@ -91,8 +91,8 @@ final class PinnedCaptureWindow: NSPanel {
                                         onEdit: onEdit.map { edit in { [weak self] in self?.close(); edit() } },
                                         onResize: { [weak self] width in self?.resize(toWidth: width) },
                                         onResizeEnded: { [weak self] in self?.resizeOrigin = nil },
-                                        onMove: { [weak self] translation in self?.move(by: translation) },
-                                        onMoveEnded: { [weak self] in self?.moveOrigin = nil })
+                                        onMove: { [weak self] in self?.drag() },
+                                        onMoveEnded: { [weak self] in self?.dragAnchor = nil })
         contentView = NSHostingView(rootView: content)
         #if DEBUG
         debugCopy = onCopy
@@ -126,22 +126,36 @@ final class PinnedCaptureWindow: NSPanel {
         zoom(by: 1 + max(-0.5, min(0.5, event.scrollingDeltaY / 100)))
     }
 
-    /// Where the window stood when the move began; the drag's whole translation is
-    /// applied to it, so the window cannot drift as the pointer is caught up with.
-    private var moveOrigin: CGRect?
+    /// True while AppKit runs the move in its own event loop, so the gesture's later
+    /// callbacks do not start a second one.
+    private var dragging = false
+    /// Where the pointer and the window stood when a hand-run move began.
+    private var dragAnchor: (pointer: CGPoint, origin: CGPoint)?
 
-    /// Dragging the picture moves the window, anywhere across the displays — far
-    /// enough onto one that it can always be grabbed again.
-    private func move(by translation: CGSize) {
-        let start = moveOrigin ?? frame
-        moveOrigin = start
-        // The drag's y grows downward, the screen's upward.
-        var origin = CGPoint(x: start.minX + translation.width, y: start.minY - translation.height)
+    /// Dragging the picture hands the move to AppKit, which follows the pointer in its
+    /// own loop until the mouse comes up — no SwiftUI round trip per frame, so the
+    /// window keeps up. Without that event to hand, the pointer on screen is followed
+    /// instead; never the gesture's own translation, whose frame of reference moves
+    /// with the window and so fights the move.
+    private func drag() {
+        guard !dragging else { return }
+        if let event = NSApp.currentEvent, event.type == .leftMouseDragged || event.type == .leftMouseDown {
+            dragging = true
+            performDrag(with: event)
+            dragging = false
+            dragAnchor = nil
+            return
+        }
+        let pointer = NSEvent.mouseLocation
+        let anchor = dragAnchor ?? (pointer, frame.origin)
+        dragAnchor = anchor
+        var origin = CGPoint(x: anchor.origin.x + pointer.x - anchor.pointer.x,
+                             y: anchor.origin.y + pointer.y - anchor.pointer.y)
         let room = NSScreen.screens.reduce(CGRect.null) { $0.union($1.frame) }
         if !room.isNull {
             let edge: CGFloat = 60 // this much of the window stays reachable
-            origin.x = min(max(origin.x, room.minX - start.width + edge), room.maxX - edge)
-            origin.y = min(max(origin.y, room.minY - start.height + edge), room.maxY - edge)
+            origin.x = min(max(origin.x, room.minX - frame.width + edge), room.maxX - edge)
+            origin.y = min(max(origin.y, room.minY - frame.height + edge), room.maxY - edge)
         }
         setFrameOrigin(origin)
     }
@@ -186,8 +200,8 @@ private struct PinnedCaptureView: View {
     /// The width the corner grip is being dragged to, then that the drag ended.
     let onResize: (CGFloat) -> Void
     let onResizeEnded: () -> Void
-    /// How far the picture has been dragged since the move began, and that it ended.
-    let onMove: (CGSize) -> Void
+    /// The picture is being dragged, and that the drag ended.
+    let onMove: () -> Void
     let onMoveEnded: () -> Void
     @State private var hovering = false
     @State private var copied = false
@@ -251,8 +265,10 @@ private struct PinnedCaptureView: View {
             // Dragging the picture moves the window. The grip and the hover buttons sit
             // above this, so they keep their own gestures.
             .gesture(
-                DragGesture(minimumDistance: 2, coordinateSpace: .global)
-                    .onChanged { onMove($0.translation) }
+                // The window itself does the moving: the translation reported here is
+                // measured against a frame that moves with the window.
+                DragGesture(minimumDistance: 2)
+                    .onChanged { _ in onMove() }
                     .onEnded { _ in onMoveEnded() }
             )
             .accessibilityLabel("Pinned screenshot")
