@@ -93,7 +93,13 @@ final class PinnedCaptureWindow: NSPanel {
                                         onResizeEnded: { [weak self] in self?.resizeOrigin = nil },
                                         onMove: { [weak self] in self?.drag() },
                                         onMoveEnded: { [weak self] in self?.dragAnchor = nil })
-        contentView = NSHostingView(rootView: content)
+        let host = NSHostingView(rootView: content)
+        // The window sets its own size (and keeps the picture's aspect); letting the
+        // hosting view push its own min/max up during a display cycle makes AppKit
+        // throw from `_postWindowNeedsUpdateConstraints` — which took Cue down while a
+        // pin was being dragged. The island's host is set the same way.
+        host.sizingOptions = []
+        contentView = host
         #if DEBUG
         debugCopy = onCopy
         debugEdit = onEdit.map { edit in { [weak self] in self?.close(); edit() } }
