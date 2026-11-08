@@ -597,18 +597,20 @@ final class AppPreferences {
     }
 
     enum AfterCapture: String, CaseIterable {
-        case edit, copy
+        case edit, copy, pin
 
         var title: String {
             switch self {
             case .edit: "Open the editor"
             case .copy: "Copy to the clipboard"
+            case .pin: "Pin it to the screen"
             }
         }
     }
 
-    /// What a finished capture does: opens in the editor (it is on the clipboard
-    /// either way), or is just copied and kept in the library.
+    /// What a finished capture does: opens in the editor, is just copied and kept in
+    /// the library, or floats above every window as a pinned shot (it is on the
+    /// clipboard whichever it is).
     var afterCapture: AfterCapture {
         didSet { defaults.set(afterCapture.rawValue, forKey: Key.afterCapture) }
     }

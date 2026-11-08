@@ -24,7 +24,7 @@ enum PaletteCommand: CaseIterable, Identifiable {
         case .cuePanel: "Cue panel"
         case .clock: "Clock and prayer times"
         case .settings: "Settings"
-        case .unghostPins: "Unghost pinned screenshots"
+        case .unghostPins: "Bring faded pins back"
         }
     }
 
@@ -65,7 +65,7 @@ enum PaletteCommand: CaseIterable, Identifiable {
         case .cuePanel: "library history"
         case .clock: "time prayer"
         case .settings: "preferences shortcuts"
-        case .unghostPins: "pin screenshot click-through see-through"
+        case .unghostPins: "pin screenshot faded see-through ghost opacity"
         }
     }
 

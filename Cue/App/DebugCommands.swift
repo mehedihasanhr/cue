@@ -17,11 +17,28 @@ import WebKit
 ///     cue://debug/size?width=1400&height=1000   the key window resized
 ///     cue://debug/markdown                  the editor's Markdown written to ~/Pictures/Cue Debug/markdown.md
 ///     cue://debug/snapshot?name=a           the Tasks window drawn to ~/Pictures/Cue Debug/a.png
+///                                            (window=pinned draws the newest pinned capture instead)
+///     cue://debug/pin?index=0                the nth capture (newest first) pinned to the screen
+///     cue://debug/pinned?action=edit         a pinned capture's own button: close, edit, copy, ghost
+///     cue://debug/island?tab=captures        the island opened on a tab, so its panel is on screen
+///     cue://debug/floating                   the floating library panel opened
+///     cue://debug/pick?index=0,2             the island panel's cards picked, as ⌘-click picks them
+///     cue://debug/picks                      what is picked, and what a copy would carry, to picks.txt
+///     cue://debug/copy-picks                 the picks copied, and what landed on the pasteboard, to copied.txt
 @MainActor
 enum DebugCommands {
     static func handles(_ url: URL) -> Bool { url.scheme == "cue" && url.host == "debug" }
 
-    static func run(_ url: URL, tasks: TaskStore, createTask: (TaskSeed) -> Void = { _ in }, openTask: (TaskItem, Bool) -> Void) {
+    /// A line or two for a test to read, in ~/Pictures/Cue Debug.
+    private static func write(report: String, to name: String) {
+        let folder = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Pictures/Cue Debug", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try? report.write(to: folder.appendingPathComponent(name), atomically: true, encoding: .utf8)
+    }
+
+    static func run(_ url: URL, tasks: TaskStore, createTask: (TaskSeed) -> Void = { _ in },
+                    pinCapture: (Int) -> Void = { _ in }, openIsland: (IslandTab?) -> Void = { _ in },
+                    openFloatingPanel: @escaping () -> Void = {}, openTask: (TaskItem, Bool) -> Void) {
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         let query = Dictionary((components?.queryItems ?? []).map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { $1 })
         let model = BlockEditorModel.current
@@ -31,9 +48,11 @@ enum DebugCommands {
         }
         // The Tasks window whether or not it is key (a sleeping display has no key window).
         // `window=panel`: the floating task form instead.
-        let window = query["window"] == "panel"
-            ? NSApp.windows.first { $0 is QuickTaskPanel && $0.isVisible }
-            : NSApp.windows.first { $0.title == "Cue Tasks" && $0.isVisible } ?? NSApp.keyWindow
+        let window: NSWindow? = switch query["window"] {
+        case "panel": NSApp.windows.first { $0 is QuickTaskPanel && $0.isVisible }
+        case "pinned": PinnedCaptureWindow.debugWindows.last
+        default: NSApp.windows.first { $0.title == "Cue Tasks" && $0.isVisible } ?? NSApp.keyWindow
+        }
         let responder = window?.firstResponder
 
         switch url.path {
@@ -133,6 +152,52 @@ enum DebugCommands {
             }
             guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil), let png = ImageEncoding.png(cg) else { return }
             createTask(.image(png))
+        case "/floating":
+            // The floating library panel opened (it closes the moment anything else takes
+            // the keyboard, so drive it from this one URL). Its glass hosting view draws
+            // blank through `cacheDisplay`, so there is no snapshot of it.
+            openFloatingPanel()
+        case "/island":
+            // The island expanded, so `IslandPanel` — and the picks below — are on screen.
+            openIsland(query["tab"].flatMap { IslandTab(rawValue: $0) })
+        case "/pin":
+            // The nth capture (newest first) pinned to the screen, as "Pin to Screen" does.
+            pinCapture(Int(query["index"] ?? "0") ?? 0)
+        case "/pinned":
+            // One of the pinned window's own buttons, on the newest pinned capture.
+            PinnedCaptureWindow.debugWindows.last?.debugRun(query["action"] ?? "")
+            let frames = PinnedCaptureWindow.debugWindows.map { window in
+                let frame = window.frame
+                return "\(Int(frame.minX)),\(Int(frame.minY)) \(Int(frame.width))x\(Int(frame.height)) alpha \(String(format: "%.2f", window.alphaValue)) clicks \(window.ignoresMouseEvents ? "off" : "on")"
+            }
+            let visible = (NSScreen.main?.visibleFrame ?? .zero)
+            write(report: """
+            pinned: \(frames.count)
+            screen: \(Int(visible.minX)),\(Int(visible.minY)) \(Int(visible.width))x\(Int(visible.height))
+            \(frames.joined(separator: "\n"))
+            """, to: "pinned.txt")
+        case "/pick":
+            // The island panel's cards picked by their place in the open tab (from 0).
+            let places = (query["index"] ?? "").split(separator: ",").compactMap { Int($0) }
+            IslandPicks.debugPick?(places)
+            write(report: IslandPicks.debugReport?() ?? "no panel", to: "picks.txt")
+        case "/picks":
+            write(report: IslandPicks.debugReport?() ?? "no panel", to: "picks.txt")
+        case "/copy-picks":
+            let before = IslandPicks.debugReport?() ?? "no panel"
+            IslandPicks.debugCopy?()
+            let pasteboard = NSPasteboard.general
+            let files = (pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] ?? []).map(\.path)
+            let report = """
+            \(before)
+            --- pasteboard ---
+            types: \(pasteboard.types?.map(\.rawValue).joined(separator: ", ") ?? "")
+            files:
+            \(files.joined(separator: "\n"))
+            string:
+            \(pasteboard.string(forType: .string) ?? "")
+            """
+            write(report: report, to: "copied.txt")
         case "/clipboard-text":
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(query["text"] ?? "", forType: .string)

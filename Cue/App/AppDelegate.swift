@@ -810,7 +810,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         for url in urls where !StudioController.handles(url) {
             #if DEBUG
             if DebugCommands.handles(url) {
-                DebugCommands.run(url, tasks: tasks, createTask: { [weak self] in self?.createTask(from: $0) }) { [weak self] task, asPage in
+                DebugCommands.run(url, tasks: tasks, createTask: { [weak self] in self?.createTask(from: $0) },
+                                  pinCapture: { [weak self] index in
+                                      guard let self, library.items.indices.contains(index) else { return }
+                                      pinToScreen(library.items[index])
+                                  },
+                                  openIsland: { [weak self] tab in
+                                      if let tab { self?.island?.expand(on: tab) } else { self?.island?.expand() }
+                                  },
+                                  openFloatingPanel: { [weak self] in self?.toggleHistoryAtPointer() }) { [weak self] task, asPage in
                     self?.openTaskDashboard(task: task)
                     self?.taskDashboard?.showAsPage(asPage)
                 }
@@ -1543,10 +1551,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func pinToScreen(_ item: CaptureItem) {
         guard let image = library.image(for: item) else { return }
         closeHistory()
-        PinnedCaptureWindow.pin(image.nsImage) { [weak self] in
+        PinnedCaptureWindow.pin(image.nsImage, onCopy: { [weak self] in
             self?.library.copyToClipboard(item)
             FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
-        }
+        }, onEdit: { [weak self] in
+            self?.openEditor(for: item, mode: .edit)
+        })
     }
 
     private func closeHistoryThen(_ action: @escaping (AppDelegate) -> Void) {
@@ -1796,6 +1806,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             openEditor(for: item, image: image, mode: .edit)
         case .copy:
             FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2), subtitle: item.dimensions, image: library.thumbnail(for: item))
+        case .pin:
+            PinnedCaptureWindow.pin(image.nsImage, onCopy: { [weak self] in
+                self?.library.copyToClipboard(item)
+                FeedbackHUD.show("Copied", symbol: "checkmark.circle.fill", duration: .seconds(1.2))
+            }, onEdit: { [weak self] in
+                self?.openEditor(for: item, image: image, mode: .edit)
+            })
         }
     }
 

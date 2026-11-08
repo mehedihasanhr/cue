@@ -1,6 +1,7 @@
 
 import UniformTypeIdentifiers
 import AppKit
+import os
 import SwiftUI
 
 /// The panel's tabs, in display order.
@@ -75,6 +76,8 @@ struct IslandPanel: View {
     @Environment(NotificationFeed.self) private var notifications
     /// Captures picked for one comparison sheet, in the order they were picked.
     @State private var compareSelection: [UUID] = []
+    /// Cards picked with ⌘-click; the bar then copies them together.
+    @State private var picks = IslandPicks()
     /// Asks the island for a line of text in its compact form.
     /// The current width (the island fits it to `onIdealWidth`).
     var width: CGFloat = IslandPanel.size.width
@@ -596,6 +599,10 @@ struct IslandPanel: View {
             .onKeyPress(.leftArrow) { moveSelection(-1) }
             .onKeyPress(.rightArrow) { moveSelection(1) }
             .onChange(of: arrowPress.tick) { _, _ in _ = moveSelection(arrowPress.delta) }
+            #if DEBUG
+            .onAppear { registerPickDebugging() }
+            .onChange(of: tab) { _, _ in registerPickDebugging() }
+            #endif
             .onChange(of: previewLeaveTick) { _, _ in closePreviewUnlessHovered() }
             .onChange(of: tab) { _, _ in
                 detail = nil
@@ -646,7 +653,71 @@ struct IslandPanel: View {
                     compareIndex: comparing.firstIndex(of: item.id).map { $0 + 1 },
                     onToggleCompare: { toggleCompare(item) })
             .modifier(CompareDrop(owner: .capture(item.id), resolve: draggedImage, accept: { actions.compare(item, $0) }))
+            .modifier(picking(.capture(item)))
     }
+
+    // MARK: - Picks
+
+    /// The stores a pick resolves through, and how a color is written.
+    private var pickSources: PickedCopy.Sources {
+        PickedCopy.Sources(library: library, clipboard: clipboard, assets: assets, colors: colors,
+                           snippets: snippets, notes: notes, colorFormat: preferences.colorFormat)
+    }
+
+    /// ⌘-click picking, the badge and the ring — for any card that can be copied.
+    private func picking(_ item: IslandItem) -> Picking {
+        Picking(index: picks.index(of: item), toggle: { picks.toggle(item) })
+    }
+
+    /// Copies every pick at once (see `PickedCopy`), then drops the picks.
+    private func copyPicked() {
+        guard PickedCopy.copy(PickedCopy.items(for: picks.ids, pickSources), pickSources) != nil else { return }
+        picks.clear()
+    }
+
+    #if DEBUG
+    /// What the open tab lists, in the order it shows — what `cue://debug/pick`
+    /// counts through.
+    private var visibleItems: [IslandItem] {
+        switch tab {
+        case .all: filteredEverything
+        case .captures: filteredCaptures.map { .capture($0) }
+        case .clipboard: filteredClipboard.map { .clipboard($0) }
+        case .assets: filteredAssets.map { .asset($0) }
+        case .colors: filteredColors.map { .color($0) }
+        case .snippets: snippets.items.map { .snippet($0) }
+        case .notes: notes.notes.map { .note($0) }
+        case .tasks, .notifications: []
+        }
+    }
+
+    /// Hands the picks and what can be done with them to `cue://debug/pick`,
+    /// `/picks` and `/copy-picks`, so both can be driven without a pointer.
+    private func registerPickDebugging() {
+        IslandPicks.current = picks
+        IslandPicks.debugPick = { [picks] places in
+            let items = visibleItems
+            for place in places where items.indices.contains(place) {
+                picks.toggle(items[place])
+            }
+        }
+        IslandPicks.debugCopy = { copyPicked() }
+        IslandPicks.debugReport = { [picks] in
+            let sources = pickSources
+            let items = PickedCopy.items(for: picks.ids, sources)
+            let report = PickedCopy.report(for: items, sources)
+            return """
+            tab: \(tab.rawValue)
+            listed: \(visibleItems.count)
+            picked: \(items.count)
+            files:
+            \(report.files.map(\.path).joined(separator: "\n"))
+            lines:
+            \(report.lines.joined(separator: "\n"))
+            """
+        }
+    }
+    #endif
 
     /// The picks that are still in the library, in the order they were picked.
     private var comparing: [UUID] {
@@ -701,6 +772,7 @@ struct IslandPanel: View {
             onPrompt(IslandPrompt(kind: .snippet(nil, initialText: text, assetID: nil)))
         }, onEdit: { actions.editClipboardImage(item) }, onNewGroup: { onPrompt(IslandPrompt(kind: .group(.clipboard, assign: .clipboard(item.id), editing: nil))) },
         createTask: actions.createTask)
+            .modifier(picking(.clipboard(item)))
     }
 
     private func assetCard(_ item: AssetItem) -> some View {
@@ -710,12 +782,14 @@ struct IslandPanel: View {
             onPrompt(IslandPrompt(kind: .snippet(nil, initialText: "", assetID: item.id)))
         }, onNewGroup: { onPrompt(IslandPrompt(kind: .group(.assets, assign: .asset(item.id), editing: nil))) },
         createTask: actions.createTask)
+            .modifier(picking(.asset(item)))
     }
 
     private func colorCard(_ entry: ColorEntry) -> some View {
         ColorCard(entry: entry, colors: colors, format: preferences.colorFormat, onPreview: { open(.color(entry)) }, onRename: {
             onPrompt(IslandPrompt(kind: .rename(.color(entry)), initial: entry.name ?? "", swatch: entry.color))
         }, onNewGroup: { onPrompt(IslandPrompt(kind: .group(.colors, assign: .color(entry.id), editing: nil))) })
+            .modifier(picking(.color(entry)))
     }
 
     // MARK: - Search
@@ -797,6 +871,7 @@ struct IslandPanel: View {
 
     private func noteCard(_ note: Note) -> some View {
         NoteCard(note: note, store: notes, clipboard: clipboard, onEdit: { onPrompt(IslandPrompt(kind: .note(note))) })
+            .modifier(picking(.note(note)))
     }
 
     private func snippetDrag(_ snippet: Snippet) -> DragPayload? {
@@ -806,6 +881,7 @@ struct IslandPanel: View {
     private func snippetCard(_ snippet: Snippet) -> some View {
         SnippetCard(snippet: snippet, store: snippets, assets: assets, clipboard: clipboard,
                     onEdit: { onPrompt(IslandPrompt(kind: .snippet(snippet, initialText: "", assetID: nil))) })
+            .modifier(picking(.snippet(snippet)))
     }
 
     /// How many cards the tab shows under its strip filter (Recent, Pinned, a group).
@@ -892,6 +968,10 @@ struct IslandPanel: View {
     /// What the open tab offers: Paste, Pick, New, Compare.
     @ViewBuilder
     private var tabActions: some View {
+        if !picks.isEmpty {
+            smallButton("Copy \(picks.count)", symbol: "doc.on.doc", help: "Copy everything picked — ⌘-click picks a card", action: copyPicked)
+            smallButton("Clear", symbol: "xmark", help: "Drop the picks") { picks.clear() }
+        }
         if tab == .captures, !comparing.isEmpty {
             smallButton("Compare \(comparing.count)", symbol: "rectangle.split.2x1",
                         help: "Lay the picked captures out in one picture and copy it", action: compareSelected)
@@ -1384,6 +1464,40 @@ struct QuietButton: View {
 
 /// Rounded card chrome shared by captures and clipboard items: blue border on hover,
 /// circular action buttons at the top, click and context menu.
+/// ⌘-click on a card picks it for copying several at once: its number in the corner,
+/// a ring around it, and the ⌘-click taken before the card's own tap (a plain click
+/// still does what the card does).
+struct Picking: ViewModifier {
+    /// Its place (from 1) among the picks; nil when it is not picked.
+    let index: Int?
+    let toggle: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(alignment: .topLeading) {
+                if let index {
+                    Text("\(index)")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 24, height: 24)
+                        .background(IslandStyle.accent, in: Circle())
+                        .overlay(Circle().strokeBorder(.white.opacity(0.35)))
+                        .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
+                        .padding(6)
+                        .allowsHitTesting(false)
+                        .accessibilityLabel("Picked, \(index)")
+                }
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: IslandChrome.cardRadius, style: .continuous)
+                    .strokeBorder(IslandStyle.accent, lineWidth: IslandStyle.selectedRingWidth)
+                    .opacity(index == nil ? 0 : 1)
+                    .allowsHitTesting(false)
+            }
+            .highPriorityGesture(TapGesture().modifiers(.command).onEnded { toggle() })
+    }
+}
+
 struct CardChrome<Content: View, Actions: View, Menu: View>: View {
     @Binding var hovering: Bool
     /// What VoiceOver reads for the card (its content is decorative for it).
@@ -1769,13 +1883,11 @@ struct CaptureCard: View {
         }
     }
 
-    /// ⌘-click adds the card to the comparison instead of copying it, which is how
-    /// several captures are picked without leaving the row.
+    /// A plain click copies the capture; ⌘-click picks it for copying several at
+    /// once (handled by `Picking` around the card), and the comparison is built from
+    /// the corner button or the card's menu.
     private func tap() {
-        if let onToggleCompare, NSEvent.modifierFlags.contains(.command) {
-            onToggleCompare()
-            return
-        }
+        guard !NSEvent.modifierFlags.contains(.command) else { return }
         actions.copy(item)
     }
 
@@ -1804,7 +1916,7 @@ struct CaptureCard: View {
             .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
         }
         .buttonStyle(.plain)
-        .help(compareIndex == nil ? "Add to the comparison (⌘-click)" : "Remove from the comparison")
+        .help(compareIndex == nil ? "Add to the comparison" : "Remove from the comparison")
         .accessibilityLabel(compareIndex == nil ? "Add to comparison" : "Remove from comparison")
     }
 

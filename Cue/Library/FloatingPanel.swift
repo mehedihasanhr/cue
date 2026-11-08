@@ -148,6 +148,10 @@ struct FloatingPanelView: View {
             .onChange(of: library.items.count + clipboard.items.count + assets.items.count + colors.items.count, refreshHits)
         }
         .padding(18)
+        // A darker ground under the glass, as the clipboard panel has: the cards and
+        // their captions must read over a bright desktop.
+        .background(Color.black.opacity(0.42))
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .foregroundStyle(.white)
         // The panel opens ready to type into.
         .onAppear { DispatchQueue.main.async { searchFocused = true } }
