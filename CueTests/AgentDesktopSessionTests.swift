@@ -1,7 +1,7 @@
 import XCTest
 
 /// Sessions of the Claude desktop app: the hook script says what started the agent,
-/// so Cue can tell them from a terminal's and leave their questions to the app.
+/// so Cue can tell them from a terminal's and hand their questions back to the app.
 final class AgentDesktopSessionTests: XCTestCase {
     private func event(entry: String?) throws -> AgentEvent {
         let cue = entry.map { #","entry":"\#($0)""# } ?? ""

@@ -1747,7 +1747,7 @@ private struct PlanCard: View {
                 } else {
                     // No pane to type in (a terminal other than WezTerm or tmux): the
                     // approval has to be given in the terminal itself.
-                    AnswerButton("Approve in Terminal", role: .primary) { store.answerInTerminal(request) }
+                    AnswerButton("Approve in \(request.appName ?? "Terminal")", role: .primary) { store.answerInTerminal(request) }
                 }
             }
         }
@@ -1801,8 +1801,8 @@ private struct QuestionsCard: View {
                     AnswerButton("Back", role: .quiet) { go(to: step - 1) }
                 }
                 Spacer(minLength: 0)
-                AnswerButton("Answer in Terminal", role: .quiet) { store.answerInTerminal(request) }
-                    .help("Leave this to the terminal; the agent waits there")
+                AnswerButton("Answer in \(request.appName ?? "Terminal")", role: .quiet) { store.answerInTerminal(request) }
+                    .help("Leave this to \(request.appName ?? "the terminal"); the agent waits there")
                 if isLast {
                     AnswerButton("Continue", role: .primary) { submit() }
                         .disabled(!complete)

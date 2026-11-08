@@ -136,10 +136,7 @@ final class AgentStore {
     }
 
     private func ask(_ event: AgentEvent, from connection: AgentConnection) {
-        // The Claude desktop app asks in its own window, and may not show that dialog
-        // while the hook holds the question: let it go at once. The session still
-        // shows as waiting, and a click brings Claude forward to answer there.
-        guard !event.isDesktop, var request = AgentRequest(event, at: .now), canAsk() else {
+        guard var request = AgentRequest(event, at: .now), canAsk() else {
             connection.reply()
             return
         }
@@ -154,6 +151,16 @@ final class AgentStore {
         // closed, the hook lets go at once and the app asks as usual).
         if request.agent == .codex, let host = hosts[request.sessionKey], Self.isAgentApp(host) {
             request.appName = host.name
+        }
+        // The Claude desktop app may not show its own dialog while the hook holds the
+        // question, so the island asks first and hands it back: on request, or by itself
+        // once it has gone unanswered, so a closed island never leaves the session stuck.
+        if event.isDesktop {
+            request.appName = "Claude"
+            let id = request.id
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.desktopAnswerWithin) { [weak self] in
+                self?.handBack(id)
+            }
         }
         connections[request.id] = connection
         if event.hookPID > 0 { hookPIDs[request.id] = event.hookPID }
@@ -213,7 +220,24 @@ final class AgentStore {
         // agent asks in its own window. Claude Code's prompt is already showing.
         // Antigravity likewise shows its own approval only once the hook has answered.
         if request.agent == .codex || request.agent == .antigravity { withdraw { $0.id == request.id } }
+        // The Claude app likewise, once the hook has let go.
+        if request.agent == .claude, request.appName != nil { handBack(request.id) }
         if let session = book.sessions.first(where: { $0.id == request.sessionKey }) { focus(session) }
+    }
+
+    /// How long the island holds a Claude desktop question before the app asks instead.
+    private static let desktopAnswerWithin: TimeInterval = 30
+
+    /// Lets a question's hook go so the agent's own app asks it. The session stays
+    /// waiting, since the question is still open there; the tool running, the turn
+    /// ending or the next prompt moves it on.
+    private func handBack(_ id: UUID) {
+        guard requests.contains(where: { $0.id == id }) else { return }
+        connections[id]?.reply()
+        connections[id] = nil
+        hookPIDs[id] = nil
+        requests.removeAll { $0.id == id }
+        if requests.isEmpty { onRequestsCleared() }
     }
 
     /// Brings `app` to the front. Cue is never the active app when the island is
