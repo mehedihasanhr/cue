@@ -23,6 +23,8 @@ final class AppPreferences {
         static let islandPlainDisplays = "island.plainDisplays"
         static let islandOpenMode = "island.openMode"
         static let islandHoverButtons = "island.hoverButtons"
+        static let islandDockItems = "island.dockItems"
+        static let quickWheel = "quickWheel.enabled"
         static let islandHoverDelay = "island.hoverDelay"
         static let islandCloseDelay = "island.closeDelay"
         static let islandCloseOnLeave = "island.closeOnLeave"
@@ -522,6 +524,19 @@ final class AppPreferences {
         didSet { defaults.set(islandHoverButtons, forKey: Key.islandHoverButtons) }
     }
 
+    /// Which floating buttons the row holds and in what order, as `IslandDockItem`
+    /// raw values joined by commas (see `islandDock`). Empty is the standard row.
+    var islandDockItems: String {
+        didSet { defaults.set(islandDockItems, forKey: Key.islandDockItems) }
+    }
+
+    /// A three-finger tap on the trackpad opens the ring of quick actions. It takes
+    /// the gesture over from macOS's Look up, and needs Accessibility to read it;
+    /// until that is granted the ring opens on its shortcut alone.
+    var quickWheelEnabled: Bool {
+        didSet { defaults.set(quickWheelEnabled, forKey: Key.quickWheel) }
+    }
+
     /// How long the pointer rests on the closed island before it opens (hover mode).
     var islandHoverDelay: Double {
         didSet { defaults.set(islandHoverDelay, forKey: Key.islandHoverDelay) }
@@ -997,6 +1012,8 @@ final class AppPreferences {
         dynamicIslandOnPlainDisplays = defaults.object(forKey: Key.islandPlainDisplays) as? Bool ?? true
         islandOpenMode = IslandOpenMode(rawValue: defaults.string(forKey: Key.islandOpenMode) ?? "") ?? .hover
         islandHoverButtons = defaults.object(forKey: Key.islandHoverButtons) as? Bool ?? true
+        islandDockItems = defaults.string(forKey: Key.islandDockItems) ?? ""
+        quickWheelEnabled = defaults.object(forKey: Key.quickWheel) as? Bool ?? true
         islandHoverDelay = defaults.object(forKey: Key.islandHoverDelay) as? Double ?? 0
         afterCapture = AfterCapture(rawValue: defaults.string(forKey: Key.afterCapture) ?? "") ?? .edit
         islandCloseDelay = defaults.object(forKey: Key.islandCloseDelay) as? Double ?? 0.25

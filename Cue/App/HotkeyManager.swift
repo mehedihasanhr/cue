@@ -24,6 +24,7 @@ struct Hotkey: Hashable, Codable {
     static let commandPalette = Hotkey(keyCode: UInt32(kVK_Space), modifiers: UInt32(optionKey | shiftKey))
     static let pasteNext = Hotkey(keyCode: UInt32(kVK_ANSI_V), modifiers: UInt32(cmdKey | shiftKey))
     static let window = Hotkey(keyCode: UInt32(kVK_ANSI_6), modifiers: UInt32(optionKey | shiftKey))
+    static let quickWheel = Hotkey(keyCode: UInt32(kVK_ANSI_A), modifiers: UInt32(optionKey | shiftKey))
     static let escape = Hotkey(keyCode: UInt32(kVK_Escape), modifiers: 0)
     static let enter = Hotkey(keyCode: UInt32(kVK_Return), modifiers: 0)
 
@@ -118,12 +119,14 @@ enum HotkeyID: UInt32, CaseIterable {
     case pasteNext
     /// A window by itself, with its shadow.
     case window
+    /// The ring of quick actions at the pointer (also a three-finger tap).
+    case quickWheel
     /// Registered only while a scrolling capture runs, so ↩ / ⎋ work from any app.
     case confirmCapture = 98
     case cancelCapture = 99
 
     /// The shortcuts a user can rebind in Settings.
-    static let configurable: [HotkeyID] = [.commandPalette, .fullScreen, .region, .window, .scrolling, .captureText, .pickColor, .quickTask, .quickNote, .showPanel, .clipboardPanel, .pasteNext]
+    static let configurable: [HotkeyID] = [.commandPalette, .quickWheel, .fullScreen, .region, .window, .scrolling, .captureText, .pickColor, .quickTask, .quickNote, .showPanel, .clipboardPanel, .pasteNext]
 
     var defaultHotkey: Hotkey {
         switch self {
@@ -139,6 +142,7 @@ enum HotkeyID: UInt32, CaseIterable {
         case .commandPalette: .commandPalette
         case .pasteNext: .pasteNext
         case .window: .window
+        case .quickWheel: .quickWheel
         case .confirmCapture: .enter
         case .cancelCapture: .escape
         }
@@ -158,6 +162,7 @@ enum HotkeyID: UInt32, CaseIterable {
         case .commandPalette: "Command palette"
         case .pasteNext: "Paste next (paste stack)"
         case .window: "Capture window"
+        case .quickWheel: "Quick actions wheel"
         case .confirmCapture: "Finish capture"
         case .cancelCapture: "Stop capture"
         }

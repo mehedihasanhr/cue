@@ -407,9 +407,6 @@ struct IslandSettingsView: View {
                     .pickerStyle(.segmented)
                     .fixedSize()
                 }
-                SettingsRow("Floating buttons", subtitle: "Round buttons under the open panel for each section, Tasks, Record and Settings.") {
-                    Toggle("Floating buttons", isOn: $preferences.islandHoverButtons).toggleStyle(.switch)
-                }
                 if preferences.islandOpenMode == .hover {
                     SettingsRow("Hover delay") {
                         SecondsSlider(value: $preferences.islandHoverDelay, range: 0...1.5, step: 0.05, zero: "At once")
@@ -433,6 +430,21 @@ struct IslandSettingsView: View {
                 }
             }
             .disabled(!preferences.dynamicIslandEnabled)
+
+            IslandDockSettings()
+
+            SettingsGroup("Quick actions wheel",
+                          footer: "Cue reads the tap macOS already recognises, so this needs System Settings › Trackpad › \u{201C}Look up & data detectors\u{201D} set to \u{201C}Tap with three fingers\u{201D} — the wheel then opens instead of Look up. Its shortcut is on the Shortcuts page and works either way.") {
+                SettingsRow("Open on a three-finger tap", subtitle: "A ring of Cue's quick actions round the pointer: capture, text, color, task, note, record.") {
+                    Toggle("Three-finger tap", isOn: $preferences.quickWheelEnabled).toggleStyle(.switch)
+                }
+                if preferences.quickWheelEnabled, !PermissionManager.hasAccessibilityAccess {
+                    SettingsRow("Accessibility needed to read the gesture", subtitle: "Without it the wheel opens on its shortcut alone.",
+                                symbol: "exclamationmark.triangle.fill", tint: .orange) {
+                        Button("Open Accessibility") { PermissionManager.openAccessibilitySettings() }
+                    }
+                }
+            }
 
             SettingsGroup("Motion") {
                 SettingsRow("Say hello at launch", subtitle: "The island comes out of the notch for a moment each time Cue starts.") {
@@ -1848,6 +1860,7 @@ struct ShortcutSettingsView: View {
         case .commandPalette: "command"
         case .pasteNext: "square.stack.3d.down.right"
         case .window: "macwindow"
+        case .quickWheel: "circle.grid.cross"
         case .confirmCapture, .cancelCapture: "xmark"
         }
     }
@@ -1866,6 +1879,7 @@ struct ShortcutSettingsView: View {
         case .commandPalette: .brand
         case .pasteNext: .teal
         case .window: .cyan
+        case .quickWheel: .pink
         case .confirmCapture, .cancelCapture: .gray
         }
     }

@@ -80,12 +80,21 @@ final class ConvertWheelModel {
 /// The ring's measures, shared by the drawing and the drop target.
 enum WheelGeometry {
     /// The window: the wheel and room for its shadow.
-    static let window = CGSize(width: 340, height: 340)
+    ///
+    /// The disc comes to `(outer + rim) * 2` = 316 across. Under it the shadow drops
+    /// 8 and blurs 18, which fades out about 36 further, so the lowest the shadow
+    /// reaches is 158 + 8 + 36 = 202 from the middle. The window is half as wide
+    /// again as that, so no part of the shadow ever reaches the window's edge, at rest
+    /// or part-way through the wheel's own scale and fade.
+    static let window = CGSize(width: 460, height: 460)
     static let outer: CGFloat = 150
     static let inner: CGFloat = 64
     /// The glass rim round the segments.
     static let rim: CGFloat = 8
     static let gap: CGFloat = 5
+    /// How long the wheel takes to animate itself away, in milliseconds: how long its
+    /// window must stay up before being pulled out.
+    static let fadeOut = 380
 
     /// The segment at `point` (from the window's centre, y up), if it's on the ring.
     static func index(at point: CGPoint, count: Int) -> Int? {
@@ -199,18 +208,32 @@ struct ConvertWheelView: View {
 }
 
 /// The disc behind the segments: Liquid Glass with a soft rim and shadow.
-private struct WheelGlass: ViewModifier {
+///
+/// The shadow is cast by `.shadow` straight from the disc, and nothing here resizes
+/// or re-frames the glass: giving the glass a frame the size of the window, to keep
+/// the blur off the window's edge, made it fill that whole frame instead — a pale
+/// rounded square behind the wheel for as long as it animated. The room the shadow
+/// needs comes from `WheelGeometry.window` being large enough, not from here.
+struct WheelGlass: ViewModifier {
     let dark: Bool
 
     func body(content: Content) -> some View {
         if #available(macOS 26.0, *) {
             content
                 .glassEffect(.regular.tint(dark ? .black.opacity(0.3) : .white.opacity(0.25)), in: Circle())
+                // The glass is told to take a circle, and at rest it does. Part-way
+                // through the wheel's scale and fade it draws its backdrop as the
+                // rounded square of its own bounds instead, which is the frame that
+                // was showing behind the wheel as it opened and closed. Clipping it
+                // leaves nothing that can escape the circle. The shadow is cast after,
+                // so it is not clipped with it.
+                .clipShape(Circle())
                 .overlay(Circle().strokeBorder(.white.opacity(dark ? 0.15 : 0.7), lineWidth: 1))
                 .shadow(color: .black.opacity(0.22), radius: 18, y: 8)
         } else {
             content
                 .background(.regularMaterial, in: Circle())
+                .clipShape(Circle())
                 .overlay(Circle().strokeBorder(.white.opacity(dark ? 0.15 : 0.7), lineWidth: 1))
                 .shadow(color: .black.opacity(0.22), radius: 18, y: 8)
         }
@@ -218,7 +241,7 @@ private struct WheelGlass: ViewModifier {
 }
 
 /// A slice of a ring with rounded corners and a gap either side, centred in its rect.
-private struct RingSegment: Shape {
+struct RingSegment: Shape {
     let start: Angle
     let end: Angle
     let inner: CGFloat

@@ -30,6 +30,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     #endif
     /// The floating basket, shaken up while dragging files.
     private lazy var basket = BasketController(preferences: preferences)
+    /// The ring of quick actions, opened by a three-finger tap or its shortcut.
+    private lazy var quickWheel = QuickWheelController(preferences: preferences)
     /// The recognisers Capture Text can use, and the language packs behind them.
     private lazy var ocrEngines = OCREngines(preferences: preferences)
     /// Screen recording and the video editor.
@@ -162,6 +164,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         basket.canShare = { [weak self] in self?.share.isConfigured ?? false }
         basket.onShareLink = { [weak self] urls in self?.shareFiles(urls) }
         basket.start()
+        quickWheel.run = { [weak self] action in self?.run(action) }
+        applyQuickWheelPreference()
 
         let expander = SnippetExpander(store: snippets, assets: assets, preferences: preferences)
         expander.askToFill = { [weak self] snippet, field in self?.fillSnippet(snippet, from: field) }
@@ -179,7 +183,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         shortcuts.setAction(for: .commandPalette) { [weak self] in self?.showCommandPalette(nil) }
         shortcuts.setAction(for: .pasteNext) { [weak self] in self?.pasteNext() }
         shortcuts.setAction(for: .window) { [weak self] in self?.coordinator.captureWindow(fromMenu: false) }
+        shortcuts.setAction(for: .quickWheel) { [weak self] in self?.quickWheel.toggle() }
 
+        // Diagnostics: `--env CUE_DEBUG_GESTURE=1` writes every trackpad gesture event
+        // that reaches an event tap to Pictures/Cue/_gesture.txt.
+        if ProcessInfo.processInfo.environment["CUE_DEBUG_GESTURE"] == "1" {
+            GestureProbe.run()
+        }
+        // Diagnostics: `--env CUE_DEBUG_WHEEL=record` shows the quick wheel at the pointer
+        // with that segment lit, and writes a picture of it to Pictures/Cue/_wheel.png.
+        // `CUE_DEBUG_WHEEL_DELAY` takes the picture that many seconds after it opens, to
+        // catch it part-way through its animation.
+        if let spec = ProcessInfo.processInfo.environment["CUE_DEBUG_WHEEL"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                guard let self else { return }
+                quickWheel.debugShow(hovered: QuickAction(rawValue: spec))
+                let after = ProcessInfo.processInfo.environment["CUE_DEBUG_WHEEL_DELAY"].flatMap(Double.init) ?? 1
+                // `CUE_DEBUG_WHEEL_CLOSE=<seconds>` closes it again first, so the
+                // picture catches it on its way out rather than on its way in.
+                if let closeAfter = ProcessInfo.processInfo.environment["CUE_DEBUG_WHEEL_CLOSE"].flatMap(Double.init) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + closeAfter) { [weak self] in self?.quickWheel.hide() }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + after) { [weak self] in
+                    guard let self, let screen = NSScreen.main else { return }
+                    let rect = quickWheel.debugFrame.insetBy(dx: -20, dy: -20)
+                    Task { @MainActor in
+                        guard let image = try? await ScreenCaptureService().captureRegionIncludingCue(rect, on: screen),
+                              let png = ImageEncoding.png(image) else { return }
+                        try? png.write(to: CaptureLibrary.defaultFolder().appendingPathComponent("_wheel.png"))
+                    }
+                }
+            }
+        }
         // Diagnostics: `--env CUE_DEBUG_HOTKEYS=1` writes every shortcut and its status to Pictures/Cue.
         if ProcessInfo.processInfo.environment["CUE_DEBUG_HOTKEYS"] == "1" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
@@ -1670,6 +1705,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard !hasVisibleWindows, !studio.handlesReopen else { return true }
         toggleHistoryAtPointer()
         return true
+    }
+
+    /// One of the quick wheel's segments: the same thing its shortcut does.
+    private func run(_ action: QuickAction) {
+        switch action {
+        case .captureArea: coordinator.captureArea(fromMenu: false)
+        case .captureWindow: coordinator.captureWindow(fromMenu: false)
+        case .captureFullScreen: coordinator.captureFullScreen(fromMenu: false)
+        case .captureText: coordinator.captureText(fromMenu: false)
+        case .pickColor: pickColor(nil)
+        case .quickTask: quickTask(nil)
+        case .quickNote: quickNote(nil)
+        case .record: recordVideo(nil)
+        }
+    }
+
+    /// Settings › Island › Quick actions wheel: starts or stops reading the
+    /// three-finger tap as the toggle changes. The gesture needs Accessibility;
+    /// without it the wheel is still there on its shortcut.
+    private func applyQuickWheelPreference() {
+        let enabled = withObservationTracking {
+            preferences.quickWheelEnabled
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.applyQuickWheelPreference() }
+        }
+        guard enabled else { return quickWheel.applyPreference() }
+        if !quickWheel.start() {
+            Log.app.notice("Quick wheel: no Accessibility, so the three-finger tap is off (its shortcut still opens it)")
+        }
     }
 
     /// The recorder bar, where recording starts.

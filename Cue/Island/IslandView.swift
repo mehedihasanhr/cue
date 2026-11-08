@@ -541,7 +541,7 @@ struct IslandView: View {
                 // back up into it: a view being removed is frozen where it was, and would
                 // be left hanging in the air as the panel shrank away from it.
                 if model.showsDock || dockMounted {
-                    IslandDock(model: model)
+                    IslandDock(model: model, actions: actions)
                         .modifier(IslandDockCollapse(progress: model.showsDock ? 1 : 0))
                         .animation(.easeOut(duration: IslandMotion.response(Self.reduceMotion ? 0.15 : 0.2)), value: model.showsDock)
                         .allowsHitTesting(model.showsDock)
@@ -825,9 +825,13 @@ struct IdealWidth: ViewModifier {
     }
 }
 
-/// The floating buttons under the island: one for each section of the panel, Tasks,
-/// then Record and Settings. A section's button opens the panel on it (or switches to
-/// it when the panel is open).
+/// The floating buttons under the island: whichever the user chose in Settings ›
+/// Island › Floating buttons, in their order (by default one for each section of the
+/// panel, then Tasks, Record and Settings). A section's button opens the panel on it
+/// (or switches to it when the panel is open); a quick action fires straight away.
+///
+/// Resting on a button names it, on a small pill under the row: the island's panel
+/// never takes focus, so AppKit's own tooltips never come up in it.
 ///
 /// Once the panel has opened they come out of it as liquid: each button its own drop,
 /// swelling out of the panel's bottom edge right above where it will sit, hanging by a
@@ -841,45 +845,135 @@ struct IslandDock: View {
     static let spacing: CGFloat = 8
 
     let model: IslandModel
+    let actions: HistoryActions
     @Environment(AppPreferences.self) private var preferences
     @AppStorage(IslandTab.storageKey) private var current: IslandTab = .all
     @State private var appeared: Double = IslandView.reduceMotion ? 1 : 0
+    /// The button under the pointer, as it happens.
+    @State private var hovered: IslandDockItem?
+    /// The button whose name is up: `hovered` once it has been there long enough.
+    @State private var named: IslandDockItem?
     /// Below 1 while the island closes: the drops going back in.
     @Environment(\.islandDockOut) private var out
 
     var body: some View {
-        let count = preferences.islandTabs.count + 3
+        let items = preferences.islandDock
+        let count = items.count
         let progress = min(appeared, out)
         ZStack(alignment: .top) {
             IslandDockGoo(progress: progress, count: count, color: .black)
             HStack(spacing: Self.spacing) {
-                ForEach(Array(preferences.islandTabs.enumerated()), id: \.element) { index, tab in
-                    LauncherButton(symbol: tab.symbol, help: tab.title, selected: model.phase == .expanded && current == tab) { model.onLauncherTab(tab) }
+                ForEach(Array(items.enumerated()), id: \.element) { index, item in
+                    LauncherButton(symbol: item.symbol, help: item.title, tint: item.tint,
+                                   selected: selected(item),
+                                   onHover: { inside in
+                                       if inside { hovered = item } else if hovered == item { hovered = nil }
+                                   },
+                                   action: { run(item) })
                         .modifier(IslandDockReveal(progress: progress, index: index, count: count))
                 }
-                // Tasks have a dashboard of their own, not a tab.
-                LauncherButton(symbol: IslandTab.tasks.symbol, help: "Tasks") { model.onOpenTaskDashboard() }
-                    .modifier(IslandDockReveal(progress: progress, index: count - 3, count: count))
-                LauncherButton(symbol: "record.circle", help: "Record", tint: .red) { model.onLauncherRecord() }
-                    .modifier(IslandDockReveal(progress: progress, index: count - 2, count: count))
-                LauncherButton(symbol: "gearshape", help: "Settings") { model.onOpenSettings() }
-                    .modifier(IslandDockReveal(progress: progress, index: count - 1, count: count))
             }
             .frame(height: Self.height)
+            // The name under the row, where there is room: the window keeps the
+            // shadow's margin below the buttons. One pill for the whole row, so moving
+            // along it slides the name across and changes the word rather than
+            // dropping one name and waiting again for the next.
+            .overlay(alignment: .bottomLeading) {
+                if let named, let index = items.firstIndex(of: named), progress >= 1 {
+                    let width = Self.tipWidth(of: named.title)
+                    DockTip(title: named.title, width: width)
+                        .offset(x: Self.tipX(of: index, among: count, width: width), y: DockTip.height + 6)
+                        .transition(.opacity)
+                }
+            }
+            .animation(Self.tipMotion, value: named)
+            // What hovering does, in one place: the first name waits for the pointer to
+            // settle; afterwards the next button takes the pill over at once, and a
+            // short grace on the way out carries it over the gaps between buttons, so
+            // crossing the row never starts the wait again.
+            .task(id: hovered) {
+                guard let hovered else {
+                    try? await Task.sleep(for: Self.tipGrace)
+                    guard !Task.isCancelled else { return }
+                    return named = nil
+                }
+                if named == nil {
+                    try? await Task.sleep(for: Self.tipDelay)
+                    guard !Task.isCancelled else { return }
+                }
+                named = hovered
+            }
         }
         // Going back in, it fades as it goes, gone before the panel has closed.
         .opacity(out < 1 ? Self.smooth(out) : 1)
-        // Nothing above the panel's edge: the liquid comes out of it.
+        // Nothing above the panel's edge: the liquid comes out of it. Below, room for
+        // the name of the button under the pointer.
         .mask(alignment: .top) {
-            Rectangle().padding(.top, -Self.gap).padding(.horizontal, -40).padding(.bottom, -30)
+            Rectangle().padding(.top, -Self.gap).padding(.horizontal, -60).padding(.bottom, -(DockTip.height + 16))
         }
         .environment(\.colorScheme, .dark)
+        .onChange(of: preferences.islandDockItems) { hovered = nil; named = nil }
         .task {
             guard appeared < 1 else { return }
             // After the panel's own spring has mostly settled, so the two never fight.
             try? await Task.sleep(for: .seconds(IslandMotion.response(0.22)))
             withAnimation(.easeInOut(duration: IslandMotion.response(0.45))) { appeared = 1 }
         }
+    }
+
+    /// A section's button is lit while the open panel is showing that section.
+    private func selected(_ item: IslandDockItem) -> Bool {
+        guard let tab = item.tab else { return false }
+        return model.phase == .expanded && current == tab
+    }
+
+    private func run(_ item: IslandDockItem) {
+        if let tab = item.tab { return model.onLauncherTab(tab) }
+        switch item {
+        case .tasks: model.onOpenTaskDashboard()
+        case .settings: model.onOpenSettings()
+        case .record: model.onLauncherRecord()
+        case .captureArea: actions.captureArea()
+        case .captureWindow: actions.captureWindow()
+        case .captureFullScreen: actions.captureFullScreen()
+        case .captureScrolling: actions.captureScrolling()
+        case .captureText: actions.captureText()
+        case .pickColor: actions.pickColor()
+        default: break
+        }
+    }
+
+    /// How long the pointer rests on the first button before its name comes up.
+    static let tipDelay = Duration.milliseconds(450)
+    /// How long a name waits after the pointer leaves a button, so that crossing the
+    /// gap to the next one hands it over instead of starting again.
+    static let tipGrace = Duration.milliseconds(160)
+    /// The pill sliding to the next button and its word changing: quick, and settling
+    /// without a wobble. A short fade instead where motion is reduced.
+    static var tipMotion: Animation {
+        IslandView.reduceMotion ? .easeOut(duration: 0.12)
+                                : .spring(response: IslandMotion.response(0.28), dampingFraction: 0.86)
+    }
+
+    /// The pill's width for a name, worked out from the text rather than measured
+    /// after the fact, so it and the slide to the next button move as one.
+    static func tipWidth(of title: String) -> CGFloat {
+        let font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        return (title as NSString).size(withAttributes: [.font: font]).width.rounded(.up) + 18
+    }
+
+    /// The width of the whole row of `count` buttons.
+    static func width(of count: Int) -> CGFloat {
+        CGFloat(count) * button + CGFloat(max(0, count - 1)) * spacing
+    }
+
+    /// Where a name pill of `width` sits, from the row's leading edge: centred on its
+    /// button, then pulled back inside the row's own width plus a little either side.
+    static func tipX(of index: Int, among count: Int, width: CGFloat) -> CGFloat {
+        let row = Self.width(of: count)
+        let wanted = centre(of: index, among: count, at: 1).x - width / 2
+        guard width < row + 72 else { return (row - width) / 2 }
+        return min(max(wanted, -36), row + 36 - width)
     }
 
     /// How far behind the middle button the outermost one starts, as a share of the run.
@@ -989,12 +1083,14 @@ private struct IslandDockGoo: View, Animatable {
     }
 }
 
-/// One of the hovered island's buttons: a round glass button that lights up under the pointer.
+/// One of the hovered island's buttons: a round glass button that lights up under the
+/// pointer. It reports the pointer coming and going; the row decides when to name it.
 private struct LauncherButton: View {
     let symbol: String
     let help: String
     var tint: Color?
     var selected = false
+    var onHover: (Bool) -> Void = { _ in }
     let action: () -> Void
     @State private var hovering = false
 
@@ -1009,10 +1105,36 @@ private struct LauncherButton: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .onHover { hovering = $0 }
+        .onHover { hovering = $0; onHover($0) }
         .animation(.easeOut(duration: 0.15), value: hovering)
         .help(help)
         .accessibilityLabel(help)
+    }
+}
+
+/// A button's name, on a small pill under the row. Its width is given rather than
+/// measured (`IslandDock.tipWidth`), so that sliding to the next button, growing to
+/// its name and changing the word all happen on the one animation.
+private struct DockTip: View {
+    let title: String
+    let width: CGFloat
+
+    static let height: CGFloat = 22
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(.white.opacity(0.92))
+            .lineLimit(1)
+            .fixedSize()
+            // The word swaps where it stands while the pill moves under it.
+            .contentTransition(.opacity)
+            .frame(width: width, height: Self.height)
+            .background(.black.opacity(0.78), in: Capsule())
+            .overlay(Capsule().strokeBorder(.white.opacity(0.12)))
+            .shadow(color: .black.opacity(0.35), radius: 6, y: 2)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 

@@ -204,7 +204,9 @@ final class BasketController {
         guard let wheelPanel, wheelPanel.isVisible else { return }
         wheel.shown = false
         Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(220))
+            // Once it has animated itself away, not before: pulled out
+            // early, the last of the wheel vanishes mid-fade.
+            try? await Task.sleep(for: .milliseconds(WheelGeometry.fadeOut))
             guard let self, !wheel.shown else { return }
             self.wheelPanel?.orderOut(nil)
         }
