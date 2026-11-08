@@ -41,6 +41,10 @@ final class FloatingPanelWindow: NSPanel {
             .padding(Self.margin)
             .environment(\.colorScheme, .dark)
         )
+        // The panel is sized here, so the hosting view must not push a size of its own
+        // up to the window: doing that while the window is being moved leaves AppKit
+        // updating constraints inside a display cycle, which it answers by throwing.
+        host.sizingOptions = []
         host.frame = CGRect(origin: .zero, size: full)
         contentView = host
     }

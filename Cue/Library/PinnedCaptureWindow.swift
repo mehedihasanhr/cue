@@ -24,6 +24,10 @@ final class PinnedCaptureWindow: NSPanel {
         case "copy": debugCopy?()
         case "edit": debugEdit?()
         case "ghost": toggleGhost()
+        case "drag":
+            // The move a drag makes, without a pointer: ten steps, as the gesture would.
+            for _ in 0..<10 { drag() }
+            dragAnchor = nil
         case "close": close()
         default: break
         }
@@ -132,26 +136,17 @@ final class PinnedCaptureWindow: NSPanel {
         zoom(by: 1 + max(-0.5, min(0.5, event.scrollingDeltaY / 100)))
     }
 
-    /// True while AppKit runs the move in its own event loop, so the gesture's later
-    /// callbacks do not start a second one.
-    private var dragging = false
-    /// Where the pointer and the window stood when a hand-run move began.
+    /// Where the pointer and the window stood when the move began.
     private var dragAnchor: (pointer: CGPoint, origin: CGPoint)?
 
-    /// Dragging the picture hands the move to AppKit, which follows the pointer in its
-    /// own loop until the mouse comes up — no SwiftUI round trip per frame, so the
-    /// window keeps up. Without that event to hand, the pointer on screen is followed
-    /// instead; never the gesture's own translation, whose frame of reference moves
-    /// with the window and so fights the move.
+    /// Dragging the picture moves the window, by following the pointer's own position
+    /// on screen: that position does not move with the window, as the drag gesture's
+    /// translation does — measuring against a frame that moves made every step fight
+    /// the last. AppKit's own `performDrag` would be smoother still, but it runs a
+    /// nested event loop, and starting one from inside a SwiftUI gesture callback
+    /// leaves the hosting view updating in the middle of a display cycle, which
+    /// AppKit answers with an exception that takes the app down.
     private func drag() {
-        guard !dragging else { return }
-        if let event = NSApp.currentEvent, event.type == .leftMouseDragged || event.type == .leftMouseDown {
-            dragging = true
-            performDrag(with: event)
-            dragging = false
-            dragAnchor = nil
-            return
-        }
         let pointer = NSEvent.mouseLocation
         let anchor = dragAnchor ?? (pointer, frame.origin)
         dragAnchor = anchor

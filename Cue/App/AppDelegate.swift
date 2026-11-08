@@ -101,6 +101,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // AppKit takes the app down on an uncaught exception; this writes down what it
+        // was on the way out, so a crash report comes with a name and a reason beside
+        // it instead of a bare trap in the display cycle.
+        NSSetUncaughtExceptionHandler { exception in
+            let stack = exception.callStackSymbols.prefix(16).joined(separator: "\n")
+            Log.app.fault("Uncaught \(exception.name.rawValue, privacy: .public): \(exception.reason ?? "no reason", privacy: .public)\n\(stack, privacy: .public)")
+        }
         preferences.applyAppearance()
         DictationService.preferences = preferences
         VoiceTyping.shared.configure(preferences)

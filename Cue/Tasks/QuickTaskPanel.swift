@@ -181,6 +181,9 @@ final class QuickTaskPanel: NSPanel {
         chrome.panel = self
         let root = Sized(chrome: chrome, content: form { [weak self] in self?.close() })
         let host = NSHostingView(rootView: root)
+        // The panel sets its own size; a hosting view that also pushes one up throws
+        // from the display cycle while the panel is moved or resized.
+        host.sizingOptions = []
         let full = CGRect(origin: .zero, size: CGSize(width: Self.defaultSize.width + Self.margin * 2, height: Self.defaultSize.height + Self.margin * 2))
         host.frame = full
         host.autoresizingMask = [.width, .height]
