@@ -37,10 +37,14 @@ final class CommandMenuController: NSObject, NSWindowDelegate {
         panel.isReleasedWhenClosed = false
         panel.delegate = self
         panel.setAccessibilityLabel("Command Menu")
-        panel.contentView = NSHostingView(rootView: CommandMenuView(
+        let host = NSHostingView(rootView: CommandMenuView(
             entries: entries,
             perform: { [weak self] entry in self?.perform(entry) },
             dismiss: { [weak self] in self?.close() }))
+        // The panel is sized here; a hosting view pushing its own size up does it from
+        // inside the display cycle, which AppKit throws on.
+        host.sizingOptions = []
+        panel.contentView = host
 
         // Over whatever window was in front, a little above its middle — where a search
         // field is looked for.

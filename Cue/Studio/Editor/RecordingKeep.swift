@@ -81,6 +81,8 @@ enum RecordingKeep {
         let hosting = NSHostingView(rootView: KeepPromptView(name: name, answer: answer))
         window.contentView = hosting
         window.setContentSize(hosting.fittingSize)
+        // Measured once, above; from here the window owns the size.
+        hosting.sizingOptions = []
         return window
     }
 }

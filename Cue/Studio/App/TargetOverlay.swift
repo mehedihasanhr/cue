@@ -98,7 +98,9 @@ final class TargetOverlayController {
                                          cancel: { [weak self] in self?.hide() },
                                          picked: { [weak self] in self?.fadeOut(after: .milliseconds(700)) })
 
-            window.contentView = NSHostingView(rootView: view)
+            let host = NSHostingView(rootView: view)
+            host.sizingOptions = [] // the window covers the screen; it owns its size
+            window.contentView = host
             window.orderFrontRegardless()
             windows.append(window)
         }

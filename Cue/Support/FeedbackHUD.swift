@@ -20,6 +20,11 @@ enum FeedbackHUD {
 
         let host = NSHostingView(rootView: FeedbackToast(message: message, symbol: symbol))
         let size = host.fittingSize
+        // The size is taken once, here; from now on the panel owns it. A hosting view
+        // left free to push its own size up to the window does so from inside the
+        // display cycle, and AppKit answers that by throwing — a HUD shows after every
+        // capture, while the island is animating, which is exactly when that lands.
+        host.sizingOptions = []
         let panel = NSPanel(
             contentRect: CGRect(origin: .zero, size: size),
             styleMask: [.borderless, .nonactivatingPanel],

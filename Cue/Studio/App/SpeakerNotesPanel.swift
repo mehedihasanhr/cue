@@ -37,7 +37,9 @@ final class SpeakerNotesPanel: NSObject, NSWindowDelegate {
                             backing: .buffered,
                             defer: false)
         panel.title = "Speaker Notes"
-        panel.contentView = NSHostingView(rootView: SpeakerNotesView(preferences: preferences))
+        let host = NSHostingView(rootView: SpeakerNotesView(preferences: preferences))
+        host.sizingOptions = [] // the panel owns its size (see PinnedCaptureWindow)
+        panel.contentView = host
         panel.isFloatingPanel = true
         panel.level = .floating
         panel.hidesOnDeactivate = false
