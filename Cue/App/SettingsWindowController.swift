@@ -37,7 +37,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             .environment(studio?.settingsObjects?.recorder)
             .frame(minWidth: 820, minHeight: 540)
 
-        window.contentViewController = NSHostingController(rootView: root)
+        let host = NSHostingController(rootView: root)
+        // The window owns its size. A hosting controller left to push the content's
+        // own minimum up does it from inside the display cycle — while the window is
+        // being resized, say — and AppKit answers that by throwing, which closes Cue.
+        // The minimum the view asked for is given to the window directly instead.
+        host.sizingOptions = []
+        window.contentViewController = host
+        window.contentMinSize = CGSize(width: 820, height: 540)
         window.title = "Cue Settings"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden

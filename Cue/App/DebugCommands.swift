@@ -20,6 +20,7 @@ import WebKit
 ///                                            (window=pinned draws the newest pinned capture instead)
 ///     cue://debug/pin?index=0                the nth capture (newest first) pinned to the screen
 ///     cue://debug/pinned?action=edit         a pinned capture's own button: close, edit, copy, ghost
+///     cue://debug/throw                      raises an exception, to check it is caught and logged
 ///     cue://debug/island?tab=captures        the island opened on a tab, so its panel is on screen
 ///     cue://debug/floating                   the floating library panel opened
 ///     cue://debug/pick?index=0,2             the island panel's cards picked, as ⌘-click picks them
@@ -157,6 +158,10 @@ enum DebugCommands {
             // the keyboard, so drive it from this one URL). Its glass hosting view draws
             // blank through `cacheDisplay`, so there is no snapshot of it.
             openFloatingPanel()
+        case "/throw":
+            // Checks the net under AppKit's drawing exceptions: this one should be
+            // written to the log by CueApplication and leave Cue running.
+            NSException(name: .internalInconsistencyException, reason: "cue://debug/throw", userInfo: nil).raise()
         case "/island":
             // The island expanded, so `IslandPanel` — and the picks below — are on screen.
             openIsland(query["tab"].flatMap { IslandTab(rawValue: $0) })

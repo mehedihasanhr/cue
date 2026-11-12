@@ -11,6 +11,8 @@ struct CueApp: App {
     @State private var studio: StudioService
 
     init() {
+        // First of all: Cue's own NSApplication, before SwiftUI asks for the shared one.
+        CueApplication.install()
         // Before the libraries below look in them.
         LegacyFolders.moveIfNeeded()
         // Diagnostics: `--env CUE_DEBUG_DEFAULTS="clock.enabled=false,color.enabled=true"`

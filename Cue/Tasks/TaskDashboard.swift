@@ -211,7 +211,12 @@ final class TaskDashboardWindowController: NSWindowController, NSWindowDelegate 
         let root = TaskDashboardView(store: store, buttons: buttons)
             .environment(model)
             .frame(minWidth: 900, minHeight: 560)
-        window.contentViewController = NSHostingController(rootView: root)
+        let host = NSHostingController(rootView: root)
+        // See SettingsWindowController: the window keeps its own size, so the hosting
+        // controller never pushes one up mid-display-cycle.
+        host.sizingOptions = []
+        window.contentViewController = host
+        window.contentMinSize = CGSize(width: 900, height: 560)
         window.title = "Cue Tasks"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden

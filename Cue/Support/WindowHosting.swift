@@ -14,6 +14,10 @@ final class HostedWindowController: NSWindowController, NSWindowDelegate {
         rootView: some View
     ) {
         let hosting = NSHostingController(rootView: rootView)
+        // The size comes from `contentSize` below, not from the view: a hosting
+        // controller that pushes its own size up does it inside the display cycle,
+        // which AppKit throws on (see SettingsWindowController).
+        hosting.sizingOptions = []
         let window = NSWindow(contentViewController: hosting)
         window.title = title
         window.styleMask = styleMask

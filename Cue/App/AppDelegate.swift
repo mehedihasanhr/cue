@@ -108,6 +108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let stack = exception.callStackSymbols.prefix(16).joined(separator: "\n")
             Log.app.fault("Uncaught \(exception.name.rawValue, privacy: .public): \(exception.reason ?? "no reason", privacy: .public)\n\(stack, privacy: .public)")
         }
+        Log.app.info("Application class: \(NSStringFromClass(type(of: NSApplication.shared)), privacy: .public)")
         preferences.applyAppearance()
         DictationService.preferences = preferences
         VoiceTyping.shared.configure(preferences)
@@ -564,7 +565,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     panel.isOpaque = false
                     panel.backgroundColor = .clear
                     panel.level = .floating
-                    if let nowPlaying = self?.island?.nowPlaying { panel.contentView = NSHostingView(rootView: LockScreenPanel(nowPlaying: nowPlaying, focus: nil)) }
+                    if let nowPlaying = self?.island?.nowPlaying {
+                        let host = NSHostingView(rootView: LockScreenPanel(nowPlaying: nowPlaying, focus: nil))
+                        host.sizingOptions = []
+                        panel.contentView = host
+                    }
                     panel.orderFrontRegardless()
                     self?.debugPanel = panel
                 #endif
