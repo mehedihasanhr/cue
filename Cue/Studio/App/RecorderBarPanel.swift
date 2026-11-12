@@ -11,6 +11,8 @@ import SwiftUI
 @MainActor
 final class RecorderBarPanel {
     private var panel: NSPanel?
+    /// The bar's tooltips, drawn by Cue: macOS shows none for a window never in front.
+    private let tooltip = BarTooltip()
     private let settings: StudioSettings
     private let studio: StudioService
     let model: RecorderModel
@@ -134,7 +136,11 @@ final class RecorderBarPanel {
                               showLibrary: { [weak self] in self?.showLibrary() },
                               openSettings: { [weak self] in self?.openSettings() },
                               showTargets: { [weak self] mode in self?.showTargets(for: mode) },
-                              askForTarget: { [weak self] in self?.askForTarget() })
+                              askForTarget: { [weak self] in self?.askForTarget() },
+                              // The bar's own tooltips: a rect in the window's own
+                              // coordinates, which only this side can put on screen.
+                              tooltip: { [weak self] title, rect in self?.showTooltip(title, over: rect) },
+                              hideTooltip: { [weak self] in self?.tooltip.hide() })
             .environment(studio)
             .environment(settings)
             .padding(14)   // room for the bar's own shadow, which a borderless window clips
@@ -199,6 +205,7 @@ final class RecorderBarPanel {
     }
 
     func hide() {
+        tooltip.hide()
         hideTargets()
         panel?.orderOut(nil)
         onVisibilityChange(false)
@@ -303,6 +310,17 @@ final class RecorderBarPanel {
     ///
     /// Only the first placement is ours. After that the bar keeps whatever centre it has,
     /// because the user may have dragged it somewhere they prefer.
+    /// Puts the label over a control, turning the bar's own coordinates into the
+    /// screen's: SwiftUI measures down from the top of the window, the screen up from
+    /// the bottom.
+    private func showTooltip(_ title: String, over rect: CGRect) {
+        guard let panel, panel.isVisible else { return tooltip.hide() }
+        let frame = panel.frame
+        let onScreen = CGRect(x: frame.minX + rect.minX, y: frame.maxY - rect.maxY,
+                              width: rect.width, height: rect.height)
+        tooltip.show(title, over: onScreen)
+    }
+
     private func position(_ panel: NSPanel) {
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main

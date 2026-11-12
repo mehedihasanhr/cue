@@ -29,6 +29,11 @@ struct RecorderBar: View {
     let showTargets: (RecorderModel.Mode) -> Void
     /// Record pressed with nothing chosen: asks for it.
     let askForTarget: () -> Void
+    /// What the pointer is on and where it is, in the window's coordinates, for the
+    /// bar's own tooltip — macOS does not show `help` for a bar that is never in front.
+    var tooltip: (String, CGRect) -> Void = { _, _ in }
+    /// The pointer left the bar, or what it was on.
+    var hideTooltip: () -> Void = {}
     @Namespace private var modeChip
     /// One hover pane for the whole setup row, which travels to whatever the pointer is
     /// over rather than each control lighting up on its own — so sweeping along the bar
@@ -38,6 +43,8 @@ struct RecorderBar: View {
     /// which stays put while it fades out so it does not slide away as it goes.
     @State private var hovered: String?
     @State private var paneTarget: String?
+    /// What each control is called, for the tooltip, by the same id the pane uses.
+    @State private var hoverTitles: [String: String] = [:]
     /// Clears the pane once the pointer has really left, rather than in the few points of
     /// gap between two controls — where it would blink out and back in.
     @State private var hoverClear: Task<Void, Never>?
@@ -139,8 +146,11 @@ struct RecorderBar: View {
         }
     }
 
-    private func slidingHover(_ id: String, isEnabled: Bool = true) -> HoverTarget {
-        HoverTarget(id: id) { inside in setHover(id, inside && isEnabled) }
+    private func slidingHover(_ id: String, _ title: String, isEnabled: Bool = true) -> HoverTarget {
+        // Recorded on the way past rather than in a table of its own: the title travels
+        // with the control it belongs to, and changes with it (which camera, say).
+        hoverTitles[id] = title
+        return HoverTarget(id: id) { inside in setHover(id, inside && isEnabled) }
     }
 
     /// The pane itself: one view for the whole row, laid behind it and moved to the bounds
@@ -152,6 +162,14 @@ struct RecorderBar: View {
         GeometryReader { proxy in
             if let target = paneTarget, let anchor = anchors[target] {
                 let rect = proxy[anchor]
+                // The same rect the pane sits on, in the window's coordinates, so the
+                // panel can put the tooltip over the control.
+                let inWindow = rect.offsetBy(dx: proxy.frame(in: .global).minX, dy: proxy.frame(in: .global).minY)
+                Color.clear
+                    .onChange(of: hovered) { _, now in
+                        guard now == target, let title = hoverTitles[target], !title.isEmpty else { return hideTooltip() }
+                        tooltip(title, inWindow)
+                    }
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(.white.opacity(0.08))
                     .frame(width: rect.width, height: rect.height)
@@ -266,7 +284,7 @@ struct RecorderBar: View {
         .buttonStyle(BarButtonStyle())
         .help("Close the recorder")
         .accessibilityLabel("Close")
-        .modifier(slidingHover("close"))
+        .modifier(slidingHover("close", "Close the recorder"))
     }
 
     /// The four modes in one inset strip, with one glass chip that slides to the choice.
@@ -281,7 +299,7 @@ struct RecorderBar: View {
                     model.choose(mode)
                     showTargets(mode)
                 }
-                .modifier(slidingHover("mode.\(mode.title)", isEnabled: mode.isAvailable))
+                .modifier(slidingHover("mode.\(mode.title)", mode.title, isEnabled: mode.isAvailable))
             }
         }
         // The highlight used to vanish from one tile and appear on another, which reads
@@ -306,7 +324,7 @@ struct RecorderBar: View {
                           label: model.cameraLabel) {
                 cameraMenu
             }
-            .modifier(slidingHover("input.cameraMenu"))
+            .modifier(slidingHover("input.cameraMenu", model.cameraLabel))
 
             InputChipMenu(accent: mood.accent,
                           symbol: "mic.slash",
@@ -315,7 +333,7 @@ struct RecorderBar: View {
                           label: model.microphoneLabel) {
                 microphoneMenu
             }
-            .modifier(slidingHover("input.microphoneMenu"))
+            .modifier(slidingHover("input.microphoneMenu", model.microphoneLabel))
             // Only once a microphone is on and allowed: the meter listens to it, and this
             // bar never opens a microphone nobody chose.
             if let meter = RecorderCenter.shared?.meter, meter.isListening, !studio.session.state.isTaking {
@@ -333,7 +351,7 @@ struct RecorderBar: View {
                                                        chosen: settings.systemAudioAppIDs)) {
                 systemAudioMenu
             }
-            .modifier(slidingHover("input.systemAudioMenu"))
+            .modifier(slidingHover("input.systemAudioMenu", SystemAudioApps.label(isOn: settings.recordsSystemAudio, chosen: settings.systemAudioAppIDs)))
         }
         .padding(.horizontal, 2)
     }
@@ -466,7 +484,7 @@ struct RecorderBar: View {
             // behind it, only the glyph took the click, and often not even that.
             SettingsGlyph()
         }
-        .modifier(slidingHover("settings"))
+        .modifier(slidingHover("settings", "Recordings, settings, countdown and Quit"))
         .menuStyle(.button)
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
@@ -498,12 +516,12 @@ struct RecorderBar: View {
             separator
 
             pauseButton
-                .modifier(slidingHover("take.pause", isEnabled: studio.session.state.isTaking))
+                .modifier(slidingHover("take.pause", settings.recorder.help(studio.session.isPaused ? "Resume" : "Pause", .pause), isEnabled: studio.session.state.isTaking))
 
             markerButton
-                .modifier(slidingHover("take.marker", isEnabled: studio.session.state.isTaking))
+                .modifier(slidingHover("take.marker", settings.recorder.help("Add a marker here, to find this moment in the editor", .marker), isEnabled: studio.session.state.isTaking))
             restartButton
-                .modifier(slidingHover("take.restart", isEnabled: studio.session.state.isTaking))
+                .modifier(slidingHover("take.restart", settings.recorder.help("Start this take again", .restart), isEnabled: studio.session.state.isTaking))
 
             Button { studio.cancel() } label: {
                 BarTileIcon(symbol: "trash")
@@ -516,7 +534,7 @@ struct RecorderBar: View {
             // is a different button, on the layout that owns that state.
             .disabled(!studio.session.state.isTaking)
             .help("Discard this recording")
-            .modifier(slidingHover("take.discard", isEnabled: studio.session.state.isTaking))
+            .modifier(slidingHover("take.discard", "Discard this recording", isEnabled: studio.session.state.isTaking))
 
             Button(action: hide) {
                 BarTileIcon(symbol: "arrow.down.right.and.arrow.up.left")
@@ -524,7 +542,7 @@ struct RecorderBar: View {
             .buttonStyle(BarButtonStyle())
             .help("Hide the bar \u{2014} the menu bar icon keeps the time, pause and stop")
             .accessibilityLabel("Minimize")
-            .modifier(slidingHover("take.minimize"))
+            .modifier(slidingHover("take.minimize", "Hide the bar \u{2014} the menu bar icon keeps the time, pause and stop"))
 
             separator
 

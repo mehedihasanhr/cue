@@ -51,6 +51,45 @@ enum QuickAction: String, CaseIterable, Identifiable, Sendable {
 
     /// Record is red, the way it is everywhere else in Cue.
     var tint: Color? { self == .record ? Color(red: 0.86, green: 0.2, blue: 0.2) : nil }
+
+    /// What this action adds to, and so what the middle offers to open while the
+    /// segment is under the pointer: the captures, the colors, the notes, the tasks.
+    var collection: QuickCollection? {
+        switch self {
+        case .captureArea, .captureWindow, .captureFullScreen, .captureText: .captures
+        case .pickColor: .colors
+        case .quickNote: .notes
+        case .quickTask: .tasks
+        case .record: .recordings
+        }
+    }
+}
+
+/// Where a quick action's work ends up. Hovering a segment puts this in the middle
+/// of the ring, and clicking the middle opens it.
+enum QuickCollection: String, Sendable {
+    case captures, colors, notes, tasks, recordings
+
+    /// The words in the middle, under the icon.
+    var title: String {
+        switch self {
+        case .captures: "All captures"
+        case .colors: "All colors"
+        case .notes: "All notes"
+        case .tasks: "All tasks"
+        case .recordings: "Recordings"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .captures: "photo.on.rectangle"
+        case .colors: "paintpalette"
+        case .notes: "note.text"
+        case .tasks: "checklist"
+        case .recordings: "film.stack"
+        }
+    }
 }
 
 @MainActor @Observable
@@ -58,10 +97,21 @@ final class QuickWheelModel {
     var shown = false
     /// The segment under the pointer.
     var hovered: QuickAction?
+    /// The pointer is in the middle of the ring. The segment it came from stays
+    /// `hovered`, so the middle keeps offering that segment's collection: the way
+    /// over to the middle to click it must not be the way to lose it.
+    var inHub = false
     var actions: [QuickAction] = QuickAction.allCases
 
-    /// The middle: the whole name of what is under the pointer, else what the ring is.
-    var caption: String { hovered?.title ?? "Quick actions" }
+    /// What the middle opens on a click, if anything.
+    var collection: QuickCollection? { hovered?.collection }
+
+    /// The middle: what hovering offers to open, else the name of the segment under
+    /// the pointer, else what the ring is.
+    var caption: String { collection?.title ?? hovered?.title ?? "Quick actions" }
+
+    /// The icon in the middle follows the same order.
+    var symbol: String { collection?.symbol ?? hovered?.symbol ?? "square.grid.2x2" }
 }
 
 /// A ring of Cue's quick actions round the pointer, opened by a three-finger tap
@@ -130,14 +180,18 @@ struct QuickWheelView: View {
                                             startPoint: .top, endPoint: .bottom))
     }
 
-    /// The middle: Cue's mark, and under it the name of whatever is under the pointer.
+    /// The middle: what the hovered segment adds to — the captures, the tasks, the
+    /// notes — which a click here opens. With nothing hovered it is the ring's own
+    /// name, and a click just closes.
     private var centre: some View {
         let side = (WheelGeometry.inner - 6) * 2
+        let openable = model.collection != nil
         return ZStack {
-            Circle().fill(dark ? Color.white.opacity(0.08) : Color.white.opacity(0.4))
+            Circle().fill(dark ? Color.white.opacity(model.inHub && openable ? 0.18 : 0.08)
+                               : Color.white.opacity(model.inHub && openable ? 0.62 : 0.4))
             VStack(spacing: 6) {
-                Icon(model.hovered?.symbol ?? "square.grid.2x2", size: 22, weight: .medium)
-                    .foregroundStyle(model.hovered?.tint ?? ink)
+                Icon(model.symbol, size: 22, weight: .medium)
+                    .foregroundStyle(model.collection == nil ? (model.hovered?.tint ?? ink) : ink)
                     .contentTransition(.opacity)
                 Text(model.caption)
                     .font(.system(size: 10, weight: .semibold))
@@ -153,6 +207,9 @@ struct QuickWheelView: View {
         }
         .frame(width: side, height: side)
         .clipShape(Circle())
-        .overlay(Circle().strokeBorder(.white.opacity(dark ? 0.15 : 0.7), lineWidth: 1))
+        .overlay(Circle().strokeBorder(.white.opacity(model.inHub && openable ? 0.9 : (dark ? 0.15 : 0.7)),
+                                       lineWidth: model.inHub && openable ? 1.5 : 1))
+        .scaleEffect(model.inHub && openable ? 1.04 : 1)
+        .animation(.spring(response: 0.22, dampingFraction: 0.75), value: model.inHub)
     }
 }

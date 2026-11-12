@@ -173,6 +173,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         basket.onShareLink = { [weak self] urls in self?.shareFiles(urls) }
         basket.start()
         quickWheel.run = { [weak self] action in self?.run(action) }
+        // The middle of the ring: everything the hovered segment adds to.
+        quickWheel.open = { [weak self] collection in
+            guard let self else { return }
+            switch collection {
+            case .captures: island?.expand(on: .captures) ?? toggleHistoryAtPointer()
+            case .colors: island?.expand(on: .colors) ?? toggleHistoryAtPointer()
+            case .notes: island?.expand(on: .notes) ?? toggleHistoryAtPointer()
+            case .tasks: openTaskDashboard(task: nil)
+            case .recordings: studio.showLibrary()
+            }
+        }
         applyQuickWheelPreference()
 
         let expander = SnippetExpander(store: snippets, assets: assets, preferences: preferences)
@@ -205,7 +216,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let spec = ProcessInfo.processInfo.environment["CUE_DEBUG_WHEEL"] {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
                 guard let self else { return }
-                quickWheel.debugShow(hovered: QuickAction(rawValue: spec))
+                // `CUE_DEBUG_WHEEL_HUB=1` puts the pointer in the middle, to see what
+                // the hovered segment offers to open.
+                quickWheel.debugShow(hovered: QuickAction(rawValue: spec),
+                                     inHub: ProcessInfo.processInfo.environment["CUE_DEBUG_WHEEL_HUB"] == "1")
                 let after = ProcessInfo.processInfo.environment["CUE_DEBUG_WHEEL_DELAY"].flatMap(Double.init) ?? 1
                 // `CUE_DEBUG_WHEEL_CLOSE=<seconds>` closes it again first, so the
                 // picture catches it on its way out rather than on its way in.

@@ -18,6 +18,9 @@ final class QuickWheelController {
     private var centre: CGPoint = .zero
     /// Set by the app: what each segment does.
     var run: (QuickAction) -> Void = { _ in }
+    /// Set by the app: opens everything the hovered segment adds to — the captures,
+    /// the tasks, the notes — when the middle of the ring is clicked.
+    var open: (QuickCollection) -> Void = { _ in }
 
     init(preferences: AppPreferences) {
         self.preferences = preferences
@@ -54,6 +57,7 @@ final class QuickWheelController {
         panel.setFrame(CGRect(x: centre.x - WheelGeometry.window.width / 2, y: centre.y - WheelGeometry.window.height / 2,
                               width: WheelGeometry.window.width, height: WheelGeometry.window.height), display: false)
         panel.orderFrontRegardless()
+        model.inHub = false
         model.shown = true
         listen()
     }
@@ -64,6 +68,7 @@ final class QuickWheelController {
         guard let panel, panel.isVisible else { return }
         model.shown = false
         model.hovered = nil
+        model.inHub = false
         hideTask = Task { [weak self] in
             // Once it has animated itself away, not before: pulled out
             // early, the last of the wheel vanishes mid-fade.
@@ -106,11 +111,17 @@ final class QuickWheelController {
         monitors.removeAll()
     }
 
-    /// Which segment the pointer is over, if any.
+    /// Which segment the pointer is over, if any — and whether it has gone into the
+    /// middle, where the segment it came from is kept: that is the only way to reach
+    /// the middle, so losing the segment on the way would leave nothing to open.
     private func follow() {
         guard isShown else { return }
         let pointer = NSEvent.mouseLocation
-        let index = WheelGeometry.index(at: CGPoint(x: pointer.x - centre.x, y: pointer.y - centre.y), count: model.actions.count)
+        let point = CGPoint(x: pointer.x - centre.x, y: pointer.y - centre.y)
+        let inHub = hypot(point.x, point.y) <= WheelGeometry.inner
+        if model.inHub != inHub { model.inHub = inHub }
+        guard !inHub else { return }
+        let index = WheelGeometry.index(at: point, count: model.actions.count)
         let action = index.map { model.actions[$0] }
         if model.hovered != action { model.hovered = action }
     }
@@ -125,12 +136,23 @@ final class QuickWheelController {
         hide()
     }
 
-    /// A click on the ring: a segment runs it, the middle just closes.
+    /// A click on the ring: a segment runs it; the middle opens everything the
+    /// hovered segment adds to, or just closes when nothing was hovered.
     private func chose() {
         guard isShown else { return }
         follow()
+        let hub = model.inHub
         let action = model.hovered
+        let collection = model.collection
         hide()
+        if hub {
+            guard let collection else { return }
+            Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(120))
+                self?.open(collection)
+            }
+            return
+        }
         guard let action else { return }
         // After the ring has gone, so a capture never catches it on screen.
         Task { [weak self] in
@@ -171,10 +193,12 @@ final class QuickWheelController {
                        y: min(max(pointer.y, visible.minY + reach), visible.maxY - reach))
     }
 
-    /// For diagnostics: the ring at the pointer, with one segment lit.
-    func debugShow(hovered: QuickAction?) {
+    /// For diagnostics: the ring at the pointer, with one segment lit — and the
+    /// pointer taken to be in the middle, to see what it offers to open.
+    func debugShow(hovered: QuickAction?, inHub: Bool = false) {
         show()
         model.hovered = hovered
+        model.inHub = inHub
     }
 
     /// For diagnostics: where the ring is, in screen coordinates.
