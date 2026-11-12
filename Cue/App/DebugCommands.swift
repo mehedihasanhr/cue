@@ -20,6 +20,7 @@ import WebKit
 ///                                            (window=pinned draws the newest pinned capture instead)
 ///     cue://debug/pin?index=0                the nth capture (newest first) pinned to the screen
 ///     cue://debug/pinned?action=edit         a pinned capture's own button: close, edit, copy, ghost
+///     cue://debug/dictation                  what dictation is set to → ~/Pictures/Cue Debug/dictation.txt
 ///     cue://debug/throw                      raises an exception, to check it is caught and logged
 ///     cue://debug/island?tab=captures        the island opened on a tab, so its panel is on screen
 ///     cue://debug/floating                   the floating library panel opened
@@ -158,6 +159,12 @@ enum DebugCommands {
             // the keyboard, so drive it from this one URL). Its glass hosting view draws
             // blank through `cacheDisplay`, so there is no snapshot of it.
             openFloatingPanel()
+        case "/dictation":
+            // What dictation is set to, inside the sandbox where a test cannot look.
+            write(report: """
+            \(VoiceTyping.shared.debugSummary)
+            \(DictationService.shared.debugSummary)
+            """, to: "dictation.txt")
         case "/throw":
             // Checks the net under AppKit's drawing exceptions: this one should be
             // written to the log by CueApplication and leave Cue running.

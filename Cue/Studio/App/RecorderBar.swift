@@ -43,8 +43,6 @@ struct RecorderBar: View {
     /// which stays put while it fades out so it does not slide away as it goes.
     @State private var hovered: String?
     @State private var paneTarget: String?
-    /// What each control is called, for the tooltip, by the same id the pane uses.
-    @State private var hoverTitles: [String: String] = [:]
     /// Clears the pane once the pointer has really left, rather than in the few points of
     /// gap between two controls — where it would blink out and back in.
     @State private var hoverClear: Task<Void, Never>?
@@ -146,11 +144,18 @@ struct RecorderBar: View {
         }
     }
 
+    /// The hover pane and the tooltip, in one place: the title and the control's own
+    /// frame travel in the closure, so nothing is written down during a redraw.
     private func slidingHover(_ id: String, _ title: String, isEnabled: Bool = true) -> HoverTarget {
-        // Recorded on the way past rather than in a table of its own: the title travels
-        // with the control it belongs to, and changes with it (which camera, say).
-        hoverTitles[id] = title
-        return HoverTarget(id: id) { inside in setHover(id, inside && isEnabled) }
+        HoverTarget(id: id) { inside, frame in
+            let on = inside && isEnabled
+            setHover(id, on)
+            if on, !title.isEmpty {
+                tooltip(title, frame)
+            } else {
+                hideTooltip()
+            }
+        }
     }
 
     /// The pane itself: one view for the whole row, laid behind it and moved to the bounds
@@ -162,14 +167,6 @@ struct RecorderBar: View {
         GeometryReader { proxy in
             if let target = paneTarget, let anchor = anchors[target] {
                 let rect = proxy[anchor]
-                // The same rect the pane sits on, in the window's coordinates, so the
-                // panel can put the tooltip over the control.
-                let inWindow = rect.offsetBy(dx: proxy.frame(in: .global).minX, dy: proxy.frame(in: .global).minY)
-                Color.clear
-                    .onChange(of: hovered) { _, now in
-                        guard now == target, let title = hoverTitles[target], !title.isEmpty else { return hideTooltip() }
-                        tooltip(title, inWindow)
-                    }
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(.white.opacity(0.08))
                     .frame(width: rect.width, height: rect.height)
@@ -1204,11 +1201,21 @@ private struct HoverAnchors: SwiftUI.PreferenceKey {
 /// is, and when the pointer arrives or leaves.
 private struct HoverTarget: ViewModifier {
     let id: String
-    let report: (Bool) -> Void
+    /// Whether the pointer is on the control, and where the control is in the
+    /// window's own coordinates — which is what a tooltip has to be put over.
+    let report: (Bool, CGRect) -> Void
+    @State private var frame: CGRect = .zero
 
     func body(content: Content) -> some View {
         content
             .anchorPreference(key: HoverAnchors.self, value: .bounds) { [id: $0] }
-            .onHover(perform: report)
+            .background {
+                GeometryReader { proxy in
+                    Color.clear
+                        .onAppear { frame = proxy.frame(in: .global) }
+                        .onChange(of: proxy.frame(in: .global)) { _, now in frame = now }
+                }
+            }
+            .onHover { inside in report(inside, frame) }
     }
 }

@@ -59,6 +59,22 @@ final class VoiceTyping {
         update()
     }
 
+    /// What dictation is set to and whether it is listening for the key, for
+    /// `cue://debug/dictation` — written where a test can read it, since Cue's own
+    /// settings live inside its sandbox.
+    var debugSummary: String {
+        let preferences = preferences
+        let key = preferences?.voiceTypingKey
+        return """
+        voice typing on: \(preferences?.voiceTypingEnabled ?? false)
+        key monitors installed: \(monitors.count)
+        talk key: \(key.map { String(describing: $0) } ?? "none")  shortcut: \(preferences?.voiceTypingShortcut.map { String(describing: $0) } ?? "none")  hotkey registered: \(hotkey != nil)
+        hey cue: \(preferences?.voiceTypingWakeWord ?? false)  wake listener: \(wake != nil)
+        accessibility trusted: \(AXIsProcessTrusted())
+        pill on screen: \(panel?.isVisible ?? false)
+        """
+    }
+
     /// Follows Settings › Dictation: the key watched or not, Hey Cue on or off.
     func update() {
         guard let preferences else { return }

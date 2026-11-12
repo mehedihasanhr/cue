@@ -77,6 +77,19 @@ final class DictationService {
 
     // MARK: Dictating
 
+    /// What the recogniser is set to and whether it can run, for `cue://debug/dictation`.
+    var debugSummary: String {
+        let engine = preferences?.dictationEngine
+        let model = chosenWhisperModel
+        return """
+        state: \(String(describing: state))
+        engine: \(engine.map(\.rawValue) ?? "unset")
+        whisper model: \(preferences?.dictationWhisperModel ?? "none")  on disk: \(model != nil)
+        microphone authorization: \(String(describing: AVCaptureDevice.authorizationStatus(for: .audio).rawValue))
+        downloads in flight: \(downloads.count)  model errors: \(modelErrors)
+        """
+    }
+
     /// Starts recording for the button `id`. False when it cannot (the microphone is not
     /// allowed, or another dictation is going); the reason has been shown.
     /// With `onPause`, it is called once the speaker pauses after talking (or has said
@@ -106,6 +119,11 @@ final class DictationService {
             state = .listening
             self.onPause = onPause
             if preferences?.dictationAutoFormat ?? true, preferences?.dictationSmartFormat ?? true { VoiceFormatter.prewarm() }
+            // The Whisper model loads while the speaker is still talking. It is let go
+            // of again after a minute idle, so most dictations used to begin with a
+            // cold load of several hundred megabytes — with the pill sitting on
+            // "writing" throughout, which is exactly what it looked like: nothing.
+            prewarmWhisper()
             heardSpeech = false
             quietSince = nil
             startedAt = .now
@@ -135,7 +153,9 @@ final class DictationService {
             state = .idle
         }
         do {
+            let started = Date.now
             var text = try await transcribe(clip)
+            AppleDictation.log.info("Transcribed in \(Int(Date.now.timeIntervalSince(started) * 1000), privacy: .public) ms, \(text.count, privacy: .public) characters")
             if !text.isEmpty, preferences?.dictationAutoFormat ?? true {
                 text = await VoiceFormatter.format(text, smart: preferences?.dictationSmartFormat ?? true)
             }
@@ -158,6 +178,17 @@ final class DictationService {
         clip = nil
         owner = nil
         state = .idle
+    }
+
+    /// Starts loading the Whisper model, if that is the engine, without waiting for it.
+    private func prewarmWhisper() {
+        guard preferences?.dictationEngine == .whisper, let model = chosenWhisperModel else { return }
+        let transcriber = transcriber
+        Task.detached(priority: .userInitiated) {
+            let started = Date.now
+            await transcriber.prewarm(model)
+            AppleDictation.log.info("Whisper \(model.id, privacy: .public) ready in \(Int(Date.now.timeIntervalSince(started) * 1000), privacy: .public) ms")
+        }
     }
 
     /// The chosen Whisper model when it is downloaded; otherwise macOS's recogniser.

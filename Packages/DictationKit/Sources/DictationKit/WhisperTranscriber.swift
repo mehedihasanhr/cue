@@ -43,6 +43,15 @@ public actor WhisperTranscriber {
         return Self.clean(results.map(\.text).joined(separator: " "))
     }
 
+    /// Loads the model and keeps it, without transcribing anything — called the moment
+    /// dictation starts listening, so the wait for a cold model happens while the
+    /// speaker is still talking rather than after they stop.
+    public func prewarm(_ model: WhisperModel) async {
+        unloadTask?.cancel()
+        _ = try? await kit(for: model)
+        scheduleUnload()
+    }
+
     /// Lets go of the model now (it is about to be removed or replaced, or Cue is quitting).
     public func unload() async {
         unloadTask?.cancel()

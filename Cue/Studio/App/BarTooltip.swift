@@ -43,10 +43,10 @@ final class BarTooltip {
         let panel = panel ?? makePanel()
         self.panel = panel
         text.title = title
-        // Measured after the words change, so the panel is the size of what it says.
-        panel.layoutIfNeeded()
-        let size = (panel.contentView?.fittingSize ?? .zero)
-        guard size.width > 0, size.height > 0 else { return }
+        // Measured from the words themselves. A hosting view with no sizing options
+        // reports no size of its own — deliberately, so it can never push one up to
+        // the window — so the panel works its size out here instead.
+        let size = Self.size(of: title)
         let visible = (NSScreen.screens.first { $0.frame.intersects(rect) } ?? NSScreen.main)?.visibleFrame ?? rect
         var origin = CGPoint(x: rect.midX - size.width / 2, y: rect.maxY + Self.gap)
         // Kept on the screen, and under the control when there is no room over it.
@@ -54,6 +54,14 @@ final class BarTooltip {
         origin.x = min(max(origin.x, visible.minX + 4), visible.maxX - size.width - 4)
         panel.setFrame(CGRect(origin: origin, size: size), display: true)
         panel.orderFrontRegardless()
+    }
+
+    /// The label's size: the words in the font below, plus the padding round them.
+    private static func size(of title: String) -> CGSize {
+        let font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        let width = (title as NSString).size(withAttributes: [.font: font]).width
+        // 8 either side inside the capsule, 6 either side for the shadow (see the view).
+        return CGSize(width: ceil(width) + (8 + 6) * 2, height: ceil(font.boundingRectForFont.height) + (5 + 6) * 2)
     }
 
     private func makePanel() -> NSPanel {
