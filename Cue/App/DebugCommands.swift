@@ -17,6 +17,7 @@ import WebKit
 ///     cue://debug/size?width=1400&height=1000   the key window resized
 ///     cue://debug/markdown                  the editor's Markdown written to ~/Pictures/Cue Debug/markdown.md
 ///     cue://debug/note?index=0&page=1       the notes dashboard with that note open
+///     cue://debug/image-frame[?off=1]       holds every image's resize frame open
 ///     cue://debug/snapshot?name=a           the Tasks window drawn to ~/Pictures/Cue Debug/a.png
 ///                                            (window=pinned draws the newest pinned capture instead,
 ///                                             window=notes the notes dashboard)
@@ -275,6 +276,9 @@ enum DebugCommands {
                 .max { ($0.documentView?.frame.height ?? 0) < ($1.documentView?.frame.height ?? 0) }
             page?.contentView.scroll(to: NSPoint(x: 0, y: y))
             page.map { $0.reflectScrolledClipView($0.contentView) }
+        case "/image-frame":
+            // Every image in the editor shows its resize frame, for a snapshot.
+            ImageBlockView.debugShowsFrame = query["off"] != "1"
         case "/snapshot":
             // The window drawn into a picture by Cue itself: works with the display asleep.
             guard let view = window?.contentView, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }

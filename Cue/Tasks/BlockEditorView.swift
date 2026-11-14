@@ -260,7 +260,7 @@ private struct BlockContent: View {
 /// The width is kept in the Markdown the way Obsidian keeps it — `![alt|420](src)` —
 /// so a note resized here is the same width in Obsidian, and a note written there
 /// arrives at the width it was given.
-private struct ImageBlockView: View {
+struct ImageBlockView: View {
     let id: UUID
     let alt: String
     let source: String
@@ -273,6 +273,21 @@ private struct ImageBlockView: View {
     private static let smallest: CGFloat = 80
     /// The column an image may fill at most.
     private static let widest: CGFloat = 720
+
+    #if DEBUG
+    /// Diagnostics: `cue://debug/image-frame` holds every image's frame and handles
+    /// open, so a snapshot can show what resting on one looks like.
+    @MainActor static var debugShowsFrame = false
+    #endif
+
+    /// The frame and handles are showing: the pointer is on the image, it is being
+    /// dragged, or diagnostics are holding them open.
+    private var showing: Bool {
+        #if DEBUG
+        if Self.debugShowsFrame { return true }
+        #endif
+        return hovering || dragging != nil
+    }
 
     private var services: BlockServices { model.services }
     private var text: String { ImageSize.split(alt).text }
@@ -287,8 +302,9 @@ private struct ImageBlockView: View {
                 .aspectRatio(contentMode: .fit)
                 .frame(width: width, alignment: .leading)
                 .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                .overlay { frame }
                 .overlay(alignment: .topTrailing) {
-                    if hovering, dragging == nil {
+                    if showing, dragging == nil {
                         Image(systemName: "arrow.up.left.and.arrow.down.right")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(.white)
@@ -298,10 +314,12 @@ private struct ImageBlockView: View {
                             .allowsHitTesting(false)
                     }
                 }
-                .overlay(alignment: .trailing) { handle(natural: natural, width: width) }
+                .overlay(alignment: .leading) { handle(natural: natural, width: width, trailing: false) }
+                .overlay(alignment: .trailing) { handle(natural: natural, width: width, trailing: true) }
+                .overlay(alignment: .bottom) { widthBadge(width) }
                 .onHover { hovering = $0 }
                 .onTapGesture { services.openImage(url) }
-                .help("Click to view full size; drag the bar on the right to resize")
+                .help("Click to view full size; drag either bar to resize")
                 .accessibilityLabel(text.isEmpty ? "Image" : text)
                 .accessibilityValue("\(Int(width)) points wide")
                 .accessibilityAddTraits(.isButton)
@@ -322,17 +340,35 @@ private struct ImageBlockView: View {
         }
     }
 
-    /// The grab bar down the image's right edge: a pill that shows while the pointer
-    /// is on the image, and stays while it is being dragged.
-    private func handle(natural: CGFloat, width: CGFloat) -> some View {
-        let showing = hovering || dragging != nil
-        return RoundedRectangle(cornerRadius: 2, style: .continuous)
-            .fill(.white.opacity(0.9))
-            .frame(width: 4, height: 38)
-            .shadow(color: .black.opacity(0.35), radius: 2)
+    /// The frame round the image while the pointer is on it, so what is about to be
+    /// resized is plain. Drawn in the accent color over a dark hairline, which reads
+    /// on a white screenshot and a dark one alike.
+    @ViewBuilder
+    private var frame: some View {
+        RoundedRectangle(cornerRadius: 4, style: .continuous)
+            .strokeBorder(.black.opacity(0.25), lineWidth: 3)
+            .overlay {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .strokeBorder(NotionStyle.accent, lineWidth: 1.5)
+            }
             .opacity(showing ? 1 : 0)
-            .padding(.trailing, 6)
-            .contentShape(Rectangle().inset(by: -10))
+            .allowsHitTesting(false)
+            .animation(.easeOut(duration: 0.12), value: showing)
+    }
+
+    /// A grab bar on each side of the image: a white pill with a dark edge, so it
+    /// shows against whatever the image happens to be — the earlier plain white one
+    /// vanished into a white logo. Either side drags; the image keeps its left edge.
+    private func handle(natural: CGFloat, width: CGFloat, trailing: Bool) -> some View {
+        Capsule(style: .continuous)
+            .fill(.white)
+            .overlay(Capsule(style: .continuous).strokeBorder(.black.opacity(0.35), lineWidth: 1))
+            .frame(width: 7, height: 44)
+            .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
+            .opacity(showing ? 1 : 0)
+            .padding(trailing ? .trailing : .leading, 5)
+            // Bigger than it looks: a 7-point bar is hard to hit on purpose.
+            .contentShape(Rectangle().inset(by: -12))
             .onHover { over in
                 if over { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
             }
@@ -341,7 +377,10 @@ private struct ImageBlockView: View {
                     .onChanged { value in
                         let from = dragging ?? width
                         if dragging == nil { dragging = from }
-                        dragging = min(max(from + value.translation.width, Self.smallest), Self.widest)
+                        // The left bar runs the other way: dragging it out to the left
+                        // makes the image wider, as it would in any editor.
+                        let moved = trailing ? value.translation.width : -value.translation.width
+                        dragging = min(max(from + moved, Self.smallest), Self.widest)
                     }
                     .onEnded { _ in
                         defer { dragging = nil }
@@ -356,6 +395,23 @@ private struct ImageBlockView: View {
                 model.update(id, .image(alt: text, source: source))
             }
             .help("Drag to resize, double-click for its own size")
+            .animation(.easeOut(duration: 0.12), value: showing)
+    }
+
+    /// How wide it is while it is being dragged, so the number is not a guess.
+    @ViewBuilder
+    private func widthBadge(_ width: CGFloat) -> some View {
+        if dragging != nil {
+            Text("\(Int(width))")
+                .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                .foregroundStyle(.white)
+                .padding(.horizontal, 7)
+                .frame(height: 20)
+                .background(.black.opacity(0.7), in: Capsule())
+                .padding(.bottom, 8)
+                .allowsHitTesting(false)
+                .transition(.opacity)
+        }
     }
 }
 
