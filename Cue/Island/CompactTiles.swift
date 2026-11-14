@@ -31,8 +31,22 @@ struct CompactTiles: Equatable {
 
     var isEmpty: Bool { left == .none && right == .none }
 
-    /// How far each side reaches past the notch.
-    static let sideWidth: CGFloat = 74
+    /// The most a side may reach past the notch. A side is normally its tile's own
+    /// width (see `side(for:)`); this is the stop for a tile that runs long.
+    static let maxSideWidth: CGFloat = 74
+    /// Between the notch's edge and the tile beside it: enough that the tile reads as
+    /// next to the notch rather than stuck to it, and no more. The physical notch is
+    /// never covered — the shape only ever reaches outward from its edges.
+    static let notchGap: CGFloat = 7
+    /// The same again on the outside, so the shape ends just past the tile instead of
+    /// trailing a band of black beside it.
+    static let edgeGap: CGFloat = 9
+
+    /// How wide one side is for a tile of `content` points: the tile, its breath
+    /// either side, and never past `maxSideWidth`.
+    static func side(for content: CGFloat) -> CGFloat {
+        min(max(content, 0) + notchGap + edgeGap, maxSideWidth)
+    }
 }
 
 /// One tile's content, sized to the notch's height.
@@ -104,7 +118,9 @@ struct CompactTileView: View {
                 }
             }
         }
-        .frame(width: CompactTiles.sideWidth, height: height)
+        // Only the height: the width is the tile's own, and the island is sized to it
+        // (`IslandModel.compactSideWidth`) rather than the tile padded out to a box.
+        .frame(height: height)
         .transition(.opacity.combined(with: .scale(scale: 0.8)))
     }
 }

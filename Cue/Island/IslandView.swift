@@ -146,6 +146,13 @@ final class IslandModel {
     private(set) var panelHeight: CGFloat = IslandPanel.size.height
     /// The window must grow with the panel; set by the controller.
     var onPanelWidthChanged: () -> Void = {}
+    /// What the tile on each side of the closed notch measures, reported by the view.
+    var compactLeftWidth: CGFloat = 0
+    var compactRightWidth: CGFloat = 0
+    /// How far the closed island reaches past the notch on each side: the wider of the
+    /// two tiles, with its breath. The same on both sides because the shape hangs
+    /// centred on the notch — a side of its own would pull it off-centre.
+    var compactSideWidth: CGFloat { CompactTiles.side(for: max(compactLeftWidth, compactRightWidth)) }
 
     func setPanelWidth(_ width: CGFloat) {
         let width = max(width, IslandPanel.size.width).rounded()
@@ -163,7 +170,7 @@ final class IslandModel {
     /// The drawn shape in `phase`: the fixed rect, or the content-fitted one.
     func shapeRect(for phase: Phase) -> CGRect {
         guard let geometry else { return .zero }
-        if phase == .collapsed || phase == .launcher, !compactTiles().isEmpty { return geometry.collapsed.insetBy(dx: -CompactTiles.sideWidth, dy: 0) }
+        if phase == .collapsed || phase == .launcher, !compactTiles().isEmpty { return geometry.collapsed.insetBy(dx: -compactSideWidth, dy: 0) }
         if phase == .expanded, showsDropZone { return geometry.dropZone(contentSize: IslandDropZone.size) }
         let width: CGFloat? = switch phase {
         case .expanded: panelWidth
@@ -581,11 +588,21 @@ struct IslandView: View {
         case .collapsed, .launcher:
             let tiles = model.compactTiles()
             if !tiles.isEmpty, let geometry = model.geometry {
-                // A tile either side of the notch, the notch itself left clear.
+                // A tile either side of the notch, the notch itself left clear: the
+                // middle is exactly the notch, so nothing is ever drawn over the
+                // physical one, and each tile sits against its edge with `notchGap`
+                // between them rather than adrift in a fixed box.
+                let side = model.compactSideWidth
                 HStack(spacing: 0) {
                     CompactTileView(tile: tiles.left, height: strip, nowPlaying: model.nowPlaying, focus: model.focus, calendar: model.calendar, weather: model.weather)
+                        .modifier(IdealWidth { model.compactLeftWidth = tiles.left == .none ? 0 : $0 })
+                        .padding(.trailing, CompactTiles.notchGap)
+                        .frame(width: side, alignment: .trailing)
                     Color.clear.frame(width: geometry.collapsed.width)
                     CompactTileView(tile: tiles.right, height: strip, nowPlaying: model.nowPlaying, focus: model.focus, calendar: model.calendar, weather: model.weather)
+                        .modifier(IdealWidth { model.compactRightWidth = tiles.right == .none ? 0 : $0 })
+                        .padding(.leading, CompactTiles.notchGap)
+                        .frame(width: side, alignment: .leading)
                 }
                 .frame(height: strip)
                 .transition(.opacity.animation(Self.contentAnimation))
