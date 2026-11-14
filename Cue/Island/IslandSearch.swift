@@ -25,7 +25,10 @@ enum IslandItem: Identifiable {
         }
     }
 
-    var tab: IslandTab {
+    /// The island tab it belongs to — nil for a note, which the island does not
+    /// show at all: notes are the Notes window's, and only the command palette
+    /// still finds them.
+    var tab: IslandTab? {
         switch self {
         case .capture: .captures
         case .clipboard: .clipboard
@@ -33,7 +36,7 @@ enum IslandItem: Identifiable {
         case .color: .colors
         case .task: .tasks
         case .snippet: .snippets
-        case .note: .notes
+        case .note: nil
         case .answer: .all
         }
     }
@@ -45,9 +48,8 @@ enum IslandItem: Identifiable {
         case .clipboard(let item): .clipboard(item)
         case .asset(let item): .asset(item)
         case .color(let entry): .color(entry)
-        case .note(let note): .note(note)
         case .task(let task): .task(task)
-        case .snippet, .answer: nil
+        case .snippet, .note, .answer: nil
         }
     }
 
@@ -71,17 +73,16 @@ enum IslandItem: Identifiable {
 /// "invoice pdf" finds the asset "Invoice March.pdf". Results keep the tab order
 /// (captures, clipboard, assets, colors, tasks), newest first within a tab.
 enum IslandSearch {
-    /// Everything, newest first, for the All tab. Tasks stay on their own tab;
-    /// search still finds them.
+    /// Everything, newest first, for the All tab. Tasks and notes stay out of it:
+    /// each has a window of its own, and the island is for what it catches.
     static func everything(library: CaptureLibrary, clipboard: ClipboardHistory, assets: AssetStore,
-                           colors: ColorStore, snippets: SnippetStore, notes: NoteStore) -> [IslandItem] {
+                           colors: ColorStore, snippets: SnippetStore) -> [IslandItem] {
         var items: [IslandItem] = []
         items += library.items.map(IslandItem.capture)
         items += clipboard.items.map(IslandItem.clipboard)
         items += assets.items.map(IslandItem.asset)
         items += colors.items.map(IslandItem.color)
         items += snippets.items.map(IslandItem.snippet)
-        items += notes.notes.map(IslandItem.note)
         return items.sorted { $0.date > $1.date }
     }
 
@@ -99,7 +100,7 @@ enum IslandSearch {
         hits += colors.items.filter { entry in matches([entry.name] + ColorFormat.allCases.map { $0.string(for: entry.color) }) }.map(IslandItem.color)
         hits += tasks.tasks.filter { matches([$0.text, tasks.project($0.projectID)?.name, $0.status.title, $0.priority.title]) }.map(IslandItem.task)
         hits += snippets.items.filter { matches([$0.keyword, $0.name, $0.text]) }.map(IslandItem.snippet)
-        hits += notes.notes.filter { matches([$0.title, $0.text]) }.map(IslandItem.note)
+        hits += notes.notes.filter { matches([$0.title, $0.text, $0.folder]) }.map(IslandItem.note)
         return hits
     }
 
@@ -119,7 +120,6 @@ extension AppPreferences {
     func shows(_ tab: IslandTab) -> Bool {
         switch tab {
         case .snippets: snippetsEnabled
-        case .notes: notesEnabled
         case .colors: colorPickerEnabled
         case .notifications: islandNotifications
         // Tasks live in the dashboard now, reached by the button beside the search.
@@ -128,5 +128,6 @@ extension AppPreferences {
         }
     }
 
-    func shows(_ item: IslandItem) -> Bool { shows(item.tab) }
+    /// A note has no tab: the island never shows one.
+    func shows(_ item: IslandItem) -> Bool { item.tab.map(shows) ?? false }
 }

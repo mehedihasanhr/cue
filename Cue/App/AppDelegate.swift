@@ -1140,6 +1140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                           notes: notes, actions: historyActions, preferences: preferences, clock: prayerClock, focus: focusTimer, agents: agentStore)
                 island?.onSnippetFilled = { [weak self] snippet, values in self?.snippetFilled(snippet, values: values) }
                 island?.onOpenTaskDashboard = { [weak self] in self?.showTaskDashboard(nil) }
+                island?.onOpenNoteDashboard = { [weak self] in self?.showNoteDashboard(nil) }
                 island?.onOpenSettings = { [weak self] in self?.showSettings(nil) }
                 island?.onRecord = { [weak self] in self?.studio.showRecorder() }
                 island?.canShare = { [weak self] in self?.share.isConfigured ?? false }
@@ -1341,7 +1342,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 case .snippet(let snippet):
                     if let island { island.prompt(IslandPrompt(kind: .snippet(snippet, initialText: "", assetID: nil))) }
                     else { snippetPanel(IslandPrompt(kind: .snippet(snippet, initialText: "", assetID: nil))) }
-                case .note(let note): notePanel(IslandPrompt(kind: .note(note)))
+                // A note found in the palette opens where notes live now.
+                case .note(let note): openNoteDashboard(note: note)
                 case .answer: break
                 }
             },

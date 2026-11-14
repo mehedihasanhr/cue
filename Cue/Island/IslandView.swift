@@ -212,6 +212,7 @@ final class IslandModel {
     var onShowTask: (TaskItem) -> Void = { _ in }
     /// Opens the task dashboard window; called by the panel, set by the controller.
     var onOpenTaskDashboard: () -> Void = {}
+    var onOpenNoteDashboard: () -> Void = {}
     /// Opens Settings; called by the panel, set by the controller.
     var onOpenSettings: () -> Void = {}
     /// Leaves the task detail (back to the open panel); set by the controller.
@@ -948,6 +949,7 @@ struct IslandDock: View {
         if let tab = item.tab { return model.onLauncherTab(tab) }
         switch item {
         case .tasks: model.onOpenTaskDashboard()
+        case .notes: model.onOpenNoteDashboard()
         case .settings: model.onOpenSettings()
         case .record: model.onLauncherRecord()
         case .captureArea: actions.captureArea()

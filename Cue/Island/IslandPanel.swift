@@ -6,12 +6,12 @@ import SwiftUI
 
 /// The panel's tabs, in display order.
 enum IslandTab: String, CaseIterable {
-    case all, assets, tasks, notes, captures, colors, snippets, clipboard, notifications
+    case all, assets, tasks, captures, colors, snippets, clipboard, notifications
 
     static let storageKey = "island.tab"
 
     /// Used little: kept behind the tab row's "…", shown as a tab only while open.
-    static let tucked: Set<IslandTab> = [.notes, .snippets, .notifications]
+    static let tucked: Set<IslandTab> = [.snippets, .notifications]
 
     var title: String {
         switch self {
@@ -22,7 +22,6 @@ enum IslandTab: String, CaseIterable {
         case .colors: "Colors"
         case .tasks: "Tasks"
         case .snippets: "Snippets"
-        case .notes: "Notes"
         case .notifications: "Notifications"
         }
     }
@@ -39,7 +38,6 @@ enum IslandTab: String, CaseIterable {
         case .colors: "paintpalette"
         case .tasks: "checklist"
         case .snippets: "text.badge.plus"
-        case .notes: "note.text"
         case .notifications: "bell"
         }
     }
@@ -131,7 +129,7 @@ struct IslandPanel: View {
     /// The All tab: recent is what is neither pinned nor grouped (snippets count
     /// as recent); pinned and each group are shown on their own. Tasks are not here.
     private var filteredEverything: [IslandItem] {
-        let everything = IslandSearch.everything(library: library, clipboard: clipboard, assets: assets, colors: colors, snippets: snippets, notes: notes)
+        let everything = IslandSearch.everything(library: library, clipboard: clipboard, assets: assets, colors: colors, snippets: snippets)
         return everything.filter { item in
             guard preferences.shows(item) else { return false }
             return switch allFilter {
@@ -554,15 +552,6 @@ struct IslandPanel: View {
                         DayStrip(items: snippets.items, date: \.createdAt, dragPayload: snippetDrag, card: snippetCard)
                             .selecting { IslandItem.snippet($0).id == selectedID }
                     }
-                case .notes:
-                    if notes.notes.isEmpty {
-                        empty("Jot things down — ⌥⇧M opens a note anywhere", symbol: "note.text",
-                              action: ("New note", "plus", { onPrompt(IslandPrompt(kind: .note(nil))) }))
-                    } else {
-                        DayStrip(items: notes.notes, date: \.updatedAt, dragPayload: noteDrag, card: noteCard)
-                            .selecting { IslandItem.note($0).id == selectedID }
-                            .onCardHover { hover(.note($0), inside: $1) }
-                    }
                 case .notifications:
                     if notifications.items.isEmpty {
                         empty(AXIsProcessTrusted() ? "Notifications land here as they come" : "Allow Cue in Accessibility to see notifications", symbol: "bell")
@@ -661,7 +650,7 @@ struct IslandPanel: View {
     /// The stores a pick resolves through, and how a color is written.
     private var pickSources: PickedCopy.Sources {
         PickedCopy.Sources(library: library, clipboard: clipboard, assets: assets, colors: colors,
-                           snippets: snippets, notes: notes, colorFormat: preferences.colorFormat)
+                           snippets: snippets, colorFormat: preferences.colorFormat)
     }
 
     /// ⌘-click picking, the badge and the ring — for any card that can be copied.
@@ -686,7 +675,6 @@ struct IslandPanel: View {
         case .assets: filteredAssets.map { .asset($0) }
         case .colors: filteredColors.map { .color($0) }
         case .snippets: snippets.items.map { .snippet($0) }
-        case .notes: notes.notes.map { .note($0) }
         case .tasks, .notifications: []
         }
     }
@@ -846,7 +834,7 @@ struct IslandPanel: View {
         if shown.isEmpty {
             empty("Nothing matches “\(search.trimmingCharacters(in: .whitespaces))”", symbol: "magnifyingglass")
         } else {
-            DayStrip(items: shown, section: { StripSection(id: $0.tab, title: $0.tab == .all ? "Answers" : $0.tab.title) }, dragPayload: dragPayload, card: itemCard)
+            DayStrip(items: shown, section: { StripSection(id: $0.tab ?? .all, title: $0.tab == .all ? "Answers" : ($0.tab ?? .all).title) }, dragPayload: dragPayload, card: itemCard)
                 .transition(.opacity)
         }
     }
@@ -860,18 +848,10 @@ struct IslandPanel: View {
         case .color(let entry): colorCard(entry)
         case .task(let task): TaskCard(task: task, store: tasksStore, focus: focusTimer, onOpen: { onShowTask(task) }, onDelete: { onPrompt(IslandPrompt(kind: .delete(.task(task)))) })
         case .snippet(let snippet): snippetCard(snippet)
-        case .note(let note): noteCard(note)
+        // A note never reaches the island: it has no tab, and search filters it out.
+        case .note: EmptyView()
         case .answer(let answer): AnswerCard(answer: answer, clipboard: clipboard, colors: colors)
         }
-    }
-
-    private func noteDrag(_ note: Note) -> DragPayload? {
-        DragPayload(writer: note.text as NSString, preview: SnippetCard.dragImage(forText: note.title))
-    }
-
-    private func noteCard(_ note: Note) -> some View {
-        NoteCard(note: note, store: notes, clipboard: clipboard, onEdit: { onPrompt(IslandPrompt(kind: .note(note))) })
-            .modifier(picking(.note(note)))
     }
 
     private func snippetDrag(_ snippet: Snippet) -> DragPayload? {
@@ -894,7 +874,6 @@ struct IslandPanel: View {
         case .colors: filteredColors.count
         case .tasks: tasksStore.tasks.count { $0.status != .complete }
         case .snippets: snippets.items.count
-        case .notes: notes.notes.count
         case .notifications: notifications.items.count
         }
     }
@@ -905,9 +884,8 @@ struct IslandPanel: View {
         case .clipboard(let item): clipboard.dragPayload(for: item)
         case .asset(let item): .file(assets.fileURL(for: item), preview: assets.thumbnail(for: item))
         case .color(let entry): DragPayload(writer: preferences.colorFormat.string(for: entry.color) as NSString, preview: ColorCard.dragImage(for: entry.color))
-        case .task: nil
+        case .task, .note: nil
         case .snippet(let snippet): DragPayload(writer: SnippetTemplate.expand(snippet.text, values: [:]) as NSString, preview: SnippetCard.dragImage(for: snippet))
-        case .note(let note): noteDrag(note)
         case .answer(let answer): DragPayload(writer: answer.value as NSString, preview: answer.color.map(ColorCard.dragImage) ?? SnippetCard.dragImage(forText: answer.value))
         }
     }
@@ -979,9 +957,6 @@ struct IslandPanel: View {
         }
         if tab == .snippets {
             smallButton("New", symbol: "plus", help: "A new snippet") { onPrompt(IslandPrompt(kind: .snippet(nil, initialText: "", assetID: nil))) }
-        }
-        if tab == .notes {
-            smallButton("New", symbol: "plus", help: "A new note (⌥⇧M anywhere)") { onPrompt(IslandPrompt(kind: .note(nil))) }
         }
         if tab == .colors {
             smallButton("Pick", symbol: "eyedropper", help: "Pick a color from the screen", action: actions.pickColor)
@@ -1113,7 +1088,6 @@ struct IslandPanel: View {
         case .assets: return (filteredAssets.filter(\.pinned) + filteredAssets.filter { !$0.pinned }).map(IslandItem.asset)
         case .colors: return (filteredColors.filter(\.pinned) + filteredColors.filter { !$0.pinned }).map(IslandItem.color)
         case .snippets: return snippets.items.map(IslandItem.snippet)
-        case .notes: return notes.notes.map(IslandItem.note)
         case .tasks, .notifications: return []
         }
     }

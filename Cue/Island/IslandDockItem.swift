@@ -11,9 +11,9 @@ import SwiftUI
 /// row, and `Self.standard` what it is before anyone has chosen.
 enum IslandDockItem: String, CaseIterable, Hashable, Identifiable, Sendable {
     // Sections of the panel.
-    case all, assets, captures, colors, clipboard, notes, snippets, notifications
+    case all, assets, captures, colors, clipboard, snippets, notifications
     // Windows of their own.
-    case tasks, settings
+    case tasks, notes, settings
     // Quick actions.
     case record, captureArea, captureWindow, captureFullScreen, captureScrolling, captureText, pickColor
 
@@ -27,7 +27,6 @@ enum IslandDockItem: String, CaseIterable, Hashable, Identifiable, Sendable {
         case .captures: .captures
         case .colors: .colors
         case .clipboard: .clipboard
-        case .notes: .notes
         case .snippets: .snippets
         case .notifications: .notifications
         default: nil
@@ -41,7 +40,6 @@ enum IslandDockItem: String, CaseIterable, Hashable, Identifiable, Sendable {
         case .captures: self = .captures
         case .colors: self = .colors
         case .clipboard: self = .clipboard
-        case .notes: self = .notes
         case .snippets: self = .snippets
         case .notifications: self = .notifications
         case .tasks: self = .tasks

@@ -284,7 +284,7 @@ struct CommandPaletteView: View {
         .background { keyboardShortcuts(rows) }
         .foregroundStyle(.white)
         .onAppear {
-            recent = Array(IslandSearch.everything(library: library, clipboard: clipboard, assets: assets, colors: colors, snippets: snippets, notes: notes).filter(preferences.shows).prefix(8))
+            recent = Array(IslandSearch.everything(library: library, clipboard: clipboard, assets: assets, colors: colors, snippets: snippets).filter(preferences.shows).prefix(8))
             DispatchQueue.main.async { focused = true }
         }
     }

@@ -65,6 +65,7 @@ final class IslandController {
     var onSnippetFilled: (Snippet, [String: String]?) -> Void = { _, _ in }
     /// The Tasks tab asked for the dashboard window; set by the app.
     var onOpenTaskDashboard: () -> Void = {}
+    var onOpenNoteDashboard: () -> Void = {}
     var onOpenSettings: () -> Void = {}
     /// Brings up Cue Studio's recorder, from the hover buttons.
     var onRecord: () -> Void = {}
@@ -157,6 +158,10 @@ final class IslandController {
         model.onOpenTaskDashboard = { [weak self] in
             self?.collapse()
             self?.onOpenTaskDashboard()
+        }
+        model.onOpenNoteDashboard = { [weak self] in
+            self?.collapse()
+            self?.onOpenNoteDashboard()
         }
         model.onOpenSettings = { [weak self] in
             self?.collapse()

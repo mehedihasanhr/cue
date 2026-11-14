@@ -53,7 +53,6 @@ enum PickedCopy {
         let assets: AssetStore
         let colors: ColorStore
         let snippets: SnippetStore
-        let notes: NoteStore
         let colorFormat: ColorFormat
     }
 
@@ -71,7 +70,7 @@ enum PickedCopy {
     /// still resolves from another.
     static func everything(_ sources: Sources) -> [IslandItem] {
         IslandSearch.everything(library: sources.library, clipboard: sources.clipboard, assets: sources.assets,
-                                colors: sources.colors, snippets: sources.snippets, notes: sources.notes)
+                                colors: sources.colors, snippets: sources.snippets)
     }
 
     /// The picks that still exist, in the order they were picked.
@@ -102,12 +101,13 @@ enum PickedCopy {
                 }
             case .color(let entry):
                 report.lines.append(sources.colorFormat.string(for: entry.color))
-            case .note(let note):
-                report.lines.append(note.text)
             case .snippet(let snippet):
                 report.lines.append(SnippetTemplate.expand(snippet.text, values: [:], clipboard: NSPasteboard.general.string(forType: .string)))
             case .task(let task):
                 report.lines.append(task.text)
+            case .note(let note):
+                // Only the palette turns a note up; a pick can still carry one.
+                report.lines.append(note.text)
             case .answer(let answer):
                 report.lines.append(answer.value)
             }
