@@ -356,14 +356,17 @@ struct ImageBlockView: View {
             .animation(.easeOut(duration: 0.12), value: showing)
     }
 
-    /// A grab bar on each side of the image: a white pill with a dark edge, so it
-    /// shows against whatever the image happens to be — the earlier plain white one
-    /// vanished into a white logo. Either side drags; the image keeps its left edge.
+    /// A grab bar on each side of the image, in the accent color inside a white
+    /// ring. The document editors (Fibery, Klaviyo) use a dark bar, which works on
+    /// their photographs but disappeared into a black logo here; white disappeared
+    /// into the page around it. The accent is neither, so it reads on a screenshot,
+    /// a photograph and a logo alike, and it ties the bar to the frame it belongs
+    /// to. Either side drags; the image keeps its left edge.
     private func handle(natural: CGFloat, width: CGFloat, trailing: Bool) -> some View {
         Capsule(style: .continuous)
-            .fill(.white)
-            .overlay(Capsule(style: .continuous).strokeBorder(.black.opacity(0.35), lineWidth: 1))
-            .frame(width: 7, height: 44)
+            .fill(NotionStyle.accent)
+            .overlay(Capsule(style: .continuous).strokeBorder(.white, lineWidth: 1.5))
+            .frame(width: 8, height: 46)
             .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
             .opacity(showing ? 1 : 0)
             .padding(trailing ? .trailing : .leading, 5)
