@@ -231,7 +231,7 @@ private struct BlockContent: View {
                 .padding(.vertical, 14)
                 .contentShape(Rectangle().inset(by: -8))
         case .image(let alt, let source):
-            ImageBlockView(alt: alt, source: source, services: model.services)
+            ImageBlockView(id: block.id, alt: alt, source: source, model: model)
                 .padding(.vertical, 6)
         case .file(let name, let source):
             FileBlockView(name: name, source: source, services: model.services)
@@ -253,23 +253,42 @@ private struct BlockContent: View {
     }
 }
 
-/// An image at its own width (up to the column's), rounded a touch; a click opens it
-/// in the viewer.
+/// An image in a note or a task: as wide as it was dragged to be, else its own width
+/// up to the column's. A click opens it in the viewer; the handle on its right edge
+/// drags it narrower or wider, and a double-click on that handle puts it back.
+///
+/// The width is kept in the Markdown the way Obsidian keeps it — `![alt|420](src)` —
+/// so a note resized here is the same width in Obsidian, and a note written there
+/// arrives at the width it was given.
 private struct ImageBlockView: View {
+    let id: UUID
     let alt: String
     let source: String
-    let services: BlockServices
+    let model: BlockEditorModel
     @State private var hovering = false
+    /// The width while the handle is being dragged, before it is written down.
+    @State private var dragging: CGFloat?
+
+    /// Narrower than this and there is nothing to see.
+    private static let smallest: CGFloat = 80
+    /// The column an image may fill at most.
+    private static let widest: CGFloat = 720
+
+    private var services: BlockServices { model.services }
+    private var text: String { ImageSize.split(alt).text }
+    private var storedWidth: CGFloat? { ImageSize.split(alt).width }
 
     var body: some View {
         if let url = services.imageURL(source), let image = ImageCache.image(at: url) {
+            let natural = min(image.size.width, Self.widest)
+            let width = dragging ?? storedWidth ?? natural
             Image(nsImage: image)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
-                .frame(maxWidth: min(image.size.width, 720), alignment: .leading)
+                .frame(width: width, alignment: .leading)
                 .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
                 .overlay(alignment: .topTrailing) {
-                    if hovering {
+                    if hovering, dragging == nil {
                         Image(systemName: "arrow.up.left.and.arrow.down.right")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(.white)
@@ -279,27 +298,87 @@ private struct ImageBlockView: View {
                             .allowsHitTesting(false)
                     }
                 }
+                .overlay(alignment: .trailing) { handle(natural: natural, width: width) }
                 .onHover { hovering = $0 }
                 .onTapGesture { services.openImage(url) }
-                .help("Click to view full size")
-                .accessibilityLabel(alt.isEmpty ? "Image" : alt)
+                .help("Click to view full size; drag the bar on the right to resize")
+                .accessibilityLabel(text.isEmpty ? "Image" : text)
+                .accessibilityValue("\(Int(width)) points wide")
                 .accessibilityAddTraits(.isButton)
+                // The handle is a thin target; the frame changing under the pointer
+                // must not make it flicker, so the row keeps its hover while dragging.
+                .animation(dragging == nil ? .easeOut(duration: 0.12) : nil, value: width)
         } else if let remote = URL(string: source), remote.scheme?.hasPrefix("http") == true {
             AsyncImage(url: remote) { image in
                 image.resizable().aspectRatio(contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: 4))
             } placeholder: {
                 ProgressView().controlSize(.small).frame(height: 60)
             }
-            .frame(maxWidth: 720, alignment: .leading)
+            .frame(maxWidth: storedWidth ?? Self.widest, alignment: .leading)
         } else {
-            Label(alt.isEmpty ? "Image not found" : alt, systemImage: "photo")
+            Label(text.isEmpty ? "Image not found" : text, systemImage: "photo")
                 .font(.system(size: 13))
                 .foregroundStyle(NotionStyle.tertiary)
         }
     }
+
+    /// The grab bar down the image's right edge: a pill that shows while the pointer
+    /// is on the image, and stays while it is being dragged.
+    private func handle(natural: CGFloat, width: CGFloat) -> some View {
+        let showing = hovering || dragging != nil
+        return RoundedRectangle(cornerRadius: 2, style: .continuous)
+            .fill(.white.opacity(0.9))
+            .frame(width: 4, height: 38)
+            .shadow(color: .black.opacity(0.35), radius: 2)
+            .opacity(showing ? 1 : 0)
+            .padding(.trailing, 6)
+            .contentShape(Rectangle().inset(by: -10))
+            .onHover { over in
+                if over { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1)
+                    .onChanged { value in
+                        let from = dragging ?? width
+                        if dragging == nil { dragging = from }
+                        dragging = min(max(from + value.translation.width, Self.smallest), Self.widest)
+                    }
+                    .onEnded { _ in
+                        defer { dragging = nil }
+                        guard let final = dragging else { return }
+                        // Back to its own width rather than a number that happens to
+                        // match it: dragged to the full width, the size is dropped.
+                        let width = abs(final - natural) < 6 ? nil : final.rounded()
+                        model.update(id, .image(alt: ImageSize.join(text: text, width: width), source: source))
+                    }
+            )
+            .onTapGesture(count: 2) {
+                model.update(id, .image(alt: text, source: source))
+            }
+            .help("Drag to resize, double-click for its own size")
+    }
 }
 
-/// An attached file as a row: its icon and name; a click opens it.
+/// An image's width inside its alt text, as Obsidian writes it: `alt|420`.
+enum ImageSize {
+    /// The alt text and the width in it, if any.
+    static func split(_ alt: String) -> (text: String, width: CGFloat?) {
+        guard let bar = alt.lastIndex(of: "|") else { return (alt, nil) }
+        let tail = alt[alt.index(after: bar)...].trimmingCharacters(in: .whitespaces)
+        // Obsidian also writes `alt|400x300`; only the width is ours to keep.
+        let number = tail.prefix { $0.isNumber }
+        guard !number.isEmpty, number.count == tail.count || tail.dropFirst(number.count).first == "x",
+              let width = Double(number), width > 0 else { return (alt, nil) }
+        return (String(alt[..<bar]), CGFloat(width))
+    }
+
+    /// The alt text with a width put back on, or without one when it is nil.
+    static func join(text: String, width: CGFloat?) -> String {
+        guard let width else { return text }
+        return "\(text)|\(Int(width))"
+    }
+}
+
 private struct FileBlockView: View {
     let name: String
     let source: String

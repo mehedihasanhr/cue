@@ -49,6 +49,7 @@ enum IslandDockItem: String, CaseIterable, Hashable, Identifiable, Sendable {
     var title: String {
         switch self {
         case .tasks: "Tasks"
+        case .notes: "Notes"
         case .settings: "Settings"
         case .record: "Record"
         case .captureArea: "Capture area"
@@ -65,6 +66,7 @@ enum IslandDockItem: String, CaseIterable, Hashable, Identifiable, Sendable {
     var caption: String {
         switch self {
         case .tasks: "The tasks dashboard, in its own window"
+        case .notes: "Your notes, in their own window"
         case .settings: "Cue Settings"
         case .record: "Start a screen recording"
         case .captureArea: "Drag out an area to capture"
@@ -80,6 +82,7 @@ enum IslandDockItem: String, CaseIterable, Hashable, Identifiable, Sendable {
     var symbol: String {
         switch self {
         case .tasks: IslandTab.tasks.symbol
+        case .notes: "note.text"
         case .settings: "gearshape"
         case .record: "record.circle"
         case .captureArea: "viewfinder"
@@ -126,16 +129,16 @@ enum IslandDockItem: String, CaseIterable, Hashable, Identifiable, Sendable {
 
     var group: Group {
         switch self {
-        case .tasks, .settings: .windows
+        case .tasks, .notes, .settings: .windows
         case .record, .captureArea, .captureWindow, .captureFullScreen, .captureScrolling, .captureText, .pickColor: .actions
         default: .sections
         }
     }
 
     /// The row as it was before the dock could be configured: every panel section on
-    /// offer, then Tasks, Record and Settings.
+    /// offer, then the windows — Tasks and Notes — then Record and Settings.
     static func standard(for preferences: AppPreferences) -> [IslandDockItem] {
-        preferences.islandTabs.map(IslandDockItem.init) + [.tasks, .record, .settings]
+        preferences.islandTabs.map(IslandDockItem.init) + [.tasks, .notes, .record, .settings]
     }
 
     /// Stored as one string so the order is kept.
@@ -156,6 +159,7 @@ extension AppPreferences {
         if let tab = item.tab { return shows(tab) }
         switch item {
         case .pickColor: return colorPickerEnabled
+        case .notes: return notesEnabled
         default: return true
         }
     }
