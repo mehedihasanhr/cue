@@ -27,6 +27,8 @@ enum URLCommand: Equatable {
     case record, recordings
     /// The task dashboard.
     case tasks
+    /// The notes dashboard.
+    case notes
     /// The floating basket last closed with files in it, back.
     case basket
     /// The camera as a mirror in the island.
@@ -70,6 +72,7 @@ enum URLCommand: Equatable {
         case ["record"], ["video", "record"], ["recorder"]: self = .record
         case ["recordings"], ["video"], ["videos"]: self = .recordings
         case ["tasks"], ["tasks", "dashboard"], ["task", "dashboard"], ["dashboard"]: self = .tasks
+        case ["notes"], ["notes", "dashboard"], ["note", "dashboard"]: self = .notes
         case ["basket"], ["basket", "reopen"]: self = .basket
         case ["mirror"], ["camera"]: self = .mirror
         case ["miniplayer"], ["player"]: self = .miniPlayer

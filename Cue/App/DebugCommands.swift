@@ -16,8 +16,10 @@ import WebKit
 ///     cue://debug/menu?block=1              a block's actions menu opened
 ///     cue://debug/size?width=1400&height=1000   the key window resized
 ///     cue://debug/markdown                  the editor's Markdown written to ~/Pictures/Cue Debug/markdown.md
+///     cue://debug/note?index=0&page=1       the notes dashboard with that note open
 ///     cue://debug/snapshot?name=a           the Tasks window drawn to ~/Pictures/Cue Debug/a.png
-///                                            (window=pinned draws the newest pinned capture instead)
+///                                            (window=pinned draws the newest pinned capture instead,
+///                                             window=notes the notes dashboard)
 ///     cue://debug/pin?index=0                the nth capture (newest first) pinned to the screen
 ///     cue://debug/pinned?action=edit         a pinned capture's own button: close, edit, copy, ghost
 ///     cue://debug/dictation                  what dictation is set to → ~/Pictures/Cue Debug/dictation.txt
@@ -38,9 +40,10 @@ enum DebugCommands {
         try? report.write(to: folder.appendingPathComponent(name), atomically: true, encoding: .utf8)
     }
 
-    static func run(_ url: URL, tasks: TaskStore, createTask: (TaskSeed) -> Void = { _ in },
+    static func run(_ url: URL, tasks: TaskStore, notes: NoteStore, createTask: (TaskSeed) -> Void = { _ in },
                     pinCapture: (Int) -> Void = { _ in }, openIsland: (IslandTab?) -> Void = { _ in },
-                    openFloatingPanel: @escaping () -> Void = {}, openTask: (TaskItem, Bool) -> Void) {
+                    openFloatingPanel: @escaping () -> Void = {}, openNote: (Note, Bool) -> Void = { _, _ in },
+                    openTask: (TaskItem, Bool) -> Void) {
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         let query = Dictionary((components?.queryItems ?? []).map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { $1 })
         let model = BlockEditorModel.current
@@ -53,11 +56,17 @@ enum DebugCommands {
         let window: NSWindow? = switch query["window"] {
         case "panel": NSApp.windows.first { $0 is QuickTaskPanel && $0.isVisible }
         case "pinned": PinnedCaptureWindow.debugWindows.last
+        case "notes": NSApp.windows.first { $0.title == "Cue Notes" && $0.isVisible }
         default: NSApp.windows.first { $0.title == "Cue Tasks" && $0.isVisible } ?? NSApp.keyWindow
         }
         let responder = window?.firstResponder
 
         switch url.path {
+        case "/note":
+            // The notes dashboard with one note open: in the peek, or `page=1` as a page.
+            let index = Int(query["index"] ?? "0") ?? 0
+            guard notes.notes.indices.contains(index) else { return }
+            openNote(notes.notes[index], query["page"] == "1")
         case "/open":
             let index = Int(query["index"] ?? "0") ?? 0
             guard tasks.tasks.indices.contains(index) else { return }

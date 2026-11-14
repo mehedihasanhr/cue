@@ -64,6 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var settingsWindow: SettingsWindowController?
     private var taskDashboard: TaskDashboardWindowController?
+    private var noteDashboard: NoteDashboardWindowController?
     private var onboardingWindows: [PermissionKind: HostedWindowController] = [:]
     private var welcome: WelcomeWindowController?
     private var editorWindows: [UUID: EditorWindowController] = [:]
@@ -179,7 +180,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             switch collection {
             case .captures: island?.expand(on: .captures) ?? toggleHistoryAtPointer()
             case .colors: island?.expand(on: .colors) ?? toggleHistoryAtPointer()
-            case .notes: island?.expand(on: .notes) ?? toggleHistoryAtPointer()
+            case .notes: openNoteDashboard(note: nil)
             case .tasks: openTaskDashboard(task: nil)
             case .recordings: studio.showLibrary()
             }
@@ -836,7 +837,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         for url in urls where !StudioController.handles(url) {
             #if DEBUG
             if DebugCommands.handles(url) {
-                DebugCommands.run(url, tasks: tasks, createTask: { [weak self] in self?.createTask(from: $0) },
+                DebugCommands.run(url, tasks: tasks, notes: notes, createTask: { [weak self] in self?.createTask(from: $0) },
                                   pinCapture: { [weak self] index in
                                       guard let self, library.items.indices.contains(index) else { return }
                                       pinToScreen(library.items[index])
@@ -844,7 +845,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                   openIsland: { [weak self] tab in
                                       if let tab { self?.island?.expand(on: tab) } else { self?.island?.expand() }
                                   },
-                                  openFloatingPanel: { [weak self] in self?.toggleHistoryAtPointer() }) { [weak self] task, asPage in
+                                  openFloatingPanel: { [weak self] in self?.toggleHistoryAtPointer() },
+                                  openNote: { [weak self] note, asPage in
+                                      self?.openNoteDashboard(note: note)
+                                      self?.noteDashboard?.showAsPage(asPage)
+                                  }) { [weak self] task, asPage in
                     self?.openTaskDashboard(task: task)
                     self?.taskDashboard?.showAsPage(asPage)
                 }
@@ -898,6 +903,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .record: studio.showRecorder()
         case .recordings: studio.showLibrary()
         case .tasks: showTaskDashboard(nil)
+        case .notes: showNoteDashboard(nil)
         case .basket: basket.reopen()
         case .mirror: island?.showMirror()
         case .miniPlayer: island?.miniPlayer.show()
@@ -1005,6 +1011,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ]
         for (title, selector, id) in panels { menu.addItem(shortcutItem(title, selector, id)) }
         menu.addItem(makeItem("Tasks", #selector(showTaskDashboard(_:))))
+        menu.addItem(makeItem("Notes", #selector(showNoteDashboard(_:))))
         if basket.canReopen { menu.addItem(makeItem("Reopen Last Basket", #selector(reopenBasket(_:)))) }
         menu.addItem(.separator())
         menu.addItem(makeItem("Settings", #selector(showSettings(_:)), keyEquivalent: ",", modifiers: .command))
@@ -1293,6 +1300,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 case .taskDashboard: showTaskDashboard(nil)
                 case .newSnippet: snippetPanel(IslandPrompt(kind: .snippet(nil, initialText: "", assetID: nil)))
                 case .newNote: quickNote(nil)
+                case .noteDashboard: showNoteDashboard(nil)
                 case .clipboardList: showClipboardPanel(nil)
                 case .cuePanel: toggleHistoryAtPointer()
                 case .clock: island?.showClock() ?? showSettings(nil)
@@ -1711,6 +1719,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             taskDashboard = controller
         }
         taskDashboard?.present(task: task)
+    }
+
+    @objc func showNoteDashboard(_ sender: Any?) {
+        openNoteDashboard(note: nil)
+    }
+
+    /// The notes dashboard, with `note` (if any) open in its detail pane.
+    func openNoteDashboard(note: Note?) {
+        closeHistory()
+        if noteDashboard == nil {
+            let controller = NoteDashboardWindowController(store: notes)
+            controller.onClose = { [weak self] in self?.noteDashboard = nil }
+            noteDashboard = controller
+        }
+        noteDashboard?.present(note: note)
     }
 
     /// A floating "new task" form at the pointer (⌥/ by default).

@@ -4,7 +4,7 @@ import SwiftUI
 /// Something the palette can do without an item.
 enum PaletteCommand: CaseIterable, Identifiable {
     case captureArea, captureWindow, captureFullScreen, captureScrolling, captureText, pickColor
-    case newTask, taskDashboard, newNote, newSnippet, clipboardList, cuePanel, clock, settings, unghostPins
+    case newTask, taskDashboard, newNote, noteDashboard, newSnippet, clipboardList, cuePanel, clock, settings, unghostPins
 
     var id: Self { self }
 
@@ -19,6 +19,7 @@ enum PaletteCommand: CaseIterable, Identifiable {
         case .newTask: "New task"
         case .taskDashboard: "Tasks dashboard"
         case .newNote: "New note"
+        case .noteDashboard: "Notes dashboard"
         case .newSnippet: "New snippet"
         case .clipboardList: "Clipboard list"
         case .cuePanel: "Cue panel"
@@ -39,6 +40,7 @@ enum PaletteCommand: CaseIterable, Identifiable {
         case .newTask: "checklist"
         case .taskDashboard: "checklist.checked"
         case .newNote: "note.text"
+        case .noteDashboard: "note.text.badge.plus"
         case .newSnippet: "text.badge.plus"
         case .clipboardList: "doc.on.clipboard"
         case .cuePanel: "cursorarrow.rays"
@@ -60,6 +62,7 @@ enum PaletteCommand: CaseIterable, Identifiable {
         case .newTask: "todo add"
         case .taskDashboard: "todo list board kanban projects all tasks"
         case .newNote: "jot memo markdown obsidian notion"
+        case .noteDashboard: "all notes list table markdown library"
         case .newSnippet: "text expander template"
         case .clipboardList: "history paste"
         case .cuePanel: "library history"
@@ -81,6 +84,7 @@ enum PaletteCommand: CaseIterable, Identifiable {
         case .newTask: .mint
         case .taskDashboard: .green
         case .newNote: .orange
+        case .noteDashboard: .yellow
         case .newSnippet: .yellow
         case .clipboardList: .purple
         case .cuePanel: .cyan
