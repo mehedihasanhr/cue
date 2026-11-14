@@ -3,119 +3,100 @@ import SwiftUI
 
 // MARK: - State
 
-/// Which list is showing, what is searched for and which note is open — shared with
-/// the window controller so a note can be opened from outside.
+/// Which note is open, what is searched for, and which folders are unfolded.
 @Observable
 @MainActor
 final class NoteDashboardModel {
-    private static let selectionKey = "notes.dashboard.selection"
+    private static let openKey = "notes.dashboard.open"
     private static let sidebarKey = "notes.dashboard.sidebarCollapsed"
-    private static let iconsKey = "notes.dashboard.icons"
-    private static let peekWidthKey = "notes.dashboard.peekWidth"
+    private static let widthKey = "notes.dashboard.listWidth"
+    private static let expandedKey = "notes.dashboard.expanded"
 
-    /// The side peek's width, dragged to by its left edge.
-    var peekWidth: CGFloat {
-        didSet { UserDefaults.standard.set(Double(peekWidth), forKey: Self.peekWidthKey) }
+    /// The list's width, dragged to by its right edge.
+    var listWidth: CGFloat {
+        didSet { UserDefaults.standard.set(Double(listWidth), forKey: Self.widthKey) }
     }
-
-    /// Icons picked for the lists, by `NoteDashboardSelection.rawValue`.
-    private var icons: [String: String] {
-        didSet { UserDefaults.standard.set(icons, forKey: Self.iconsKey) }
-    }
-
-    var selection: NoteDashboardSelection {
-        didSet { UserDefaults.standard.set(selection.rawValue, forKey: Self.selectionKey) }
-    }
-    /// The sidebar folded away (⌃⌘S), for more room for the notes.
+    /// The list folded away (⌃⌘S), for the note alone.
     var sidebarCollapsed: Bool {
         didSet {
             UserDefaults.standard.set(sidebarCollapsed, forKey: Self.sidebarKey)
             sidebarFloating = false
         }
     }
-    /// The folded sidebar shown for a moment, floating over the page, while the
-    /// pointer is at the window's left edge or on it.
+    /// The folded list brought out over the note while the pointer wants it.
     var sidebarFloating = false
     /// How wide the window's content is, kept by the dashboard as it lays out.
     var contentWidth: CGFloat = 0 {
         didSet { if !sidebarHidden { sidebarFloating = false } }
     }
 
-    /// The sidebar folds itself away when the window cannot fit it beside the list and
-    /// the open peek; `sidebarCollapsed`, the user's choice, is left alone.
+    /// The list folds itself away when the window cannot fit it beside the note.
     var sidebarSqueezedOut: Bool {
         guard contentWidth > 0 else { return false }
-        let peek = openNoteID != nil && !noteAsPage ? NoteDashboardView.peekWidths.lowerBound : 0
-        return contentWidth < NoteDashboardView.sidebarWidth + NoteDashboardView.mainMinimum + peek
+        return contentWidth < NoteDashboardView.listWidths.lowerBound + NoteDashboardView.noteMinimum
     }
 
     var sidebarHidden: Bool { sidebarCollapsed || sidebarSqueezedOut }
     var query = ""
-    /// The note in the side peek — or on its own page. A note's id is its file name,
-    /// so renaming one changes this; the page says so when it saves.
+
+    /// The note being read, by its path. A note's id is its file, so renaming one
+    /// changes this; the note view says so when it saves.
     var openNoteID: String? {
-        didSet { if openNoteID == nil { noteAsPage = false } }
+        didSet { UserDefaults.standard.set(openNoteID, forKey: Self.openKey) }
     }
-    /// The open note fills the main column instead of peeking in beside it.
-    var noteAsPage = false
-    /// Age groups folded away in the table; the old ones start folded.
-    var collapsed: Set<NoteAge> = [.month, .older]
-    /// The table is showing a line to type a new note's title in.
-    var composing = false
+    /// The folders unfolded in the list, by path.
+    var expanded: Set<String> {
+        didSet { UserDefaults.standard.set(Array(expanded), forKey: Self.expandedKey) }
+    }
+    /// The folder a new note or folder is being named in, and which of the two.
+    var composing: Composing?
     /// Bumped to put the caret in that line, even when it is already showing.
     var composeTick = 0
+    /// A folder being renamed in place.
+    var renaming: String?
     /// Asked of the user before it happens.
-    var pendingDeletion: Note?
+    var pendingNoteDeletion: Note?
+    var pendingFolderDeletion: String?
     /// Bumped to put the caret in the search field (⌘F).
     var searchFocus = 0
     /// An image from a note, shown over the whole window.
     var viewingImage: URL?
 
+    /// A line being typed in the list: a note's title, or a folder's name.
+    struct Composing: Equatable {
+        enum Kind { case note, folder }
+        var kind: Kind
+        /// The folder it goes in ("" is the top).
+        var parent: String
+    }
+
     init() {
         let defaults = UserDefaults.standard
-        selection = defaults.string(forKey: Self.selectionKey).flatMap(NoteDashboardSelection.init(rawValue:)) ?? .list(.all)
         sidebarCollapsed = defaults.bool(forKey: Self.sidebarKey)
-        icons = defaults.dictionary(forKey: Self.iconsKey) as? [String: String] ?? [:]
-        let stored = defaults.double(forKey: Self.peekWidthKey)
-        peekWidth = stored > 0 ? min(max(CGFloat(stored), NoteDashboardView.peekWidths.lowerBound), NoteDashboardView.peekWidths.upperBound) : NoteDashboardView.peekWidth
+        openNoteID = defaults.string(forKey: Self.openKey)
+        expanded = Set(defaults.stringArray(forKey: Self.expandedKey) ?? [])
+        let stored = defaults.double(forKey: Self.widthKey)
+        listWidth = stored > 0 ? min(max(CGFloat(stored), NoteDashboardView.listWidths.lowerBound), NoteDashboardView.listWidths.upperBound) : NoteDashboardView.listWidth
     }
 
     var isSearching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
 
-    /// A list's icon: the one picked for it, else its own.
-    func icon(for selection: NoteDashboardSelection) -> PageIcon {
-        if let picked = icons[selection.rawValue].flatMap(PageIcon.init(rawValue:)) { return picked }
-        switch selection {
-        case .list(let list): return .symbol(list.symbol)
+    func isExpanded(_ folder: String) -> Bool { expanded.contains(folder) }
+
+    func toggle(_ folder: String) {
+        if expanded.contains(folder) { expanded.remove(folder) } else { expanded.insert(folder) }
+    }
+
+    /// Unfolds a folder and everything above it, so a note inside can be seen.
+    func reveal(_ folder: String) {
+        var path = folder
+        while !path.isEmpty {
+            expanded.insert(path)
+            path = (path as NSString).deletingLastPathComponent
         }
     }
 
-    /// Picks an icon for a list; nil puts its own back.
-    func setIcon(_ icon: PageIcon?, for selection: NoteDashboardSelection) {
-        icons[selection.rawValue] = icon?.rawValue
-    }
-
-    /// The icon over the page now showing (a search has the magnifying glass).
-    var currentIcon: PageIcon {
-        isSearching ? .symbol("magnifyingglass") : icon(for: selection)
-    }
-
-    /// What the main column is showing, for its title and the breadcrumb.
-    var title: String {
-        if isSearching { return "Search" }
-        switch selection {
-        case .list(let list): return list.title
-        }
-    }
-
-    /// Closes the side peek; a note open as a page stays.
-    func closePeek() {
-        guard openNoteID != nil, !noteAsPage else { return }
-        openNoteID = nil
-    }
-
-    /// ⌃⌘S and the sidebar button. With no room to dock it, the sidebar floats out
-    /// (or back in) instead.
+    /// ⌃⌘S and the list button.
     func toggleSidebar() {
         if sidebarSqueezedOut, !sidebarCollapsed {
             sidebarFloating.toggle()
@@ -124,46 +105,53 @@ final class NoteDashboardModel {
         withAnimation(.easeOut(duration: 0.2)) { sidebarCollapsed.toggle() }
     }
 
-    /// Brings the sidebar to hand: docked when it can be, floating when it cannot.
     func revealSidebar() {
         if sidebarCollapsed { toggleSidebar() }
         if sidebarSqueezedOut { sidebarFloating = true }
     }
 
-    /// ⌘N and the New button: the line to type a new note's title in. A note is its
-    /// file, and a file needs a name, so a note is never made empty — it starts with
-    /// the line that becomes its title.
-    func composeNew() {
-        noteAsPage = false
-        collapsed.remove(.today)
-        composing = true
+    /// ⌘N and the New button: the line to type a new note's title in. A note is a
+    /// file, and a file needs a name, so a note is never made empty.
+    func composeNote(in parent: String = "") {
+        reveal(parent)
+        if !parent.isEmpty { expanded.insert(parent) }
+        composing = Composing(kind: .note, parent: parent)
+        composeTick += 1
+    }
+
+    func composeFolder(in parent: String = "") {
+        reveal(parent)
+        if !parent.isEmpty { expanded.insert(parent) }
+        composing = Composing(kind: .folder, parent: parent)
         composeTick += 1
     }
 }
 
 // MARK: - Window
 
-/// The notes dashboard: every note in a window of its own, laid out the way the task
-/// dashboard is — a quiet sidebar of lists, the notes as a table grouped by when they
-/// were last written, and the open note in a side peek or as a page of its own.
+/// The notes window: the notes themselves down the left, in their folders, and the
+/// one being read on the right. Two panes, no database — a note is a file in a
+/// folder, and that is what the window shows.
 final class NoteDashboardWindowController: NSWindowController, NSWindowDelegate {
     var onClose: (() -> Void)?
     private let model = NoteDashboardModel()
+    private let store: NoteStore
 
     init(store: NoteStore) {
-        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1180, height: 760), styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+        self.store = store
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1060, height: 720), styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
         let buttons = WindowButtons(close: { [weak window] in window?.performClose(nil) },
                                     minimize: { [weak window] in window?.miniaturize(nil) },
                                     zoom: { [weak window] in window?.zoom(nil) })
         let root = NoteDashboardView(store: store, buttons: buttons)
             .environment(model)
-            .frame(minWidth: 860, minHeight: 540)
+            .frame(minWidth: 720, minHeight: 480)
         let host = NSHostingController(rootView: root)
         // See SettingsWindowController: the window keeps its own size, so the hosting
         // controller never pushes one up mid-display-cycle.
         host.sizingOptions = []
         window.contentViewController = host
-        window.contentMinSize = CGSize(width: 860, height: 540)
+        window.contentMinSize = CGSize(width: 720, height: 480)
         window.title = "Cue Notes"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
@@ -175,7 +163,7 @@ final class NoteDashboardWindowController: NSWindowController, NSWindowDelegate 
         }
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
-        window.setContentSize(CGSize(width: 1180, height: 760))
+        window.setContentSize(CGSize(width: 1060, height: 720))
         window.center()
         window.setFrameAutosaveName("CueNoteDashboard")
         super.init(window: window)
@@ -187,12 +175,12 @@ final class NoteDashboardWindowController: NSWindowController, NSWindowDelegate 
         fatalError("init(coder:) is not supported")
     }
 
-    /// Opens in front of every other app's windows and takes focus; with a note, that
-    /// note is open in the side peek.
+    /// Opens in front of every other app's windows and takes focus; with a note,
+    /// that note is the one being read.
     func present(note: Note? = nil) {
         if let note {
             model.query = ""
-            model.selection = .list(.all)
+            model.reveal(note.folder)
             model.openNoteID = note.id
         }
         let wasOpen = window?.isVisible ?? false
@@ -204,6 +192,9 @@ final class NoteDashboardWindowController: NSWindowController, NSWindowDelegate 
 
     /// Clicked back into, the window comes up over every other app's, with Cue active.
     func windowDidBecomeKey(_ notification: Notification) {
+        // The watcher only hears about the top folder, so a note written in a
+        // sub-folder elsewhere (Obsidian, iCloud) is picked up on coming back.
+        store.reload()
         guard let window, !NSApp.isActive else { return }
         NSApp.activate(ignoringOtherApps: true)
         window.orderFrontRegardless()
@@ -214,9 +205,10 @@ final class NoteDashboardWindowController: NSWindowController, NSWindowDelegate 
     }
 
     #if DEBUG
-    /// The open note as a page or in the peek (for `cue://debug/notes`).
-    func showAsPage(_ page: Bool) {
-        model.noteAsPage = page
+    /// For `cue://debug/note`: which note is being read.
+    func show(note: Note) {
+        model.reveal(note.folder)
+        model.openNoteID = note.id
     }
     #endif
 }
@@ -228,70 +220,42 @@ struct NoteDashboardView: View {
     let buttons: WindowButtons
     @Environment(NoteDashboardModel.self) private var model
 
-    static let sidebarWidth: CGFloat = 240
-    static let peekWidth: CGFloat = 480
-    static let peekWidths: ClosedRange<CGFloat> = 380...1100
-    /// The least the list in the middle is given while the peek is open.
-    static let mainMinimum: CGFloat = 340
+    static let listWidth: CGFloat = 280
+    static let listWidths: ClosedRange<CGFloat> = 220...460
+    /// The least the note itself is given.
+    static let noteMinimum: CGFloat = 420
     static let topBarHeight: CGFloat = 44
     static let windowRadius: CGFloat = 14
 
-    /// The peek's width in a window `width` wide, never so wide that the sidebar and
-    /// the list no longer fit beside it.
-    private func fittedPeekWidth(in width: CGFloat) -> CGFloat {
-        let room = width - (model.sidebarHidden ? 0 : Self.sidebarWidth) - Self.mainMinimum
-        return min(model.peekWidth, max(room, Self.peekWidths.lowerBound))
-    }
-
     var body: some View {
         GeometryReader { proxy in
-            columns(width: proxy.size.width)
+            columns
                 .onAppear { model.contentWidth = proxy.size.width }
                 .onChange(of: proxy.size.width) { _, width in model.contentWidth = width }
         }
     }
 
-    private func columns(width: CGFloat) -> some View {
+    private var columns: some View {
         HStack(spacing: 0) {
             if !model.sidebarHidden {
-                NoteDashboardSidebar(store: store, buttons: buttons)
-                    .frame(width: Self.sidebarWidth)
+                NoteList(store: store, buttons: buttons)
+                    .frame(width: min(model.listWidth, max(model.contentWidth - Self.noteMinimum, Self.listWidths.lowerBound)))
                     .background(NotionStyle.sidebar)
-                    .overlay(alignment: .trailing) { Hairline(axis: .vertical) }
+                    .overlay(alignment: .trailing) {
+                        NoteListResizer(width: Binding(get: { model.listWidth }, set: { model.listWidth = $0 }))
+                    }
                     .transition(.move(edge: .leading).combined(with: .opacity))
             }
-            VStack(spacing: 0) {
-                NoteTopBar(store: store, buttons: buttons, note: openNote)
-                Group {
-                    if model.noteAsPage, let note = openNote {
-                        NotePageView(store: store, note: note, style: .page)
-                            .id(note.id)
-                            .transition(.opacity)
-                    } else {
-                        NoteDashboardMain(store: store)
-                            .transition(.opacity)
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-            .frame(minWidth: 0, maxWidth: .infinity)
-            .clipped()
-            if !model.noteAsPage, let note = openNote {
-                NotePageView(store: store, note: note, style: .peek)
-                    .id(note.id)
-                    .frame(width: fittedPeekWidth(in: width))
-                    .background(NotionStyle.page)
-                    .overlay(alignment: .leading) {
-                        NotePeekResizer(width: Binding(get: { model.peekWidth }, set: { model.peekWidth = $0 }), sidebarShown: !model.sidebarHidden)
-                    }
-                    .transition(.move(edge: .trailing))
-            }
+            NoteDetail(store: store, buttons: buttons, note: openNote)
+                .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
+                .background(NotionStyle.page)
+                .clipped()
         }
         .foregroundStyle(NotionStyle.text)
         .background(NotionStyle.page)
         .overlay(alignment: .topLeading) {
             if model.sidebarHidden {
-                NoteFloatingSidebar(store: store, buttons: buttons)
+                NoteFloatingList(store: store, buttons: buttons)
             }
         }
         .overlay {
@@ -300,24 +264,34 @@ struct NoteDashboardView: View {
             }
         }
         .animation(.easeOut(duration: 0.15), value: model.viewingImage)
-        .animation(.spring(response: 0.3, dampingFraction: 0.9), value: openNote == nil)
         .animation(.easeOut(duration: 0.2), value: model.sidebarHidden)
-        .animation(.easeOut(duration: 0.2), value: model.noteAsPage)
         .clipShape(RoundedRectangle(cornerRadius: Self.windowRadius, style: .continuous))
         .ignoresSafeArea()
         .background { shortcuts }
         .onExitCommand {
-            if model.viewingImage != nil { model.viewingImage = nil } else { model.openNoteID = nil }
+            if model.viewingImage != nil { model.viewingImage = nil } else if model.isSearching { model.query = "" }
         }
-        .confirmationDialog("Delete this note?", isPresented: Binding(get: { model.pendingDeletion != nil }, set: { if !$0 { model.pendingDeletion = nil } }), presenting: model.pendingDeletion) { note in
+        .confirmationDialog("Delete this note?", isPresented: Binding(get: { model.pendingNoteDeletion != nil }, set: { if !$0 { model.pendingNoteDeletion = nil } }), presenting: model.pendingNoteDeletion) { note in
             Button("Delete", role: .destructive) {
                 if model.openNoteID == note.id { model.openNoteID = nil }
                 store.delete(note)
-                model.pendingDeletion = nil
+                model.pendingNoteDeletion = nil
             }
-            Button("Cancel", role: .cancel) { model.pendingDeletion = nil }
+            Button("Cancel", role: .cancel) { model.pendingNoteDeletion = nil }
         } message: { note in
             Text("“\(note.title)” — its file goes too.")
+        }
+        .confirmationDialog("Delete this folder?", isPresented: Binding(get: { model.pendingFolderDeletion != nil }, set: { if !$0 { model.pendingFolderDeletion = nil } }), presenting: model.pendingFolderDeletion) { folder in
+            Button("Delete", role: .destructive) {
+                if let open = openNote, open.folder == folder || open.folder.hasPrefix(folder + "/") { model.openNoteID = nil }
+                store.deleteFolder(folder)
+                model.pendingFolderDeletion = nil
+            }
+            Button("Cancel", role: .cancel) { model.pendingFolderDeletion = nil }
+        } message: { folder in
+            let count = store.noteCount(in: folder)
+            Text(count == 0 ? "“\((folder as NSString).lastPathComponent)” is empty."
+                            : "“\((folder as NSString).lastPathComponent)” and the \(count) note\(count == 1 ? "" : "s") in it.")
         }
     }
 
@@ -325,24 +299,24 @@ struct NoteDashboardView: View {
         model.openNoteID.flatMap { id in store.notes.first { $0.id == id } }
     }
 
-    /// The window's keys: ⌘N a new note, ⌘F search, ⌘⌫ delete the open note,
-    /// ⌃⌘S the sidebar.
+    /// The window's keys: ⌘N a new note, ⇧⌘N a new folder, ⌘F search,
+    /// ⌘⌫ delete the note being read, ⌃⌘S the list.
     private var shortcuts: some View {
         ZStack {
-            Button("") { model.composeNew() }.keyboardShortcut("n")
+            Button("") { model.composeNote(in: openNote?.folder ?? "") }.keyboardShortcut("n")
+            Button("") { model.composeFolder(in: openNote?.folder ?? "") }.keyboardShortcut("n", modifiers: [.command, .shift])
             Button("") { model.searchFocus += 1 }.keyboardShortcut("f")
-            Button("") { if let note = openNote { model.pendingDeletion = note } }.keyboardShortcut(.delete, modifiers: .command)
+            Button("") { if let note = openNote { model.pendingNoteDeletion = note } }.keyboardShortcut(.delete, modifiers: .command)
             Button("") { model.toggleSidebar() }.keyboardShortcut("s", modifiers: [.control, .command])
         }
         .hidden()
     }
 }
 
-/// The side peek's left edge: a hairline that turns blue under the pointer and drags
-/// the peek wider or narrower, leaving the table at least some room.
-private struct NotePeekResizer: View {
+/// The list's right edge: a hairline that turns blue under the pointer and drags the
+/// list wider or narrower, leaving the note at least some room.
+private struct NoteListResizer: View {
     @Binding var width: CGFloat
-    var sidebarShown = true
     @State private var hovering = false
     @State private var start: CGFloat?
 
@@ -365,12 +339,11 @@ private struct NotePeekResizer: View {
                 .gesture(
                     DragGesture(minimumDistance: 1, coordinateSpace: .global)
                         .onChanged { value in
-                            let windowWidth = NSApp.keyWindow?.frame.width ?? 1200
-                            let beside = (sidebarShown ? NoteDashboardView.sidebarWidth : 0) + NoteDashboardView.mainMinimum
-                            let most = min(NoteDashboardView.peekWidths.upperBound, windowWidth - beside)
-                            let origin = start ?? min(width, max(most, NoteDashboardView.peekWidths.lowerBound))
+                            let windowWidth = NSApp.keyWindow?.frame.width ?? 1060
+                            let most = min(NoteDashboardView.listWidths.upperBound, windowWidth - NoteDashboardView.noteMinimum)
+                            let origin = start ?? min(width, max(most, NoteDashboardView.listWidths.lowerBound))
                             start = origin
-                            width = min(max(origin - value.translation.width, NoteDashboardView.peekWidths.lowerBound), max(most, NoteDashboardView.peekWidths.lowerBound))
+                            width = min(max(origin + value.translation.width, NoteDashboardView.listWidths.lowerBound), max(most, NoteDashboardView.listWidths.lowerBound))
                         }
                         .onEnded { _ in start = nil }
                 )
@@ -379,15 +352,16 @@ private struct NotePeekResizer: View {
     }
 }
 
-/// The traffic lights and the button that folds the sidebar.
-private struct NoteWindowChrome: View {
+/// The traffic lights and the button that folds the list away. Shown at the top of
+/// the list, or of the note when the list is away (`NoteDetail`).
+struct NoteWindowChrome: View {
     let buttons: WindowButtons
     @Environment(NoteDashboardModel.self) private var model
 
     var body: some View {
         HStack(spacing: 2) {
             TrafficLights(onClose: buttons.close, onMinimize: buttons.minimize, onZoom: buttons.zoom)
-            NotionIconButton(symbol: "sidebar.left", help: model.sidebarHidden ? "Show sidebar (⌃⌘S)" : "Hide sidebar (⌃⌘S)", size: 14) {
+            NotionIconButton(symbol: "sidebar.left", help: model.sidebarHidden ? "Show the notes (⌃⌘S)" : "Hide the notes (⌃⌘S)", size: 14) {
                 model.toggleSidebar()
             }
             .onHover { over in
@@ -397,8 +371,8 @@ private struct NoteWindowChrome: View {
     }
 }
 
-/// The folded sidebar, brought out over the page while the pointer wants it.
-private struct NoteFloatingSidebar: View {
+/// The folded list, brought out over the note while the pointer wants it.
+private struct NoteFloatingList: View {
     let store: NoteStore
     let buttons: WindowButtons
     @Environment(NoteDashboardModel.self) private var model
@@ -415,8 +389,8 @@ private struct NoteFloatingSidebar: View {
                 .contentShape(Rectangle())
                 .onHover { $0 ? show() : hideSoon() }
             if model.sidebarFloating {
-                NoteDashboardSidebar(store: store, buttons: buttons, floating: true)
-                    .frame(width: NoteDashboardView.sidebarWidth)
+                NoteList(store: store, buttons: buttons, floating: true)
+                    .frame(width: NoteDashboardView.listWidth)
                     .frame(maxHeight: .infinity)
                     .background(NotionStyle.card, in: shape)
                     .overlay { shape.stroke(NotionStyle.divider) }
@@ -447,130 +421,20 @@ private struct NoteFloatingSidebar: View {
         hiding?.cancel()
         hiding = Task {
             try? await Task.sleep(for: Self.linger)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, model.composing == nil, model.renaming == nil else { return }
             model.sidebarFloating = false
         }
     }
 }
 
-// MARK: - Top bar
+// MARK: - The list
 
-/// The thin bar over the content: where you are as a breadcrumb (Notes › list ›
-/// note), and on a note's page when it was last written and what can be done to it.
-private struct NoteTopBar: View {
+/// Every note down the left, inside its folders: a folder is a twisty with its
+/// sub-folders and notes under it, and clicking a note opens it on the right.
+/// Searching flattens the lot to what matches.
+private struct NoteList: View {
     let store: NoteStore
     let buttons: WindowButtons
-    let note: Note?
-    @Environment(NoteDashboardModel.self) private var model
-
-    var body: some View {
-        HStack(spacing: 2) {
-            if model.sidebarHidden {
-                NoteWindowChrome(buttons: buttons)
-            }
-            NotionIconButton(symbol: "chevron.left", help: model.noteAsPage ? "Back to \(model.title) (⎋)" : "Back", size: 13,
-                             tint: model.noteAsPage ? NotionStyle.secondary : NotionStyle.tertiary.opacity(0.6)) { leavePage() }
-                .disabled(!model.noteAsPage)
-                .keyboardShortcut("[", modifiers: .command)
-                .padding(.trailing, 4)
-            crumb("Notes", icon: .symbol("note.text")) { leavePage() }
-            separator
-            crumb(model.title, icon: model.currentIcon) { leavePage() }
-            if model.noteAsPage, let note {
-                separator
-                crumb(note.title, icon: .symbol("doc.text")) {}
-            }
-            Spacer(minLength: 12)
-            if model.noteAsPage, let note {
-                Text("Edited \(note.updatedAt.formatted(.relative(presentation: .named)))")
-                    .font(.system(size: 13))
-                    .foregroundStyle(NotionStyle.tertiary)
-                    .padding(.trailing, 6)
-                NotionIconButton(symbol: "sidebar.right", help: "Open in side peek") { model.noteAsPage = false }
-                NoteMoreMenu(store: store, note: note)
-            }
-        }
-        .padding(.horizontal, 10)
-        .frame(height: NoteDashboardView.topBarHeight)
-    }
-
-    private func leavePage() {
-        if model.noteAsPage { model.openNoteID = nil }
-    }
-
-    private var separator: some View {
-        Text("/").font(.system(size: 14)).foregroundStyle(NotionStyle.tertiary).padding(.horizontal, 2)
-    }
-
-    private func crumb(_ title: String, icon: PageIcon, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                PageIconView(icon: icon, size: 13)
-                Text(title).font(.system(size: 14)).lineLimit(1)
-            }
-            .padding(.horizontal, 6)
-            .frame(height: 26)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(NotionHoverStyle())
-    }
-}
-
-/// The … menu on a note: copy it, show the file, delete it.
-struct NoteMoreMenu: View {
-    let store: NoteStore
-    let note: Note
-    @Environment(NoteDashboardModel.self) private var model
-
-    var body: some View {
-        Menu {
-            NoteRowMenu(store: store, note: note)
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 13))
-                .foregroundStyle(NotionStyle.secondary)
-                .frame(width: 26, height: 26)
-                .contentShape(Rectangle())
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("More")
-    }
-}
-
-/// What can be done to a note, in the … menu and on a right-click.
-struct NoteRowMenu: View {
-    let store: NoteStore
-    let note: Note
-    @Environment(NoteDashboardModel.self) private var model
-
-    var body: some View {
-        Button("Open in Side Peek") { model.openNoteID = note.id }
-        Button("Open as Page") {
-            model.openNoteID = note.id
-            model.noteAsPage = true
-        }
-        Divider()
-        Button("Copy Text") {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(note.text, forType: .string)
-        }
-        Button("Show in Finder") {
-            NSWorkspace.shared.activateFileViewerSelecting([store.fileURL(for: note)])
-        }
-        Divider()
-        Button("Delete Note", role: .destructive) { model.pendingDeletion = note }
-    }
-}
-
-// MARK: - Sidebar
-
-private struct NoteDashboardSidebar: View {
-    let store: NoteStore
-    let buttons: WindowButtons
-    /// Brought out over the page while folded: the window's buttons stay in the top
-    /// bar, so the sidebar starts at its search field.
     var floating = false
     @Environment(NoteDashboardModel.self) private var model
     @FocusState private var searching: Bool
@@ -583,7 +447,8 @@ private struct NoteDashboardSidebar: View {
                 HStack(spacing: 0) {
                     NoteWindowChrome(buttons: buttons)
                     Spacer(minLength: 0)
-                    NotionIconButton(symbol: "square.and.pencil", help: "New note (⌘N)", size: 14) { model.composeNew() }
+                    NotionIconButton(symbol: "folder.badge.plus", help: "New folder (⇧⌘N)", size: 14) { model.composeFolder() }
+                    NotionIconButton(symbol: "square.and.pencil", help: "New note (⌘N)", size: 14) { model.composeNote() }
                 }
                 .padding(.horizontal, 8)
                 .frame(height: NoteDashboardView.topBarHeight)
@@ -591,26 +456,35 @@ private struct NoteDashboardSidebar: View {
 
             searchField
                 .padding(.horizontal, 8)
-                .padding(.bottom, 8)
+                .padding(.bottom, 6)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 1) {
-                    ForEach(NoteDashboardList.allCases) { list in
-                        NoteSidebarItem(title: list.title, icon: model.icon(for: .list(list)),
-                                        count: NoteDashboardQuery.count(store.notes, list: list),
-                                        selected: !model.isSearching && model.selection == .list(list)) {
-                            select(.list(list))
+                    if model.isSearching {
+                        results
+                    } else {
+                        ForEach(rows) { row in
+                            switch row.kind {
+                            case .folder(let folder):
+                                NoteFolderRow(store: store, folder: folder, depth: row.depth)
+                            case .note(let note):
+                                NoteRow(store: store, note: note, depth: row.depth, selected: model.openNoteID == note.id)
+                            case .composing(let composing):
+                                NewThingLine(store: store, composing: composing, depth: row.depth)
+                            }
+                        }
+                        if store.notes.isEmpty && store.folders.isEmpty && model.composing == nil {
+                            hint("No notes yet. ⌘N starts one.")
                         }
                     }
-                    folderSection
                 }
                 .padding(.horizontal, 8)
                 .padding(.bottom, 12)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .thinScrollers()
-            .contentShape(Rectangle())
-            .onTapGesture { model.closePeek() }
+            // A drop on the empty space below moves a note to the top folder.
+            .dropDestination(for: String.self) { ids, _ in moveNotes(ids, to: "") }
         }
         .onChange(of: model.searchFocus) { _, _ in
             model.revealSidebar()
@@ -618,46 +492,55 @@ private struct NoteDashboardSidebar: View {
         }
     }
 
-    /// Where the notes are. A note is a Markdown file, and which folder it sits in is
-    /// the one thing about the collection worth saying — it is what decides whether
-    /// they reach iCloud Drive or an Obsidian vault.
-    private var folderSection: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text("Folder")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(NotionStyle.tertiary)
-                .padding(.leading, 8)
-                .padding(.top, 18)
-                .padding(.bottom, 2)
-            Button {
-                NSWorkspace.shared.activateFileViewerSelecting([store.folderURL])
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: store.folderIsCustom ? "folder" : "internaldrive")
-                        .font(.system(size: 13))
-                        .frame(width: 20)
-                    Text(store.folderURL.lastPathComponent)
-                        .font(.system(size: 14))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer(minLength: 4)
-                }
-                .foregroundStyle(NotionStyle.text.opacity(0.85))
-                .padding(.horizontal, 8)
-                .frame(height: 30)
-                .contentShape(Rectangle())
+    /// The list, flattened: every unfolded folder and the notes under it, in order,
+    /// each with how deep it sits. Worked out here rather than by a view calling
+    /// itself — a SwiftUI view cannot be recursive without losing its type.
+    private var rows: [NoteListRow] {
+        var rows: [NoteListRow] = []
+        func walk(_ folder: String, depth: Int) {
+            for child in store.subfolders(of: folder) {
+                rows.append(NoteListRow(id: "folder:" + child, depth: depth, kind: .folder(child)))
+                if model.isExpanded(child) { walk(child, depth: depth + 1) }
             }
-            .buttonStyle(NotionHoverStyle())
-            .help("Show the notes folder in Finder — \(store.folderURL.path)")
+            for note in store.notes(in: folder) {
+                rows.append(NoteListRow(id: "note:" + note.id, depth: depth, kind: .note(note)))
+            }
+            if let composing = model.composing, composing.parent == folder {
+                rows.append(NoteListRow(id: "new", depth: depth, kind: .composing(composing)))
+            }
+        }
+        walk("", depth: 0)
+        return rows
+    }
+
+    /// What a search finds, flat: a note's folder is said beside it instead.
+    @ViewBuilder
+    private var results: some View {
+        let found = store.notes.filter { NoteDashboardQuery.matches($0, query: model.query) }
+        if found.isEmpty {
+            hint("No note matches “\(model.query)”.")
+        } else {
+            ForEach(found) { note in
+                NoteRow(store: store, note: note, depth: 0, selected: model.openNoteID == note.id, showsFolder: true)
+            }
         }
     }
 
-    private func select(_ selection: NoteDashboardSelection) {
-        model.query = ""
-        searching = false
-        model.composing = false
-        model.openNoteID = nil
-        model.selection = selection
+    private func hint(_ message: String) -> some View {
+        Text(message)
+            .font(.system(size: 13))
+            .foregroundStyle(NotionStyle.tertiary)
+            .padding(.horizontal, 8)
+            .padding(.top, 10)
+    }
+
+    private func moveNotes(_ ids: [String], to folder: String) -> Bool {
+        let moved = ids.compactMap { id in store.notes.first { $0.id == id } }.filter { $0.folder != folder }
+        for note in moved {
+            let after = store.move(note, to: folder)
+            if model.openNoteID == note.id { model.openNoteID = after?.id }
+        }
+        return !moved.isEmpty
     }
 
     private var searchField: some View {
@@ -690,472 +573,290 @@ private struct NoteDashboardSidebar: View {
     }
 }
 
-/// A list in the sidebar: a grey glyph, its name and how many notes are in it.
-private struct NoteSidebarItem: View {
-    let title: String
-    let icon: PageIcon
-    let count: Int
-    let selected: Bool
-    let action: () -> Void
+/// One line of the list: a folder, a note, or the line being typed.
+private struct NoteListRow: Identifiable {
+    enum Kind {
+        case folder(String)
+        case note(Note)
+        case composing(NoteDashboardModel.Composing)
+    }
+
+    let id: String
+    let depth: Int
+    let kind: Kind
+}
+
+/// A folder in the list: a twisty, its name, and how many notes are under it. Notes
+/// dragged onto it move into it; the … menu adds, renames and removes.
+private struct NoteFolderRow: View {
+    let store: NoteStore
+    let folder: String
+    let depth: Int
+    @Environment(NoteDashboardModel.self) private var model
     @State private var hovering = false
+    @State private var targeted = false
+    @FocusState private var renaming: Bool
+    @State private var draft = ""
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                PageIconView(icon: icon, size: 14)
-                    .frame(width: 20)
-                Text(title)
-                    .font(.system(size: 14, weight: selected ? .medium : .regular))
-                    .foregroundStyle(selected ? NotionStyle.text : NotionStyle.text.opacity(0.85))
-                    .lineLimit(1)
-                Spacer(minLength: 4)
-                if count > 0 {
-                    Text("\(count)")
-                        .font(.system(size: 12).monospacedDigit())
-                        .foregroundStyle(NotionStyle.tertiary)
-                }
-            }
-            .padding(.horizontal, 8)
-            .frame(height: 30)
-            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(selected ? NotionStyle.selectedRow : hovering ? NotionStyle.hover : Color.clear)
-            )
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .accessibilityAddTraits(selected ? .isSelected : [])
-        .accessibilityValue(count > 0 ? "\(count) notes" : "")
-    }
-}
-
-// MARK: - Main column
-
-/// The database page: an icon and a big title, the view as a tab with a New button,
-/// then the table.
-private struct NoteDashboardMain: View {
-    let store: NoteStore
-    @Environment(NoteDashboardModel.self) private var model
-
-    static let margin: CGFloat = 48
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-                .padding(.horizontal, Self.margin)
-                .padding(.top, 22)
-            tabs
-                .padding(.horizontal, Self.margin)
-                .padding(.top, 18)
-            if model.isSearching && shown.isEmpty {
-                empty("No note matches “\(model.query)”.")
-            } else if shown.isEmpty && !model.composing {
-                empty(model.selection == .list(.all) ? "No notes yet. ⌘N starts one." : "Nothing in \(model.title.lowercased()).")
-            } else {
-                NoteTable(store: store, notes: shown, groups: groups)
-            }
-        }
-        .contentShape(Rectangle())
-        .onTapGesture { model.closePeek() }
-    }
-
-    private func empty(_ message: String) -> some View {
-        Text(message)
-            .font(.system(size: 14))
-            .foregroundStyle(NotionStyle.secondary)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    /// What the page lists: every match for a search, else the chosen list.
-    private var shown: [Note] {
-        if model.isSearching { return store.notes.filter { NoteDashboardQuery.matches($0, query: model.query) } }
-        switch model.selection {
-        case .list(let list): return NoteDashboardQuery.filter(store.notes, list: list)
-        }
-    }
-
-    /// The table's groups: those with notes, plus Today while a new note is being
-    /// typed, so the line has somewhere to sit.
-    private var groups: [NoteAge] {
-        let present = NoteDashboardQuery.groups(shown)
-        guard model.composing, !model.isSearching, !present.contains(.today) else { return present }
-        return [.today] + present
-    }
-
-    private var header: some View {
-        HStack(spacing: 8) {
-            NotePageIconButton()
-            Text(model.title)
-                .font(.system(size: 26, weight: .semibold))
-                .lineLimit(1)
-        }
-    }
-
-    /// One view for now — notes have nothing a board would column by — kept as a tab
-    /// so the page reads as the task dashboard's sibling.
-    private var tabs: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 4) {
-                tab(title: "Table", symbol: "tablecells")
-                Spacer(minLength: 8)
-                ViewThatFits(in: .horizontal) {
-                    newButton(labelled: true)
-                    newButton(labelled: false)
-                }
-            }
-            .padding(.bottom, 6)
-            Hairline()
-        }
-    }
-
-    private func newButton(labelled: Bool) -> some View {
-        Button(action: model.composeNew) {
-            Group {
-                if labelled {
-                    Text("New")
-                        .font(.system(size: 14, weight: .medium))
-                        .padding(.horizontal, 12)
-                } else {
-                    Image(systemName: "plus")
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(width: 28)
-                }
-            }
-            .foregroundStyle(.white)
-            .frame(height: 28)
-            .background(NotionStyle.accent, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .help("New note (⌘N)")
-        .fixedSize()
-    }
-
-    private func tab(title: String, symbol: String) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: symbol).font(.system(size: 13))
-            Text(title).font(.system(size: 14, weight: .medium))
-        }
-        .fixedSize()
-        .foregroundStyle(NotionStyle.text)
-        .padding(.horizontal, 8)
-        .frame(height: 28)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(NotionStyle.text).frame(height: 2).offset(y: 7)
-        }
-    }
-}
-
-/// The page's icon beside its title: a click opens the picker, as in Notion.
-private struct NotePageIconButton: View {
-    @Environment(NoteDashboardModel.self) private var model
-    @State private var picking = false
-    @State private var hovering = false
-
-    var body: some View {
-        let icon = model.currentIcon
-        Button {
-            picking = true
-        } label: {
-            PageIconView(icon: icon, size: 21, weight: .light)
-                .frame(width: 36, height: 36)
-                .background(hovering && !model.isSearching ? NotionStyle.hover : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(model.isSearching)
-        .onHover { hovering = $0 }
-        .help("Change icon")
-        .accessibilityLabel("Change icon")
-        .popover(isPresented: $picking, arrowEdge: .bottom) {
-            PageIconPicker(current: icon) { picked in
-                model.setIcon(picked, for: model.selection)
-                picking = false
-            }
-        }
-        .padding(.leading, -8)
-    }
-}
-
-// MARK: - Table
-
-/// The table's columns: the name takes what is left, the rest are fixed.
-private enum NoteColumns {
-    static let gutter: CGFloat = 28
-    static let name: CGFloat = 300
-    static let words: CGFloat = 120
-    static let created: CGFloat = 150
-    static let updated: CGFloat = 150
-    static var minimumWidth: CGFloat { gutter + name + words + created + updated + 4 }
-}
-
-/// Every note in groups by when it was last written, each a ▸ toggle with its tag and
-/// count, the column headings and the rows.
-private struct NoteTable: View {
-    let store: NoteStore
-    let notes: [Note]
-    let groups: [NoteAge]
-    @Environment(NoteDashboardModel.self) private var model
-
-    var body: some View {
-        GeometryReader { proxy in
-            ScrollView(.vertical) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(groups) { age in
-                            NoteTableGroup(store: store, age: age, notes: NoteDashboardQuery.notes(notes, in: age))
-                        }
-                    }
-                    .frame(width: max(proxy.size.width - (NoteDashboardMain.margin - NoteColumns.gutter) * 2, NoteColumns.minimumWidth), alignment: .leading)
-                    .padding(.horizontal, NoteDashboardMain.margin - NoteColumns.gutter)
-                    .padding(.bottom, 40)
-                }
-            }
-            .thinScrollers()
-        }
-    }
-}
-
-private struct NoteTableGroup: View {
-    let store: NoteStore
-    let age: NoteAge
-    let notes: [Note]
-    @Environment(NoteDashboardModel.self) private var model
-
-    var body: some View {
-        let folded = model.collapsed.contains(age)
-        VStack(alignment: .leading, spacing: 0) {
+        let open = model.isExpanded(folder)
+        let name = (folder as NSString).lastPathComponent
+        HStack(spacing: 6) {
             Button {
-                withAnimation(.easeOut(duration: 0.15)) {
-                    if folded { model.collapsed.remove(age) } else { model.collapsed.insert(age) }
-                }
+                withAnimation(.easeOut(duration: 0.15)) { model.toggle(folder) }
             } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "arrowtriangle.right.fill")
-                        .font(.system(size: 9))
-                        .foregroundStyle(NotionStyle.secondary)
-                        .rotationEffect(.degrees(folded ? 0 : 90))
-                    NotionTag(text: age.title, color: age.tint, dot: true)
-                    Text("\(notes.count)")
-                        .font(.system(size: 13).monospacedDigit())
-                        .foregroundStyle(NotionStyle.tertiary)
-                }
-                .padding(.leading, NoteColumns.gutter - 18)
-                .padding(.trailing, 8)
-                .frame(height: 32)
-                .contentShape(Rectangle())
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(NotionStyle.tertiary)
+                    .rotationEffect(.degrees(open ? 90 : 0))
+                    .frame(width: 14, height: 20)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .padding(.top, 18)
-            .padding(.bottom, 4)
-            .accessibilityLabel("\(age.title), \(notes.count) notes, \(folded ? "folded" : "unfolded")")
-
-            if !folded {
-                columnHeadings
-                ForEach(notes) { note in
-                    NoteTableRow(store: store, note: note, open: model.openNoteID == note.id)
-                }
-                // A new note is always written now, so the line belongs to Today.
-                if age == .today {
-                    if model.composing {
-                        NewNoteLine(store: store)
-                            .padding(.leading, NoteColumns.gutter)
-                            .overlay(alignment: .bottom) { Hairline().padding(.leading, NoteColumns.gutter) }
-                    } else {
-                        Button(action: model.composeNew) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "plus").font(.system(size: 13))
-                                Text("New note").font(.system(size: 14))
-                                Spacer()
-                            }
+            .opacity(store.isEmpty(folder) ? 0.25 : 1)
+            Image(systemName: open ? "folder.fill" : "folder")
+                .font(.system(size: 12))
+                .foregroundStyle(NotionStyle.secondary)
+                .frame(width: 16)
+            if model.renaming == folder {
+                TextField("Folder name", text: $draft)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14))
+                    .focused($renaming)
+                    .onSubmit(commitRename)
+                    .onExitCommand { model.renaming = nil }
+                    .onAppear { draft = name; renaming = true }
+                    .onChange(of: renaming) { _, focused in if !focused { commitRename() } }
+            } else {
+                Text(name)
+                    .font(.system(size: 14, weight: .medium))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 4)
+                if hovering {
+                    Menu {
+                        folderMenu
+                    } label: {
+                        Image(systemName: "ellipsis").font(.system(size: 12)).foregroundStyle(NotionStyle.secondary)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .frame(width: 18)
+                } else {
+                    let count = store.noteCount(in: folder)
+                    if count > 0 {
+                        Text("\(count)")
+                            .font(.system(size: 12).monospacedDigit())
                             .foregroundStyle(NotionStyle.tertiary)
-                            .padding(.horizontal, 8)
-                            .frame(height: 34)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(NotionHoverStyle())
-                        .padding(.leading, NoteColumns.gutter)
                     }
                 }
             }
         }
+        .padding(.leading, 6 + CGFloat(depth) * 14)
+        .padding(.trailing, 8)
+        .frame(height: 30)
+        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(targeted ? NotionStyle.accent.opacity(0.14) : hovering ? NotionStyle.hover : Color.clear)
+        )
+        .overlay {
+            if targeted {
+                RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(NotionStyle.accent.opacity(0.6))
+            }
+        }
+        .onHover { hovering = $0 }
+        .onTapGesture { withAnimation(.easeOut(duration: 0.15)) { model.toggle(folder) } }
+        .dropDestination(for: String.self) { ids, _ in
+            let moved = ids.compactMap { id in store.notes.first { $0.id == id } }.filter { $0.folder != folder }
+            model.expanded.insert(folder)
+            for note in moved {
+                let after = store.move(note, to: folder)
+                if model.openNoteID == note.id { model.openNoteID = after?.id }
+            }
+            return !moved.isEmpty
+        } isTargeted: { targeted = $0 }
+        .contextMenu { folderMenu }
+        .accessibilityLabel("\(name) folder, \(store.noteCount(in: folder)) notes")
     }
 
-    private var columnHeadings: some View {
-        HStack(spacing: 0) {
-            heading("Note name", symbol: "textformat", width: nil)
-            Hairline(axis: .vertical)
-            heading("Words", symbol: "number", width: NoteColumns.words)
-            Hairline(axis: .vertical)
-            heading("Created", symbol: "clock", width: NoteColumns.created)
-            Hairline(axis: .vertical)
-            heading("Updated", symbol: "clock.arrow.circlepath", width: NoteColumns.updated)
+    @ViewBuilder
+    private var folderMenu: some View {
+        Button("New Note Here") { model.composeNote(in: folder) }
+        Button("New Sub-folder") { model.composeFolder(in: folder) }
+        Divider()
+        Button("Rename") {
+            draft = (folder as NSString).lastPathComponent
+            model.renaming = folder
         }
-        .fixedSize(horizontal: false, vertical: true)
-        .overlay(alignment: .top) { Hairline() }
-        .overlay(alignment: .bottom) { Hairline() }
-        .padding(.leading, NoteColumns.gutter)
+        Button("Show in Finder") {
+            NSWorkspace.shared.activateFileViewerSelecting([store.folderURL.appendingPathComponent(folder, isDirectory: true)])
+        }
+        Divider()
+        Button("Delete Folder", role: .destructive) { model.pendingFolderDeletion = folder }
     }
 
-    private func heading(_ title: String, symbol: String, width: CGFloat?) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: symbol).font(.system(size: 12))
-            Text(title).font(.system(size: 14))
-            Spacer(minLength: 0)
+    private func commitRename() {
+        guard model.renaming == folder else { return }
+        let wanted = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        model.renaming = nil
+        guard !wanted.isEmpty, wanted != (folder as NSString).lastPathComponent else { return }
+        let open = model.openNoteID
+        guard let path = store.renameFolder(folder, to: wanted) else { return }
+        // The folder's notes moved with it, so their paths — and the open one's —
+        // changed under us.
+        if let open, open.hasPrefix(folder + "/") {
+            model.openNoteID = path + String(open.dropFirst(folder.count))
         }
-        .foregroundStyle(NotionStyle.secondary)
-        .padding(.horizontal, 8)
-        .frame(height: 34)
-        .frame(minWidth: width == nil ? NoteColumns.name : nil, maxWidth: width ?? .infinity)
-        .frame(width: width)
+        model.expanded = Set(model.expanded.map { $0 == folder ? path : ($0.hasPrefix(folder + "/") ? path + String($0.dropFirst(folder.count)) : $0) })
     }
 }
 
-/// One note as a table row: its title with the first line of its text behind it, how
-/// many words it holds, and when it was written. A click opens it beside the table.
-private struct NoteTableRow: View {
+/// A note in the list: its title, and under it the first line of what it says. The
+/// one being read is filled in. Dragging it carries its path, so a folder can take it.
+private struct NoteRow: View {
     let store: NoteStore
     let note: Note
-    let open: Bool
+    let depth: Int
+    let selected: Bool
+    var showsFolder = false
     @Environment(NoteDashboardModel.self) private var model
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 0) {
-            Group {
-                if NoteDashboardQuery.carriesFiles(note) {
-                    Image(systemName: "paperclip")
-                        .font(.system(size: 11))
-                        .foregroundStyle(NotionStyle.tertiary)
-                        .help("This note carries a picture or a file")
-                }
-            }
-            .frame(width: NoteColumns.gutter)
-            HStack(spacing: 0) {
-                nameCell
-                Hairline(axis: .vertical)
-                cell(width: NoteColumns.words) {
-                    NotionTag(text: "\(NoteDashboardQuery.words(in: note))", color: .gray)
-                }
-                Hairline(axis: .vertical)
-                cell(width: NoteColumns.created) {
-                    Text(note.createdAt.formatted(date: .abbreviated, time: .omitted))
-                        .font(.system(size: 13))
-                        .foregroundStyle(NotionStyle.secondary)
-                        .help(note.createdAt.formatted(date: .complete, time: .shortened))
-                }
-                Hairline(axis: .vertical)
-                cell(width: NoteColumns.updated) {
-                    Text(note.updatedAt.formatted(date: .abbreviated, time: .omitted))
-                        .font(.system(size: 13))
-                        .foregroundStyle(NotionStyle.secondary)
-                        .help(note.updatedAt.formatted(date: .complete, time: .shortened))
-                }
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            .background(open ? NotionStyle.openRow : hovering ? NotionStyle.hover : .clear)
-            .overlay(alignment: .bottom) { Hairline() }
-        }
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .onTapGesture { model.openNoteID = note.id }
-        .contextMenu { NoteRowMenu(store: store, note: note) }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(note.title)
-        .accessibilityAddTraits(open ? [.isSelected, .isButton] : .isButton)
-    }
-
-    private var nameCell: some View {
         HStack(spacing: 8) {
-            Text(note.title)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(NotionStyle.text)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .help(note.title)
-            // What the note goes on to say, greyed behind the title: a note has no
-            // status to show, and the first line of it is what tells two apart.
-            if !note.summary.isEmpty, !hovering {
-                Text(note.summary)
-                    .font(.system(size: 13))
-                    .foregroundStyle(NotionStyle.tertiary)
+            Image(systemName: NoteDashboardQuery.carriesFiles(note) ? "doc.richtext" : "doc.text")
+                .font(.system(size: 12))
+                .foregroundStyle(selected ? NotionStyle.text : NotionStyle.tertiary)
+                .frame(width: 16)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(note.title)
+                    .font(.system(size: 14, weight: selected ? .medium : .regular))
                     .lineLimit(1)
                     .truncationMode(.tail)
-            }
-            Spacer(minLength: 4)
-            if hovering {
-                Button {
-                    model.openNoteID = note.id
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "sidebar.right").font(.system(size: 10, weight: .medium))
-                        Text("OPEN").font(.system(size: 11, weight: .medium)).tracking(0.4)
+                HStack(spacing: 5) {
+                    Text(note.updatedAt.formatted(date: .abbreviated, time: .omitted))
+                        .font(.system(size: 11).monospacedDigit())
+                        .foregroundStyle(NotionStyle.tertiary)
+                    if showsFolder, !note.folder.isEmpty {
+                        Text(note.folder)
+                            .font(.system(size: 11))
+                            .foregroundStyle(NotionStyle.tertiary)
+                            .lineLimit(1)
+                            .truncationMode(.head)
+                    } else if !note.summary.isEmpty {
+                        Text(note.summary)
+                            .font(.system(size: 11))
+                            .foregroundStyle(NotionStyle.tertiary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                     }
-                    .foregroundStyle(NotionStyle.secondary)
-                    .padding(.horizontal, 6)
-                    .frame(height: 22)
-                    .background(NotionStyle.card, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(NotionStyle.divider))
-                    .shadow(color: .black.opacity(0.05), radius: 1, y: 1)
                 }
-                .buttonStyle(.plain)
-                .help("Open in side peek")
             }
+            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 7)
-        .frame(minWidth: NoteColumns.name, maxWidth: .infinity, minHeight: 36, alignment: .leading)
-    }
-
-    private func cell(width: CGFloat, @ViewBuilder content: () -> some View) -> some View {
-        content()
-            .padding(.horizontal, 8)
-            .frame(width: width, alignment: .leading)
-            .frame(minHeight: 36)
+        .padding(.leading, 6 + CGFloat(depth) * 14 + 20)
+        .padding(.trailing, 8)
+        .frame(height: 44)
+        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(selected ? NotionStyle.selectedRow : hovering ? NotionStyle.hover : Color.clear)
+        )
+        .onHover { hovering = $0 }
+        .onTapGesture { model.openNoteID = note.id }
+        .draggable(note.id) {
+            Text(note.title)
+                .font(.system(size: 13, weight: .medium))
+                .padding(.horizontal, 10)
+                .frame(height: 28)
+                .background(NotionStyle.card, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .contextMenu { NoteRowMenu(store: store, note: note) }
+        .accessibilityLabel(note.title)
+        .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
     }
 }
 
-/// A line to type a new note's title in, at the foot of Today's group. A note is a
-/// file named after its title, so this is the title: ↩ writes the file and opens it
-/// beside the table, ready for the rest; ⎋ puts the line away.
-private struct NewNoteLine: View {
+/// What can be done to a note, in the … menu and on a right-click.
+struct NoteRowMenu: View {
     let store: NoteStore
+    let note: Note
+    @Environment(NoteDashboardModel.self) private var model
+
+    var body: some View {
+        Button("Open") { model.openNoteID = note.id }
+        Divider()
+        Button("Copy Text") {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(note.text, forType: .string)
+        }
+        Button("Show in Finder") {
+            NSWorkspace.shared.activateFileViewerSelecting([store.fileURL(for: note)])
+        }
+        if !note.folder.isEmpty {
+            Button("Move to Top") {
+                let after = store.move(note, to: "")
+                if model.openNoteID == note.id { model.openNoteID = after?.id }
+            }
+        }
+        Divider()
+        Button("Delete Note", role: .destructive) { model.pendingNoteDeletion = note }
+    }
+}
+
+/// The line being typed in the list: a new note's title, or a new folder's name.
+/// ↩ makes it, ⎋ puts the line away.
+private struct NewThingLine: View {
+    let store: NoteStore
+    let composing: NoteDashboardModel.Composing
+    let depth: Int
     @Environment(NoteDashboardModel.self) private var model
     @State private var text = ""
     @FocusState private var focused: Bool
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: "plus").font(.system(size: 13)).foregroundStyle(NotionStyle.tertiary)
-            TextField("Note title", text: $text)
+            Image(systemName: composing.kind == .folder ? "folder.badge.plus" : "square.and.pencil")
+                .font(.system(size: 12))
+                .foregroundStyle(NotionStyle.tertiary)
+                .frame(width: 16)
+            TextField(composing.kind == .folder ? "Folder name" : "Note title", text: $text)
                 .textFieldStyle(.plain)
                 .font(.system(size: 14))
                 .focused($focused)
                 .onSubmit(commit)
         }
-        .padding(.horizontal, 8)
-        .frame(height: 34)
+        .padding(.leading, 6 + CGFloat(depth) * 14 + 20)
+        .padding(.trailing, 8)
+        .frame(height: 32)
         .onAppear { focused = true }
         .onChange(of: model.composeTick) { _, _ in focused = true }
         .onExitCommand { dismiss() }
         .onChange(of: focused) { _, focused in
-            // Clicked away from with nothing typed: the line goes rather than sitting
-            // there empty.
             if !focused, text.trimmingCharacters(in: .whitespaces).isEmpty { dismiss() }
         }
     }
 
     private func commit() {
-        let title = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty else { return dismiss() }
+        let wanted = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !wanted.isEmpty else { return dismiss() }
         text = ""
-        guard let note = store.add(text: title) else { return }
-        model.composing = false
-        model.openNoteID = note.id
+        switch composing.kind {
+        case .note:
+            guard let note = store.add(text: wanted, in: composing.parent) else { return }
+            model.composing = nil
+            model.openNoteID = note.id
+        case .folder:
+            guard let path = store.createFolder(named: wanted, in: composing.parent) else { return }
+            model.composing = nil
+            model.expanded.insert(path)
+        }
     }
 
     private func dismiss() {
         text = ""
-        model.composing = false
+        model.composing = nil
     }
 }

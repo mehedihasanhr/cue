@@ -17,8 +17,9 @@ enum URLCommand: Equatable {
     case captureArea, captureWindow, captureFullScreen, captureScrolling, captureText, pickColor
     case newTask(title: String?, notes: String, priority: TaskPriority, project: String?)
     case addSnippet(keyword: String, name: String, text: String)
-    /// A note from `text` (nil: the quick note form).
-    case newNote(text: String?)
+    /// A note from `text` (nil: the quick note form), in `folder` when one is named
+    /// (`cue://note?text=…&folder=Work/Ideas`); the folder is made if it is not there.
+    case newNote(text: String?, folder: String)
     case copy(String)
     case palette, clipboard, panel, clock
     /// Settings, on a page when one is named (`cue://settings/mcp`): the page's name,
@@ -58,7 +59,8 @@ enum URLCommand: Equatable {
             guard let keyword = query["keyword"], !keyword.isEmpty, let text = query["text"], !text.isEmpty else { return nil }
             self = .addSnippet(keyword: keyword, name: query["name"] ?? "", text: text)
         case ["note", "new"], ["note"], ["note", "add"]:
-            self = .newNote(text: query["text"].flatMap { $0.isEmpty ? nil : $0 })
+            self = .newNote(text: query["text"].flatMap { $0.isEmpty ? nil : $0 },
+                            folder: (query["folder"] ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "/ ")))
         case ["clipboard", "copy"], ["copy"]:
             guard let text = query["text"] else { return nil }
             self = .copy(text)

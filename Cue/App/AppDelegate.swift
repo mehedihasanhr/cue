@@ -367,7 +367,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Diagnostics: `--env CUE_DEBUG_NOTE_SCRIPT=1` compiles (does not run) the Apple Notes
         // script for a sample note and logs the outcome.
         if ProcessInfo.processInfo.environment["CUE_DEBUG_NOTE_SCRIPT"] == "1" {
-            let sample = Note(id: "Sample", text: "Sample \"note\"\n\n- one **two**\n- [ ] three\n\n> quote", createdAt: .now, updatedAt: .now)
+            let sample = Note(folder: "", name: "Sample", text: "Sample \"note\"\n\n- one **two**\n- [ ] three\n\n> quote", createdAt: .now, updatedAt: .now)
             for folder in ["Cue", ""] {
                 var error: NSDictionary?
                 let compiled = NSAppleScript(source: NoteSharing.appleNotesScript(sample, folder: folder))?.compileAndReturnError(&error) ?? false
@@ -846,9 +846,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                       if let tab { self?.island?.expand(on: tab) } else { self?.island?.expand() }
                                   },
                                   openFloatingPanel: { [weak self] in self?.toggleHistoryAtPointer() },
-                                  openNote: { [weak self] note, asPage in
+                                  openNote: { [weak self] note, _ in
                                       self?.openNoteDashboard(note: note)
-                                      self?.noteDashboard?.showAsPage(asPage)
+                                      self?.noteDashboard?.show(note: note)
                                   }) { [weak self] task, asPage in
                     self?.openTaskDashboard(task: task)
                     self?.taskDashboard?.showAsPage(asPage)
@@ -884,9 +884,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if let snippet = snippets.add(keyword: keyword, name: name, text: text) {
                 FeedbackHUD.show("Snippet saved", symbol: "text.badge.checkmark", subtitle: "Type \(snippet.keyword) anywhere")
             }
-        case .newNote(let text):
+        case .newNote(let text, let folder):
             guard let text else { quickNote(nil); return }
-            if let note = notes.add(text: text) {
+            if !folder.isEmpty, !notes.folders.contains(folder) {
+                // `Work/Ideas` makes Work as well, as the Finder would.
+                var path = ""
+                for part in folder.components(separatedBy: "/") where !part.isEmpty {
+                    let parent = path
+                    path = parent.isEmpty ? part : parent + "/" + part
+                    if !notes.folders.contains(path) { path = notes.createFolder(named: part, in: parent) ?? path }
+                }
+            }
+            if let note = notes.add(text: text, in: folder) {
                 FeedbackHUD.show("Note saved", symbol: "note.text", duration: .seconds(1.2), subtitle: note.title)
                 NoteSharing.sendToConnected(note, preferences: preferences)
             }

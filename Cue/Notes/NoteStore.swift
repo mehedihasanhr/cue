@@ -6,16 +6,24 @@ import os
 /// folder of notes reads as such anywhere — Finder, iCloud Drive, an Obsidian
 /// vault. The first line that says anything is the title (`TaskText`).
 nonisolated struct Note: Identifiable, Hashable {
+    /// The folder it sits in, relative to the notes folder: "" at the top, else
+    /// "Work" or "Work/Ideas".
+    var folder: String
     /// The file's name without its `.md`.
-    let id: String
+    var name: String
     var text: String
     var createdAt: Date
     var updatedAt: Date
 
+    /// Where it is, as one string: the path from the notes folder without the `.md`.
+    /// Two notes may share a name in different folders, so the path is what is
+    /// unique, and it is what the dashboard holds on to.
+    var id: String { folder.isEmpty ? name : folder + "/" + name }
+
     /// The first line, plain — or the file's name when the text is empty.
     var title: String {
         let line = TaskText.title(of: text)
-        return line.isEmpty ? id : line
+        return line.isEmpty ? name : line
     }
 
     /// What follows the title line, plain and on one line — for a card's preview.
@@ -47,6 +55,10 @@ final class NoteStore {
     private static let bookmarkKey = "notes.folderBookmark"
     /// Newest change first.
     private(set) var notes: [Note] = []
+    /// Every folder under the notes folder, as paths relative to it ("Work",
+    /// "Work/Ideas"), in order. Empty ones are here too — a folder made and not yet
+    /// written in is still a folder.
+    private(set) var folders: [String] = []
     /// Where the notes are now.
     private(set) var folderURL: URL
     /// Whether the folder is the user's, not the container's.
@@ -118,7 +130,13 @@ final class NoteStore {
         for note in notes {
             let from = fileURL(for: note), to = target.appendingPathComponent(note.id + ".md")
             guard !manager.fileExists(atPath: to.path) else { continue }
+            // A note in a sub-folder needs that folder made on the other side first.
+            try? manager.createDirectory(at: to.deletingLastPathComponent(), withIntermediateDirectories: true)
             if (try? manager.copyItem(at: from, to: to)) != nil { try? manager.removeItem(at: from) }
+        }
+        // Folders with nothing in them yet would be lost by the loop above.
+        for folder in folders {
+            try? manager.createDirectory(at: target.appendingPathComponent(folder, isDirectory: true), withIntermediateDirectories: true)
         }
         let attachments = folderURL.appendingPathComponent(Self.attachmentsFolder, isDirectory: true)
         if manager.fileExists(atPath: attachments.path) {
@@ -141,45 +159,168 @@ final class NoteStore {
         folderURL.appendingPathComponent(note.id + ".md")
     }
 
-    /// Reads the folder's top-level `.md` files.
+    /// Reads every `.md` file under the notes folder, sub-folders and all. The
+    /// attachments folder is skipped: what is in it belongs to the notes, and is not
+    /// one.
     func reload() {
         let manager = FileManager.default
-        let keys: Set<URLResourceKey> = [.creationDateKey, .contentModificationDateKey, .isRegularFileKey]
-        let urls = (try? manager.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles])) ?? []
+        let keys: Set<URLResourceKey> = [.creationDateKey, .contentModificationDateKey, .isRegularFileKey, .isDirectoryKey]
         var loaded: [Note] = []
-        for url in urls where url.pathExtension.lowercased() == "md" {
-            guard let values = try? url.resourceValues(forKeys: keys), values.isRegularFile == true,
+        var found: Set<String> = []
+        let root = folderURL.standardizedFileURL.path
+        let walker = manager.enumerator(at: folderURL, includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles, .skipsPackageDescendants])
+        while let url = walker?.nextObject() as? URL {
+            guard let values = try? url.resourceValues(forKeys: keys) else { continue }
+            let relative = Self.relativePath(of: url, under: root)
+            if values.isDirectory == true {
+                // Nothing inside the attachments folder is a note.
+                if relative == Self.attachmentsFolder { walker?.skipDescendants(); continue }
+                found.insert(relative)
+                continue
+            }
+            guard values.isRegularFile == true, url.pathExtension.lowercased() == "md",
                   let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
-            loaded.append(Note(id: url.deletingPathExtension().lastPathComponent, text: text,
+            let folder = (relative as NSString).deletingLastPathComponent
+            loaded.append(Note(folder: folder, name: url.deletingPathExtension().lastPathComponent, text: text,
                                createdAt: values.creationDate ?? .now, updatedAt: values.contentModificationDate ?? .now))
         }
         loaded.sort { $0.updatedAt > $1.updatedAt }
+        let sortedFolders = found.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
         if loaded != notes { notes = loaded }
+        if sortedFolders != folders { folders = sortedFolders }
     }
 
+    /// A file's path relative to the notes folder, with no leading slash.
+    private static func relativePath(of url: URL, under root: String) -> String {
+        let path = url.standardizedFileURL.path
+        guard path.hasPrefix(root) else { return url.lastPathComponent }
+        return String(path.dropFirst(root.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    }
+
+    // MARK: - Folders of notes
+
+    /// The notes directly in `folder` ("" is the top), newest change first.
+    func notes(in folder: String) -> [Note] {
+        notes.filter { $0.folder == folder }
+    }
+
+    /// The folders directly inside `folder` ("" is the top), by name.
+    func subfolders(of folder: String) -> [String] {
+        folders.filter { ($0 as NSString).deletingLastPathComponent == folder }
+    }
+
+    /// Whether `folder` holds anything at all — what decides if it gets a twisty.
+    func isEmpty(_ folder: String) -> Bool {
+        subfolders(of: folder).isEmpty && notes(in: folder).isEmpty
+    }
+
+    /// Makes a folder inside `parent` and returns its path; a name already taken gets
+    /// a number, as a note's does.
     @discardableResult
-    func add(text: String) -> Note? {
+    func createFolder(named name: String, in parent: String = "") -> String? {
+        let wanted = Self.safeName(name, fallback: "Folder")
+        var candidate = wanted
+        var counter = 2
+        while folders.contains(parent.isEmpty ? candidate : parent + "/" + candidate) {
+            candidate = "\(wanted) \(counter)"
+            counter += 1
+        }
+        let path = parent.isEmpty ? candidate : parent + "/" + candidate
+        do {
+            try FileManager.default.createDirectory(at: folderURL.appendingPathComponent(path, isDirectory: true), withIntermediateDirectories: true)
+        } catch {
+            Log.app.error("Could not make the notes folder \(path, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+        reload()
+        return path
+    }
+
+    /// Renames a folder in place; its notes and sub-folders come along.
+    @discardableResult
+    func renameFolder(_ folder: String, to name: String) -> String? {
+        let parent = (folder as NSString).deletingLastPathComponent
+        let wanted = Self.safeName(name, fallback: (folder as NSString).lastPathComponent)
+        let path = parent.isEmpty ? wanted : parent + "/" + wanted
+        guard path != folder else { return folder }
+        guard !folders.contains(path) else { return nil }
+        do {
+            try FileManager.default.moveItem(at: folderURL.appendingPathComponent(folder, isDirectory: true),
+                                             to: folderURL.appendingPathComponent(path, isDirectory: true))
+        } catch {
+            Log.app.error("Could not rename the notes folder \(folder, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+        reload()
+        return path
+    }
+
+    /// Removes a folder and everything in it.
+    func deleteFolder(_ folder: String) {
+        guard !folder.isEmpty else { return }
+        try? FileManager.default.removeItem(at: folderURL.appendingPathComponent(folder, isDirectory: true))
+        reload()
+    }
+
+    /// How many notes a folder holds, its sub-folders included.
+    func noteCount(in folder: String) -> Int {
+        guard !folder.isEmpty else { return notes.count }
+        return notes.filter { $0.folder == folder || $0.folder.hasPrefix(folder + "/") }.count
+    }
+
+    /// Moves a note into `folder`; its name is kept unless something there has it.
+    @discardableResult
+    func move(_ note: Note, to folder: String) -> Note? {
+        guard note.folder != folder else { return note }
+        guard let index = notes.firstIndex(where: { $0.id == note.id }) else { return nil }
+        let name = uniqueName(note.name, in: folder, except: nil)
+        var moved = notes[index]
+        moved.folder = folder
+        moved.name = name
+        guard write(moved) else { return nil }
+        try? FileManager.default.removeItem(at: fileURL(for: note))
+        notes[index] = moved
+        return moved
+    }
+
+    /// Nothing Finder or iCloud objects to, at most 80 characters.
+    private static func safeName(_ name: String, fallback: String) -> String {
+        let forbidden = CharacterSet(charactersIn: "/\\:?*\"<>|").union(.newlines).union(.controlCharacters)
+        var clean = name.components(separatedBy: forbidden).joined(separator: " ")
+            .trimmingCharacters(in: CharacterSet.whitespaces.union(CharacterSet(charactersIn: ".")))
+        if clean.count > 80 { clean = String(clean.prefix(80)).trimmingCharacters(in: .whitespaces) }
+        return clean.isEmpty ? fallback : clean
+    }
+
+    // MARK: - Notes
+
+    /// A new note, in `folder` ("" is the top).
+    @discardableResult
+    func add(text: String, in folder: String = "") -> Note? {
         let text = text.trimmingCharacters(in: .newlines)
         guard !TaskText.plain(TaskText.titleLine(of: text)).isEmpty || !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        let name = uniqueName(Note.fileName(for: text), except: nil)
-        let note = Note(id: name, text: text, createdAt: .now, updatedAt: .now)
+        let name = uniqueName(Note.fileName(for: text), in: folder, except: nil)
+        let note = Note(folder: folder, name: name, text: text, createdAt: .now, updatedAt: .now)
         guard write(note) else { return nil }
         notes.insert(note, at: 0)
+        if !folder.isEmpty, !folders.contains(folder) { reload() }
         return note
     }
 
-    /// Saves new text; a changed title renames the file (the note's id with it).
+    /// Saves new text; a changed title renames the file (the note's id with it). The
+    /// note stays in its folder.
     @discardableResult
     func update(_ note: Note, text: String) -> Note? {
-        guard let index = notes.firstIndex(where: { $0.id == note.id }) else { return add(text: text) }
+        guard let index = notes.firstIndex(where: { $0.id == note.id }) else { return add(text: text, in: note.folder) }
         let text = text.trimmingCharacters(in: .newlines)
         var updated = notes[index]
         updated.text = text
         updated.updatedAt = .now
         let wanted = Note.fileName(for: text)
-        if wanted != note.id, TaskText.title(of: note.text) != TaskText.title(of: text) {
-            let name = uniqueName(wanted, except: note.id)
-            let renamed = Note(id: name, text: text, createdAt: updated.createdAt, updatedAt: updated.updatedAt)
+        if wanted != note.name, TaskText.title(of: note.text) != TaskText.title(of: text) {
+            let name = uniqueName(wanted, in: note.folder, except: note.name)
+            var renamed = updated
+            renamed.name = name
             guard write(renamed) else { return nil }
             try? FileManager.default.removeItem(at: fileURL(for: note))
             updated = renamed
@@ -198,7 +339,9 @@ final class NoteStore {
 
     private func write(_ note: Note) -> Bool {
         do {
-            try note.text.write(to: fileURL(for: note), atomically: true, encoding: .utf8)
+            let url = fileURL(for: note)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try note.text.write(to: url, atomically: true, encoding: .utf8)
             return true
         } catch {
             Log.app.error("Could not write note \(note.id, privacy: .public): \(error.localizedDescription, privacy: .public)")
@@ -206,11 +349,12 @@ final class NoteStore {
         }
     }
 
-    /// `name`, or `name 2`, `name 3`… when another note has it.
-    private func uniqueName(_ name: String, except own: String?) -> String {
+    /// `name`, or `name 2`, `name 3`… when another note in the same folder has it.
+    private func uniqueName(_ name: String, in folder: String, except own: String?) -> String {
+        let directory = folder.isEmpty ? folderURL : folderURL.appendingPathComponent(folder, isDirectory: true)
         var candidate = name
         var counter = 2
-        while candidate != own, FileManager.default.fileExists(atPath: folderURL.appendingPathComponent(candidate + ".md").path) {
+        while candidate != own, FileManager.default.fileExists(atPath: directory.appendingPathComponent(candidate + ".md").path) {
             candidate = "\(name) \(counter)"
             counter += 1
         }
