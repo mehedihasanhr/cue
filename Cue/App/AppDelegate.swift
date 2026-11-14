@@ -146,6 +146,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         coordinator.onBusyChanged = { [weak self] busy in self?.island?.setHidden(busy) }
         coordinator.onColorPicked = { [weak self] color in self?.handlePickedColor(color) }
 
+        tasks.restoreOwnFolder()
         applySyncFolder()
         focusTimer.announce = { [weak self] status in
             guard let self else { return }
@@ -1836,7 +1837,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func showSettings(_ sender: Any?) {
         if settingsWindow == nil {
-            let controller = SettingsWindowController(model: model, shortcuts: shortcuts, library: library, clipboard: clipboard, preferences: preferences, clock: prayerClock, share: share, sync: syncFolder, notes: notes, taskSync: taskSync, ocrEngines: ocrEngines, agents: agentConnector, studio: studio, taskMCP: taskMCP)
+            let controller = SettingsWindowController(model: model, shortcuts: shortcuts, library: library, clipboard: clipboard, preferences: preferences, clock: prayerClock, share: share, sync: syncFolder, notes: notes, tasks: tasks, taskSync: taskSync, ocrEngines: ocrEngines, agents: agentConnector, studio: studio, taskMCP: taskMCP)
             controller.onClose = { [weak self] in
                 self?.settingsWindow = nil
                 self?.shortcuts.isRecording = false

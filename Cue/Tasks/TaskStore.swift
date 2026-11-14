@@ -1,5 +1,7 @@
+import AppKit
 import Foundation
 import Observation
+import os
 import SwiftUI
 
 /// A project (a group of tasks); projects can nest inside one another.
@@ -410,8 +412,86 @@ final class TaskStore {
         file.changed = { [weak self] data in self?.load(data) }
     }
 
-    /// Keeps the tasks in `folder` (nil: the container), taking what is there.
+    /// The folder the shared sync setting asks for (Settings › General), kept so a
+    /// task folder of its own can be given up and this taken back.
+    @ObservationIgnored private var syncFolderURL: URL?
+    /// The folder chosen for the tasks alone (Settings › Tasks), which wins over the
+    /// shared one.
+    private(set) var ownFolderURL: URL?
+    @ObservationIgnored private var accessingOwn = false
+    private static let folderBookmarkKey = "tasks.folderBookmark"
+
+    /// Where `tasks.json` is now: the folder chosen for the tasks, else the shared
+    /// sync folder, else Cue's own.
+    var folderURL: URL { file.url.deletingLastPathComponent() }
+    /// Whether the tasks have a folder of their own, rather than following the
+    /// shared one.
+    var folderIsCustom: Bool { ownFolderURL != nil }
+
+    /// Takes up the folder chosen for the tasks last time, if there still is one.
+    /// Called once at launch, before `useSyncFolder`.
+    func restoreOwnFolder() {
+        guard let data = UserDefaults.standard.data(forKey: Self.folderBookmarkKey) else { return }
+        var stale = false
+        guard let resolved = try? URL(resolvingBookmarkData: data, options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: &stale),
+              FileManager.default.fileExists(atPath: resolved.path) else { return }
+        ownFolderURL = resolved
+        accessingOwn = resolved.startAccessingSecurityScopedResource()
+    }
+
+    /// Keeps the tasks in `folder` (nil: the container), taking what is there. A
+    /// folder chosen for the tasks alone wins: the shared setting is remembered, and
+    /// takes over again if that folder is given up.
     func useSyncFolder(_ folder: URL?) {
+        syncFolderURL = folder
+        relocate(to: ownFolderURL ?? folder)
+    }
+
+    /// Asks for a folder to keep `cue-tasks.json` in. One in iCloud Drive or Dropbox
+    /// puts the tasks on another Mac; a file already there is taken as it is, rather
+    /// than being written over.
+    func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Keep Tasks Here"
+        panel.message = "Choose a folder for your tasks — one in iCloud Drive or Dropbox syncs them between Macs"
+        panel.directoryURL = ownFolderURL ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+        guard panel.runModal() == .OK, let chosen = panel.url, chosen != ownFolderURL else { return }
+        do {
+            let bookmark = try chosen.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
+            UserDefaults.standard.set(bookmark, forKey: Self.folderBookmarkKey)
+            stopAccessingOwn()
+            ownFolderURL = chosen
+            accessingOwn = chosen.startAccessingSecurityScopedResource()
+            relocate(to: chosen)
+            Log.app.info("Tasks folder set to \(chosen.path, privacy: .public)")
+        } catch {
+            Log.app.error("Could not bookmark the tasks folder: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Gives up the tasks' own folder; the shared sync folder (or Cue's own) takes
+    /// over again, and the tasks come along.
+    func useDefaultFolder() {
+        guard ownFolderURL != nil else { return }
+        UserDefaults.standard.removeObject(forKey: Self.folderBookmarkKey)
+        stopAccessingOwn()
+        ownFolderURL = nil
+        relocate(to: syncFolderURL)
+    }
+
+    func revealFolder() {
+        NSWorkspace.shared.activateFileViewerSelecting([file.url])
+    }
+
+    private func stopAccessingOwn() {
+        if accessingOwn { ownFolderURL?.stopAccessingSecurityScopedResource() }
+        accessingOwn = false
+    }
+
+    private func relocate(to folder: URL?) {
         if let data = file.relocate(to: folder, current: try? JSONEncoder().encode(File(projects: projects, tasks: tasks, deleted: deletedIDs))) { load(data) }
     }
 

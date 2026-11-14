@@ -809,6 +809,10 @@ struct TasksSettingsView: View {
 
     @Environment(AppPreferences.self) private var preferences
     @Environment(TaskSync.self) private var sync: TaskSync?
+    @Environment(TaskStore.self) private var tasks: TaskStore?
+    /// The shared folder (Settings › General); named apart from `sync`, which is the
+    /// remote server.
+    @Environment(SyncFolder.self) private var syncFolder: SyncFolder?
     @Environment(TaskMCPController.self) private var mcp: TaskMCPController?
     @Environment(SettingsNavigation.self) private var navigation
     @State private var serverCheck: String?
@@ -818,6 +822,28 @@ struct TasksSettingsView: View {
     var body: some View {
         @Bindable var preferences = preferences
         SettingsPane(.tasks) {
+            SettingsGroup("Where tasks live") {
+                if let tasks {
+                    SettingsRow(tasks.folderIsCustom ? tasks.folderURL.lastPathComponent : syncFolder?.isOn == true ? "The shared sync folder" : "Cue's own folder",
+                                subtitle: tasks.folderURL.path(percentEncoded: false), symbol: "folder", tint: .green) {
+                        HStack(spacing: 8) {
+                            Button("Choose") { tasks.chooseFolder() }
+                            Button(action: { tasks.revealFolder() }) {
+                                Image(systemName: "arrow.up.forward.app")
+                            }
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(.secondary)
+                            .help("Reveal in Finder")
+                        }
+                    }
+                    if tasks.folderIsCustom {
+                        SettingsRow("Default folder", subtitle: syncFolder?.isOn == true ? "Back to the shared sync folder" : "Back to Cue's own folder") {
+                            Button("Use Default Folder") { tasks.useDefaultFolder() }
+                        }
+                    }
+                }
+            }
+
             SettingsGroup("AI agents") {
                 SettingsRow("MCP", subtitle: mcpStatus, symbol: SettingsSection.mcp.symbol, tint: SettingsSection.mcp.tint) {
                     Button("Set Up") { navigation.go(.mcp) }
