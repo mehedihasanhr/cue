@@ -58,6 +58,7 @@ enum DebugCommands {
         case "panel": NSApp.windows.first { $0 is QuickTaskPanel && $0.isVisible }
         case "pinned": PinnedCaptureWindow.debugWindows.last
         case "notes": NSApp.windows.first { $0.title == "Cue Notes" && $0.isVisible }
+        case "player": NSApp.windows.first { $0.title == "Cue Mini Player" && $0.isVisible }
         default: NSApp.windows.first { $0.title == "Cue Tasks" && $0.isVisible } ?? NSApp.keyWindow
         }
         let responder = window?.firstResponder

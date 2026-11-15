@@ -58,6 +58,15 @@ final class NowPlaying {
         }
 
         var isRunning: Bool { !NSRunningApplication.runningApplications(withBundleIdentifier: rawValue).isEmpty }
+        /// Whether the app is playing anything out of the speakers right now, asked
+        /// of CoreAudio rather than of the app. Nil when it cannot be told.
+        var isAudible: Bool? {
+            let answers = NSRunningApplication.runningApplications(withBundleIdentifier: rawValue)
+                .compactMap { AudioActivity.isPlayingOutput(pid: $0.processIdentifier) }
+            // Nil when nothing could be asked, so the caller can fall back rather
+            // than take silence for an answer.
+            return answers.isEmpty ? nil : answers.contains(true)
+        }
         var icon: NSImage? {
             NSWorkspace.shared.urlForApplication(withBundleIdentifier: rawValue).map { NSWorkspace.shared.icon(forFile: $0.path) }
         }
@@ -369,7 +378,11 @@ final class NowPlaying {
             // "(3) Title - YouTube": the count is YouTube's unread notifications.
             let name = chosen.title.replacingOccurrences(of: " - YouTube Music", with: "").replacingOccurrences(of: " - YouTube", with: "")
                 .replacingOccurrences(of: #"^\(\d+\)\s*"#, with: "", options: .regularExpression)
-            let playing = guessed?.id == videoID ? guessed?.playing ?? true : true
+            // An open tab is not a playing one. Ask CoreAudio whether the browser is
+            // actually making a sound; failing that, the last press of Cue's own
+            // button; failing that, paused — a tab sitting there is the usual case,
+            // and a pause button over a silent video is the worse of the two wrongs.
+            let playing = browser.isAudible ?? (guessed?.id == videoID ? guessed?.playing ?? false : false)
             show(Track(id: videoID, title: name, artist: "", album: "YouTube", duration: 0), from: browser,
                  playing: playing, at: 0, artworkURL: artworkURL, blocked: true)
         }

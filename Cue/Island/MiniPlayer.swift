@@ -79,6 +79,9 @@ final class MiniPlayerController {
         panel.hidesOnDeactivate = false
         panel.isMovableByWindowBackground = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        // Named so diagnostics can find it (`cue://debug/snapshot?window=player`);
+        // the title is never drawn on a borderless panel.
+        panel.title = "Cue Mini Player"
         let host = FirstMouseHostingView(rootView: MiniPlayerView(nowPlaying: nowPlaying, model: model,
                                                                   toggle: { [weak self] in self?.toggleSize() },
                                                                   close: { [weak self] in self?.close() }))
