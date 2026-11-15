@@ -146,12 +146,48 @@ struct MiniPlayerView: View {
 
     // MARK: The pill
 
+    @ViewBuilder
     private var pill: some View {
+        if nowPlaying.track == nil { idlePill } else { playingPill }
+    }
+
+    /// Nothing is playing. The same shape as the pill with a track in it, so the
+    /// window does not jump when one starts — but a note in the well instead of an
+    /// empty grey square, a line saying what will happen, and no transport buttons:
+    /// a play button with nothing to play did nothing, and looked it. The second
+    /// line is kept short enough for the width that is left beside the critter.
+    private var idlePill: some View {
+        HStack(spacing: 10) {
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(well)
+                .overlay {
+                    Icon("music.note", size: 18, weight: .medium)
+                        .foregroundStyle(faint)
+                }
+                .frame(width: 44, height: 44)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Nothing playing")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(quiet)
+                    .lineLimit(1)
+                Text("Play something to see it here")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(faint)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            critter(CueCritter(side: 26, mood: .playing(false, trackID: "idle")))
+                .padding(.trailing, 2)
+        }
+        .overlay(alignment: .topTrailing) { if hovering { closeButton.offset(x: 6, y: -6) } }
+    }
+
+    private var playingPill: some View {
         HStack(spacing: 10) {
             artwork(side: 44, radius: 11)
                 .onTapGesture(perform: toggle)
             VStack(alignment: .leading, spacing: 1) {
-                Text(nowPlaying.track?.title ?? "Nothing playing")
+                Text(nowPlaying.track?.title ?? "")
                     .font(.system(size: 12.5, weight: .semibold))
                     .lineLimit(1)
                 Text(nowPlaying.track?.artist ?? nowPlaying.player?.name ?? "")
