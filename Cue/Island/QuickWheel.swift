@@ -4,7 +4,7 @@ import SwiftUI
 /// What the quick wheel offers, clockwise from the top. The same things the
 /// shortcuts and the menu bar do, in one ring under the pointer.
 enum QuickAction: String, CaseIterable, Identifiable, Sendable {
-    case captureArea, captureWindow, captureFullScreen, captureText, pickColor, quickTask, quickNote, record
+    case captureArea, captureWindow, captureFullScreen, captureScrolling, captureText, pickColor, quickTask, quickNote, record
 
     var id: Self { self }
 
@@ -14,6 +14,7 @@ enum QuickAction: String, CaseIterable, Identifiable, Sendable {
         case .captureArea: "Area"
         case .captureWindow: "Window"
         case .captureFullScreen: "Screen"
+        case .captureScrolling: "Scroll"
         case .captureText: "Text"
         case .pickColor: "Color"
         case .quickTask: "Task"
@@ -28,6 +29,7 @@ enum QuickAction: String, CaseIterable, Identifiable, Sendable {
         case .captureArea: "Capture selected area"
         case .captureWindow: "Capture window"
         case .captureFullScreen: "Capture screen"
+        case .captureScrolling: "Scrolling capture"
         case .captureText: "Capture text"
         case .pickColor: "Pick a color"
         case .quickTask: "Quick task"
@@ -41,6 +43,7 @@ enum QuickAction: String, CaseIterable, Identifiable, Sendable {
         case .captureArea: "viewfinder"
         case .captureWindow: "macwindow"
         case .captureFullScreen: "display"
+        case .captureScrolling: "rectangle.expand.vertical"
         case .captureText: "text.viewfinder"
         case .pickColor: "eyedropper"
         case .quickTask: "checklist"
@@ -56,7 +59,7 @@ enum QuickAction: String, CaseIterable, Identifiable, Sendable {
     /// segment is under the pointer: the captures, the colors, the notes, the tasks.
     var collection: QuickCollection? {
         switch self {
-        case .captureArea, .captureWindow, .captureFullScreen, .captureText: .captures
+        case .captureArea, .captureWindow, .captureFullScreen, .captureScrolling, .captureText: .captures
         case .pickColor: .colors
         case .quickNote: .notes
         case .quickTask: .tasks

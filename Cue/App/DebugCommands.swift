@@ -17,6 +17,7 @@ import WebKit
 ///     cue://debug/size?width=1400&height=1000   the key window resized
 ///     cue://debug/markdown                  the editor's Markdown written to ~/Pictures/Cue Debug/markdown.md
 ///     cue://debug/note?index=0&page=1       the notes dashboard with that note open
+///     cue://debug/wheel[?hovered=record]    the quick wheel on screen, a segment lit
 ///     cue://debug/image-frame[?off=1]       holds every image's resize frame open
 ///     cue://debug/snapshot?name=a           the Tasks window drawn to ~/Pictures/Cue Debug/a.png
 ///                                            (window=pinned draws the newest pinned capture instead,
@@ -44,6 +45,7 @@ enum DebugCommands {
     static func run(_ url: URL, tasks: TaskStore, notes: NoteStore, createTask: (TaskSeed) -> Void = { _ in },
                     pinCapture: (Int) -> Void = { _ in }, openIsland: (IslandTab?) -> Void = { _ in },
                     openFloatingPanel: @escaping () -> Void = {}, openNote: (Note, Bool) -> Void = { _, _ in },
+                    showWheel: (QuickAction?, Bool) -> Void = { _, _ in },
                     openTask: (TaskItem, Bool) -> Void) {
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         let query = Dictionary((components?.queryItems ?? []).map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { $1 })
@@ -59,6 +61,7 @@ enum DebugCommands {
         case "pinned": PinnedCaptureWindow.debugWindows.last
         case "notes": NSApp.windows.first { $0.title == "Cue Notes" && $0.isVisible }
         case "player": NSApp.windows.first { $0.title == "Cue Mini Player" && $0.isVisible }
+        case "wheel": NSApp.windows.first { $0.title == "Cue Quick Wheel" && $0.isVisible }
         default: NSApp.windows.first { $0.title == "Cue Tasks" && $0.isVisible } ?? NSApp.keyWindow
         }
         let responder = window?.firstResponder
@@ -277,6 +280,9 @@ enum DebugCommands {
                 .max { ($0.documentView?.frame.height ?? 0) < ($1.documentView?.frame.height ?? 0) }
             page?.contentView.scroll(to: NSPoint(x: 0, y: y))
             page.map { $0.reflectScrolledClipView($0.contentView) }
+        case "/wheel":
+            // The quick wheel on screen, optionally with one segment lit.
+            showWheel(QuickAction(rawValue: query["hovered"] ?? ""), query["hub"] == "1")
         case "/image-frame":
             // Every image in the editor shows its resize frame, for a snapshot.
             ImageBlockView.debugShowsFrame = query["off"] != "1"

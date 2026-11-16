@@ -170,6 +170,9 @@ final class QuickWheelController {
         panel.level = .popUpMenu
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        // Named so diagnostics can find it (`cue://debug/snapshot?window=wheel`);
+        // the title is never drawn on a borderless panel.
+        panel.title = "Cue Quick Wheel"
         // The ring takes its own clicks, so choosing a segment never also clicks
         // whatever happens to be under it.
         let content = QuickWheelHitView(frame: CGRect(origin: .zero, size: WheelGeometry.window))

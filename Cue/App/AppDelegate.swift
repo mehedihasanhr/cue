@@ -850,6 +850,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                   openNote: { [weak self] note, _ in
                                       self?.openNoteDashboard(note: note)
                                       self?.noteDashboard?.show(note: note)
+                                  },
+                                  showWheel: { [weak self] hovered, inHub in
+                                      self?.quickWheel.debugShow(hovered: hovered, inHub: inHub)
                                   }) { [weak self] task, asPage in
                     self?.openTaskDashboard(task: task)
                     self?.taskDashboard?.showAsPage(asPage)
@@ -1784,6 +1787,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .captureArea: coordinator.captureArea(fromMenu: false)
         case .captureWindow: coordinator.captureWindow(fromMenu: false)
         case .captureFullScreen: coordinator.captureFullScreen(fromMenu: false)
+        case .captureScrolling: coordinator.captureScrolling(fromMenu: false)
         case .captureText: coordinator.captureText(fromMenu: false)
         case .pickColor: pickColor(nil)
         case .quickTask: quickTask(nil)
