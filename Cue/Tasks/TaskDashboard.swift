@@ -9,6 +9,11 @@ import UniformTypeIdentifiers
 @Observable
 @MainActor
 final class TaskDashboardModel {
+    #if DEBUG
+    /// The dashboard on screen, so a debug URL can reach its state (cue://debug/sort).
+    static weak var current: TaskDashboardModel?
+    #endif
+
     enum Layout: String { case list, board }
 
     /// A name asked for in a sheet: a new project (in a parent, or at the top) or a new name.
@@ -98,6 +103,11 @@ final class TaskDashboardModel {
     var manualOrder: [UUID] {
         didSet { UserDefaults.standard.set(manualOrder.map(\.uuidString), forKey: Self.orderKey) }
     }
+    /// The column the table is sorted by, if any. A table starts unsorted — in the
+    /// order tasks were dragged into — and clicking a heading cycles that column
+    /// from greatest first, to least first, to no sort at all. It is not kept
+    /// between sessions: it is a way of looking through the list, not a setting.
+    var sort: TaskSort?
     /// A task being dragged by its row or card, and where it would land.
     var draggingTaskID: UUID?
     var taskDrop: TaskDrop?
@@ -123,6 +133,9 @@ final class TaskDashboardModel {
         manualOrder = (defaults.stringArray(forKey: Self.orderKey) ?? []).compactMap(UUID.init(uuidString:))
         let stored = defaults.double(forKey: Self.peekWidthKey)
         peekWidth = stored > 0 ? min(max(CGFloat(stored), TaskDashboardView.peekWidths.lowerBound), TaskDashboardView.peekWidths.upperBound) : TaskDashboardView.peekWidth
+        #if DEBUG
+        Self.current = self
+        #endif
     }
 
     var isSearching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
@@ -1088,13 +1101,22 @@ private struct TaskTable: View {
     @Environment(TaskDashboardModel.self) private var model
     @Namespace private var motion
 
+    /// Sorting by project sorts by its name, which only the store knows.
+    private var projectNames: [UUID: String] {
+        Dictionary(store.projects.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+    }
+
     var body: some View {
         GeometryReader { proxy in
             ScrollView(.vertical) {
                 ScrollView(.horizontal, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(groups, id: \.self) { status in
-                            TableGroup(store: store, status: status, tasks: TaskDashboardQuery.sorted(tasks.filter { $0.status == status }, order: model.manualOrder))
+                            TableGroup(store: store, status: status,
+                                       tasks: TaskDashboardQuery.sorted(tasks.filter { $0.status == status },
+                                                                        order: model.manualOrder,
+                                                                        sort: model.sort,
+                                                                        projectNames: projectNames))
                         }
                     }
                     .frame(width: max(proxy.size.width - (TaskDashboardMain.margin - TableColumns.gutter) * 2, TableColumns.minimumWidth), alignment: .leading)
@@ -1180,15 +1202,15 @@ private struct TableGroup: View {
 
     private var columnHeadings: some View {
         HStack(spacing: 0) {
-            heading("Task name", symbol: "textformat", width: nil)
+            heading("Task name", symbol: "textformat", column: .name, width: nil)
             Hairline(axis: .vertical)
-            heading("Status", symbol: "circle.dotted", width: TableColumns.status)
+            heading("Status", symbol: "circle.dotted", column: .status, width: TableColumns.status)
             Hairline(axis: .vertical)
-            heading("Priority", symbol: "flag", width: TableColumns.priority)
+            heading("Priority", symbol: "flag", column: .priority, width: TableColumns.priority)
             Hairline(axis: .vertical)
-            heading("Project", symbol: "folder", width: TableColumns.project)
+            heading("Project", symbol: "folder", column: .project, width: TableColumns.project)
             Hairline(axis: .vertical)
-            heading("Updated", symbol: "clock", width: TableColumns.updated)
+            heading("Updated", symbol: "clock", column: .updated, width: TableColumns.updated)
         }
         .fixedSize(horizontal: false, vertical: true)
         .overlay(alignment: .top) { Hairline() }
@@ -1196,17 +1218,38 @@ private struct TableGroup: View {
         .padding(.leading, TableColumns.gutter)
     }
 
-    private func heading(_ title: String, symbol: String, width: CGFloat?) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: symbol).font(.system(size: 12))
-            Text(title).font(.system(size: 14))
-            Spacer(minLength: 0)
+    /// A heading is a button: clicking it sorts by that column, greatest first, then
+    /// least first, then back to the list's own order. The arrow only shows on the
+    /// column being sorted by, so an untouched table says nothing about sorting.
+    private func heading(_ title: String, symbol: String, column: TaskColumn, width: CGFloat?) -> some View {
+        let sort = model.sort?.column == column ? model.sort : nil
+        return Button {
+            withAnimation(.easeOut(duration: 0.18)) {
+                model.sort = TaskSort.next(after: model.sort, column: column)
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: symbol).font(.system(size: 12))
+                Text(title).font(.system(size: 14))
+                Spacer(minLength: 0)
+                if let sort {
+                    Image(systemName: sort.descending ? "arrow.down" : "arrow.up")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(NotionStyle.text)
+                        .transition(.opacity)
+                }
+            }
+            .foregroundStyle(NotionStyle.secondary)
+            .padding(.horizontal, 8)
+            .frame(height: 34)
+            .frame(minWidth: width == nil ? TableColumns.name : nil, maxWidth: width ?? .infinity)
+            .frame(width: width)
+            .contentShape(Rectangle())
         }
-        .foregroundStyle(NotionStyle.secondary)
-        .padding(.horizontal, 8)
-        .frame(height: 34)
-        .frame(minWidth: width == nil ? TableColumns.name : nil, maxWidth: width ?? .infinity)
-        .frame(width: width)
+        .buttonStyle(NotionHoverStyle())
+        .help(sort == nil ? "Sort by \(title.lowercased())"
+                          : sort?.descending == true ? "Sorted, greatest first — click for least first"
+                                                     : "Sorted, least first — click to stop sorting")
     }
 }
 

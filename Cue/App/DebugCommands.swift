@@ -19,6 +19,7 @@ import WebKit
 ///     cue://debug/note?index=0&page=1       the notes dashboard with that note open
 ///     cue://debug/wheel[?hovered=record]    the quick wheel on screen, a segment lit
 ///     cue://debug/image-frame[?off=1]       holds every image's resize frame open
+///     cue://debug/sort?column=priority      a table heading clicked (again: the other way, then off)
 ///     cue://debug/snapshot?name=a           the Tasks window drawn to ~/Pictures/Cue Debug/a.png
 ///                                            (window=pinned draws the newest pinned capture instead,
 ///                                             window=notes the notes dashboard)
@@ -74,6 +75,10 @@ enum DebugCommands {
             openNote(notes.notes[index], query["page"] == "1")
         case "/open":
             let index = Int(query["index"] ?? "0") ?? 0
+            #if DEBUG
+            // A negative index closes whatever is open, for a clear look at the table.
+            if index < 0 { TaskDashboardModel.current?.closePeek(); return }
+            #endif
             guard tasks.tasks.indices.contains(index) else { return }
             let start = Date()
             openTask(tasks.tasks[index], query["page"] == "1")
@@ -283,6 +288,16 @@ enum DebugCommands {
         case "/wheel":
             // The quick wheel on screen, optionally with one segment lit.
             showWheel(QuickAction(rawValue: query["hovered"] ?? ""), query["hub"] == "1")
+        case "/sort":
+            // A table heading clicked, as the button does it: cue://debug/sort?column=priority
+            // (again for the other way, a third time for no sort), or ?off=1 to clear it.
+            guard let model = TaskDashboardModel.current else { return }
+            if query["off"] == "1" {
+                model.sort = nil
+            } else if let column = TaskColumn(rawValue: query["column"] ?? "") {
+                model.sort = TaskSort.next(after: model.sort, column: column)
+            }
+            write(report: model.sort.map { "\($0.column.rawValue) \($0.descending ? "descending" : "ascending")" } ?? "none", to: "sort.txt")
         case "/image-frame":
             // Every image in the editor shows its resize frame, for a snapshot.
             ImageBlockView.debugShowsFrame = query["off"] != "1"

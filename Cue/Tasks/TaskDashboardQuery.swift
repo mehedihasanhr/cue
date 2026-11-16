@@ -179,3 +179,74 @@ nonisolated enum PageIcon: Hashable {
         "⚙️", "🔍", "✏️", "🤝", "💎", "🌙", "☀️", "🌈",
     ]
 }
+
+// MARK: - Sorting the table
+
+/// A column of the task table, as something to sort by.
+nonisolated enum TaskColumn: String, CaseIterable, Hashable {
+    case name, status, priority, project, updated
+}
+
+/// Which column the table is sorted by, and which way. No sort at all is `nil`
+/// wherever this is held: a table starts in the order tasks were dragged into.
+nonisolated struct TaskSort: Equatable {
+    var column: TaskColumn
+    /// The greatest first: Z to A, the newest, the most pressing, the last stage.
+    var descending: Bool
+
+    /// Clicking a heading: the greatest first, then the least, then no sort at all.
+    /// Clicking a different heading starts that column over.
+    static func next(after current: TaskSort?, column: TaskColumn) -> TaskSort? {
+        guard let current, current.column == column else { return TaskSort(column: column, descending: true) }
+        return current.descending ? TaskSort(column: column, descending: false) : nil
+    }
+}
+
+extension TaskDashboardQuery {
+    /// Tasks in a column's order. Ties keep the order they would have had unsorted,
+    /// so clicking a heading never shuffles rows it has nothing to say about.
+    static func sorted(_ tasks: [TaskItem], order: [UUID] = [], sort: TaskSort?, projectNames: [UUID: String] = [:]) -> [TaskItem] {
+        let base = sorted(tasks, order: order)
+        guard let sort else { return base }
+        let place = Dictionary(uniqueKeysWithValues: base.enumerated().map { ($1.id, $0) })
+        return base.sorted { lhs, rhs in
+            let side = compare(lhs, rhs, column: sort.column, projectNames: projectNames)
+            guard side != .orderedSame else { return (place[lhs.id] ?? 0) < (place[rhs.id] ?? 0) }
+            return sort.descending ? side == .orderedDescending : side == .orderedAscending
+        }
+    }
+
+    /// Two tasks as a column shows them, least first: A before Z, to do before
+    /// complete, low before urgent, older before newer.
+    static func compare(_ lhs: TaskItem, _ rhs: TaskItem, column: TaskColumn, projectNames: [UUID: String] = [:]) -> ComparisonResult {
+        switch column {
+        case .name:
+            return lhs.title.localizedStandardCompare(rhs.title)
+        case .status:
+            return rank(statusOrder.firstIndex(of: lhs.status), statusOrder.firstIndex(of: rhs.status))
+        case .priority:
+            // allCases runs urgent first, so the most pressing is the greatest here.
+            let all = TaskPriority.allCases
+            let left = all.firstIndex(of: lhs.priority).map { all.count - $0 }
+            let right = all.firstIndex(of: rhs.priority).map { all.count - $0 }
+            return rank(left, right)
+        case .project:
+            let left = lhs.projectID.flatMap { projectNames[$0] } ?? ""
+            let right = rhs.projectID.flatMap { projectNames[$0] } ?? ""
+            // No project is the least: it gathers at one end rather than among the names.
+            if left.isEmpty != right.isEmpty { return left.isEmpty ? .orderedAscending : .orderedDescending }
+            return left.localizedStandardCompare(right)
+        case .updated:
+            return rank(lhs.updatedAt, rhs.updatedAt)
+        }
+    }
+
+    private static func rank<Value: Comparable>(_ lhs: Value?, _ rhs: Value?) -> ComparisonResult {
+        switch (lhs, rhs) {
+        case let (left?, right?): return left == right ? .orderedSame : (left < right ? .orderedAscending : .orderedDescending)
+        case (nil, .some): return .orderedAscending
+        case (.some, nil): return .orderedDescending
+        case (nil, nil): return .orderedSame
+        }
+    }
+}
