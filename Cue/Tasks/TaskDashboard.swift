@@ -1080,6 +1080,20 @@ private struct PageIconButton: View {
 
 // MARK: - Table
 
+/// Dates in the table: 12 Dec, 2026 — the day first, the month in the reader's own
+/// language. (A verbatim style writes the month as "M12"; a formatter with the
+/// pattern gives it a name.)
+@MainActor
+enum TaskDate {
+    private static let formatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "dd MMM, yyyy"
+        return formatter
+    }()
+
+    static func short(_ date: Date) -> String { formatter.string(from: date) }
+}
+
 /// The table's columns: a gutter for the drag handle, the name taking what is left,
 /// and fixed widths for the properties.
 private enum TableColumns {
@@ -1292,7 +1306,7 @@ private struct TableRow: View {
                 }
                 Hairline(axis: .vertical)
                 cell(width: TableColumns.updated) {
-                    Text(task.updatedAt.formatted(date: .abbreviated, time: .omitted))
+                    Text(TaskDate.short(task.updatedAt))
                         .font(.system(size: 13))
                         .foregroundStyle(NotionStyle.secondary)
                         .help(task.updatedAt.formatted(date: .complete, time: .shortened))
