@@ -48,11 +48,6 @@ final class SensoryOS {
     var notificationsEnabled: Bool {
         didSet { defaults.set(notificationsEnabled, forKey: Keys.notifications) }
     }
-    /// Cue's client ID on a server that doesn't let apps register themselves (an admin
-    /// adds Cue as an OAuth app there). Empty: Cue registers itself.
-    var clientIDText: String {
-        didSet { defaults.set(clientIDText, forKey: Keys.clientID) }
-    }
 
     /// A Sensory OS notification arrived: for the island. The URL opens it.
     @ObservationIgnored var onNotification: (SOSNotification, URL?) -> Void = { _, _ in }
@@ -86,7 +81,6 @@ final class SensoryOS {
         static let notificationsSeen = "sensoryos.notifications.seen"
         static let dismissed = "sensoryos.dismissed"
         static let lastSync = "sensoryos.lastSync"
-        static let clientID = "sensoryos.clientID"
         static func cursor(_ scope: String, _ agency: String) -> String { "sensoryos.cursor.\(scope).\(agency)" }
     }
 
@@ -95,7 +89,6 @@ final class SensoryOS {
         serverText = defaults.string(forKey: Keys.server) ?? SOSServer.production.absoluteString
         scope = defaults.string(forKey: Keys.scope) ?? "mine"
         notificationsEnabled = defaults.object(forKey: Keys.notifications) as? Bool ?? true
-        clientIDText = defaults.string(forKey: Keys.clientID) ?? ""
         lastSync = defaults.object(forKey: Keys.lastSync) as? Date
 
         store.onLocalChange = { [weak self] in self?.scheduleRun() }
@@ -142,7 +135,7 @@ final class SensoryOS {
 
     enum SignInMode { case sheet, browser, manual((URL) -> Void) }
 
-    /// Signs in and starts keeping in step. `sheet`: the system sign-in window.
+    /// Signs in with Google and starts keeping in step. `sheet`: the system sign-in window.
     /// `browser`: the default browser (its answer comes back through Cue's URL handler).
     func connect(mode: SignInMode = .sheet) async {
         guard phase != .connecting else { return }
@@ -153,12 +146,12 @@ final class SensoryOS {
         phase = .connecting
         lastError = nil
         do {
-            let auth = try await SOSAuth.discover(server)
-            let clientID = try await SOSAuth.clientID(for: auth, server: server, given: clientIDText)
-            let attempt = SOSSignIn(server: server, auth: auth, clientID: clientID)
+            let config = try await SOSAuth.config(server)
+            guard config.offersGoogle else { throw SOSAuthError.server("This Sensory OS doesn't offer Google sign-in. Use your email and password.") }
+            let attempt = SOSSignIn(server: server, config: config)
             signIn = attempt
             signInURL = attempt.url
-            // The server's request lasts ten minutes; a sign-in left open longer can't finish.
+            // Supabase keeps a sign-in's PKCE request for a limited time; one left open longer can't finish.
             let deadline = Task { @MainActor [weak attempt] in
                 try? await Task.sleep(for: .seconds(600))
                 guard !Task.isCancelled else { return }
@@ -188,6 +181,35 @@ final class SensoryOS {
             signIn = nil
             phase = tokens == nil ? .disconnected : .connected
             if (error as? SOSAuthError) != .cancelled { lastError = error.localizedDescription }
+            log.error("Sensory OS sign-in failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Signs in with the email and password the person uses on the website, and starts
+    /// keeping in step. The password goes to Sensory OS's sign-in server and nowhere else;
+    /// Cue keeps only the tokens it answers with.
+    func connect(email: String, password: String) async {
+        guard phase != .connecting else { return }
+        guard let server else {
+            lastError = "Enter the Sensory OS address, starting with https://"
+            return
+        }
+        guard !email.trimmingCharacters(in: .whitespaces).isEmpty, !password.isEmpty else {
+            lastError = "Enter your email and password."
+            return
+        }
+        phase = .connecting
+        lastError = nil
+        do {
+            let config = try await SOSAuth.config(server)
+            guard config.offersEmail else { throw SOSAuthError.server("This Sensory OS doesn't offer email sign-in. Use Google.") }
+            let fresh = try await SOSAuth.password(email: email, password: password, config: config, server: server)
+            use(fresh)
+            phase = .connected
+            await start()
+        } catch {
+            phase = tokens == nil ? .disconnected : .connected
+            lastError = error.localizedDescription
             log.error("Sensory OS sign-in failed: \(error.localizedDescription, privacy: .public)")
         }
     }
@@ -694,7 +716,7 @@ final class SensoryOS {
 
     func debugReport() -> String {
         var lines = ["phase: \(phase)", "server: \(serverText)", "scope: \(scope)", "live: \(realtime.isLive)",
-                     "clientID: \(clientIDText.isEmpty ? "(self-registered)" : clientIDText)", "user: \(me?.user.email ?? "-")", "agencies: \(agencies.map(\.name).joined(separator: ", "))",
+                     "user: \(me?.user.email ?? "-")", "agencies: \(agencies.map(\.name).joined(separator: ", "))",
                      "lastSync: \(lastSync.map(SOSDates.string) ?? "-")", "lastError: \(lastError ?? "-")", "unsent: \(unsent)", "", "projects:"]
         for project in store.projects where project.isOrg {
             lines.append("  \(project.name) [board \(project.org?.boardID ?? "-")] parent=\(store.project(project.parentID)?.name ?? "-")")

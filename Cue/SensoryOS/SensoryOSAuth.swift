@@ -4,15 +4,15 @@ import Foundation
 import os
 import Security
 
-/// Signing in to Sensory OS: OAuth 2.1 with PKCE against the Supabase OAuth server
-/// Sensory OS runs (the one its MCP connector uses), as a public client.
+/// Signing in to Sensory OS, the way its own website signs people in: with Supabase
+/// Auth, by Google (PKCE) or by email and password. Cue is just another client of the
+/// project's sign-in, so nothing needs registering and no consent page is involved.
 ///
-/// Nothing about the server is built in but its address. Cue reads where to sign in
-/// from the site's protected-resource metadata, registers itself with the
-/// authorization server (dynamic client registration) the first time, and keeps the
-/// client id. The redirect is an https page on the site that passes the answer on to
-/// `cue://oauth/sensory-os` (docs/integrations/cue-desktop.md in Sensory OS), which the
-/// system sign-in sheet catches — or, signed in from a browser, Cue's URL handler.
+/// Nothing about the server is built in but its address. Cue reads where the sign-in
+/// server is from the site (`/api/desktop/v1/config`). Google's answer comes back to an
+/// https page on the site that passes it on to `cue://oauth/sensory-os`
+/// (docs/integrations/cue-desktop.md in Sensory OS), which the system sign-in sheet
+/// catches — or, signed in from a browser, Cue's URL handler.
 nonisolated struct SOSServer: Sendable, Equatable {
     /// The site: `https://os.sensory-creative.com`.
     let origin: URL
@@ -40,19 +40,19 @@ nonisolated struct SOSServer: Sendable, Equatable {
     }
 }
 
-/// The authorization server, as its metadata describes it.
-nonisolated struct SOSAuthServer: Codable, Sendable, Equatable {
-    var issuer: String
-    var authorizationEndpoint: URL
-    var tokenEndpoint: URL
-    var registrationEndpoint: URL?
+/// The site's sign-in server, as `/api/desktop/v1/config` describes it. Both values are
+/// public: they are in every page the site serves.
+nonisolated struct SOSAuthConfig: Codable, Sendable, Equatable {
+    /// The Supabase project, `https://<ref>.supabase.co`.
+    var url: URL
+    /// Its publishable key, sent as `apikey` with every sign-in call.
+    var key: String
+    /// The ways in the site offers: "google", "email".
+    var providers: [String]
 
-    private enum CodingKeys: String, CodingKey {
-        case issuer
-        case authorizationEndpoint = "authorization_endpoint"
-        case tokenEndpoint = "token_endpoint"
-        case registrationEndpoint = "registration_endpoint"
-    }
+    var tokenEndpoint: URL { url.appendingPathComponent("auth/v1/token") }
+    var offersGoogle: Bool { providers.contains("google") }
+    var offersEmail: Bool { providers.contains("email") }
 }
 
 /// What is kept in the Keychain while connected.
@@ -60,8 +60,9 @@ nonisolated struct SOSTokens: Codable, Sendable, Equatable {
     var accessToken: String
     var refreshToken: String?
     var expiresAt: Date
-    var clientID: String
+    /// Supabase's `/auth/v1/token`, and the key it wants.
     var tokenEndpoint: URL
+    var apiKey: String
     var origin: URL
 
     /// Refreshed a little before it runs out, so a request never carries a dead one.
@@ -84,110 +85,77 @@ nonisolated enum SOSAuthError: LocalizedError, Equatable {
     }
 }
 
-/// The OAuth calls themselves, apart from any state.
+/// The sign-in calls themselves, apart from any state.
 nonisolated enum SOSAuth {
-    static let scopes = "openid email profile"
-
-    static func discover(_ server: SOSServer) async throws -> SOSAuthServer {
-        struct Resource: Decodable { let authorization_servers: [String]? }
-        let resourceURL = server.origin.appendingPathComponent(".well-known/oauth-protected-resource")
-        let (data, response) = try await URLSession.shared.data(for: fresh(resourceURL))
-        guard (response as? HTTPURLResponse)?.statusCode == 200,
-              let issuer = (try? JSONDecoder().decode(Resource.self, from: data))?.authorization_servers?.first,
-              let issuerURL = URL(string: issuer) else {
-            throw SOSAuthError.server("\(server.origin.host ?? "That address") is not a Sensory OS site Cue can sign in to.")
+    /// Where this site signs people in. Read fresh each time: it is one small request,
+    /// and a copy kept from before the site changed servers would sign in to the wrong one.
+    static func config(_ server: SOSServer) async throws -> SOSAuthConfig {
+        struct Answer: Decodable {
+            struct Auth: Decodable { let url: URL; let key: String }
+            let auth: Auth
+            let providers: [String]?
         }
-        // Supabase answers at <issuer>/.well-known/…; RFC 8414 puts the issuer's path after it.
-        var candidates = [issuerURL.appendingPathComponent(".well-known/oauth-authorization-server")]
-        if var components = URLComponents(url: issuerURL, resolvingAgainstBaseURL: false) {
-            components.path = "/.well-known/oauth-authorization-server" + components.path
-            if let url = components.url { candidates.append(url) }
-        }
-        for url in candidates {
-            guard let (data, response) = try? await URLSession.shared.data(for: fresh(url)),
-                  (response as? HTTPURLResponse)?.statusCode == 200,
-                  let metadata = try? JSONDecoder().decode(SOSAuthServer.self, from: data) else { continue }
-            return metadata
-        }
-        throw SOSAuthError.server("Sensory OS has sign-in for apps switched off on this server.")
-    }
-
-    /// A request that skips the URL cache. Supabase marks its metadata cacheable for ten
-    /// minutes, and a copy kept from before an admin switched something on (registration)
-    /// would keep Connect failing long after it was fixed.
-    private static func fresh(_ url: URL) -> URLRequest {
-        URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData, timeoutInterval: 20)
-    }
-
-    /// The client id this Mac registered with this authorization server, registering
-    /// once when there is none.
-    static func clientID(for auth: SOSAuthServer, server: SOSServer, given: String = "") async throws -> String {
-        // One an admin registered for Cue on the server, when it does not let apps register themselves.
-        let given = given.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !given.isEmpty { return given }
-        let key = "sensoryos.client.\(auth.issuer)|\(server.redirectURI)"
-        if let saved = UserDefaults.standard.string(forKey: key), !saved.isEmpty { return saved }
-        guard let endpoint = auth.registrationEndpoint else {
-            throw SOSAuthError.server("This server doesn't let apps register themselves. Add Cue as an OAuth app on it (redirect URL \(server.redirectURI), public client) and enter its client ID here.")
-        }
-        var request = URLRequest(url: endpoint, timeoutInterval: 20)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: [
-            "client_name": "Cue",
-            "redirect_uris": [server.redirectURI],
-            "grant_types": ["authorization_code", "refresh_token"],
-            "response_types": ["code"],
-            "token_endpoint_auth_method": "none",
-            "scope": scopes,
-        ])
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let url = server.origin.appendingPathComponent("api/desktop/v1/config")
+        let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData, timeoutInterval: 20)
+        let data: Data, response: URLResponse
+        do { (data, response) = try await URLSession.shared.data(for: request) }
+        catch { throw SOSAuthError.server("Couldn't reach \(server.origin.host ?? "Sensory OS"): \(error.localizedDescription)") }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        struct Registered: Decodable { let client_id: String }
-        guard (200..<300).contains(status), let registered = try? JSONDecoder().decode(Registered.self, from: data) else {
-            throw SOSAuthError.server(message(in: data) ?? "Sensory OS would not register Cue (\(status)).")
+        guard status == 200, let answer = try? JSONDecoder().decode(Answer.self, from: data) else {
+            if status == 404 { throw SOSAuthError.server("\(server.origin.host ?? "That address") doesn't have Cue sign-in yet.") }
+            throw SOSAuthError.server(message(in: data) ?? "\(server.origin.host ?? "That address") is not a Sensory OS site Cue can sign in to (\(status)).")
         }
-        UserDefaults.standard.set(registered.client_id, forKey: key)
-        return registered.client_id
+        return SOSAuthConfig(url: answer.auth.url, key: answer.auth.key, providers: answer.providers ?? ["google", "email"])
     }
 
-    static func authorizeURL(_ auth: SOSAuthServer, clientID: String, server: SOSServer, pkce: PKCE, state: String) -> URL {
-        var components = URLComponents(url: auth.authorizationEndpoint, resolvingAgainstBaseURL: false)!
+    /// Supabase's Google sign-in, PKCE flavour: Google, then Supabase, then the site's
+    /// callback page with `?code=…&state=…`. The state rides in the redirect address,
+    /// which Supabase keeps when it adds the code.
+    static func googleURL(_ config: SOSAuthConfig, server: SOSServer, pkce: PKCE, state: String) -> URL {
+        var redirect = URLComponents(string: server.redirectURI)!
+        redirect.queryItems = [URLQueryItem(name: "state", value: state)]
+        var components = URLComponents(url: config.url.appendingPathComponent("auth/v1/authorize"), resolvingAgainstBaseURL: false)!
         components.queryItems = [
-            URLQueryItem(name: "response_type", value: "code"),
-            URLQueryItem(name: "client_id", value: clientID),
-            URLQueryItem(name: "redirect_uri", value: server.redirectURI),
-            URLQueryItem(name: "scope", value: scopes),
+            URLQueryItem(name: "provider", value: "google"),
+            URLQueryItem(name: "redirect_to", value: redirect.url!.absoluteString),
             URLQueryItem(name: "code_challenge", value: pkce.challenge),
-            URLQueryItem(name: "code_challenge_method", value: "S256"),
-            URLQueryItem(name: "state", value: state),
+            URLQueryItem(name: "code_challenge_method", value: "s256"),
+            URLQueryItem(name: "prompt", value: "select_account"),
         ]
         return components.url!
     }
 
-    static func exchange(code: String, pkce: PKCE, clientID: String, auth: SOSAuthServer, server: SOSServer) async throws -> SOSTokens {
-        try await tokenRequest(["grant_type": "authorization_code", "code": code, "redirect_uri": server.redirectURI,
-                                "client_id": clientID, "code_verifier": pkce.verifier],
-                               clientID: clientID, endpoint: auth.tokenEndpoint, origin: server.origin, keeping: nil)
+    static func exchange(code: String, pkce: PKCE, config: SOSAuthConfig, server: SOSServer) async throws -> SOSTokens {
+        try await token(grant: "pkce", ["auth_code": code, "code_verifier": pkce.verifier],
+                        endpoint: config.tokenEndpoint, apiKey: config.key, origin: server.origin, keeping: nil)
+    }
+
+    static func password(email: String, password: String, config: SOSAuthConfig, server: SOSServer) async throws -> SOSTokens {
+        try await token(grant: "password", ["email": email.trimmingCharacters(in: .whitespacesAndNewlines), "password": password],
+                        endpoint: config.tokenEndpoint, apiKey: config.key, origin: server.origin, keeping: nil)
     }
 
     static func refresh(_ tokens: SOSTokens) async throws -> SOSTokens {
         guard let refreshToken = tokens.refreshToken else { throw SOSAuthError.signedOut }
-        return try await tokenRequest(["grant_type": "refresh_token", "refresh_token": refreshToken, "client_id": tokens.clientID],
-                                      clientID: tokens.clientID, endpoint: tokens.tokenEndpoint, origin: tokens.origin, keeping: refreshToken)
+        return try await token(grant: "refresh_token", ["refresh_token": refreshToken],
+                               endpoint: tokens.tokenEndpoint, apiKey: tokens.apiKey, origin: tokens.origin, keeping: refreshToken)
     }
 
-    private static func tokenRequest(_ fields: [String: String], clientID: String, endpoint: URL, origin: URL, keeping oldRefresh: String?) async throws -> SOSTokens {
-        var request = URLRequest(url: endpoint, timeoutInterval: 20)
+    private static func token(grant: String, _ fields: [String: String], endpoint: URL, apiKey: String, origin: URL, keeping oldRefresh: String?) async throws -> SOSTokens {
+        var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "grant_type", value: grant)]
+        var request = URLRequest(url: components.url!, timeoutInterval: 20)
         request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.httpBody = GoogleOAuth.form(fields)
+        request.setValue(apiKey, forHTTPHeaderField: "apikey")
+        request.httpBody = try JSONSerialization.data(withJSONObject: fields)
         let (data, response) = try await URLSession.shared.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
-            // A refused refresh token (revoked from the website, or expired): nothing to retry.
-            if (400..<500).contains(status), fields["grant_type"] == "refresh_token" { throw SOSAuthError.signedOut }
+            // A refused refresh token (signed out on the website, or expired): nothing to retry.
+            if (400..<500).contains(status), grant == "refresh_token" { throw SOSAuthError.signedOut }
+            if grant == "password", status == 400 { throw SOSAuthError.server(message(in: data) ?? "Invalid email or password.") }
             throw SOSAuthError.server(message(in: data) ?? "Sensory OS refused the sign-in (\(status)).")
         }
         struct Answer: Decodable {
@@ -199,14 +167,17 @@ nonisolated enum SOSAuth {
             throw SOSAuthError.server("Sensory OS answered the sign-in with something Cue can't read.")
         }
         return SOSTokens(accessToken: answer.access_token, refreshToken: answer.refresh_token ?? oldRefresh,
-                         expiresAt: .now.addingTimeInterval(answer.expires_in ?? 3600), clientID: clientID,
-                         tokenEndpoint: endpoint, origin: origin)
+                         expiresAt: .now.addingTimeInterval(answer.expires_in ?? 3600),
+                         tokenEndpoint: endpoint, apiKey: apiKey, origin: origin)
     }
 
     static func message(in data: Data) -> String? {
         guard let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        return body["error_description"] as? String ?? body["msg"] as? String ?? body["message"] as? String
+        let text = body["error_description"] as? String ?? body["msg"] as? String ?? body["message"] as? String
             ?? (body["error"] as? String).map { "Sensory OS said: \($0)" }
+        // Supabase's own wording for a wrong password.
+        if text == "Invalid login credentials" { return "Invalid email or password." }
+        return text
     }
 }
 
@@ -238,24 +209,22 @@ nonisolated enum SOSKeychain {
     }
 }
 
-/// One sign-in in progress: what its answer must match, and who is waiting for it.
+/// One Google sign-in in progress: what its answer must match, and who is waiting for it.
 @MainActor
 final class SOSSignIn {
     let server: SOSServer
-    let auth: SOSAuthServer
-    let clientID: String
+    let config: SOSAuthConfig
     let pkce = PKCE.random()
     let state = PKCE.random().verifier
     private var continuation: CheckedContinuation<URL, Error>?
     private var session: ASWebAuthenticationSession?
 
-    init(server: SOSServer, auth: SOSAuthServer, clientID: String) {
+    init(server: SOSServer, config: SOSAuthConfig) {
         self.server = server
-        self.auth = auth
-        self.clientID = clientID
+        self.config = config
     }
 
-    var url: URL { SOSAuth.authorizeURL(auth, clientID: clientID, server: server, pkce: pkce, state: state) }
+    var url: URL { SOSAuth.googleURL(config, server: server, pkce: pkce, state: state) }
 
     /// Whether an incoming `cue://` URL is this sign-in's answer.
     func matches(_ url: URL) -> Bool {
@@ -298,7 +267,7 @@ final class SOSSignIn {
     /// Gave up waiting: the person never finished, and the server's request has expired.
     func expire() {
         session?.cancel()
-        finish(.failure(SOSAuthError.server("The sign-in wasn't finished in time. Click Connect Organization to try again.")))
+        finish(.failure(SOSAuthError.server("The sign-in wasn't finished in time. Try again.")))
     }
 
     private func finish(_ result: Result<URL, Error>) {
@@ -318,7 +287,7 @@ final class SOSSignIn {
         }
         guard value("state") == state else { throw SOSAuthError.server("The sign-in answer did not match the request.") }
         guard let code = value("code") else { throw SOSAuthError.server("Sensory OS sent no sign-in code.") }
-        return try await SOSAuth.exchange(code: code, pkce: pkce, clientID: clientID, auth: auth, server: server)
+        return try await SOSAuth.exchange(code: code, pkce: pkce, config: config, server: server)
     }
 }
 

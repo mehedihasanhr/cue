@@ -18,6 +18,8 @@ struct OrganizationSettingsView: View {
 struct SensoryOSSettingsGroup: View {
     @Bindable var sensoryOS: SensoryOS
     @State private var showsServer = false
+    @State private var email = ""
+    @State private var password = ""
 
     var body: some View {
         SettingsGroup("Sensory OS", footer: footer) {
@@ -25,8 +27,12 @@ struct SensoryOSSettingsGroup: View {
                 HStack(spacing: 8) {
                     switch sensoryOS.phase {
                     case .disconnected:
-                        Button("Connect Organization") { Task { await sensoryOS.connect() } }
-                            .keyboardShortcut(.defaultAction)
+                        Button {
+                            Task { await sensoryOS.connect() }
+                        } label: {
+                            Label("Connect with Google", systemImage: "globe")
+                        }
+                        .help("Signs in to Sensory OS with your Google account, in a sign-in window.")
                     case .connecting:
                         ProgressView().controlSize(.small)
                         if sensoryOS.signInURL != nil {
@@ -56,6 +62,28 @@ struct SensoryOSSettingsGroup: View {
                 }
             }
 
+            if sensoryOS.phase == .disconnected {
+                SettingsRow("Email", subtitle: "Or connect with the email and password you use on the website.") {
+                    TextField("Email", text: $email, prompt: Text("you@company.com"))
+                        .textFieldStyle(.roundedBorder)
+                        .textContentType(.username)
+                        .frame(width: 280)
+                }
+                SettingsRow("Password") {
+                    HStack(spacing: 8) {
+                        SecureField("Password", text: $password)
+                            .textFieldStyle(.roundedBorder)
+                            .textContentType(.password)
+                            .frame(width: 190)
+                            .onSubmit(signInWithEmail)
+                        Button("Connect", action: signInWithEmail)
+                            .keyboardShortcut(.defaultAction)
+                            .disabled(email.trimmingCharacters(in: .whitespaces).isEmpty || password.isEmpty)
+                    }
+                    .frame(width: 280, alignment: .trailing)
+                }
+            }
+
             if sensoryOS.phase != .connected || showsServer {
                 SettingsRow("Server", subtitle: "The Sensory OS site to connect to. Change it only to try a staging or local server.") {
                     TextField("Server", text: $sensoryOS.serverText, prompt: Text(SOSServer.production.absoluteString))
@@ -63,14 +91,16 @@ struct SensoryOSSettingsGroup: View {
                         .frame(width: 280)
                         .disabled(sensoryOS.phase != .disconnected)
                 }
-                SettingsRow("Client ID", subtitle: "Only for a server that doesn't let apps register themselves: an admin adds Cue as an OAuth app there and gives you its client ID. Leave empty otherwise.") {
-                    TextField("Client ID", text: $sensoryOS.clientIDText, prompt: Text("Optional"))
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 280)
-                        .disabled(sensoryOS.phase != .disconnected)
-                }
             }
         }
+    }
+
+    private func signInWithEmail() {
+        guard !email.trimmingCharacters(in: .whitespaces).isEmpty, !password.isEmpty else { return }
+        let typed = password
+        // Not kept on screen or in memory longer than the sign-in takes.
+        password = ""
+        Task { await sensoryOS.connect(email: email, password: typed) }
     }
 
     private var title: String {
@@ -88,10 +118,12 @@ struct SensoryOSSettingsGroup: View {
     private var footer: String? {
         if let error = sensoryOS.lastError { return error }
         if sensoryOS.phase == .connecting {
-            return "Sign in and allow Cue on the Sensory OS page. No page? Click Open Sign-in Page. This gives up after ten minutes."
+            return sensoryOS.signInURL == nil
+                ? "Signing in…"
+                : "Choose your Google account in the sign-in window. No window? Click Open Sign-in Page. This gives up after ten minutes."
         }
         guard sensoryOS.phase == .connected else {
-            return "Cue opens Sensory OS's sign-in. Your password never reaches Cue; it keeps a sign-in token in your Keychain."
+            return "Sign in the way you do on the website. Cue keeps only a sign-in token, in your Keychain; your password is sent to Sensory OS and not stored."
         }
         var parts: [String] = []
         let names = sensoryOS.agencies.map(\.name)

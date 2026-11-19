@@ -1780,16 +1780,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             switch query["action"] ?? "state" {
             case "server":
                 if let value = query["url"] { sos.serverText = value }
-                if let value = query["client"] { sos.clientIDText = value }
             case "token":
                 let file = folder.appendingPathComponent("sensoryos-token.json")
-                struct Seed: Decodable { let accessToken: String; let refreshToken: String?; let expiresIn: Double?; let origin: String; let tokenEndpoint: String; let clientID: String? }
+                struct Seed: Decodable { let accessToken: String; let refreshToken: String?; let expiresIn: Double?; let origin: String; let tokenEndpoint: String; let apiKey: String? }
                 if let data = try? Data(contentsOf: file), let seed = try? JSONDecoder().decode(Seed.self, from: data),
                    let origin = URL(string: seed.origin), let endpoint = URL(string: seed.tokenEndpoint) {
                     try? FileManager.default.removeItem(at: file)
                     await sos.debugUse(SOSTokens(accessToken: seed.accessToken, refreshToken: seed.refreshToken,
-                                                 expiresAt: .now.addingTimeInterval(seed.expiresIn ?? 3600), clientID: seed.clientID ?? "debug",
-                                                 tokenEndpoint: endpoint, origin: origin))
+                                                 expiresAt: .now.addingTimeInterval(seed.expiresIn ?? 3600),
+                                                 tokenEndpoint: endpoint, apiKey: seed.apiKey ?? "", origin: origin))
                 }
             case "connect":
                 Task { await sos.connect(mode: .manual({ url in
