@@ -20,6 +20,7 @@ import WebKit
 ///     cue://debug/wheel[?hovered=record]    the quick wheel on screen, a segment lit
 ///     cue://debug/image-frame[?off=1]       holds every image's resize frame open
 ///     cue://debug/sort?column=priority      a table heading clicked (again: the other way, then off)
+///     cue://debug/sidebar?folded=a,b        sidebar folders and sections folded (ids, section.projects)
 ///     cue://debug/snapshot?name=a           the Tasks window drawn to ~/Pictures/Cue Debug/a.png
 ///                                            (window=pinned draws the newest pinned capture instead,
 ///                                             window=notes the notes dashboard)
@@ -302,6 +303,9 @@ enum DebugCommands {
         case "/sidebar":
             // The task window's sidebar folded (collapsed=1) or not, for a snapshot.
             TaskDashboardModel.current?.sidebarCollapsed = query["collapsed"] == "1"
+            // What the sidebar tree folds away: project ids and section.organization /
+            // section.projects, comma-separated (folded= with nothing unfolds all).
+            if let folded = query["folded"] { UserDefaults.standard.set(folded, forKey: "tasks.sidebar.folded") }
         case "/image-frame":
             // Every image in the editor shows its resize frame, for a snapshot.
             ImageBlockView.debugShowsFrame = query["off"] != "1"

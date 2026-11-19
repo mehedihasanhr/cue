@@ -690,6 +690,20 @@ private struct TaskDashboardSidebar: View {
     var floating = false
     @Environment(TaskDashboardModel.self) private var model
     @FocusState private var searching: Bool
+    /// What is folded: project ids, and "section.organization" / "section.projects".
+    /// Comma-separated, so it lasts and both copies of the sidebar agree.
+    @AppStorage("tasks.sidebar.folded") private var foldedText = ""
+
+    private static let orgSection = "section.organization"
+    private static let projectsSection = "section.projects"
+
+    private var folded: Set<String> { Set(foldedText.split(separator: ",").map(String.init)) }
+
+    private func toggle(_ key: String) {
+        var keys = folded
+        if keys.contains(key) { keys.remove(key) } else { keys.insert(key) }
+        withAnimation(.snappy(duration: 0.22)) { foldedText = keys.sorted().joined(separator: ",") }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -723,16 +737,20 @@ private struct TaskDashboardSidebar: View {
                     if !orgTree.isEmpty {
                         // A connected organization (Sensory OS): its boards, kept by the
                         // sync. Tasks added here go to its website; nothing else does.
-                        sectionHeader("Organization", add: nil)
-                        ForEach(orgTree, id: \.project.id) { entry in
+                        sectionHeader("Organization", key: Self.orgSection, add: nil)
+                        if !folded.contains(Self.orgSection) {
+                            ForEach(orgTree, id: \.project.id) { entry in
+                                projectRow(entry.project, depth: entry.depth)
+                            }
+                        }
+                    }
+                    sectionHeader("Projects", key: Self.projectsSection) { model.projectPrompt = .new(parent: nil) }
+                    if !folded.contains(Self.projectsSection) {
+                        ForEach(tree, id: \.project.id) { entry in
                             projectRow(entry.project, depth: entry.depth)
                         }
                     }
-                    sectionHeader("Projects") { model.projectPrompt = .new(parent: nil) }
-                    ForEach(tree, id: \.project.id) { entry in
-                        projectRow(entry.project, depth: entry.depth)
-                    }
-                    if !store.projects.contains(where: { !$0.isOrg }) {
+                    if !folded.contains(Self.projectsSection), !store.projects.contains(where: { !$0.isOrg }) {
                         Button {
                             model.projectPrompt = .new(parent: nil)
                         } label: {
@@ -763,18 +781,22 @@ private struct TaskDashboardSidebar: View {
         }
     }
 
-    private func under(_ parent: UUID?, depth: Int) -> [(project: TaskProject, depth: Int)] {
-        store.subprojects(of: parent).flatMap { [(project: $0, depth: depth)] + under($0.id, depth: depth + 1) }
+    /// The projects under `parent`, each followed by its own unless it is folded.
+    private func under(_ parent: UUID?, depth: Int, folded: Set<String>) -> [(project: TaskProject, depth: Int)] {
+        store.subprojects(of: parent).flatMap { project in
+            [(project: project, depth: depth)]
+                + (folded.contains(project.id.uuidString) ? [] : under(project.id, depth: depth + 1, folded: folded))
+        }
     }
 
     /// The person's own projects.
     private var tree: [(project: TaskProject, depth: Int)] {
-        under(nil, depth: 0).filter { !$0.project.isOrg }
+        under(nil, depth: 0, folded: folded).filter { !$0.project.isOrg }
     }
 
     /// The connected organization's: its root, then its boards.
     private var orgTree: [(project: TaskProject, depth: Int)] {
-        under(nil, depth: 0).filter { $0.project.isOrg }
+        under(nil, depth: 0, folded: folded).filter { $0.project.isOrg }
     }
 
     private func select(_ selection: TaskDashboardSelection) {
@@ -785,28 +807,18 @@ private struct TaskDashboardSidebar: View {
         model.selection = selection
     }
 
-    private func sectionHeader(_ title: String, add: (() -> Void)?) -> some View {
-        HStack(spacing: 0) {
-            Text(title)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(NotionStyle.tertiary)
-            Spacer()
-            if let add {
-                NotionIconButton(symbol: "plus", help: "New project", size: 12, tint: NotionStyle.tertiary, action: add)
-            } else {
-                // keeps the header the height of one with a button
-                Color.clear.frame(width: 1, height: 22)
-            }
-        }
-        .padding(.leading, 8)
-        .padding(.top, 18)
-        .padding(.bottom, 2)
+    private func sectionHeader(_ title: String, key: String, add: (() -> Void)?) -> some View {
+        SidebarSectionHeader(title: title, folded: folded.contains(key), add: add) { toggle(key) }
     }
 
     private func projectRow(_ project: TaskProject, depth: Int) -> some View {
         let open = store.tasks(in: project.id).filter { $0.status != .complete }.count
-        return SidebarItem(title: project.name, icon: model.icon(for: .project(project.id), hasSubprojects: !store.subprojects(of: project.id).isEmpty), depth: depth, count: open,
-                           selected: !model.isSearching && model.selection == .project(project.id)) {
+        let hasSubprojects = !store.subprojects(of: project.id).isEmpty
+        let key = project.id.uuidString
+        return SidebarItem(title: project.name, icon: model.icon(for: .project(project.id), hasSubprojects: hasSubprojects), depth: depth, count: open,
+                           selected: !model.isSearching && model.selection == .project(project.id),
+                           expanded: hasSubprojects ? !folded.contains(key) : nil,
+                           toggle: hasSubprojects ? { toggle(key) } : nil) {
             select(.project(project.id))
         }
         .dropDestination(for: String.self) { ids, _ in
@@ -887,13 +899,16 @@ private struct SidebarItem: View {
     let depth: Int
     let count: Int
     let selected: Bool
+    /// Has sub-projects: whether they show. Nil for a row with none.
+    var expanded: Bool? = nil
+    var toggle: (() -> Void)? = nil
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                PageIconView(icon: icon, size: 14)
+                iconSlot
                     .frame(width: 20)
                 Text(title)
                     .font(.system(size: 14, weight: selected ? .medium : .regular))
@@ -919,6 +934,85 @@ private struct SidebarItem: View {
         .onHover { hovering = $0 }
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityValue(count > 0 ? "\(count) open" : "")
+        .modifier(DisclosureAction(expanded: expanded, toggle: toggle))
+    }
+
+    /// The icon; for a row with sub-projects, a chevron in its place under the pointer
+    /// (Notion's way), which folds them away or brings them back.
+    @ViewBuilder private var iconSlot: some View {
+        if let expanded, let toggle, hovering {
+            Button(action: toggle) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(NotionStyle.secondary)
+                    .rotationEffect(.degrees(expanded ? 90 : 0))
+                    .frame(width: 20, height: 20)
+                    .background(RoundedRectangle(cornerRadius: 4, style: .continuous).fill(NotionStyle.selectedRow))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(expanded ? "Hide sub-projects" : "Show sub-projects")
+        } else {
+            PageIconView(icon: icon, size: 14)
+        }
+    }
+}
+
+/// VoiceOver's Expand / Collapse on a row that has sub-projects.
+private struct DisclosureAction: ViewModifier {
+    let expanded: Bool?
+    let toggle: (() -> Void)?
+
+    func body(content: Content) -> some View {
+        if let expanded, let toggle {
+            content.accessibilityAction(named: expanded ? "Collapse" : "Expand", toggle)
+        } else {
+            content
+        }
+    }
+}
+
+/// "Organization", "Projects": click to fold the section away. The chevron shows under
+/// the pointer, and stays while folded so it is clear something is hidden.
+private struct SidebarSectionHeader: View {
+    let title: String
+    let folded: Bool
+    let add: (() -> Void)?
+    let toggle: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Button(action: toggle) {
+                HStack(spacing: 4) {
+                    Text(title)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(NotionStyle.tertiary)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(NotionStyle.tertiary)
+                        .rotationEffect(.degrees(folded ? 0 : 90))
+                        .opacity(hovering || folded ? 1 : 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(folded ? "Show \(title)" : "Hide \(title)")
+            .accessibilityLabel(title)
+            .accessibilityValue(folded ? "Collapsed" : "Expanded")
+            Spacer()
+            if let add {
+                NotionIconButton(symbol: "plus", help: "New project", size: 12, tint: NotionStyle.tertiary, action: add)
+            } else {
+                // keeps the header the height of one with a button
+                Color.clear.frame(width: 1, height: 22)
+            }
+        }
+        .padding(.leading, 8)
+        .padding(.top, 18)
+        .padding(.bottom, 2)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
     }
 }
 
