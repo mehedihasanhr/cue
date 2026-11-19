@@ -63,6 +63,7 @@ enum DebugCommands {
         case "notes": NSApp.windows.first { $0.title == "Cue Notes" && $0.isVisible }
         case "player": NSApp.windows.first { $0.title == "Cue Mini Player" && $0.isVisible }
         case "wheel": NSApp.windows.first { $0.title == "Cue Quick Wheel" && $0.isVisible }
+        case "settings": NSApp.windows.first { $0.windowController is SettingsWindowController && $0.isVisible }
         default: NSApp.windows.first { $0.title == "Cue Tasks" && $0.isVisible } ?? NSApp.keyWindow
         }
         let responder = window?.firstResponder
@@ -298,6 +299,9 @@ enum DebugCommands {
                 model.sort = TaskSort.next(after: model.sort, column: column)
             }
             write(report: model.sort.map { "\($0.column.rawValue) \($0.descending ? "descending" : "ascending")" } ?? "none", to: "sort.txt")
+        case "/sidebar":
+            // The task window's sidebar folded (collapsed=1) or not, for a snapshot.
+            TaskDashboardModel.current?.sidebarCollapsed = query["collapsed"] == "1"
         case "/image-frame":
             // Every image in the editor shows its resize frame, for a snapshot.
             ImageBlockView.debugShowsFrame = query["off"] != "1"

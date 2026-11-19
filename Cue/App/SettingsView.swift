@@ -814,6 +814,7 @@ struct TasksSettingsView: View {
     /// remote server.
     @Environment(SyncFolder.self) private var syncFolder: SyncFolder?
     @Environment(TaskMCPController.self) private var mcp: TaskMCPController?
+    @Environment(SensoryOS.self) private var sensoryOS: SensoryOS?
     @Environment(SettingsNavigation.self) private var navigation
     @State private var serverCheck: String?
     @State private var checking = false
@@ -822,6 +823,14 @@ struct TasksSettingsView: View {
     var body: some View {
         @Bindable var preferences = preferences
         SettingsPane(.tasks) {
+            SettingsGroup("Organization") {
+                SettingsRow(sensoryOS?.phase == .connected ? "Sensory OS" : "Not connected",
+                            subtitle: "Your organization's tasks under Organization in the task list, the ones you add there sent to its website.",
+                            symbol: SettingsSection.organization.symbol, tint: SettingsSection.organization.tint) {
+                    Button(sensoryOS?.phase == .connected ? "Manage" : "Connect Organization") { navigation.go(.organization) }
+                }
+            }
+
             SettingsGroup("Where tasks live") {
                 if let tasks {
                     SettingsRow(tasks.folderIsCustom ? tasks.folderURL.lastPathComponent : syncFolder?.isOn == true ? "The shared sync folder" : "Cue's own folder",

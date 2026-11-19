@@ -17,6 +17,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let tasks = TaskStore()
     /// The remote server and webhooks for tasks (Settings › Tasks).
     private lazy var taskSync = TaskSync(store: tasks, preferences: preferences)
+    /// Sensory OS: its tasks under an organization in the task list, its notifications
+    /// on the island (Settings › Tasks).
+    private lazy var sensoryOS = SensoryOS(store: tasks)
     let snippets = SnippetStore()
     let notes = NoteStore()
     private var snippetExpander: SnippetExpander?
@@ -136,6 +139,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if preferences.welcomeTourSeen { AppUpdater.shared.start() }
         spaceFocus.start()
         _ = taskSync // listens for task changes from now on
+        sensoryOS.onNotification = { [weak self] item, url in self?.showSensoryOSNotification(item, url: url) }
+        sensoryOS.openTask = { [weak self] id in
+            guard let self, let task = tasks.tasks.first(where: { $0.id == id }) else { return }
+            openTaskDashboard(task: task)
+        }
         taskMCP.apply()
 
         coordinator.onCaptured = { [weak self] image in self?.handleCapture(image) }
@@ -836,7 +844,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let recordings = urls.filter(StudioController.handles)
         if !recordings.isEmpty { studio.open(recordings) }
         for url in urls where !StudioController.handles(url) {
+            // the answer to a Sensory OS sign-in made in a browser
+            if sensoryOS.handle(url) { continue }
             #if DEBUG
+            if url.scheme == "cue", url.host == "debug", url.path == "/sensoryos" {
+                debugSensoryOS(url)
+                continue
+            }
             if DebugCommands.handles(url) {
                 DebugCommands.run(url, tasks: tasks, notes: notes, createTask: { [weak self] in self?.createTask(from: $0) },
                                   pinCapture: { [weak self] index in
@@ -1726,6 +1740,96 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// The dashboard, with `task` (if any) open in its detail pane.
+    /// A Sensory OS notification on the island; a click opens what it is about.
+    private func showSensoryOSNotification(_ item: SOSNotification, url: URL?) {
+        let id = item.id
+        let entity = item.entityType == "task" ? item.entityId : nil
+        let banner = BannerNotification(id: "sensory-os.\(item.id)", app: "Sensory OS", appURL: Bundle.main.bundleURL,
+                                        title: item.title, subtitle: "", body: item.body ?? "", date: item.createdAt, link: url,
+                                        action: { [weak self] in self?.sensoryOS.open(notificationID: id, url: url, taskEntity: entity) })
+        island?.showStatus(IslandStatus(symbol: "bell.fill", title: item.title, duration: .seconds(6), banner: banner))
+    }
+
+    #if DEBUG
+    /// cue://debug/sensoryos?action=… — drives the Sensory OS connection for a test
+    /// against a local server, and reports to ~/Pictures/Cue Debug/sensoryos.txt.
+    ///   state                 the report alone
+    ///   server&url=…          the site to connect to
+    ///   token                 signs in with ~/Pictures/Cue Debug/sensoryos-token.json (then deletes it)
+    ///   connect               starts the real sign-in, writing its URL to sensoryos-authorize.txt
+    ///   sync                  one round now
+    ///   scope&value=all|mine  which tasks
+    ///   add&title=…           a task in the first board
+    ///   status&title=…&to=…   a task's status (pending, inProcess, review, complete)
+    ///   edit&title=…&text=…   a task's description
+    ///   delete&title=…        deletes a task here
+    ///   notifications         checks the bell now
+    ///   disconnect
+    private func debugSensoryOS(_ url: URL) {
+        let query = Dictionary((URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []).map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { $1 })
+        let folder = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Pictures/Cue Debug", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let sos = sensoryOS
+        func report() { try? sos.debugReport().write(to: folder.appendingPathComponent("sensoryos.txt"), atomically: true, encoding: .utf8) }
+        func task(_ title: String?) -> TaskItem? {
+            guard let title = title?.lowercased() else { return nil }
+            return tasks.tasks.first { tasks.isOrgTask($0) && $0.title.lowercased().hasPrefix(title) }
+        }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            switch query["action"] ?? "state" {
+            case "server":
+                if let value = query["url"] { sos.serverText = value }
+            case "token":
+                let file = folder.appendingPathComponent("sensoryos-token.json")
+                struct Seed: Decodable { let accessToken: String; let refreshToken: String?; let expiresIn: Double?; let origin: String; let tokenEndpoint: String; let clientID: String? }
+                if let data = try? Data(contentsOf: file), let seed = try? JSONDecoder().decode(Seed.self, from: data),
+                   let origin = URL(string: seed.origin), let endpoint = URL(string: seed.tokenEndpoint) {
+                    try? FileManager.default.removeItem(at: file)
+                    await sos.debugUse(SOSTokens(accessToken: seed.accessToken, refreshToken: seed.refreshToken,
+                                                 expiresAt: .now.addingTimeInterval(seed.expiresIn ?? 3600), clientID: seed.clientID ?? "debug",
+                                                 tokenEndpoint: endpoint, origin: origin))
+                }
+            case "connect":
+                Task { await sos.connect(mode: .manual({ url in
+                    try? url.absoluteString.write(to: folder.appendingPathComponent("sensoryos-authorize.txt"), atomically: true, encoding: .utf8)
+                })) }
+                try? await Task.sleep(for: .seconds(3))
+            case "sync":
+                await sos.run()
+            case "scope":
+                sos.scope = query["value"] == "all" ? "all" : "mine"
+                try? await Task.sleep(for: .seconds(1))
+                await sos.run()
+            case "add":
+                let board = tasks.projects.first { $0.org?.boardID != nil && $0.org?.webProjectID == nil } ?? tasks.projects.first { $0.org?.boardID != nil }
+                tasks.addTask(text: query["title"] ?? "Debug task", in: board?.id, priority: TaskPriority(rawValue: query["priority"] ?? "") ?? .medium)
+                try? await Task.sleep(for: .seconds(2.5))
+                await sos.run()
+            case "status":
+                if let found = task(query["title"]), let status = TaskStatus(rawValue: query["to"] ?? "") { tasks.setStatus(status, for: found) }
+                try? await Task.sleep(for: .seconds(2.5))
+                await sos.run()
+            case "edit":
+                if let found = task(query["title"]) { tasks.update(found, title: found.title, text: query["text"] ?? "") }
+                try? await Task.sleep(for: .seconds(2.5))
+                await sos.run()
+            case "delete":
+                if let found = task(query["title"]) { tasks.delete(found) }
+                await sos.run()
+            case "notifications":
+                await sos.checkNotifications()
+            case "disconnect":
+                sos.disconnect()
+            default:
+                break
+            }
+            report()
+            _ = self
+        }
+    }
+    #endif
+
     func openTaskDashboard(task: TaskItem?) {
         closeHistory()
         if taskDashboard == nil {
@@ -1843,7 +1947,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func showSettings(_ sender: Any?) {
         if settingsWindow == nil {
-            let controller = SettingsWindowController(model: model, shortcuts: shortcuts, library: library, clipboard: clipboard, preferences: preferences, clock: prayerClock, share: share, sync: syncFolder, notes: notes, tasks: tasks, taskSync: taskSync, ocrEngines: ocrEngines, agents: agentConnector, studio: studio, taskMCP: taskMCP)
+            let controller = SettingsWindowController(model: model, shortcuts: shortcuts, library: library, clipboard: clipboard, preferences: preferences, clock: prayerClock, share: share, sync: syncFolder, notes: notes, tasks: tasks, taskSync: taskSync, ocrEngines: ocrEngines, agents: agentConnector, studio: studio, taskMCP: taskMCP, sensoryOS: sensoryOS)
             controller.onClose = { [weak self] in
                 self?.settingsWindow = nil
                 self?.shortcuts.isRecording = false

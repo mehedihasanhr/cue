@@ -13,6 +13,14 @@ struct BannerNotification: Identifiable, Equatable {
     let subtitle: String
     let body: String
     let date: Date
+    /// Where a click goes when it is not another app's banner (a Sensory OS notification).
+    var link: URL? = nil
+    /// Run on a click instead of opening anything (a Sensory OS notification Cue opens itself).
+    var action: (@MainActor () -> Void)? = nil
+
+    static func == (lhs: BannerNotification, rhs: BannerNotification) -> Bool {
+        lhs.id == rhs.id && lhs.app == rhs.app && lhs.title == rhs.title && lhs.subtitle == rhs.subtitle && lhs.body == rhs.body && lhs.date == rhs.date && lhs.link == rhs.link
+    }
 
     var icon: NSImage {
         appURL.map { NSWorkspace.shared.icon(forFile: $0.path) } ?? NSWorkspace.shared.icon(for: .application)
@@ -76,7 +84,11 @@ final class NotificationFeed {
     }
 
     func open(_ item: BannerNotification) {
-        if let element = live[item.id], let show = Self.action(of: element, named: "Show") ?? Self.action(of: element, named: "AXPress") {
+        if let action = item.action {
+            action()
+        } else if let link = item.link {
+            NSWorkspace.shared.open(link)
+        } else if let element = live[item.id], let show = Self.action(of: element, named: "Show") ?? Self.action(of: element, named: "AXPress") {
             AXUIElementPerformAction(element, show as CFString)
         } else if let url = item.appURL {
             NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())

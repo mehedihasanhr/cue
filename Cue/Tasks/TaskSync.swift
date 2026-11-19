@@ -79,8 +79,10 @@ final class TaskSync {
         guard !syncing else { return }
         syncing = true
         defer { syncing = false }
-        let request = TaskSyncRequest(sentAt: .now, since: lastSync, projects: store.projects.map(RemoteProject.init),
-                                      tasks: store.tasks.map(RemoteTask.init), deleted: store.deletedIDs)
+        // A connected organization's projects and tasks are its website's to keep: they
+        // never go to this server too.
+        let request = TaskSyncRequest(sentAt: .now, since: lastSync, projects: store.projects.filter { !$0.isOrg }.map(RemoteProject.init),
+                                      tasks: store.tasks.filter { !store.isOrgTask($0) }.map(RemoteTask.init), deleted: store.deletedIDs)
         do {
             let data = try await post(request, to: url, token: preferences.tasksServerToken, headers: [:])
             var taken = 0
@@ -112,7 +114,8 @@ final class TaskSync {
 
     /// A change: sent to the webhook when it is on and wants this kind of event.
     private func send(_ event: TaskEvent) {
-        guard preferences.tasksWebhookEnabled, let url = webhookURL, preferences.tasksWebhookEvents.contains(event.kind) else { return }
+        guard preferences.tasksWebhookEnabled, let url = webhookURL, preferences.tasksWebhookEvents.contains(event.kind),
+              !store.isOrgTask(event.task) else { return }
         let payload = TaskWebhookEvent(event: event.name, sentAt: .now, task: RemoteTask(event.task), project: store.project(event.task.projectID).map(RemoteProject.init))
         let secret = preferences.tasksWebhookSecret
         Task { @MainActor in

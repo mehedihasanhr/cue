@@ -10,6 +10,13 @@ nonisolated struct TaskProject: Identifiable, Codable, Hashable {
     var name: String
     var parentID: UUID?
     var createdAt: Date
+    /// Set on the projects that mirror a connected organization (Sensory OS): its root,
+    /// and one per board. They are kept by the sync, not by hand.
+    var org: OrgLink?
+
+    /// Part of a connected organization: its tasks go to the web, it is not renamed or
+    /// deleted here.
+    var isOrg: Bool { org != nil }
 
     init(name: String, parentID: UUID? = nil) {
         id = UUID()
@@ -195,6 +202,9 @@ nonisolated struct TaskItem: Identifiable, Codable, Hashable {
     var createdAt: Date
     /// When it last changed here; what decides between two copies when syncing.
     var updatedAt: Date
+    /// The copy of this task on a connected organization's website, once it has one (or
+    /// is about to): a task in an organization project.
+    var remote: RemoteLink?
 
     init(text: String, projectID: UUID?, priority: TaskPriority = .medium) {
         id = UUID()
@@ -231,7 +241,7 @@ nonisolated struct TaskItem: Identifiable, Codable, Hashable {
 
     // `title` and `notes` are what older builds wrote (and read): the text is their
     // join. `title` is still written, so they keep showing a name.
-    private enum CodingKeys: String, CodingKey { case id, text, title, customTitle, notes, projectID, status, priority, createdAt, updatedAt }
+    private enum CodingKeys: String, CodingKey { case id, text, title, customTitle, notes, projectID, status, priority, createdAt, updatedAt, remote }
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -249,6 +259,7 @@ nonisolated struct TaskItem: Identifiable, Codable, Hashable {
         priority = try container.decodeIfPresent(TaskPriority.self, forKey: .priority) ?? .medium
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? createdAt
+        remote = try container.decodeIfPresent(RemoteLink.self, forKey: .remote)
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -262,6 +273,7 @@ nonisolated struct TaskItem: Identifiable, Codable, Hashable {
         try container.encode(priority, forKey: .priority)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encodeIfPresent(remote, forKey: .remote)
     }
 }
 
@@ -372,6 +384,8 @@ final class TaskStore {
     private(set) var deletedIDs: [UUID] = []
     /// A change made here was saved (not one taken from the server).
     @ObservationIgnored var onChanged: () -> Void = {}
+    /// The same, for the organization sync (`onChanged` belongs to the task server's).
+    @ObservationIgnored var onLocalChange: () -> Void = {}
     /// A task changed here, for webhooks.
     @ObservationIgnored var onEvent: (TaskEvent) -> Void = { _ in }
     /// Changes from the server are being applied: they are neither pushed back nor announced.
@@ -597,7 +611,8 @@ final class TaskStore {
     @discardableResult
     func addProject(named name: String, in parentID: UUID? = nil) -> TaskProject? {
         let cleaned = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleaned.isEmpty else { return nil }
+        // An organization's projects are its boards, made on the website.
+        guard !cleaned.isEmpty, project(parentID)?.isOrg != true else { return nil }
         let project = TaskProject(name: cleaned, parentID: parentID)
         projects.append(project)
         save()
@@ -606,7 +621,7 @@ final class TaskStore {
 
     func renameProject(_ project: TaskProject, to name: String) {
         let cleaned = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleaned.isEmpty, let index = projects.firstIndex(where: { $0.id == project.id }) else { return }
+        guard !cleaned.isEmpty, let index = projects.firstIndex(where: { $0.id == project.id }), !projects[index].isOrg else { return }
         projects[index].name = cleaned
         save()
     }
@@ -636,6 +651,7 @@ final class TaskStore {
 
     /// Deletes the project and everything nested in it; their tasks move to no project.
     func deleteProject(_ project: TaskProject) {
+        guard !project.isOrg else { return }
         let ids = descendants(of: project.id)
         projects.removeAll { ids.contains($0.id) }
         for index in tasks.indices where tasks[index].projectID.map(ids.contains) ?? false {
@@ -802,6 +818,13 @@ final class TaskStore {
     func delete(_ task: TaskItem) {
         guard let index = tasks.firstIndex(where: { $0.id == task.id }) else { return }
         let gone = tasks.remove(at: index)
+        if let remote = gone.remote {
+            // Cue never deletes a task on the website: it only stops showing it here,
+            // until it changes there again.
+            onOrgDeleted(gone, remote)
+            save()
+            return
+        }
         deletedIDs.append(gone.id)
         save()
         onEvent(.deleted(gone))
@@ -815,11 +838,89 @@ final class TaskStore {
         onEvent(event(tasks[index]))
     }
 
+    // MARK: - Organizations
+
+    /// An organization's task was deleted here (it stays on the website).
+    @ObservationIgnored var onOrgDeleted: (TaskItem, RemoteLink) -> Void = { _, _ in }
+
+    /// The organization project a project sits in, itself included: the board, or the root.
+    func orgProject(_ id: UUID?) -> TaskProject? {
+        var current = project(id)
+        while let project = current {
+            if project.isOrg { return project }
+            current = self.project(project.parentID)
+        }
+        return nil
+    }
+
+    /// Whether a task belongs to a connected organization (and so goes to its website).
+    func isOrgTask(_ task: TaskItem) -> Bool {
+        task.remote != nil || orgProject(task.projectID) != nil
+    }
+
+    /// The organization's projects as the website has them now: made, renamed, moved,
+    /// and those it no longer has removed (their tasks go with them). Not announced, not
+    /// pushed back.
+    func replaceOrgProjects(_ wanted: [TaskProject], source: String) {
+        applyingRemote = true
+        defer { applyingRemote = false }
+        let keep = Set(wanted.map(\.id))
+        let gone = Set(projects.filter { $0.org?.source == source && !keep.contains($0.id) }.map(\.id))
+        projects.removeAll { gone.contains($0.id) }
+        if !gone.isEmpty {
+            // the website's tasks go with their board; one made here and never sent stays, as a local task
+            tasks.removeAll { task in (task.projectID.map(gone.contains) ?? false) && task.remote?.taskID != nil }
+            for index in tasks.indices where tasks[index].projectID.map(gone.contains) ?? false {
+                tasks[index].projectID = nil
+                tasks[index].remote = nil
+            }
+        }
+        for project in wanted {
+            if let index = projects.firstIndex(where: { $0.id == project.id }) {
+                if projects[index] != project { projects[index] = project }
+            } else {
+                projects.append(project)
+            }
+        }
+        save()
+    }
+
+    /// Writes tasks the sync worked out (taken from the website, or answered by it)
+    /// without announcing them or pushing them back. `remove`: ids that left.
+    func applyOrgTasks(_ changed: [TaskItem], remove: Set<UUID> = []) {
+        guard !changed.isEmpty || !remove.isEmpty else { return }
+        applyingRemote = true
+        defer { applyingRemote = false }
+        if !remove.isEmpty { tasks.removeAll { remove.contains($0.id) } }
+        for task in changed {
+            if let index = tasks.firstIndex(where: { $0.id == task.id }) {
+                tasks[index] = task
+            } else {
+                tasks.insert(task, at: 0)
+            }
+        }
+        tasks.sort { $0.createdAt > $1.createdAt }
+        save()
+    }
+
+    /// Everything of one organization, when it is disconnected.
+    func removeOrg(source: String) {
+        applyingRemote = true
+        defer { applyingRemote = false }
+        let ids = Set(projects.filter { $0.org?.source == source }.map(\.id))
+        projects.removeAll { ids.contains($0.id) }
+        tasks.removeAll { task in task.remote?.source == source || (task.projectID.map(ids.contains) ?? false) }
+        save()
+    }
+
     // MARK: - Persistence
 
     private func save() {
         guard let data = try? JSONEncoder().encode(File(projects: projects, tasks: tasks, deleted: deletedIDs)) else { return }
         file.write(data)
-        if !applyingRemote { onChanged() }
+        if !applyingRemote {
+            onChanged()
+            onLocalChange()
+        }
     }
 }

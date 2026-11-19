@@ -720,11 +720,19 @@ private struct TaskDashboardSidebar: View {
                         }
                         .dropDestination(for: String.self) { ids, _ in drop(ids, on: list) }
                     }
+                    if !orgTree.isEmpty {
+                        // A connected organization (Sensory OS): its boards, kept by the
+                        // sync. Tasks added here go to its website; nothing else does.
+                        sectionHeader("Organization", add: nil)
+                        ForEach(orgTree, id: \.project.id) { entry in
+                            projectRow(entry.project, depth: entry.depth)
+                        }
+                    }
                     sectionHeader("Projects") { model.projectPrompt = .new(parent: nil) }
                     ForEach(tree, id: \.project.id) { entry in
                         projectRow(entry.project, depth: entry.depth)
                     }
-                    if store.projects.isEmpty {
+                    if !store.projects.contains(where: { !$0.isOrg }) {
                         Button {
                             model.projectPrompt = .new(parent: nil)
                         } label: {
@@ -755,11 +763,18 @@ private struct TaskDashboardSidebar: View {
         }
     }
 
+    private func under(_ parent: UUID?, depth: Int) -> [(project: TaskProject, depth: Int)] {
+        store.subprojects(of: parent).flatMap { [(project: $0, depth: depth)] + under($0.id, depth: depth + 1) }
+    }
+
+    /// The person's own projects.
     private var tree: [(project: TaskProject, depth: Int)] {
-        func under(_ parent: UUID?, depth: Int) -> [(project: TaskProject, depth: Int)] {
-            store.subprojects(of: parent).flatMap { [(project: $0, depth: depth)] + under($0.id, depth: depth + 1) }
-        }
-        return under(nil, depth: 0)
+        under(nil, depth: 0).filter { !$0.project.isOrg }
+    }
+
+    /// The connected organization's: its root, then its boards.
+    private var orgTree: [(project: TaskProject, depth: Int)] {
+        under(nil, depth: 0).filter { $0.project.isOrg }
     }
 
     private func select(_ selection: TaskDashboardSelection) {
@@ -770,13 +785,18 @@ private struct TaskDashboardSidebar: View {
         model.selection = selection
     }
 
-    private func sectionHeader(_ title: String, add: @escaping () -> Void) -> some View {
+    private func sectionHeader(_ title: String, add: (() -> Void)?) -> some View {
         HStack(spacing: 0) {
             Text(title)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(NotionStyle.tertiary)
             Spacer()
-            NotionIconButton(symbol: "plus", help: "New project", size: 12, tint: NotionStyle.tertiary, action: add)
+            if let add {
+                NotionIconButton(symbol: "plus", help: "New project", size: 12, tint: NotionStyle.tertiary, action: add)
+            } else {
+                // keeps the header the height of one with a button
+                Color.clear.frame(width: 1, height: 22)
+            }
         }
         .padding(.leading, 8)
         .padding(.top, 18)
@@ -795,10 +815,18 @@ private struct TaskDashboardSidebar: View {
             return !moved.isEmpty
         }
         .contextMenu {
-            Button("New Sub-project") { model.projectPrompt = .new(parent: project.id) }
-            Button("Rename") { model.projectPrompt = .rename(project) }
-            Divider()
-            Button("Delete Project", role: .destructive) { model.pendingDeletion = .project(project) }
+            if project.isOrg {
+                // the website's boards: made, renamed and removed there
+                Button("New Task Here") {
+                    select(.project(project.id))
+                    model.composeNew()
+                }
+            } else {
+                Button("New Sub-project") { model.projectPrompt = .new(parent: project.id) }
+                Button("Rename") { model.projectPrompt = .rename(project) }
+                Divider()
+                Button("Delete Project", role: .destructive) { model.pendingDeletion = .project(project) }
+            }
         }
     }
 
