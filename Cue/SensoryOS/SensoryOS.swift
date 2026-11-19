@@ -79,6 +79,7 @@ final class SensoryOS {
         static let notifications = "sensoryos.notifications"
         static let notificationsSince = "sensoryos.notifications.since"
         static let notificationsSeen = "sensoryos.notifications.seen"
+        static let announced = "sensoryos.announced"
         static let dismissed = "sensoryos.dismissed"
         static let lastSync = "sensoryos.lastSync"
         static func cursor(_ scope: String, _ agency: String) -> String { "sensoryos.cursor.\(scope).\(agency)" }
@@ -246,6 +247,7 @@ final class SensoryOS {
         defaults.removeObject(forKey: Keys.notificationsSince)
         defaults.removeObject(forKey: Keys.notificationsSeen)
         defaults.removeObject(forKey: Keys.dismissed)
+        defaults.removeObject(forKey: Keys.announced)
         store.removeOrg(source: SOSMap.source)
         phase = .disconnected
         lastError = nil
@@ -357,9 +359,11 @@ final class SensoryOS {
 
     private func pull() async throws {
         guard let me else { return }
-        var fetched: [(agency: SOSAgency, boards: [SOSBoard], tasks: [SOSTask], ids: Set<String>?, cursor: String?)] = []
+        var fetched: [(agency: SOSAgency, boards: [SOSBoard], tasks: [SOSTask], ids: Set<String>?, cursor: String?, caughtUp: Bool)] = []
         for agency in me.agencies {
             var since = defaults.string(forKey: Keys.cursor(scope, agency.id))
+            // A first look at an agency brings in everything there already is: none of it is news.
+            let caughtUp = since != nil
             var tasks: [SOSTask] = []
             var page: SOSSync
             var rounds = 0
@@ -371,7 +375,7 @@ final class SensoryOS {
                 since = page.cursor ?? since
                 rounds += 1
             } while page.more && rounds < 40
-            fetched.append((agency, page.boards, tasks, page.taskIdsComplete ? Set(page.taskIds) : nil, since))
+            fetched.append((agency, page.boards, tasks, page.taskIdsComplete ? Set(page.taskIds) : nil, since, caughtUp))
         }
 
         // the projects first: a task needs its board to be there
@@ -404,6 +408,7 @@ final class SensoryOS {
         let local = Dictionary(store.tasks.compactMap { task in task.remote?.taskID.map { ($0, task) } }, uniquingKeysWith: { first, _ in first })
         var changed: [TaskItem] = []
         var remove = Set<UUID>()
+        var news: [SOSNotification] = []
         for entry in fetched {
             for wire in entry.tasks {
                 if let hidden = dismissed[wire.id] {
@@ -429,6 +434,7 @@ final class SensoryOS {
                     SOSMap.apply(theirs, to: &task)
                     task.remote = link(wire, agency: entry.agency.id, base: theirs)
                     changed.append(task)
+                    if entry.caughtUp, let item = announcement(for: wire, agency: entry.agency.id, boards: entry.boards) { news.append(item) }
                 }
             }
             // what left the scope (finished long ago, deleted, handed on, its board archived)
@@ -447,6 +453,31 @@ final class SensoryOS {
             if let cursor = entry.cursor { defaults.set(cursor, forKey: Keys.cursor(scope, entry.agency.id)) }
         }
         if !changed.isEmpty || !remove.isEmpty { note("took \(changed.count), removed \(remove.count)") }
+        if notificationsEnabled {
+            for item in news.suffix(5) { deliver(item) }
+        }
+    }
+
+    /// A task that just appeared on the website and is the person's to do: news for the
+    /// island, though the website only notifies someone assigned by somebody else. Nil
+    /// when it isn't theirs, is done, is old, or they have already been told about it.
+    private func announcement(for wire: SOSTask, agency: String, boards: [SOSBoard]) -> SOSNotification? {
+        guard wire.assignedToMe == true, wire.status != "done", wire.createdAt.timeIntervalSinceNow > -3600,
+              markAnnounced(wire.id) else { return nil }
+        let board = boards.first { $0.id == wire.boardId }.map { Self.name(of: $0, among: boards) }
+        return SOSNotification(id: "cue.task.\(wire.id)", agencyId: agency, createdAt: wire.createdAt, type: "task.assigned",
+                               title: "New task: \(wire.title)", body: board.map { "Assigned to you · \($0)" } ?? "Assigned to you",
+                               entityType: "task", entityId: wire.id, readAt: nil, href: wire.href)
+    }
+
+    /// Records that the person has been told about a task (by Cue, or by the website's
+    /// own "assigned" notification), so the other one stays quiet. False if they were.
+    private func markAnnounced(_ taskID: String) -> Bool {
+        var announced = defaults.stringArray(forKey: Keys.announced) ?? []
+        guard !announced.contains(taskID) else { return false }
+        announced.append(taskID)
+        defaults.set(Array(announced.suffix(300)), forKey: Keys.announced)
+        return true
     }
 
     /// A board's name in the sidebar: its project's name (a project has one board), the
@@ -611,7 +642,11 @@ final class SensoryOS {
             let fresh = answer.notifications.filter { !seen.contains($0.id) }.sorted { $0.createdAt < $1.createdAt }
             // the first look only sets the mark: what was already in the bell is not news
             if since != nil, notificationsEnabled {
-                for item in fresh.suffix(5) { deliver(item) }
+                for item in fresh.suffix(5) {
+                    // the website's "you were assigned" for a task Cue has already announced
+                    if item.type == "task.assigned", item.entityType == "task", let task = item.entityId, !markAnnounced(task) { continue }
+                    deliver(item)
+                }
             }
             seen.formUnion(answer.notifications.map(\.id))
             defaults.set(Array(seen.suffix(300)), forKey: Keys.notificationsSeen)
@@ -637,6 +672,8 @@ final class SensoryOS {
         } else if let url {
             NSWorkspace.shared.open(url)
         }
+        // Cue's own "new task" has no row on the website to mark
+        guard !notificationID.hasPrefix("cue.") else { return }
         Task { _ = try? await call("POST", "/api/desktop/v1/notifications/read", body: ["ids": [notificationID]]) as SOSOK }
     }
 
