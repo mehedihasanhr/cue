@@ -1796,6 +1796,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     try? url.absoluteString.write(to: folder.appendingPathComponent("sensoryos-authorize.txt"), atomically: true, encoding: .utf8)
                 })) }
                 try? await Task.sleep(for: .seconds(3))
+            case "connect-sheet":
+                // the real sign-in window, as the Connect Organization button opens it
+                Task { await sos.connect(mode: .sheet) }
+                try? await Task.sleep(for: .seconds(4))
             case "sync":
                 await sos.run()
             case "scope":

@@ -269,11 +269,15 @@ final class SOSSignIn {
         try await withCheckedThrowingContinuation { continuation in
             self.continuation = continuation
             guard sheet else { return }
-            let session = ASWebAuthenticationSession(url: url, callbackURLScheme: SOSServer.callbackScheme) { [weak self] url, error in
-                MainActor.assumeIsolated {
+            // macOS calls this on a background queue (an XPC reply), not the main thread:
+            // the closure is @Sendable so it is not taken for main-actor code, and it hops.
+            let session = ASWebAuthenticationSession(url: url, callbackURLScheme: SOSServer.callbackScheme) { @Sendable [weak self] url, error in
+                let cancelled = (error as? ASWebAuthenticationSessionError)?.code == .canceledLogin
+                let message = error?.localizedDescription
+                Task { @MainActor in
                     if let url { self?.finish(.success(url)) }
-                    else if let error = error as? ASWebAuthenticationSessionError, error.code == .canceledLogin { self?.finish(.failure(SOSAuthError.cancelled)) }
-                    else { self?.finish(.failure(error ?? SOSAuthError.server("Sign-in did not finish."))) }
+                    else if cancelled { self?.finish(.failure(SOSAuthError.cancelled)) }
+                    else { self?.finish(.failure(SOSAuthError.server(message.map { "The sign-in window failed: \($0)" } ?? "Sign-in did not finish."))) }
                 }
             }
             session.presentationContextProvider = SOSSignInAnchor.shared
