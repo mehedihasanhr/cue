@@ -27,6 +27,8 @@ final class SensoryOS {
     private(set) var busy = false
     /// The live feed is joined (changes arrive at once, not on the next minute).
     private(set) var isLive = false
+    /// The sign-in page while a sign-in waits, so Settings can open it again.
+    private(set) var signInURL: URL?
 
     // MARK: Settings
 
@@ -155,6 +157,17 @@ final class SensoryOS {
             let clientID = try await SOSAuth.clientID(for: auth, server: server, given: clientIDText)
             let attempt = SOSSignIn(server: server, auth: auth, clientID: clientID)
             signIn = attempt
+            signInURL = attempt.url
+            // The server's request lasts ten minutes; a sign-in left open longer can't finish.
+            let deadline = Task { @MainActor [weak attempt] in
+                try? await Task.sleep(for: .seconds(600))
+                guard !Task.isCancelled else { return }
+                attempt?.expire()
+            }
+            defer {
+                deadline.cancel()
+                signInURL = nil
+            }
             let callback: URL
             switch mode {
             case .sheet:
@@ -190,6 +203,13 @@ final class SensoryOS {
     }
 
     func cancelSignIn() { signIn?.cancel() }
+
+    /// Opens the waiting sign-in in the browser (the window was closed, or never showed).
+    /// The answer comes back through Cue's URL handler.
+    func openSignInPage() {
+        guard let signInURL else { return }
+        NSWorkspace.shared.open(signInURL)
+    }
 
     /// Signs out and removes the organization's copy from Cue (the website keeps it all).
     func disconnect() {

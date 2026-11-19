@@ -291,6 +291,12 @@ final class SOSSignIn {
         finish(.failure(SOSAuthError.cancelled))
     }
 
+    /// Gave up waiting: the person never finished, and the server's request has expired.
+    func expire() {
+        session?.cancel()
+        finish(.failure(SOSAuthError.server("The sign-in wasn't finished in time. Click Connect Organization to try again.")))
+    }
+
     private func finish(_ result: Result<URL, Error>) {
         guard let continuation else { return }
         self.continuation = nil

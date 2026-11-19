@@ -29,6 +29,10 @@ struct SensoryOSSettingsGroup: View {
                             .keyboardShortcut(.defaultAction)
                     case .connecting:
                         ProgressView().controlSize(.small)
+                        if sensoryOS.signInURL != nil {
+                            Button("Open Sign-in Page") { sensoryOS.openSignInPage() }
+                                .help("Opens Sensory OS's sign-in in your browser, if its window was closed or didn't appear.")
+                        }
                         Button("Cancel") { sensoryOS.cancelSignIn() }
                     case .connected:
                         Button("Sync Now") { Task { await sensoryOS.run() } }
@@ -72,7 +76,7 @@ struct SensoryOSSettingsGroup: View {
     private var title: String {
         switch sensoryOS.phase {
         case .disconnected: "Not connected"
-        case .connecting: "Waiting for you to sign in…"
+        case .connecting: "Finish signing in to Sensory OS…"
         case .connected: sensoryOS.me.map { "Connected as \($0.user.email)" } ?? "Connected"
         }
     }
@@ -83,6 +87,9 @@ struct SensoryOSSettingsGroup: View {
 
     private var footer: String? {
         if let error = sensoryOS.lastError { return error }
+        if sensoryOS.phase == .connecting {
+            return "Sign in and allow Cue on the Sensory OS page. No page? Click Open Sign-in Page. This gives up after ten minutes."
+        }
         guard sensoryOS.phase == .connected else {
             return "Cue opens Sensory OS's sign-in. Your password never reaches Cue; it keeps a sign-in token in your Keychain."
         }
