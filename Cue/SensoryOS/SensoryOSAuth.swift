@@ -114,11 +114,14 @@ nonisolated enum SOSAuth {
 
     /// The client id this Mac registered with this authorization server, registering
     /// once when there is none.
-    static func clientID(for auth: SOSAuthServer, server: SOSServer) async throws -> String {
+    static func clientID(for auth: SOSAuthServer, server: SOSServer, given: String = "") async throws -> String {
+        // One an admin registered for Cue on the server, when it does not let apps register themselves.
+        let given = given.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !given.isEmpty { return given }
         let key = "sensoryos.client.\(auth.issuer)|\(server.redirectURI)"
         if let saved = UserDefaults.standard.string(forKey: key), !saved.isEmpty { return saved }
         guard let endpoint = auth.registrationEndpoint else {
-            throw SOSAuthError.server("This Sensory OS server does not let apps register themselves.")
+            throw SOSAuthError.server("This server doesn't let apps register themselves. Add Cue as an OAuth app on it (redirect URL \(server.redirectURI), public client) and enter its client ID here.")
         }
         var request = URLRequest(url: endpoint, timeoutInterval: 20)
         request.httpMethod = "POST"

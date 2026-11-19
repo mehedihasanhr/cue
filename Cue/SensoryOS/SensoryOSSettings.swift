@@ -59,6 +59,12 @@ struct SensoryOSSettingsGroup: View {
                         .frame(width: 280)
                         .disabled(sensoryOS.phase != .disconnected)
                 }
+                SettingsRow("Client ID", subtitle: "Only for a server that doesn't let apps register themselves: an admin adds Cue as an OAuth app there and gives you its client ID. Leave empty otherwise.") {
+                    TextField("Client ID", text: $sensoryOS.clientIDText, prompt: Text("Optional"))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 280)
+                        .disabled(sensoryOS.phase != .disconnected)
+                }
             }
         }
     }

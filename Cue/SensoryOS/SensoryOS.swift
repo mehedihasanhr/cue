@@ -46,6 +46,11 @@ final class SensoryOS {
     var notificationsEnabled: Bool {
         didSet { defaults.set(notificationsEnabled, forKey: Keys.notifications) }
     }
+    /// Cue's client ID on a server that doesn't let apps register themselves (an admin
+    /// adds Cue as an OAuth app there). Empty: Cue registers itself.
+    var clientIDText: String {
+        didSet { defaults.set(clientIDText, forKey: Keys.clientID) }
+    }
 
     /// A Sensory OS notification arrived: for the island. The URL opens it.
     @ObservationIgnored var onNotification: (SOSNotification, URL?) -> Void = { _, _ in }
@@ -79,6 +84,7 @@ final class SensoryOS {
         static let notificationsSeen = "sensoryos.notifications.seen"
         static let dismissed = "sensoryos.dismissed"
         static let lastSync = "sensoryos.lastSync"
+        static let clientID = "sensoryos.clientID"
         static func cursor(_ scope: String, _ agency: String) -> String { "sensoryos.cursor.\(scope).\(agency)" }
     }
 
@@ -87,6 +93,7 @@ final class SensoryOS {
         serverText = defaults.string(forKey: Keys.server) ?? SOSServer.production.absoluteString
         scope = defaults.string(forKey: Keys.scope) ?? "mine"
         notificationsEnabled = defaults.object(forKey: Keys.notifications) as? Bool ?? true
+        clientIDText = defaults.string(forKey: Keys.clientID) ?? ""
         lastSync = defaults.object(forKey: Keys.lastSync) as? Date
 
         store.onLocalChange = { [weak self] in self?.scheduleRun() }
@@ -145,7 +152,7 @@ final class SensoryOS {
         lastError = nil
         do {
             let auth = try await SOSAuth.discover(server)
-            let clientID = try await SOSAuth.clientID(for: auth, server: server)
+            let clientID = try await SOSAuth.clientID(for: auth, server: server, given: clientIDText)
             let attempt = SOSSignIn(server: server, auth: auth, clientID: clientID)
             signIn = attempt
             let callback: URL
@@ -667,7 +674,7 @@ final class SensoryOS {
 
     func debugReport() -> String {
         var lines = ["phase: \(phase)", "server: \(serverText)", "scope: \(scope)", "live: \(realtime.isLive)",
-                     "user: \(me?.user.email ?? "-")", "agencies: \(agencies.map(\.name).joined(separator: ", "))",
+                     "clientID: \(clientIDText.isEmpty ? "(self-registered)" : clientIDText)", "user: \(me?.user.email ?? "-")", "agencies: \(agencies.map(\.name).joined(separator: ", "))",
                      "lastSync: \(lastSync.map(SOSDates.string) ?? "-")", "lastError: \(lastError ?? "-")", "unsent: \(unsent)", "", "projects:"]
         for project in store.projects where project.isOrg {
             lines.append("  \(project.name) [board \(project.org?.boardID ?? "-")] parent=\(store.project(project.parentID)?.name ?? "-")")

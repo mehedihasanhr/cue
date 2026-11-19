@@ -1780,6 +1780,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             switch query["action"] ?? "state" {
             case "server":
                 if let value = query["url"] { sos.serverText = value }
+                if let value = query["client"] { sos.clientIDText = value }
             case "token":
                 let file = folder.appendingPathComponent("sensoryos-token.json")
                 struct Seed: Decodable { let accessToken: String; let refreshToken: String?; let expiresIn: Double?; let origin: String; let tokenEndpoint: String; let clientID: String? }
