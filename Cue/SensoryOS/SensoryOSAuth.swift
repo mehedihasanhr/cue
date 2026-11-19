@@ -91,7 +91,7 @@ nonisolated enum SOSAuth {
     static func discover(_ server: SOSServer) async throws -> SOSAuthServer {
         struct Resource: Decodable { let authorization_servers: [String]? }
         let resourceURL = server.origin.appendingPathComponent(".well-known/oauth-protected-resource")
-        let (data, response) = try await URLSession.shared.data(from: resourceURL)
+        let (data, response) = try await URLSession.shared.data(for: fresh(resourceURL))
         guard (response as? HTTPURLResponse)?.statusCode == 200,
               let issuer = (try? JSONDecoder().decode(Resource.self, from: data))?.authorization_servers?.first,
               let issuerURL = URL(string: issuer) else {
@@ -104,12 +104,19 @@ nonisolated enum SOSAuth {
             if let url = components.url { candidates.append(url) }
         }
         for url in candidates {
-            guard let (data, response) = try? await URLSession.shared.data(from: url),
+            guard let (data, response) = try? await URLSession.shared.data(for: fresh(url)),
                   (response as? HTTPURLResponse)?.statusCode == 200,
                   let metadata = try? JSONDecoder().decode(SOSAuthServer.self, from: data) else { continue }
             return metadata
         }
         throw SOSAuthError.server("Sensory OS has sign-in for apps switched off on this server.")
+    }
+
+    /// A request that skips the URL cache. Supabase marks its metadata cacheable for ten
+    /// minutes, and a copy kept from before an admin switched something on (registration)
+    /// would keep Connect failing long after it was fixed.
+    private static func fresh(_ url: URL) -> URLRequest {
+        URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData, timeoutInterval: 20)
     }
 
     /// The client id this Mac registered with this authorization server, registering
