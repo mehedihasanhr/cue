@@ -107,6 +107,9 @@ struct TaskPageView: View {
             property("Status", symbol: "circle.dotted") {
                 TagMenu(tag: .status(task.status), help: "Status") { TaskStatusItems(store: store, task: task) }
             }
+            property("Assignee", symbol: "person") {
+                AssigneeMenu(store: store, task: task)
+            }
             property("Priority", symbol: "flag") {
                 TagMenu(tag: .priority(task.priority), help: "Priority") { TaskPriorityItems(store: store, task: task) }
             }
@@ -121,6 +124,8 @@ struct TaskPageView: View {
                     .font(.system(size: 14))
                     .foregroundStyle(dirty ? NotionStyle.tertiary : NotionStyle.text)
             }
+
+            TaskPageDetails(store: store, task: task)
 
             Hairline()
                 .padding(.top, 12)
@@ -223,5 +228,171 @@ struct TaskPageView: View {
         store.update(current, title: title, text: text)
         savedTitle = title
         savedText = text
+    }
+}
+
+/// What a task has beyond its properties, each only when it has it: when it is due, its
+/// labels, what "done" looks like, the task it is a step of and those it waits on, its
+/// links (and the Claude session that worked on it) as chips, its checklist and steps.
+private struct TaskPageDetails: View {
+    let store: TaskStore
+    let task: TaskItem
+    @Environment(TaskDashboardModel.self) private var model
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if task.kind == .ownerStep {
+                Label("Waiting on you: only you can take this step.", systemImage: "hand.raised")
+                    .font(.system(size: 13))
+                    .foregroundStyle(NotionColor.purple.text)
+            }
+            if let due = task.due {
+                line("Due", symbol: "calendar") {
+                    Text(due.formatted(date: .abbreviated, time: .omitted)).font(.system(size: 14))
+                        .foregroundStyle(due < .now && task.status != .complete ? NotionColor.red.text : NotionStyle.text)
+                }
+            }
+            if !task.labels.isEmpty {
+                line("Labels", symbol: "tag") {
+                    HStack(spacing: 4) { ForEach(task.labels, id: \.self) { NotionTag(text: $0, color: .blue) } }
+                }
+            }
+            if let parent = task.parentID.flatMap({ id in store.tasks.first { $0.id == id } }) {
+                line("Step of", symbol: "arrow.turn.left.up") { taskButton(parent) }
+            }
+            if !task.blockedBy.isEmpty {
+                line("Blocked by", symbol: "hand.raised.slash") {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(task.blockedBy, id: \.self) { id in
+                            if let blocker = store.tasks.first(where: { $0.id == id }) { taskButton(blocker) }
+                        }
+                    }
+                }
+            }
+            if let doneWhen = task.doneWhen, !doneWhen.isEmpty {
+                line("Done when", symbol: "flag.checkered") {
+                    Text(doneWhen).font(.system(size: 14)).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            if !task.links.isEmpty || task.sessionID != nil {
+                chips
+            }
+            if !task.checklist.isEmpty {
+                checklist
+            }
+            let steps = store.subtasks(of: task)
+            if !steps.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Steps \(steps.filter { $0.status == .complete }.count)/\(steps.count)")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(NotionStyle.secondary)
+                    ForEach(steps) { taskButton($0) }
+                }
+                .padding(.top, 4)
+            }
+        }
+        .padding(.top, 4)
+    }
+
+    private func line(_ name: String, symbol: String, @ViewBuilder value: () -> some View) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: symbol).font(.system(size: 13)).frame(width: 16)
+                Text(name).font(.system(size: 14))
+            }
+            .foregroundStyle(NotionStyle.secondary)
+            .frame(width: 150, alignment: .leading)
+            value()
+            Spacer(minLength: 0)
+        }
+        .frame(minHeight: 30)
+    }
+
+    /// Another task, by its status and name; a click opens it.
+    private func taskButton(_ other: TaskItem) -> some View {
+        Button { model.openTaskID = other.id } label: {
+            HStack(spacing: 6) {
+                NotionTag.status(other.status)
+                Text(other.title)
+                    .font(.system(size: 14))
+                    .strikethrough(other.status == .complete, color: NotionStyle.tertiary)
+                    .foregroundStyle(NotionStyle.text)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 4)
+            .frame(height: 26)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(NotionHoverStyle())
+        .help("Open \(other.title)")
+    }
+
+    private var chips: some View {
+        HStack(spacing: 6) {
+            ForEach(task.links) { link in
+                chip(link.label, symbol: link.symbol, help: link.target) {
+                    if let url = link.url { NSWorkspace.shared.open(url) } else { copy(link.target, said: "Copied \(link.label)") }
+                }
+            }
+            if let session = task.sessionID {
+                // A Claude Code session is picked up again with `claude --resume`.
+                chip("Claude session", symbol: "sparkles", help: "Copy claude --resume \(session)") {
+                    copy("claude --resume \(session)", said: "Copied the command to resume the session")
+                }
+            }
+        }
+    }
+
+    private func chip(_ title: String, symbol: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: symbol).font(.system(size: 11))
+                Text(title).font(.system(size: 12, weight: .medium)).lineLimit(1)
+            }
+            .foregroundStyle(NotionStyle.text)
+            .padding(.horizontal, 8)
+            .frame(height: 24)
+            .background(NotionStyle.field, in: Capsule())
+            .overlay(Capsule().strokeBorder(NotionStyle.divider))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+
+    private func copy(_ text: String, said: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        FeedbackHUD.show(said, symbol: "doc.on.clipboard")
+    }
+
+    private var checklist: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Checklist \(task.checklist.filter(\.done).count)/\(task.checklist.count)")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(NotionStyle.secondary)
+            ForEach(task.checklist) { item in
+                Button {
+                    store.edit(task) { task in
+                        if let index = task.checklist.firstIndex(where: { $0.id == item.id }) { task.checklist[index].done.toggle() }
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: item.done ? "checkmark.square.fill" : "square")
+                            .font(.system(size: 14))
+                            .foregroundStyle(item.done ? NotionStyle.accent : NotionStyle.secondary)
+                        Text(item.text)
+                            .font(.system(size: 14))
+                            .strikethrough(item.done, color: NotionStyle.tertiary)
+                            .foregroundStyle(item.done ? NotionStyle.secondary : NotionStyle.text)
+                    }
+                    .padding(.horizontal, 4)
+                    .frame(minHeight: 26)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(NotionHoverStyle())
+            }
+        }
+        .padding(.top, 4)
     }
 }

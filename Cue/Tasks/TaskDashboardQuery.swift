@@ -5,7 +5,7 @@ import SwiftUI
 
 /// The fixed lists at the top of the dashboard's sidebar.
 nonisolated enum TaskDashboardList: String, CaseIterable, Identifiable {
-    case all, today, urgent, unassigned, completed
+    case all, today, urgent, waiting, unassigned, completed, archived
 
     var id: String { rawValue }
 
@@ -14,8 +14,10 @@ nonisolated enum TaskDashboardList: String, CaseIterable, Identifiable {
         case .all: "All tasks"
         case .today: "Today"
         case .urgent: "Urgent"
+        case .waiting: "Waiting on you"
         case .unassigned: "No project"
         case .completed: "Completed"
+        case .archived: "Archived"
         }
     }
 
@@ -24,8 +26,10 @@ nonisolated enum TaskDashboardList: String, CaseIterable, Identifiable {
         case .all: "tray.full"
         case .today: "sun.max"
         case .urgent: "flame"
+        case .waiting: "hand.raised"
         case .unassigned: "tray"
         case .completed: "checkmark.circle"
+        case .archived: "archivebox"
         }
     }
 
@@ -34,8 +38,10 @@ nonisolated enum TaskDashboardList: String, CaseIterable, Identifiable {
         case .all: .blue
         case .today: .orange
         case .urgent: .red
+        case .waiting: .purple
         case .unassigned: .gray
         case .completed: .green
+        case .archived: .gray
         }
     }
 }
@@ -72,13 +78,19 @@ nonisolated enum TaskDashboardQuery {
     static let statusOrder: [TaskStatus] = [.pending, .inProcess, .review, .complete]
 
     /// The tasks a fixed list shows.
+    /// Archived tasks show only on Archived; steps waiting on the owner have their own
+    /// list rather than hiding among the work.
     static func filter(_ tasks: [TaskItem], list: TaskDashboardList, now: Date = .now, calendar: Calendar = .current) -> [TaskItem] {
+        let kept = tasks.filter { !$0.isArchived }
+        let work = kept.filter { $0.kind == .task }
         switch list {
-        case .all: tasks
-        case .today: tasks.filter { calendar.isDate($0.createdAt, inSameDayAs: now) || calendar.isDate($0.updatedAt, inSameDayAs: now) }
-        case .urgent: tasks.filter { $0.priority == .urgent && $0.status != .complete }
-        case .unassigned: tasks.filter { $0.projectID == nil }
-        case .completed: tasks.filter { $0.status == .complete }
+        case .all: return work
+        case .today: return work.filter { calendar.isDate($0.createdAt, inSameDayAs: now) || calendar.isDate($0.updatedAt, inSameDayAs: now) }
+        case .urgent: return work.filter { $0.priority == .urgent && $0.status != .complete }
+        case .waiting: return kept.filter { $0.kind == .ownerStep }
+        case .unassigned: return work.filter { $0.projectID == nil }
+        case .completed: return kept.filter { $0.status == .complete }
+        case .archived: return tasks.filter(\.isArchived)
         }
     }
 
@@ -86,7 +98,7 @@ nonisolated enum TaskDashboardQuery {
     /// Completed, which counts what is done.
     static func count(_ tasks: [TaskItem], list: TaskDashboardList, now: Date = .now, calendar: Calendar = .current) -> Int {
         let shown = filter(tasks, list: list, now: now, calendar: calendar)
-        return list == .completed ? shown.count : shown.filter { $0.status != .complete }.count
+        return list == .completed || list == .archived ? shown.count : shown.filter { $0.status != .complete }.count
     }
 
     /// Whether the task's text holds every word of the search, in any order and case.
@@ -184,7 +196,7 @@ nonisolated enum PageIcon: Hashable {
 
 /// A column of the task table, as something to sort by.
 nonisolated enum TaskColumn: String, CaseIterable, Hashable {
-    case name, status, priority, project, updated
+    case name, status, priority, assignee, project, updated
 }
 
 /// Which column the table is sorted by, and which way. No sort at all is `nil`
@@ -234,6 +246,11 @@ extension TaskDashboardQuery {
             let left = lhs.projectID.flatMap { projectNames[$0] } ?? ""
             let right = rhs.projectID.flatMap { projectNames[$0] } ?? ""
             // No project is the least: it gathers at one end rather than among the names.
+            if left.isEmpty != right.isEmpty { return left.isEmpty ? .orderedAscending : .orderedDescending }
+            return left.localizedStandardCompare(right)
+        case .assignee:
+            // No one is the least, as with projects: those tasks gather at one end.
+            let left = lhs.assignee ?? "", right = rhs.assignee ?? ""
             if left.isEmpty != right.isEmpty { return left.isEmpty ? .orderedAscending : .orderedDescending }
             return left.localizedStandardCompare(right)
         case .updated:

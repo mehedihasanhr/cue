@@ -843,13 +843,15 @@ private struct TaskDashboardSidebar: View {
     }
 
     /// Tasks dropped on a fixed list take what it means where that is one thing:
-    /// No project, Urgent, Completed.
+    /// No project, Urgent, Completed, Waiting on you (a step for the owner), Archived.
     private func drop(_ ids: [String], on list: TaskDashboardList) -> Bool {
         let dropped = tasks(for: ids)
         switch list {
         case .unassigned: dropped.forEach { store.move($0, to: nil) }
         case .urgent: dropped.forEach { store.setPriority(.urgent, for: $0) }
         case .completed: dropped.forEach { store.setStatus(.complete, for: $0) }
+        case .waiting: dropped.forEach { task in store.edit(task) { $0.kind = .ownerStep } }
+        case .archived: dropped.forEach { store.setArchived(true, for: $0) }
         case .all, .today: return false
         }
         return !dropped.isEmpty
@@ -1054,7 +1056,7 @@ private struct TaskDashboardMain: View {
 
     /// What the page lists: every match for a search, else the chosen list or project.
     private var shown: [TaskItem] {
-        if model.isSearching { return store.tasks.filter { TaskDashboardQuery.matches($0, query: model.query) } }
+        if model.isSearching { return store.tasks.filter { !$0.isArchived && TaskDashboardQuery.matches($0, query: model.query) } }
         switch model.selection {
         case .list(let list): return TaskDashboardQuery.filter(store.tasks, list: list)
         case .project(let id): return store.tasks(in: id)
@@ -1222,10 +1224,11 @@ private enum TableColumns {
     static let gutter: CGFloat = 28
     static let name: CGFloat = 280
     static let status: CGFloat = 150
+    static let assignee: CGFloat = 160
     static let priority: CGFloat = 120
     static let project: CGFloat = 170
     static let updated: CGFloat = 150
-    static var minimumWidth: CGFloat { gutter + name + status + priority + project + updated + 4 }
+    static var minimumWidth: CGFloat { gutter + name + status + assignee + priority + project + updated + 5 }
 }
 
 /// Every task in groups by status, each a ▸ toggle with its tag and count, the column
@@ -1342,6 +1345,8 @@ private struct TableGroup: View {
             Hairline(axis: .vertical)
             heading("Status", symbol: "circle.dotted", column: .status, width: TableColumns.status)
             Hairline(axis: .vertical)
+            heading("Assignee", symbol: "person", column: .assignee, width: TableColumns.assignee)
+            Hairline(axis: .vertical)
             heading("Priority", symbol: "flag", column: .priority, width: TableColumns.priority)
             Hairline(axis: .vertical)
             heading("Project", symbol: "folder", column: .project, width: TableColumns.project)
@@ -1389,6 +1394,42 @@ private struct TableGroup: View {
     }
 }
 
+/// What a row says about a task beyond its name, small and grey: held up by another
+/// task, its steps and checklist done so far, how many links it has.
+private struct TaskMarkers: View {
+    let store: TaskStore
+    let task: TaskItem
+
+    var body: some View {
+        let blockers = store.blockers(of: task)
+        let steps = store.subtasks(of: task)
+        HStack(spacing: 8) {
+            if !blockers.isEmpty {
+                marker("hand.raised.slash", "", help: "Waiting on " + blockers.map(\.title).joined(separator: ", "))
+                    .foregroundStyle(NotionColor.red.text)
+            }
+            if task.kind == .ownerStep { marker("hand.raised", "", help: "Waiting on you") }
+            if !steps.isEmpty {
+                marker("list.bullet.indent", "\(steps.filter { $0.status == .complete }.count)/\(steps.count)", help: "Steps done")
+            }
+            if !task.checklist.isEmpty {
+                marker("checklist", "\(task.checklist.filter(\.done).count)/\(task.checklist.count)", help: "Checklist done")
+            }
+            if !task.links.isEmpty { marker("link", "\(task.links.count)", help: task.links.map(\.label).joined(separator: ", ")) }
+        }
+        .foregroundStyle(NotionStyle.tertiary)
+    }
+
+    private func marker(_ symbol: String, _ text: String, help: String) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: symbol).font(.system(size: 10))
+            if !text.isEmpty { Text(text).font(.system(size: 11).monospacedDigit()) }
+        }
+        .fixedSize()
+        .help(help)
+    }
+}
+
 /// One task as a table row: its name (with OPEN on hover), then status, priority and
 /// project as tags that change from a menu, and when it last changed. A drag handle
 /// shows in the gutter under the pointer; a click opens the task beside the table.
@@ -1415,6 +1456,10 @@ private struct TableRow: View {
                 Hairline(axis: .vertical)
                 cell(width: TableColumns.status) {
                     TagMenu(tag: .status(task.status), help: "Status") { TaskStatusItems(store: store, task: task) }
+                }
+                Hairline(axis: .vertical)
+                cell(width: TableColumns.assignee) {
+                    AssigneeMenu(store: store, task: task, placeholder: hovering ? "Assign" : "")
                 }
                 Hairline(axis: .vertical)
                 cell(width: TableColumns.priority) {
@@ -1465,6 +1510,7 @@ private struct TableRow: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .help(task.title)
+            TaskMarkers(store: store, task: task)
             Spacer(minLength: 4)
             if hovering {
                 Button {
@@ -1642,12 +1688,16 @@ private struct TaskRowMenu: View {
         Menu("Status") { TaskStatusItems(store: store, task: task) }
         Menu("Priority") { TaskPriorityItems(store: store, task: task) }
         Menu("Move to") { TaskProjectItems(store: store, task: task) }
+        Button(task.kind == .ownerStep ? "Make It a Task" : "Waiting on Me") {
+            store.edit(task) { $0.kind = $0.kind == .ownerStep ? .task : .ownerStep }
+        }
         Divider()
         Button("Copy Text") {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(task.text, forType: .string)
         }
         Divider()
+        Button(task.isArchived ? "Unarchive" : "Archive") { store.setArchived(!task.isArchived, for: task) }
         Button("Delete", role: .destructive) { model.pendingDeletion = .task(task) }
     }
 }
@@ -1777,6 +1827,10 @@ private struct TaskCardFace: View {
             HStack(spacing: 6) {
                 NotionTag.priority(task.priority)
                 if let project = store.project(task.projectID) { NotionTag.project(project.name) }
+                if let assignee = task.assignee {
+                    Spacer(minLength: 0)
+                    AssigneeTag(name: assignee, size: 12)
+                }
             }
         }
         .padding(10)

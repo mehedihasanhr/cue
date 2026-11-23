@@ -10,6 +10,7 @@ nonisolated struct RemoteTask: Codable, Sendable {
     var status: TaskStatus
     var priority: TaskPriority
     var projectID: UUID?
+    var assignee: String?
     var createdAt: Date
     var updatedAt: Date
 
@@ -20,6 +21,7 @@ nonisolated struct RemoteTask: Codable, Sendable {
         status = task.status
         priority = task.priority
         projectID = task.projectID
+        assignee = task.assignee
         createdAt = task.createdAt
         updatedAt = task.updatedAt
     }
@@ -29,10 +31,12 @@ nonisolated struct RemoteTask: Codable, Sendable {
     var item: TaskItem {
         let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let custom = text.isEmpty || title.isEmpty ? nil : TaskText.customTitle(title, for: text)
-        return TaskItem(id: id, text: text.isEmpty ? title : text, customTitle: custom, projectID: projectID, status: status, priority: priority, createdAt: createdAt, updatedAt: updatedAt)
+        var task = TaskItem(id: id, text: text.isEmpty ? title : text, customTitle: custom, projectID: projectID, status: status, priority: priority, createdAt: createdAt, updatedAt: updatedAt)
+        task.assignee = assignee.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+        return task
     }
 
-    private enum CodingKeys: String, CodingKey { case id, title, text, status, priority, projectID, createdAt, updatedAt }
+    private enum CodingKeys: String, CodingKey { case id, title, text, status, priority, projectID, assignee, createdAt, updatedAt }
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -42,6 +46,7 @@ nonisolated struct RemoteTask: Codable, Sendable {
         status = try container.decodeIfPresent(TaskStatus.self, forKey: .status) ?? .pending
         priority = try container.decodeIfPresent(TaskPriority.self, forKey: .priority) ?? .medium
         projectID = try container.decodeIfPresent(UUID.self, forKey: .projectID)
+        assignee = try container.decodeIfPresent(String.self, forKey: .assignee)
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? .now
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? createdAt
     }

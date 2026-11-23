@@ -199,6 +199,28 @@ nonisolated struct TaskItem: Identifiable, Codable, Hashable {
     var projectID: UUID?
     var status: TaskStatus
     var priority: TaskPriority
+    /// Who the task is for: a name, as it was typed ("Yat"). nil: no one.
+    var assignee: String?
+    /// The task this one is a step of. nil: a task on its own.
+    var parentID: UUID?
+    /// When it is due, if it has a date.
+    var due: Date?
+    /// Put away: kept, but out of every list but Archived. nil: in the lists.
+    var archivedAt: Date?
+    /// Labels it carries ("feature", "bug", "waiting-on-meta"), as written.
+    var labels: [String] = []
+    /// Commits, pull requests, branches, plan files and pages it is tied to.
+    var links: [TaskLink] = []
+    /// Small steps inside the task, ticked off one by one.
+    var checklist: [ChecklistItem] = []
+    /// Tasks that have to be complete before this one can go on.
+    var blockedBy: [UUID] = []
+    /// The Claude Code session that worked on it, to go back to.
+    var sessionID: String?
+    /// What "done" looks like for it, said when it was planned.
+    var doneWhen: String?
+    /// A task for the work, or a step only the owner can take.
+    var kind: TaskKind = .task
     var createdAt: Date
     /// When it last changed here; what decides between two copies when syncing.
     var updatedAt: Date
@@ -241,7 +263,10 @@ nonisolated struct TaskItem: Identifiable, Codable, Hashable {
 
     // `title` and `notes` are what older builds wrote (and read): the text is their
     // join. `title` is still written, so they keep showing a name.
-    private enum CodingKeys: String, CodingKey { case id, text, title, customTitle, notes, projectID, status, priority, createdAt, updatedAt, remote }
+    private enum CodingKeys: String, CodingKey {
+        case id, text, title, customTitle, notes, projectID, status, priority, assignee, createdAt, updatedAt, remote
+        case parentID, due, archivedAt, labels, links, checklist, blockedBy, sessionID, doneWhen, kind
+    }
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -257,6 +282,17 @@ nonisolated struct TaskItem: Identifiable, Codable, Hashable {
         projectID = try container.decodeIfPresent(UUID.self, forKey: .projectID)
         status = try container.decode(TaskStatus.self, forKey: .status)
         priority = try container.decodeIfPresent(TaskPriority.self, forKey: .priority) ?? .medium
+        assignee = try container.decodeIfPresent(String.self, forKey: .assignee)
+        parentID = try container.decodeIfPresent(UUID.self, forKey: .parentID)
+        due = try container.decodeIfPresent(Date.self, forKey: .due)
+        archivedAt = try container.decodeIfPresent(Date.self, forKey: .archivedAt)
+        labels = try container.decodeIfPresent([String].self, forKey: .labels) ?? []
+        links = try container.decodeIfPresent([TaskLink].self, forKey: .links) ?? []
+        checklist = try container.decodeIfPresent([ChecklistItem].self, forKey: .checklist) ?? []
+        blockedBy = try container.decodeIfPresent([UUID].self, forKey: .blockedBy) ?? []
+        sessionID = try container.decodeIfPresent(String.self, forKey: .sessionID)
+        doneWhen = try container.decodeIfPresent(String.self, forKey: .doneWhen)
+        kind = try container.decodeIfPresent(TaskKind.self, forKey: .kind) ?? .task
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? createdAt
         remote = try container.decodeIfPresent(RemoteLink.self, forKey: .remote)
@@ -271,10 +307,107 @@ nonisolated struct TaskItem: Identifiable, Codable, Hashable {
         try container.encodeIfPresent(projectID, forKey: .projectID)
         try container.encode(status, forKey: .status)
         try container.encode(priority, forKey: .priority)
+        try container.encodeIfPresent(assignee, forKey: .assignee)
+        try container.encodeIfPresent(parentID, forKey: .parentID)
+        try container.encodeIfPresent(due, forKey: .due)
+        try container.encodeIfPresent(archivedAt, forKey: .archivedAt)
+        if !labels.isEmpty { try container.encode(labels, forKey: .labels) }
+        if !links.isEmpty { try container.encode(links, forKey: .links) }
+        if !checklist.isEmpty { try container.encode(checklist, forKey: .checklist) }
+        if !blockedBy.isEmpty { try container.encode(blockedBy, forKey: .blockedBy) }
+        try container.encodeIfPresent(sessionID, forKey: .sessionID)
+        try container.encodeIfPresent(doneWhen, forKey: .doneWhen)
+        if kind != .task { try container.encode(kind, forKey: .kind) }
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encodeIfPresent(remote, forKey: .remote)
     }
+}
+
+nonisolated extension TaskItem {
+    var isArchived: Bool { archivedAt != nil }
+
+    /// What only this Mac keeps of a task, carried over from `old` when a copy comes in
+    /// from a server or the website, which know nothing of it (an assignee only when the
+    /// copy brings none).
+    mutating func keepLocal(from old: TaskItem) {
+        if assignee == nil { assignee = old.assignee }
+        parentID = old.parentID
+        due = due ?? old.due
+        archivedAt = old.archivedAt
+        labels = old.labels
+        links = old.links
+        checklist = old.checklist
+        blockedBy = old.blockedBy
+        sessionID = old.sessionID
+        doneWhen = old.doneWhen
+        kind = old.kind
+    }
+}
+
+/// A step only the owner can take is apart from the work: it has its own list,
+/// "Waiting on you", so a blocked task does not hide among the others.
+nonisolated enum TaskKind: String, Codable, CaseIterable {
+    case task
+    case ownerStep = "owner_step"
+}
+
+/// Something a task is tied to: a commit, a pull request, a branch, a plan file, a
+/// staging page. Shown as a chip that opens it.
+nonisolated struct TaskLink: Codable, Hashable, Identifiable {
+    enum Kind: String, Codable, CaseIterable {
+        case commit, pr, branch, plan, staging, url
+    }
+
+    var id = UUID()
+    var kind: Kind
+    /// A URL, a path, a commit hash or a branch name, as given.
+    var target: String
+    /// A short name for the chip ("#592", "a1b2c3d"); the target's own when nil.
+    var title: String?
+    var addedAt = Date.now
+
+    /// The chip's words.
+    var label: String {
+        if let title, !title.isEmpty { return title }
+        switch kind {
+        case .commit: return String(target.split(separator: "/").last.map(String.init)?.prefix(7) ?? Substring(target))
+        case .pr:
+            if let number = target.split(separator: "/").last, number.allSatisfy(\.isNumber) { return "#\(number)" }
+            return target
+        case .branch: return target
+        case .plan: return URL(fileURLWithPath: target).lastPathComponent
+        case .staging, .url: return URL(string: target)?.host() ?? target
+        }
+    }
+
+    var symbol: String {
+        switch kind {
+        case .commit: "point.3.connected.trianglepath.dotted"
+        case .pr: "arrow.triangle.pull"
+        case .branch: "arrow.branch"
+        case .plan: "doc.text"
+        case .staging: "globe"
+        case .url: "link"
+        }
+    }
+
+    /// Where a click goes: the URL, or the file for a path; nil for a bare hash or branch.
+    var url: URL? {
+        if target.hasPrefix("/") || target.hasPrefix("~") { return URL(fileURLWithPath: (target as NSString).expandingTildeInPath) }
+        guard let url = URL(string: target), url.scheme != nil else { return nil }
+        return url
+    }
+
+    /// Whether a link proves work was shipped: a commit or a pull request.
+    var isProof: Bool { kind == .commit || kind == .pr }
+}
+
+/// One small step inside a task.
+nonisolated struct ChecklistItem: Codable, Hashable, Identifiable {
+    var id = UUID()
+    var text: String
+    var done = false
 }
 
 /// A task's text and the lines in it: the title line, what follows, and plain
@@ -536,9 +669,11 @@ final class TaskStore {
                 projects.append(project)
             }
         }
-        for task in remote where !deletedIDs.contains(task.id) {
+        for var task in remote where !deletedIDs.contains(task.id) {
             if let index = tasks.firstIndex(where: { $0.id == task.id }) {
                 if task.updatedAt > tasks[index].updatedAt {
+                    // What the server does not keep (subtasks, links, checklists…) stays.
+                    task.keepLocal(from: tasks[index])
                     tasks[index] = task
                     changed += 1
                 }
@@ -592,9 +727,9 @@ final class TaskStore {
 
     /// The project's own tasks plus those of its sub-projects (nil: every task).
     func tasks(in projectID: UUID?) -> [TaskItem] {
-        guard let projectID else { return tasks }
+        guard let projectID else { return tasks.filter { !$0.isArchived } }
         let ids = descendants(of: projectID)
-        return tasks.filter { $0.projectID.map(ids.contains) ?? false }
+        return tasks.filter { !$0.isArchived && ($0.projectID.map(ids.contains) ?? false) }
     }
 
     /// From the top level down to the project, for the breadcrumb.
@@ -787,6 +922,64 @@ final class TaskStore {
         update(task) { $0.priority = priority }
     }
 
+    /// Assigns the task to someone by name; nil or blank, to no one. A name already used
+    /// on another task in another case ("yat" for "Yat") takes that spelling, so one
+    /// person is one name in the column and its menu.
+    func setAssignee(_ name: String?, for task: TaskItem) {
+        let typed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let wanted = typed.isEmpty ? nil : assignees.first { $0.caseInsensitiveCompare(typed) == .orderedSame } ?? typed
+        guard wanted != task.assignee else { return }
+        update(task) { $0.assignee = wanted }
+    }
+
+    /// Any change to a task, saved and announced as one edit (the agents' tools use it
+    /// for what has no button of its own: links, labels, checklists, dependencies).
+    func edit(_ task: TaskItem, _ change: (inout TaskItem) -> Void) {
+        update(task, change)
+    }
+
+    /// Puts a task away (it stays, out of the lists), or back.
+    func setArchived(_ archived: Bool, for task: TaskItem) {
+        guard archived != task.isArchived else { return }
+        update(task) { $0.archivedAt = archived ? .now : nil }
+    }
+
+    /// The steps of a task, in the order they were made.
+    func subtasks(of task: TaskItem) -> [TaskItem] {
+        tasks.filter { $0.parentID == task.id }.sorted { $0.createdAt < $1.createdAt }
+    }
+
+    /// The tasks holding this one up: those it waits on that are not complete.
+    func blockers(of task: TaskItem) -> [TaskItem] {
+        task.blockedBy.compactMap { id in tasks.first { $0.id == id } }.filter { $0.status != .complete && !$0.isArchived }
+    }
+
+    /// Every label in use, the most used first.
+    var labels: [String] {
+        var count: [String: Int] = [:]
+        for task in tasks where !task.isArchived { for label in task.labels { count[label, default: 0] += 1 } }
+        return count.keys.sorted { count[$0]! != count[$1]! ? count[$0]! > count[$1]! : $0 < $1 }
+    }
+
+    /// Whether a task may go to a project, and if not why: a task on the website can
+    /// change boards only there (Sensory OS cannot be told of a move yet), and Cue would
+    /// otherwise put it back at the next sync.
+    func moveRefusal(_ task: TaskItem, to projectID: UUID?) -> String? {
+        guard let remote = task.remote, remote.taskID != nil,
+              let board = orgProject(projectID)?.org?.boardID, board != remote.boardID else { return nil }
+        return "Sensory OS can't move a task to another board from Cue yet. Move it on the website."
+    }
+
+    /// Everyone tasks are assigned to, those with the most open tasks first.
+    var assignees: [String] {
+        var count: [String: Int] = [:]
+        for task in tasks {
+            guard let name = task.assignee else { continue }
+            count[name, default: 0] += task.status == .complete ? 0 : 1
+        }
+        return count.keys.sorted { count[$0]! != count[$1]! ? count[$0]! > count[$1]! : $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
     /// Gives the task a title of its own; the description is left as it is. A title
     /// the same as the one taken from the text puts it back to following the text.
     func rename(_ task: TaskItem, to title: String) {
@@ -812,6 +1005,10 @@ final class TaskStore {
     }
 
     func move(_ task: TaskItem, to projectID: UUID?) {
+        if let reason = moveRefusal(task, to: projectID) {
+            FeedbackHUD.show("Not moved", symbol: "arrow.uturn.backward", subtitle: reason)
+            return
+        }
         update(task) { $0.projectID = projectID }
     }
 
@@ -892,8 +1089,10 @@ final class TaskStore {
         applyingRemote = true
         defer { applyingRemote = false }
         if !remove.isEmpty { tasks.removeAll { remove.contains($0.id) } }
-        for task in changed {
+        for var task in changed {
             if let index = tasks.firstIndex(where: { $0.id == task.id }) {
+                // The website's copy carries none of what only Cue keeps; it stays.
+                task.keepLocal(from: tasks[index])
                 tasks[index] = task
             } else {
                 tasks.insert(task, at: 0)

@@ -246,6 +246,136 @@ struct TagMenu<Items: View>: View {
     }
 }
 
+// MARK: - Assignee
+
+/// A person a task is assigned to: their initial in a circle of their own colour (the
+/// same for a name every time), and the name.
+struct AssigneeTag: View {
+    let name: String
+    var size: CGFloat = 13
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(String(name.prefix(1)).uppercased())
+                .font(.system(size: size - 3, weight: .semibold))
+                .foregroundStyle(color.text)
+                .frame(width: size + 5, height: size + 5)
+                .background(color.background, in: Circle())
+            Text(name)
+                .font(.system(size: size))
+                .foregroundStyle(NotionStyle.text)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Assigned to \(name)")
+    }
+
+    /// Picked from the name's letters, so it does not change between launches.
+    private var color: NotionColor {
+        let colors = NotionColor.allCases.filter { $0 != .gray }
+        let sum = name.lowercased().unicodeScalars.reduce(0) { $0 &+ Int($1.value) }
+        return colors[sum % colors.count]
+    }
+}
+
+/// Who a task is for, and the way to change it: the name as a tag; a click opens a
+/// small panel to type a name, or pick one of those already used, or take it off.
+struct AssigneeMenu: View {
+    let store: TaskStore
+    let task: TaskItem
+    var placeholder = "Empty"
+    @State private var picking = false
+
+    var body: some View {
+        Button { picking = true } label: {
+            Group {
+                if let name = task.assignee {
+                    AssigneeTag(name: name)
+                } else {
+                    Text(placeholder).font(.system(size: 13)).foregroundStyle(NotionStyle.tertiary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(task.assignee.map { "Assigned to \($0) — click to change" } ?? "Assign to someone")
+        .popover(isPresented: $picking, arrowEdge: .bottom) {
+            AssigneePicker(store: store, task: task) { picking = false }
+        }
+    }
+}
+
+/// The panel `AssigneeMenu` opens: a field for a name, the names already used that
+/// match it, and Remove.
+private struct AssigneePicker: View {
+    let store: TaskStore
+    let task: TaskItem
+    let done: () -> Void
+    @State private var name = ""
+    @FocusState private var focused: Bool
+
+    private var typed: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    private var matches: [String] {
+        Array(store.assignees.filter { typed.isEmpty || $0.localizedCaseInsensitiveContains(typed) }.prefix(8))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            TextField("Assign to…", text: $name)
+                .textFieldStyle(.roundedBorder)
+                .focused($focused)
+                // Return takes the name typed, or the one match it narrowed to.
+                .onSubmit { assign(matches.count == 1 && !typed.isEmpty ? matches[0] : typed) }
+                .padding(.bottom, 6)
+            ForEach(matches, id: \.self) { candidate in
+                row { assign(candidate) } label: {
+                    AssigneeTag(name: candidate)
+                    Spacer(minLength: 8)
+                    if candidate == task.assignee {
+                        Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold)).foregroundStyle(NotionStyle.secondary)
+                    }
+                }
+            }
+            if !typed.isEmpty, !store.assignees.contains(where: { $0.caseInsensitiveCompare(typed) == .orderedSame }) {
+                row { assign(typed) } label: {
+                    Image(systemName: "plus").font(.system(size: 11)).foregroundStyle(NotionStyle.secondary)
+                    Text("Assign to “\(typed)”").font(.system(size: 13)).foregroundStyle(NotionStyle.text).lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+            }
+            if task.assignee != nil {
+                Divider().padding(.vertical, 4)
+                row { assign(nil) } label: {
+                    Image(systemName: "person.slash").font(.system(size: 11)).foregroundStyle(NotionStyle.secondary)
+                    Text("Remove assignee").font(.system(size: 13)).foregroundStyle(NotionStyle.text)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        .padding(10)
+        .frame(width: 240)
+        .onAppear { focused = true }
+    }
+
+    private func row(_ action: @escaping () -> Void, @ViewBuilder label: () -> some View) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) { label() }
+                .padding(.horizontal, 6)
+                .frame(height: 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(NotionHoverStyle())
+    }
+
+    private func assign(_ name: String?) {
+        store.setAssignee(name, for: task)
+        done()
+    }
+}
+
 // MARK: - Page icons
 
 /// A page's icon at a size: the symbol in grey ink, or the emoji as it is.
