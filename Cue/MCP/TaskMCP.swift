@@ -211,7 +211,9 @@ final class TaskMCP {
     /// status, priority and project, read and checked before anything changes. A key left
     /// out is left alone; "none" (or an empty list) clears it.
     private struct Fields {
+        /// The name, email or id given; `person` is who it turned out to be.
         var assignee: String??
+        var person: TaskPerson??
         var due: Date??
         var labels: [String]?
         var parent: UUID??
@@ -301,10 +303,36 @@ final class TaskMCP {
         return false
     }
 
+    /// Who an assignee given by name, email or id is, among the people of the organization
+    /// (`agency`) the task is in. Only an organization's tasks have assignees; while its
+    /// website does not list its people yet, a new name is kept in Cue.
+    private func resolveAssignee(_ fields: inout Fields, agency: String?) -> ToolError? {
+        guard case .some(let given) = fields.assignee else { return nil }
+        guard let given else { fields.person = .some(nil); return nil }
+        guard let agency else {
+            return ToolError("Only organization tasks have an assignee. Put the task in a Sensory OS board, or leave assignee out.")
+        }
+        let people = store.people(inAgency: agency)
+        let exact = people.first { $0.membershipID?.lowercased() == given.lowercased() || $0.name.caseInsensitiveCompare(given) == .orderedSame
+            || $0.email?.caseInsensitiveCompare(given) == .orderedSame }
+        let partial = people.filter { $0.name.localizedCaseInsensitiveContains(given) }
+        if let person = exact ?? (partial.count == 1 ? partial[0] : nil) {
+            fields.person = .some(person)
+            return nil
+        }
+        if store.knowsPeople(inAgency: agency) {
+            let names = people.map(\.name).joined(separator: ", ")
+            return ToolError(partial.count > 1 ? "\"\(given)\" could be \(partial.map(\.name).joined(separator: " or ")); give the full name."
+                                               : "No one called \"\(given)\" in this organization. Who can be assigned: \(names).")
+        }
+        fields.person = .some(TaskPerson(name: given))
+        return nil
+    }
+
     /// Writes what `fields` holds onto the task: the assignee as the dashboard sets it,
     /// the rest as one change.
     private func apply(_ fields: Fields, to task: TaskItem) {
-        if case .some(let assignee) = fields.assignee { store.setAssignee(assignee, for: current(task)) }
+        if case .some(let person) = fields.person { store.setAssignee(person, for: current(task)) }
         var rest = fields
         rest.assignee = nil
         guard !rest.isEmpty else { return }
@@ -357,16 +385,19 @@ final class TaskMCP {
             guard let value = Self.status(named: name) else { return .failure(Self.badStatus(name)) }
             status = value
         }
-        let fields: Fields
+        var fields: Fields
         switch self.fields(arguments) {
         case .success(let value): fields = value
         case .failure(let error): return .failure(error)
         }
         // A step goes where its task is, unless a project is named.
-        var projectID = Self.string(arguments["project"]).flatMap { projectCreatingIfNeeded($0)?.id }
-        if projectID == nil, case .some(.some(let parent)) = fields.parent {
-            projectID = store.tasks.first { $0.id == parent }?.projectID
+        let named = Self.string(arguments["project"])
+        var target = named.flatMap { project(matching: $0)?.id }
+        if named == nil, case .some(.some(let parent)) = fields.parent {
+            target = store.tasks.first { $0.id == parent }?.projectID
         }
+        if let error = resolveAssignee(&fields, agency: store.orgProject(target)?.org?.agencyID) { return .failure(error) }
+        let projectID = target ?? named.flatMap { projectCreatingIfNeeded($0)?.id }
         guard let task = store.addTask(titled: title, notes: arguments["notes"] as? String ?? "", in: projectID, priority: priority ?? .medium) else {
             return .failure(ToolError("The task was not added: its title is empty."))
         }
@@ -399,11 +430,16 @@ final class TaskMCP {
         case .success(let value): projectChange = value
         case .failure(let error): return .failure(error)
         }
-        let fields: Fields
+        var fields: Fields
         switch self.fields(arguments, for: task) {
         case .success(let value): fields = value
         case .failure(let error): return .failure(error)
         }
+        let agency: String? = {
+            if case .some(let destination) = projectChange { return store.orgProject(destination)?.org?.agencyID ?? task.remote?.agencyID }
+            return store.agencyID(of: task)
+        }()
+        if let error = resolveAssignee(&fields, agency: agency) { return .failure(error) }
         guard status != nil || priority != nil || title != nil || projectChange != nil || !fields.isEmpty else {
             return .failure(ToolError("Nothing to change: give a status, priority, title, project, assignee, due date, labels or another field."))
         }
@@ -465,14 +501,26 @@ final class TaskMCP {
         return .success(taskJSON(current(task), full: false))
     }
 
-    /// The names tasks can be assigned to: those used so far, most open tasks first.
+    /// Who organization tasks can be assigned to, organization by organization.
     private func listPeople() -> Result<Any, ToolError> {
-        let people = store.assignees.map { name -> [String: Any] in
-            let theirs = store.tasks.filter { $0.assignee == name && !$0.isArchived }
-            return ["name": name, "open": theirs.filter { $0.status != .complete }.count]
+        // Every organization Cue has: signed in to, listed, or with projects here.
+        let fromProjects = store.projects.compactMap { $0.org?.agencyID }.filter { !$0.isEmpty }
+        let agencies = Set(store.orgMe.keys).union(store.orgPeople.keys).union(fromProjects).sorted()
+        let organizations = agencies.map { agency -> [String: Any] in
+            let name = store.projects.first { $0.org?.agencyID == agency && $0.org?.boardID == nil }?.name
+                ?? store.projects.first { $0.isOrg && $0.org?.boardID == nil }?.name ?? "Organization"
+            let people = store.people(inAgency: agency).map { person -> [String: Any] in
+                let open = store.tasks.filter { !$0.isArchived && $0.status != .complete && store.agencyID(of: $0) == agency
+                    && ($0.assigneeID.map { $0 == person.membershipID } ?? ($0.assignee == person.name)) }.count
+                var json: [String: Any] = ["name": person.name, "open": open]
+                if let email = person.email { json["email"] = email }
+                if let id = person.membershipID { json["membershipId"] = id }
+                return json
+            }
+            return ["organization": name, "agencyId": agency, "people": people, "complete": store.knowsPeople(inAgency: agency)]
         }
-        return .success(["people": people,
-                         "note": "Names already used in Cue. Sensory OS does not share its team with Cue yet, so any new name can be assigned too."])
+        return .success(["organizations": organizations,
+                         "note": "Only organization tasks have an assignee. Where complete is false, the website does not list its team yet: these are you and the names already used, and a new name is kept in Cue."])
     }
 
     private func listLabels() -> Result<Any, ToolError> {
@@ -499,7 +547,9 @@ final class TaskMCP {
         guard let steps = arguments["steps"] as? [Any], !steps.isEmpty else {
             return .failure(ToolError("create_plan needs steps: a list of {title, done_when}."))
         }
-        // Every step checked before anything is made.
+        // Every step checked before anything is made, its assignee among the people of the
+        // organization the plan goes to.
+        let planAgency = Self.string(arguments["project"]).flatMap { project(matching: $0) }.flatMap { store.orgProject($0.id)?.org?.agencyID }
         var parsed: [(title: String, notes: String, fields: Fields, priority: TaskPriority?)] = []
         for (index, raw) in steps.enumerated() {
             var step = (raw as? [String: Any]) ?? (raw as? String).map { ["title": $0] } ?? [:]
@@ -507,11 +557,12 @@ final class TaskMCP {
             if step["assignee"] == nil, let assignee = arguments["assignee"] { step["assignee"] = assignee }
             if step["labels"] == nil, let labels = arguments["labels"] { step["labels"] = labels }
             step["parent_id"] = nil
-            let fields: Fields
+            var fields: Fields
             switch self.fields(step) {
             case .success(let value): fields = value
             case .failure(let error): return .failure(ToolError("Step \(index + 1): \(error.message)"))
             }
+            if let error = resolveAssignee(&fields, agency: planAgency) { return .failure(ToolError("Step \(index + 1): \(error.message)")) }
             let priority: TaskPriority?
             switch self.priority(step) {
             case .success(let value): priority = value
@@ -1012,7 +1063,7 @@ final class TaskMCP {
             "title": ["type": "string", "description": "A short name for its chip, for example #592."],
         ], "required": ["target"]]
         let fields: [String: Any] = [
-            "assignee": ["type": "string", "description": "Who it is for, by name (list_people); \"none\" clears."],
+            "assignee": ["type": "string", "description": "Who it is for: a person of the task's organization by name or email (list_people); \"none\" clears. Only organization tasks have one."],
             "due": ["type": "string", "description": "YYYY-MM-DD, today or tomorrow; \"none\" clears."],
             "labels": labels,
             "parent_id": ["type": "string", "description": "Makes it a step (subtask) of that task; \"none\" makes it a task of its own."],
@@ -1068,7 +1119,7 @@ final class TaskMCP {
                  ["id": id, "include_archived": ["type": "boolean"]], required: ["id"], readOnly: true),
             tool("list_projects", "List projects", "Every project, with its path (for nested ones), id and how many open tasks it has.",
                  [:], readOnly: true),
-            tool("list_people", "List people", "The names tasks can be assigned to: those already used, with how many open tasks each has. A new name can be assigned too.",
+            tool("list_people", "List people", "Who organization tasks can be assigned to, organization by organization, with how many open tasks each has. Tasks of Cue's own have no assignee.",
                  [:], readOnly: true),
             tool("list_labels", "List labels", "Every label in use, with how many tasks carry it.",
                  [:], readOnly: true),

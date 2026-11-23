@@ -199,8 +199,10 @@ nonisolated struct TaskItem: Identifiable, Codable, Hashable {
     var projectID: UUID?
     var status: TaskStatus
     var priority: TaskPriority
-    /// Who the task is for: a name, as it was typed ("Yat"). nil: no one.
+    /// Who the task is for, by name ("Yat"): only a task in an organization has one.
     var assignee: String?
+    /// Their membership on the organization's website, which is what goes there.
+    var assigneeID: String?
     /// The task this one is a step of. nil: a task on its own.
     var parentID: UUID?
     /// When it is due, if it has a date.
@@ -265,7 +267,7 @@ nonisolated struct TaskItem: Identifiable, Codable, Hashable {
     // join. `title` is still written, so they keep showing a name.
     private enum CodingKeys: String, CodingKey {
         case id, text, title, customTitle, notes, projectID, status, priority, assignee, createdAt, updatedAt, remote
-        case parentID, due, archivedAt, labels, links, checklist, blockedBy, sessionID, doneWhen, kind
+        case parentID, due, archivedAt, labels, links, checklist, blockedBy, sessionID, doneWhen, kind, assigneeID
     }
 
     init(from decoder: any Decoder) throws {
@@ -283,6 +285,7 @@ nonisolated struct TaskItem: Identifiable, Codable, Hashable {
         status = try container.decode(TaskStatus.self, forKey: .status)
         priority = try container.decodeIfPresent(TaskPriority.self, forKey: .priority) ?? .medium
         assignee = try container.decodeIfPresent(String.self, forKey: .assignee)
+        assigneeID = try container.decodeIfPresent(String.self, forKey: .assigneeID)
         parentID = try container.decodeIfPresent(UUID.self, forKey: .parentID)
         due = try container.decodeIfPresent(Date.self, forKey: .due)
         archivedAt = try container.decodeIfPresent(Date.self, forKey: .archivedAt)
@@ -308,6 +311,7 @@ nonisolated struct TaskItem: Identifiable, Codable, Hashable {
         try container.encode(status, forKey: .status)
         try container.encode(priority, forKey: .priority)
         try container.encodeIfPresent(assignee, forKey: .assignee)
+        try container.encodeIfPresent(assigneeID, forKey: .assigneeID)
         try container.encodeIfPresent(parentID, forKey: .parentID)
         try container.encodeIfPresent(due, forKey: .due)
         try container.encodeIfPresent(archivedAt, forKey: .archivedAt)
@@ -330,8 +334,11 @@ nonisolated extension TaskItem {
     /// What only this Mac keeps of a task, carried over from `old` when a copy comes in
     /// from a server or the website, which know nothing of it (an assignee only when the
     /// copy brings none).
-    mutating func keepLocal(from old: TaskItem) {
-        if assignee == nil { assignee = old.assignee }
+    mutating func keepLocal(from old: TaskItem, assignee keepAssignee: Bool = true) {
+        if keepAssignee, assignee == nil {
+            assignee = old.assignee
+            assigneeID = old.assigneeID
+        }
         parentID = old.parentID
         due = due ?? old.due
         archivedAt = old.archivedAt
@@ -922,14 +929,53 @@ final class TaskStore {
         update(task) { $0.priority = priority }
     }
 
-    /// Assigns the task to someone by name; nil or blank, to no one. A name already used
-    /// on another task in another case ("yat" for "Yat") takes that spelling, so one
-    /// person is one name in the column and its menu.
-    func setAssignee(_ name: String?, for task: TaskItem) {
-        let typed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let wanted = typed.isEmpty ? nil : assignees.first { $0.caseInsensitiveCompare(typed) == .orderedSame } ?? typed
-        guard wanted != task.assignee else { return }
-        update(task) { $0.assignee = wanted }
+    /// Each organization's people who can be assigned tasks, by agency id, as its website
+    /// last listed them (the sync asks). Missing: the website does not list them yet.
+    var orgPeople: [String: [TaskPerson]] = [:]
+    /// The person signed in, in each organization: always someone a task can go to.
+    var orgMe: [String: TaskPerson] = [:]
+
+    /// The organization a task belongs to, by its agency id; nil for a task of Cue's own.
+    func agencyID(of task: TaskItem) -> String? {
+        let agency = task.remote?.agencyID ?? orgProject(task.projectID)?.org?.agencyID
+        return agency?.isEmpty == false ? agency : nil
+    }
+
+    /// Whether the organization's website listed its people (so only they can be assigned).
+    func knowsPeople(for task: TaskItem) -> Bool {
+        agencyID(of: task).map(knowsPeople(inAgency:)) ?? false
+    }
+
+    func knowsPeople(inAgency agency: String) -> Bool { orgPeople[agency] != nil }
+
+    /// Who a task can be assigned to: its organization's people, and anyone already
+    /// assigned a task there; by name. None for a task of Cue's own.
+    func people(for task: TaskItem) -> [TaskPerson] {
+        agencyID(of: task).map(people(inAgency:)) ?? []
+    }
+
+    func people(inAgency agency: String) -> [TaskPerson] {
+        var people = orgPeople[agency] ?? []
+        if let me = orgMe[agency], !people.contains(where: { $0.membershipID == me.membershipID }) { people.append(me) }
+        for other in tasks where agencyID(of: other) == agency {
+            guard let name = other.assignee else { continue }
+            let known = people.contains { ($0.membershipID != nil && $0.membershipID == other.assigneeID) || $0.name.caseInsensitiveCompare(name) == .orderedSame }
+            if !known { people.append(TaskPerson(membershipID: other.assigneeID, name: name)) }
+        }
+        return people.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    /// Assigns an organization's task to someone, or to no one; a task of Cue's own has
+    /// no assignee. False when it can't be (not an organization task).
+    @discardableResult
+    func setAssignee(_ person: TaskPerson?, for task: TaskItem) -> Bool {
+        guard isOrgTask(task) else { return false }
+        guard person?.membershipID != task.assigneeID || person?.name != task.assignee else { return true }
+        update(task) {
+            $0.assignee = person?.name
+            $0.assigneeID = person?.membershipID
+        }
+        return true
     }
 
     /// Any change to a task, saved and announced as one edit (the agents' tools use it
@@ -968,16 +1014,6 @@ final class TaskStore {
         guard let remote = task.remote, remote.taskID != nil,
               let board = orgProject(projectID)?.org?.boardID, board != remote.boardID else { return nil }
         return "Sensory OS can't move a task to another board from Cue yet. Move it on the website."
-    }
-
-    /// Everyone tasks are assigned to, those with the most open tasks first.
-    var assignees: [String] {
-        var count: [String: Int] = [:]
-        for task in tasks {
-            guard let name = task.assignee else { continue }
-            count[name, default: 0] += task.status == .complete ? 0 : 1
-        }
-        return count.keys.sorted { count[$0]! != count[$1]! ? count[$0]! > count[$1]! : $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
     /// Gives the task a title of its own; the description is left as it is. A title
@@ -1091,8 +1127,9 @@ final class TaskStore {
         if !remove.isEmpty { tasks.removeAll { remove.contains($0.id) } }
         for var task in changed {
             if let index = tasks.firstIndex(where: { $0.id == task.id }) {
-                // The website's copy carries none of what only Cue keeps; it stays.
-                task.keepLocal(from: tasks[index])
+                // The website's copy carries none of what only Cue keeps; it stays. Its
+                // assignee is the website's, once the website shares assignees.
+                task.keepLocal(from: tasks[index], assignee: task.remote?.base?.assigneeKnown != true)
                 tasks[index] = task
             } else {
                 tasks.insert(task, at: 0)

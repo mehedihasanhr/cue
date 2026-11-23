@@ -38,13 +38,52 @@ nonisolated struct RemoteLink: Codable, Hashable, Sendable {
     var clientRef: UUID?
 }
 
-/// What is kept in step: the four things both sides have.
+/// What is kept in step: what both sides have.
 nonisolated struct RemoteValues: Codable, Hashable, Sendable {
     var title: String
     var description: String
     var status: TaskStatus
     /// Nil: the website has none set (Cue shows Medium).
     var priority: TaskPriority?
+    /// Who it is assigned to: their membership on the website; nil for no one.
+    var assigneeID: String?
+    /// Their name, as the website gave it (not compared, only shown).
+    var assigneeName: String?
+    /// Whether the website said who it is assigned to at all. One that does not yet (an
+    /// older server) leaves the assignee to Cue, and is never sent one.
+    var assigneeKnown: Bool?
+
+    init(title: String, description: String, status: TaskStatus, priority: TaskPriority?,
+         assigneeID: String? = nil, assigneeName: String? = nil, assigneeKnown: Bool? = nil) {
+        self.title = title
+        self.description = description
+        self.status = status
+        self.priority = priority
+        self.assigneeID = assigneeID
+        self.assigneeName = assigneeName
+        self.assigneeKnown = assigneeKnown
+    }
+}
+
+/// Someone a task in an organization can be assigned to.
+nonisolated struct TaskPerson: Codable, Hashable, Sendable, Identifiable {
+    /// Their membership on the website; nil for a name only Cue knows.
+    var membershipID: String?
+    var name: String
+    var email: String?
+
+    var id: String { membershipID ?? "name:" + name.lowercased() }
+}
+
+/// GET /api/desktop/v1/people: an agency's people who can be assigned tasks.
+nonisolated struct SOSPeople: Decodable, Sendable {
+    struct Person: Decodable, Sendable {
+        var membershipId: String
+        var name: String?
+        var email: String?
+    }
+
+    var people: [Person]
 }
 
 // MARK: - The wire
@@ -100,9 +139,39 @@ nonisolated struct SOSTask: Codable, Hashable, Sendable {
     var dueAt: String?
     var dueHasTime: Bool?
     var assignedToMe: Bool?
+    var assigneeMembershipId: String?
+    var assigneeName: String?
+    /// Whether the website sent `assigneeMembershipId` at all (null counts): a server from
+    /// before assignees were shared sends neither.
+    var knowsAssignee = false
     var createdAt: Date
     var updatedAt: Date
     var href: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, boardId, sectionId, title, description, status, priority, dueAt, dueHasTime, assignedToMe
+        case assigneeMembershipId, assigneeName, createdAt, updatedAt, href
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        boardId = try container.decode(String.self, forKey: .boardId)
+        sectionId = try container.decodeIfPresent(String.self, forKey: .sectionId)
+        title = try container.decode(String.self, forKey: .title)
+        description = try container.decode(String.self, forKey: .description)
+        status = try container.decode(String.self, forKey: .status)
+        priority = try container.decodeIfPresent(String.self, forKey: .priority)
+        dueAt = try container.decodeIfPresent(String.self, forKey: .dueAt)
+        dueHasTime = try container.decodeIfPresent(Bool.self, forKey: .dueHasTime)
+        assignedToMe = try container.decodeIfPresent(Bool.self, forKey: .assignedToMe)
+        knowsAssignee = container.contains(.assigneeMembershipId)
+        assigneeMembershipId = try container.decodeIfPresent(String.self, forKey: .assigneeMembershipId)
+        assigneeName = try container.decodeIfPresent(String.self, forKey: .assigneeName)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        href = try container.decodeIfPresent(String.self, forKey: .href)
+    }
 }
 
 nonisolated struct SOSSync: Codable, Sendable {
@@ -197,7 +266,8 @@ nonisolated enum SOSMap {
         // With no title of its own the title is the text's first line, so the
         // description is what follows it; with one, the whole text is the description.
         let description = task.customTitle == nil ? TaskText.body(of: task.text) : task.text
-        return RemoteValues(title: title, description: description, status: task.status, priority: task.priority)
+        return RemoteValues(title: title, description: description, status: task.status, priority: task.priority,
+                            assigneeID: task.assigneeID, assigneeName: task.assignee)
     }
 
     /// What a task from the website looks like here: its description as the text (its
@@ -214,10 +284,20 @@ nonisolated enum SOSMap {
         }
         task.status = values.status
         task.priority = values.priority ?? .medium
+        if values.assigneeKnown == true {
+            task.assigneeID = values.assigneeID
+            task.assignee = values.assigneeID == nil ? nil : values.assigneeName ?? task.assignee ?? "Someone"
+        }
+    }
+
+    /// A change of assignee here counts only once the website shares assignees.
+    static func assigneeChanged(_ local: RemoteValues, from base: RemoteValues) -> Bool {
+        base.assigneeKnown == true && local.assigneeID != base.assigneeID
     }
 
     static func values(of wire: SOSTask) -> RemoteValues {
-        RemoteValues(title: wire.title, description: wire.description, status: status(wire.status), priority: priority(wire.priority))
+        RemoteValues(title: wire.title, description: wire.description, status: status(wire.status), priority: priority(wire.priority),
+                     assigneeID: wire.assigneeMembershipId, assigneeName: wire.assigneeName, assigneeKnown: wire.knowsAssignee)
     }
 
     /// Whether what is here differs from what was agreed (the priority counts only once
@@ -225,7 +305,7 @@ nonisolated enum SOSMap {
     static func changes(_ local: RemoteValues, from base: RemoteValues) -> RemoteValues? {
         let priorityChanged = base.priority == nil ? local.priority != .medium : local.priority != base.priority
         let same = local.title == base.title && local.description.trimmingCharacters(in: .whitespacesAndNewlines) == base.description.trimmingCharacters(in: .whitespacesAndNewlines)
-            && local.status == base.status && !priorityChanged
+            && local.status == base.status && !priorityChanged && !assigneeChanged(local, from: base)
         return same ? nil : local
     }
 }

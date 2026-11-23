@@ -276,6 +276,7 @@ final class SensoryOS {
         let me: SOSMe = try await call("GET", "/api/desktop/v1/me")
         self.me = me
         meFetched = .now
+        noteMe()
         startRealtime()
     }
 
@@ -333,6 +334,7 @@ final class SensoryOS {
             runAgain = false
             do {
                 if me == nil { try await loadMe() }
+                await loadPeople()
                 try await pull()
                 try await push()
                 lastSync = .now
@@ -353,6 +355,38 @@ final class SensoryOS {
             lastError = error.localizedDescription
         }
         log.error("Sensory OS: \(error.localizedDescription, privacy: .public)")
+    }
+
+    // MARK: - People
+
+    @ObservationIgnored private var peopleLoadedAt: Date?
+
+    /// Each organization's people who can be assigned tasks, asked for every ten minutes.
+    /// A website that does not list them yet answers 404: the person signed in is still
+    /// someone to assign to, and the names already used.
+    /// The person signed in, as someone each of their organizations' tasks can go to.
+    private func noteMe() {
+        guard let me else { return }
+        for agency in me.agencies {
+            store.orgMe[agency.id] = TaskPerson(membershipID: agency.membershipId, name: me.user.name ?? me.user.email, email: me.user.email)
+        }
+    }
+
+    private func loadPeople() async {
+        guard let me else { return }
+        noteMe()
+        if let peopleLoadedAt, Date.now.timeIntervalSince(peopleLoadedAt) < 600 { return }
+        peopleLoadedAt = .now
+        for agency in me.agencies {
+            do {
+                let answer: SOSPeople = try await call("GET", "/api/desktop/v1/people", query: [URLQueryItem(name: "agencyId", value: agency.id)])
+                store.orgPeople[agency.id] = answer.people.map { TaskPerson(membershipID: $0.membershipId, name: $0.name ?? $0.email ?? "Someone", email: $0.email) }
+            } catch let error as SOSHTTPError where error.status == 404 {
+                store.orgPeople[agency.id] = nil
+            } catch {
+                log.error("Sensory OS people: \(error.localizedDescription, privacy: .public)")
+            }
+        }
     }
 
     // MARK: - Taking
@@ -543,6 +577,8 @@ final class SensoryOS {
         var body: [String: Any] = ["agencyId": agency.id, "boardId": boardID, "title": values.title, "description": values.description,
                                    "priority": task.priority.rawValue, "clientRef": ref.uuidString.lowercased()]
         if task.status != .pending { body["status"] = SOSMap.wire(task.status) }
+        // A website from before assignees were shared leaves it out.
+        if let assignee = task.assigneeID { body["assigneeMembershipId"] = assignee }
         do {
             let answer: SOSTaskAnswer = try await call("POST", "/api/desktop/v1/tasks", body: body)
             guard var current = store.tasks.first(where: { $0.id == task.id }) else { return }
@@ -567,6 +603,7 @@ final class SensoryOS {
         if mine.status != base.status { body["status"] = SOSMap.wire(mine.status) }
         let priorityChanged = base.priority == nil ? mine.priority != .medium : mine.priority != base.priority
         if priorityChanged { body["priority"] = mine.priority?.rawValue }
+        if SOSMap.assigneeChanged(mine, from: base) { body["assigneeMembershipId"] = mine.assigneeID ?? NSNull() }
         do {
             let answer: SOSTaskAnswer = try await call("PATCH", "/api/desktop/v1/tasks/\(id)", body: body)
             guard var current = store.tasks.first(where: { $0.id == task.id }) else { return }

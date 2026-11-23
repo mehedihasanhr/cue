@@ -107,8 +107,10 @@ struct TaskPageView: View {
             property("Status", symbol: "circle.dotted") {
                 TagMenu(tag: .status(task.status), help: "Status") { TaskStatusItems(store: store, task: task) }
             }
-            property("Assignee", symbol: "person") {
-                AssigneeMenu(store: store, task: task)
+            if store.isOrgTask(task) {
+                property("Assignee", symbol: "person") {
+                    AssigneeMenu(store: store, task: task)
+                }
             }
             property("Priority", symbol: "flag") {
                 TagMenu(tag: .priority(task.priority), help: "Priority") { TaskPriorityItems(store: store, task: task) }

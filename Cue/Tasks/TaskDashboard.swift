@@ -1228,7 +1228,9 @@ private enum TableColumns {
     static let priority: CGFloat = 120
     static let project: CGFloat = 170
     static let updated: CGFloat = 150
-    static var minimumWidth: CGFloat { gutter + name + status + assignee + priority + project + updated + 5 }
+    static func minimumWidth(assignee shown: Bool) -> CGFloat {
+        gutter + name + status + (shown ? assignee + 1 : 0) + priority + project + updated + 4
+    }
 }
 
 /// Every task in groups by status, each a ▸ toggle with its tag and count, the column
@@ -1245,20 +1247,23 @@ private struct TaskTable: View {
         Dictionary(store.projects.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
     }
 
+    /// Assignees are an organization's: the column shows where its tasks are.
+    private var showsAssignee: Bool { tasks.contains { store.isOrgTask($0) } }
+
     var body: some View {
         GeometryReader { proxy in
             ScrollView(.vertical) {
                 ScrollView(.horizontal, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(groups, id: \.self) { status in
-                            TableGroup(store: store, status: status,
+                            TableGroup(store: store, status: status, showsAssignee: showsAssignee,
                                        tasks: TaskDashboardQuery.sorted(tasks.filter { $0.status == status },
                                                                         order: model.manualOrder,
                                                                         sort: model.sort,
                                                                         projectNames: projectNames))
                         }
                     }
-                    .frame(width: max(proxy.size.width - (TaskDashboardMain.margin - TableColumns.gutter) * 2, TableColumns.minimumWidth), alignment: .leading)
+                    .frame(width: max(proxy.size.width - (TaskDashboardMain.margin - TableColumns.gutter) * 2, TableColumns.minimumWidth(assignee: showsAssignee)), alignment: .leading)
                     .padding(.horizontal, TaskDashboardMain.margin - TableColumns.gutter)
                     .padding(.bottom, 40)
                 }
@@ -1272,6 +1277,7 @@ private struct TaskTable: View {
 private struct TableGroup: View {
     let store: TaskStore
     let status: TaskStatus
+    let showsAssignee: Bool
     let tasks: [TaskItem]
     @Environment(TaskDashboardModel.self) private var model
 
@@ -1306,7 +1312,7 @@ private struct TableGroup: View {
             if !folded {
                 columnHeadings
                 ForEach(tasks) { task in
-                    TableRow(store: store, task: task, open: model.openTaskID == task.id)
+                    TableRow(store: store, task: task, open: model.openTaskID == task.id, showsAssignee: showsAssignee)
                 }
                 if model.composing == status {
                     NewTaskLine(store: store, status: status)
@@ -1344,8 +1350,10 @@ private struct TableGroup: View {
             heading("Task name", symbol: "textformat", column: .name, width: nil)
             Hairline(axis: .vertical)
             heading("Status", symbol: "circle.dotted", column: .status, width: TableColumns.status)
-            Hairline(axis: .vertical)
-            heading("Assignee", symbol: "person", column: .assignee, width: TableColumns.assignee)
+            if showsAssignee {
+                Hairline(axis: .vertical)
+                heading("Assignee", symbol: "person", column: .assignee, width: TableColumns.assignee)
+            }
             Hairline(axis: .vertical)
             heading("Priority", symbol: "flag", column: .priority, width: TableColumns.priority)
             Hairline(axis: .vertical)
@@ -1437,6 +1445,7 @@ private struct TableRow: View {
     let store: TaskStore
     let task: TaskItem
     let open: Bool
+    let showsAssignee: Bool
     @Environment(TaskDashboardModel.self) private var model
     @State private var hovering = false
     @State private var height: CGFloat = 36
@@ -1457,9 +1466,12 @@ private struct TableRow: View {
                 cell(width: TableColumns.status) {
                     TagMenu(tag: .status(task.status), help: "Status") { TaskStatusItems(store: store, task: task) }
                 }
-                Hairline(axis: .vertical)
-                cell(width: TableColumns.assignee) {
-                    AssigneeMenu(store: store, task: task, placeholder: hovering ? "Assign" : "")
+                if showsAssignee {
+                    Hairline(axis: .vertical)
+                    cell(width: TableColumns.assignee) {
+                        // A task of Cue's own has no one to assign it to.
+                        if store.isOrgTask(task) { AssigneeMenu(store: store, task: task, placeholder: hovering ? "Assign" : "") }
+                    }
                 }
                 Hairline(axis: .vertical)
                 cell(width: TableColumns.priority) {

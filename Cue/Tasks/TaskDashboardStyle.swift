@@ -279,8 +279,8 @@ struct AssigneeTag: View {
     }
 }
 
-/// Who a task is for, and the way to change it: the name as a tag; a click opens a
-/// small panel to type a name, or pick one of those already used, or take it off.
+/// Who an organization's task is for, and the way to change it: the name as a tag; a
+/// click opens a searchable dropdown of the organization's people.
 struct AssigneeMenu: View {
     let store: TaskStore
     let task: TaskItem
@@ -307,71 +307,120 @@ struct AssigneeMenu: View {
     }
 }
 
-/// The panel `AssigneeMenu` opens: a field for a name, the names already used that
-/// match it, and Remove.
+/// The dropdown `AssigneeMenu` opens: a search over the organization's people, the
+/// first ten who match, and Unassign. While the website does not list its people yet,
+/// a name typed can be used too (kept in Cue until it does).
 private struct AssigneePicker: View {
     let store: TaskStore
     let task: TaskItem
     let done: () -> Void
-    @State private var name = ""
+    @State private var query = ""
+    @State private var highlighted = 0
     @FocusState private var focused: Bool
 
-    private var typed: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private static let shown = 10
 
-    private var matches: [String] {
-        Array(store.assignees.filter { typed.isEmpty || $0.localizedCaseInsensitiveContains(typed) }.prefix(8))
+    private var typed: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    private var everyone: [TaskPerson] { store.people(for: task) }
+
+    private var matches: [TaskPerson] {
+        everyone.filter { typed.isEmpty || $0.name.localizedCaseInsensitiveContains(typed) || ($0.email?.localizedCaseInsensitiveContains(typed) ?? false) }
+    }
+
+    /// A name no one has, offered only while the website has not listed its people.
+    private var newName: String? {
+        guard !typed.isEmpty, !store.knowsPeople(for: task),
+              !everyone.contains(where: { $0.name.caseInsensitiveCompare(typed) == .orderedSame }) else { return nil }
+        return typed
     }
 
     var body: some View {
+        let matches = Array(self.matches.prefix(Self.shown))
         VStack(alignment: .leading, spacing: 2) {
-            TextField("Assign to…", text: $name)
-                .textFieldStyle(.roundedBorder)
-                .focused($focused)
-                // Return takes the name typed, or the one match it narrowed to.
-                .onSubmit { assign(matches.count == 1 && !typed.isEmpty ? matches[0] : typed) }
-                .padding(.bottom, 6)
-            ForEach(matches, id: \.self) { candidate in
-                row { assign(candidate) } label: {
-                    AssigneeTag(name: candidate)
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(NotionStyle.tertiary)
+                TextField("Search people", text: $query)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .focused($focused)
+                    .onSubmit {
+                        if matches.indices.contains(highlighted) { assign(matches[highlighted]) } else if let newName { assign(TaskPerson(name: newName)) }
+                    }
+                    .onKeyPress(.downArrow) { highlighted = min(highlighted + 1, max(matches.count - 1, 0)); return .handled }
+                    .onKeyPress(.upArrow) { highlighted = max(highlighted - 1, 0); return .handled }
+                    .onChange(of: query) { highlighted = 0 }
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 30)
+            .background(NotionStyle.field, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .padding(.bottom, 6)
+
+            if matches.isEmpty, newName == nil {
+                Text(everyone.isEmpty ? "No one to assign yet" : "No one matches")
+                    .font(.system(size: 13))
+                    .foregroundStyle(NotionStyle.tertiary)
+                    .padding(.horizontal, 6)
+                    .frame(height: 28)
+            }
+            ForEach(Array(matches.enumerated()), id: \.element.id) { index, person in
+                row(highlighted: index == highlighted) { assign(person) } label: {
+                    AssigneeTag(name: person.name)
+                    if let email = person.email, email != person.name {
+                        Text(email).font(.system(size: 11)).foregroundStyle(NotionStyle.tertiary).lineLimit(1)
+                    }
                     Spacer(minLength: 8)
-                    if candidate == task.assignee {
+                    if isCurrent(person) {
                         Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold)).foregroundStyle(NotionStyle.secondary)
                     }
                 }
             }
-            if !typed.isEmpty, !store.assignees.contains(where: { $0.caseInsensitiveCompare(typed) == .orderedSame }) {
-                row { assign(typed) } label: {
+            if self.matches.count > Self.shown {
+                Text("\(self.matches.count - Self.shown) more: type to narrow")
+                    .font(.system(size: 11))
+                    .foregroundStyle(NotionStyle.tertiary)
+                    .padding(.horizontal, 6)
+                    .padding(.top, 2)
+            }
+            if let newName {
+                row(highlighted: matches.isEmpty) { assign(TaskPerson(name: newName)) } label: {
                     Image(systemName: "plus").font(.system(size: 11)).foregroundStyle(NotionStyle.secondary)
-                    Text("Assign to “\(typed)”").font(.system(size: 13)).foregroundStyle(NotionStyle.text).lineLimit(1)
+                    Text("Assign to “\(newName)”").font(.system(size: 13)).foregroundStyle(NotionStyle.text).lineLimit(1)
                     Spacer(minLength: 0)
                 }
             }
             if task.assignee != nil {
                 Divider().padding(.vertical, 4)
-                row { assign(nil) } label: {
+                row(highlighted: false) { assign(nil) } label: {
                     Image(systemName: "person.slash").font(.system(size: 11)).foregroundStyle(NotionStyle.secondary)
-                    Text("Remove assignee").font(.system(size: 13)).foregroundStyle(NotionStyle.text)
+                    Text("Unassign").font(.system(size: 13)).foregroundStyle(NotionStyle.text)
                     Spacer(minLength: 0)
                 }
             }
         }
-        .padding(10)
-        .frame(width: 240)
+        .padding(8)
+        .frame(width: 280)
         .onAppear { focused = true }
     }
 
-    private func row(_ action: @escaping () -> Void, @ViewBuilder label: () -> some View) -> some View {
+    private func isCurrent(_ person: TaskPerson) -> Bool {
+        if let id = person.membershipID, let current = task.assigneeID { return id == current }
+        return person.name == task.assignee
+    }
+
+    private func row(highlighted: Bool, _ action: @escaping () -> Void, @ViewBuilder label: () -> some View) -> some View {
         Button(action: action) {
             HStack(spacing: 6) { label() }
                 .padding(.horizontal, 6)
-                .frame(height: 28)
+                .frame(height: 30)
+                .background(highlighted ? NotionStyle.hover : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .contentShape(Rectangle())
         }
         .buttonStyle(NotionHoverStyle())
     }
 
-    private func assign(_ name: String?) {
-        store.setAssignee(name, for: task)
+    private func assign(_ person: TaskPerson?) {
+        store.setAssignee(person, for: task)
         done()
     }
 }
