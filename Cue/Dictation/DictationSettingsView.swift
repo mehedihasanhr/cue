@@ -72,10 +72,6 @@ struct DictationSettingsView: View {
                     }
                 }
                 .disabled(!preferences.voiceTypingEnabled)
-                SettingsRow("Hey Cue", subtitle: "Say \"Hey Cue\" to start talking, no key needed. Keeps the microphone on while Cue runs (macOS shows its orange dot), but the recogniser only wakes when someone talks, and the microphone closes while the Mac is locked or asleep. Heard on this Mac only.") {
-                    Toggle("Hey Cue", isOn: $preferences.voiceTypingWakeWord).toggleStyle(.switch)
-                }
-                .disabled(!preferences.voiceTypingEnabled)
                 SettingsRow("Auto-format", subtitle: "Takes out \"um\" and \"uh\", adds punctuation and capitals, and turns \"new line\" and \"new paragraph\" into breaks.") {
                     Toggle("Auto-format", isOn: $preferences.dictationAutoFormat).toggleStyle(.switch)
                 }
@@ -98,7 +94,6 @@ struct DictationSettingsView: View {
             .onChange(of: preferences.voiceTypingEnabled) { VoiceTyping.shared.update() }
             .onChange(of: preferences.voiceTypingKey) { VoiceTyping.shared.update() }
             .onChange(of: preferences.voiceTypingShortcut) { VoiceTyping.shared.update() }
-            .onChange(of: preferences.voiceTypingWakeWord) { VoiceTyping.shared.update() }
 
             SettingsGroup("Whisper models", footer: "Downloaded from Hugging Face and run on this Mac; nothing you say leaves it. Remove deletes a model and everything of it. Update downloads the new version beside the old one, and deletes the old one once the new one works.") {
                 ForEach(WhisperModel.all) { model in
@@ -143,7 +138,12 @@ private struct WhisperModelRow: View {
                         .help(error)
                         .accessibilityLabel(error)
                 }
-                if let fraction = service.downloads[model.id] {
+                if service.preparing.contains(model.id) {
+                    ProgressView().controlSize(.small)
+                    Text("Preparing for this Mac")
+                        .font(SettingsFont.sub)
+                        .foregroundStyle(.secondary)
+                } else if let fraction = service.downloads[model.id] {
                     ProgressView(value: fraction)
                         .frame(width: 110)
                     Text(fraction.formatted(.percent.precision(.fractionLength(0))))

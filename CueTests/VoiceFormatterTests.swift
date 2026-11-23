@@ -10,6 +10,9 @@ final class VoiceFormatterTests: XCTestCase {
     func testSpokenBreaksBecomeBreaks() {
         XCTAssertEqual(VoiceFormatter.rules("first point new line second point new paragraph the end"),
                        "First point\nSecond point\n\nThe end")
+        // The recogniser's stop before "new line" ends the sentence before it.
+        XCTAssertEqual(VoiceFormatter.rules("Call the bank about the new card. New line. Then send the report to Sam."),
+                       "Call the bank about the new card.\nThen send the report to Sam.")
     }
 
     func testAStumbledWordIsSaidOnce() {
@@ -28,6 +31,14 @@ final class VoiceFormatterTests: XCTestCase {
         XCTAssertFalse(VoiceFormatter.isFaithful("Sure! Here is the cleaned text: buy milk", to: "buy milk and eggs today please"))
         XCTAssertFalse(VoiceFormatter.isFaithful("", to: "anything"))
         XCTAssertTrue(VoiceFormatter.isFaithful("Buy milk and eggs today, please.", to: "buy milk and eggs today please"))
+    }
+
+    /// Two sentences on two lines came back as a one-item list once, "Then" gone.
+    func testAListOfFewerThanThreeIsNotTaken() {
+        let said = "Remind me to call the bank on Tuesday about the new card.\nThen send the report to Sam."
+        XCTAssertFalse(VoiceFormatter.isFaithful("Remind me to call the bank on Tuesday about the new card:\n- send the report to Sam", to: said))
+        XCTAssertTrue(VoiceFormatter.isFaithful("For the launch we need:\n- the venue\n- the caterer\n- the band",
+                                                to: "For the launch we need the venue the caterer the band."))
     }
 
     func testTheRecognisersPunctuationIsTakenOffForTheModel() {

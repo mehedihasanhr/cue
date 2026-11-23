@@ -26,9 +26,10 @@ nonisolated enum VoiceFormatter {
     static func rules(_ text: String) -> String {
         var text = text
         text = text.replacingOccurrences(of: fillers, with: "", options: .regularExpression)
-        // Spoken layout, with whatever punctuation the recogniser put around it.
-        text = text.replacingOccurrences(of: #"(?i)[,.]?\s*\bnew paragraph\b[,.]?\s*"#, with: "\n\n", options: .regularExpression)
-        text = text.replacingOccurrences(of: #"(?i)[,.]?\s*\bnew line\b[,.]?\s*"#, with: "\n", options: .regularExpression)
+        // Spoken layout, with whatever punctuation the recogniser put around it; a stop
+        // before it ends the sentence before, and stays ("…the card. New line. Then…").
+        text = text.replacingOccurrences(of: #"(?i),?\s*\bnew paragraph\b[,.]?\s*"#, with: "\n\n", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"(?i),?\s*\bnew line\b[,.]?\s*"#, with: "\n", options: .regularExpression)
         // A word said twice in a row by stumbling ("the the").
         text = text.replacingOccurrences(of: #"(?i)\b(\w+)(\s+\1\b)+"#, with: "$1", options: .regularExpression)
         text = text.replacingOccurrences(of: #"[ \t]+"#, with: " ", options: .regularExpression)
@@ -135,6 +136,10 @@ nonisolated enum VoiceFormatter {
         guard !cleaned.isEmpty else { return false }
         let ratio = Double(cleaned.count) / Double(max(original.count, 1))
         guard (0.5...1.5).contains(ratio) else { return false }
+        // A list is for three things or more, as the instructions say; the model also makes
+        // one of two sentences ("…the new card. New line. Then send the report"), dropping words.
+        let bullets = { (text: String) in text.split(separator: "\n").filter { $0.hasPrefix("- ") }.count }
+        if bullets(cleaned) > bullets(original), bullets(cleaned) < 3 { return false }
         let lowered = cleaned.lowercased()
         let replies = ["sure", "here is", "here's", "certainly", "i can", "i'm sorry", "as an ai"]
         return !replies.contains { lowered.hasPrefix($0) && !original.lowercased().hasPrefix($0) }

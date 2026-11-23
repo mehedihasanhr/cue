@@ -114,7 +114,8 @@ final class AppPreferences {
         static let voiceTypingEnabled = "dictation.voiceTyping"
         static let voiceTypingKey = "dictation.voiceTypingKey"
         static let voiceTypingShortcut = "dictation.voiceTypingShortcut"
-        static let voiceTypingWakeWord = "dictation.heyCue"
+        /// Hey Cue's switch, from before it was taken out; cleared at launch.
+        static let retiredHeyCue = "dictation.heyCue"
         static let dictationAutoFormat = "dictation.autoFormat"
         static let dictationSmartFormat = "dictation.smartFormat"
         static let snippetPrefix = "snippets.prefix"
@@ -258,8 +259,8 @@ final class AppPreferences {
         didSet { defaults.set(dictationLanguage, forKey: Key.dictationLanguage) }
     }
 
-    /// Talking into any app's text field: hold a key (or say "Hey Cue"), speak, and the
-    /// words are pasted where the caret is.
+    /// Talking into any app's text field: hold a key (or tap it), speak, and the words
+    /// are pasted where the caret is.
     var voiceTypingEnabled: Bool {
         didSet { defaults.set(voiceTypingEnabled, forKey: Key.voiceTypingEnabled) }
     }
@@ -290,11 +291,6 @@ final class AppPreferences {
     /// The shortcut held to talk, when `voiceTypingKey` is `.shortcut`.
     var voiceTypingShortcut: Hotkey? {
         didSet { defaults.set(voiceTypingShortcut.flatMap { try? JSONEncoder().encode($0) }, forKey: Key.voiceTypingShortcut) }
-    }
-
-    /// Listening for "Hey Cue" all the time. Off by default: the microphone stays on.
-    var voiceTypingWakeWord: Bool {
-        didSet { defaults.set(voiceTypingWakeWord, forKey: Key.voiceTypingWakeWord) }
     }
 
     /// Dictated text tidied before it is typed: fillers out, punctuation and capitals in,
@@ -1112,7 +1108,7 @@ final class AppPreferences {
         voiceTypingEnabled = defaults.object(forKey: Key.voiceTypingEnabled) as? Bool ?? true
         voiceTypingKey = VoiceTypingKey(rawValue: defaults.string(forKey: Key.voiceTypingKey) ?? "") ?? .fn
         voiceTypingShortcut = defaults.data(forKey: Key.voiceTypingShortcut).flatMap { try? JSONDecoder().decode(Hotkey.self, from: $0) }
-        voiceTypingWakeWord = defaults.object(forKey: Key.voiceTypingWakeWord) as? Bool ?? false
+        defaults.removeObject(forKey: Key.retiredHeyCue)
         dictationAutoFormat = defaults.object(forKey: Key.dictationAutoFormat) as? Bool ?? true
         dictationSmartFormat = defaults.object(forKey: Key.dictationSmartFormat) as? Bool ?? true
         snippetPrefix = defaults.string(forKey: Key.snippetPrefix) ?? ";"

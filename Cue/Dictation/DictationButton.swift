@@ -37,14 +37,22 @@ struct DictationButton: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(transcribing || (service.state != .idle && service.owner != id))
-        .help(listening ? "Stop and type what you said" : "Dictate (or press Fn twice)")
-        .accessibilityLabel(listening ? "Stop dictating" : "Dictate")
-        // A window closed mid-dictation does not leave the microphone on.
-        .onDisappear { if service.owner == id, service.state == .listening { service.cancel() } }
+        // Another field's dictation has the microphone; this one waits.
+        .disabled(service.state != .idle && service.owner != id)
+        .help(transcribing ? "Cancel" : listening ? "Stop and type what you said" : "Dictate (or press Fn twice)")
+        .accessibilityLabel(transcribing ? "Cancel dictation" : listening ? "Stop dictating" : "Dictate")
+        // A window closed mid-dictation does not leave the microphone on, nor type into
+        // a field that is gone.
+        .onDisappear { if service.owner == id { service.cancel() } }
     }
 
     private func toggle() {
+        // Still working the words out (a model loading for the first time can take a
+        // while): a click lets go of it rather than leaving the button stuck.
+        if service.isTranscribing(id) {
+            service.cancel()
+            return
+        }
         Task { @MainActor in
             if service.isListening(id) {
                 if let text = await service.finish(for: id) { insert(text) }

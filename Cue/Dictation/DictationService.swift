@@ -29,6 +29,9 @@ final class DictationService {
 
     /// Downloads and updates in progress, by model id: the fraction done.
     private(set) var downloads: [String: Double] = [:]
+    /// Downloaded models being loaded once from where they now live, so Core ML prepares
+    /// them for this Mac then rather than in the middle of the first dictation.
+    private(set) var preparing: Set<String> = []
     /// Installed models with a newer version in the repository.
     private(set) var updates: Set<String> = []
     private(set) var checkingForUpdates = false
@@ -55,11 +58,33 @@ final class DictationService {
     @ObservationIgnored private var heardSpeech = false
     @ObservationIgnored private var quietSince: Date?
     @ObservationIgnored private var startedAt = Date.now
+    /// The loudest the microphone got in this dictation, 0…1.
+    @ObservationIgnored private var peak: Double = 0
+    /// Every reading of this dictation's meter, for `cue://debug/dictation`.
+    @ObservationIgnored private var readings: [Double] = []
+    /// The room with nobody talking: the meter followed down quickly and up slowly, so a
+    /// voice barely moves it.
+    @ObservationIgnored private var floor: Double?
+    /// The microphone is being opened; a second start waits its turn rather than racing it.
+    @ObservationIgnored private var starting = false
+    /// Counts dictations. A dictation that was cancelled while its words were worked out
+    /// finds the count moved on, and neither answers nor tidies up after the next one.
+    @ObservationIgnored private var session = 0
+    /// How the last dictation ended, for `cue://debug/dictation`.
+    @ObservationIgnored private var lastOutcome = "none"
+    #if DEBUG
+    /// `cue://debug/dictate?action=stop&clip=…`: this file is heard in place of the recording.
+    @ObservationIgnored var debugClip: URL?
+    #endif
 
     /// How long a pause after speaking ends a dictation that ends on one.
     static let pauseLength: TimeInterval = 1.5
     /// How long such a dictation waits for the first word before giving up.
     static let waitForSpeech: TimeInterval = 8
+    /// Louder than this is a voice (about -32 dB); quieter than `quietLevel`, a pause. Both
+    /// rise with a noisy room (`floor`): a fan or a café is neither talk nor a pause.
+    static let speechLevel = 0.35
+    static let quietLevel = 0.2
 
     /// The longest one dictation records, so a button left on does not fill the disk.
     private static let longest: TimeInterval = 10 * 60
@@ -86,7 +111,9 @@ final class DictationService {
         engine: \(engine.map(\.rawValue) ?? "unset")
         whisper model: \(preferences?.dictationWhisperModel ?? "none")  on disk: \(model != nil)
         microphone authorization: \(String(describing: AVCaptureDevice.authorizationStatus(for: .audio).rawValue))
-        downloads in flight: \(downloads.count)  model errors: \(modelErrors)
+        installed: \(WhisperModel.all.filter { store.installation(of: $0) != nil }.map(\.id))
+        downloads in flight: \(downloads)  model errors: \(modelErrors)
+        last dictation: \(lastOutcome)
         """
     }
 
@@ -96,7 +123,10 @@ final class DictationService {
     /// nothing for a while); the caller then finishes the dictation.
     @discardableResult
     func start(for id: UUID, onPause: (() -> Void)? = nil) async -> Bool {
-        guard state == .idle else { return false }
+        guard state == .idle, !starting else { return false }
+        // The permission check can wait on macOS's prompt; meanwhile this is the start.
+        starting = true
+        defer { starting = false }
         guard await microphoneAllowed() else {
             FeedbackHUD.show("Microphone not allowed", symbol: "mic.slash",
                              subtitle: "Allow Cue in System Settings › Privacy & Security › Microphone.")
@@ -118,6 +148,7 @@ final class DictationService {
             owner = id
             state = .listening
             self.onPause = onPause
+            session += 1
             if preferences?.dictationAutoFormat ?? true, preferences?.dictationSmartFormat ?? true { VoiceFormatter.prewarm() }
             // The Whisper model loads while the speaker is still talking. It is let go
             // of again after a minute idle, so most dictations used to begin with a
@@ -127,6 +158,9 @@ final class DictationService {
             heardSpeech = false
             quietSince = nil
             startedAt = .now
+            peak = 0
+            readings = []
+            floor = nil
             startMeter()
             return true
         } catch {
@@ -137,47 +171,105 @@ final class DictationService {
         }
     }
 
-    /// Stops recording and returns what was said; nil when nothing was heard or it failed
-    /// (the reason has been shown).
+    /// From now on the dictation `id` ends at the next pause (`onPause` is called), as one
+    /// started hands-free does; for a held key let go too soon to have meant holding it.
+    func endOnPause(for id: UUID, _ onPause: @escaping () -> Void) {
+        guard isListening(id) else { return }
+        self.onPause = onPause
+        // The wait for a first word starts again, from now.
+        if !heardSpeech { startedAt = .now }
+    }
+
+    /// Stops recording and returns what was said; nil when nothing was heard, it failed
+    /// (the reason has been shown), or it was cancelled while the words were worked out.
     func finish(for id: UUID) async -> String? {
         guard owner == id, state == .listening, let recorder, let clip else { return nil }
         recorder.stop()
         self.recorder = nil
         onPause = nil
+        var spoke = heardSpeech
+        var heard = clip
+        #if DEBUG
+        if let debugClip {
+            heard = debugClip
+            spoke = true
+            self.debugClip = nil
+        }
+        #endif
         stopMeter()
         state = .transcribing
+        let session = session
+        // Only this dictation's own leftovers: after a cancel, the next may be running.
         defer {
             try? FileManager.default.removeItem(at: clip)
-            self.clip = nil
-            owner = nil
-            state = .idle
+            if session == self.session {
+                self.clip = nil
+                owner = nil
+                state = .idle
+            }
         }
+        // Nothing louder than the room: no recogniser hears it, because Whisper given
+        // silence or a fan makes words up ("Thank you.") and they would be typed.
+        guard spoke else {
+            lastOutcome = "silent (\(levels))"
+            FeedbackHUD.show("Nothing heard", symbol: "mic")
+            return nil
+        }
+        // The first load of a model on this Mac (or after a macOS update) has Core ML prepare
+        // it for the Neural Engine: a minute or two for the larger ones, with nothing to show
+        // for it but "Writing". Say so, rather than look stuck.
+        let slowLoad = Task { [weak self, transcriber] in
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled, let self, self.session == session, self.state == .transcribing,
+                  self.preferences?.dictationEngine == .whisper, await !transcriber.isLoaded else { return }
+            FeedbackHUD.show("Getting Whisper ready", symbol: "hourglass", duration: .seconds(6),
+                             subtitle: "The first time on this Mac takes a minute or two.")
+        }
+        defer { slowLoad.cancel() }
         do {
             let started = Date.now
-            var text = try await transcribe(clip)
+            var text = try await transcribe(heard)
             AppleDictation.log.info("Transcribed in \(Int(Date.now.timeIntervalSince(started) * 1000), privacy: .public) ms, \(text.count, privacy: .public) characters")
+            guard session == self.session else { lastOutcome = "cancelled while writing"; return nil }
             if !text.isEmpty, preferences?.dictationAutoFormat ?? true {
                 text = await VoiceFormatter.format(text, smart: preferences?.dictationSmartFormat ?? true)
             }
+            guard session == self.session else { lastOutcome = "cancelled while writing"; return nil }
+            lastOutcome = "text (\(levels), \(Int(Date.now.timeIntervalSince(started) * 1000)) ms): \(text)"
             if text.isEmpty { FeedbackHUD.show("Nothing heard", symbol: "mic") }
             return text.isEmpty ? nil : text
         } catch {
             AppleDictation.log.error("Dictation failed: \(error.localizedDescription, privacy: .public)")
+            lastOutcome = "failed: \(error.localizedDescription)"
+            guard session == self.session else { return nil }
             FeedbackHUD.show("Couldn't turn speech into text", symbol: "mic.slash", subtitle: error.localizedDescription)
             return nil
         }
     }
 
-    /// Stops recording and throws the clip away.
+    /// Stops recording and throws the clip away; while the words are being worked out,
+    /// drops them when they come.
     func cancel() {
+        session += 1
         onPause = nil
         recorder?.stop()
         recorder = nil
         stopMeter()
-        if let clip { try? FileManager.default.removeItem(at: clip) }
+        // A clip being transcribed is deleted by `finish` once the recogniser is done with it.
+        if state == .listening, let clip { try? FileManager.default.removeItem(at: clip) }
+        if state == .listening { lastOutcome = "cancelled (\(levels))" } else if state != .idle { lastOutcome = "cancelled" }
         clip = nil
         owner = nil
         state = .idle
+    }
+
+    /// The meter's readings in short, for `cue://debug/dictation`.
+    private var levels: String {
+        let sorted = readings.sorted()
+        func at(_ fraction: Double) -> String {
+            sorted.isEmpty ? "-" : String(format: "%.2f", sorted[min(sorted.count - 1, Int(Double(sorted.count) * fraction))])
+        }
+        return "levels p10 \(at(0.1)) p50 \(at(0.5)) p90 \(at(0.9)) peak \(String(format: "%.2f", peak)) room \(String(format: "%.2f", floor ?? 0)), \(readings.count) readings, voice: \(heardSpeech)"
     }
 
     /// Starts loading the Whisper model, if that is the engine, without waiting for it.
@@ -220,27 +312,41 @@ final class DictationService {
     }
 
     private func startMeter() {
-        meter = Timer.scheduledTimer(withTimeInterval: 0.06, repeats: true) { [weak self] _ in
+        let meter = Timer(timeInterval: 0.06, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, let recorder = self.recorder else { return }
                 recorder.updateMeters()
                 // -50 dB and below is silence; 0 dB is as loud as it goes.
                 self.level = max(0, min(1, (Double(recorder.averagePower(forChannel: 0)) + 50) / 50))
-                self.watchForPause()
+                self.peak = max(self.peak, self.level)
+                self.readings.append(self.level)
+                self.listen()
             }
         }
+        // In the common modes, so the meter (and the pause that ends a hands-free
+        // dictation) keeps going while a menu is open or something is being dragged.
+        RunLoop.main.add(meter, forMode: .common)
+        self.meter = meter
     }
 
-    /// Fires `onPause` once the voice has gone quiet after speaking, or never came.
-    private func watchForPause() {
-        guard let onPause else { return }
+    /// Tells a voice from the room, and fires `onPause` once the voice has gone quiet
+    /// after speaking, or never came.
+    private func listen() {
         let now = Date.now
-        if level > 0.35 {
+        // The room is taken to be quiet at first (the speaker may start at once, and the
+        // meter reads nothing for its first moments), and found out as the dictation goes.
+        if level > 0 {
+            let floor = floor ?? min(level, Self.quietLevel)
+            self.floor = level < floor ? (floor + level) / 2 : floor + (level - floor) * 0.005
+        }
+        let room = floor ?? 0
+        if level > max(Self.speechLevel, room + 0.2) {
             heardSpeech = true
             quietSince = nil
-        } else if level < 0.2 {
+        } else if level < max(Self.quietLevel, room + 0.08) {
             quietSince = quietSince ?? now
         }
+        guard let onPause else { return }
         let paused = heardSpeech && quietSince.map { now.timeIntervalSince($0) >= Self.pauseLength } == true
         let silent = !heardSpeech && now.timeIntervalSince(startedAt) >= Self.waitForSpeech
         guard paused || silent else { return }
@@ -284,6 +390,13 @@ final class DictationService {
                 updates.remove(id)
                 // The first model downloaded is the one used.
                 if preferences?.dictationWhisperModel == nil { preferences?.dictationWhisperModel = id }
+                // Loaded once more from its own folder, so the first dictation does not
+                // wait for Core ML to prepare it.
+                downloads[id] = nil
+                changes += 1
+                preparing.insert(id)
+                await transcriber.prewarm(model)
+                preparing.remove(id)
             } catch is CancellationError {
             } catch {
                 if !Task.isCancelled { modelErrors[id] = error.localizedDescription }

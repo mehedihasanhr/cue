@@ -32,6 +32,22 @@ struct WhisperLiveTests {
         #expect(text.lowercased().contains("fox"))
         await transcriber.unload()
 
+        // Dictation warms the model as listening starts, and a short clip arrives while it
+        // is still loading: the clip waits for that load instead of making a second copy.
+        let cold = WhisperTranscriber(store: store)
+        async let warmed: Void = cold.prewarm(model)
+        async let heard = cold.transcribe(fileAt: speech, with: model, language: nil)
+        _ = await warmed
+        #expect(try await heard.lowercased().contains("fox"))
+        #expect(await cold.loads == 1)
+
+        // Let go of mid-clip (an update, a removal): the clip still gets its words.
+        let during = Task { try await cold.transcribe(fileAt: speech, with: model, language: "en") }
+        while await cold.clipsInProgress == 0 { try await Task.sleep(for: .milliseconds(2)) }
+        await cold.unload()
+        #expect(try await during.value.lowercased().contains("fox"))
+        #expect(await !cold.isLoaded)
+
         // An update over the top leaves one copy.
         try await store.install(model)
         try store.remove(model)

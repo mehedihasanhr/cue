@@ -1,5 +1,6 @@
 #if DEBUG
 import AppKit
+import DictationKit
 import os
 import WebKit
 
@@ -27,6 +28,10 @@ import WebKit
 ///     cue://debug/pin?index=0                the nth capture (newest first) pinned to the screen
 ///     cue://debug/pinned?action=edit         a pinned capture's own button: close, edit, copy, ghost
 ///     cue://debug/dictation                  what dictation is set to → ~/Pictures/Cue Debug/dictation.txt
+///                                            (engine=whisper|apple, model=<id> and download=<id> set it first)
+///     cue://debug/dictate?action=start       voice typing as if the talk key were held (handsfree=1: tapped);
+///                                            action=stop lets go (clip=a.aiff: that file in Cue Debug is
+///                                            heard instead of the microphone), action=cancel is Esc
 ///     cue://debug/throw                      raises an exception, to check it is caught and logged
 ///     cue://debug/island?tab=captures        the island opened on a tab, so its panel is on screen
 ///     cue://debug/floating                   the floating library panel opened
@@ -181,11 +186,20 @@ enum DebugCommands {
             // blank through `cacheDisplay`, so there is no snapshot of it.
             openFloatingPanel()
         case "/dictation":
+            if let engine = query["engine"].flatMap(AppPreferences.DictationEngine.init(rawValue:)) {
+                DictationService.preferences?.dictationEngine = engine
+            }
+            if let id = query["model"] { DictationService.preferences?.dictationWhisperModel = id.isEmpty ? nil : id }
+            if let model = query["download"].flatMap(WhisperModel.named) { DictationService.shared.download(model) }
             // What dictation is set to, inside the sandbox where a test cannot look.
             write(report: """
             \(VoiceTyping.shared.debugSummary)
             \(DictationService.shared.debugSummary)
             """, to: "dictation.txt")
+        case "/dictate":
+            // clip=<name>: a file in ~/Pictures/Cue Debug heard instead of the microphone.
+            let clip = query["clip"].map { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Pictures/Cue Debug/\($0)") }
+            VoiceTyping.shared.debugDictate(query["action"] ?? "", handsFree: query["handsfree"] == "1", clip: clip)
         case "/throw":
             // Checks the net under AppKit's drawing exceptions: this one should be
             // written to the log by CueApplication and leave Cue running.
