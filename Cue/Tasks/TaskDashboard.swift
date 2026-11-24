@@ -1469,8 +1469,13 @@ private struct TableRow: View {
                 if showsAssignee {
                     Hairline(axis: .vertical)
                     cell(width: TableColumns.assignee) {
-                        // A task of Cue's own has no one to assign it to.
-                        if store.isOrgTask(task) { AssigneeMenu(store: store, task: task, placeholder: hovering ? "Assign" : "") }
+                        // A task of Cue's own has no one to assign it to. Its cell stays, empty:
+                        // a modifier on nothing is dropped, and the cells after it would move left.
+                        if store.isOrgTask(task) {
+                            AssigneeMenu(store: store, task: task, placeholder: hovering ? "Assign" : "")
+                        } else {
+                            Color.clear.frame(height: 1)
+                        }
                     }
                 }
                 Hairline(axis: .vertical)
